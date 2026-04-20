@@ -1,0 +1,32 @@
+# Sensitive configuration - DO NOT COMMIT
+demand_backend/src/main/resources/application*.yml
+demand_backend/src/main/resources/application*.properties
+demand_backend/target/
+demand_frontend/.env
+demand_frontend/.env.production
+demand_frontend/.env.*.local
+
+# Build outputs
+demand_backend/target/
+demand_frontend/dist/
+demand_frontend/node_modules/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp
+*.tmp
+*.temp
+Temp/

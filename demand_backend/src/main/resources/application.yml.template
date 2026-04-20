@@ -1,0 +1,28 @@
+# Application Configuration Template
+# Copy this file to application.yml and fill in your values
+
+server:
+  port: 8081
+
+spring:
+  profiles:
+    active: dev
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+    serialization:
+      write-dates-as-timestamps: false
+
+mybatis-plus:
+  global-config:
+    db-config:
+      logic-delete-field: deletedAt
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+logging:
+  level:
+    com.demand.system: debug
