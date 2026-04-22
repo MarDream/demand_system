@@ -85,6 +85,12 @@ export const routes: RouteRecordRaw[] = [
         meta: { title: '组织架构', hidden: true },
       },
       {
+        path: 'settings/requirements',
+        name: 'RequirementConfig',
+        component: () => import('@/views/settings/requirements.vue'),
+        meta: { title: '需求配置', hidden: true },
+      },
+      {
         path: 'notifications',
         name: 'Notifications',
         component: () => import('@/views/notifications/index.vue'),

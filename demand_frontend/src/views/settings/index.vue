@@ -35,13 +35,23 @@
           </div>
         </el-card>
       </el-col>
+      <el-col :span="8">
+        <el-card shadow="hover" class="settings-card" @click="$router.push('/settings/requirements')">
+          <div class="card-content">
+            <el-icon :size="48" color="#909399"><Setting /></el-icon>
+            <h3>需求配置</h3>
+            <p>管理系统需求类型和优先级的配置</p>
+            <el-button text>进入管理 &rarr;</el-button>
+          </div>
+        </el-card>
+      </el-col>
     </el-row>
     <router-view />
   </div>
 </template>
 
 <script setup lang="ts">
-import { Folder, User, OfficeBuilding } from '@element-plus/icons-vue'
+import { Folder, User, OfficeBuilding, Setting } from '@element-plus/icons-vue'
 </script>
 
 <style lang="scss" scoped>

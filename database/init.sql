@@ -354,6 +354,39 @@ CREATE TABLE `reviews` (
   INDEX `idx_result` (`result`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='评审表';
 
+-- -----------------------------------------------------
+-- 19. 需求类型表 requirement_types
+-- -----------------------------------------------------
+DROP TABLE IF EXISTS `requirement_types`;
+CREATE TABLE `requirement_types` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `code` VARCHAR(50) NOT NULL COMMENT '类型编码',
+  `name` VARCHAR(100) NOT NULL COMMENT '类型名称',
+  `color` VARCHAR(20) DEFAULT NULL COMMENT '颜色',
+  `sort_order` INT DEFAULT 0 COMMENT '排序',
+  `is_default` TINYINT DEFAULT 0 COMMENT '是否默认',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='需求类型表';
+
+-- -----------------------------------------------------
+-- 20. 优先级表 priorities
+-- -----------------------------------------------------
+DROP TABLE IF EXISTS `priorities`;
+CREATE TABLE `priorities` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `code` VARCHAR(50) NOT NULL COMMENT '优先级编码',
+  `name` VARCHAR(100) NOT NULL COMMENT '优先级名称',
+  `color` VARCHAR(20) DEFAULT NULL COMMENT '颜色',
+  `level` INT DEFAULT 0 COMMENT '级别(数字越小越高)',
+  `sort_order` INT DEFAULT 0 COMMENT '排序',
+  `is_default` TINYINT DEFAULT 0 COMMENT '是否默认',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='优先级表';
+
 -- =====================================================
 -- SEED DATA - 初始化数据
 -- =====================================================
@@ -381,6 +414,21 @@ INSERT INTO `users` (`id`, `username`, `password`, `real_name`, `email`, `phone`
 -- 用户组织关系
 INSERT INTO `user_organizations` (`user_id`, `region_id`, `department_id`, `position_id`, `system_role`, `manager_id`, `effective_date`) VALUES
 (1, 1, 1, 1, 'admin', NULL, '2026-01-01');
+
+-- 需求类型数据
+INSERT INTO `requirement_types` (`code`, `name`, `color`, `sort_order`, `is_default`) VALUES
+('FEATURE', '功能', '#409EFF', 1, 1),
+('OPTIMIZATION', '优化', '#67C23A', 2, 0),
+('BUG', 'Bug', '#F56C6C', 3, 0),
+('TECH_DEBT', '技术债务', '#E6A23C', 4, 0),
+('OPERATION', '运营', '#909399', 5, 0);
+
+-- 优先级数据
+INSERT INTO `priorities` (`code`, `name`, `color`, `level`, `sort_order`, `is_default`) VALUES
+('P0', 'P0-紧急', '#F56C6C', 0, 1, 0),
+('P1', 'P1-高', '#E6A23C', 1, 2, 1),
+('P2', 'P2-中', '#409EFF', 2, 3, 0),
+('P3', 'P3-低', '#909399', 3, 4, 0);
 
 -- 演示项目
 INSERT INTO `projects` (`id`, `name`, `description`, `creator_id`, `status`, `created_at`, `updated_at`, `deleted_at`) VALUES
