@@ -1,23 +1,26 @@
 <template>
-  <div class="requirements-page">
-    <!-- Filter Bar -->
-    <div class="filter-card">
+  <PageContainer title="需求管理">
+    <!-- Filter -->
+    <FilterCard>
       <el-form :model="filterForm" inline>
         <el-form-item label="需求类型">
           <el-select v-model="filterForm.type" placeholder="全部" clearable style="width: 140px">
-            <el-option label="功能" value="功能" />
-            <el-option label="优化" value="优化" />
-            <el-option label="Bug" value="Bug" />
-            <el-option label="技术债务" value="技术债务" />
-            <el-option label="运营" value="运营" />
+            <el-option
+              v-for="t in configTypes"
+              :key="t.code"
+              :label="t.name"
+              :value="t.code"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="优先级">
           <el-select v-model="filterForm.priority" placeholder="全部" clearable style="width: 100px">
-            <el-option label="P0" value="P0" />
-            <el-option label="P1" value="P1" />
-            <el-option label="P2" value="P2" />
-            <el-option label="P3" value="P3" />
+            <el-option
+              v-for="p in configPriorities"
+              :key="p.code"
+              :label="p.name"
+              :value="p.code"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="状态">
@@ -38,86 +41,91 @@
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-input v-model="filterForm.keyword" placeholder="关键词搜索" clearable style="width: 200px" @keyup.enter="handleSearch" />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="handleSearch">搜索</el-button>
-          <el-button @click="handleReset">重置</el-button>
+          <el-input v-model="filterForm.keyword" placeholder="关键词搜索" clearable style="width: 220px" @keyup.enter="handleSearch" />
         </el-form-item>
       </el-form>
-    </div>
+      <template #actions>
+        <el-button type="primary" @click="handleSearch">搜索</el-button>
+        <el-button @click="handleReset">重置</el-button>
+      </template>
+    </FilterCard>
 
-    <!-- Toolbar -->
-    <div class="table-card">
-      <div class="toolbar">
-        <el-button type="primary" @click="handleCreate">新建需求</el-button>
-        <el-button @click="handleExport">导出Excel</el-button>
-        <el-button type="danger" :disabled="selectedIds.length === 0" @click="handleBatchDelete">
-          批量删除
-        </el-button>
-      </div>
+    <!-- Table -->
+    <TableCard>
+      <template #toolbar>
+        <Toolbar>
+          <template #left>
+            <el-button type="primary" @click="handleCreate">新建需求</el-button>
+            <el-button @click="handleExport">导出Excel</el-button>
+          </template>
+          <template #right>
+            <el-button type="danger" :disabled="selectedIds.length === 0" @click="handleBatchDelete">
+              批量删除
+            </el-button>
+          </template>
+        </Toolbar>
+      </template>
 
-      <!-- Table -->
-      <el-table
-        v-loading="loading"
-        :data="tableData"
-        border
-        stripe
-        style="width: 100%"
-        @selection-change="handleSelectionChange"
-      >
-        <el-table-column type="selection" width="50" />
-        <el-table-column type="expand" width="40">
-          <template #default="{ row }">
-            <div v-if="row.childCount && row.childCount > 0" style="padding: 10px 40px">
-              <p style="color: #909399;">子需求（共 {{ row.childCount }} 个，详情查看）</p>
-            </div>
-            <div v-else style="padding: 10px 40px">
-              <p style="color: #909399;">暂无子需求</p>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="需求标题" min-width="200">
-          <template #default="{ row }">
-            <el-link type="primary" @click="handleViewDetail(row.id)">{{ row.title }}</el-link>
-          </template>
-        </el-table-column>
-        <el-table-column label="类型" width="100" align="center">
-          <template #default="{ row }">
-            <el-tag>{{ row.type }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="优先级" width="90" align="center">
-          <template #default="{ row }">
-            <el-tag :type="priorityTagType(row.priority)">{{ row.priority }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="状态" width="100" align="center">
-          <template #default="{ row }">
-            <el-tag :type="statusTagType(row.status)">{{ row.status }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="负责人" width="100" align="center">
-          <template #default="{ row }">{{ row.assigneeName || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="创建时间" width="170" align="center">
-          <template #default="{ row }">{{ row.createdAt }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="220" align="center" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" @click="handleEdit(row)">编辑</el-button>
-            <el-button link type="primary" @click="handleViewDetail(row.id)">查看详情</el-button>
-            <el-popconfirm title="确定删除该需求吗？" @confirm="handleDelete(row.id)">
-              <template #reference>
-                <el-button link type="danger">删除</el-button>
-              </template>
-            </el-popconfirm>
-          </template>
-        </el-table-column>
-      </el-table>
+      <template #table>
+        <el-table
+          v-loading="loading"
+          :data="tableData"
+          border
+          stripe
+          @selection-change="handleSelectionChange"
+        >
+          <el-table-column type="selection" width="50" />
+          <el-table-column type="expand" width="40">
+            <template #default="{ row }">
+              <div class="expand-row">
+                <p class="expand-row__text" v-if="row.childCount && row.childCount > 0">
+                  子需求（共 {{ row.childCount }} 个，详情查看）
+                </p>
+                <p class="expand-row__text" v-else>暂无子需求</p>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="需求标题" min-width="220">
+            <template #default="{ row }">
+              <el-link type="primary" @click="handleViewDetail(row.id)">{{ row.title }}</el-link>
+            </template>
+          </el-table-column>
+          <el-table-column label="类型" width="100" align="center">
+            <template #default="{ row }">
+              <el-tag>{{ typeLabel(row.type) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="优先级" width="90" align="center">
+            <template #default="{ row }">
+              <el-tag :type="priorityTagType(row.priority)">{{ priorityLabel(row.priority) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="100" align="center">
+            <template #default="{ row }">
+              <el-tag :type="statusTagType(row.status)">{{ row.status }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="负责人" width="100" align="center">
+            <template #default="{ row }">{{ row.assigneeName || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="创建时间" width="170" align="center">
+            <template #default="{ row }">{{ row.createdAt }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="220" align="center" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="handleEdit(row)">编辑</el-button>
+              <el-button link type="primary" @click="handleViewDetail(row.id)">查看详情</el-button>
+              <el-popconfirm title="确定删除该需求吗？" @confirm="handleDelete(row.id)">
+                <template #reference>
+                  <el-button link type="danger">删除</el-button>
+                </template>
+              </el-popconfirm>
+            </template>
+          </el-table-column>
+        </el-table>
+      </template>
 
-      <!-- Pagination -->
-      <div class="pagination-wrapper">
+      <template #pagination>
         <el-pagination
           v-model:current-page="pagination.pageNum"
           v-model:page-size="pagination.pageSize"
@@ -127,9 +135,9 @@
           @size-change="fetchData"
           @current-change="fetchData"
         />
-      </div>
-    </div>
-  </div>
+      </template>
+    </TableCard>
+  </PageContainer>
 </template>
 
 <script setup lang="ts">
@@ -138,13 +146,47 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as XLSX from 'xlsx'
 import { requirementApi, userApi } from '@/api'
+import { requirementConfigApi } from '@/api/modules/requirementConfig'
 import type { Requirement, RequirementQuery } from '@/types/requirement'
 import type { User } from '@/types/user'
+import PageContainer from '@/components/common/PageContainer.vue'
+import FilterCard from '@/components/common/FilterCard.vue'
+import TableCard from '@/components/common/TableCard.vue'
+import Toolbar from '@/components/common/Toolbar.vue'
 
 const router = useRouter()
 
 // Default projectId
 const DEFAULT_PROJECT_ID = 1
+
+const configTypes = ref<any[]>([])
+const configPriorities = ref<any[]>([])
+
+const typeMap = ref<Record<string, string>>({})
+const priorityMap = ref<Record<string, string>>({})
+
+async function loadConfig() {
+  try {
+    const [typesRes, prioritiesRes] = await Promise.all([
+      requirementConfigApi.listTypes(),
+      requirementConfigApi.listPriorities(),
+    ])
+    configTypes.value = Array.isArray(typesRes) ? typesRes : (typesRes as any).data || []
+    configPriorities.value = Array.isArray(prioritiesRes) ? prioritiesRes : (prioritiesRes as any).data || []
+    typeMap.value = Object.fromEntries(configTypes.value.map((t: any) => [t.code, t.name]))
+    priorityMap.value = Object.fromEntries(configPriorities.value.map((p: any) => [p.code, p.name]))
+  } catch {
+    // ignore
+  }
+}
+
+function typeLabel(code: string) {
+  return typeMap.value[code] || code || '-'
+}
+
+function priorityLabel(code: string) {
+  return priorityMap.value[code] || code || '-'
+}
 
 // Filter user list (动态加载用户列表用于过滤)
 const filterUserList = ref<User[]>([])
@@ -273,8 +315,8 @@ async function handleExport() {
   try {
     const exportData = tableData.value.map(row => ({
       '需求标题': row.title || '',
-      '类型': row.type || '',
-      '优先级': row.priority || '',
+      '类型': typeLabel(row.type),
+      '优先级': priorityLabel(row.priority),
       '状态': row.status || '',
       '负责人': row.assigneeName || '-',
       '创建时间': row.createdAt || '',
@@ -332,36 +374,16 @@ function statusTagType(status: string): string {
 onMounted(() => {
   fetchData()
   loadFilterUsers()
+  loadConfig()
 })
 </script>
 
-<style scoped>
-.requirements-page {
-  padding: 20px;
+<style scoped lang="scss">
+.expand-row {
+  padding: 10px 40px;
 }
 
-.filter-card {
-  background: #fff;
-  padding: 20px;
-  border-radius: 8px;
-  margin-bottom: 16px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
-}
-
-.table-card {
-  background: #fff;
-  padding: 20px;
-  border-radius: 8px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
-}
-
-.toolbar {
-  margin-bottom: 16px;
-}
-
-.pagination-wrapper {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 16px;
+.expand-row__text {
+  color: $text-color-placeholder;
 }
 </style>

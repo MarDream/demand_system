@@ -1,14 +1,17 @@
 <template>
-  <div class="iteration-page">
-    <el-card shadow="never">
-      <template #header>
-        <div class="card-header">
-          <span class="title">迭代管理</span>
-          <el-button type="primary" @click="openDialog()">新建迭代</el-button>
-        </div>
+  <PageContainer title="迭代管理">
+    <TableCard>
+      <template #toolbar>
+        <Toolbar>
+          <template #left />
+          <template #right>
+            <el-button type="primary" @click="openDialog()">新建迭代</el-button>
+          </template>
+        </Toolbar>
       </template>
 
-      <el-table :data="iterations" border style="width: 100%">
+      <template #table>
+        <el-table :data="iterations" border>
         <el-table-column prop="name" label="迭代名称" min-width="180" />
         <el-table-column label="开始日期" width="120">
           <template #default="{ row }">
@@ -48,8 +51,9 @@
             <el-button link type="info" @click="viewBurndown(row)">查看燃尽图</el-button>
           </template>
         </el-table-column>
-      </el-table>
-    </el-card>
+        </el-table>
+      </template>
+    </TableCard>
 
     <!-- 创建/编辑迭代对话框 -->
     <el-dialog
@@ -105,7 +109,7 @@
       </div>
       <el-empty v-else description="暂无燃尽图数据" />
     </el-dialog>
-  </div>
+  </PageContainer>
 </template>
 
 <script setup lang="ts">
@@ -115,6 +119,9 @@ import type { FormInstance } from 'element-plus'
 import * as echarts from 'echarts'
 import { getIterationList, createIteration, updateIteration, deleteIteration } from '@/api/modules/iteration'
 import type { Iteration } from '@/types/iteration'
+import PageContainer from '@/components/common/PageContainer.vue'
+import TableCard from '@/components/common/TableCard.vue'
+import Toolbar from '@/components/common/Toolbar.vue'
 
 const projectId = 1
 const iterations = ref<Iteration[]>([])
@@ -320,22 +327,9 @@ onMounted(() => {
 </script>
 
 <style scoped lang="scss">
-.iteration-page {
-  .card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-
-    .title {
-      font-size: 18px;
-      font-weight: 600;
-    }
-  }
-
-  .burndown-chart {
-    .mb-4 {
-      margin-bottom: 16px;
-    }
+.burndown-chart {
+  .mb-4 {
+    margin-bottom: 16px;
   }
 }
 </style>

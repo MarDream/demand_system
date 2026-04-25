@@ -1,5 +1,6 @@
 <template>
-  <div class="create-page">
+  <PageContainer :breadcrumb="false">
+    <div class="create-page">
     <div class="page-header">
       <el-breadcrumb separator="/">
         <el-breadcrumb-item :to="{ name: 'Requirements' }">需求管理</el-breadcrumb-item>
@@ -93,7 +94,7 @@
                   </el-tooltip>
                   <el-tooltip content="斜体" placement="top">
                     <el-button @click="editor?.chain().focus().toggleItalic().run()" :class="{ 'is-active': editor?.isActive('italic') }">
-                      <el-icon><ICON_NAME /></el-icon>
+                      <span class="toolbar-text-italic">I</span>
                     </el-button>
                   </el-tooltip>
                   <el-tooltip content="删除线" placement="top">
@@ -115,12 +116,12 @@
                   <el-divider direction="vertical" />
                   <el-tooltip content="引用" placement="top">
                     <el-button @click="editor?.chain().focus().toggleBlockquote().run()" :class="{ 'is-active': editor?.isActive('blockquote') }">
-                      <el-icon><ICON_NAME /></el-icon>
+                      <span class="toolbar-text-quote">"</span>
                     </el-button>
                   </el-tooltip>
                   <el-tooltip content="代码" placement="top">
                     <el-button @click="editor?.chain().focus().toggleCode().run()" :class="{ 'is-active': editor?.isActive('code') }">
-                      <el-icon><ICON_NAME /></el-icon>
+                      <span class="toolbar-text-code">&lt;/&gt;</span>
                     </el-button>
                   </el-tooltip>
                   <el-divider direction="vertical" />
@@ -347,7 +348,8 @@
         <el-button type="primary" @click="confirmAddRelation">确定</el-button>
       </template>
     </el-dialog>
-  </div>
+    </div>
+  </PageContainer>
 </template>
 
 <script setup lang="ts">
@@ -365,6 +367,7 @@ import Image from '@tiptap/extension-image'
 import TiptapLink from '@tiptap/extension-link'
 import { requirementApi, projectApi, userApi, iterationApi } from '@/api'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
+import PageContainer from '@/components/common/PageContainer.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -619,8 +622,8 @@ async function loadConfig() {
       requirementConfigApi.listTypes(),
       requirementConfigApi.listPriorities(),
     ])
-    configTypes.value = typesRes.data || []
-    configPriorities.value = prioritiesRes.data || []
+    configTypes.value = Array.isArray(typesRes) ? typesRes : (typesRes as any).data || []
+    configPriorities.value = Array.isArray(prioritiesRes) ? prioritiesRes : (prioritiesRes as any).data || []
   } catch {
     console.error('Failed to load requirement config')
   }
@@ -642,10 +645,10 @@ onBeforeUnmount(() => {
 })
 </script>
 
-<style scoped>
+<style scoped lang="scss">
 .create-page {
-  padding: 20px;
-  padding-bottom: 80px;
+  padding: 0;
+  padding-bottom: 0;
   min-height: 100%;
   display: flex;
   flex-direction: column;
@@ -683,7 +686,7 @@ onBeforeUnmount(() => {
 
 .form-card :deep(.el-form-item__label) {
   font-weight: 500;
-  color: #303133;
+  color: $text-color;
 }
 
 .inline-fields {
@@ -699,7 +702,7 @@ onBeforeUnmount(() => {
 
 /* Editor */
 .editor-wrapper {
-  border: 1px solid #dcdfe6;
+  border: 1px solid $border-color;
   border-radius: 4px;
   overflow: hidden;
 }
@@ -711,7 +714,7 @@ onBeforeUnmount(() => {
   gap: 4px;
   padding: 8px 12px;
   background: #f5f7fa;
-  border-bottom: 1px solid #dcdfe6;
+  border-bottom: 1px solid $border-color;
 }
 
 .editor-toolbar .el-button {
@@ -719,7 +722,7 @@ onBeforeUnmount(() => {
 }
 
 .editor-toolbar .el-button.is-active {
-  background: #409eff;
+  background: $primary-color;
   color: #fff;
 }
 
@@ -759,10 +762,10 @@ onBeforeUnmount(() => {
 }
 
 .editor-content :deep(.ProseMirror blockquote) {
-  border-left: 3px solid #409eff;
+  border-left: 3px solid $primary-color;
   padding-left: 12px;
   margin: 8px 0;
-  color: #606266;
+  color: $text-color-secondary;
   background: #f5f7fa;
 }
 
@@ -782,7 +785,7 @@ onBeforeUnmount(() => {
 }
 
 .editor-content :deep(.ProseMirror a) {
-  color: #409eff;
+  color: $primary-color;
   text-decoration: underline;
 }
 
@@ -842,7 +845,7 @@ onBeforeUnmount(() => {
 
 /* Relation Section */
 .relation-section {
-  border: 1px solid #ebeef5;
+  border: 1px solid $border-color;
   border-radius: 4px;
   overflow: hidden;
 }
@@ -853,12 +856,12 @@ onBeforeUnmount(() => {
   align-items: center;
   padding: 12px 16px;
   background: #f5f7fa;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid $border-color;
 }
 
 .relation-header span {
   font-size: 14px;
-  color: #606266;
+  color: $text-color-secondary;
 }
 
 .relation-table {
@@ -871,17 +874,29 @@ onBeforeUnmount(() => {
 
 /* Action Bar */
 .action-bar {
-  position: fixed;
+  position: sticky;
   bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 12px 24px;
-  background: #fff;
-  border-top: 1px solid #e4e7ed;
+  padding: 12px 0;
+  background: $bg-container;
+  border-top: 1px solid $border-color;
   display: flex;
   justify-content: flex-end;
   gap: 12px;
   z-index: 100;
+}
+
+.toolbar-text-italic {
+  font-style: italic;
+  font-weight: 600;
+}
+
+.toolbar-text-quote {
+  font-weight: 700;
+}
+
+.toolbar-text-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
 }
 
 /* Relation Dialog */

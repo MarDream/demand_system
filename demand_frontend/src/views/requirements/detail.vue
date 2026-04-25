@@ -1,47 +1,48 @@
 <template>
-  <div v-loading="loading" class="detail-page">
-    <template v-if="detail">
-      <!-- Header -->
-      <div class="detail-header">
-        <div class="header-left">
-          <el-breadcrumb separator="/">
-            <el-breadcrumb-item :to="{ name: 'Requirements' }">需求管理</el-breadcrumb-item>
-            <el-breadcrumb-item>需求详情</el-breadcrumb-item>
-          </el-breadcrumb>
-          <h2 class="detail-title">
-            {{ detail.title }}
-            <el-tag :type="statusTagType(detail.status)" size="small" style="margin-left: 12px">
-              {{ detail.status }}
-            </el-tag>
-          </h2>
+  <PageContainer variant="card" :breadcrumb="false">
+    <div v-loading="loading" class="detail-page">
+      <template v-if="detail">
+        <!-- Header -->
+        <div class="detail-header">
+          <div class="header-left">
+            <el-breadcrumb separator="/">
+              <el-breadcrumb-item :to="{ name: 'Requirements' }">需求管理</el-breadcrumb-item>
+              <el-breadcrumb-item>需求详情</el-breadcrumb-item>
+            </el-breadcrumb>
+            <h2 class="detail-title">
+              {{ detail.title }}
+              <el-tag :type="statusTagType(detail.status)" size="small" style="margin-left: 12px">
+                {{ detail.status }}
+              </el-tag>
+            </h2>
+          </div>
+          <div class="header-actions">
+            <el-button @click="handleEdit">编辑</el-button>
+            <el-button type="success" @click="handleSplit">拆分子需求</el-button>
+            <el-popconfirm title="确定删除该需求吗？" @confirm="handleDelete">
+              <template #reference>
+                <el-button type="danger">删除</el-button>
+              </template>
+            </el-popconfirm>
+            <el-select
+              v-model="newStatus"
+              placeholder="状态流转"
+              style="width: 140px; margin-right: 8px"
+            >
+              <el-option label="待评审" value="待评审" />
+              <el-option label="评审中" value="评审中" />
+              <el-option label="已通过" value="已通过" />
+              <el-option label="开发中" value="开发中" />
+              <el-option label="测试中" value="测试中" />
+              <el-option label="已上线" value="已上线" />
+              <el-option label="已验收" value="已验收" />
+            </el-select>
+            <el-button type="primary" @click="handleStatusTransition">执行流转</el-button>
+          </div>
         </div>
-        <div class="header-actions">
-          <el-button @click="handleEdit">编辑</el-button>
-          <el-button type="success" @click="handleSplit">拆分子需求</el-button>
-          <el-popconfirm title="确定删除该需求吗？" @confirm="handleDelete">
-            <template #reference>
-              <el-button type="danger">删除</el-button>
-            </template>
-          </el-popconfirm>
-          <el-select
-            v-model="newStatus"
-            placeholder="状态流转"
-            style="width: 140px; margin-right: 8px"
-          >
-            <el-option label="待评审" value="待评审" />
-            <el-option label="评审中" value="评审中" />
-            <el-option label="已通过" value="已通过" />
-            <el-option label="开发中" value="开发中" />
-            <el-option label="测试中" value="测试中" />
-            <el-option label="已上线" value="已上线" />
-            <el-option label="已验收" value="已验收" />
-          </el-select>
-          <el-button type="primary" @click="handleStatusTransition">执行流转</el-button>
-        </div>
-      </div>
 
-      <!-- Tabs -->
-      <el-tabs v-model="activeTab" class="detail-tabs">
+        <!-- Tabs -->
+        <el-tabs v-model="activeTab" class="detail-tabs">
         <!-- 基本信息 -->
         <el-tab-pane label="基本信息" name="basic">
           <el-descriptions :column="2" border>
@@ -186,9 +187,10 @@
             </div>
           </div>
         </el-tab-pane>
-      </el-tabs>
-    </template>
-  </div>
+        </el-tabs>
+      </template>
+    </div>
+  </PageContainer>
 </template>
 
 <script setup lang="ts">
@@ -197,6 +199,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { requirementApi } from '@/api'
 import type { Requirement, RequirementHistory, RequirementUpdate } from '@/types/requirement'
+import PageContainer from '@/components/common/PageContainer.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -308,10 +311,7 @@ onMounted(() => {
 
 <style scoped>
 .detail-page {
-  padding: 20px;
-  background: #fff;
-  border-radius: 8px;
-  min-height: calc(100vh - 100px);
+  min-height: 200px;
 }
 
 .detail-header {

@@ -25,20 +25,20 @@ export interface Priority {
 
 export const requirementConfigApi = {
   // 需求类型
-  listTypes: () => request.get<RequirementType[]>('/requirement-config/types'),
+  listTypes: () => request.get<RequirementType[]>('/v1/requirement-config/types'),
 
-  createType: (data: RequirementType) => request.post('/requirement-config/types', data),
+  createType: (data: RequirementType) => request.post('/v1/requirement-config/types', data),
 
-  updateType: (id: number, data: RequirementType) => request.put(`/requirement-config/types/${id}`, data),
+  updateType: (id: number, data: RequirementType) => request.put(`/v1/requirement-config/types/${id}`, data),
 
-  deleteType: (id: number) => request.delete(`/requirement-config/types/${id}`),
+  deleteType: (id: number) => request.delete(`/v1/requirement-config/types/${id}`),
 
   // 优先级
-  listPriorities: () => request.get<Priority[]>('/requirement-config/priorities'),
+  listPriorities: () => request.get<Priority[]>('/v1/requirement-config/priorities'),
 
-  createPriority: (data: Priority) => request.post('/requirement-config/priorities', data),
+  createPriority: (data: Priority) => request.post('/v1/requirement-config/priorities', data),
 
-  updatePriority: (id: number, data: Priority) => request.put(`/requirement-config/priorities/${id}`, data),
+  updatePriority: (id: number, data: Priority) => request.put(`/v1/requirement-config/priorities/${id}`, data),
 
-  deletePriority: (id: number) => request.delete(`/requirement-config/priorities/${id}`),
+  deletePriority: (id: number) => request.delete(`/v1/requirement-config/priorities/${id}`),
 }

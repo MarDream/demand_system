@@ -1,14 +1,19 @@
 <template>
-  <div class="project-settings">
-    <div class="page-header">
-      <h2>项目管理</h2>
-      <el-button type="primary" @click="handleCreate">
-        <el-icon><Plus /></el-icon> 新建项目
-      </el-button>
-    </div>
+  <PageContainer title="项目管理">
+    <TableCard>
+      <template #toolbar>
+        <Toolbar>
+          <template #left />
+          <template #right>
+            <el-button type="primary" @click="handleCreate">
+              <el-icon><Plus /></el-icon> 新建项目
+            </el-button>
+          </template>
+        </Toolbar>
+      </template>
 
-    <el-card>
-      <el-table :data="projectList" v-loading="loading" style="width: 100%">
+      <template #table>
+        <el-table :data="projectList" v-loading="loading" border>
         <el-table-column prop="name" label="项目名称" min-width="180" />
         <el-table-column prop="description" label="描述" min-width="240" show-overflow-tooltip />
         <el-table-column prop="status" label="状态" width="100">
@@ -25,19 +30,21 @@
             <el-button type="danger" link size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
-      </el-table>
+        </el-table>
+      </template>
 
-      <el-pagination
-        v-model:current-page="pageNum"
-        v-model:page-size="pageSize"
-        :total="total"
-        :page-sizes="[10, 20, 50]"
-        layout="total, sizes, prev, pager, next"
-        class="pagination"
-        @size-change="fetchList"
-        @current-change="fetchList"
-      />
-    </el-card>
+      <template #pagination>
+        <el-pagination
+          v-model:current-page="pageNum"
+          v-model:page-size="pageSize"
+          :total="total"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next"
+          @size-change="fetchList"
+          @current-change="fetchList"
+        />
+      </template>
+    </TableCard>
 
     <!-- Create/Edit Dialog -->
     <el-dialog
@@ -64,7 +71,7 @@
         <el-button type="primary" :loading="submitting" @click="handleSubmit">确定</el-button>
       </template>
     </el-dialog>
-  </div>
+  </PageContainer>
 </template>
 
 <script setup lang="ts">
@@ -73,6 +80,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import * as projectApi from '@/api/modules/project'
+import PageContainer from '@/components/common/PageContainer.vue'
+import TableCard from '@/components/common/TableCard.vue'
+import Toolbar from '@/components/common/Toolbar.vue'
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -178,26 +188,4 @@ function resetForm() {
 onMounted(fetchList)
 </script>
 
-<style lang="scss" scoped>
-.project-settings {
-  padding: 20px;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-
-  h2 {
-    margin: 0;
-    font-size: 20px;
-    color: #303133;
-  }
-}
-
-.pagination {
-  margin-top: 20px;
-  justify-content: flex-end;
-}
-</style>
+<style lang="scss" scoped></style>

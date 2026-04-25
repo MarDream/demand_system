@@ -232,8 +232,9 @@ async function handleLogout() {
 
 .app-main {
   flex: 1;
-  padding: $spacing-md;
+  padding: 0;
   overflow: auto;
+  background: $bg-color;
 }
 
 .notification-badge {

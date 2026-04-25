@@ -1,15 +1,13 @@
 <template>
-  <div class="user-settings">
-    <div class="page-header">
-      <h2>用户管理</h2>
+  <PageContainer title="用户管理">
+    <template #headerActions>
       <el-button type="primary" @click="handleCreate">
         <el-icon><Plus /></el-icon> 新增用户
       </el-button>
-    </div>
+    </template>
 
-    <el-card>
-      <!-- Search Bar -->
-      <el-form :inline="true" :model="queryParams" class="search-form">
+    <FilterCard>
+      <el-form :inline="true" :model="queryParams">
         <el-form-item label="用户名">
           <el-input v-model="queryParams.username" placeholder="请输入用户名" clearable />
         </el-form-item>
@@ -22,14 +20,16 @@
             <el-option label="停用" value="disabled" />
           </el-select>
         </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="handleSearch">搜索</el-button>
-          <el-button @click="handleReset">重置</el-button>
-        </el-form-item>
       </el-form>
+      <template #actions>
+        <el-button type="primary" @click="handleSearch">搜索</el-button>
+        <el-button @click="handleReset">重置</el-button>
+      </template>
+    </FilterCard>
 
-      <!-- Table -->
-      <el-table :data="userList" v-loading="loading" style="width: 100%">
+    <TableCard>
+      <template #table>
+        <el-table :data="userList" v-loading="loading" border>
         <el-table-column prop="username" label="用户名" width="130" />
         <el-table-column prop="realName" label="姓名" width="120" />
         <el-table-column prop="email" label="邮箱" min-width="180" show-overflow-tooltip />
@@ -49,19 +49,20 @@
             <el-button type="warning" link size="small" @click="handleResetPassword(row)">重置密码</el-button>
           </template>
         </el-table-column>
-      </el-table>
-
-      <el-pagination
-        v-model:current-page="pageNum"
-        v-model:page-size="pageSize"
-        :total="total"
-        :page-sizes="[10, 20, 50]"
-        layout="total, sizes, prev, pager, next"
-        class="pagination"
-        @size-change="fetchList"
-        @current-change="fetchList"
-      />
-    </el-card>
+        </el-table>
+      </template>
+      <template #pagination>
+        <el-pagination
+          v-model:current-page="pageNum"
+          v-model:page-size="pageSize"
+          :total="total"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next"
+          @size-change="fetchList"
+          @current-change="fetchList"
+        />
+      </template>
+    </TableCard>
 
     <!-- Create/Edit Dialog -->
     <el-dialog
@@ -96,7 +97,7 @@
         <el-button type="primary" :loading="submitting" @click="handleSubmit">确定</el-button>
       </template>
     </el-dialog>
-  </div>
+  </PageContainer>
 </template>
 
 <script setup lang="ts">
@@ -105,6 +106,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import * as userApi from '@/api/modules/user'
+import PageContainer from '@/components/common/PageContainer.vue'
+import FilterCard from '@/components/common/FilterCard.vue'
+import TableCard from '@/components/common/TableCard.vue'
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -260,30 +264,4 @@ function resetForm() {
 onMounted(fetchList)
 </script>
 
-<style lang="scss" scoped>
-.user-settings {
-  padding: 20px;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-
-  h2 {
-    margin: 0;
-    font-size: 20px;
-    color: #303133;
-  }
-}
-
-.search-form {
-  margin-bottom: 20px;
-}
-
-.pagination {
-  margin-top: 20px;
-  justify-content: flex-end;
-}
-</style>
+<style lang="scss" scoped></style>
