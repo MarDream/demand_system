@@ -11,7 +11,19 @@ public interface WorkflowService {
 
     List<WorkflowState> getStates(Long projectId);
 
+    WorkflowState createState(Long projectId, WorkflowState state);
+
+    void updateState(Long id, WorkflowState state);
+
+    void deleteState(Long id);
+
     List<WorkflowTransition> getTransitions(Long projectId);
+
+    WorkflowTransition createTransition(Long projectId, WorkflowTransition transition);
+
+    void updateTransition(Long id, WorkflowTransition transition);
+
+    void deleteTransition(Long id);
 
     List<WorkflowTransition> getAvailableTransitions(Long requirementId, Long userId);
 

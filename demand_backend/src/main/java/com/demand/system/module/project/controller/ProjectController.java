@@ -1,7 +1,10 @@
 package com.demand.system.module.project.controller;
 
+import com.demand.system.common.exception.BusinessException;
+import com.demand.system.common.result.ErrorCode;
 import com.demand.system.common.result.PageResult;
 import com.demand.system.common.result.Result;
+import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.project.dto.ProjectCreateDTO;
 import com.demand.system.module.project.dto.ProjectMemberAddDTO;
 import com.demand.system.module.project.dto.ProjectUpdateDTO;
@@ -38,8 +41,10 @@ public class ProjectController {
 
     @PostMapping
     public Result<Void> create(@Valid @RequestBody ProjectCreateDTO dto) {
-        // TODO: 后续接入 SecurityUtils 获取当前用户ID
-        Long creatorId = 1L;
+        Long creatorId = SecurityUtils.getCurrentUserId();
+        if (creatorId == null) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "未登录");
+        }
         projectService.create(dto, creatorId);
         return Result.success();
     }

@@ -353,7 +353,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, defineComponent, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -361,12 +361,13 @@ import {
   Plus, Delete, Search, Link, Picture,
   RefreshLeft, RefreshRight, Edit, Close, List
 } from '@element-plus/icons-vue'
-import { useEditor, EditorContent } from '@tiptap/vue-3'
+import { useEditor, EditorContent, NodeViewWrapper, VueNodeViewRenderer } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import TiptapLink from '@tiptap/extension-link'
 import { requirementApi, projectApi, userApi, iterationApi } from '@/api'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
+import { normalizeText } from '@/utils/format'
 import PageContainer from '@/components/common/PageContainer.vue'
 
 const route = useRoute()
@@ -427,11 +428,117 @@ const formRules: FormRules = {
   priority: [{ required: true, message: '请选择优先级', trigger: 'change' }],
 }
 
+const ResizableImageView = defineComponent({
+  props: {
+    node: { type: Object as any, required: true },
+    updateAttributes: { type: Function as any, required: true },
+    selected: { type: Boolean, default: false },
+  },
+  setup(props) {
+    const boxRef = ref<HTMLElement | null>(null)
+    let observer: ResizeObserver | null = null
+    let rafId: number | null = null
+    let lastWidth = 0
+    let lastHeight = 0
+
+    function commitSize(width: number, height: number) {
+      const attrs = (props.node as any).attrs || {}
+      if (!attrs.width && !attrs.height && (width < 40 || height < 40)) return
+      const w = Math.max(24, Math.round(width))
+      const h = Math.max(24, Math.round(height))
+      if (w === lastWidth && h === lastHeight) return
+      lastWidth = w
+      lastHeight = h
+      ;(props.updateAttributes as any)({ width: w, height: h })
+    }
+
+    onMounted(() => {
+      const el = boxRef.value
+      if (!el) return
+      observer = new ResizeObserver((entries) => {
+        const entry = entries[0]
+        if (!entry) return
+        const { width, height } = entry.contentRect
+        if (rafId != null) cancelAnimationFrame(rafId)
+        rafId = requestAnimationFrame(() => commitSize(width, height))
+      })
+      observer.observe(el)
+    })
+
+    onBeforeUnmount(() => {
+      if (rafId != null) cancelAnimationFrame(rafId)
+      observer?.disconnect()
+      observer = null
+    })
+
+    return () => {
+      const attrs = (props.node as any).attrs || {}
+      const width = attrs.width ? `${attrs.width}px` : undefined
+      const height = attrs.height ? `${attrs.height}px` : undefined
+
+      return h(
+        NodeViewWrapper as any,
+        { as: 'span', class: ['tiptap-resizable-image', props.selected ? 'is-selected' : ''] },
+        () =>
+          h(
+            'span',
+            {
+              ref: boxRef,
+              class: 'tiptap-resizable-image__box',
+              contenteditable: 'false',
+              style: { width, height },
+            },
+            [
+              h('img', {
+                class: 'tiptap-resizable-image__img',
+                src: attrs.src,
+                alt: attrs.alt || '',
+                title: attrs.title || '',
+                draggable: 'false',
+              }),
+            ],
+          ),
+      )
+    }
+  },
+})
+
+const ResizableImage = Image.extend({
+  addAttributes() {
+    return {
+      ...(this.parent?.() || {}),
+      width: {
+        default: null,
+        parseHTML: (element) => {
+          const raw = element.getAttribute('width')
+          if (!raw) return null
+          const n = Number(raw)
+          return Number.isFinite(n) ? n : null
+        },
+        renderHTML: (attributes) => (attributes.width ? { width: attributes.width } : {}),
+      },
+      height: {
+        default: null,
+        parseHTML: (element) => {
+          const raw = element.getAttribute('height')
+          if (!raw) return null
+          const n = Number(raw)
+          return Number.isFinite(n) ? n : null
+        },
+        renderHTML: (attributes) => (attributes.height ? { height: attributes.height } : {}),
+      },
+    }
+  },
+  addNodeView() {
+    return VueNodeViewRenderer(ResizableImageView as any)
+  },
+})
+
 // Tiptap Editor
 const editor = useEditor({
   extensions: [
     StarterKit,
-    Image.configure({
+    ResizableImage.configure({
       inline: false,
       allowBase64: true,
     }),
@@ -622,8 +729,10 @@ async function loadConfig() {
       requirementConfigApi.listTypes(),
       requirementConfigApi.listPriorities(),
     ])
-    configTypes.value = Array.isArray(typesRes) ? typesRes : (typesRes as any).data || []
-    configPriorities.value = Array.isArray(prioritiesRes) ? prioritiesRes : (prioritiesRes as any).data || []
+    const typeList = Array.isArray(typesRes) ? typesRes : (typesRes as any).data || []
+    const priorityList = Array.isArray(prioritiesRes) ? prioritiesRes : (prioritiesRes as any).data || []
+    configTypes.value = typeList.map((t: any) => ({ ...t, name: normalizeText(t.name) }))
+    configPriorities.value = priorityList.map((p: any) => ({ ...p, name: normalizeText(p.name) }))
   } catch {
     console.error('Failed to load requirement config')
   }
@@ -753,6 +862,25 @@ onBeforeUnmount(() => {
 .editor-content :deep(.ProseMirror img) {
   max-width: 100%;
   border-radius: 4px;
+}
+
+.editor-content :deep(.tiptap-resizable-image__box) {
+  display: inline-block;
+  max-width: 100%;
+  resize: both;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+.editor-content :deep(.tiptap-resizable-image.is-selected .tiptap-resizable-image__box) {
+  outline: 2px solid $primary-color;
+}
+
+.editor-content :deep(.tiptap-resizable-image__img) {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .editor-content :deep(.ProseMirror ul),

@@ -5,35 +5,33 @@ export function formatDate(date: string | Date | undefined, format = 'YYYY-MM-DD
   return dayjs(date).format(format)
 }
 
-export function formatPriority(priority: string): string {
-  const map: Record<string, string> = {
-    critical: '紧急',
-    high: '高',
-    medium: '中',
-    low: '低',
-  }
-  return map[priority] || priority
+export function formatLabel(value: string, map?: Record<string, string>): string {
+  const normalizedValue = normalizeText(value)
+  if (!map) return normalizedValue
+  const mapped = map[value] ?? map[normalizedValue]
+  return mapped ? normalizeText(mapped) : normalizedValue
 }
 
-export function formatStatus(status: string): string {
-  const map: Record<string, string> = {
-    new: '新建',
-    pending_review: '待评审',
-    reviewing: '评审中',
-    approved: '已通过',
-    developing: '开发中',
-    testing: '测试中',
-    released: '已上线',
-    accepted: '已验收',
-    cancelled: '已取消',
-    rejected: '已拒绝',
-    test_failed: '测试不通过',
-    accepted_failed: '验收不通过',
-    active: '启用',
-    inactive: '停用',
-    planned: '计划中',
-    in_progress: '进行中',
-    completed: '已完成',
-  }
-  return map[status] || status
+export function formatPriority(priority: string, map?: Record<string, string>): string {
+  return formatLabel(priority, map)
+}
+
+export function formatStatus(status: string, map?: Record<string, string>): string {
+  return formatLabel(status, map)
+}
+
+export function normalizeText(text: string): string {
+  if (!text) return text
+  if (/[\u4E00-\u9FFF]/.test(text)) return text
+  if (!/[ÃÂâäåæçèéêëìíîïðñòóôõöùúûüýþÿ]/.test(text)) return text
+
+  try {
+    const bytes = Uint8Array.from(Array.from(text, ch => ch.charCodeAt(0) & 0xff))
+    const decoded = new TextDecoder('utf-8').decode(bytes)
+    if (/[\u4E00-\u9FFF]/.test(decoded) && !decoded.includes('\uFFFD')) {
+      return decoded
+    }
+  } catch {}
+
+  return text
 }

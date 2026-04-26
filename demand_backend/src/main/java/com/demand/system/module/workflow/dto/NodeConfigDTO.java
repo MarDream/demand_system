@@ -15,6 +15,8 @@ public class NodeConfigDTO {
 
     private List<String> allowedRoles;
 
+    private List<Long> allowedUsers;
+
     private List<String> editableFields;
 
     private List<String> requiredFields;

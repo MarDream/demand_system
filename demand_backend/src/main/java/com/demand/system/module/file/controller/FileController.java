@@ -1,6 +1,9 @@
 package com.demand.system.module.file.controller;
 
+import com.demand.system.common.exception.BusinessException;
+import com.demand.system.common.result.ErrorCode;
 import com.demand.system.common.result.Result;
+import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.file.entity.FileRecord;
 import com.demand.system.module.file.service.FileService;
 import lombok.RequiredArgsConstructor;
@@ -24,7 +27,10 @@ public class FileController {
 
     @PostMapping("/upload")
     public Result<String> upload(@RequestParam("file") MultipartFile file) {
-        Long uploaderId = 1L;
+        Long uploaderId = SecurityUtils.getCurrentUserId();
+        if (uploaderId == null) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "未登录");
+        }
         String url = fileService.upload(file, uploaderId);
         return Result.success(url);
     }

@@ -46,9 +46,10 @@
         <!-- 基本信息 -->
         <el-tab-pane label="基本信息" name="basic">
           <el-descriptions :column="2" border>
-            <el-descriptions-item label="需求类型">{{ detail.type }}</el-descriptions-item>
+            <el-descriptions-item label="所属项目">{{ projectLabel(detail.projectId) }}</el-descriptions-item>
+            <el-descriptions-item label="需求类型">{{ typeLabel(detail.type) }}</el-descriptions-item>
             <el-descriptions-item label="优先级">
-              <el-tag :type="priorityTagType(detail.priority)">{{ detail.priority }}</el-tag>
+              <el-tag :type="priorityTagType(detail.priority)">{{ priorityLabel(detail.priority) }}</el-tag>
             </el-descriptions-item>
             <el-descriptions-item label="状态">
               <el-tag :type="statusTagType(detail.status)">{{ detail.status }}</el-tag>
@@ -61,7 +62,8 @@
             <el-descriptions-item label="估算工时">{{ detail.estimatedHours ? detail.estimatedHours + ' 小时' : '-' }}</el-descriptions-item>
             <el-descriptions-item label="实际工时">{{ detail.actualHours ? detail.actualHours + ' 小时' : '-' }}</el-descriptions-item>
             <el-descriptions-item label="描述" :span="2">
-              {{ detail.description || '-' }}
+              <div v-if="detail.description" class="rich-content" v-html="detail.description"></div>
+              <span v-else>-</span>
             </el-descriptions-item>
           </el-descriptions>
 
@@ -83,11 +85,11 @@
                 </template>
               </el-table-column>
               <el-table-column label="类型" width="80" align="center">
-                <template #default="{ row }">{{ row.type }}</template>
+                <template #default="{ row }">{{ typeLabel(row.type) }}</template>
               </el-table-column>
               <el-table-column label="优先级" width="80" align="center">
                 <template #default="{ row }">
-                  <el-tag :type="priorityTagType(row.priority)" size="small">{{ row.priority }}</el-tag>
+                  <el-tag :type="priorityTagType(row.priority)" size="small">{{ priorityLabel(row.priority) }}</el-tag>
                 </template>
               </el-table-column>
               <el-table-column label="状态" width="90" align="center">
@@ -137,11 +139,11 @@
               </template>
             </el-table-column>
             <el-table-column label="类型" width="100" align="center">
-              <template #default="{ row }">{{ row.type }}</template>
+              <template #default="{ row }">{{ typeLabel(row.type) }}</template>
             </el-table-column>
             <el-table-column label="优先级" width="90" align="center">
               <template #default="{ row }">
-                <el-tag :type="priorityTagType(row.priority)" size="small">{{ row.priority }}</el-tag>
+                <el-tag :type="priorityTagType(row.priority)" size="small">{{ priorityLabel(row.priority) }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column label="状态" width="100" align="center">
@@ -197,8 +199,10 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { requirementApi } from '@/api'
+import { requirementApi, projectApi } from '@/api'
+import { requirementConfigApi } from '@/api/modules/requirementConfig'
 import type { Requirement, RequirementHistory, RequirementUpdate } from '@/types/requirement'
+import { normalizeText } from '@/utils/format'
 import PageContainer from '@/components/common/PageContainer.vue'
 
 const route = useRoute()
@@ -214,6 +218,9 @@ const children = ref<any[]>([])
 const activeTab = ref('basic')
 const newStatus = ref('')
 const commentText = ref('')
+const projectName = ref<string>('')
+const typeMap = ref<Record<string, string>>({})
+const priorityMap = ref<Record<string, string>>({})
 
 // Fetch detail
 async function fetchDetail() {
@@ -221,10 +228,40 @@ async function fetchDetail() {
   try {
     const res = await requirementApi.getRequirementById(id)
     detail.value = res
+    await loadProjectName()
   } catch {
     ElMessage.error('获取需求详情失败')
   } finally {
     loading.value = false
+  }
+}
+
+async function loadProjectName() {
+  if (!detail.value?.projectId) {
+    projectName.value = ''
+    return
+  }
+  try {
+    const res = await projectApi.getProjectById(detail.value.projectId) as any
+    projectName.value = res?.name || ''
+  } catch {
+    projectName.value = ''
+  }
+}
+
+async function loadConfig() {
+  try {
+    const [typesRes, prioritiesRes] = await Promise.all([
+      requirementConfigApi.listTypes(),
+      requirementConfigApi.listPriorities(),
+    ])
+    const typeList = Array.isArray(typesRes) ? typesRes : (typesRes as any)?.data || []
+    const priorityList = Array.isArray(prioritiesRes) ? prioritiesRes : (prioritiesRes as any)?.data || []
+    typeMap.value = Object.fromEntries(typeList.map((t: any) => [t.code, normalizeText(t.name)]))
+    priorityMap.value = Object.fromEntries(priorityList.map((p: any) => [p.code, normalizeText(p.name)]))
+  } catch {
+    typeMap.value = {}
+    priorityMap.value = {}
   }
 }
 
@@ -260,6 +297,18 @@ function statusTagType(status: string): string {
     '开发中': 'primary', '测试中': 'info', '已上线': 'success', '已验收': 'success',
   }
   return map[status] || 'info'
+}
+
+function typeLabel(code: string) {
+  return typeMap.value[code] || code || '-'
+}
+
+function priorityLabel(code: string) {
+  return priorityMap.value[code] || code || '-'
+}
+
+function projectLabel(projectId: number) {
+  return projectName.value || String(projectId || '-')
 }
 
 // Handlers
@@ -303,6 +352,7 @@ function handleComment() {
 }
 
 onMounted(() => {
+  loadConfig()
   fetchDetail()
   fetchHistory()
   fetchChildren()
@@ -343,6 +393,15 @@ onMounted(() => {
 
 .detail-tabs {
   margin-top: 16px;
+}
+
+.rich-content :deep(img) {
+  max-width: 100%;
+  height: auto;
+}
+
+.rich-content :deep(p) {
+  margin: 0 0 8px 0;
 }
 
 .old-value {

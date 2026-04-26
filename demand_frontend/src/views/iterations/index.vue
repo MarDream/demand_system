@@ -113,7 +113,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, nextTick, computed, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance } from 'element-plus'
 import * as echarts from 'echarts'
@@ -123,7 +124,11 @@ import PageContainer from '@/components/common/PageContainer.vue'
 import TableCard from '@/components/common/TableCard.vue'
 import Toolbar from '@/components/common/Toolbar.vue'
 
-const projectId = 1
+const route = useRoute()
+const projectId = computed(() => {
+  const id = Number(route.query.projectId)
+  return Number.isFinite(id) && id > 0 ? id : 1
+})
 const iterations = ref<Iteration[]>([])
 
 // 对话框
@@ -187,25 +192,25 @@ const getProgressColor = (progress: number | undefined) => {
 // 加载数据
 const loadIterations = async () => {
   try {
-    iterations.value = (await getIterationList(projectId)) as unknown as Iteration[]
+    iterations.value = (await getIterationList(projectId.value)) as unknown as Iteration[]
   } catch {
     ElMessage.warning('迭代数据加载失败，使用模拟数据')
     const now = new Date()
     iterations.value = [
       {
-        id: 1, projectId: 1, name: 'Sprint 1', description: '第一个迭代',
+        id: 1, projectId: projectId.value, name: 'Sprint 1', description: '第一个迭代',
         startDate: '2024-03-01', endDate: '2024-03-15', capacity: 20,
         status: 'completed', creatorId: 1, createdAt: '2024-02-25',
         requirementCount: 8, progress: 100,
       },
       {
-        id: 2, projectId: 1, name: 'Sprint 2', description: '第二个迭代',
+        id: 2, projectId: projectId.value, name: 'Sprint 2', description: '第二个迭代',
         startDate: '2024-03-18', endDate: '2024-04-01', capacity: 25,
         status: 'in_progress', creatorId: 1, createdAt: '2024-03-15',
         requirementCount: 10, progress: 65,
       },
       {
-        id: 3, projectId: 1, name: 'Sprint 3', description: '第三个迭代',
+        id: 3, projectId: projectId.value, name: 'Sprint 3', description: '第三个迭代',
         startDate: '2024-04-05', endDate: '2024-04-20', capacity: 30,
         status: 'not_started', creatorId: 1, createdAt: '2024-04-01',
         requirementCount: 12, progress: 0,
@@ -241,7 +246,7 @@ const submitForm = async () => {
       await updateIteration(form.value.id, form.value)
       ElMessage.success('迭代更新成功')
     } else {
-      await createIteration(projectId, form.value)
+      await createIteration(projectId.value, form.value)
       ElMessage.success('迭代创建成功')
     }
     dialogVisible.value = false
@@ -321,9 +326,9 @@ const renderBurndownChart = () => {
   })
 }
 
-onMounted(() => {
+watch(projectId, () => {
   loadIterations()
-})
+}, { immediate: true })
 </script>
 
 <style scoped lang="scss">

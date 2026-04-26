@@ -144,6 +144,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { requirementConfigApi, type RequirementType, type Priority } from '@/api/modules/requirementConfig'
+import { normalizeText } from '@/utils/format'
 
 const activeTab = ref('types')
 const types = ref<RequirementType[]>([])
@@ -188,8 +189,9 @@ const priorityRules: FormRules = {
 
 const loadTypes = async () => {
   try {
-    const res = await requirementConfigApi.listTypes()
-    types.value = res.data || []
+    const res = await requirementConfigApi.listTypes() as any
+    const list = Array.isArray(res) ? res : res?.data || []
+    types.value = list.map((t: RequirementType) => ({ ...t, name: normalizeText(t.name) }))
   } catch (error) {
     console.error('加载需求类型失败', error)
   }
@@ -197,8 +199,9 @@ const loadTypes = async () => {
 
 const loadPriorities = async () => {
   try {
-    const res = await requirementConfigApi.listPriorities()
-    priorities.value = res.data || []
+    const res = await requirementConfigApi.listPriorities() as any
+    const list = Array.isArray(res) ? res : res?.data || []
+    priorities.value = list.map((p: Priority) => ({ ...p, name: normalizeText(p.name) }))
   } catch (error) {
     console.error('加载优先级失败', error)
   }

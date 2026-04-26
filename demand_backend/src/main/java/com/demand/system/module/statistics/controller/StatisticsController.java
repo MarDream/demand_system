@@ -1,6 +1,9 @@
 package com.demand.system.module.statistics.controller;
 
+import com.demand.system.common.exception.BusinessException;
+import com.demand.system.common.result.ErrorCode;
 import com.demand.system.common.result.Result;
+import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.statistics.dto.BurndownPoint;
 import com.demand.system.module.statistics.dto.CfdPoint;
 import com.demand.system.module.statistics.service.StatisticsService;
@@ -19,7 +22,10 @@ public class StatisticsController {
 
     @GetMapping("/{id}/stats/dashboard")
     public Result<Map<String, Object>> getDashboard(@PathVariable("id") Long projectId) {
-        Long userId = 1L;
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "未登录");
+        }
         return Result.success(statisticsService.getDashboardData(projectId, userId));
     }
 

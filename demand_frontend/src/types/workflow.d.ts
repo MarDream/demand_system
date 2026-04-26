@@ -3,7 +3,7 @@ export interface WorkflowState {
   projectId: number
   name: string
   color: string
-  isFinal: boolean
+  isFinal: boolean | number
   sortOrder: number
 }
 
@@ -12,9 +12,9 @@ export interface WorkflowTransition {
   projectId: number
   fromStateId: number
   toStateId: number
-  allowedRoles?: string[]
-  requiredFields?: string[]
-  conditions?: Record<string, unknown>
+  allowedRoles?: string[] | string | null
+  requiredFields?: string[] | string | null
+  conditions?: Record<string, unknown> | string | null
 }
 
 export interface WorkflowVersion {
@@ -22,7 +22,7 @@ export interface WorkflowVersion {
   projectId: number
   version: number
   name: string
-  definition: Record<string, unknown>
+  definition: Record<string, unknown> | string | null
   isActive: boolean
   creatorId: number
   createdAt: string

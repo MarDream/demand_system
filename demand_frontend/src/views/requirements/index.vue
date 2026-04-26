@@ -149,6 +149,7 @@ import { requirementApi, userApi } from '@/api'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
 import type { Requirement, RequirementQuery } from '@/types/requirement'
 import type { User } from '@/types/user'
+import { normalizeText } from '@/utils/format'
 import PageContainer from '@/components/common/PageContainer.vue'
 import FilterCard from '@/components/common/FilterCard.vue'
 import TableCard from '@/components/common/TableCard.vue'
@@ -171,8 +172,10 @@ async function loadConfig() {
       requirementConfigApi.listTypes(),
       requirementConfigApi.listPriorities(),
     ])
-    configTypes.value = Array.isArray(typesRes) ? typesRes : (typesRes as any).data || []
-    configPriorities.value = Array.isArray(prioritiesRes) ? prioritiesRes : (prioritiesRes as any).data || []
+    const typeList = Array.isArray(typesRes) ? typesRes : (typesRes as any).data || []
+    const priorityList = Array.isArray(prioritiesRes) ? prioritiesRes : (prioritiesRes as any).data || []
+    configTypes.value = typeList.map((t: any) => ({ ...t, name: normalizeText(t.name) }))
+    configPriorities.value = priorityList.map((p: any) => ({ ...p, name: normalizeText(p.name) }))
     typeMap.value = Object.fromEntries(configTypes.value.map((t: any) => [t.code, t.name]))
     priorityMap.value = Object.fromEntries(configPriorities.value.map((p: any) => [p.code, p.name]))
   } catch {

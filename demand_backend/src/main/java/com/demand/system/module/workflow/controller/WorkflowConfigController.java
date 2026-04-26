@@ -4,6 +4,7 @@ import com.demand.system.common.result.Result;
 import com.demand.system.module.workflow.entity.WorkflowState;
 import com.demand.system.module.workflow.entity.WorkflowTransition;
 import com.demand.system.module.workflow.entity.WorkflowVersion;
+import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.demand.system.module.workflow.service.WorkflowService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -16,15 +17,54 @@ import java.util.List;
 public class WorkflowConfigController {
 
     private final WorkflowService workflowService;
+    private final WorkflowVersionMapper workflowVersionMapper;
 
     @GetMapping("/projects/{id}/workflow/states")
     public Result<List<WorkflowState>> getStates(@PathVariable("id") Long projectId) {
         return Result.success(workflowService.getStates(projectId));
     }
 
+    @PostMapping("/projects/{id}/workflow/states")
+    public Result<WorkflowState> createState(@PathVariable("id") Long projectId,
+                                            @RequestBody WorkflowState state) {
+        return Result.success(workflowService.createState(projectId, state));
+    }
+
+    @PutMapping("/workflow/states/{id}")
+    public Result<Void> updateState(@PathVariable("id") Long id,
+                                   @RequestBody WorkflowState state) {
+        workflowService.updateState(id, state);
+        return Result.success();
+    }
+
+    @DeleteMapping("/workflow/states/{id}")
+    public Result<Void> deleteState(@PathVariable("id") Long id) {
+        workflowService.deleteState(id);
+        return Result.success();
+    }
+
     @GetMapping("/projects/{id}/workflow/transitions")
     public Result<List<WorkflowTransition>> getTransitions(@PathVariable("id") Long projectId) {
         return Result.success(workflowService.getTransitions(projectId));
+    }
+
+    @PostMapping("/projects/{id}/workflow/transitions")
+    public Result<WorkflowTransition> createTransition(@PathVariable("id") Long projectId,
+                                                      @RequestBody WorkflowTransition transition) {
+        return Result.success(workflowService.createTransition(projectId, transition));
+    }
+
+    @PutMapping("/workflow/transitions/{id}")
+    public Result<Void> updateTransition(@PathVariable("id") Long id,
+                                        @RequestBody WorkflowTransition transition) {
+        workflowService.updateTransition(id, transition);
+        return Result.success();
+    }
+
+    @DeleteMapping("/workflow/transitions/{id}")
+    public Result<Void> deleteTransition(@PathVariable("id") Long id) {
+        workflowService.deleteTransition(id);
+        return Result.success();
     }
 
     @GetMapping("/projects/{id}/workflow/versions")
@@ -56,23 +96,10 @@ public class WorkflowConfigController {
 
     @PostMapping("/workflow/versions/{id}/validate")
     public Result<List<String>> validateWorkflow(@PathVariable("id") Long id) {
-        WorkflowVersion version = workflowService.getVersions(
-                getCurrentProjectId(id)
-        ).stream()
-                .filter(v -> v.getId().equals(id))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Version not found: " + id));
-
+        WorkflowVersion version = workflowVersionMapper.selectById(id);
+        if (version == null) {
+            throw new IllegalArgumentException("Version not found: " + id);
+        }
         return Result.success(workflowService.validateWorkflow(version.getDefinition()));
-    }
-
-    /**
-     * 辅助方法：从版本获取所属projectId（简化处理，实际应通过versionMapper直接查询）
-     */
-    private Long getCurrentProjectId(Long versionId) {
-        // 简化实现：此处需要额外查询，实际应注入WorkflowVersionMapper
-        // 由于 validateWorkflow 只需要definition，此方法仅做占位
-        // 更好的做法是单独提供一个获取version定义的接口
-        return 0L;
     }
 }

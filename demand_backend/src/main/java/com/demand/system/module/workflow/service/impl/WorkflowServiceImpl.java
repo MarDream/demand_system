@@ -9,14 +9,15 @@ import com.demand.system.module.workflow.dto.TransitionResponse;
 import com.demand.system.module.workflow.dto.WorkflowDefinitionDTO;
 import com.demand.system.module.workflow.engine.PermissionEngine;
 import com.demand.system.module.workflow.engine.StateMachine;
+import com.demand.system.module.workflow.entity.WorkflowNodePermission;
 import com.demand.system.module.workflow.entity.WorkflowState;
 import com.demand.system.module.workflow.entity.WorkflowTransition;
 import com.demand.system.module.workflow.entity.WorkflowVersion;
+import com.demand.system.module.workflow.mapper.WorkflowNodePermissionMapper;
 import com.demand.system.module.workflow.mapper.WorkflowStateMapper;
 import com.demand.system.module.workflow.mapper.WorkflowTransitionMapper;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.demand.system.module.workflow.service.WorkflowService;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +35,7 @@ public class WorkflowServiceImpl implements WorkflowService {
     private final WorkflowStateMapper stateMapper;
     private final WorkflowTransitionMapper transitionMapper;
     private final WorkflowVersionMapper versionMapper;
+    private final WorkflowNodePermissionMapper nodePermissionMapper;
     private final StateMachine stateMachine;
     private final PermissionEngine permissionEngine;
     private final RequirementMapper requirementMapper;
@@ -48,10 +50,73 @@ public class WorkflowServiceImpl implements WorkflowService {
     }
 
     @Override
+    public WorkflowState createState(Long projectId, WorkflowState state) {
+        state.setId(null);
+        state.setProjectId(projectId);
+        if (state.getSortOrder() == null) {
+            state.setSortOrder(0);
+        }
+        if (state.getIsFinal() == null) {
+            state.setIsFinal(0);
+        }
+        stateMapper.insert(state);
+        return state;
+    }
+
+    @Override
+    public void updateState(Long id, WorkflowState state) {
+        WorkflowState existing = stateMapper.selectById(id);
+        if (existing == null) {
+            throw new IllegalArgumentException("Workflow state not found: " + id);
+        }
+        if (state.getName() != null) existing.setName(state.getName());
+        if (state.getColor() != null) existing.setColor(state.getColor());
+        if (state.getIsFinal() != null) existing.setIsFinal(state.getIsFinal());
+        if (state.getSortOrder() != null) existing.setSortOrder(state.getSortOrder());
+        stateMapper.updateById(existing);
+    }
+
+    @Override
+    public void deleteState(Long id) {
+        transitionMapper.delete(new LambdaQueryWrapper<WorkflowTransition>()
+                .eq(WorkflowTransition::getFromStateId, id)
+                .or()
+                .eq(WorkflowTransition::getToStateId, id));
+        stateMapper.deleteById(id);
+    }
+
+    @Override
     public List<WorkflowTransition> getTransitions(Long projectId) {
         LambdaQueryWrapper<WorkflowTransition> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(WorkflowTransition::getProjectId, projectId);
         return transitionMapper.selectList(wrapper);
+    }
+
+    @Override
+    public WorkflowTransition createTransition(Long projectId, WorkflowTransition transition) {
+        transition.setId(null);
+        transition.setProjectId(projectId);
+        transitionMapper.insert(transition);
+        return transition;
+    }
+
+    @Override
+    public void updateTransition(Long id, WorkflowTransition transition) {
+        WorkflowTransition existing = transitionMapper.selectById(id);
+        if (existing == null) {
+            throw new IllegalArgumentException("Workflow transition not found: " + id);
+        }
+        if (transition.getFromStateId() != null) existing.setFromStateId(transition.getFromStateId());
+        if (transition.getToStateId() != null) existing.setToStateId(transition.getToStateId());
+        if (transition.getAllowedRoles() != null) existing.setAllowedRoles(transition.getAllowedRoles());
+        if (transition.getRequiredFields() != null) existing.setRequiredFields(transition.getRequiredFields());
+        if (transition.getConditions() != null) existing.setConditions(transition.getConditions());
+        transitionMapper.updateById(existing);
+    }
+
+    @Override
+    public void deleteTransition(Long id) {
+        transitionMapper.deleteById(id);
     }
 
     @Override
@@ -153,6 +218,7 @@ public class WorkflowServiceImpl implements WorkflowService {
             version.setCreatedAt(LocalDateTime.now());
         }
         versionMapper.insert(version);
+        syncNodePermissionsFromDefinition(version.getId(), version.getDefinition());
     }
 
     @Override
@@ -169,6 +235,9 @@ public class WorkflowServiceImpl implements WorkflowService {
             existing.setDefinition(version.getDefinition());
         }
         versionMapper.updateById(existing);
+        if (version.getDefinition() != null) {
+            syncNodePermissionsFromDefinition(existing.getId(), existing.getDefinition());
+        }
     }
 
     @Override
@@ -182,6 +251,48 @@ public class WorkflowServiceImpl implements WorkflowService {
         UpdateWrapper<WorkflowVersion> activateWrapper = new UpdateWrapper<>();
         activateWrapper.eq("id", id).set("is_active", 1);
         versionMapper.update(null, activateWrapper);
+    }
+
+    private void syncNodePermissionsFromDefinition(Long workflowVersionId, String definition) {
+        if (workflowVersionId == null) return;
+        nodePermissionMapper.delete(new LambdaQueryWrapper<WorkflowNodePermission>()
+                .eq(WorkflowNodePermission::getWorkflowVersionId, workflowVersionId));
+
+        if (definition == null || definition.trim().isEmpty()) return;
+
+        WorkflowDefinitionDTO workflow;
+        try {
+            workflow = objectMapper.readValue(definition, WorkflowDefinitionDTO.class);
+        } catch (Exception e) {
+            log.warn("Failed to parse workflow definition for node permissions, version={}: {}", workflowVersionId, e.getMessage());
+            return;
+        }
+
+        if (workflow.getNodes() == null || workflow.getNodes().isEmpty()) return;
+
+        for (NodeConfigDTO node : workflow.getNodes()) {
+            if (node == null || node.getNodeId() == null || node.getNodeId().trim().isEmpty()) continue;
+            String allowedRoles = node.getAllowedRoles() == null ? null : String.join(",", node.getAllowedRoles());
+            String allowedUsers = null;
+            if (node.getAllowedUsers() != null && !node.getAllowedUsers().isEmpty()) {
+                allowedUsers = node.getAllowedUsers().stream()
+                        .filter(Objects::nonNull)
+                        .map(String::valueOf)
+                        .collect(Collectors.joining(","));
+            }
+
+            if ((allowedRoles == null || allowedRoles.trim().isEmpty()) &&
+                    (allowedUsers == null || allowedUsers.trim().isEmpty())) {
+                continue;
+            }
+
+            WorkflowNodePermission perm = new WorkflowNodePermission();
+            perm.setWorkflowVersionId(workflowVersionId);
+            perm.setNodeId(node.getNodeId().trim());
+            perm.setAllowedRoles(allowedRoles);
+            perm.setAllowedUsers(allowedUsers);
+            nodePermissionMapper.insert(perm);
+        }
     }
 
     @Override
