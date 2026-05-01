@@ -20,6 +20,8 @@ import com.demand.system.module.user.entity.User;
 import com.demand.system.module.user.mapper.UserMapper;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.notification.service.NotificationService;
+import com.demand.system.module.workflow.service.WorkflowService;
+import com.demand.system.module.workflow.mapper.WorkflowTransitionRecordMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
@@ -44,6 +46,8 @@ public class RequirementServiceImpl implements RequirementService {
     private final CustomFieldValueMapper customFieldValueMapper;
     private final UserMapper userMapper;
     private final NotificationService notificationService;
+    private final WorkflowService workflowService;
+    private final WorkflowTransitionRecordMapper workflowTransitionRecordMapper;
 
     @Override
     public PageResult<RequirementVO> list(RequirementQueryDTO query) {
@@ -118,7 +122,7 @@ public class RequirementServiceImpl implements RequirementService {
         Requirement requirement = new Requirement();
         BeanUtils.copyProperties(dto, requirement);
         requirement.setCreatorId(creatorId);
-        requirement.setStatus("新建");
+        requirement.setStatus(workflowService.resolveInitialStateName(dto.getProjectId(), requirement));
         if (requirement.getOrderNum() == null) {
             requirement.setOrderNum(0);
         }
@@ -200,15 +204,7 @@ public class RequirementServiceImpl implements RequirementService {
             updateWrapper.set("actual_hours", dto.getActualHours());
         }
         if (dto.getStatus() != null && !Objects.equals(existing.getStatus(), dto.getStatus())) {
-            recordHistory(dto.getId(), operatorId, "status", existing.getStatus(), dto.getStatus());
-            updateWrapper.set("status", dto.getStatus());
-
-            // PRD: 子需求状态汇总后自动更新父需求状态
-            // 当子需求状态变更时，更新父需求的汇总状态
-            updateParentStatus(existing.getParentId(), dto.getStatus());
-
-            // Send notifications for status change
-            sendStatusChangeNotifications(existing, dto.getStatus(), userId);
+            throw new BusinessException("状态流转请使用工作流操作");
         }
         if (dto.getOrderNum() != null && !Objects.equals(existing.getOrderNum(), dto.getOrderNum())) {
             recordHistory(dto.getId(), operatorId, "orderNum",
@@ -236,9 +232,11 @@ public class RequirementServiceImpl implements RequirementService {
             throw new BusinessException("只有创建者或管理员可以删除需求");
         }
 
-        // 检查是否已流转：只有未流转的需求才能删除
-        // 流转判断：status不为"新建"表示已流转
-        if (!"新建".equals(requirement.getStatus())) {
+        Long transitionCount = workflowTransitionRecordMapper.selectCount(
+                new LambdaQueryWrapper<com.demand.system.module.workflow.entity.WorkflowTransitionRecord>()
+                        .eq(com.demand.system.module.workflow.entity.WorkflowTransitionRecord::getRequirementId, id)
+        );
+        if (transitionCount != null && transitionCount > 0) {
             throw new BusinessException("已流转的需求不能删除");
         }
 

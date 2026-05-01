@@ -25,19 +25,26 @@
               </template>
             </el-popconfirm>
             <el-select
-              v-model="newStatus"
-              placeholder="状态流转"
+              v-model="selectedTransitionTargetId"
+              :disabled="transitionLoading || availableTransitions.length === 0"
+              :placeholder="availableTransitions.length > 0 ? '选择目标状态' : '当前无可执行流转'"
               style="width: 140px; margin-right: 8px"
             >
-              <el-option label="待评审" value="待评审" />
-              <el-option label="评审中" value="评审中" />
-              <el-option label="已通过" value="已通过" />
-              <el-option label="开发中" value="开发中" />
-              <el-option label="测试中" value="测试中" />
-              <el-option label="已上线" value="已上线" />
-              <el-option label="已验收" value="已验收" />
+              <el-option
+                v-for="transition in availableTransitions"
+                :key="transition.id || transition.toStateId"
+                :label="transitionOptionLabel(transition)"
+                :value="transition.toStateId"
+              />
             </el-select>
-            <el-button type="primary" @click="handleStatusTransition">执行流转</el-button>
+            <el-button
+              type="primary"
+              :loading="transitionLoading"
+              :disabled="availableTransitions.length === 0"
+              @click="handleStatusTransition"
+            >
+              执行流转
+            </el-button>
           </div>
         </div>
 
@@ -198,10 +205,12 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { requirementApi, projectApi } from '@/api'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
+import { executeTransition, getAvailableTransitions, getWorkflowStates } from '@/api/modules/workflow'
 import type { Requirement, RequirementHistory, RequirementUpdate } from '@/types/requirement'
+import type { WorkflowState, WorkflowTransition } from '@/types/workflow'
 import { normalizeText } from '@/utils/format'
 import PageContainer from '@/components/common/PageContainer.vue'
 
@@ -216,11 +225,14 @@ const relatedRequirements = ref<any[]>([])
 const comments = ref<any[]>([])
 const children = ref<any[]>([])
 const activeTab = ref('basic')
-const newStatus = ref('')
 const commentText = ref('')
 const projectName = ref<string>('')
 const typeMap = ref<Record<string, string>>({})
 const priorityMap = ref<Record<string, string>>({})
+const workflowStates = ref<WorkflowState[]>([])
+const availableTransitions = ref<WorkflowTransition[]>([])
+const selectedTransitionTargetId = ref<number | null>(null)
+const transitionLoading = ref(false)
 
 // Fetch detail
 async function fetchDetail() {
@@ -228,7 +240,7 @@ async function fetchDetail() {
   try {
     const res = await requirementApi.getRequirementById(id)
     detail.value = res
-    await loadProjectName()
+    await Promise.all([loadProjectName(), loadWorkflowMeta()])
   } catch {
     ElMessage.error('获取需求详情失败')
   } finally {
@@ -262,6 +274,36 @@ async function loadConfig() {
   } catch {
     typeMap.value = {}
     priorityMap.value = {}
+  }
+}
+
+async function loadWorkflowMeta() {
+  if (!detail.value?.projectId) {
+    workflowStates.value = []
+    availableTransitions.value = []
+    selectedTransitionTargetId.value = null
+    return
+  }
+
+  try {
+    const [statesRes, transitionsRes] = await Promise.all([
+      getWorkflowStates(detail.value.projectId),
+      getAvailableTransitions(id),
+    ])
+
+    workflowStates.value = Array.isArray(statesRes) ? statesRes : []
+    availableTransitions.value = Array.isArray(transitionsRes) ? transitionsRes : []
+
+    const exists = availableTransitions.value.some(
+      (transition) => transition.toStateId === selectedTransitionTargetId.value,
+    )
+    if (!exists) {
+      selectedTransitionTargetId.value = availableTransitions.value[0]?.toStateId ?? null
+    }
+  } catch {
+    workflowStates.value = []
+    availableTransitions.value = []
+    selectedTransitionTargetId.value = null
   }
 }
 
@@ -311,6 +353,14 @@ function projectLabel(projectId: number) {
   return projectName.value || String(projectId || '-')
 }
 
+function workflowStateName(stateId: number) {
+  return workflowStates.value.find((state) => state.id === stateId)?.name || `状态${stateId}`
+}
+
+function transitionOptionLabel(transition: WorkflowTransition) {
+  return transition.label || workflowStateName(transition.toStateId)
+}
+
 // Handlers
 function handleEdit() {
   router.push({ name: 'RequirementCreate', query: { id } })
@@ -331,17 +381,21 @@ async function handleDelete() {
 }
 
 async function handleStatusTransition() {
-  if (!newStatus.value) {
+  if (!selectedTransitionTargetId.value) {
     ElMessage.warning('请选择目标状态')
     return
   }
+
+  transitionLoading.value = true
   try {
-    await requirementApi.updateRequirement(id, { status: newStatus.value, id } as unknown as RequirementUpdate)
+    await executeTransition(id, { targetStateId: selectedTransitionTargetId.value })
     ElMessage.success('状态流转成功')
-    fetchDetail()
-    newStatus.value = ''
+    selectedTransitionTargetId.value = null
+    await Promise.all([fetchDetail(), fetchHistory()])
   } catch {
     ElMessage.error('状态流转失败')
+  } finally {
+    transitionLoading.value = false
   }
 }
 

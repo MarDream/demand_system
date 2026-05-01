@@ -19,10 +19,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -182,8 +185,15 @@ public class AuthServiceImpl implements AuthService {
                         .eq(UserOrganization::getUserId, userId)
                         .last("LIMIT 1")
         );
-        if (org != null && org.getSystemRole() != null && !org.getSystemRole().isEmpty()) {
-            return List.of(org.getSystemRole());
+        if (org != null && StringUtils.hasText(org.getSystemRole())) {
+            List<String> roles = Arrays.stream(org.getSystemRole().split(","))
+                    .map(String::trim)
+                    .filter(StringUtils::hasText)
+                    .distinct()
+                    .collect(Collectors.toList());
+            if (!roles.isEmpty()) {
+                return roles;
+            }
         }
         return List.of("USER");
     }

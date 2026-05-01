@@ -4,6 +4,7 @@ import com.demand.system.module.workflow.dto.TransitionResponse;
 import com.demand.system.module.workflow.entity.WorkflowState;
 import com.demand.system.module.workflow.entity.WorkflowTransition;
 import com.demand.system.module.workflow.entity.WorkflowVersion;
+import com.demand.system.module.requirement.entity.Requirement;
 
 import java.util.List;
 
@@ -38,4 +39,6 @@ public interface WorkflowService {
     void activateVersion(Long id, Long projectId);
 
     List<String> validateWorkflow(String definition);
+
+    String resolveInitialStateName(Long projectId, Requirement requirement);
 }

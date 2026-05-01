@@ -12,6 +12,7 @@ export interface WorkflowTransition {
   projectId: number
   fromStateId: number
   toStateId: number
+  label?: string
   allowedRoles?: string[] | string | null
   requiredFields?: string[] | string | null
   conditions?: Record<string, unknown> | string | null
@@ -44,6 +45,38 @@ export interface WorkflowNodePermission {
   timeoutHours?: number
   dataPermissions?: Record<string, unknown>
   attachmentPermissions?: Record<string, unknown>
+}
+
+export interface WorkflowNodeDefinition {
+  nodeId: string
+  name: string
+  type: string
+  color?: string
+  isFinal?: boolean
+  sortOrder?: number
+  allowedRoles?: string[]
+  allowedUsers?: number[]
+  editableFields?: string[]
+  requiredFields?: string[]
+  availableActions?: string[]
+}
+
+export interface WorkflowEdgeDefinition {
+  source: string
+  target: string
+  label?: string
+  allowedRoles?: string[]
+  requiredFields?: string[]
+  conditions?: Record<string, unknown> | string | null
+  defaultFlow?: boolean
+}
+
+export interface WorkflowDefinition {
+  id?: number | null
+  processKey?: string
+  name: string
+  nodes: WorkflowNodeDefinition[]
+  edges: WorkflowEdgeDefinition[]
 }
 
 export interface TransitionRequest {

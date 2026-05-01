@@ -26,7 +26,7 @@
           <el-icon><ChatDotRound /></el-icon>
           <span>评审管理</span>
         </el-menu-item>
-        <el-menu-item index="/workflow">
+        <el-menu-item v-if="canManageWorkflow" index="/workflow">
           <el-icon><Share /></el-icon>
           <span>工作流配置</span>
         </el-menu-item>
@@ -148,6 +148,9 @@ watch(unreadCount, () => {
 
 const sidebarOpened = computed(() => appStore.sidebarOpened)
 const activeMenu = computed(() => route.path)
+const canManageWorkflow = computed(() =>
+  userStore.roles.includes('admin') || userStore.roles.includes('workflow:config'),
+)
 
 async function handleLogout() {
   await userStore.logout()

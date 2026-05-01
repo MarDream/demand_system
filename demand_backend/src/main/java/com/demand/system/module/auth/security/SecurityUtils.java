@@ -5,6 +5,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.List;
+import java.util.Set;
 
 public final class SecurityUtils {
 
@@ -55,5 +56,14 @@ public final class SecurityUtils {
         return authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
                 .toList();
+    }
+
+    public static boolean hasAnyRole(String... roles) {
+        List<String> currentRoles = getCurrentUserRoles();
+        if (currentRoles.isEmpty() || roles == null || roles.length == 0) {
+            return false;
+        }
+        Set<String> expected = Set.of(roles);
+        return currentRoles.stream().anyMatch(expected::contains);
     }
 }

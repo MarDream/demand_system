@@ -2,13 +2,20 @@ package com.demand.system.module.workflow.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.demand.system.common.exception.BusinessException;
+import com.demand.system.module.auth.security.SecurityUtils;
+import com.demand.system.module.notification.service.NotificationService;
 import com.demand.system.module.requirement.entity.Requirement;
+import com.demand.system.module.requirement.entity.RequirementHistory;
+import com.demand.system.module.requirement.mapper.RequirementHistoryMapper;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
+import com.demand.system.module.workflow.dto.EdgeDTO;
 import com.demand.system.module.workflow.dto.NodeConfigDTO;
 import com.demand.system.module.workflow.dto.TransitionResponse;
 import com.demand.system.module.workflow.dto.WorkflowDefinitionDTO;
 import com.demand.system.module.workflow.engine.PermissionEngine;
 import com.demand.system.module.workflow.engine.StateMachine;
+import com.demand.system.module.workflow.engine.WorkflowDefinitionEngine;
 import com.demand.system.module.workflow.entity.WorkflowNodePermission;
 import com.demand.system.module.workflow.entity.WorkflowState;
 import com.demand.system.module.workflow.entity.WorkflowTransition;
@@ -18,13 +25,30 @@ import com.demand.system.module.workflow.mapper.WorkflowStateMapper;
 import com.demand.system.module.workflow.mapper.WorkflowTransitionMapper;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.demand.system.module.workflow.service.WorkflowService;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
-import java.util.*;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -32,180 +56,153 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class WorkflowServiceImpl implements WorkflowService {
 
+    private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {
+    };
+    private static final TypeReference<List<Long>> LONG_LIST = new TypeReference<>() {
+    };
+
     private final WorkflowStateMapper stateMapper;
     private final WorkflowTransitionMapper transitionMapper;
     private final WorkflowVersionMapper versionMapper;
     private final WorkflowNodePermissionMapper nodePermissionMapper;
     private final StateMachine stateMachine;
     private final PermissionEngine permissionEngine;
+    private final WorkflowDefinitionEngine workflowDefinitionEngine;
     private final RequirementMapper requirementMapper;
+    private final RequirementHistoryMapper requirementHistoryMapper;
+    private final NotificationService notificationService;
     private final ObjectMapper objectMapper;
 
     @Override
     public List<WorkflowState> getStates(Long projectId) {
-        LambdaQueryWrapper<WorkflowState> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(WorkflowState::getProjectId, projectId)
-               .orderByAsc(WorkflowState::getSortOrder);
-        return stateMapper.selectList(wrapper);
+        return stateMapper.selectList(new LambdaQueryWrapper<WorkflowState>()
+                .eq(WorkflowState::getProjectId, projectId)
+                .orderByAsc(WorkflowState::getSortOrder)
+                .orderByAsc(WorkflowState::getId));
     }
 
     @Override
     public WorkflowState createState(Long projectId, WorkflowState state) {
-        state.setId(null);
-        state.setProjectId(projectId);
-        if (state.getSortOrder() == null) {
-            state.setSortOrder(0);
-        }
-        if (state.getIsFinal() == null) {
-            state.setIsFinal(0);
-        }
-        stateMapper.insert(state);
-        return state;
+        throw new BusinessException("运行态状态不支持直接维护，请通过工作流版本配置并启用后生效");
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void updateState(Long id, WorkflowState state) {
-        WorkflowState existing = stateMapper.selectById(id);
-        if (existing == null) {
-            throw new IllegalArgumentException("Workflow state not found: " + id);
-        }
-        if (state.getName() != null) existing.setName(state.getName());
-        if (state.getColor() != null) existing.setColor(state.getColor());
-        if (state.getIsFinal() != null) existing.setIsFinal(state.getIsFinal());
-        if (state.getSortOrder() != null) existing.setSortOrder(state.getSortOrder());
-        stateMapper.updateById(existing);
+        throw new BusinessException("运行态状态不支持直接维护，请通过工作流版本配置并启用后生效");
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void deleteState(Long id) {
-        transitionMapper.delete(new LambdaQueryWrapper<WorkflowTransition>()
-                .eq(WorkflowTransition::getFromStateId, id)
-                .or()
-                .eq(WorkflowTransition::getToStateId, id));
-        stateMapper.deleteById(id);
+        throw new BusinessException("运行态状态不支持直接维护，请通过工作流版本配置并启用后生效");
     }
 
     @Override
     public List<WorkflowTransition> getTransitions(Long projectId) {
-        LambdaQueryWrapper<WorkflowTransition> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(WorkflowTransition::getProjectId, projectId);
-        return transitionMapper.selectList(wrapper);
+        return transitionMapper.selectList(new LambdaQueryWrapper<WorkflowTransition>()
+                .eq(WorkflowTransition::getProjectId, projectId)
+                .orderByAsc(WorkflowTransition::getFromStateId)
+                .orderByAsc(WorkflowTransition::getToStateId)
+                .orderByAsc(WorkflowTransition::getId));
     }
 
     @Override
     public WorkflowTransition createTransition(Long projectId, WorkflowTransition transition) {
-        transition.setId(null);
-        transition.setProjectId(projectId);
-        transitionMapper.insert(transition);
-        return transition;
+        throw new BusinessException("运行态流转不支持直接维护，请通过工作流版本配置并启用后生效");
     }
 
     @Override
     public void updateTransition(Long id, WorkflowTransition transition) {
-        WorkflowTransition existing = transitionMapper.selectById(id);
-        if (existing == null) {
-            throw new IllegalArgumentException("Workflow transition not found: " + id);
-        }
-        if (transition.getFromStateId() != null) existing.setFromStateId(transition.getFromStateId());
-        if (transition.getToStateId() != null) existing.setToStateId(transition.getToStateId());
-        if (transition.getAllowedRoles() != null) existing.setAllowedRoles(transition.getAllowedRoles());
-        if (transition.getRequiredFields() != null) existing.setRequiredFields(transition.getRequiredFields());
-        if (transition.getConditions() != null) existing.setConditions(transition.getConditions());
-        transitionMapper.updateById(existing);
+        throw new BusinessException("运行态流转不支持直接维护，请通过工作流版本配置并启用后生效");
     }
 
     @Override
     public void deleteTransition(Long id) {
-        transitionMapper.deleteById(id);
+        throw new BusinessException("运行态流转不支持直接维护，请通过工作流版本配置并启用后生效");
     }
 
     @Override
     public List<WorkflowTransition> getAvailableTransitions(Long requirementId, Long userId) {
-        // 获取需求当前状态
         Requirement requirement = requirementMapper.selectById(requirementId);
-        if (requirement == null || requirement.getStatus() == null) {
+        if (requirement == null || !StringUtils.hasText(requirement.getStatus())) {
             log.warn("Requirement {} not found or has no status", requirementId);
             return Collections.emptyList();
         }
 
-        // 通过状态名称查找对应的 workflow_state
-        LambdaQueryWrapper<WorkflowState> stateWrapper = new LambdaQueryWrapper<>();
-        stateWrapper.eq(WorkflowState::getProjectId, requirement.getProjectId())
-                    .eq(WorkflowState::getName, requirement.getStatus());
-        WorkflowState currentState = stateMapper.selectOne(stateWrapper);
-
+        WorkflowState currentState = findStateByName(requirement.getProjectId(), requirement.getStatus());
         if (currentState == null) {
             log.warn("No workflow state found for status '{}' in project {}", requirement.getStatus(), requirement.getProjectId());
             return Collections.emptyList();
         }
 
-        // 查询所有从当前状态出发的转换
-        LambdaQueryWrapper<WorkflowTransition> transWrapper = new LambdaQueryWrapper<>();
-        transWrapper.eq(WorkflowTransition::getFromStateId, currentState.getId())
-                    .eq(WorkflowTransition::getProjectId, requirement.getProjectId());
-        List<WorkflowTransition> allTransitions = transitionMapper.selectList(transWrapper);
+        if (workflowDefinitionEngine.hasActiveDefinition(requirement.getProjectId())) {
+            return workflowDefinitionEngine.resolveAvailableTransitions(requirement).stream()
+                    .map(spec -> toRuntimeTransition(requirement.getProjectId(), currentState, spec))
+                    .filter(Objects::nonNull)
+                    .filter(t -> permissionEngine.canTransition(requirementId, currentState.getId(), t.getToStateId(), userId))
+                    .toList();
+        }
 
-        // 过滤有权限的转换
+        List<WorkflowTransition> allTransitions = transitionMapper.selectList(new LambdaQueryWrapper<WorkflowTransition>()
+                .eq(WorkflowTransition::getFromStateId, currentState.getId())
+                .eq(WorkflowTransition::getProjectId, requirement.getProjectId())
+                .orderByAsc(WorkflowTransition::getId));
+
         return allTransitions.stream()
                 .filter(t -> permissionEngine.canTransition(requirementId, currentState.getId(), t.getToStateId(), userId))
                 .collect(Collectors.toList());
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public TransitionResponse executeTransition(Long requirementId, Long targetStateId, Long userId, String comment) {
-        // 获取需求当前状态
         Requirement requirement = requirementMapper.selectById(requirementId);
         if (requirement == null) {
             return TransitionResponse.builder().success(false).build();
         }
 
-        // 通过状态名称查找当前 workflow_state
-        LambdaQueryWrapper<WorkflowState> stateWrapper = new LambdaQueryWrapper<>();
-        stateWrapper.eq(WorkflowState::getProjectId, requirement.getProjectId())
-                    .eq(WorkflowState::getName, requirement.getStatus());
-        WorkflowState currentState = stateMapper.selectOne(stateWrapper);
-
+        WorkflowState currentState = findStateByName(requirement.getProjectId(), requirement.getStatus());
         if (currentState == null) {
             return TransitionResponse.builder().success(false).build();
         }
 
-        // 执行转换
+        String oldStatus = requirement.getStatus();
         boolean success = stateMachine.transition(requirementId, currentState.getId(), targetStateId, userId, comment);
-
         if (!success) {
             return TransitionResponse.builder().success(false).build();
         }
 
-        // 获取目标状态名称
         WorkflowState targetState = stateMapper.selectById(targetStateId);
         String newStatus = targetState != null ? targetState.getName() : null;
-
-        // 获取新的可用转换列表
-        List<WorkflowTransition> available = getAvailableTransitions(requirementId, userId);
+        if (StringUtils.hasText(newStatus)) {
+            recordStatusHistory(requirementId, userId, oldStatus, newStatus);
+            sendStatusChangeNotifications(requirement, newStatus, userId);
+        }
 
         return TransitionResponse.builder()
                 .success(true)
                 .newStatus(newStatus)
-                .availableTransitions(available)
+                .availableTransitions(getAvailableTransitions(requirementId, userId))
                 .build();
     }
 
     @Override
     public List<WorkflowVersion> getVersions(Long projectId) {
-        LambdaQueryWrapper<WorkflowVersion> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(WorkflowVersion::getProjectId, projectId)
-               .orderByDesc(WorkflowVersion::getVersion);
-        return versionMapper.selectList(wrapper);
+        return versionMapper.selectList(new LambdaQueryWrapper<WorkflowVersion>()
+                .eq(WorkflowVersion::getProjectId, projectId)
+                .orderByDesc(WorkflowVersion::getVersion));
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void createVersion(WorkflowVersion version) {
-        // 自动递增版本号
-        LambdaQueryWrapper<WorkflowVersion> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(WorkflowVersion::getProjectId, version.getProjectId())
-               .orderByDesc(WorkflowVersion::getVersion)
-               .last("LIMIT 1");
-        WorkflowVersion latest = versionMapper.selectOne(wrapper);
+        validateDefinitionOrThrow(version.getDefinition());
+
+        WorkflowVersion latest = versionMapper.selectOne(new LambdaQueryWrapper<WorkflowVersion>()
+                .eq(WorkflowVersion::getProjectId, version.getProjectId())
+                .orderByDesc(WorkflowVersion::getVersion)
+                .last("LIMIT 1"));
 
         int nextVersion = 1;
         if (latest != null && latest.getVersion() != null) {
@@ -214,6 +211,7 @@ public class WorkflowServiceImpl implements WorkflowService {
 
         version.setVersion(nextVersion);
         version.setIsActive(0);
+        version.setCreatorId(resolveCurrentUserId());
         if (version.getCreatedAt() == null) {
             version.setCreatedAt(LocalDateTime.now());
         }
@@ -222,18 +220,21 @@ public class WorkflowServiceImpl implements WorkflowService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void updateVersion(Long id, WorkflowVersion version) {
         WorkflowVersion existing = versionMapper.selectById(id);
         if (existing == null) {
-            throw new IllegalArgumentException("Workflow version not found: " + id);
+            throw new BusinessException("工作流版本不存在");
         }
 
-        if (version.getName() != null) {
-            existing.setName(version.getName());
-        }
         if (version.getDefinition() != null) {
+            validateDefinitionOrThrow(version.getDefinition());
             existing.setDefinition(version.getDefinition());
         }
+        if (StringUtils.hasText(version.getName())) {
+            existing.setName(version.getName());
+        }
+
         versionMapper.updateById(existing);
         if (version.getDefinition() != null) {
             syncNodePermissionsFromDefinition(existing.getId(), existing.getDefinition());
@@ -241,161 +242,285 @@ public class WorkflowServiceImpl implements WorkflowService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void activateVersion(Long id, Long projectId) {
-        // 先将该项目下所有版本设为非激活
-        UpdateWrapper<WorkflowVersion> deactivateWrapper = new UpdateWrapper<>();
-        deactivateWrapper.eq("project_id", projectId).set("is_active", 0);
-        versionMapper.update(null, deactivateWrapper);
-
-        // 再将指定版本设为激活
-        UpdateWrapper<WorkflowVersion> activateWrapper = new UpdateWrapper<>();
-        activateWrapper.eq("id", id).set("is_active", 1);
-        versionMapper.update(null, activateWrapper);
-    }
-
-    private void syncNodePermissionsFromDefinition(Long workflowVersionId, String definition) {
-        if (workflowVersionId == null) return;
-        nodePermissionMapper.delete(new LambdaQueryWrapper<WorkflowNodePermission>()
-                .eq(WorkflowNodePermission::getWorkflowVersionId, workflowVersionId));
-
-        if (definition == null || definition.trim().isEmpty()) return;
-
-        WorkflowDefinitionDTO workflow;
-        try {
-            workflow = objectMapper.readValue(definition, WorkflowDefinitionDTO.class);
-        } catch (Exception e) {
-            log.warn("Failed to parse workflow definition for node permissions, version={}: {}", workflowVersionId, e.getMessage());
-            return;
+        WorkflowVersion version = versionMapper.selectById(id);
+        if (version == null || !Objects.equals(version.getProjectId(), projectId)) {
+            throw new BusinessException("工作流版本不存在");
         }
 
-        if (workflow.getNodes() == null || workflow.getNodes().isEmpty()) return;
+        validateDefinitionOrThrow(version.getDefinition());
+        syncNodePermissionsFromDefinition(version.getId(), version.getDefinition());
+        publishVersionToRuntime(projectId, version.getDefinition());
 
-        for (NodeConfigDTO node : workflow.getNodes()) {
-            if (node == null || node.getNodeId() == null || node.getNodeId().trim().isEmpty()) continue;
-            String allowedRoles = node.getAllowedRoles() == null ? null : String.join(",", node.getAllowedRoles());
-            String allowedUsers = null;
-            if (node.getAllowedUsers() != null && !node.getAllowedUsers().isEmpty()) {
-                allowedUsers = node.getAllowedUsers().stream()
-                        .filter(Objects::nonNull)
-                        .map(String::valueOf)
-                        .collect(Collectors.joining(","));
-            }
-
-            if ((allowedRoles == null || allowedRoles.trim().isEmpty()) &&
-                    (allowedUsers == null || allowedUsers.trim().isEmpty())) {
-                continue;
-            }
-
-            WorkflowNodePermission perm = new WorkflowNodePermission();
-            perm.setWorkflowVersionId(workflowVersionId);
-            perm.setNodeId(node.getNodeId().trim());
-            perm.setAllowedRoles(allowedRoles);
-            perm.setAllowedUsers(allowedUsers);
-            nodePermissionMapper.insert(perm);
-        }
+        versionMapper.update(null, new UpdateWrapper<WorkflowVersion>()
+                .eq("project_id", projectId)
+                .set("is_active", 0));
+        versionMapper.update(null, new UpdateWrapper<WorkflowVersion>()
+                .eq("id", id)
+                .set("is_active", 1));
     }
 
     @Override
     public List<String> validateWorkflow(String definition) {
-        List<String> errors = new ArrayList<>();
-        if (definition == null || definition.trim().isEmpty()) {
-            errors.add("工作流定义不能为空");
-            return errors;
+        return workflowDefinitionEngine.validateDefinition(definition);
+    }
+
+    @Override
+    public String resolveInitialStateName(Long projectId, Requirement requirement) {
+        Optional<String> definitionDrivenState = workflowDefinitionEngine.resolveInitialStateName(projectId, requirement);
+        if (definitionDrivenState.isPresent()) {
+            return definitionDrivenState.get();
+        }
+
+        List<WorkflowState> states = getStates(projectId);
+        if (states.isEmpty()) {
+            return "新建";
+        }
+
+        Set<Long> targetStateIds = getTransitions(projectId).stream()
+                .map(WorkflowTransition::getToStateId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        return states.stream()
+                .filter(state -> !targetStateIds.contains(state.getId()))
+                .min(Comparator.comparing(WorkflowState::getSortOrder, Comparator.nullsLast(Integer::compareTo)))
+                .or(() -> states.stream()
+                        .min(Comparator.comparing(WorkflowState::getSortOrder, Comparator.nullsLast(Integer::compareTo))))
+                .map(WorkflowState::getName)
+                .orElse("新建");
+    }
+
+    private WorkflowState findStateByName(Long projectId, String status) {
+        return stateMapper.selectOne(new LambdaQueryWrapper<WorkflowState>()
+                .eq(WorkflowState::getProjectId, projectId)
+                .eq(WorkflowState::getName, status)
+                .last("LIMIT 1"));
+    }
+
+    private void recordStatusHistory(Long requirementId, Long operatorId, String oldStatus, String newStatus) {
+        RequirementHistory history = new RequirementHistory();
+        history.setRequirementId(requirementId);
+        history.setOperatorId(operatorId);
+        history.setFieldName("status");
+        history.setOldValue(oldStatus);
+        history.setNewValue(newStatus);
+        history.setCreatedAt(LocalDateTime.now());
+        requirementHistoryMapper.insert(history);
+    }
+
+    private void sendStatusChangeNotifications(Requirement requirement, String newStatus, Long operatorId) {
+        String title = "需求状态变更";
+        String content = String.format("需求【%s】状态已变更为【%s】", requirement.getTitle(), newStatus);
+
+        if (requirement.getCreatorId() != null && !requirement.getCreatorId().equals(operatorId)) {
+            notificationService.sendNotification(requirement.getCreatorId(), title, content, "requirement", requirement.getId());
+        }
+        if (requirement.getAssigneeId() != null
+                && !requirement.getAssigneeId().equals(operatorId)
+                && !requirement.getAssigneeId().equals(requirement.getCreatorId())) {
+            notificationService.sendNotification(requirement.getAssigneeId(), title, content, "requirement", requirement.getId());
+        }
+    }
+
+    private void validateDefinitionOrThrow(String definition) {
+        List<String> errors = validateWorkflow(definition);
+        if (!errors.isEmpty()) {
+            throw new BusinessException(String.join("；", errors));
+        }
+    }
+
+    private void syncNodePermissionsFromDefinition(Long workflowVersionId, String definition) {
+        if (workflowVersionId == null) {
+            return;
+        }
+
+        nodePermissionMapper.delete(new LambdaQueryWrapper<WorkflowNodePermission>()
+                .eq(WorkflowNodePermission::getWorkflowVersionId, workflowVersionId));
+
+        if (!StringUtils.hasText(definition)) {
+            return;
         }
 
         try {
-            WorkflowDefinitionDTO workflow = objectMapper.readValue(definition, WorkflowDefinitionDTO.class);
+            WorkflowDefinitionEngine.RuntimeCompilation runtimeCompilation =
+                    workflowDefinitionEngine.compileRuntimeDefinition(definition);
 
-            if (workflow.getNodes() == null || workflow.getNodes().isEmpty()) {
-                errors.add("工作流必须包含至少一个节点");
-                return errors;
-            }
-
-            Set<String> nodeIds = workflow.getNodes().stream()
-                    .map(NodeConfigDTO::getNodeId)
-                    .collect(Collectors.toSet());
-
-            List<com.demand.system.module.workflow.dto.EdgeDTO> edges = workflow.getEdges();
-            if (edges == null) {
-                edges = Collections.emptyList();
-            }
-
-            // 检查孤立节点（没有入边的节点 - 允许有，但提示）
-            Set<String> targetNodes = edges.stream()
-                    .map(com.demand.system.module.workflow.dto.EdgeDTO::getTarget)
-                    .collect(Collectors.toSet());
-
-            for (String nodeId : nodeIds) {
-                if (!targetNodes.contains(nodeId)) {
-                    errors.add("节点 '" + nodeId + "' 没有入边（可能是起始节点或孤立节点）");
+            for (NodeConfigDTO node : runtimeCompilation.runtimeStates()) {
+                if (node == null || !StringUtils.hasText(node.getName())) {
+                    continue;
                 }
-            }
 
-            // 检查是否有不存在的节点引用
-            for (com.demand.system.module.workflow.dto.EdgeDTO edge : edges) {
-                if (!nodeIds.contains(edge.getSource())) {
-                    errors.add("边的源节点 '" + edge.getSource() + "' 不存在");
+                WorkflowNodePermission perm = new WorkflowNodePermission();
+                perm.setWorkflowVersionId(workflowVersionId);
+                perm.setNodeId(node.getName().trim());
+                perm.setAllowedRoles(writeJson(node.getAllowedRoles()));
+                perm.setAllowedUsers(writeJson(node.getAllowedUsers()));
+                perm.setEditableFields(writeJson(node.getEditableFields()));
+                perm.setRequiredFields(writeJson(node.getRequiredFields()));
+                perm.setAvailableActions(writeJson(node.getAvailableActions()));
+
+                if (!hasPermissionPayload(perm)) {
+                    continue;
                 }
-                if (!nodeIds.contains(edge.getTarget())) {
-                    errors.add("边的目标节点 '" + edge.getTarget() + "' 不存在");
-                }
+                nodePermissionMapper.insert(perm);
+            }
+        } catch (IllegalArgumentException e) {
+            log.warn("Failed to parse workflow definition for node permissions, version={}: {}", workflowVersionId, e.getMessage());
+        }
+    }
+
+    private boolean hasPermissionPayload(WorkflowNodePermission permission) {
+        return StringUtils.hasText(permission.getAllowedRoles())
+                || StringUtils.hasText(permission.getAllowedUsers())
+                || StringUtils.hasText(permission.getEditableFields())
+                || StringUtils.hasText(permission.getRequiredFields())
+                || StringUtils.hasText(permission.getAvailableActions());
+    }
+
+    private void publishVersionToRuntime(Long projectId, String definition) {
+        WorkflowDefinitionEngine.RuntimeCompilation runtimeCompilation;
+        try {
+            runtimeCompilation = workflowDefinitionEngine.compileRuntimeDefinition(definition);
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException("工作流定义解析失败");
+        }
+
+        ensureCurrentStatusesSupported(projectId, runtimeCompilation);
+
+        transitionMapper.delete(new LambdaQueryWrapper<WorkflowTransition>()
+                .eq(WorkflowTransition::getProjectId, projectId));
+        stateMapper.delete(new LambdaQueryWrapper<WorkflowState>()
+                .eq(WorkflowState::getProjectId, projectId));
+
+        Map<String, Long> stateIdByName = new LinkedHashMap<>();
+        for (NodeConfigDTO node : runtimeCompilation.runtimeStates()) {
+            WorkflowState state = new WorkflowState();
+            state.setProjectId(projectId);
+            state.setName(node.getName());
+            state.setColor(StringUtils.hasText(node.getColor()) ? node.getColor() : "#409EFF");
+            state.setIsFinal(Boolean.TRUE.equals(node.getIsFinal()) ? 1 : 0);
+            state.setSortOrder(node.getSortOrder() == null ? 0 : node.getSortOrder());
+            stateMapper.insert(state);
+            stateIdByName.put(node.getName().trim(), state.getId());
+        }
+
+        for (WorkflowDefinitionEngine.ResolvedTransitionSpec transitionSpec : runtimeCompilation.transitions()) {
+            Long fromStateId = stateIdByName.get(transitionSpec.fromStateName());
+            Long toStateId = stateIdByName.get(transitionSpec.targetStateName());
+            if (fromStateId == null || toStateId == null) {
+                continue;
             }
 
-            // DFS 检查循环
-            Map<String, List<String>> adjacency = new HashMap<>();
-            for (String nodeId : nodeIds) {
-                adjacency.put(nodeId, new ArrayList<>());
-            }
-            for (com.demand.system.module.workflow.dto.EdgeDTO edge : edges) {
-                adjacency.computeIfAbsent(edge.getSource(), k -> new ArrayList<>()).add(edge.getTarget());
-            }
+            WorkflowTransition transition = new WorkflowTransition();
+            transition.setProjectId(projectId);
+            transition.setFromStateId(fromStateId);
+            transition.setToStateId(toStateId);
+            transition.setAllowedRoles(transitionSpec.allowedRolesJson());
+            transition.setRequiredFields(transitionSpec.requiredFieldsJson());
+            transition.setConditions(normalizeJsonObject(transitionSpec.conditionsJson()));
+            transitionMapper.insert(transition);
+        }
+    }
 
-            if (hasCycle(adjacency)) {
-                errors.add("工作流中存在循环依赖");
-            }
+    private void ensureCurrentStatusesSupported(Long projectId, WorkflowDefinitionEngine.RuntimeCompilation runtimeCompilation) {
+        Set<String> stateNames = runtimeCompilation.runtimeStates().stream()
+                .map(NodeConfigDTO::getName)
+                .filter(StringUtils::hasText)
+                .collect(Collectors.toSet());
 
+        List<String> currentStatuses = requirementMapper.selectList(new LambdaQueryWrapper<Requirement>()
+                        .eq(Requirement::getProjectId, projectId)
+                        .eq(Requirement::getDeletedAt, 0))
+                .stream()
+                .map(Requirement::getStatus)
+                .filter(StringUtils::hasText)
+                .distinct()
+                .toList();
+
+        List<String> unsupported = currentStatuses.stream()
+                .filter(status -> !stateNames.contains(status))
+                .toList();
+
+        if (!unsupported.isEmpty()) {
+            throw new BusinessException("目标工作流缺少正在使用的状态: " + String.join("、", unsupported));
+        }
+    }
+
+    private Long resolveCurrentUserId() {
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) {
+            throw new BusinessException("未登录，无法保存工作流版本");
+        }
+        return userId;
+    }
+
+    private String normalizeId(String id) {
+        return id == null ? null : id.trim();
+    }
+
+    private WorkflowTransition toRuntimeTransition(Long projectId,
+                                                   WorkflowState currentState,
+                                                   WorkflowDefinitionEngine.ResolvedTransitionSpec spec) {
+        if (currentState == null || spec == null || !StringUtils.hasText(spec.targetStateName())) {
+            return null;
+        }
+
+        WorkflowState targetState = findStateByName(projectId, spec.targetStateName());
+        if (targetState == null) {
+            return null;
+        }
+
+        WorkflowTransition transition = new WorkflowTransition();
+        transition.setProjectId(projectId);
+        transition.setFromStateId(currentState.getId());
+        transition.setToStateId(targetState.getId());
+        transition.setAllowedRoles(spec.allowedRolesJson());
+        transition.setRequiredFields(spec.requiredFieldsJson());
+        transition.setConditions(spec.conditionsJson());
+        return transition;
+    }
+
+    private String normalizeJsonStringList(String raw, boolean defaultEmptyArray) {
+        if (!StringUtils.hasText(raw)) {
+            return defaultEmptyArray ? "[]" : null;
+        }
+        try {
+            List<String> values = objectMapper.readValue(raw, STRING_LIST);
+            return objectMapper.writeValueAsString(values == null ? List.of() : values);
+        } catch (Exception ignore) {
+            List<String> values = Arrays.stream(raw.split(","))
+                    .map(String::trim)
+                    .map(value -> value.replace("[", "").replace("]", "").replace("\"", ""))
+                    .filter(StringUtils::hasText)
+                    .toList();
+            return writeJson(values);
+        }
+    }
+
+    private String normalizeJsonObject(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return "{}";
+        }
+        try {
+            return objectMapper.writeValueAsString(objectMapper.readTree(raw));
+        } catch (Exception ignore) {
+            return "{}";
+        }
+    }
+
+    private String writeJson(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Collection<?> collection && collection.isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(value);
         } catch (Exception e) {
-            errors.add("工作流定义 JSON 解析失败: " + e.getMessage());
+            throw new BusinessException("工作流配置序列化失败");
         }
-
-        return errors;
-    }
-
-    /**
-     * 使用 DFS 检测有向图中是否存在环
-     */
-    private boolean hasCycle(Map<String, List<String>> adjacency) {
-        Set<String> visited = new HashSet<>();
-        Set<String> recStack = new HashSet<>();
-
-        for (String node : adjacency.keySet()) {
-            if (hasCycleDFS(node, adjacency, visited, recStack)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean hasCycleDFS(String node, Map<String, List<String>> adjacency,
-                                Set<String> visited, Set<String> recStack) {
-        if (recStack.contains(node)) {
-            return true;
-        }
-        if (visited.contains(node)) {
-            return false;
-        }
-
-        visited.add(node);
-        recStack.add(node);
-
-        List<String> neighbors = adjacency.getOrDefault(node, Collections.emptyList());
-        for (String neighbor : neighbors) {
-            if (hasCycleDFS(neighbor, adjacency, visited, recStack)) {
-                return true;
-            }
-        }
-
-        recStack.remove(node);
-        return false;
     }
 }

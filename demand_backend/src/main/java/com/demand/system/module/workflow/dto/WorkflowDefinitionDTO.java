@@ -9,6 +9,8 @@ public class WorkflowDefinitionDTO {
 
     private Long id;
 
+    private String processKey;
+
     private String name;
 
     private List<NodeConfigDTO> nodes;

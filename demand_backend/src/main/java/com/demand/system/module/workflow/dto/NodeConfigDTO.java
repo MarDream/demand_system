@@ -13,6 +13,12 @@ public class NodeConfigDTO {
 
     private String type;
 
+    private String color;
+
+    private Boolean isFinal;
+
+    private Integer sortOrder;
+
     private List<String> allowedRoles;
 
     private List<Long> allowedUsers;

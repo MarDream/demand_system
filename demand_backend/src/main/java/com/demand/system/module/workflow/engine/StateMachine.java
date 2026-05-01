@@ -17,6 +17,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Slf4j
 @Component
@@ -28,6 +29,7 @@ public class StateMachine {
     private final WorkflowStateMapper stateMapper;
     private final WorkflowTransitionRecordMapper transitionRecordMapper;
     private final PermissionEngine permissionEngine;
+    private final WorkflowDefinitionEngine workflowDefinitionEngine;
 
     /**
      * 执行状态转换
@@ -40,56 +42,58 @@ public class StateMachine {
      * @return true 如果转换成功
      */
     public boolean transition(Long requirementId, Long fromStateId, Long toStateId, Long userId, String comment) {
-        // 1. 验证转换规则是否存在
-        LambdaQueryWrapper<WorkflowTransition> transWrapper = new LambdaQueryWrapper<>();
-        transWrapper.eq(WorkflowTransition::getFromStateId, fromStateId)
-                    .eq(WorkflowTransition::getToStateId, toStateId);
-        WorkflowTransition transition = transitionMapper.selectOne(transWrapper);
-
-        if (transition == null) {
-            log.error("Transition from state {} to state {} does not exist", fromStateId, toStateId);
+        Requirement requirement = requirementMapper.selectById(requirementId);
+        if (requirement == null) {
+            log.error("Requirement {} not found", requirementId);
             return false;
         }
 
-        // 2. 检查权限
+        WorkflowState fromState = stateMapper.selectById(fromStateId);
+        WorkflowState targetState = stateMapper.selectById(toStateId);
+        if (fromState == null || targetState == null) {
+            log.error("From or target state not found: {} -> {}", fromStateId, toStateId);
+            return false;
+        }
+
+        boolean definitionDriven = workflowDefinitionEngine.hasActiveDefinition(requirement.getProjectId());
+        Optional<WorkflowDefinitionEngine.ResolvedTransitionSpec> resolvedSpec = definitionDriven
+                ? workflowDefinitionEngine.resolveTransition(requirement, fromState.getName(), targetState.getName())
+                : Optional.empty();
+
+        WorkflowTransition transition = transitionMapper.selectOne(new LambdaQueryWrapper<WorkflowTransition>()
+                .eq(WorkflowTransition::getFromStateId, fromStateId)
+                .eq(WorkflowTransition::getToStateId, toStateId)
+                .last("LIMIT 1"));
+
+        if (!definitionDriven && transition == null) {
+            log.error("Transition from state {} to state {} does not exist", fromStateId, toStateId);
+            return false;
+        }
+        if (definitionDriven && resolvedSpec.isEmpty()) {
+            log.error("No executable BPMN path from {} to {}", fromState.getName(), targetState.getName());
+            return false;
+        }
+
         if (!permissionEngine.canTransition(requirementId, fromStateId, toStateId, userId)) {
             log.error("User {} not permitted to transition from {} to {}", userId, fromStateId, toStateId);
             return false;
         }
 
-        // 3. 检查必填字段
-        String requiredFields = transition.getRequiredFields();
+        String requiredFields = resolvedSpec
+                .map(WorkflowDefinitionEngine.ResolvedTransitionSpec::requiredFieldsJson)
+                .orElseGet(() -> transition == null ? null : transition.getRequiredFields());
         if (StringUtils.hasText(requiredFields)) {
-            Requirement requirement = requirementMapper.selectById(requirementId);
-            if (requirement == null) {
-                log.error("Requirement {} not found", requirementId);
-                return false;
-            }
             if (!validateRequiredFields(requirement, requiredFields)) {
                 log.error("Required fields not filled for requirement {}", requirementId);
                 return false;
             }
         }
 
-        // 4. 获取目标状态
-        WorkflowState targetState = stateMapper.selectById(toStateId);
-        if (targetState == null) {
-            log.error("Target state {} not found", toStateId);
-            return false;
-        }
-
-        // 5. 获取起始状态名称用于并发控制
-        WorkflowState fromState = stateMapper.selectById(fromStateId);
-        if (fromState == null) {
-            log.error("From state {} not found", fromStateId);
-            return false;
-        }
         String fromStateName = fromState.getName();
 
-        // 6. 并发控制：查询当前需求状态，检查是否已变化
         Requirement currentReq = requirementMapper.selectById(requirementId);
         if (currentReq == null) {
-            log.error("Requirement {} not found", requirementId);
+            log.error("Requirement {} disappeared during transition", requirementId);
             return false;
         }
         String currentStateName = currentReq.getStatus();

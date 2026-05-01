@@ -42,6 +42,7 @@ public class RequirementFlowIT extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.code").value(200));
 
         mockMvc.perform(get("/api/v1/requirements")
+                        .header("Authorization", "Bearer " + token)
                         .queryParam("projectId", "1")
                         .queryParam("keyword", title)
                         .accept(MediaType.APPLICATION_JSON))
@@ -68,4 +69,3 @@ public class RequirementFlowIT extends BaseIntegrationTest {
         return JsonPath.read(json, "$.data.accessToken");
     }
 }
-

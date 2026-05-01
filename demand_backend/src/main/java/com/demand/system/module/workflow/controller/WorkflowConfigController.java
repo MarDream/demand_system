@@ -7,6 +7,7 @@ import com.demand.system.module.workflow.entity.WorkflowVersion;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.demand.system.module.workflow.service.WorkflowService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -14,6 +15,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1")
 @RequiredArgsConstructor
+@PreAuthorize("hasAnyAuthority('admin', 'workflow:config')")
 public class WorkflowConfigController {
 
     private final WorkflowService workflowService;

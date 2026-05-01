@@ -52,7 +52,7 @@ export const routes: RouteRecordRaw[] = [
         path: 'workflow',
         name: 'Workflow',
         component: () => import('@/views/workflow/index.vue'),
-        meta: { title: '工作流配置', icon: 'Share' },
+        meta: { title: '工作流配置', icon: 'Share', requiredRoles: ['admin', 'workflow:config'] },
       },
       {
         path: 'statistics',
