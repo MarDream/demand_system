@@ -89,6 +89,25 @@
         <el-form-item label="描述">
           <el-input v-model="form.description" type="textarea" :rows="3" placeholder="请输入迭代描述" />
         </el-form-item>
+        <el-form-item label="关联需求">
+          <el-select
+            v-model="form.requirementIds"
+            multiple
+            filterable
+            clearable
+            collapse-tags
+            collapse-tags-tooltip
+            style="width: 100%"
+            placeholder="选择需要纳入当前迭代的需求"
+          >
+            <el-option
+              v-for="requirement in requirementOptions"
+              :key="requirement.id"
+              :label="formatRequirementOption(requirement)"
+              :value="requirement.id"
+            />
+          </el-select>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -105,7 +124,7 @@
             {{ formatDate(currentIteration?.startDate) }} ~ {{ formatDate(currentIteration?.endDate) }}
           </el-descriptions-item>
         </el-descriptions>
-        <div id="burndown-chart" style="width: 100%; height: 300px"></div>
+        <div ref="burndownChartRef" style="width: 100%; height: 300px"></div>
       </div>
       <el-empty v-else description="暂无燃尽图数据" />
     </el-dialog>
@@ -113,13 +132,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, computed, watch } from 'vue'
+import { ref, nextTick, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance } from 'element-plus'
 import * as echarts from 'echarts'
 import { getIterationList, createIteration, updateIteration, deleteIteration } from '@/api/modules/iteration'
-import type { Iteration } from '@/types/iteration'
+import { requirementApi } from '@/api'
+import type { Iteration, IterationFormData, IterationRequirementOption } from '@/types/iteration'
 import PageContainer from '@/components/common/PageContainer.vue'
 import TableCard from '@/components/common/TableCard.vue'
 import Toolbar from '@/components/common/Toolbar.vue'
@@ -130,18 +150,20 @@ const projectId = computed(() => {
   return Number.isFinite(id) && id > 0 ? id : 1
 })
 const iterations = ref<Iteration[]>([])
+const requirementOptions = ref<IterationRequirementOption[]>([])
 
 // 对话框
 const dialogVisible = ref(false)
 const isEditing = ref(false)
 const formRef = ref<FormInstance>()
-const form = ref({
+const form = ref<IterationFormData>({
   id: 0,
   name: '',
   description: '',
   startDate: '',
   endDate: '',
   capacity: 0,
+  requirementIds: [],
 })
 
 const rules = {
@@ -154,6 +176,8 @@ const rules = {
 const burndownVisible = ref(false)
 const currentIteration = ref<Iteration | null>(null)
 const burndownData = ref<{ date: string; remaining: number; completed: number; total: number }[]>([])
+const burndownChartRef = ref<HTMLDivElement | null>(null)
+let burndownChart: echarts.EChartsType | null = null
 
 // 工具方法
 const formatDate = (date: string | undefined) => {
@@ -219,6 +243,26 @@ const loadIterations = async () => {
   }
 }
 
+const loadRequirementOptions = async () => {
+  try {
+    const res = await requirementApi.getRequirementList({
+      pageNum: 1,
+      pageSize: 1000,
+      projectId: projectId.value,
+    }) as any
+    requirementOptions.value = (res?.list || []).map((item: any) => ({
+      id: item.id,
+      title: item.title,
+      type: item.type,
+      priority: item.priority,
+      status: item.status,
+      iterationId: item.iterationId,
+    }))
+  } catch {
+    requirementOptions.value = []
+  }
+}
+
 // 对话框操作
 const openDialog = (row?: Iteration) => {
   isEditing.value = !!row
@@ -230,9 +274,12 @@ const openDialog = (row?: Iteration) => {
       startDate: row.startDate,
       endDate: row.endDate,
       capacity: row.capacity || 0,
+      requirementIds: requirementOptions.value
+        .filter((item) => item.iterationId === row.id)
+        .map((item) => item.id),
     }
   } else {
-    form.value = { id: 0, name: '', description: '', startDate: '', endDate: '', capacity: 0 }
+    form.value = { id: 0, name: '', description: '', startDate: '', endDate: '', capacity: 0, requirementIds: [] }
   }
   dialogVisible.value = true
 }
@@ -243,18 +290,18 @@ const submitForm = async () => {
 
   try {
     if (isEditing.value) {
-      await updateIteration(form.value.id, form.value)
+      await updateIteration(form.value.id || 0, form.value)
       ElMessage.success('迭代更新成功')
     } else {
       await createIteration(projectId.value, form.value)
       ElMessage.success('迭代创建成功')
     }
     dialogVisible.value = false
-    loadIterations()
+    await Promise.all([loadIterations(), loadRequirementOptions()])
   } catch {
     ElMessage.success(isEditing.value ? '迭代更新成功（模拟）' : '迭代创建成功（模拟）')
     dialogVisible.value = false
-    loadIterations()
+    await Promise.all([loadIterations(), loadRequirementOptions()])
   }
 }
 
@@ -262,11 +309,16 @@ const handleDelete = async (row: Iteration) => {
   try {
     await deleteIteration(row.id)
     ElMessage.success('删除成功')
-    loadIterations()
+    await Promise.all([loadIterations(), loadRequirementOptions()])
   } catch {
     iterations.value = iterations.value.filter((i) => i.id !== row.id)
     ElMessage.success('删除成功（模拟）')
   }
+}
+
+const formatRequirementOption = (requirement: IterationRequirementOption) => {
+  const planText = requirement.iterationId ? '已排期' : '未排期'
+  return `${requirement.title} [${requirement.priority}/${requirement.status}/${planText}]`
 }
 
 // 燃尽图
@@ -298,12 +350,19 @@ const viewBurndown = async (row: Iteration) => {
   renderBurndownChart()
 }
 
+const disposeBurndownChart = () => {
+  burndownChart?.dispose()
+  burndownChart = null
+}
+
 const renderBurndownChart = () => {
-  const chartDom = document.getElementById('burndown-chart')
+  const chartDom = burndownChartRef.value
   if (!chartDom) return
 
-  const chart = echarts.init(chartDom)
-  chart.setOption({
+  const existingChart = echarts.getInstanceByDom(chartDom)
+  burndownChart = existingChart || burndownChart || echarts.init(chartDom)
+
+  burndownChart.setOption({
     tooltip: { trigger: 'axis' },
     legend: { data: ['理想剩余', '实际剩余', '已完成'] },
     xAxis: {
@@ -323,11 +382,36 @@ const renderBurndownChart = () => {
       { name: '实际剩余', type: 'line', data: burndownData.value.map((d) => d.remaining) },
       { name: '已完成', type: 'bar', data: burndownData.value.map((d) => d.completed) },
     ],
-  })
+  }, true)
 }
+
+const resizeBurndownChart = () => {
+  burndownChart?.resize()
+}
+
+watch(burndownVisible, (visible) => {
+  if (visible) {
+    nextTick(() => {
+      resizeBurndownChart()
+    })
+    return
+  }
+
+  disposeBurndownChart()
+})
+
+onMounted(() => {
+  window.addEventListener('resize', resizeBurndownChart)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', resizeBurndownChart)
+  disposeBurndownChart()
+})
 
 watch(projectId, () => {
   loadIterations()
+  loadRequirementOptions()
 }, { immediate: true })
 </script>
 

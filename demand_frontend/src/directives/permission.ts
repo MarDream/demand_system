@@ -1,17 +1,24 @@
 import type { Directive, DirectiveBinding } from 'vue'
-import { useUserStore } from '@/stores/modules/user'
+import { usePermission } from '@/composables/usePermission'
 
 export const permission: Directive = {
   mounted(el: HTMLElement, binding: DirectiveBinding) {
-    const { value } = binding
-    if (value) {
-      const userStore = useUserStore()
-      const roles = userStore.roles
-      const hasPermission = roles.includes('admin') ||
-        (Array.isArray(value) ? value.some((r: string) => roles.includes(r)) : roles.includes(value))
-      if (!hasPermission) {
-        el.parentNode?.removeChild(el)
-      }
+    const value = binding.value
+    if (!value) {
+      return
+    }
+
+    const { hasPermission, hasAnyPermission, hasRole, hasAnyRole } = usePermission()
+
+    let allowed = false
+    if (typeof value === 'string') {
+      allowed = hasPermission(value) || hasRole(value)
+    } else if (Array.isArray(value)) {
+      allowed = hasAnyPermission(value) || hasAnyRole(value)
+    }
+
+    if (!allowed) {
+      el.parentNode?.removeChild(el)
     }
   },
 }

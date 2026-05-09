@@ -8,6 +8,5 @@ test('管理员登录并进入仪表盘', async ({ page }) => {
   await page.getByRole('button', { name: '登 录' }).click()
 
   await expect(page).toHaveURL(/\/dashboard/)
-  await expect(page.getByText('仪表盘')).toBeVisible()
+  await expect(page.getByRole('heading', { name: '工作台' })).toBeVisible()
 })
-

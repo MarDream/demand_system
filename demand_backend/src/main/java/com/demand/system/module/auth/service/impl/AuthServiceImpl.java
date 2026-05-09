@@ -4,29 +4,29 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.demand.system.common.constant.RedisConstants;
 import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.utils.JwtUtils;
-import com.demand.system.module.auth.dto.LoginRequest;
-import com.demand.system.module.auth.dto.RefreshTokenRequest;
-import com.demand.system.module.auth.dto.TokenResponse;
-import com.demand.system.module.auth.dto.UserInfoResponse;
+import com.demand.system.module.auth.dto.*;
 import com.demand.system.module.auth.entity.SysUser;
 import com.demand.system.module.user.entity.UserOrganization;
 import com.demand.system.module.auth.mapper.SysUserMapper;
 import com.demand.system.module.user.mapper.UserOrganizationMapper;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.auth.service.AuthService;
+import com.demand.system.module.auth.service.VerificationCodeService;
+import com.demand.system.module.rbac.support.RbacPermissionResolver;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Arrays;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
@@ -35,6 +35,8 @@ public class AuthServiceImpl implements AuthService {
     private final UserOrganizationMapper userOrganizationMapper;
     private final StringRedisTemplate stringRedisTemplate;
     private final PasswordEncoder passwordEncoder;
+    private final VerificationCodeService verificationCodeService;
+    private final RbacPermissionResolver rbacPermissionResolver;
 
     @Value("${jwt.secret}")
     private String jwtSecret;
@@ -64,7 +66,7 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException("账户已被禁用，请联系管理员");
         }
 
-        List<String> roles = getUserRoles(user.getId());
+        List<String> roles = rbacPermissionResolver.resolveRoles(user.getId());
 
         String accessToken = JwtUtils.generateToken(
                 user.getId(),
@@ -101,7 +103,6 @@ public class AuthServiceImpl implements AuthService {
             String redisKey = RedisConstants.USER_PREFIX + username;
             stringRedisTemplate.delete(redisKey);
         }
-        // Also try to delete by token if it's a refresh token
         if (token != null && !token.isEmpty()) {
             String refreshKey = RedisConstants.REFRESH_TOKEN_PREFIX + token;
             stringRedisTemplate.delete(refreshKey);
@@ -124,7 +125,7 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException("账户已被禁用，请联系管理员");
         }
 
-        List<String> roles = getUserRoles(userId);
+        List<String> roles = rbacPermissionResolver.resolveRoles(userId);
 
         String newAccessToken = JwtUtils.generateToken(
                 userId,
@@ -160,7 +161,8 @@ public class AuthServiceImpl implements AuthService {
                         .last("LIMIT 1")
         );
 
-        List<String> roles = getUserRoles(userId);
+        List<String> roles = rbacPermissionResolver.resolveRoles(userId);
+        List<String> permissions = rbacPermissionResolver.resolvePermissions(userId, roles);
 
         UserInfoResponse.UserInfoResponseBuilder builder = UserInfoResponse.builder()
                 .id(user.getId())
@@ -168,7 +170,9 @@ public class AuthServiceImpl implements AuthService {
                 .realName(user.getRealName())
                 .email(user.getEmail())
                 .avatar(user.getAvatar())
-                .roles(roles);
+                .roles(roles)
+                .permissions(permissions)
+                .isSuperAdmin(rbacPermissionResolver.isSuperAdmin(roles));
 
         if (org != null) {
             builder.regionId(org.getRegionId())
@@ -179,22 +183,144 @@ public class AuthServiceImpl implements AuthService {
         return builder.build();
     }
 
-    private List<String> getUserRoles(Long userId) {
-        UserOrganization org = userOrganizationMapper.selectOne(
-                new LambdaQueryWrapper<UserOrganization>()
-                        .eq(UserOrganization::getUserId, userId)
-                        .last("LIMIT 1")
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public TokenResponse register(RegisterRequest request) {
+        log.info("用户注册: username={}, email={}", request.getUsername(), request.getEmail());
+
+        if (!verificationCodeService.verifyCode(request.getEmail(), request.getVerificationCode(), "register")) {
+            throw new BusinessException("验证码错误或已过期");
+        }
+
+        SysUser existingUser = sysUserMapper.selectOne(
+                new LambdaQueryWrapper<SysUser>()
+                        .eq(SysUser::getUsername, request.getUsername())
         );
-        if (org != null && StringUtils.hasText(org.getSystemRole())) {
-            List<String> roles = Arrays.stream(org.getSystemRole().split(","))
-                    .map(String::trim)
-                    .filter(StringUtils::hasText)
-                    .distinct()
-                    .collect(Collectors.toList());
-            if (!roles.isEmpty()) {
-                return roles;
+        if (existingUser != null) {
+            throw new BusinessException("用户名已存在");
+        }
+
+        SysUser existingEmail = sysUserMapper.selectOne(
+                new LambdaQueryWrapper<SysUser>()
+                        .eq(SysUser::getEmail, request.getEmail())
+        );
+        if (existingEmail != null) {
+            throw new BusinessException("邮箱已被注册");
+        }
+
+        SysUser user = new SysUser();
+        user.setUsername(request.getUsername());
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
+        user.setRealName(request.getRealName());
+        user.setEmail(request.getEmail());
+        user.setPhone(request.getPhone());
+        user.setStatus("inactive");
+        user.setCreatedAt(LocalDateTime.now());
+        user.setUpdatedAt(LocalDateTime.now());
+        user.setDeletedAt(0);
+
+        sysUserMapper.insert(user);
+        log.info("用户注册成功: userId={}, username={}", user.getId(), user.getUsername());
+
+        verificationCodeService.markCodeAsUsed(request.getEmail(), request.getVerificationCode(), "register");
+
+        List<String> roles = List.of("USER");
+
+        String accessToken = JwtUtils.generateToken(
+                user.getId(),
+                user.getUsername(),
+                roles,
+                accessTokenExpiration,
+                jwtSecret
+        );
+
+        String refreshToken = UUID.randomUUID().toString();
+        String redisKey = RedisConstants.REFRESH_TOKEN_PREFIX + refreshToken;
+        stringRedisTemplate.opsForValue().set(
+                redisKey,
+                user.getId().toString(),
+                refreshTokenExpiration,
+                TimeUnit.MILLISECONDS
+        );
+
+        return TokenResponse.builder()
+                .accessToken(accessToken)
+                .refreshToken(refreshToken)
+                .expiresIn(accessTokenExpiration / 1000)
+                .tokenType("Bearer")
+                .build();
+    }
+
+    @Override
+    public void sendVerificationCode(SendVerificationCodeRequest request) {
+        log.info("发送验证码: email={}, type={}", request.getEmail(), request.getType());
+
+        if (!"register".equals(request.getType()) && !"reset_password".equals(request.getType())) {
+            throw new BusinessException("验证码类型不正确");
+        }
+
+        if ("register".equals(request.getType())) {
+            SysUser existingUser = sysUserMapper.selectOne(
+                    new LambdaQueryWrapper<SysUser>()
+                            .eq(SysUser::getEmail, request.getEmail())
+            );
+            if (existingUser != null) {
+                throw new BusinessException("该邮箱已被注册");
             }
         }
-        return List.of("USER");
+
+        if ("reset_password".equals(request.getType())) {
+            SysUser user = sysUserMapper.selectOne(
+                    new LambdaQueryWrapper<SysUser>()
+                            .eq(SysUser::getEmail, request.getEmail())
+            );
+            if (user == null) {
+                throw new BusinessException("该邮箱未注册");
+            }
+        }
+
+        verificationCodeService.generateAndSendCode(request.getEmail(), request.getType());
+        log.info("验证码发送成功: email={}, type={}", request.getEmail(), request.getType());
+    }
+
+    @Override
+    public void requestPasswordReset(ResetPasswordRequest request) {
+        log.info("请求密码重置: email={}", request.getEmail());
+
+        SysUser user = sysUserMapper.selectOne(
+                new LambdaQueryWrapper<SysUser>()
+                        .eq(SysUser::getEmail, request.getEmail())
+        );
+        if (user == null) {
+            throw new BusinessException("该邮箱未注册");
+        }
+
+        verificationCodeService.generateAndSendCode(request.getEmail(), "reset_password");
+        log.info("密码重置验证码发送成功: email={}", request.getEmail());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void confirmPasswordReset(ConfirmResetPasswordRequest request) {
+        log.info("确认密码重置: email={}", request.getEmail());
+
+        if (!verificationCodeService.verifyCode(request.getEmail(), request.getVerificationCode(), "reset_password")) {
+            throw new BusinessException("验证码错误或已过期");
+        }
+
+        SysUser user = sysUserMapper.selectOne(
+                new LambdaQueryWrapper<SysUser>()
+                        .eq(SysUser::getEmail, request.getEmail())
+        );
+        if (user == null) {
+            throw new BusinessException("用户不存在");
+        }
+
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        user.setUpdatedAt(LocalDateTime.now());
+        sysUserMapper.updateById(user);
+
+        verificationCodeService.markCodeAsUsed(request.getEmail(), request.getVerificationCode(), "reset_password");
+        log.info("密码重置成功: userId={}, email={}", user.getId(), request.getEmail());
     }
 }

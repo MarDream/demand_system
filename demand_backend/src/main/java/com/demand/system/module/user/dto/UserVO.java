@@ -21,7 +21,15 @@ public class UserVO {
 
     private String status;
 
+    private Long regionId;
+
+    private Long departmentId;
+
+    private Long positionId;
+
     private String regionName;
+
+    private String regionPath;
 
     private String departmentName;
 

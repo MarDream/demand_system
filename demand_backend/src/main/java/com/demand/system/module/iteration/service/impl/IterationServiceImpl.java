@@ -92,6 +92,7 @@ public class IterationServiceImpl implements IterationService {
         iteration.setCreatorId(userId);
         iteration.setStatus("未开始");
         iterationMapper.insert(iteration);
+        syncIterationRequirements(iteration.getId(), dto.getProjectId(), dto.getRequirementIds());
     }
 
     @Override
@@ -125,6 +126,7 @@ public class IterationServiceImpl implements IterationService {
         }
 
         iterationMapper.update(null, updateWrapper);
+        syncIterationRequirements(existing.getId(), existing.getProjectId(), dto.getRequirementIds());
     }
 
     @Override
@@ -144,11 +146,7 @@ public class IterationServiceImpl implements IterationService {
         if (iteration == null) {
             throw new BusinessException("迭代不存在");
         }
-
-        UpdateWrapper<Requirement> wrapper = new UpdateWrapper<>();
-        wrapper.in("id", requirementIds)
-                .set("iteration_id", iterationId);
-        requirementMapper.update(null, wrapper);
+        syncIterationRequirements(iterationId, iteration.getProjectId(), requirementIds);
     }
 
     @Override
@@ -234,5 +232,35 @@ public class IterationServiceImpl implements IterationService {
             vo.setProgress(0.0);
         }
         return vo;
+    }
+
+    private void syncIterationRequirements(Long iterationId, Long projectId, List<Long> requirementIds) {
+        if (iterationId == null || projectId == null) {
+            return;
+        }
+
+        UpdateWrapper<Requirement> clearWrapper = new UpdateWrapper<>();
+        clearWrapper.eq("project_id", projectId)
+                .eq("iteration_id", iterationId)
+                .set("iteration_id", null);
+        requirementMapper.update(null, clearWrapper);
+
+        if (requirementIds == null || requirementIds.isEmpty()) {
+            return;
+        }
+
+        Long matchedCount = requirementMapper.selectCount(new LambdaQueryWrapper<Requirement>()
+                .eq(Requirement::getProjectId, projectId)
+                .eq(Requirement::getDeletedAt, 0)
+                .in(Requirement::getId, requirementIds));
+        if (matchedCount == null || matchedCount.intValue() != new LinkedHashSet<>(requirementIds).size()) {
+            throw new BusinessException("存在不属于当前项目的需求，无法关联到迭代");
+        }
+
+        UpdateWrapper<Requirement> assignWrapper = new UpdateWrapper<>();
+        assignWrapper.eq("project_id", projectId)
+                .in("id", requirementIds)
+                .set("iteration_id", iterationId);
+        requirementMapper.update(null, assignWrapper);
     }
 }

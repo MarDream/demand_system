@@ -3,6 +3,7 @@ import NProgress from 'nprogress'
 import 'nprogress/nprogress.css'
 import { getToken } from '@/utils/auth'
 import { useUserStore } from '@/stores/modules/user'
+import { usePermission } from '@/composables/usePermission'
 
 NProgress.configure({ showSpinner: false })
 
@@ -38,15 +39,22 @@ export function setupGuards(router: Router) {
       }
     }
 
+    const { hasAnyRole, hasAnyPermission } = usePermission()
     const requiredRoles = Array.isArray(to.meta.requiredRoles)
       ? (to.meta.requiredRoles as string[])
       : []
-    if (requiredRoles.length > 0) {
-      const hasRole = requiredRoles.some((role) => userStore.roles.includes(role))
-      if (!hasRole) {
-        next('/dashboard')
-        return
-      }
+    const requiredPermissions = Array.isArray(to.meta.requiredPermissions)
+      ? (to.meta.requiredPermissions as string[])
+      : []
+
+    if (requiredRoles.length > 0 && !hasAnyRole(requiredRoles)) {
+      next('/dashboard')
+      return
+    }
+
+    if (requiredPermissions.length > 0 && !hasAnyPermission(requiredPermissions)) {
+      next('/dashboard')
+      return
     }
 
     next()

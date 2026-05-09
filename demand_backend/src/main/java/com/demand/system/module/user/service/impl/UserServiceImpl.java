@@ -9,17 +9,15 @@ import com.demand.system.module.user.dto.UserCreateDTO;
 import com.demand.system.module.user.dto.UserQueryDTO;
 import com.demand.system.module.user.dto.UserUpdateDTO;
 import com.demand.system.module.user.dto.UserVO;
-import com.demand.system.module.user.entity.Department;
-import com.demand.system.module.user.entity.Position;
-import com.demand.system.module.user.entity.Region;
 import com.demand.system.module.user.entity.User;
-import com.demand.system.module.user.entity.UserOrganization;
-import com.demand.system.module.user.mapper.DepartmentMapper;
-import com.demand.system.module.user.mapper.PositionMapper;
-import com.demand.system.module.user.mapper.RegionMapper;
 import com.demand.system.module.user.mapper.UserMapper;
-import com.demand.system.module.user.mapper.UserOrganizationMapper;
 import com.demand.system.module.user.service.UserService;
+import com.demand.system.module.organization.entity.Department;
+import com.demand.system.module.organization.entity.Position;
+import com.demand.system.module.organization.entity.Region;
+import com.demand.system.module.organization.mapper.DepartmentMapper;
+import com.demand.system.module.organization.mapper.PositionMapper;
+import com.demand.system.module.organization.mapper.RegionMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -32,7 +30,6 @@ import java.util.stream.Collectors;
 public class UserServiceImpl implements UserService {
 
     private final UserMapper userMapper;
-    private final UserOrganizationMapper userOrganizationMapper;
     private final RegionMapper regionMapper;
     private final DepartmentMapper departmentMapper;
     private final PositionMapper positionMapper;
@@ -46,21 +43,10 @@ public class UserServiceImpl implements UserService {
         wrapper.like(query.getUsername() != null, User::getUsername, query.getUsername())
                 .like(query.getRealName() != null, User::getRealName, query.getRealName())
                 .eq(query.getStatus() != null, User::getStatus, query.getStatus())
+                .eq(query.getRegionId() != null, User::getRegionId, query.getRegionId())
+                .eq(query.getDepartmentId() != null, User::getDepartmentId, query.getDepartmentId())
+                .eq(query.getPositionId() != null, User::getPositionId, query.getPositionId())
                 .orderByDesc(User::getCreatedAt);
-
-        // If filtering by org, collect matching userIds first
-        Set<Long> userIds = null;
-        if (query.getRegionId() != null || query.getDepartmentId() != null) {
-            LambdaQueryWrapper<UserOrganization> orgWrapper = new LambdaQueryWrapper<>();
-            orgWrapper.eq(query.getRegionId() != null, UserOrganization::getRegionId, query.getRegionId())
-                    .eq(query.getDepartmentId() != null, UserOrganization::getDepartmentId, query.getDepartmentId());
-            List<UserOrganization> orgs = userOrganizationMapper.selectList(orgWrapper);
-            userIds = orgs.stream().map(UserOrganization::getUserId).collect(Collectors.toSet());
-            if (userIds.isEmpty()) {
-                return new PageResult<>(Collections.emptyList(), 0, query.getPageNum(), query.getPageSize());
-            }
-            wrapper.in(User::getId, userIds);
-        }
 
         Page<User> userPage = userMapper.selectPage(page, wrapper);
 
@@ -91,13 +77,6 @@ public class UserServiceImpl implements UserService {
         user.setPassword(passwordEncoder.encode(dto.getPassword()));
         user.setStatus(User.STATUS_ACTIVE);
         userMapper.insert(user);
-
-        // Create default org record
-        UserOrganization org = new UserOrganization();
-        org.setUserId(user.getId());
-        org.setSystemRole("member");
-        org.setEffectiveDate(java.time.LocalDate.now());
-        userOrganizationMapper.insert(org);
     }
 
     @Override
@@ -122,6 +101,15 @@ public class UserServiceImpl implements UserService {
         if (dto.getStatus() != null) {
             user.setStatus(dto.getStatus());
         }
+        if (dto.getRegionId() != null) {
+            user.setRegionId(dto.getRegionId());
+        }
+        if (dto.getDepartmentId() != null) {
+            user.setDepartmentId(dto.getDepartmentId());
+        }
+        if (dto.getPositionId() != null) {
+            user.setPositionId(dto.getPositionId());
+        }
         userMapper.updateById(user);
     }
 
@@ -143,35 +131,56 @@ public class UserServiceImpl implements UserService {
         vo.setPhone(user.getPhone());
         vo.setAvatar(user.getAvatar());
         vo.setStatus(user.getStatus());
+        vo.setRegionId(user.getRegionId());
+        vo.setDepartmentId(user.getDepartmentId());
+        vo.setPositionId(user.getPositionId());
         vo.setCreatedAt(user.getCreatedAt());
         vo.setUpdatedAt(user.getUpdatedAt());
 
-        // Fill org info
-        LambdaQueryWrapper<UserOrganization> orgWrapper = new LambdaQueryWrapper<>();
-        orgWrapper.eq(UserOrganization::getUserId, user.getId());
-        List<UserOrganization> orgs = userOrganizationMapper.selectList(orgWrapper);
-        if (!orgs.isEmpty()) {
-            UserOrganization org = orgs.get(0);
-            vo.setSystemRole(org.getSystemRole());
-            if (org.getRegionId() != null) {
-                Region region = regionMapper.selectById(org.getRegionId());
-                if (region != null) {
-                    vo.setRegionName(region.getName());
-                }
-            }
-            if (org.getDepartmentId() != null) {
-                Department dept = departmentMapper.selectById(org.getDepartmentId());
-                if (dept != null) {
-                    vo.setDepartmentName(dept.getName());
-                }
-            }
-            if (org.getPositionId() != null) {
-                Position position = positionMapper.selectById(org.getPositionId());
-                if (position != null) {
-                    vo.setPositionName(position.getName());
-                }
+        // Fill region info and build region path
+        if (user.getRegionId() != null) {
+            Region region = regionMapper.selectById(user.getRegionId());
+            if (region != null) {
+                vo.setRegionName(region.getName());
+                vo.setRegionPath(buildRegionPath(region.getId()));
             }
         }
+
+        // Fill department info
+        if (user.getDepartmentId() != null) {
+            Department dept = departmentMapper.selectById(user.getDepartmentId());
+            if (dept != null) {
+                vo.setDepartmentName(dept.getName());
+            }
+        }
+
+        // Fill position info
+        if (user.getPositionId() != null) {
+            Position position = positionMapper.selectById(user.getPositionId());
+            if (position != null) {
+                vo.setPositionName(position.getName());
+            }
+        }
+
         return vo;
+    }
+
+    /**
+     * 构建区域完整路径，如"华南区 > 深圳市 > 福田区"
+     */
+    private String buildRegionPath(Long regionId) {
+        List<String> pathList = new ArrayList<>();
+        Long currentId = regionId;
+
+        while (currentId != null) {
+            Region region = regionMapper.selectById(currentId);
+            if (region == null) {
+                break;
+            }
+            pathList.add(0, region.getName());
+            currentId = region.getParentId();
+        }
+
+        return String.join(" > ", pathList);
     }
 }

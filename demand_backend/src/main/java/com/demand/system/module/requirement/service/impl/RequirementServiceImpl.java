@@ -12,12 +12,16 @@ import com.demand.system.module.requirement.dto.RequirementUpdateDTO;
 import com.demand.system.module.requirement.dto.RequirementVO;
 import com.demand.system.module.requirement.entity.Requirement;
 import com.demand.system.module.requirement.entity.RequirementHistory;
+import com.demand.system.module.requirement.entity.RequirementTypeConfig;
 import com.demand.system.module.requirement.mapper.CustomFieldValueMapper;
 import com.demand.system.module.requirement.mapper.RequirementHistoryMapper;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
+import com.demand.system.module.requirement.service.RequirementConfigService;
 import com.demand.system.module.requirement.service.RequirementService;
 import com.demand.system.module.user.entity.User;
 import com.demand.system.module.user.mapper.UserMapper;
+import com.demand.system.module.organization.entity.Department;
+import com.demand.system.module.organization.mapper.DepartmentMapper;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.notification.service.NotificationService;
 import com.demand.system.module.workflow.service.WorkflowService;
@@ -45,9 +49,11 @@ public class RequirementServiceImpl implements RequirementService {
     private final RequirementHistoryMapper historyMapper;
     private final CustomFieldValueMapper customFieldValueMapper;
     private final UserMapper userMapper;
+    private final DepartmentMapper departmentMapper;
     private final NotificationService notificationService;
     private final WorkflowService workflowService;
     private final WorkflowTransitionRecordMapper workflowTransitionRecordMapper;
+    private final RequirementConfigService requirementConfigService;
 
     @Override
     public PageResult<RequirementVO> list(RequirementQueryDTO query) {
@@ -79,6 +85,31 @@ public class RequirementServiceImpl implements RequirementService {
         if (StringUtils.hasText(query.getKeyword())) {
             wrapper.and(w -> w.like(Requirement::getTitle, query.getKeyword())
                     .or().like(Requirement::getDescription, query.getKeyword()));
+        }
+
+        if (query.getCreatedAtStart() != null) {
+            wrapper.ge(Requirement::getCreatedAt, query.getCreatedAtStart());
+        }
+        if (query.getCreatedAtEnd() != null) {
+            wrapper.le(Requirement::getCreatedAt, query.getCreatedAtEnd());
+        }
+        if (query.getAnalysisCompletedAtStart() != null) {
+            wrapper.ge(Requirement::getAnalysisCompletedAt, query.getAnalysisCompletedAtStart());
+        }
+        if (query.getAnalysisCompletedAtEnd() != null) {
+            wrapper.le(Requirement::getAnalysisCompletedAt, query.getAnalysisCompletedAtEnd());
+        }
+        if (query.getConfirmAtStart() != null) {
+            wrapper.ge(Requirement::getConfirmAt, query.getConfirmAtStart());
+        }
+        if (query.getConfirmAtEnd() != null) {
+            wrapper.le(Requirement::getConfirmAt, query.getConfirmAtEnd());
+        }
+        if (query.getDevelopmentCompletedAtStart() != null) {
+            wrapper.ge(Requirement::getDevelopmentCompletedAt, query.getDevelopmentCompletedAtStart());
+        }
+        if (query.getDevelopmentCompletedAtEnd() != null) {
+            wrapper.le(Requirement::getDevelopmentCompletedAt, query.getDevelopmentCompletedAtEnd());
         }
 
         if (StringUtils.hasText(query.getSortField()) && StringUtils.hasText(query.getSortOrder())) {
@@ -121,6 +152,12 @@ public class RequirementServiceImpl implements RequirementService {
     public void create(RequirementCreateDTO dto, Long creatorId) {
         Requirement requirement = new Requirement();
         BeanUtils.copyProperties(dto, requirement);
+        RequirementTypeConfig defaultType = requirementConfigService.getDefaultType();
+        if (defaultType == null || !StringUtils.hasText(defaultType.getCode())) {
+            throw new BusinessException("请先配置至少一个需求类型");
+        }
+        requirement.setType(defaultType.getCode());
+        requirement.setIterationId(null);
         requirement.setCreatorId(creatorId);
         requirement.setStatus(workflowService.resolveInitialStateName(dto.getProjectId(), requirement));
         if (requirement.getOrderNum() == null) {
@@ -178,6 +215,11 @@ public class RequirementServiceImpl implements RequirementService {
                     strVal(existing.getAssigneeId()), strVal(dto.getAssigneeId()));
             updateWrapper.set("assignee_id", dto.getAssigneeId());
         }
+        if (dto.getStartDate() != null && !Objects.equals(existing.getStartDate(), dto.getStartDate())) {
+            recordHistory(dto.getId(), operatorId, "startDate",
+                    strDate(existing.getStartDate()), strDate(dto.getStartDate()));
+            updateWrapper.set("start_date", dto.getStartDate());
+        }
         if (dto.getIterationId() != null && !Objects.equals(existing.getIterationId(), dto.getIterationId())) {
             recordHistory(dto.getId(), operatorId, "iterationId",
                     strVal(existing.getIterationId()), strVal(dto.getIterationId()));
@@ -203,6 +245,10 @@ public class RequirementServiceImpl implements RequirementService {
                     strDecimal(existing.getActualHours()), strDecimal(dto.getActualHours()));
             updateWrapper.set("actual_hours", dto.getActualHours());
         }
+        if (dto.getAttachments() != null && !Objects.equals(existing.getAttachments(), dto.getAttachments())) {
+            recordHistory(dto.getId(), operatorId, "attachments", null, "更新附件");
+            updateWrapper.set("attachments", dto.getAttachments());
+        }
         if (dto.getStatus() != null && !Objects.equals(existing.getStatus(), dto.getStatus())) {
             throw new BusinessException("状态流转请使用工作流操作");
         }
@@ -212,7 +258,9 @@ public class RequirementServiceImpl implements RequirementService {
             updateWrapper.set("order_num", dto.getOrderNum());
         }
 
-        requirementMapper.update(null, updateWrapper);
+        if (updateWrapper.getSqlSet() != null && !updateWrapper.getSqlSet().isEmpty()) {
+            requirementMapper.update(null, updateWrapper);
+        }
     }
 
     @Override
@@ -403,6 +451,24 @@ public class RequirementServiceImpl implements RequirementService {
             User assignee = userMapper.selectById(r.getAssigneeId());
             if (assignee != null) {
                 vo.setAssigneeName(assignee.getRealName());
+            }
+        }
+        if (r.getOpsFollowId() != null) {
+            User opsFollow = userMapper.selectById(r.getOpsFollowId());
+            if (opsFollow != null) {
+                vo.setOpsFollowName(opsFollow.getRealName());
+            }
+        }
+        if (r.getMaintFollowId() != null) {
+            User maintFollow = userMapper.selectById(r.getMaintFollowId());
+            if (maintFollow != null) {
+                vo.setMaintFollowName(maintFollow.getRealName());
+            }
+        }
+        if (r.getDepartmentId() != null) {
+            Department dept = departmentMapper.selectById(r.getDepartmentId());
+            if (dept != null) {
+                vo.setDepartmentName(dept.getName());
             }
         }
     }

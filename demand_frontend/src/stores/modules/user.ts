@@ -1,16 +1,19 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
-import { login as loginApi, logout as logoutApi, getMe } from '@/api/modules/auth'
+import { computed, ref } from 'vue'
+import { login as loginApi, logout as logoutApi, getMe, type AuthUserInfo } from '@/api/modules/auth'
 import { setToken, removeToken, setRefreshToken, removeRefreshToken } from '@/utils/auth'
 
 export const useUserStore = defineStore('user', () => {
   const token = ref('')
-  const userInfo = ref<any>(null)
+  const userInfo = ref<AuthUserInfo | null>(null)
   const roles = ref<string[]>([])
+  const permissions = ref<string[]>([])
+  const isSuperAdmin = ref(false)
+
+  const hasAdminRole = computed(() => roles.value.includes('admin'))
 
   async function login(username: string, password: string) {
-    const res = await loginApi(username, password)
-    const data = (res as any).data || res
+    const data = await loginApi(username, password) as any
     setToken(data.accessToken)
     setRefreshToken(data.refreshToken)
     token.value = data.accessToken
@@ -18,10 +21,11 @@ export const useUserStore = defineStore('user', () => {
   }
 
   async function getUserInfo() {
-    const res = await getMe()
-    const data = (res as any).data || res
+    const data = await getMe() as any
     userInfo.value = data
     roles.value = data.roles || []
+    permissions.value = data.permissions || []
+    isSuperAdmin.value = !!data.isSuperAdmin
   }
 
   async function logout() {
@@ -33,8 +37,20 @@ export const useUserStore = defineStore('user', () => {
       token.value = ''
       userInfo.value = null
       roles.value = []
+      permissions.value = []
+      isSuperAdmin.value = false
     }
   }
 
-  return { token, userInfo, roles, login, logout, getUserInfo }
+  return {
+    token,
+    userInfo,
+    roles,
+    permissions,
+    isSuperAdmin,
+    hasAdminRole,
+    login,
+    logout,
+    getUserInfo,
+  }
 })

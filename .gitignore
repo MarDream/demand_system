@@ -30,3 +30,19 @@ Thumbs.db
 *.tmp
 *.temp
 Temp/
+
+# Local oh-my-codex runtime state
+.omx/
+
+# Claude Code local state
+.claude/
+
+# Codex temp
+.codex-tmp/
+
+# Test reports
+demand_frontend/playwright-report/
+demand_frontend/test-results/
+
+# AGENTS.md (local agent config)
+AGENTS.md

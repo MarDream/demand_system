@@ -1,6 +1,6 @@
 import request from '@/api/request'
 import type { ApiResponse } from '@/types/api'
-import type { Iteration } from '@/types/iteration'
+import type { Iteration, IterationFormData } from '@/types/iteration'
 
 export function getIterationList(projectId: number) {
   return request.get<ApiResponse<Iteration[]>>(`/v1/projects/${projectId}/iterations`)
@@ -10,11 +10,11 @@ export function getIterationById(id: number) {
   return request.get<ApiResponse<Iteration>>(`/v1/iterations/${id}`)
 }
 
-export function createIteration(projectId: number, data: any) {
+export function createIteration(projectId: number, data: IterationFormData) {
   return request.post<ApiResponse>(`/v1/projects/${projectId}/iterations`, data)
 }
 
-export function updateIteration(id: number, data: any) {
+export function updateIteration(id: number, data: IterationFormData) {
   return request.put<ApiResponse>(`/v1/iterations/${id}`, data)
 }
 

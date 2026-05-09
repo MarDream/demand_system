@@ -2,7 +2,7 @@ import axios from 'axios'
 import type { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios'
 import { ElMessage } from 'element-plus'
 import type { ApiResponse } from '@/types/api'
-import { getToken, removeToken, getRefreshToken, removeRefreshToken } from '@/utils/auth'
+import { getToken, setToken, removeToken, getRefreshToken, setRefreshToken, removeRefreshToken } from '@/utils/auth'
 
 const service: AxiosInstance = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL,
@@ -37,6 +37,9 @@ service.interceptors.request.use(
 
 service.interceptors.response.use(
   (response: AxiosResponse<ApiResponse>) => {
+    if (response.config.responseType === 'blob' || response.config.responseType === 'arraybuffer') {
+      return response.data as unknown as AxiosResponse
+    }
     const res = response.data
     if (res.code !== 200) {
       ElMessage.error(res.message || '请求失败')
@@ -100,10 +103,8 @@ service.interceptors.response.use(
         const newRefreshToken = refreshData.data.refreshToken
 
         // 更新Token
-        import('@/utils/auth').then(({ setToken, setRefreshToken }) => {
-          setToken(newToken)
-          setRefreshToken(newRefreshToken)
-        })
+        setToken(newToken)
+        setRefreshToken(newRefreshToken)
 
         onTokenRefreshed(newToken)
         isRefreshing = false

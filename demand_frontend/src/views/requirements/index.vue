@@ -3,46 +3,66 @@
     <!-- Filter -->
     <FilterCard>
       <el-form :model="filterForm" inline>
-        <el-form-item label="需求类型">
-          <el-select v-model="filterForm.type" placeholder="全部" clearable style="width: 140px">
-            <el-option
-              v-for="t in configTypes"
-              :key="t.code"
-              :label="t.name"
-              :value="t.code"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="优先级">
-          <el-select v-model="filterForm.priority" placeholder="全部" clearable style="width: 100px">
-            <el-option
-              v-for="p in configPriorities"
-              :key="p.code"
-              :label="p.name"
-              :value="p.code"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="filterForm.status" placeholder="全部" clearable style="width: 120px">
-            <el-option label="新建" value="新建" />
-            <el-option label="待评审" value="待评审" />
-            <el-option label="评审中" value="评审中" />
-            <el-option label="已通过" value="已通过" />
-            <el-option label="开发中" value="开发中" />
-            <el-option label="测试中" value="测试中" />
-            <el-option label="已上线" value="已上线" />
-            <el-option label="已验收" value="已验收" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="负责人">
-          <el-select v-model="filterForm.assigneeId" placeholder="请选择" clearable style="width: 140px">
-            <el-option v-for="user in filterUserList" :key="user.id" :label="user.realName || user.username" :value="user.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-input v-model="filterForm.keyword" placeholder="关键词搜索" clearable style="width: 220px" @keyup.enter="handleSearch" />
-        </el-form-item>
+        <div class="filter-main">
+          <el-form-item label="需求类型">
+            <el-select v-model="filterForm.type" placeholder="全部" clearable style="width: 140px">
+              <el-option v-for="t in configTypes" :key="t.code" :label="t.name" :value="t.code" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="优先级">
+            <el-select v-model="filterForm.priority" placeholder="全部" clearable style="width: 100px">
+              <el-option v-for="p in configPriorities" :key="p.code" :label="p.name" :value="p.code" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="状态">
+            <el-select v-model="filterForm.status" placeholder="全部" clearable style="width: 120px">
+              <el-option label="新建" value="新建" />
+              <el-option label="待评审" value="待评审" />
+              <el-option label="评审中" value="评审中" />
+              <el-option label="已通过" value="已通过" />
+              <el-option label="开发中" value="开发中" />
+              <el-option label="测试中" value="测试中" />
+              <el-option label="已上线" value="已上线" />
+              <el-option label="已验收" value="已验收" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="负责人">
+            <el-select v-model="filterForm.assigneeId" placeholder="请选择" clearable style="width: 140px">
+              <el-option v-for="user in filterUserList" :key="user.id" :label="user.realName || user.username" :value="user.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item>
+            <el-input v-model="filterForm.keyword" placeholder="关键词搜索" clearable style="width: 220px" @keyup.enter="handleSearch" />
+          </el-form-item>
+        </div>
+        <el-collapse-transition>
+          <div v-show="filterExpanded" class="filter-extra">
+            <el-form-item label="时间维度">
+              <el-select v-model="timeDimension" placeholder="选择时间维度" style="width: 140px">
+                <el-option label="创建时间" value="createdAt" />
+                <el-option label="分析完成" value="analysisCompletedAt" />
+                <el-option label="需求确认" value="confirmAt" />
+                <el-option label="开发完成" value="developmentCompletedAt" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="日期范围">
+              <el-date-picker
+                v-model="timeRange"
+                type="daterange"
+                range-separator="至"
+                start-placeholder="开始日期"
+                end-placeholder="结束日期"
+                value-format="YYYY-MM-DD HH:mm:ss"
+                :default-time="defaultTime"
+                style="width: 300px"
+              />
+            </el-form-item>
+          </div>
+        </el-collapse-transition>
+        <el-link type="primary" underline="never" class="filter-toggle" @click="filterExpanded = !filterExpanded">
+          {{ filterExpanded ? '收起' : '展开' }}
+          <el-icon class="filter-toggle__icon" :class="{ 'is-expanded': filterExpanded }"><ArrowDown /></el-icon>
+        </el-link>
       </el-form>
       <template #actions>
         <el-button type="primary" @click="handleSearch">搜索</el-button>
@@ -59,6 +79,7 @@
             <el-button @click="handleExport">导出Excel</el-button>
           </template>
           <template #right>
+            <el-button :icon="Setting" circle @click="showColumnConfig = true" title="列设置" />
             <el-button type="danger" :disabled="selectedIds.length === 0" @click="handleBatchDelete">
               批量删除
             </el-button>
@@ -85,43 +106,46 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="需求标题" min-width="220">
-            <template #default="{ row }">
-              <el-link type="primary" @click="handleViewDetail(row.id)">{{ row.title }}</el-link>
-            </template>
-          </el-table-column>
-          <el-table-column label="类型" width="100" align="center">
-            <template #default="{ row }">
-              <el-tag>{{ typeLabel(row.type) }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="优先级" width="90" align="center">
-            <template #default="{ row }">
-              <el-tag :type="priorityTagType(row.priority)">{{ priorityLabel(row.priority) }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="状态" width="100" align="center">
-            <template #default="{ row }">
-              <el-tag :type="statusTagType(row.status)">{{ row.status }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="负责人" width="100" align="center">
-            <template #default="{ row }">{{ row.assigneeName || '-' }}</template>
-          </el-table-column>
-          <el-table-column label="创建时间" width="170" align="center">
-            <template #default="{ row }">{{ row.createdAt }}</template>
-          </el-table-column>
-          <el-table-column label="操作" width="220" align="center" fixed="right">
-            <template #default="{ row }">
-              <el-button link type="primary" @click="handleEdit(row)">编辑</el-button>
-              <el-button link type="primary" @click="handleViewDetail(row.id)">查看详情</el-button>
-              <el-popconfirm title="确定删除该需求吗？" @confirm="handleDelete(row.id)">
-                <template #reference>
-                  <el-button link type="danger">删除</el-button>
+          <template v-for="col in visibleColumns" :key="col.key">
+            <el-table-column
+              :label="col.label"
+              :width="col.width"
+              :min-width="col.minWidth"
+              :align="col.align || 'center'"
+              :fixed="col.fixed"
+            >
+              <template #default="{ row }">
+                <template v-if="col.key === 'title'">
+                  <el-link type="primary" @click="handleViewDetail(row.id)">{{ row.title }}</el-link>
                 </template>
-              </el-popconfirm>
-            </template>
-          </el-table-column>
+                <template v-else-if="col.key === 'type'">
+                  <el-tag>{{ typeLabel(row.type) }}</el-tag>
+                </template>
+                <template v-else-if="col.key === 'priority'">
+                  <el-tag :type="priorityTagType(row.priority)">{{ priorityLabel(row.priority) }}</el-tag>
+                </template>
+                <template v-else-if="col.key === 'status'">
+                  <el-tag :type="statusTagType(row.status)">{{ row.status }}</el-tag>
+                </template>
+                <template v-else-if="col.key === 'operations'">
+                  <el-tooltip content="查看详情" placement="top">
+                    <el-button link type="primary" :icon="View" @click="handleViewDetail(row.id)" />
+                  </el-tooltip>
+                  <el-tooltip content="编辑" placement="top">
+                    <el-button link type="primary" :icon="Edit" @click="handleEdit(row)" />
+                  </el-tooltip>
+                  <el-popconfirm title="确定删除该需求吗？" @confirm="handleDelete(row.id)">
+                    <template #reference>
+                      <el-button link type="danger" :icon="Delete" title="删除" />
+                    </template>
+                  </el-popconfirm>
+                </template>
+                <template v-else>
+                  {{ row[col.key as keyof Requirement] ?? '-' }}
+                </template>
+              </template>
+            </el-table-column>
+          </template>
         </el-table>
       </template>
 
@@ -137,16 +161,37 @@
         />
       </template>
     </TableCard>
+
+    <!-- 列配置弹窗 -->
+    <el-dialog v-model="showColumnConfig" title="列显示设置" width="400px">
+      <div class="column-config">
+        <el-checkbox v-model="checkAll" :indeterminate="isIndeterminate" @change="handleCheckAll">
+          全选
+        </el-checkbox>
+        <el-divider />
+        <el-checkbox-group v-model="selectedColumnKeys">
+          <div v-for="col in allColumns.filter(c => c.key !== 'operations')" :key="col.key" class="column-item">
+            <el-checkbox :label="col.key">{{ col.label }}</el-checkbox>
+          </div>
+        </el-checkbox-group>
+      </div>
+      <template #footer>
+        <el-button @click="showColumnConfig = false">取消</el-button>
+        <el-button type="primary" @click="saveColumns">保存</el-button>
+      </template>
+    </el-dialog>
   </PageContainer>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Setting, View, Edit, Delete, ArrowDown } from '@element-plus/icons-vue'
 import * as XLSX from 'xlsx'
 import { requirementApi, userApi } from '@/api'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
+import { getColumnConfig, saveColumnConfig } from '@/api/modules/requirement'
 import type { Requirement, RequirementQuery } from '@/types/requirement'
 import type { User } from '@/types/user'
 import { normalizeText } from '@/utils/format'
@@ -157,12 +202,92 @@ import Toolbar from '@/components/common/Toolbar.vue'
 
 const router = useRouter()
 
-// Default projectId
+const filterExpanded = ref(true)
+
 const DEFAULT_PROJECT_ID = 1
 
+interface ColumnDef {
+  key: string
+  label: string
+  width?: number
+  minWidth?: number
+  align?: string
+  fixed?: string | false
+}
+
+// 所有可用列定义
+const allColumns: ColumnDef[] = [
+  { key: 'title', label: '需求标题', minWidth: 220, fixed: false },
+  { key: 'type', label: '类型', width: 100 },
+  { key: 'priority', label: '优先级', width: 90 },
+  { key: 'status', label: '状态', width: 100 },
+  { key: 'creatorName', label: '创建人', width: 100 },
+  { key: 'assigneeName', label: '负责人', width: 100 },
+  { key: 'opsFollowName', label: '运营跟进人', width: 110 },
+  { key: 'maintFollowName', label: '运维跟进人', width: 110 },
+  { key: 'departmentName', label: '归属部门', width: 120 },
+  { key: 'createdAt', label: '创建时间', width: 170 },
+  { key: 'analysisCompletedAt', label: '分析完成时间', width: 160 },
+  { key: 'confirmAt', label: '需求确认时间', width: 160 },
+  { key: 'developmentCompletedAt', label: '开发完成时间', width: 160 },
+  { key: 'operations', label: '操作', width: 120, fixed: 'right' },
+]
+
+// 默认显示的列
+const defaultColumnKeys = ['title', 'type', 'priority', 'status', 'creatorName', 'assigneeName', 'createdAt', 'operations']
+
+const selectedColumnKeys = ref<string[]>([...defaultColumnKeys])
+const showColumnConfig = ref(false)
+
+const checkAll = computed(() => {
+  const optional = allColumns.filter(c => c.key !== 'operations')
+  return optional.every(c => selectedColumnKeys.value.includes(c.key))
+})
+
+const isIndeterminate = computed(() => {
+  const optional = allColumns.filter(c => c.key !== 'operations')
+  const checked = optional.filter(c => selectedColumnKeys.value.includes(c.key)).length
+  return checked > 0 && checked < optional.length
+})
+
+function handleCheckAll(val: boolean) {
+  const optional = allColumns.filter(c => c.key !== 'operations')
+  selectedColumnKeys.value = val ? optional.map(c => c.key) : []
+}
+
+const visibleColumns = computed(() => {
+  const cols = allColumns.filter(c => selectedColumnKeys.value.includes(c.key))
+  if (!cols.find(c => c.key === 'operations')) {
+    cols.push(allColumns.find(c => c.key === 'operations')!)
+  }
+  return cols
+})
+
+async function loadColumnConfig() {
+  try {
+    const res = await getColumnConfig('requirement_list')
+    if (res && Array.isArray(res)) {
+      selectedColumnKeys.value = [...res, 'operations']
+    }
+  } catch {
+    // 使用默认配置
+  }
+}
+
+async function saveColumns() {
+  try {
+    const keys = selectedColumnKeys.value.filter(k => k !== 'operations')
+    await saveColumnConfig('requirement_list', keys)
+    ElMessage.success('列配置已保存')
+    showColumnConfig.value = false
+  } catch {
+    ElMessage.error('保存列配置失败')
+  }
+}
+
+// 配置
 const configTypes = ref<any[]>([])
 const configPriorities = ref<any[]>([])
-
 const typeMap = ref<Record<string, string>>({})
 const priorityMap = ref<Record<string, string>>({})
 
@@ -191,7 +316,7 @@ function priorityLabel(code: string) {
   return priorityMap.value[code] || code || '-'
 }
 
-// Filter user list (动态加载用户列表用于过滤)
+// Filter user list
 const filterUserList = ref<User[]>([])
 
 async function loadFilterUsers() {
@@ -211,6 +336,11 @@ const filterForm = reactive({
   assigneeId: undefined as number | undefined,
   keyword: '',
 })
+
+// 时间筛选
+const timeDimension = ref<'createdAt' | 'analysisCompletedAt' | 'confirmAt' | 'developmentCompletedAt'>('createdAt')
+const timeRange = ref<[string, string] | null>(null)
+const defaultTime = [new Date(2000, 0, 1, 0, 0, 0), new Date(2000, 0, 1, 23, 59, 59)]
 
 // Table data
 const loading = ref(false)
@@ -239,6 +369,24 @@ async function fetchData() {
     if (filterForm.assigneeId) params.assigneeId = filterForm.assigneeId
     if (filterForm.keyword) params.keyword = filterForm.keyword
 
+    // 时间维度筛选
+    if (timeRange.value) {
+      const [start, end] = timeRange.value
+      if (timeDimension.value === 'createdAt') {
+        params.createdAtStart = start
+        params.createdAtEnd = end
+      } else if (timeDimension.value === 'analysisCompletedAt') {
+        params.analysisCompletedAtStart = start
+        params.analysisCompletedAtEnd = end
+      } else if (timeDimension.value === 'confirmAt') {
+        params.confirmAtStart = start
+        params.confirmAtEnd = end
+      } else if (timeDimension.value === 'developmentCompletedAt') {
+        params.developmentCompletedAtStart = start
+        params.developmentCompletedAtEnd = end
+      }
+    }
+
     const res = await requirementApi.getRequirementList(params)
     const data = res
     tableData.value = data.list
@@ -262,6 +410,8 @@ function handleReset() {
   filterForm.status = ''
   filterForm.assigneeId = undefined
   filterForm.keyword = ''
+  timeDimension.value = 'createdAt'
+  timeRange.value = null
   pagination.pageNum = 1
   fetchData()
 }
@@ -321,8 +471,15 @@ async function handleExport() {
       '类型': typeLabel(row.type),
       '优先级': priorityLabel(row.priority),
       '状态': row.status || '',
+      '创建人': row.creatorName || '-',
       '负责人': row.assigneeName || '-',
+      '运营跟进人': row.opsFollowName || '-',
+      '运维跟进人': row.maintFollowName || '-',
+      '归属部门': row.departmentName || '-',
       '创建时间': row.createdAt || '',
+      '分析完成时间': row.analysisCompletedAt || '',
+      '需求确认时间': row.confirmAt || '',
+      '开发完成时间': row.developmentCompletedAt || '',
       '描述': row.description || '',
     }))
 
@@ -330,15 +487,10 @@ async function handleExport() {
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, '需求列表')
 
-    // 设置列宽
     ws['!cols'] = [
-      { wch: 30 }, // 需求标题
-      { wch: 10 }, // 类型
-      { wch: 10 }, // 优先级
-      { wch: 10 }, // 状态
-      { wch: 12 }, // 负责人
-      { wch: 20 }, // 创建时间
-      { wch: 40 }, // 描述
+      { wch: 30 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
+      { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
+      { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 40 },
     ]
 
     const date = new Date().toISOString().slice(0, 10)
@@ -351,25 +503,14 @@ async function handleExport() {
 
 // Tag type helpers
 function priorityTagType(priority: string): string {
-  const map: Record<string, string> = {
-    P0: 'danger',
-    P1: 'warning',
-    P2: 'info',
-    P3: 'success',
-  }
+  const map: Record<string, string> = { P0: 'danger', P1: 'warning', P2: 'info', P3: 'success' }
   return map[priority] || 'info'
 }
 
 function statusTagType(status: string): string {
   const map: Record<string, string> = {
-    '新建': 'info',
-    '待评审': 'info',
-    '评审中': 'warning',
-    '已通过': 'success',
-    '开发中': 'primary',
-    '测试中': 'info',
-    '已上线': 'success',
-    '已验收': 'success',
+    '新建': 'info', '待评审': 'info', '评审中': 'warning', '已通过': 'success',
+    '开发中': 'primary', '测试中': 'info', '已上线': 'success', '已验收': 'success',
   }
   return map[status] || 'info'
 }
@@ -378,6 +519,7 @@ onMounted(() => {
   fetchData()
   loadFilterUsers()
   loadConfig()
+  loadColumnConfig()
 })
 </script>
 
@@ -388,5 +530,25 @@ onMounted(() => {
 
 .expand-row__text {
   color: $text-color-placeholder;
+}
+
+.column-config {
+  .column-item {
+    margin-bottom: 8px;
+  }
+}
+
+.filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+
+  &__icon {
+    transition: transform 0.3s;
+
+    &.is-expanded {
+      transform: rotate(180deg);
+    }
+  }
 }
 </style>

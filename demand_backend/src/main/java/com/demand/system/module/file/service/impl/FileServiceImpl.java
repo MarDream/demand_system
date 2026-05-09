@@ -2,6 +2,7 @@ package com.demand.system.module.file.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.demand.system.common.exception.BusinessException;
+import com.demand.system.module.file.dto.FileUploadDTO;
 import com.demand.system.module.file.entity.FileRecord;
 import com.demand.system.module.file.mapper.FileRecordMapper;
 import com.demand.system.module.file.service.FileService;
@@ -33,7 +34,7 @@ public class FileServiceImpl implements FileService {
     );
 
     @Override
-    public String upload(MultipartFile file, Long uploaderId) {
+    public FileUploadDTO upload(MultipartFile file, Long uploaderId) {
         if (file.isEmpty()) {
             throw new BusinessException("文件不能为空");
         }
@@ -65,12 +66,20 @@ public class FileServiceImpl implements FileService {
             fileRecord.setStorageName(storageName);
             fileRecord.setFileSize(file.getSize());
             fileRecord.setContentType(file.getContentType());
-            fileRecord.setBucketName("demand-system");
+            fileRecord.setBucketName(minioStorageService.getBucketName());
             fileRecord.setUploaderId(uploaderId);
 
             fileRecordMapper.insert(fileRecord);
 
-            return fileUrl;
+            FileUploadDTO result = new FileUploadDTO();
+            result.setFileId(fileRecord.getId());
+            result.setName(originalFilename);
+            result.setUrl(fileUrl);
+            result.setSize(file.getSize());
+            result.setContentType(file.getContentType());
+            result.setBucketName(fileRecord.getBucketName());
+            result.setObjectName(storageName);
+            return result;
         } catch (Exception e) {
             log.error("文件上传失败", e);
             throw new BusinessException("文件上传失败: " + e.getMessage());

@@ -2,6 +2,7 @@ package com.demand.system.common.config;
 
 import com.demand.system.common.utils.JwtUtils;
 import com.demand.system.module.auth.security.UserPrincipal;
+import com.demand.system.module.rbac.support.RbacPermissionResolver;
 import jakarta.servlet.FilterChain;
 import lombok.RequiredArgsConstructor;
 import jakarta.servlet.ServletException;
@@ -24,6 +25,8 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 @Configuration
@@ -35,8 +38,8 @@ public class SecurityConfig {
     private String jwtSecret;
 
     @Bean
-    public JwtAuthenticationFilter jwtAuthenticationFilter() {
-        return new JwtAuthenticationFilter(jwtSecret);
+    public JwtAuthenticationFilter jwtAuthenticationFilter(RbacPermissionResolver rbacPermissionResolver) {
+        return new JwtAuthenticationFilter(jwtSecret, rbacPermissionResolver);
     }
 
     @Bean
@@ -73,6 +76,7 @@ public class SecurityConfig {
     public static class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         private final String jwtSecret;
+        private final RbacPermissionResolver rbacPermissionResolver;
 
         @Override
         protected void doFilterInternal(HttpServletRequest request,
@@ -85,20 +89,23 @@ public class SecurityConfig {
                     if (JwtUtils.isTokenValid(token, jwtSecret)) {
                         Long userId = JwtUtils.getUserId(token, jwtSecret);
                         String username = JwtUtils.getUsername(token, jwtSecret);
-                        List<String> roles = JwtUtils.getRoles(token, jwtSecret);
+                        List<String> roles = rbacPermissionResolver.resolveRoles(userId);
+                        List<String> permissions = rbacPermissionResolver.resolvePermissions(userId, roles);
 
-                        List<SimpleGrantedAuthority> authorities = roles.stream()
+                        LinkedHashSet<String> authorities = new LinkedHashSet<>();
+                        authorities.addAll(roles);
+                        authorities.addAll(permissions);
+
+                        List<SimpleGrantedAuthority> grantedAuthorities = new ArrayList<>(authorities).stream()
                                 .map(SimpleGrantedAuthority::new)
                                 .toList();
 
-                        // 使用UserPrincipal封装用户信息
-                        UserPrincipal principal = new UserPrincipal(userId, username, roles);
+                        UserPrincipal principal = new UserPrincipal(userId, username, roles, permissions);
                         UsernamePasswordAuthenticationToken authentication =
-                                new UsernamePasswordAuthenticationToken(principal, null, authorities);
+                                new UsernamePasswordAuthenticationToken(principal, null, grantedAuthorities);
                         SecurityContextHolder.getContext().setAuthentication(authentication);
                     }
                 } catch (Exception e) {
-                    // Invalid token, continue without authentication
                 }
             }
             filterChain.doFilter(request, response);

@@ -15,7 +15,14 @@
             </el-button>
           </div>
 
-          <el-table :data="types" border style="width: 100%">
+          <el-table ref="typeTableRef" :data="types" border style="width: 100%" row-key="id">
+            <el-table-column width="60" align="center">
+              <template>
+                <el-icon class="drag-handle" style="cursor: move;">
+                  <Rank />
+                </el-icon>
+              </template>
+            </el-table-column>
             <el-table-column prop="name" label="名称" min-width="120" />
             <el-table-column prop="code" label="编码" min-width="100" />
             <el-table-column prop="color" label="颜色" min-width="100">
@@ -52,7 +59,14 @@
             </el-button>
           </div>
 
-          <el-table :data="priorities" border style="width: 100%">
+          <el-table ref="priorityTableRef" :data="priorities" border style="width: 100%" row-key="id">
+            <el-table-column width="60" align="center">
+              <template>
+                <el-icon class="drag-handle" style="cursor: grab;">
+                  <Grid />
+                </el-icon>
+              </template>
+            </el-table-column>
             <el-table-column prop="name" label="名称" min-width="120" />
             <el-table-column prop="code" label="编码" min-width="100" />
             <el-table-column prop="level" label="级别" width="80" align="center" />
@@ -75,6 +89,44 @@
               <template #default="{ row }">
                 <el-button link type="primary" @click="openPriorityDialog(row)">编辑</el-button>
                 <el-button link type="danger" @click="deletePriority(row.id!)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="节点状态" name="nodeStatuses">
+        <div class="tab-content">
+          <div class="tab-header">
+            <el-button type="primary" @click="openNodeStatusDialog()">
+              <el-icon><Plus /></el-icon>
+              新增节点状态
+            </el-button>
+          </div>
+
+          <el-table :data="nodeStatuses" border style="width: 100%">
+            <el-table-column prop="name" label="状态名称" min-width="120" />
+            <el-table-column prop="code" label="编码" min-width="150" />
+            <el-table-column prop="color" label="颜色" min-width="100">
+              <template #default="{ row }">
+                <div class="color-cell">
+                  <span class="color-dot" :style="{ backgroundColor: row.color }"></span>
+                  <span>{{ row.color }}</span>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column label="类型标记" min-width="160">
+              <template #default="{ row }">
+                <el-tag v-if="row.isStart" type="success" size="small" style="margin-right:4px">开始</el-tag>
+                <el-tag v-if="row.isEnd" type="info" size="small" style="margin-right:4px">结束</el-tag>
+                <el-tag v-if="row.isCancel" type="danger" size="small">取消</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="sortOrder" label="排序" width="80" align="center" />
+            <el-table-column label="操作" width="180" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openNodeStatusDialog(row)">编辑</el-button>
+                <el-button link type="danger" @click="deleteNodeStatus(row.id)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -135,20 +187,53 @@
         <el-button type="primary" @click="savePriority">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 节点状态对话框 -->
+    <el-dialog v-model="nodeStatusDialogVisible" :title="editingNodeStatus ? '编辑节点状态' : '新增节点状态'" width="500px">
+      <el-form ref="nodeStatusFormRef" :model="nodeStatusForm" :rules="nodeStatusRules" label-width="100px">
+        <el-form-item label="名称" prop="name">
+          <el-input v-model="nodeStatusForm.name" placeholder="如: 待评审" />
+        </el-form-item>
+        <el-form-item label="编码" prop="code">
+          <el-input v-model="nodeStatusForm.code" placeholder="如: PENDING_REVIEW" />
+        </el-form-item>
+        <el-form-item label="颜色">
+          <el-color-picker v-model="nodeStatusForm.color" show-alpha />
+        </el-form-item>
+        <el-form-item label="排序">
+          <el-input-number v-model="nodeStatusForm.sortOrder" :min="0" />
+        </el-form-item>
+        <el-form-item label="特殊标记">
+          <el-checkbox v-model="nodeStatusForm.isStart">开始状态</el-checkbox>
+          <el-checkbox v-model="nodeStatusForm.isEnd" style="margin-left: 16px">结束状态</el-checkbox>
+          <el-checkbox v-model="nodeStatusForm.isCancel" style="margin-left: 16px">取消状态</el-checkbox>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="nodeStatusDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveNodeStatus">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
-import { requirementConfigApi, type RequirementType, type Priority } from '@/api/modules/requirementConfig'
+import { Plus, Rank, Grid } from '@element-plus/icons-vue'
+import { requirementConfigApi, type RequirementType, type Priority, type SortItem } from '@/api/modules/requirementConfig'
+import { nodeStatusApi, type NodeStatus } from '@/api/modules/workflow-engine'
 import { normalizeText } from '@/utils/format'
+import Sortable, { type SortableEvent } from 'sortablejs'
 
 const activeTab = ref('types')
 const types = ref<RequirementType[]>([])
 const priorities = ref<Priority[]>([])
+
+// 表格ref
+const typeTableRef = ref()
+const priorityTableRef = ref()
 
 // 类型对话框
 const typeDialogVisible = ref(false)
@@ -317,9 +402,165 @@ const deletePriority = async (id: number) => {
   }
 }
 
+// 初始化拖拽排序
+const initTypeSortable = () => {
+  nextTick(() => {
+    const el = typeTableRef.value?.$el.querySelector('.el-table__body-wrapper tbody')
+    if (!el) return
+
+    Sortable.create(el, {
+      handle: '.drag-handle',
+      animation: 150,
+      ghostClass: 'sortable-ghost',
+      onEnd: async (evt: SortableEvent) => {
+        const { oldIndex, newIndex } = evt
+        if (oldIndex === newIndex) return
+
+        // 更新本地数据
+        const movedItem = types.value.splice(oldIndex!, 1)[0]
+        types.value.splice(newIndex!, 0, movedItem)
+
+        // 重新计算sortOrder
+        const items: SortItem[] = types.value.map((item, index) => ({
+          id: item.id!,
+          sortOrder: index
+        }))
+
+        try {
+          await requirementConfigApi.sortTypes(items)
+          ElMessage.success('排序已保存')
+          loadTypes()
+        } catch (error) {
+          ElMessage.error('排序保存失败')
+          loadTypes() // 恢复原始顺序
+        }
+      }
+    })
+  })
+}
+
+const initPrioritySortable = () => {
+  nextTick(() => {
+    const el = priorityTableRef.value?.$el.querySelector('.el-table__body-wrapper tbody')
+    if (!el) return
+
+    Sortable.create(el, {
+      handle: '.drag-handle',
+      animation: 150,
+      ghostClass: 'sortable-ghost',
+      onEnd: async (evt: SortableEvent) => {
+        const { oldIndex, newIndex } = evt
+        if (oldIndex === newIndex) return
+
+        // 更新本地数据
+        const movedItem = priorities.value.splice(oldIndex!, 1)[0]
+        priorities.value.splice(newIndex!, 0, movedItem)
+
+        // 重新计算sortOrder
+        const items: SortItem[] = priorities.value.map((item, index) => ({
+          id: item.id!,
+          sortOrder: index
+        }))
+
+        try {
+          await requirementConfigApi.sortPriorities(items)
+          ElMessage.success('排序已保存')
+          loadPriorities()
+        } catch (error) {
+          ElMessage.error('排序保存失败')
+          loadPriorities() // 恢复原始顺序
+        }
+      }
+    })
+  })
+}
+
+// 节点状态管理
+const nodeStatuses = ref<NodeStatus[]>([])
+const nodeStatusDialogVisible = ref(false)
+const nodeStatusFormRef = ref<FormInstance>()
+const editingNodeStatus = ref<NodeStatus | null>(null)
+
+const nodeStatusForm = ref({
+  name: '',
+  code: '',
+  color: '#409EFF',
+  sortOrder: 0,
+  isStart: false,
+  isEnd: false,
+  isCancel: false
+})
+
+const nodeStatusRules: FormRules = {
+  name: [{ required: true, message: '请输入状态名称', trigger: 'blur' }],
+  code: [{ required: true, message: '请输入状态编码', trigger: 'blur' }]
+}
+
+const loadNodeStatuses = async () => {
+  try {
+    const res = await nodeStatusApi.list() as any
+    nodeStatuses.value = Array.isArray(res) ? res : res?.data || []
+  } catch (error) {
+    console.error('加载节点状态失败', error)
+  }
+}
+
+const openNodeStatusDialog = (status?: NodeStatus) => {
+  editingNodeStatus.value = status || null
+  if (status) {
+    nodeStatusForm.value = {
+      name: status.name,
+      code: status.code,
+      color: status.color || '#409EFF',
+      sortOrder: status.sortOrder || 0,
+      isStart: status.isStart || false,
+      isEnd: status.isEnd || false,
+      isCancel: status.isCancel || false
+    }
+  } else {
+    nodeStatusForm.value = { name: '', code: '', color: '#409EFF', sortOrder: 0, isStart: false, isEnd: false, isCancel: false }
+  }
+  nodeStatusDialogVisible.value = true
+}
+
+const saveNodeStatus = async () => {
+  if (!nodeStatusFormRef.value) return
+  await nodeStatusFormRef.value.validate(async (valid) => {
+    if (valid) {
+      try {
+        if (editingNodeStatus.value?.id) {
+          await nodeStatusApi.update(editingNodeStatus.value.id, nodeStatusForm.value)
+          ElMessage.success('更新成功')
+        } else {
+          await nodeStatusApi.create(nodeStatusForm.value)
+          ElMessage.success('创建成功')
+        }
+        nodeStatusDialogVisible.value = false
+        loadNodeStatuses()
+      } catch (error) {
+        ElMessage.error('保存失败')
+      }
+    }
+  })
+}
+
+const deleteNodeStatus = async (id: number) => {
+  await ElMessageBox.confirm('确定要删除该节点状态吗？', '提示', { type: 'warning' })
+  try {
+    await nodeStatusApi.delete(id)
+    ElMessage.success('删除成功')
+    loadNodeStatuses()
+  } catch (error) {
+    ElMessage.error('删除失败')
+  }
+}
+
 onMounted(() => {
   loadTypes()
   loadPriorities()
+  loadNodeStatuses()
+  initTypeSortable()
+  initPrioritySortable()
 })
 </script>
 
@@ -374,5 +615,26 @@ onMounted(() => {
   margin-left: 8px;
   color: #909399;
   font-size: 12px;
+}
+
+.drag-handle {
+  cursor: move;
+  color: #909399;
+  transition: color 0.3s;
+
+  &:hover {
+    color: #409EFF;
+  }
+}
+
+:deep(.sortable-ghost) {
+  opacity: 0.4;
+  background: #f5f7fa;
+}
+
+:deep(.el-table__body-wrapper tbody) {
+  tr {
+    transition: transform 0.3s;
+  }
 }
 </style>

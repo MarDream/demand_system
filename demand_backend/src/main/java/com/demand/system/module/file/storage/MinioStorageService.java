@@ -23,6 +23,10 @@ public class MinioStorageService {
     @Value("${minio.endpoint}")
     private String endpoint;
 
+    public String getBucketName() {
+        return bucketName;
+    }
+
     public String upload(InputStream inputStream, String fileName, String contentType) throws Exception {
         minioClient.putObject(PutObjectArgs.builder()
                 .bucket(bucketName)

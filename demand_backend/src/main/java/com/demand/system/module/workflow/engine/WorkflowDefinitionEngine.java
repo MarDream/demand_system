@@ -1,6 +1,7 @@
 package com.demand.system.module.workflow.engine;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.demand.system.module.requirement.dto.RequirementFieldAlias;
 import com.demand.system.module.requirement.entity.Requirement;
 import com.demand.system.module.workflow.dto.EdgeDTO;
 import com.demand.system.module.workflow.dto.NodeConfigDTO;
@@ -678,7 +679,7 @@ public class WorkflowDefinitionEngine {
             return true;
         }
 
-        String field = textValue(node, "field");
+        String field = RequirementFieldAlias.normalize(textValue(node, "field"));
         if (!StringUtils.hasText(field)) {
             return true;
         }
@@ -722,9 +723,11 @@ public class WorkflowDefinitionEngine {
             case "assigneeId" -> requirement.getAssigneeId();
             case "moduleId" -> requirement.getModuleId();
             case "iterationId" -> requirement.getIterationId();
+            case "startDate" -> requirement.getStartDate();
             case "dueDate" -> requirement.getDueDate();
             case "estimatedHours" -> requirement.getEstimatedHours();
             case "actualHours" -> requirement.getActualHours();
+            case "attachments" -> requirement.getAttachments();
             case "createdAt" -> requirement.getCreatedAt();
             case "updatedAt" -> requirement.getUpdatedAt();
             default -> null;

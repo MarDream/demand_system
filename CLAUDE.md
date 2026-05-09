@@ -1,159 +1,66 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+需求管理系统 — 需求全生命周期管理工具。
 
-## Project Overview
+## 技术栈
 
-需求管理系统 (Demand System) - 一站式需求管理工具，覆盖从需求收集到上线验收的全生命周期。
+Vue 3 + TypeScript + Element Plus + Spring Boot 3.2 + MyBatis-Plus + MySQL 8 + Redis + RabbitMQ + MinIO + Elasticsearch
 
-### Technology Stack
-
-| Layer | Technology |
-|-------|------------|
-| Frontend | Vue 3 + TypeScript + Vite + Element Plus + Pinia |
-| Backend | Spring Boot 3.2 + MyBatis-Plus + Spring Security |
-| Database | MySQL 8.0 |
-| Cache | Redis |
-| MQ | RabbitMQ |
-| File Storage | MinIO |
-| Search | Elasticsearch |
-
-### Directory Structure
+## 目录
 
 ```
-demand_system/
-├── demand_frontend/          # Vue3 Web端 (端口517x)
-├── demand_backend/            # Spring Boot后端 (端口8081)
-├── database/                 # 数据库初始化脚本
-├── scripts/                  # Docker Compose配置
-└── docs/                    # PRD文档
+demand_frontend/    # 前端 (Vite, 端口517x)
+demand_backend/     # 后端 (Spring Boot, 端口8081)
+database/           # 数据库初始化脚本
+scripts/            # Docker Compose
 ```
 
-## Development Commands
+## 关键配置
 
-### Frontend (demand_frontend/)
+- 基础设施均为Docker容器部署 (MySQL/Redis/RabbitMQ/MinIO/Elasticsearch)
+- RabbitMQ: `admin/admin`, MinIO: `admin/admin123456`
+- JWT: 256位+ secret, Access 2h, Refresh 7d
+- 配置文件: `demand_backend/src/main/resources/application-dev.yml`，启动先加载记录基础设施对应的访问账号密码信息
+- **端口占用处理**: 启动服务时若端口被占用，直接杀掉占用进程后重启，不手动排查
+- **SQL维护**: 所有SQL变更整合到 database/init.sql，不新增独立SQL文件
 
-```bash
-npm install                    # 安装依赖
-npm run dev                    # 开发服务器 (localhost:517x)
-npm run build                  # 生产构建
-npm run preview                # 预览构建结果
-```
+## 架构约定
 
-### Backend (demand_backend/)
+### 后端分层
 
-```bash
-mvn compile                   # 编译
-mvn package -DskipTests       # 构建JAR (跳过测试)
-mvn spring-boot:run           # 开发模式启动
-java -jar target/demand-system-1.0.0-SNAPSHOT.jar  # 生产启动
-```
+模块统一结构: `controller / service / mapper / entity / dto / converter`
 
-### Infrastructure (scripts/)
+| 模块 | 说明 |
+|------|------|
+| auth | 认证授权 |
+| requirement | 需求管理 |
+| workflow | 工作流 (StateMachine + PermissionEngine, 位于 workflow/engine/) |
+| iteration | 迭代管理 |
+| review | 评审管理 |
+| project | 项目管理 |
+| user | 用户组织 |
+| relation | 需求关联 |
+| statistics | 统计报表 |
+| notification | 通知中心 |
+| file | 文件服务 |
 
-```bash
-docker-compose -f scripts/docker-compose.yml up -d   # 启动所有基础设施
-docker ps                                              # 查看运行中的容器
-```
-
-**容器端口映射**：
-- MySQL: 3306
-- Redis: 6379
-- RabbitMQ: 5672 (AMQP), 15672 (管理界面)
-- MinIO: 9000 (API), 9001 (控制台)
-- Elasticsearch: 9200
-
-## Critical Configuration
-
-### 基础设施认证 (必须与docker-compose.yml一致)
-
-**RabbitMQ**: `admin / admin`
-**MinIO**: `admin / admin123456`
-
-配置文件: `demand_backend/src/main/resources/application-dev.yml`
-
-### JWT Configuration
-
-- Secret: 需256位以上
-- Access Token有效期: 2小时 (7200000ms)
-- Refresh Token有效期: 7天 (604800000ms)
-
-## Architecture Patterns
-
-### Backend (分层结构)
+### 前端结构
 
 ```
-module/
-├── auth/           # 认证授权
-├── user/           # 用户与组织架构
-├── project/        # 项目管理
-├── requirement/    # 需求管理
-├── workflow/       # 工作流引擎 (StateMachine + PermissionEngine)
-├── iteration/      # 迭代管理
-├── review/         # 评审管理
-├── relation/       # 需求关联
-├── statistics/     # 统计报表
-├── notification/  # 通知中心
-└── file/          # 文件服务
+api/modules/     # 按模块的API定义
+components/      # 公共组件
+composables/     # 组合式函数 (useAuth/usePermission/useWorkflow)
+stores/          # Pinia状态管理
+views/           # 页面
+types/           # TypeScript类型
 ```
 
-**每个模块遵循统一结构**: `controller / service / mapper / entity / dto / converter`
+## 代码规范
 
-### Frontend (Vue3最佳实践)
+- 后端: Service承载业务逻辑, Controller仅校验调用; LambdaQueryWrapper查询; @Version乐观锁; deleted_at软删除; 用户ID从SecurityUtils.getCurrentUserId()获取
+- 前端: Composition API + script setup; 组件以App或业务前缀命名; 工具函数放utils/不依赖Vue实例
 
-```
-src/
-├── api/modules/    # 按业务模块的API定义
-├── components/     # 公共组件 (common/requirement/workflow/charts/layout)
-├── composables/    # 组合式函数 (useAuth/usePermission/useWorkflow)
-├── stores/         # Pinia状态管理
-├── views/          # 页面视图
-└── types/          # TypeScript类型定义
-```
+## API规范
 
-### Security Architecture
-
-- JWT Token认证 (Spring Security + 自定义JwtAuthenticationFilter)
-- RBAC权限控制 (@PreAuthorize注解)
-- 数据权限: 项目级隔离
-- Token刷新: 前端自动处理401并刷新
-
-### Workflow Engine
-
-核心组件位于 `workflow/engine/`:
-- **StateMachine**: 状态流转执行器，含乐观锁并发控制
-- **PermissionEngine**: 权限校验引擎，支持角色/用户/动态指定人
-
-## Code Conventions
-
-### Backend
-
-- Service层承载所有业务逻辑，Controller仅做参数校验和调用
-- 使用MyBatis-Plus的LambdaQueryWrapper进行类型安全查询
-- 使用@Version字段实现乐观锁
-- 软删除: 使用deleted_at字段，0=已删除，null=正常
-- 用户ID: 必须从SecurityUtils.getCurrentUserId()获取，禁止硬编码
-
-### Frontend
-
-- 使用Composition API + `<script setup>`
-- API返回类型统一使用泛型 `Promise<T>`
-- 组件命名: 公共组件以`App`或业务前缀开头
-- 工具函数: 放utils/目录，不依赖Vue实例
-
-## API Standards
-
-- Base Path: `/api/v1/`
-- 统一响应格式: `{ code, message, data }`
-- 分页格式: `{ list, total, pageNum, pageSize }`
-- 认证: `Authorization: Bearer <token>`
-- Swagger文档: `/swagger-ui.html`
-
-### Key API Endpoints
-
-| Resource | Endpoints |
-|----------|-----------|
-| /requirements | GET, POST, GET/:id, PUT/:id, DELETE/:id |
-| /workflow | GET/states, POST/transition, GET/versions |
-| /iterations | GET, POST, PUT/:id, POST/:id/requirements |
-| /auth | POST/login, POST/refresh, GET/currentUser |
+- Base: `/api/v1/`, 响应 `{ code, message, data }`, 分页 `{ list, total, pageNum, pageSize }`
+- 认证: `Bearer <token>`, Swagger: `/swagger-ui.html`

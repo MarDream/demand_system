@@ -33,3 +33,12 @@ export function getRequirementHistory(id: number) {
 export function getRequirementChildren(parentId: number) {
   return request.get<ApiResponse<Requirement[]>>(`/v1/requirements/${parentId}/children`) as unknown as Promise<Requirement[]>
 }
+
+// 列配置 API
+export function getColumnConfig(pageKey: string) {
+  return request.get<ApiResponse<string[]>>(`/v1/column-config/${pageKey}`) as unknown as Promise<string[] | null>
+}
+
+export function saveColumnConfig(pageKey: string, columns: string[]) {
+  return request.put<ApiResponse>(`/v1/column-config/${pageKey}`, { columns }) as unknown as Promise<void>
+}

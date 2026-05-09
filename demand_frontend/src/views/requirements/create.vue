@@ -10,28 +10,28 @@
       <h2 class="page-title">{{ isEditMode ? '编辑需求' : '新建需求' }}</h2>
     </div>
 
-    <div class="form-container">
-      <!-- Left Panel: Main Form -->
-      <div class="left-panel">
+    <el-row :gutter="20" class="form-container">
+      <el-col :xs="24" :lg="16" class="left-panel">
         <el-card class="form-card">
-          <el-form ref="formRef" :model="formData" :rules="formRules" label-position="top">
+          <template #header>
+            <div class="card-titlebar">
+              <div class="card-title">需求内容</div>
+              <div class="card-subtitle">填写标题与描述，并按需关联需求与附件</div>
+            </div>
+          </template>
+          <el-form ref="formRef" :model="formData" :rules="formRules" label-position="top" @submit.prevent>
             <!-- 需求类型 & 优先级 -->
             <div class="inline-fields">
-              <el-form-item label="需求类型" prop="type" class="inline-item">
-                <el-select v-model="formData.type" placeholder="请选择" style="width: 100%">
-                  <el-option
-                    v-for="t in configTypes"
-                    :key="t.code"
-                    :label="t.name"
-                    :value="t.code"
-                  >
-                    <span v-if="t.color" class="type-option">
-                      <span class="type-dot" :style="{ backgroundColor: t.color }"></span>
-                      {{ t.name }}
-                    </span>
-                    <span v-else>{{ t.name }}</span>
-                  </el-option>
-                </el-select>
+              <el-form-item v-if="isEditMode" label="需求类型" prop="type" class="inline-item">
+                <el-input
+                  :model-value="selectedTypeLabel"
+                  readonly
+                  placeholder="请先在需求配置中维护需求类型"
+                >
+                  <template #prefix>
+                    <span v-if="selectedTypeColor" class="type-dot" :style="{ backgroundColor: selectedTypeColor }"></span>
+                  </template>
+                </el-input>
               </el-form-item>
 
               <el-form-item label="优先级" prop="priority" class="inline-item">
@@ -63,134 +63,98 @@
             </el-form-item>
 
             <!-- 需求描述 -->
-            <el-form-item label="需求描述" prop="description">
-              <div class="editor-wrapper">
-                <div class="editor-toolbar">
-                  <el-tooltip content="撤销" placement="top">
-                    <el-button @click="editor?.chain().focus().undo().run()" :disabled="!editor?.can().undo()">
-                      <el-icon><RefreshLeft /></el-icon>
-                    </el-button>
-                  </el-tooltip>
-                  <el-tooltip content="重做" placement="top">
-                    <el-button @click="editor?.chain().focus().redo().run()" :disabled="!editor?.can().redo()">
-                      <el-icon><RefreshRight /></el-icon>
-                    </el-button>
-                  </el-tooltip>
-                  <el-divider direction="vertical" />
-                  <el-tooltip content="标题1" placement="top">
-                    <el-button @click="editor?.chain().focus().toggleHeading({ level: 1 }).run()" :class="{ 'is-active': editor?.isActive('heading', { level: 1 }) }">H1</el-button>
-                  </el-tooltip>
-                  <el-tooltip content="标题2" placement="top">
-                    <el-button @click="editor?.chain().focus().toggleHeading({ level: 2 }).run()" :class="{ 'is-active': editor?.isActive('heading', { level: 2 }) }">H2</el-button>
-                  </el-tooltip>
-                  <el-tooltip content="标题3" placement="top">
-                    <el-button @click="editor?.chain().focus().toggleHeading({ level: 3 }).run()" :class="{ 'is-active': editor?.isActive('heading', { level: 3 }) }">H3</el-button>
-                  </el-tooltip>
-                  <el-divider direction="vertical" />
-                  <el-tooltip content="加粗" placement="top">
-                    <el-button @click="editor?.chain().focus().toggleBold().run()" :class="{ 'is-active': editor?.isActive('bold') }">
-                      <el-icon><Edit /></el-icon>
-                    </el-button>
-                  </el-tooltip>
-                  <el-tooltip content="斜体" placement="top">
-                    <el-button @click="editor?.chain().focus().toggleItalic().run()" :class="{ 'is-active': editor?.isActive('italic') }">
-                      <span class="toolbar-text-italic">I</span>
-                    </el-button>
-                  </el-tooltip>
-                  <el-tooltip content="删除线" placement="top">
-                    <el-button @click="editor?.chain().focus().toggleStrike().run()" :class="{ 'is-active': editor?.isActive('strike') }">
-                      <el-icon><Close /></el-icon>
-                    </el-button>
-                  </el-tooltip>
-                  <el-divider direction="vertical" />
-                  <el-tooltip content="有序列表" placement="top">
-                    <el-button @click="editor?.chain().focus().toggleOrderedList().run()" :class="{ 'is-active': editor?.isActive('orderedList') }">
-                      <el-icon><List /></el-icon>
-                    </el-button>
-                  </el-tooltip>
-                  <el-tooltip content="无序列表" placement="top">
-                    <el-button @click="editor?.chain().focus().toggleBulletList().run()" :class="{ 'is-active': editor?.isActive('bulletList') }">
-                      <el-icon><List /></el-icon>
-                    </el-button>
-                  </el-tooltip>
-                  <el-divider direction="vertical" />
-                  <el-tooltip content="引用" placement="top">
-                    <el-button @click="editor?.chain().focus().toggleBlockquote().run()" :class="{ 'is-active': editor?.isActive('blockquote') }">
-                      <span class="toolbar-text-quote">"</span>
-                    </el-button>
-                  </el-tooltip>
-                  <el-tooltip content="代码" placement="top">
-                    <el-button @click="editor?.chain().focus().toggleCode().run()" :class="{ 'is-active': editor?.isActive('code') }">
-                      <span class="toolbar-text-code">&lt;/&gt;</span>
-                    </el-button>
-                  </el-tooltip>
-                  <el-divider direction="vertical" />
-                  <el-tooltip content="插入链接" placement="top">
-                    <el-button @click="setLink" :class="{ 'is-active': editor?.isActive('link') }">
-                      <el-icon><Link /></el-icon>
-                    </el-button>
-                  </el-tooltip>
-                  <el-tooltip content="插入图片" placement="top">
-                    <el-button @click="addImage">
-                      <el-icon><Picture /></el-icon>
-                    </el-button>
-                  </el-tooltip>
-                  <el-divider direction="vertical" />
-                  <el-tooltip content="清除格式" placement="top">
-                    <el-button @click="editor?.chain().focus().unsetAllMarks().clearNodes().run()">
+            <el-form-item label="需求描述" prop="description" class="description-item">
+              <div
+                class="editor-wrapper"
+                :class="{ 'editor-wrapper--dragover': attachmentDragover }"
+                @dragover.prevent="attachmentDragover = true"
+                @dragleave.prevent="attachmentDragover = false"
+                @drop.prevent="handleAttachmentDrop"
+              >
+                <IsleEditorToolbar v-if="editorInstance" :editor="editorInstance" />
+                <IsleEditor v-model="formData.description" :extensions="editorExtensions" locale="zh" @create="onEditorCreate" />
+                <div v-if="attachmentDragover" class="editor-drop-overlay">
+                  <el-icon :size="32"><Upload /></el-icon>
+                  <span>拖放文件到此处上传</span>
+                </div>
+              </div>
+            </el-form-item>
+
+            <!-- 关联需求 & 附件 -->
+            <div class="extra-section">
+              <!-- 关联需求 -->
+              <div class="extra-row">
+                <div class="extra-row-label">关联需求</div>
+                <div class="extra-row-content">
+                  <el-button size="small" @click="showRelationDialog = true">
+                    <el-icon><Plus /></el-icon>
+                    添加
+                  </el-button>
+                  <span v-if="relatedRequirements.length > 0" class="relation-count">已关联 {{ relatedRequirements.length }} 个</span>
+                </div>
+              </div>
+              <el-table v-if="relatedRequirements.length > 0" :data="relatedRequirements" size="small" class="relation-table">
+                <el-table-column prop="title" label="标题" min-width="200" />
+                <el-table-column v-if="isEditMode" prop="type" label="类型" width="100">
+                  <template #default="{ row }">
+                    <el-tag size="small">{{ row.type }}</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="relationType" label="关联类型" width="120">
+                  <template #default="{ row }">
+                    <el-select v-model="row.relationType" size="small" style="width: 100%">
+                      <el-option label="阻塞" value="blocks" />
+                      <el-option label="被阻塞" value="blocked_by" />
+                      <el-option label="包含" value="contains" />
+                      <el-option label="被包含" value="contained_by" />
+                      <el-option label="相关" value="relates_to" />
+                    </el-select>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="60" align="center">
+                  <template #default="{ row }">
+                    <el-button type="danger" link size="small" @click="removeRelation(row)">
                       <el-icon><Delete /></el-icon>
                     </el-button>
-                  </el-tooltip>
-                </div>
-                <editor-content :editor="editor" class="editor-content" />
-              </div>
-            </el-form-item>
+                  </template>
+                </el-table-column>
+              </el-table>
+              <el-empty v-else-if="isEditMode" description="暂无关联需求" :image-size="40" />
 
-            <!-- 关联需求 -->
-            <el-form-item label="关联需求">
-              <div class="relation-section">
-                <div class="relation-header">
-                  <span>已关联 {{ relatedRequirements.length }} 个需求</span>
-                  <el-button type="primary" size="small" @click="showRelationDialog = true">
-                    <el-icon><Plus /></el-icon>
-                    添加关联
-                  </el-button>
+              <!-- 附件上传区 -->
+              <input ref="fileInputRef" type="file" multiple style="display: none" @change="handleFileSelect" />
+              <div
+                class="upload-zone"
+                :class="{ 'upload-zone--active': attachmentDragover }"
+                @click="triggerAttachmentUpload"
+                @dragover.prevent="attachmentDragover = true"
+                @dragleave.prevent="attachmentDragover = false"
+                @drop.prevent="handleAttachmentDrop"
+                @paste.prevent="handleAttachmentPaste"
+                tabindex="0"
+              >
+                <div class="upload-zone__content">
+                  <el-icon :size="24" class="upload-zone__icon"><Upload /></el-icon>
+                  <span class="upload-zone__text">点击上传、拖拽文件或粘贴截图至此处</span>
                 </div>
-                <el-table :data="relatedRequirements" size="small" class="relation-table">
-                  <el-table-column prop="title" label="标题" min-width="200" />
-                  <el-table-column prop="type" label="类型" width="100">
-                    <template #default="{ row }">
-                      <el-tag size="small">{{ row.type }}</el-tag>
-                    </template>
-                  </el-table-column>
-                  <el-table-column prop="relationType" label="关联类型" width="120">
-                    <template #default="{ row }">
-                      <el-select v-model="row.relationType" size="small" style="width: 100%">
-                        <el-option label="阻塞" value="blocks" />
-                        <el-option label="被阻塞" value="blocked_by" />
-                        <el-option label="包含" value="contains" />
-                        <el-option label="被包含" value="contained_by" />
-                        <el-option label="相关" value="relates_to" />
-                      </el-select>
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="操作" width="60" align="center">
-                    <template #default="{ row }">
-                      <el-button type="danger" link size="small" @click="removeRelation(row)">
-                        <el-icon><Delete /></el-icon>
-                      </el-button>
-                    </template>
-                  </el-table-column>
-                </el-table>
-                <el-empty v-if="relatedRequirements.length === 0" description="暂无关联需求" :image-size="60" />
               </div>
-            </el-form-item>
+              <div v-if="attachmentUploading" class="attachment-uploading">附件上传中...</div>
+              <div v-if="formData.attachments.length > 0" class="attachment-list">
+                <div v-for="(file, index) in formData.attachments" :key="`${file.fileId || file.objectName || file.url}-${index}`" class="attachment-item">
+                  <div class="attachment-meta">
+                    <el-button link type="primary" @click="handleAttachmentDownload(file)">{{ file.name }}</el-button>
+                    <span v-if="file.size" class="attachment-size">{{ formatFileSize(file.size) }}</span>
+                  </div>
+                  <el-button link type="danger" @click="removeAttachment(index)">移除</el-button>
+                </div>
+              </div>
+            </div>
           </el-form>
         </el-card>
-      </div>
+      </el-col>
 
       <!-- Right Panel: Info Cards -->
-      <div class="right-panel">
+      <el-col :xs="24" :lg="8" class="right-panel">
         <!-- 基础信息 -->
         <el-card class="info-card">
           <template #header>
@@ -255,7 +219,7 @@
               </el-select>
             </el-form-item>
 
-            <el-form-item label="所属迭代">
+            <el-form-item v-if="isEditMode" label="所属迭代">
               <el-select v-model="formData.iterationId" placeholder="请选择" clearable style="width: 100%">
                 <el-option
                   v-for="iteration in iterations"
@@ -269,14 +233,14 @@
         </el-card>
 
         <!-- 时间 -->
-        <el-card class="info-card">
+        <el-card v-if="showTimeCard" class="info-card">
           <template #header>
             <div class="card-header">
               <span>时间</span>
             </div>
           </template>
           <el-form label-position="top">
-            <el-form-item label="开始时间">
+            <el-form-item v-if="shouldShowField('startDate')" label="开始时间">
               <el-date-picker
                 v-model="formData.startDate"
                 type="date"
@@ -286,7 +250,7 @@
               />
             </el-form-item>
 
-            <el-form-item label="截止日期">
+            <el-form-item v-if="shouldShowField('dueDate')" label="截止日期">
               <el-date-picker
                 v-model="formData.dueDate"
                 type="date"
@@ -296,7 +260,7 @@
               />
             </el-form-item>
 
-            <el-form-item label="估算工时(小时)">
+            <el-form-item v-if="shouldShowField('estimatedHours')" label="估算工时(小时)">
               <el-input-number
                 v-model="formData.estimatedHours"
                 :min="0"
@@ -307,8 +271,8 @@
             </el-form-item>
           </el-form>
         </el-card>
-      </div>
-    </div>
+      </el-col>
+    </el-row>
 
     <!-- Action Bar -->
     <div class="action-bar">
@@ -325,7 +289,7 @@
           v-model="relationSearchText"
           placeholder="搜索需求标题..."
           clearable
-          prefix-icon="Search"
+          :prefix-icon="Search"
         />
       </div>
       <el-table
@@ -353,25 +317,116 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, defineComponent, h } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import type { UploadRequestOptions } from 'element-plus'
 import {
-  Plus, Delete, Search, Link, Picture,
-  RefreshLeft, RefreshRight, Edit, Close, List
+  Plus, Delete, Search, Upload
 } from '@element-plus/icons-vue'
-import { useEditor, EditorContent, NodeViewWrapper, VueNodeViewRenderer } from '@tiptap/vue-3'
-import StarterKit from '@tiptap/starter-kit'
-import Image from '@tiptap/extension-image'
-import TiptapLink from '@tiptap/extension-link'
+import { IsleEditor, IsleEditorToolbar, RichTextKit } from '@isle-editor/vue3'
+import { addLocale } from '@isle-editor/core'
+import '@isle-editor/vue3/dist/style.css'
+
+// 在编辑器实例化前注册中文 locale（补充新增字体翻译）
+addLocale('zh', {
+  isleEditor: '岛屿编辑器',
+  fontFamily: '字体',
+  fontSize: '字号',
+  textStyle: '文字样式',
+  background: '背景颜色',
+  color: '文字颜色',
+  lineHeight: '行高',
+  letterSpacing: '字间距',
+  bold: '加粗',
+  italic: '斜体',
+  underline: '下划线',
+  strike: '删除线',
+  code: '行内代码',
+  link: '链接',
+  linkPlaceholder: '请输入链接',
+  openInNewTab: '在新标签页中打开',
+  unlink: '取消链接',
+  subscript: '下标',
+  superscript: '上标',
+  heading: '标题',
+  heading1: '一级标题',
+  heading2: '二级标题',
+  heading3: '三级标题',
+  heading4: '四级标题',
+  heading5: '五级标题',
+  heading6: '六级标题',
+  paragraph: '段落',
+  blockquote: '引用',
+  bulletList: '无序列表',
+  orderedList: '有序列表',
+  taskList: '任务列表',
+  codeBlock: '代码块',
+  divider: '分割线',
+  indent: '增加缩进',
+  outdent: '减少缩进',
+  hardBreak: '换行',
+  undo: '撤销',
+  redo: '重做',
+  textAlign: '文字对齐',
+  alignLeft: '左对齐',
+  alignCenter: '居中对齐',
+  alignRight: '右对齐',
+  alignJustify: '两端对齐',
+  table: '表格',
+  edit: '编辑',
+  textClear: '清除',
+  copy: '复制',
+  paste: '粘贴',
+  cancel: '取消',
+  open: '打开',
+  empty: '空',
+  fonts: {
+    Default: '默认字体',
+    MicrosoftYaHei: '微软雅黑',
+    SimSun: '宋体',
+    SimHei: '黑体',
+    KaiTi: '楷体',
+    FangSong: '仿宋',
+    PingFangSC: '苹方',
+    HiraginoSansGB: '冬青黑体',
+    SourceHanSansSC: '思源黑体',
+    STXihei: '华文细黑',
+    STZhongsong: '华文中宋',
+    Arial: 'Arial',
+    TimesNewRoman: 'Times New Roman',
+    CourierNew: 'Courier New',
+    Georgia: 'Georgia',
+  },
+  sizes: {
+    tiny: '超小',
+    small: '小',
+    normal: '中',
+    large: '大',
+    huge: '超大',
+  },
+  colors: {
+    defaultColor: '默认颜色',
+    baseColor: '基础颜色',
+    standardColor: '标准颜色',
+    recentUse: '最近使用',
+    palette: '调色板',
+  },
+  placeholder: '写点什么 ...',
+})
+
 import { requirementApi, projectApi, userApi, iterationApi } from '@/api'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
+import { downloadRequirementAttachment, uploadRequirementAttachment } from '@/api/modules/file'
 import { normalizeText } from '@/utils/format'
 import PageContainer from '@/components/common/PageContainer.vue'
+import { useUserStore } from '@/stores'
+import type { RequirementAttachment } from '@/types/requirement'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 
 const formRef = ref<FormInstance>()
 const infoFormRef = ref<FormInstance>()
@@ -379,6 +434,10 @@ const submitting = ref(false)
 const showRelationDialog = ref(false)
 const relationSearchText = ref('')
 const selectedRelations = ref<any[]>([])
+const attachmentUploading = ref(false)
+const attachmentDragover = ref(false)
+const createFormVisibleFields = ref<string[]>([])
+const createFormRequiredFields = ref<string[]>([])
 
 // Data
 const projects = ref<any[]>([])
@@ -406,6 +465,17 @@ const parentId = computed(() => {
 const isEditMode = computed(() => editId.value > 0)
 
 const DEFAULT_PROJECT_ID = 1
+const CREATE_VISIBLE_FIELD_FALLBACK = ['startDate', 'dueDate', 'estimatedHours']
+const FIELD_NAME_ALIASES: Record<string, string> = {
+  startDate: 'startDate',
+  开始时间: 'startDate',
+  开始日期: 'startDate',
+  dueDate: 'dueDate',
+  截止时间: 'dueDate',
+  截止日期: 'dueDate',
+  estimatedHours: 'estimatedHours',
+  估算工时: 'estimatedHours',
+}
 
 const formData = reactive({
   projectId: DEFAULT_PROJECT_ID,
@@ -419,150 +489,81 @@ const formData = reactive({
   startDate: '' as string | undefined,
   dueDate: '' as string | undefined,
   estimatedHours: undefined as number | undefined,
+  attachments: [] as RequirementAttachment[],
 })
 
-const formRules: FormRules = {
+const formRules = computed<FormRules>(() => ({
   title: [{ required: true, message: '请输入需求标题', trigger: 'blur' }],
   projectId: [{ required: true, message: '请选择所属项目', trigger: 'change' }],
-  type: [{ required: true, message: '请选择需求类型', trigger: 'change' }],
+  type: isEditMode.value ? [{ required: true, message: '请选择需求类型', trigger: 'change' }] : [],
   priority: [{ required: true, message: '请选择优先级', trigger: 'change' }],
+}))
+
+const selectedType = computed(() => configTypes.value.find((item) => item.code === formData.type))
+const selectedTypeLabel = computed(() => selectedType.value?.name || '')
+const selectedTypeColor = computed(() => selectedType.value?.color || '')
+const showTimeCard = computed(() =>
+  shouldShowField('startDate') || shouldShowField('dueDate') || shouldShowField('estimatedHours'),
+)
+
+const editorExtensions = [
+  RichTextKit.configure({
+    placeholder: { placeholder: '请输入需求描述...' },
+    fontFamily: {
+      fonts: [
+        { label: 'Default', value: '' },
+        { label: 'MicrosoftYaHei', value: '"Microsoft YaHei", "PingFang SC", sans-serif' },
+        { label: 'SimSun', value: '"SimSun", "STSong", serif' },
+        { label: 'SimHei', value: '"SimHei", "STHeiti", sans-serif' },
+        { label: 'KaiTi', value: '"KaiTi", "STKaiti", serif' },
+        { label: 'FangSong', value: '"FangSong", "STFangsong", serif' },
+        { label: 'PingFangSC', value: '"PingFang SC", "Microsoft YaHei", sans-serif' },
+        { label: 'HiraginoSansGB', value: '"Hiragino Sans GB", "Microsoft YaHei", sans-serif' },
+        { label: 'SourceHanSansSC', value: '"Source Han Sans SC", "Noto Sans CJK SC", sans-serif' },
+        { label: 'STXihei', value: '"STXihei", "华文细黑", sans-serif' },
+        { label: 'STZhongsong', value: '"STZhongsong", "华文中宋", serif' },
+        { label: 'Arial', value: 'Arial, "Helvetica Neue", Helvetica, sans-serif' },
+        { label: 'TimesNewRoman', value: '"Times New Roman", TimesNewRoman, serif' },
+        { label: 'CourierNew', value: '"Courier New", Courier, monospace' },
+        { label: 'Georgia', value: 'Georgia, serif' },
+      ],
+    },
+    fontSize: {
+      type: 'complex',
+    },
+  }),
+]
+
+const editorInstance = ref<any>(null)
+
+function onEditorCreate({ editor }: { editor: any }) {
+  editorInstance.value = editor
+  if (formData.description && isEditMode.value) {
+    editor.commands.setContent(formData.description)
+  }
+  // 绑定粘贴事件到编辑器 DOM，支持粘贴文件/截图上传
+  const editorEl = editor.view.dom as HTMLElement
+  editorEl.addEventListener('paste', handleAttachmentPaste as unknown as EventListener)
 }
 
-const ResizableImageView = defineComponent({
-  props: {
-    node: { type: Object as any, required: true },
-    updateAttributes: { type: Function as any, required: true },
-    selected: { type: Boolean, default: false },
-  },
-  setup(props) {
-    const boxRef = ref<HTMLElement | null>(null)
-    let observer: ResizeObserver | null = null
-    let rafId: number | null = null
-    let lastWidth = 0
-    let lastHeight = 0
-
-    function commitSize(width: number, height: number) {
-      const attrs = (props.node as any).attrs || {}
-      if (!attrs.width && !attrs.height && (width < 40 || height < 40)) return
-      const w = Math.max(24, Math.round(width))
-      const h = Math.max(24, Math.round(height))
-      if (w === lastWidth && h === lastHeight) return
-      lastWidth = w
-      lastHeight = h
-      ;(props.updateAttributes as any)({ width: w, height: h })
-    }
-
-    onMounted(() => {
-      const el = boxRef.value
-      if (!el) return
-      observer = new ResizeObserver((entries) => {
-        const entry = entries[0]
-        if (!entry) return
-        const { width, height } = entry.contentRect
-        if (rafId != null) cancelAnimationFrame(rafId)
-        rafId = requestAnimationFrame(() => commitSize(width, height))
-      })
-      observer.observe(el)
-    })
-
-    onBeforeUnmount(() => {
-      if (rafId != null) cancelAnimationFrame(rafId)
-      observer?.disconnect()
-      observer = null
-    })
-
-    return () => {
-      const attrs = (props.node as any).attrs || {}
-      const width = attrs.width ? `${attrs.width}px` : undefined
-      const height = attrs.height ? `${attrs.height}px` : undefined
-
-      return h(
-        NodeViewWrapper as any,
-        { as: 'span', class: ['tiptap-resizable-image', props.selected ? 'is-selected' : ''] },
-        () =>
-          h(
-            'span',
-            {
-              ref: boxRef,
-              class: 'tiptap-resizable-image__box',
-              contenteditable: 'false',
-              style: { width, height },
-            },
-            [
-              h('img', {
-                class: 'tiptap-resizable-image__img',
-                src: attrs.src,
-                alt: attrs.alt || '',
-                title: attrs.title || '',
-                draggable: 'false',
-              }),
-            ],
-          ),
-      )
+watch(
+  () => formData.description,
+  (val) => {
+    if (editorInstance.value && isEditMode.value && val && editorInstance.value.getHTML() !== val) {
+      editorInstance.value.commands.setContent(val)
     }
   },
-})
+)
 
-const ResizableImage = Image.extend({
-  addAttributes() {
-    return {
-      ...(this.parent?.() || {}),
-      width: {
-        default: null,
-        parseHTML: (element) => {
-          const raw = element.getAttribute('width')
-          if (!raw) return null
-          const n = Number(raw)
-          return Number.isFinite(n) ? n : null
-        },
-        renderHTML: (attributes) => (attributes.width ? { width: attributes.width } : {}),
-      },
-      height: {
-        default: null,
-        parseHTML: (element) => {
-          const raw = element.getAttribute('height')
-          if (!raw) return null
-          const n = Number(raw)
-          return Number.isFinite(n) ? n : null
-        },
-        renderHTML: (attributes) => (attributes.height ? { height: attributes.height } : {}),
-      },
-    }
+watch(
+  () => formData.projectId,
+  (projectId) => {
+    loadIterations(projectId)
+    loadRequirements(projectId)
+    loadCreateFormConfig(projectId)
   },
-  addNodeView() {
-    return VueNodeViewRenderer(ResizableImageView as any)
-  },
-})
-
-// Tiptap Editor
-const editor = useEditor({
-  extensions: [
-    StarterKit,
-    ResizableImage.configure({
-      inline: false,
-      allowBase64: true,
-    }),
-    TiptapLink.configure({
-      openOnClick: false,
-    }),
-  ],
-  content: '',
-  editorProps: {
-    attributes: {
-      class: 'prose',
-    },
-  },
-  onUpdate: ({ editor }) => {
-    formData.description = editor.getHTML()
-  },
-})
-
-// Watch for edit mode to set initial content
-watch(isEditMode, (isEdit) => {
-  if (isEdit && formData.description) {
-    editor.value?.commands.setContent(formData.description)
-  }
-}, { immediate: true })
+  { immediate: true },
+)
 
 // Filtered requirements for relation dialog
 const filteredRequirements = computed(() => {
@@ -576,8 +577,12 @@ const filteredRequirements = computed(() => {
 async function loadProjects() {
   try {
     const res = await projectApi.getProjectList({ pageNum: 1, pageSize: 100 }) as any
-    projects.value = res?.data?.list || []
+    projects.value = res?.list || []
+    if (!projects.value.some((project: any) => project.id === formData.projectId)) {
+      formData.projectId = projects.value[0]?.id || DEFAULT_PROJECT_ID
+    }
   } catch {
+    projects.value = []
     console.error('Failed to load projects')
   }
 }
@@ -585,26 +590,41 @@ async function loadProjects() {
 async function loadUsers() {
   try {
     const res = await userApi.getUserList({ pageNum: 1, pageSize: 100 }) as any
-    users.value = res?.data?.list || []
+    users.value = res?.list || []
   } catch {
+    users.value = []
     console.error('Failed to load users')
   }
 }
 
-async function loadIterations() {
+async function loadIterations(projectId = formData.projectId) {
   try {
-    const res = await iterationApi.getIterationList(DEFAULT_PROJECT_ID) as any
-    iterations.value = res?.data || []
+    if (!projectId) {
+      iterations.value = []
+      formData.iterationId = undefined
+      return
+    }
+    const res = await iterationApi.getIterationList(projectId) as any
+    iterations.value = Array.isArray(res) ? res : []
+    if (!iterations.value.some((iteration: any) => iteration.id === formData.iterationId)) {
+      formData.iterationId = undefined
+    }
   } catch {
+    iterations.value = []
     console.error('Failed to load iterations')
   }
 }
 
-async function loadRequirements() {
+async function loadRequirements(projectId = formData.projectId) {
   try {
-    const res = await requirementApi.getRequirementList({ pageNum: 1, pageSize: 100, projectId: DEFAULT_PROJECT_ID }) as any
-    allRequirements.value = res?.data?.list || []
+    if (!projectId) {
+      allRequirements.value = []
+      return
+    }
+    const res = await requirementApi.getRequirementList({ pageNum: 1, pageSize: 100, projectId }) as any
+    allRequirements.value = res?.list || []
   } catch {
+    allRequirements.value = []
     console.error('Failed to load requirements')
   }
 }
@@ -613,6 +633,7 @@ async function loadEditData() {
   if (!isEditMode.value) return
   try {
     const data = await requirementApi.getRequirementById(editId.value) as any
+    formData.projectId = data.projectId || DEFAULT_PROJECT_ID
     formData.title = data.title
     formData.description = data.description
     formData.type = data.type
@@ -623,36 +644,133 @@ async function loadEditData() {
     formData.dueDate = data.dueDate || undefined
     formData.estimatedHours = data.estimatedHours || undefined
     formData.ccUserIds = data.ccUserIds || []
-
-    // Set editor content
-    if (editor.value && data.description) {
-      editor.value.commands.setContent(data.description)
-    }
+    formData.attachments = Array.isArray(data.attachments) ? data.attachments : []
   } catch {
     ElMessage.error('加载需求数据失败')
   }
 }
 
-// Editor functions
-function setLink() {
-  if (!editor.value) return
+function shouldShowField(field: string) {
+  if (isEditMode.value) return true
+  if (createFormVisibleFields.value.length === 0) return false
+  return createFormVisibleFields.value.some((item) => normalizeFieldName(item) === field)
+}
 
-  if (editor.value.isActive('link')) {
-    editor.value.chain().focus().unsetLink().run()
-    return
+function formatFileSize(size?: number | null) {
+  if (!size) return ''
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 / 1024).toFixed(1)} MB`
+}
+
+function beforeAttachmentUpload(rawFile: File) {
+  const isValid = rawFile.size <= 50 * 1024 * 1024
+  if (!isValid) {
+    ElMessage.error('单个附件不能超过 50MB')
   }
+  return isValid
+}
 
-  const url = ''
-  if (url) {
-    editor.value.chain().focus().setLink({ href: url }).run()
+async function handleAttachmentUpload(options: UploadRequestOptions) {
+  attachmentUploading.value = true
+  try {
+    const attachment = await uploadRequirementAttachment(options.file as File)
+    formData.attachments.push(attachment)
+    ElMessage.success('附件上传成功')
+    options.onSuccess?.(attachment as any)
+  } catch (error) {
+    ElMessage.error('附件上传失败')
+    options.onError?.(error as any)
+  } finally {
+    attachmentUploading.value = false
   }
 }
 
-function addImage() {
-  const url = window.prompt('请输入图片地址')
-  if (url) {
-    editor.value?.chain().focus().setImage({ src: url, alt: '图片' }).run()
+const fileInputRef = ref<HTMLInputElement>()
+
+function triggerAttachmentUpload() {
+  fileInputRef.value?.click()
+}
+
+async function handleFileSelect(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = input.files
+  if (!files || files.length === 0) return
+  for (const file of Array.from(files)) {
+    if (!beforeAttachmentUpload(file)) continue
+    try {
+      attachmentUploading.value = true
+      const attachment = await uploadRequirementAttachment(file)
+      formData.attachments.push(attachment)
+    } catch {
+      ElMessage.error('附件上传失败')
+    } finally {
+      attachmentUploading.value = false
+    }
   }
+  input.value = ''
+}
+
+async function handleAttachmentDrop(event: DragEvent) {
+  attachmentDragover.value = false
+  const files = event.dataTransfer?.files
+  if (!files || files.length === 0) return
+  for (const file of Array.from(files)) {
+    if (!beforeAttachmentUpload(file)) continue
+    try {
+      attachmentUploading.value = true
+      const attachment = await uploadRequirementAttachment(file)
+      formData.attachments.push(attachment)
+    } catch {
+      ElMessage.error('附件上传失败')
+    } finally {
+      attachmentUploading.value = false
+    }
+  }
+  ElMessage.success('附件上传成功')
+}
+
+async function handleAttachmentPaste(event: ClipboardEvent) {
+  const files = event.clipboardData?.files
+  if (!files || files.length === 0) return
+  // 有文件时阻止默认粘贴行为，避免编辑器重复处理
+  event.preventDefault()
+  for (const file of Array.from(files)) {
+    if (!beforeAttachmentUpload(file)) continue
+    try {
+      attachmentUploading.value = true
+      const attachment = await uploadRequirementAttachment(file)
+      formData.attachments.push(attachment)
+    } catch {
+      ElMessage.error('附件上传失败')
+    } finally {
+      attachmentUploading.value = false
+    }
+  }
+}
+
+function removeAttachment(index: number) {
+  formData.attachments.splice(index, 1)
+}
+
+async function handleAttachmentDownload(file: RequirementAttachment) {
+  try {
+    await downloadRequirementAttachment(file)
+  } catch {
+    ElMessage.error('附件下载失败')
+  }
+}
+
+function normalizeFieldName(field: string) {
+  return FIELD_NAME_ALIASES[field] || field
+}
+
+function normalizeDateValue(value?: string) {
+  return value || undefined
+}
+
+function normalizeNumberValue(value?: number) {
+  return typeof value === 'number' ? value : undefined
 }
 
 // Relation operations
@@ -690,12 +808,20 @@ async function handleSubmit() {
       type: formData.type,
       priority: formData.priority,
       assigneeId: formData.assigneeId,
-      iterationId: formData.iterationId,
-      startDate: formData.startDate,
-      dueDate: formData.dueDate,
-      estimatedHours: formData.estimatedHours,
-      ccUserIds: formData.ccUserIds,
+      attachments: formData.attachments,
       parentId: parentId.value,
+    }
+
+    if (isEditMode.value) {
+      payload.iterationId = formData.iterationId
+      payload.ccUserIds = formData.ccUserIds
+      payload.startDate = normalizeDateValue(formData.startDate)
+      payload.dueDate = normalizeDateValue(formData.dueDate)
+      payload.estimatedHours = normalizeNumberValue(formData.estimatedHours)
+    } else {
+      if (shouldShowField('startDate')) payload.startDate = normalizeDateValue(formData.startDate)
+      if (shouldShowField('dueDate')) payload.dueDate = normalizeDateValue(formData.dueDate)
+      if (shouldShowField('estimatedHours')) payload.estimatedHours = normalizeNumberValue(formData.estimatedHours)
     }
 
     if (isEditMode.value) {
@@ -733,8 +859,38 @@ async function loadConfig() {
     const priorityList = Array.isArray(prioritiesRes) ? prioritiesRes : (prioritiesRes as any).data || []
     configTypes.value = typeList.map((t: any) => ({ ...t, name: normalizeText(t.name) }))
     configPriorities.value = priorityList.map((p: any) => ({ ...p, name: normalizeText(p.name) }))
+    if (!isEditMode.value && configTypes.value.length > 0) {
+      formData.type = configTypes.value[0].code
+    }
   } catch {
     console.error('Failed to load requirement config')
+  }
+}
+
+async function loadCreateFormConfig(projectId = formData.projectId) {
+  if (!projectId || isEditMode.value) {
+    createFormVisibleFields.value = CREATE_VISIBLE_FIELD_FALLBACK
+    createFormRequiredFields.value = []
+    return
+  }
+
+  try {
+    const res = await requirementConfigApi.getCreateFormConfig(projectId) as any
+    const visibleFields = Array.isArray(res?.visibleFields)
+      ? res.visibleFields.map((item: string) => normalizeFieldName(item)).filter(Boolean)
+      : []
+    createFormVisibleFields.value = visibleFields.length > 0 ? visibleFields : CREATE_VISIBLE_FIELD_FALLBACK
+    createFormRequiredFields.value = Array.isArray(res?.requiredFields)
+      ? res.requiredFields.map((item: string) => normalizeFieldName(item)).filter(Boolean)
+      : []
+
+    if (res?.defaultTypeCode) {
+      formData.type = res.defaultTypeCode
+    }
+  } catch {
+    const roleFallback = userStore.roles.some((role) => ['admin', '产品经理', 'PM'].includes(role))
+    createFormVisibleFields.value = roleFallback ? CREATE_VISIBLE_FIELD_FALLBACK : []
+    createFormRequiredFields.value = []
   }
 }
 
@@ -742,25 +898,20 @@ onMounted(async () => {
   await Promise.all([
     loadProjects(),
     loadUsers(),
-    loadIterations(),
-    loadRequirements(),
     loadEditData(),
     loadConfig(),
   ])
-})
-
-onBeforeUnmount(() => {
-  editor.value?.destroy()
 })
 </script>
 
 <style scoped lang="scss">
 .create-page {
-  padding: 0;
-  padding-bottom: 0;
+  padding: $page-padding;
   min-height: 100%;
   display: flex;
   flex-direction: column;
+  max-width: 1280px;
+  margin: 0 auto;
 }
 
 .page-header {
@@ -773,24 +924,49 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
-.form-container {
+.card-titlebar {
   display: flex;
-  gap: 20px;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: $text-color;
+}
+
+.card-subtitle {
+  font-size: 12px;
+  color: $text-color-secondary;
+}
+
+.form-container {
   flex: 1;
 }
 
 .left-panel {
-  flex: 1;
   min-width: 0;
 }
 
 .right-panel {
-  width: 320px;
-  flex-shrink: 0;
+  position: sticky;
+  top: $spacing-md;
 }
 
 .form-card {
   height: 100%;
+  border-radius: $card-radius;
+  box-shadow: $shadow-sm;
+  border: 1px solid $border-color;
+}
+
+.form-card :deep(.el-card__header) {
+  padding: 14px 16px;
+}
+
+.info-card :deep(.el-card__header) {
+  padding: 14px 16px;
 }
 
 .form-card :deep(.el-form-item__label) {
@@ -810,118 +986,40 @@ onBeforeUnmount(() => {
 }
 
 /* Editor */
+.description-item :deep(.el-form-item__content) {
+  width: 100%;
+}
+
 .editor-wrapper {
   border: 1px solid $border-color;
   border-radius: 4px;
-  overflow: hidden;
-}
-
-.editor-toolbar {
+  overflow-x: hidden;
+  background: #fff;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  height: clamp(360px, calc(100vh - 520px), 760px);
+  position: relative;
+}
+
+.editor-wrapper--dragover {
+  border-color: var(--el-color-primary);
+  box-shadow: 0 0 0 2px var(--el-color-primary-light-5);
+}
+
+.editor-drop-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(64, 158, 255, 0.08);
+  border: 2px dashed var(--el-color-primary);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 8px 12px;
-  background: #f5f7fa;
-  border-bottom: 1px solid $border-color;
-}
-
-.editor-toolbar .el-button {
-  padding: 6px 8px;
-}
-
-.editor-toolbar .el-button.is-active {
-  background: $primary-color;
-  color: #fff;
-}
-
-.editor-content {
-  min-height: 280px;
-  max-height: 450px;
-  overflow-y: auto;
-}
-
-.editor-content :deep(.ProseMirror) {
-  padding: 12px 16px;
-  min-height: 260px;
-  outline: none;
-}
-
-.editor-content :deep(.ProseMirror p) {
-  margin: 0 0 8px 0;
-  line-height: 1.6;
-}
-
-.editor-content :deep(.ProseMirror h1),
-.editor-content :deep(.ProseMirror h2),
-.editor-content :deep(.ProseMirror h3) {
-  margin: 16px 0 8px 0;
-  font-weight: 600;
-}
-
-.editor-content :deep(.ProseMirror img) {
-  max-width: 100%;
-  border-radius: 4px;
-}
-
-.editor-content :deep(.tiptap-resizable-image__box) {
-  display: inline-block;
-  max-width: 100%;
-  resize: both;
-  overflow: hidden;
-  border-radius: 4px;
-}
-
-.editor-content :deep(.tiptap-resizable-image.is-selected .tiptap-resizable-image__box) {
-  outline: 2px solid $primary-color;
-}
-
-.editor-content :deep(.tiptap-resizable-image__img) {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.editor-content :deep(.ProseMirror ul),
-.editor-content :deep(.ProseMirror ol) {
-  padding-left: 24px;
-  margin: 8px 0;
-}
-
-.editor-content :deep(.ProseMirror blockquote) {
-  border-left: 3px solid $primary-color;
-  padding-left: 12px;
-  margin: 8px 0;
-  color: $text-color-secondary;
-  background: #f5f7fa;
-}
-
-.editor-content :deep(.ProseMirror code) {
-  background: #f0f0f0;
-  padding: 2px 4px;
-  border-radius: 2px;
-  font-family: monospace;
-}
-
-.editor-content :deep(.ProseMirror pre) {
-  background: #282c34;
-  color: #abb2bf;
-  padding: 12px 16px;
-  border-radius: 4px;
-  overflow-x: auto;
-}
-
-.editor-content :deep(.ProseMirror a) {
-  color: $primary-color;
-  text-decoration: underline;
-}
-
-.editor-content :deep(.ProseMirror p.is-editor-empty:first-child::before) {
-  color: #aaa;
-  content: attr(data-placeholder);
-  float: left;
-  height: 0;
+  justify-content: center;
+  gap: 8px;
+  color: var(--el-color-primary);
+  font-size: 14px;
+  z-index: 10;
   pointer-events: none;
 }
 
@@ -953,6 +1051,9 @@ onBeforeUnmount(() => {
 /* Info Cards */
 .info-card {
   margin-bottom: 16px;
+  border-radius: $card-radius;
+  box-shadow: $shadow-sm;
+  border: 1px solid $border-color;
 }
 
 .info-card:last-child {
@@ -971,33 +1072,102 @@ onBeforeUnmount(() => {
   margin-bottom: 0;
 }
 
-/* Relation Section */
-.relation-section {
-  border: 1px solid $border-color;
-  border-radius: 4px;
-  overflow: hidden;
+/* Extra Section: Relation & Attachment */
+.extra-section {
+  margin-top: 8px;
 }
 
-.relation-header {
+.extra-row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
-  background: #f5f7fa;
-  border-bottom: 1px solid $border-color;
+  gap: 12px;
+  padding: 8px 0;
 }
 
-.relation-header span {
+.extra-row-label {
   font-size: 14px;
+  font-weight: 500;
+  color: $text-color;
+  white-space: nowrap;
+}
+
+.extra-row-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.relation-count {
+  font-size: 13px;
   color: $text-color-secondary;
 }
 
+/* Upload Zone */
+.upload-zone {
+  border: 1px dashed #d9d9d9;
+  border-radius: 6px;
+  padding: 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s;
+  outline: none;
+}
+
+.upload-zone:hover,
+.upload-zone:focus {
+  border-color: var(--el-color-primary);
+}
+
+.upload-zone--active {
+  border-color: var(--el-color-primary);
+  background: rgba(64, 158, 255, 0.04);
+}
+
+.upload-zone__content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.upload-zone__icon {
+  color: var(--el-text-color-placeholder);
+}
+
+.upload-zone:hover .upload-zone__icon,
+.upload-zone--active .upload-zone__icon {
+  color: var(--el-color-primary);
+}
+
+.upload-zone__text {
+  font-size: 13px;
+  color: var(--el-text-color-placeholder);
+}
+
+.upload-zone:hover .upload-zone__text,
+.upload-zone--active .upload-zone__text {
+  color: var(--el-color-primary);
+}
+
 .relation-table {
-  border: none;
+  margin-bottom: 4px;
 }
 
 .relation-table :deep(.el-table__header-wrapper th) {
   background: #fafafa;
+}
+
+.attachment-uploading {
+  color: $text-color-secondary;
+  font-size: 13px;
+  padding: 8px 0;
+}
+
+.attachment-meta .el-button {
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Action Bar */
@@ -1013,20 +1183,6 @@ onBeforeUnmount(() => {
   z-index: 100;
 }
 
-.toolbar-text-italic {
-  font-style: italic;
-  font-weight: 600;
-}
-
-.toolbar-text-quote {
-  font-weight: 700;
-}
-
-.toolbar-text-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 12px;
-}
-
 /* Relation Dialog */
 .relation-search {
   margin-bottom: 16px;
@@ -1036,4 +1192,17 @@ onBeforeUnmount(() => {
   max-height: 400px;
   overflow-y: auto;
 }
+
+@media (max-width: 1100px) {
+  .create-page {
+    max-width: 100%;
+  }
+
+  .right-panel {
+    position: static;
+  }
+}
+
+
+
 </style>

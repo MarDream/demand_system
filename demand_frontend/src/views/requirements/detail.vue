@@ -68,6 +68,17 @@
             <el-descriptions-item label="截止日期">{{ detail.dueDate || '-' }}</el-descriptions-item>
             <el-descriptions-item label="估算工时">{{ detail.estimatedHours ? detail.estimatedHours + ' 小时' : '-' }}</el-descriptions-item>
             <el-descriptions-item label="实际工时">{{ detail.actualHours ? detail.actualHours + ' 小时' : '-' }}</el-descriptions-item>
+            <el-descriptions-item label="附件" :span="2">
+              <div v-if="detail.attachments?.length" class="attachment-list">
+                <div v-for="attachment in detail.attachments" :key="attachment.fileId || attachment.url" class="attachment-item">
+                  <el-button link type="primary" @click="handleAttachmentDownload(attachment)">{{ attachment.name }}</el-button>
+                  <span class="attachment-meta">
+                    {{ formatAttachmentMeta(attachment) }}
+                  </span>
+                </div>
+              </div>
+              <span v-else>-</span>
+            </el-descriptions-item>
             <el-descriptions-item label="描述" :span="2">
               <div v-if="detail.description" class="rich-content" v-html="detail.description"></div>
               <span v-else>-</span>
@@ -207,9 +218,10 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { requirementApi, projectApi } from '@/api'
+import { downloadRequirementAttachment } from '@/api/modules/file'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
 import { executeTransition, getAvailableTransitions, getWorkflowStates } from '@/api/modules/workflow'
-import type { Requirement, RequirementHistory, RequirementUpdate } from '@/types/requirement'
+import type { Requirement, RequirementAttachment, RequirementHistory, RequirementUpdate } from '@/types/requirement'
 import type { WorkflowState, WorkflowTransition } from '@/types/workflow'
 import { normalizeText } from '@/utils/format'
 import PageContainer from '@/components/common/PageContainer.vue'
@@ -351,6 +363,31 @@ function priorityLabel(code: string) {
 
 function projectLabel(projectId: number) {
   return projectName.value || String(projectId || '-')
+}
+
+function formatAttachmentMeta(attachment: RequirementAttachment) {
+  const parts: string[] = []
+  if (attachment.size) {
+    if (attachment.size < 1024) {
+      parts.push(`${attachment.size} B`)
+    } else if (attachment.size < 1024 * 1024) {
+      parts.push(`${(attachment.size / 1024).toFixed(1)} KB`)
+    } else {
+      parts.push(`${(attachment.size / 1024 / 1024).toFixed(1)} MB`)
+    }
+  }
+  if (attachment.contentType) {
+    parts.push(attachment.contentType)
+  }
+  return parts.join(' / ')
+}
+
+async function handleAttachmentDownload(attachment: RequirementAttachment) {
+  try {
+    await downloadRequirementAttachment(attachment)
+  } catch {
+    ElMessage.error('附件下载失败')
+  }
 }
 
 function workflowStateName(stateId: number) {
@@ -503,6 +540,24 @@ onMounted(() => {
 
 .children-section {
   margin-top: 24px;
+}
+
+.attachment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.attachment-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.attachment-meta {
+  color: #909399;
+  font-size: 12px;
 }
 
 .section-header {

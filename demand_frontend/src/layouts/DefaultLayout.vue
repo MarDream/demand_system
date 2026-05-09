@@ -10,34 +10,22 @@
         active-text-color="#409EFF"
         router
       >
-        <el-menu-item index="/dashboard">
-          <el-icon><Odometer /></el-icon>
-          <span>仪表盘</span>
-        </el-menu-item>
-        <el-menu-item index="/requirements">
-          <el-icon><Document /></el-icon>
-          <span>需求管理</span>
-        </el-menu-item>
-        <el-menu-item index="/iterations">
-          <el-icon><Calendar /></el-icon>
-          <span>迭代管理</span>
-        </el-menu-item>
-        <el-menu-item index="/reviews">
-          <el-icon><ChatDotRound /></el-icon>
-          <span>评审管理</span>
-        </el-menu-item>
-        <el-menu-item v-if="canManageWorkflow" index="/workflow">
-          <el-icon><Share /></el-icon>
-          <span>工作流配置</span>
-        </el-menu-item>
-        <el-menu-item index="/statistics">
-          <el-icon><TrendCharts /></el-icon>
-          <span>统计报表</span>
-        </el-menu-item>
-        <el-menu-item index="/settings">
-          <el-icon><Setting /></el-icon>
-          <span>系统设置</span>
-        </el-menu-item>
+        <template v-for="item in visibleMenus" :key="item.index">
+          <el-sub-menu v-if="item.children.length" :index="item.index">
+            <template #title>
+              <el-icon><component :is="item.icon" /></el-icon>
+              <span>{{ item.title }}</span>
+            </template>
+            <el-menu-item v-for="child in item.children" :key="child.index" :index="child.path">
+              <el-icon><component :is="child.icon" /></el-icon>
+              <span>{{ child.title }}</span>
+            </el-menu-item>
+          </el-sub-menu>
+          <el-menu-item v-else :index="item.path">
+            <el-icon><component :is="item.icon" /></el-icon>
+            <span>{{ item.title }}</span>
+          </el-menu-item>
+        </template>
       </el-menu>
     </div>
     <div class="main-container">
@@ -103,14 +91,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/modules/app'
 import { useUserStore } from '@/stores/modules/user'
 import { useNotification } from '@/composables/useNotification'
-import { Odometer, Document, Calendar, ChatDotRound, Share, TrendCharts, Setting, Fold, Expand, Bell } from '@element-plus/icons-vue'
+import * as ElementPlusIcons from '@element-plus/icons-vue'
+import { Fold, Expand, Bell } from '@element-plus/icons-vue'
 import Breadcrumb from '@/components/layout/Breadcrumb.vue'
 import { getNotificationList, markAsRead } from '@/api/modules/notification'
+import { getCurrentMenus, type MenuItem } from '@/api/modules/menu'
 
 const route = useRoute()
 const router = useRouter()
@@ -119,17 +109,67 @@ const userStore = useUserStore()
 const { unreadCount } = useNotification()
 
 const recentNotifications = ref<any[]>([])
+const menuList = ref<MenuItem[]>([])
+
+const iconMap: Record<string, Component> = {}
+for (const [name, comp] of Object.entries(ElementPlusIcons)) {
+  iconMap[name] = comp as Component
+}
+
+async function fetchMenus() {
+  try {
+    const res = await getCurrentMenus() as any
+    const data = res.data ?? res
+    menuList.value = Array.isArray(data) ? data : []
+  } catch {
+    menuList.value = []
+  }
+}
+
+interface SidebarItem {
+  index: string
+  path: string
+  title: string
+  icon: Component
+  children: SidebarItem[]
+}
+
+const visibleMenus = computed<SidebarItem[]>(() => {
+  function build(items: MenuItem[]): SidebarItem[] {
+    return items
+      .filter(m => (m.menuType === 'MENU' || m.menuType === 'DIRECTORY') && m.enabled === 1 && m.visible === 1)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+      .map(m => {
+        const children = build(m.children || [])
+        return {
+          index: m.path || `menu-${m.id}`,
+          path: m.path || (children[0]?.path ?? ''),
+          title: m.name,
+          icon: iconMap[m.icon || 'Document'] || iconMap['Document'],
+          children,
+        }
+      })
+      .filter(item => item.path || item.children.length)
+  }
+  return build(menuList.value)
+})
+
+onMounted(fetchMenus)
 
 async function fetchRecentNotifications() {
   try {
     const res = await getNotificationList({ pageNum: 1, pageSize: 5 }) as any
     recentNotifications.value = res.list || res.data?.list || []
-  } catch { /* ignore */ }
+  } catch {
+  }
 }
 
 async function handleNotificationClick(item: any) {
   if (item.isRead === 0) {
-    try { await markAsRead(item.id) } catch { /* ignore */ }
+    try {
+      await markAsRead(item.id)
+    } catch {
+    }
   }
   if (item.relatedId) {
     router.push({ name: 'RequirementDetail', params: { id: item.relatedId } })
@@ -141,16 +181,12 @@ function formatTime(time: string) {
   return time.replace('T', ' ').substring(0, 16)
 }
 
-// Fetch recent notifications periodically alongside unread count
 watch(unreadCount, () => {
   fetchRecentNotifications()
 }, { immediate: true })
 
 const sidebarOpened = computed(() => appStore.sidebarOpened)
 const activeMenu = computed(() => route.path)
-const canManageWorkflow = computed(() =>
-  userStore.roles.includes('admin') || userStore.roles.includes('workflow:config'),
-)
 
 async function handleLogout() {
   await userStore.logout()

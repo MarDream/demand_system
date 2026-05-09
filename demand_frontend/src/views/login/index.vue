@@ -46,6 +46,12 @@
             {{ loading ? '登录中...' : '登 录' }}
           </el-button>
         </el-form-item>
+
+        <div class="login-footer">
+          <router-link to="/register" class="link">注册账号</router-link>
+          <el-divider direction="vertical" />
+          <router-link to="/forgot-password" class="link">忘记密码</router-link>
+        </div>
       </el-form>
     </div>
   </div>
@@ -147,5 +153,28 @@ async function handleLogin() {
 
 .login-btn {
   width: 100%;
+}
+
+.login-footer {
+  margin-top: 16px;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  .link {
+    color: #409EFF;
+    text-decoration: none;
+    font-size: 14px;
+    transition: color 0.3s;
+
+    &:hover {
+      color: #66b1ff;
+    }
+  }
+
+  .el-divider--vertical {
+    margin: 0 12px;
+  }
 }
 </style>

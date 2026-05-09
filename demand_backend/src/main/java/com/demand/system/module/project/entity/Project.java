@@ -1,12 +1,14 @@
 package com.demand.system.module.project.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import lombok.Data;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("projects")
+@TableName(value = "projects", autoResultMap = true)
 public class Project {
 
     @TableId(type = IdType.AUTO)
@@ -15,6 +17,16 @@ public class Project {
     private String name;
 
     private String description;
+
+    private Long companyId;
+
+    private String team;
+
+    private Long leaderId;
+
+    private LocalDate startDate;
+
+    private LocalDate endDate;
 
     private Long creatorId;
 

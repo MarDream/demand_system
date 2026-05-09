@@ -30,6 +30,12 @@ public class User {
 
     private String avatar;
 
+    private Long regionId;
+
+    private Long departmentId;
+
+    private Long positionId;
+
     private String status;
 
     @TableField(fill = FieldFill.INSERT)

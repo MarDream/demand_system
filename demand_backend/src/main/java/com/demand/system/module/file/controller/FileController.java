@@ -4,6 +4,7 @@ import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.ErrorCode;
 import com.demand.system.common.result.Result;
 import com.demand.system.module.auth.security.SecurityUtils;
+import com.demand.system.module.file.dto.FileUploadDTO;
 import com.demand.system.module.file.entity.FileRecord;
 import com.demand.system.module.file.service.FileService;
 import lombok.RequiredArgsConstructor;
@@ -26,28 +27,30 @@ public class FileController {
     private final FileService fileService;
 
     @PostMapping("/upload")
-    public Result<String> upload(@RequestParam("file") MultipartFile file) {
+    public Result<FileUploadDTO> upload(@RequestParam("file") MultipartFile file) {
         Long uploaderId = SecurityUtils.getCurrentUserId();
         if (uploaderId == null) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED, "未登录");
         }
-        String url = fileService.upload(file, uploaderId);
-        return Result.success(url);
+        return Result.success(fileService.upload(file, uploaderId));
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<byte[]> download(@PathVariable Long id) {
         Map<String, Object> result = fileService.download(id);
         FileRecord fileRecord = (FileRecord) result.get("fileRecord");
-        InputStream inputStream = (InputStream) result.get("inputStream");
+        MediaType mediaType = MediaType.APPLICATION_OCTET_STREAM;
+        if (fileRecord.getContentType() != null && !fileRecord.getContentType().isBlank()) {
+            mediaType = MediaType.parseMediaType(fileRecord.getContentType());
+        }
 
-        try {
+        try (InputStream inputStream = (InputStream) result.get("inputStream")) {
             byte[] bytes = inputStream.readAllBytes();
             String encodedName = URLEncoder.encode(fileRecord.getOriginalName(), StandardCharsets.UTF_8).replace("+", "%20");
 
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encodedName)
-                    .contentType(MediaType.parseMediaType(fileRecord.getContentType()))
+                    .contentType(mediaType)
                     .body(bytes);
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();

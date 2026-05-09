@@ -4,6 +4,9 @@ export interface Requirement {
   parentId: number | null
   creatorId: number
   assigneeId: number | null
+  opsFollowId: number | null
+  maintFollowId: number | null
+  departmentId: number | null
   title: string
   description: string
   type: string
@@ -11,16 +14,34 @@ export interface Requirement {
   status: string
   moduleId: number | null
   iterationId: number | null
+  startDate?: string | null
   estimatedHours: number | null
   actualHours: number | null
   dueDate: string | null
+  analysisCompletedAt: string | null
+  confirmAt: string | null
+  developmentCompletedAt: string | null
+  attachments?: RequirementAttachment[]
   orderNum: number
   version: number
   createdAt: string
   updatedAt: string
   creatorName?: string
   assigneeName?: string
+  opsFollowName?: string
+  maintFollowName?: string
+  departmentName?: string
   childCount?: number
+}
+
+export interface RequirementAttachment {
+  fileId?: number | null
+  name: string
+  url: string
+  size?: number | null
+  contentType?: string | null
+  bucketName?: string | null
+  objectName?: string | null
 }
 
 export interface RequirementCreate {
@@ -31,14 +52,16 @@ export interface RequirementCreate {
   type: string
   priority: string
   assigneeId?: number
-  iterationId?: number
   moduleId?: number
+  startDate?: string
   dueDate?: string
   estimatedHours?: number
+  attachments?: RequirementAttachment[]
 }
 
 export interface RequirementUpdate extends Partial<RequirementCreate> {
   id: number
+  iterationId?: number
   status?: string
 }
 
@@ -51,6 +74,14 @@ export interface RequirementQuery {
   assigneeId?: number
   iterationId?: number
   keyword?: string
+  createdAtStart?: string
+  createdAtEnd?: string
+  analysisCompletedAtStart?: string
+  analysisCompletedAtEnd?: string
+  confirmAtStart?: string
+  confirmAtEnd?: string
+  developmentCompletedAtStart?: string
+  developmentCompletedAtEnd?: string
   pageNum: number
   pageSize: number
   sortField?: string

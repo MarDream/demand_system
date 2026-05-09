@@ -14,6 +14,10 @@ public class RabbitMQConfig {
     public static final String QUEUE_NAME = "notification.system.queue";
     public static final String ROUTING_KEY = "notification.#";
 
+    public static final String KNOWLEDGE_EXCHANGE = "knowledge.exchange";
+    public static final String KNOWLEDGE_DOC_PROCESS_QUEUE = "knowledge.document.process.queue";
+    public static final String KNOWLEDGE_DOC_PROCESS_KEY = "knowledge.document.process";
+
     @Bean
     public TopicExchange notificationExchange() {
         return new TopicExchange(EXCHANGE_NAME, true, false);
@@ -27,5 +31,20 @@ public class RabbitMQConfig {
     @Bean
     public Binding notificationBinding(Queue notificationQueue, TopicExchange notificationExchange) {
         return BindingBuilder.bind(notificationQueue).to(notificationExchange).with(ROUTING_KEY);
+    }
+
+    @Bean
+    public TopicExchange knowledgeExchange() {
+        return new TopicExchange(KNOWLEDGE_EXCHANGE, true, false);
+    }
+
+    @Bean
+    public Queue knowledgeDocProcessQueue() {
+        return new Queue(KNOWLEDGE_DOC_PROCESS_QUEUE, true);
+    }
+
+    @Bean
+    public Binding knowledgeDocProcessBinding(Queue knowledgeDocProcessQueue, TopicExchange knowledgeExchange) {
+        return BindingBuilder.bind(knowledgeDocProcessQueue).to(knowledgeExchange).with(KNOWLEDGE_DOC_PROCESS_KEY);
     }
 }

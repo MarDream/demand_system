@@ -8,11 +8,12 @@
         style="width: 140px"
         @change="emitChange"
       >
-        <el-option label="功能" value="功能" />
-        <el-option label="优化" value="优化" />
-        <el-option label="Bug" value="Bug" />
-        <el-option label="技术债务" value="技术债务" />
-        <el-option label="运营" value="运营" />
+        <el-option
+          v-for="type in typeOptions"
+          :key="type.code"
+          :label="type.name"
+          :value="type.code"
+        />
       </el-select>
     </el-form-item>
 
@@ -24,10 +25,12 @@
         style="width: 100px"
         @change="emitChange"
       >
-        <el-option label="P0" value="P0" />
-        <el-option label="P1" value="P1" />
-        <el-option label="P2" value="P2" />
-        <el-option label="P3" value="P3" />
+        <el-option
+          v-for="priority in priorityOptions"
+          :key="priority.code"
+          :label="priority.name"
+          :value="priority.code"
+        />
       </el-select>
     </el-form-item>
 
@@ -68,7 +71,13 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, watch } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
+import {
+  requirementConfigApi,
+  type Priority,
+  type RequirementType,
+} from '@/api/modules/requirementConfig'
+import { normalizeText } from '@/utils/format'
 
 interface FilterValue {
   type?: string
@@ -86,6 +95,9 @@ const emit = defineEmits<{
   search: []
   reset: []
 }>()
+
+const typeOptions = ref<RequirementType[]>([])
+const priorityOptions = ref<Priority[]>([])
 
 const internalValue = reactive<FilterValue>({
   type: props.modelValue?.type || '',
@@ -124,6 +136,31 @@ function handleReset() {
   emit('update:modelValue', { ...internalValue })
   emit('reset')
 }
+
+async function loadConfigOptions() {
+  try {
+    const [typesRes, prioritiesRes] = await Promise.all([
+      requirementConfigApi.listTypes(),
+      requirementConfigApi.listPriorities(),
+    ])
+    const typeList = Array.isArray(typesRes) ? typesRes : (typesRes as any)?.data || []
+    const priorityList = Array.isArray(prioritiesRes) ? prioritiesRes : (prioritiesRes as any)?.data || []
+    typeOptions.value = typeList.map((type: RequirementType) => ({
+      ...type,
+      name: normalizeText(type.name),
+    }))
+    priorityOptions.value = priorityList.map((priority: Priority) => ({
+      ...priority,
+      name: normalizeText(priority.name),
+    }))
+  } catch (error) {
+    console.error('加载需求配置失败', error)
+  }
+}
+
+onMounted(() => {
+  loadConfigOptions()
+})
 </script>
 
 <style scoped>

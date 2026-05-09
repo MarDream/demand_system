@@ -39,7 +39,7 @@ const props = withDefaults(defineProps<{
   breadcrumb?: boolean
   variant?: 'plain' | 'card'
 }>(), {
-  breadcrumb: true,
+  breadcrumb: false,
   variant: 'plain',
 })
 

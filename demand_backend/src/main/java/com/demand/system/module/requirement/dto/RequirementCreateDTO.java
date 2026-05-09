@@ -6,6 +6,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 @Data
 public class RequirementCreateDTO {
@@ -20,7 +21,6 @@ public class RequirementCreateDTO {
 
     private String description;
 
-    @NotBlank(message = "需求类型不能为空")
     private String type;
 
     @NotBlank(message = "优先级不能为空")
@@ -32,7 +32,11 @@ public class RequirementCreateDTO {
 
     private Long moduleId;
 
+    private LocalDate startDate;
+
     private LocalDate dueDate;
 
     private BigDecimal estimatedHours;
+
+    private List<RequirementAttachmentDTO> attachments;
 }

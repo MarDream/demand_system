@@ -7,6 +7,9 @@ export interface User {
   avatar: string | null
   status: string
   password?: string
+  regionId?: number | null
+  departmentId?: number | null
+  positionId?: number | null
   createdAt: string
   updatedAt: string
 }
@@ -58,4 +61,5 @@ export interface Position {
   code: string | null
   level: number | null
   description: string | null
+  sortOrder?: number
 }

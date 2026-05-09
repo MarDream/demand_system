@@ -223,6 +223,28 @@
             <el-option v-for="user in userOptions" :key="user.id" :label="user.label" :value="user.id" />
           </el-select>
         </el-form-item>
+        <el-form-item label="可编辑字段">
+          <el-select
+            v-model="nodeForm.editableFields"
+            multiple
+            filterable
+            clearable
+            placeholder="新建/编辑需求时允许操作的字段"
+          >
+            <el-option v-for="field in fieldOptions" :key="field.value" :label="field.label" :value="field.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="节点必填字段">
+          <el-select
+            v-model="nodeForm.requiredFields"
+            multiple
+            filterable
+            clearable
+            placeholder="进入该节点时必须补齐的字段"
+          >
+            <el-option v-for="field in fieldOptions" :key="field.value" :label="field.label" :value="field.value" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="提示">
           <div class="helper-text">
             同时配置角色和用户时，满足任一条件即可在该节点执行流转操作。内置动态角色支持：创建人、负责人、处理人。
@@ -269,7 +291,7 @@
             clearable
             placeholder="执行该流转前必须补齐的字段"
           >
-            <el-option v-for="field in fieldOptions" :key="field" :label="field" :value="field" />
+            <el-option v-for="field in fieldOptions" :key="field.value" :label="field.label" :value="field.value" />
           </el-select>
         </el-form-item>
         <el-form-item label="条件表达式">
@@ -321,15 +343,17 @@ type NodePosition = {
 
 const BUILTIN_ROLE_OPTIONS = ['创建人', '负责人', '处理人']
 const FIELD_OPTIONS = [
-  'title',
-  'description',
-  'type',
-  'priority',
-  'assigneeId',
-  'moduleId',
-  'iterationId',
-  'estimatedHours',
-  'dueDate',
+  { label: '标题', value: 'title' },
+  { label: '描述', value: 'description' },
+  { label: '需求类型', value: 'type' },
+  { label: '优先级', value: 'priority' },
+  { label: '负责人', value: 'assigneeId' },
+  { label: '模块', value: 'moduleId' },
+  { label: '所属迭代', value: 'iterationId' },
+  { label: '开始时间', value: 'startDate' },
+  { label: '截止日期', value: 'dueDate' },
+  { label: '估算工时', value: 'estimatedHours' },
+  { label: '附件', value: 'attachments' },
 ]
 
 const route = useRoute()
@@ -468,7 +492,9 @@ function formatUserSummary(userIds?: number[] | null) {
 
 function formatFieldSummary(fields?: string[] | null) {
   const list = normalizeStringArray(fields)
-  return list.length > 0 ? list.join('、') : '无'
+  return list.length > 0
+    ? list.map((field) => fieldOptions.find((item) => item.value === field)?.label || field).join('、')
+    : '无'
 }
 
 function hasNodePermission(node: WorkflowNodeDefinition) {
@@ -552,9 +578,9 @@ function buildDefinition(versionName: string): WorkflowDefinition {
       sortOrder: node.sortOrder || 0,
       allowedRoles: normalizeStringArray(node.allowedRoles),
       allowedUsers: normalizeNumberArray(node.allowedUsers),
-      editableFields: [],
-      requiredFields: [],
-      availableActions: [],
+      editableFields: normalizeStringArray(node.editableFields),
+      requiredFields: normalizeStringArray(node.requiredFields),
+      availableActions: normalizeStringArray(node.availableActions),
     })),
     edges: draftEdges.value.map((edge) => ({
       source: edge.source,
@@ -719,12 +745,12 @@ function buildDraftFromRuntime(states: WorkflowState[], transitions: WorkflowTra
     color: state.color || '#409EFF',
     isFinal: !!state.isFinal,
     sortOrder: Number.isFinite(Number(state.sortOrder)) ? Number(state.sortOrder) : index + 1,
-    allowedRoles: [],
-    allowedUsers: [],
-    editableFields: [],
-    requiredFields: [],
-    availableActions: [],
-  }))
+      allowedRoles: [],
+      allowedUsers: [],
+      editableFields: [],
+      requiredFields: [],
+      availableActions: [],
+    }))
 
   const nodeIdMap = new Map<number, string>()
   states.forEach((state) => {
@@ -842,6 +868,9 @@ function openNodeDialog(node?: WorkflowNodeDefinition) {
       ...node,
       allowedRoles: normalizeStringArray(node.allowedRoles),
       allowedUsers: normalizeNumberArray(node.allowedUsers),
+      editableFields: normalizeStringArray(node.editableFields),
+      requiredFields: normalizeStringArray(node.requiredFields),
+      availableActions: normalizeStringArray(node.availableActions),
     }
   } else {
     nodeForm.value = createEmptyNode()
@@ -874,9 +903,9 @@ async function submitNode() {
     sortOrder: nodeForm.value.sortOrder || 0,
     allowedRoles: normalizeStringArray(nodeForm.value.allowedRoles),
     allowedUsers: normalizeNumberArray(nodeForm.value.allowedUsers),
-    editableFields: [],
-    requiredFields: [],
-    availableActions: [],
+    editableFields: normalizeStringArray(nodeForm.value.editableFields),
+    requiredFields: normalizeStringArray(nodeForm.value.requiredFields),
+    availableActions: normalizeStringArray(nodeForm.value.availableActions),
   }
 
   if (editingNodeId.value) {

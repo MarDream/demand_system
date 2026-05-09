@@ -18,11 +18,9 @@ public final class SecurityUtils {
             return null;
         }
         Object principal = authentication.getPrincipal();
-        // 优先从UserPrincipal获取
         if (principal instanceof UserPrincipal userPrincipal) {
             return userPrincipal.getUserId();
         }
-        // 兼容旧的UserDetails方式
         if (principal instanceof org.springframework.security.core.userdetails.UserDetails userDetails) {
             return Long.parseLong(userDetails.getUsername());
         }
@@ -35,20 +33,17 @@ public final class SecurityUtils {
             return null;
         }
         Object principal = authentication.getPrincipal();
-        // 优先从UserPrincipal获取
         if (principal instanceof UserPrincipal userPrincipal) {
             return userPrincipal.getUsername();
         }
         return authentication.getName();
     }
 
-    @SuppressWarnings("unchecked")
     public static List<String> getCurrentUserRoles() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || authentication.getAuthorities() == null) {
             return List.of();
         }
-        // 优先从UserPrincipal获取
         Object principal = authentication.getPrincipal();
         if (principal instanceof UserPrincipal userPrincipal) {
             return userPrincipal.getRoles();
@@ -58,6 +53,18 @@ public final class SecurityUtils {
                 .toList();
     }
 
+    public static List<String> getCurrentUserPermissions() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || authentication.getPrincipal() == null) {
+            return List.of();
+        }
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof UserPrincipal userPrincipal && userPrincipal.getPermissions() != null) {
+            return userPrincipal.getPermissions();
+        }
+        return List.of();
+    }
+
     public static boolean hasAnyRole(String... roles) {
         List<String> currentRoles = getCurrentUserRoles();
         if (currentRoles.isEmpty() || roles == null || roles.length == 0) {
@@ -65,5 +72,14 @@ public final class SecurityUtils {
         }
         Set<String> expected = Set.of(roles);
         return currentRoles.stream().anyMatch(expected::contains);
+    }
+
+    public static boolean hasAnyPermission(String... permissions) {
+        List<String> currentPermissions = getCurrentUserPermissions();
+        if (currentPermissions.isEmpty() || permissions == null || permissions.length == 0) {
+            return false;
+        }
+        Set<String> expected = Set.of(permissions);
+        return currentPermissions.stream().anyMatch(expected::contains);
     }
 }

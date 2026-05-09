@@ -2,6 +2,7 @@ package com.demand.system.module.workflow.engine;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.demand.system.module.requirement.dto.RequirementFieldAlias;
 import com.demand.system.module.requirement.entity.Requirement;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
 import com.demand.system.module.workflow.entity.WorkflowState;
@@ -141,7 +142,7 @@ public class StateMachine {
 
         String[] fields = cleaned.split(",");
         for (String field : fields) {
-            field = field.trim();
+            field = RequirementFieldAlias.normalize(field);
             if (field.isEmpty()) continue;
             try {
                 Object value = getFieldValue(requirement, field);
@@ -166,8 +167,10 @@ public class StateMachine {
             case "assigneeId" -> requirement.getAssigneeId();
             case "moduleId" -> requirement.getModuleId();
             case "iterationId" -> requirement.getIterationId();
+            case "startDate" -> requirement.getStartDate();
             case "estimatedHours" -> requirement.getEstimatedHours();
             case "dueDate" -> requirement.getDueDate();
+            case "attachments" -> requirement.getAttachments();
             default -> throw new NoSuchFieldException(fieldName);
         };
     }

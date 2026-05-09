@@ -6,6 +6,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 @Data
 public class IterationCreateDTO {
@@ -25,4 +26,6 @@ public class IterationCreateDTO {
     private LocalDate endDate;
 
     private BigDecimal capacity;
+
+    private List<Long> requirementIds;
 }

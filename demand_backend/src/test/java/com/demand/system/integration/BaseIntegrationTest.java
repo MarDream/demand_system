@@ -14,6 +14,9 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 import org.testcontainers.containers.wait.strategy.Wait;
+import org.testcontainers.utility.MountableFile;
+
+import java.nio.file.Path;
 
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -30,7 +33,10 @@ public abstract class BaseIntegrationTest {
             .withDatabaseName("demand_system")
             .withUsername("root")
             .withPassword("admin123")
-            .withInitScript("db/init.sql");
+            .withCopyFileToContainer(
+                    MountableFile.forHostPath(Path.of("..", "database", "init.sql").toAbsolutePath().normalize()),
+                    "/docker-entrypoint-initdb.d/init.sql"
+            );
 
     @Container
     static final GenericContainer<?> REDIS = new GenericContainer<>(REDIS_IMAGE)

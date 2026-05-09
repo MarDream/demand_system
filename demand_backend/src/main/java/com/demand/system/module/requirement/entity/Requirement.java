@@ -1,11 +1,14 @@
 package com.demand.system.module.requirement.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
+import com.demand.system.module.requirement.dto.RequirementAttachmentDTO;
 import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @TableName(value = "requirements", autoResultMap = true)
@@ -22,6 +25,12 @@ public class Requirement {
 
     private Long assigneeId;
 
+    private Long opsFollowId;
+
+    private Long maintFollowId;
+
+    private Long departmentId;
+
     private String title;
 
     private String description;
@@ -36,11 +45,28 @@ public class Requirement {
 
     private Long iterationId;
 
+    private Long workflowInstanceId;
+
+    private String nodeStatus;
+
+    private Boolean isDraft;
+
+    private LocalDate startDate;
+
     private BigDecimal estimatedHours;
 
     private BigDecimal actualHours;
 
     private LocalDate dueDate;
+
+    private LocalDateTime analysisCompletedAt;
+
+    private LocalDateTime confirmAt;
+
+    private LocalDateTime developmentCompletedAt;
+
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private List<RequirementAttachmentDTO> attachments;
 
     private Integer orderNum;
 

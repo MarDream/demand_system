@@ -5,6 +5,7 @@ import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 public class RequirementVO {
@@ -18,6 +19,12 @@ public class RequirementVO {
     private Long creatorId;
 
     private Long assigneeId;
+
+    private Long opsFollowId;
+
+    private Long maintFollowId;
+
+    private Long departmentId;
 
     private String title;
 
@@ -33,11 +40,21 @@ public class RequirementVO {
 
     private Long iterationId;
 
+    private LocalDate startDate;
+
     private BigDecimal estimatedHours;
 
     private BigDecimal actualHours;
 
     private LocalDate dueDate;
+
+    private LocalDateTime analysisCompletedAt;
+
+    private LocalDateTime confirmAt;
+
+    private LocalDateTime developmentCompletedAt;
+
+    private List<RequirementAttachmentDTO> attachments;
 
     private Integer orderNum;
 
@@ -52,6 +69,12 @@ public class RequirementVO {
     private String creatorName;
 
     private String assigneeName;
+
+    private String opsFollowName;
+
+    private String maintFollowName;
+
+    private String departmentName;
 
     private Integer childCount;
 }

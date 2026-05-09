@@ -23,20 +23,23 @@
 
     <el-form-item label="需求类型" prop="type">
       <el-select v-model="internalValue.type" placeholder="请选择需求类型" style="width: 100%">
-        <el-option label="功能" value="功能" />
-        <el-option label="优化" value="优化" />
-        <el-option label="Bug" value="Bug" />
-        <el-option label="技术债务" value="技术债务" />
-        <el-option label="运营" value="运营" />
+        <el-option
+          v-for="type in typeOptions"
+          :key="type.code"
+          :label="type.name"
+          :value="type.code"
+        />
       </el-select>
     </el-form-item>
 
     <el-form-item label="优先级" prop="priority">
       <el-select v-model="internalValue.priority" placeholder="请选择优先级" style="width: 100%">
-        <el-option label="P0" value="P0" />
-        <el-option label="P1" value="P1" />
-        <el-option label="P2" value="P2" />
-        <el-option label="P3" value="P3" />
+        <el-option
+          v-for="priority in priorityOptions"
+          :key="priority.code"
+          :label="priority.name"
+          :value="priority.code"
+        />
       </el-select>
     </el-form-item>
 
@@ -95,20 +98,28 @@
 <script setup lang="ts">
 import { reactive, computed, watch, ref, onMounted } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
-import type { RequirementCreate } from '@/types/requirement'
+import type { RequirementCreate, RequirementUpdate } from '@/types/requirement'
 import type { User } from '@/types/user'
 import type { Iteration } from '@/types/iteration'
 import { userApi, iterationApi } from '@/api'
+import {
+  requirementConfigApi,
+  type Priority,
+  type RequirementType,
+} from '@/api/modules/requirementConfig'
+import { normalizeText } from '@/utils/format'
+
+type RequirementFormModel = Partial<RequirementCreate & RequirementUpdate>
 
 const props = defineProps<{
-  modelValue: Partial<RequirementCreate>
+  modelValue: RequirementFormModel
   isEdit?: boolean
   projectId?: number
 }>()
 
 const emit = defineEmits<{
-  'update:modelValue': [value: Partial<RequirementCreate>]
-  submit: [value: Partial<RequirementCreate>]
+  'update:modelValue': [value: RequirementFormModel]
+  submit: [value: RequirementFormModel]
   cancel: []
 }>()
 
@@ -120,6 +131,10 @@ const userList = ref<User[]>([])
 
 // 动态加载：迭代列表
 const iterationList = ref<Iteration[]>([])
+
+// 动态加载：需求配置
+const typeOptions = ref<RequirementType[]>([])
+const priorityOptions = ref<Priority[]>([])
 
 async function loadUsers() {
   try {
@@ -140,7 +155,28 @@ async function loadIterations() {
   }
 }
 
-const internalValue = reactive<Partial<RequirementCreate>>({
+async function loadConfigOptions() {
+  try {
+    const [typesRes, prioritiesRes] = await Promise.all([
+      requirementConfigApi.listTypes(),
+      requirementConfigApi.listPriorities(),
+    ])
+    const typeList = Array.isArray(typesRes) ? typesRes : (typesRes as any)?.data || []
+    const priorityList = Array.isArray(prioritiesRes) ? prioritiesRes : (prioritiesRes as any)?.data || []
+    typeOptions.value = typeList.map((type: RequirementType) => ({
+      ...type,
+      name: normalizeText(type.name),
+    }))
+    priorityOptions.value = priorityList.map((priority: Priority) => ({
+      ...priority,
+      name: normalizeText(priority.name),
+    }))
+  } catch (error) {
+    console.error('加载需求配置失败', error)
+  }
+}
+
+const internalValue = reactive<RequirementFormModel>({
   title: props.modelValue.title || '',
   description: props.modelValue.description || '',
   type: props.modelValue.type || '',
@@ -180,6 +216,7 @@ watch(
 onMounted(() => {
   loadUsers()
   loadIterations()
+  loadConfigOptions()
 })
 
 const isEdit = computed(() => props.isEdit)

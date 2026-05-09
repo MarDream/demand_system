@@ -15,6 +15,8 @@ public class UserQueryDTO {
 
     private Long departmentId;
 
+    private Long positionId;
+
     private Integer pageNum = 1;
 
     private Integer pageSize = 10;

@@ -5,6 +5,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 @Data
 public class RequirementUpdateDTO {
@@ -26,11 +27,15 @@ public class RequirementUpdateDTO {
 
     private Long moduleId;
 
+    private LocalDate startDate;
+
     private LocalDate dueDate;
 
     private BigDecimal estimatedHours;
 
     private BigDecimal actualHours;
+
+    private List<RequirementAttachmentDTO> attachments;
 
     private String status;
 

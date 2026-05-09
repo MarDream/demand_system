@@ -1,12 +1,10 @@
 package com.demand.system.module.user.dto;
 
-import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 @Data
 public class UserUpdateDTO {
 
-    @NotNull(message = "用户ID不能为空")
     private Long id;
 
     private String realName;
@@ -18,4 +16,10 @@ public class UserUpdateDTO {
     private String avatar;
 
     private String status;
+
+    private Long regionId;
+
+    private Long departmentId;
+
+    private Long positionId;
 }
