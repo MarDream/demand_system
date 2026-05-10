@@ -1,8 +1,13 @@
 package com.demand.system.module.knowledge.service.impl;
 
+import com.demand.system.module.knowledge.entity.KnowledgeDocument;
 import com.demand.system.module.knowledge.config.KnowledgeConfig;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchRequest;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse;
+import com.demand.system.module.knowledge.mapper.KnowledgeDocumentMapper;
+import com.demand.system.module.requirement.dto.RequirementAttachmentDTO;
+import com.demand.system.module.requirement.entity.Requirement;
+import com.demand.system.module.requirement.mapper.RequirementMapper;
 import com.demand.system.module.knowledge.service.EmbeddingService;
 import com.demand.system.module.knowledge.service.KnowledgeSearchService;
 import com.demand.system.module.knowledge.service.RagAnswerService;
@@ -23,6 +28,8 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
     private final MilvusVectorStore milvusVectorStore;
     private final KnowledgeConfig knowledgeConfig;
     private final RagAnswerService ragAnswerService;
+    private final RequirementMapper requirementMapper;
+    private final KnowledgeDocumentMapper knowledgeDocumentMapper;
 
     @Override
     public KnowledgeSearchResponse search(KnowledgeSearchRequest request) {
@@ -44,7 +51,8 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
 
         KnowledgeSearchResponse.KnowledgeSearchResponseBuilder responseBuilder = KnowledgeSearchResponse.builder()
                 .results(results)
-                .total(results.size());
+                .total(results.size())
+                .processSummary(buildProcessSummary(request, results));
 
         // RAG模式：生成LLM答案
         if ("rag".equals(mode) && !results.isEmpty()) {
@@ -115,16 +123,87 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
 
     private KnowledgeSearchResponse.SearchResultItem toResultItem(MilvusVectorStore.SearchResult sr) {
         Map<String, Object> entity = sr.getEntity();
+        String fileName = getString(entity.get("file_name"));
         return KnowledgeSearchResponse.SearchResultItem.builder()
                 .chunkId(parseLong(entity.get("id")))
                 .documentId(parseLong(entity.get("document_id")))
-                .fileName(getString(entity.get("file_name")))
+                .fileName(fileName)
                 .sectionTitle(getString(entity.get("section_title")))
                 .content(getString(entity.get("text")))
                 .pageNum(parseInteger(entity.get("page_num")))
                 .score((double) sr.getScore())
                 .knowledgeBaseId(getString(entity.get("knowledge_base_id")))
+                .requirement(findRequirementReference(parseLong(entity.get("document_id")), fileName))
                 .build();
+    }
+
+    private String buildProcessSummary(KnowledgeSearchRequest request, List<KnowledgeSearchResponse.SearchResultItem> results) {
+        String mode = request.getMode() == null ? "hybrid" : request.getMode();
+        if (results.isEmpty()) {
+            return String.format("系统按%s模式检索了知识库内容，但未找到与“%s”相关的文档片段。", mode, request.getQuery());
+        }
+        long relatedRequirementCount = results.stream().filter(item -> item.getRequirement() != null).count();
+        return String.format(
+                "系统按%s模式解析问题“%s”，在%s个候选片段中返回前%d条结果，其中%d条结果可追溯到需求流程附件。",
+                mode,
+                request.getQuery(),
+                results.size(),
+                results.size(),
+                relatedRequirementCount
+        );
+    }
+
+    private KnowledgeSearchResponse.RequirementReference findRequirementReference(Long documentId, String fileName) {
+        if (documentId != null) {
+            KnowledgeDocument document = knowledgeDocumentMapper.selectById(documentId);
+            if (document != null && document.getRequirementId() != null) {
+                Requirement requirement = requirementMapper.selectById(document.getRequirementId());
+                if (requirement != null) {
+                    return toRequirementReference(requirement);
+                }
+            }
+        }
+
+        if (fileName == null || fileName.isBlank()) {
+            return null;
+        }
+        List<Requirement> requirements = requirementMapper.selectList(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Requirement>()
+                .isNotNull(Requirement::getAttachments)
+                .orderByDesc(Requirement::getCreatedAt));
+        for (Requirement requirement : requirements) {
+            if (requirement.getAttachments() == null) {
+                continue;
+            }
+            boolean matched = requirement.getAttachments().stream()
+                    .map(RequirementAttachmentDTO::getName)
+                    .filter(Objects::nonNull)
+                    .anyMatch(fileName::equalsIgnoreCase);
+            if (matched) {
+                return toRequirementReference(requirement);
+            }
+        }
+        return null;
+    }
+
+    private KnowledgeSearchResponse.RequirementReference toRequirementReference(Requirement requirement) {
+        return KnowledgeSearchResponse.RequirementReference.builder()
+                .id(requirement.getId())
+                .title(requirement.getTitle())
+                .status(requirement.getStatus())
+                .type(requirement.getType())
+                .summary(buildRequirementSummary(requirement.getDescription()))
+                .build();
+    }
+
+    private String buildRequirementSummary(String description) {
+        if (description == null || description.isBlank()) {
+            return "";
+        }
+        String plainText = description.replaceAll("<[^>]+>", "").replaceAll("\\s+", " ").trim();
+        if (plainText.length() <= 80) {
+            return plainText;
+        }
+        return plainText.substring(0, 80) + "...";
     }
 
     private Long parseLong(Object val) {

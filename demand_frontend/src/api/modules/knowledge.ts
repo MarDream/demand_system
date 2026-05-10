@@ -20,12 +20,16 @@ export interface KnowledgeBase {
 export interface KnowledgeDocument {
   id: number
   knowledgeBaseId: number
+  projectId?: number | null
   fileName: string
   fileType: string
   fileSize: number
   chunkCount: number
   status: string
   errorMessage: string | null
+  requirementId?: number | null
+  sourceType?: string | null
+  sourceId?: number | null
   uploaderId: number
   uploaderName: string | null
   createdAt: string
@@ -40,11 +44,20 @@ export interface SearchResultItem {
   pageNum: number | null
   score: number
   knowledgeBaseId: string
+  requirement?: {
+    id: number
+    title: string
+    status: string
+    type: string
+    summary: string
+  } | null
 }
 
 export interface SearchResponse {
   results: SearchResultItem[]
   total: number
+  answer?: string | null
+  processSummary?: string | null
 }
 
 export type SearchMode = 'hybrid' | 'semantic' | 'keyword'
@@ -91,6 +104,19 @@ export function getDocuments(knowledgeBaseId: number, params: { pageNum?: number
 
 export function deleteDocument(knowledgeBaseId: number, documentId: number) {
   return request.delete(`/v1/knowledge/bases/${knowledgeBaseId}/documents/${documentId}`)
+}
+
+export function generateDocumentShareLink(
+  knowledgeBaseId: number,
+  documentId: number,
+  options?: { expireHours?: number; requireLogin?: boolean; oneTimeAccess?: boolean }
+) {
+  const expireHours = options?.expireHours ?? 24
+  const requireLogin = options?.requireLogin ? 'true' : 'false'
+  const oneTimeAccess = options?.oneTimeAccess ? 'true' : 'false'
+  return request.post<string>(
+    `/v1/knowledge/bases/${knowledgeBaseId}/documents/${documentId}/share?expireHours=${expireHours}&requireLogin=${requireLogin}&oneTimeAccess=${oneTimeAccess}`
+  )
 }
 
 // 语义检索

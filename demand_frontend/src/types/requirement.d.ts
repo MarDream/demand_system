@@ -14,6 +14,9 @@ export interface Requirement {
   status: string
   moduleId: number | null
   iterationId: number | null
+  workflowInstanceId?: number | null
+  nodeStatus?: string | null
+  isDraft?: boolean | null
   startDate?: string | null
   estimatedHours: number | null
   actualHours: number | null

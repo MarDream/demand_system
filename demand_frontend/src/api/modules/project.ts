@@ -1,8 +1,19 @@
 import request from '@/api/request'
 import type { ApiResponse, PageResult } from '@/types/api'
-import type { Project, ProjectMember } from '@/types/project'
+import type { Project, ProjectImportResult, ProjectMember } from '@/types/project'
 
-export function getProjectList(params: { name?: string; pageNum: number; pageSize: number }) {
+export interface ProjectPayload {
+  name: string
+  description?: string | null
+  companyId?: number | null
+  team?: string | null
+  leaderId?: number | null
+  startDate?: string | null
+  endDate?: string | null
+  status?: string
+}
+
+export function getProjectList(params: { name?: string; status?: string; pageNum: number; pageSize: number }) {
   return request.get<ApiResponse<PageResult<Project>>>('/v1/projects', { params })
 }
 
@@ -10,11 +21,11 @@ export function getProjectById(id: number) {
   return request.get<ApiResponse<Project>>(`/v1/projects/${id}`)
 }
 
-export function createProject(data: { name: string; description: string }) {
+export function createProject(data: ProjectPayload) {
   return request.post<ApiResponse>('/v1/projects', data)
 }
 
-export function updateProject(id: number, data: { name: string; description: string; status: string }) {
+export function updateProject(id: number, data: ProjectPayload) {
   return request.put<ApiResponse>(`/v1/projects/${id}`, data)
 }
 
@@ -32,4 +43,16 @@ export function addProjectMember(projectId: number, data: { userId: number; role
 
 export function removeProjectMember(projectId: number, userId: number) {
   return request.delete<ApiResponse>(`/v1/projects/${projectId}/members/${userId}`)
+}
+
+export function downloadProjectTemplate() {
+  return request.get('/v1/projects/template', { responseType: 'blob' }) as unknown as Promise<Blob>
+}
+
+export function importProjects(file: File) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return request.post<ApiResponse<ProjectImportResult>>('/v1/projects/import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }) as unknown as Promise<ProjectImportResult>
 }

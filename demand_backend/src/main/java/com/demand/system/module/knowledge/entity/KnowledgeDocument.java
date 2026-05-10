@@ -28,6 +28,14 @@ public class KnowledgeDocument {
 
     private String minioKey;
 
+    private Long projectId;
+
+    private Long requirementId;
+
+    private String sourceType;
+
+    private Long sourceId;
+
     private Long uploaderId;
 
     private LocalDateTime createdAt;

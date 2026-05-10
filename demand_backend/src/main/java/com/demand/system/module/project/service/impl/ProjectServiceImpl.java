@@ -24,10 +24,13 @@ public class ProjectServiceImpl implements ProjectService {
     private final ProjectMemberMapper projectMemberMapper;
 
     @Override
-    public PageResult<Project> list(String name, int pageNum, int pageSize) {
+    public PageResult<Project> list(String name, String status, int pageNum, int pageSize) {
         LambdaQueryWrapper<Project> wrapper = new LambdaQueryWrapper<>();
         if (name != null && !name.trim().isEmpty()) {
             wrapper.like(Project::getName, name);
+        }
+        if (status != null && !status.trim().isEmpty()) {
+            wrapper.eq(Project::getStatus, status);
         }
         wrapper.orderByDesc(Project::getCreatedAt);
 
@@ -47,6 +50,11 @@ public class ProjectServiceImpl implements ProjectService {
         Project project = new Project();
         project.setName(dto.getName());
         project.setDescription(dto.getDescription());
+        project.setCompanyId(dto.getCompanyId());
+        project.setTeam(dto.getTeam());
+        project.setLeaderId(dto.getLeaderId());
+        project.setStartDate(dto.getStartDate());
+        project.setEndDate(dto.getEndDate());
         project.setCreatorId(creatorId);
         project.setStatus("active");
         projectMapper.insert(project);
@@ -58,7 +66,12 @@ public class ProjectServiceImpl implements ProjectService {
         project.setId(dto.getId());
         project.setName(dto.getName());
         project.setDescription(dto.getDescription());
-        project.setStatus(dto.getStatus());
+        project.setCompanyId(dto.getCompanyId());
+        project.setTeam(dto.getTeam());
+        project.setLeaderId(dto.getLeaderId());
+        project.setStartDate(dto.getStartDate());
+        project.setEndDate(dto.getEndDate());
+        project.setStatus(dto.getStatus() == null || dto.getStatus().isBlank() ? "active" : dto.getStatus());
         projectMapper.updateById(project);
     }
 

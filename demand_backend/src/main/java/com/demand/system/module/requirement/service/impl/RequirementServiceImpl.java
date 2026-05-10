@@ -24,6 +24,7 @@ import com.demand.system.module.organization.entity.Department;
 import com.demand.system.module.organization.mapper.DepartmentMapper;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.notification.service.NotificationService;
+import com.demand.system.module.knowledge.service.KnowledgeDocumentService;
 import com.demand.system.module.workflow.service.WorkflowService;
 import com.demand.system.module.workflow.mapper.WorkflowTransitionRecordMapper;
 import lombok.RequiredArgsConstructor;
@@ -54,6 +55,7 @@ public class RequirementServiceImpl implements RequirementService {
     private final WorkflowService workflowService;
     private final WorkflowTransitionRecordMapper workflowTransitionRecordMapper;
     private final RequirementConfigService requirementConfigService;
+    private final KnowledgeDocumentService knowledgeDocumentService;
 
     @Override
     public PageResult<RequirementVO> list(RequirementQueryDTO query) {
@@ -180,6 +182,7 @@ public class RequirementServiceImpl implements RequirementService {
         }
 
         recordHistory(requirement.getId(), creatorId, "create", null, "需求创建");
+        knowledgeDocumentService.syncRequirementAttachments(dto.getProjectId(), requirement.getId(), dto.getAttachments(), creatorId);
     }
 
     @Override
@@ -260,6 +263,9 @@ public class RequirementServiceImpl implements RequirementService {
 
         if (updateWrapper.getSqlSet() != null && !updateWrapper.getSqlSet().isEmpty()) {
             requirementMapper.update(null, updateWrapper);
+        }
+        if (dto.getAttachments() != null) {
+            knowledgeDocumentService.syncRequirementAttachments(existing.getProjectId(), existing.getId(), dto.getAttachments(), userId);
         }
     }
 

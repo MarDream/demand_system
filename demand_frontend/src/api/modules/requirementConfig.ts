@@ -49,7 +49,7 @@ export const requirementConfigApi = {
 
   deleteType: (id: number) => request.delete(`/v1/requirement-config/types/${id}`),
 
-  sortTypes: (items: SortItem[]) => request.post('/v1/requirement-config/types/sort', { items }),
+  sortTypes: (items: SortItem[]) => request.post('/v1/requirement-config/types/sort', items),
 
   // 优先级
   listPriorities: () => request.get<Priority[]>('/v1/requirement-config/priorities'),
@@ -60,5 +60,5 @@ export const requirementConfigApi = {
 
   deletePriority: (id: number) => request.delete(`/v1/requirement-config/priorities/${id}`),
 
-  sortPriorities: (items: SortItem[]) => request.post('/v1/requirement-config/priorities/sort', { items }),
+  sortPriorities: (items: SortItem[]) => request.post('/v1/requirement-config/priorities/sort', items),
 }

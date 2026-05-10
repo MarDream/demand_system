@@ -7,6 +7,19 @@ export interface FlowTransitionRequest {
   comment?: string
 }
 
+export interface AvailableTransition {
+  toNodeId: string
+  toNodeName: string
+  label?: string | null
+}
+
+export interface WorkflowAvailableActions {
+  canTransition: boolean
+  canRollback: boolean
+  canCancel: boolean
+  transitions: AvailableTransition[]
+}
+
 export interface TransitionVO {
   id: number
   instanceId: number
@@ -37,6 +50,11 @@ export interface NodeStatus {
   isCancel: boolean
 }
 
+export interface SortItem {
+  id: number
+  sortOrder: number
+}
+
 export const workflowEngineApi = {
   initWorkflow(requirementId: number, workflowVersionId: number) {
     return request.post(`/v1/workflow-engine/init?requirementId=${requirementId}&workflowVersionId=${workflowVersionId}`)
@@ -64,6 +82,10 @@ export const workflowEngineApi = {
 
   getTransitionHistory(requirementId: number) {
     return request.get<TransitionVO[]>(`/v1/workflow-engine/transitions/${requirementId}`)
+  },
+
+  getAvailableActions(requirementId: number) {
+    return request.get<WorkflowAvailableActions>(`/v1/workflow-engine/actions/${requirementId}`) as unknown as Promise<WorkflowAvailableActions>
   }
 }
 
@@ -82,5 +104,9 @@ export const nodeStatusApi = {
 
   delete(id: number) {
     return request.delete(`/v1/node-statuses/${id}`)
+  },
+
+  sort(items: SortItem[]) {
+    return request.post<NodeStatus[]>('/v1/node-statuses/sort', items)
   }
 }

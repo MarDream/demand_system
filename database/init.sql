@@ -204,6 +204,23 @@ CREATE TABLE `workflow_transitions` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工作流转换表';
 
 -- -----------------------------------------------------
+-- 10.1 工作流转换记录表 workflow_transition_records
+-- -----------------------------------------------------
+DROP TABLE IF EXISTS `workflow_transition_records`;
+CREATE TABLE `workflow_transition_records` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `requirement_id` BIGINT UNSIGNED NOT NULL COMMENT '需求ID',
+  `from_state_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '源状态ID',
+  `to_state_id` BIGINT UNSIGNED NOT NULL COMMENT '目标状态ID',
+  `operator_id` BIGINT UNSIGNED NOT NULL COMMENT '操作人ID',
+  `comment` TEXT DEFAULT NULL COMMENT '备注',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `idx_requirement_id` (`requirement_id`),
+  INDEX `idx_operator_id` (`operator_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工作流转换记录表';
+
+-- -----------------------------------------------------
 -- 11. 工作流版本表 workflow_versions
 -- -----------------------------------------------------
 DROP TABLE IF EXISTS `workflow_versions`;
@@ -280,6 +297,9 @@ CREATE TABLE `requirements` (
   `parent_id` INT UNSIGNED DEFAULT NULL COMMENT '父需求ID(树形结构)',
   `creator_id` INT UNSIGNED NOT NULL COMMENT '创建人ID',
   `assignee_id` INT UNSIGNED DEFAULT NULL COMMENT '负责人ID',
+  `ops_follow_id` INT UNSIGNED DEFAULT NULL COMMENT '运维跟进人ID',
+  `maint_follow_id` INT UNSIGNED DEFAULT NULL COMMENT '维护跟进人ID',
+  `department_id` INT UNSIGNED DEFAULT NULL COMMENT '所属部门ID',
   `title` VARCHAR(500) NOT NULL COMMENT '标题',
   `description` LONGTEXT COMMENT '描述',
   `type` VARCHAR(50) NOT NULL COMMENT '类型(feature/bug/improvement等)',
@@ -291,6 +311,9 @@ CREATE TABLE `requirements` (
   `estimated_hours` DECIMAL(10, 2) DEFAULT NULL COMMENT '预估工时',
   `actual_hours` DECIMAL(10, 2) DEFAULT NULL COMMENT '实际工时',
   `due_date` DATE DEFAULT NULL COMMENT '截止日期',
+  `analysis_completed_at` DATETIME DEFAULT NULL COMMENT '分析完成时间',
+  `confirm_at` DATETIME DEFAULT NULL COMMENT '确认时间',
+  `development_completed_at` DATETIME DEFAULT NULL COMMENT '开发完成时间',
   `attachments` JSON DEFAULT NULL COMMENT '附件列表',
   `order_num` INT DEFAULT 0 COMMENT '排序号',
   `version` INT DEFAULT 0 COMMENT '乐观锁版本号',
@@ -823,6 +846,7 @@ DROP TABLE IF EXISTS `knowledge_documents`;
 CREATE TABLE `knowledge_documents` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `knowledge_base_id` BIGINT UNSIGNED NOT NULL COMMENT '知识库ID',
+  `project_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联项目ID',
   `file_name` VARCHAR(500) NOT NULL COMMENT '文件名',
   `file_type` VARCHAR(32) DEFAULT NULL COMMENT '文件类型(pdf/txt/md/docx)',
   `file_size` BIGINT UNSIGNED DEFAULT 0 COMMENT '文件大小(字节)',
@@ -830,19 +854,69 @@ CREATE TABLE `knowledge_documents` (
   `status` VARCHAR(50) DEFAULT 'pending' COMMENT '状态(pending/parsed/indexing/indexed/failed)',
   `error_message` VARCHAR(500) DEFAULT NULL COMMENT '错误信息',
   `minio_key` VARCHAR(500) DEFAULT NULL COMMENT 'MinIO存储Key',
+  `requirement_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联需求ID',
+  `source_type` VARCHAR(50) DEFAULT NULL COMMENT '来源类型(requirement/knowledge_base)',
+  `source_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '来源业务ID',
   `uploader_id` BIGINT UNSIGNED NOT NULL COMMENT '上传人ID',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
   PRIMARY KEY (`id`),
   INDEX `idx_knowledge_base_id` (`knowledge_base_id`),
+  INDEX `idx_project_id` (`project_id`),
   INDEX `idx_status` (`status`),
+  INDEX `idx_requirement_id` (`requirement_id`),
+  INDEX `idx_source_type_source_id` (`source_type`, `source_id`),
   INDEX `idx_uploader_id` (`uploader_id`),
   INDEX `idx_deleted_at` (`deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='知识库文档表';
 
 -- -----------------------------------------------------
--- 33. 知识库文档分块表 knowledge_chunks
+-- 33. 知识库文档分享表 knowledge_document_shares
+-- -----------------------------------------------------
+DROP TABLE IF EXISTS `knowledge_document_shares`;
+CREATE TABLE `knowledge_document_shares` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `token` VARCHAR(64) NOT NULL COMMENT '分享令牌',
+  `knowledge_base_id` BIGINT UNSIGNED NOT NULL COMMENT '知识库ID',
+  `document_id` BIGINT UNSIGNED NOT NULL COMMENT '文档ID',
+  `creator_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '创建人ID',
+  `require_login` TINYINT DEFAULT 0 COMMENT '是否需要登录 0=否 1=是',
+  `one_time_access` TINYINT DEFAULT 0 COMMENT '是否一次性链接 0=否 1=是',
+  `used_count` INT UNSIGNED DEFAULT 0 COMMENT '使用次数',
+  `status` VARCHAR(32) DEFAULT 'active' COMMENT '状态(active/used/expired)',
+  `expire_at` DATETIME DEFAULT NULL COMMENT '过期时间',
+  `used_at` DATETIME DEFAULT NULL COMMENT '最后使用时间',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `uk_token` (`token`),
+  INDEX `idx_document_id` (`document_id`),
+  INDEX `idx_expire_at` (`expire_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='知识库文档分享表';
+
+-- -----------------------------------------------------
+-- 34. 知识库文档分享访问日志表 knowledge_document_share_logs
+-- -----------------------------------------------------
+DROP TABLE IF EXISTS `knowledge_document_share_logs`;
+CREATE TABLE `knowledge_document_share_logs` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `share_id` BIGINT UNSIGNED NOT NULL COMMENT '分享记录ID',
+  `document_id` BIGINT UNSIGNED NOT NULL COMMENT '文档ID',
+  `access_user_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '访问用户ID',
+  `access_ip` VARCHAR(64) DEFAULT NULL COMMENT '访问IP',
+  `user_agent` VARCHAR(500) DEFAULT NULL COMMENT '访问UA',
+  `access_status` VARCHAR(32) DEFAULT 'success' COMMENT '访问状态(success/failed)',
+  `failure_reason` VARCHAR(255) DEFAULT NULL COMMENT '失败原因',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `idx_share_id` (`share_id`),
+  INDEX `idx_document_id` (`document_id`),
+  INDEX `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='知识库文档分享访问日志';
+
+-- -----------------------------------------------------
+-- 35. 知识库文档分块表 knowledge_chunks
 -- -----------------------------------------------------
 DROP TABLE IF EXISTS `knowledge_chunks`;
 CREATE TABLE `knowledge_chunks` (
@@ -974,6 +1048,31 @@ INSERT IGNORE INTO `node_statuses` (`code`, `name`, `color`, `sort_order`, `is_s
 ('ACCEPTED', '已验收', '#909399', 8, 0, 1, 0),
 ('CANCELLED', '已取消', '#909399', 9, 0, 0, 1);
 
+UPDATE `node_statuses`
+SET `name` = CASE `code`
+  WHEN 'DRAFT' THEN '新建'
+  WHEN 'PENDING_ANALYSIS' THEN '待分析'
+  WHEN 'PENDING_CONFIRM' THEN '待确认'
+  WHEN 'PENDING_REVIEW' THEN '待评审'
+  WHEN 'IN_DEVELOPMENT' THEN '开发中'
+  WHEN 'IN_TESTING' THEN '测试中'
+  WHEN 'LIVE' THEN '已上线'
+  WHEN 'ACCEPTED' THEN '已验收'
+  WHEN 'CANCELLED' THEN '已取消'
+  ELSE `name`
+END
+WHERE `code` IN (
+  'DRAFT',
+  'PENDING_ANALYSIS',
+  'PENDING_CONFIRM',
+  'PENDING_REVIEW',
+  'IN_DEVELOPMENT',
+  'IN_TESTING',
+  'LIVE',
+  'ACCEPTED',
+  'CANCELLED'
+);
+
 -- -----------------------------------------------------
 -- 工作流实例表
 -- -----------------------------------------------------
@@ -1025,6 +1124,10 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS `team` VARCHAR(200) DEFAULT NULL C
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS `leader_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '负责人ID' AFTER team;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS `start_date` DATE DEFAULT NULL COMMENT '开始日期' AFTER leader_id;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS `end_date` DATE DEFAULT NULL COMMENT '截止日期' AFTER start_date;
+ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS `project_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联项目ID' AFTER knowledge_base_id;
+ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS `requirement_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联需求ID' AFTER minio_key;
+ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS `source_type` VARCHAR(50) DEFAULT NULL COMMENT '来源类型(requirement/knowledge_base)' AFTER requirement_id;
+ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS `source_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '来源业务ID' AFTER source_type;
 
 -- -----------------------------------------------------
 -- 岗位表字段补全
@@ -1039,3 +1142,102 @@ ALTER TABLE positions ADD COLUMN IF NOT EXISTS `menu_permissions` JSON DEFAULT N
 ALTER TABLE requirements ADD COLUMN IF NOT EXISTS `workflow_instance_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '工作流实例ID' AFTER iteration_id;
 ALTER TABLE requirements ADD COLUMN IF NOT EXISTS `node_status` VARCHAR(50) DEFAULT 'DRAFT' COMMENT '当前节点状态' AFTER workflow_instance_id;
 ALTER TABLE requirements ADD COLUMN IF NOT EXISTS `is_draft` TINYINT DEFAULT 1 COMMENT '是否草稿 0=否 1=是' AFTER node_status;
+
+-- -----------------------------------------------------
+-- 增量变更：知识库文档分享与访问审计
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `knowledge_document_shares` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `token` VARCHAR(64) NOT NULL COMMENT '分享令牌',
+  `knowledge_base_id` BIGINT UNSIGNED NOT NULL COMMENT '知识库ID',
+  `document_id` BIGINT UNSIGNED NOT NULL COMMENT '文档ID',
+  `creator_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '创建人ID',
+  `require_login` TINYINT DEFAULT 0 COMMENT '是否需要登录 0=否 1=是',
+  `one_time_access` TINYINT DEFAULT 0 COMMENT '是否一次性链接 0=否 1=是',
+  `used_count` INT UNSIGNED DEFAULT 0 COMMENT '使用次数',
+  `status` VARCHAR(32) DEFAULT 'active' COMMENT '状态(active/used/expired)',
+  `expire_at` DATETIME DEFAULT NULL COMMENT '过期时间',
+  `used_at` DATETIME DEFAULT NULL COMMENT '最后使用时间',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_token` (`token`),
+  KEY `idx_document_id` (`document_id`),
+  KEY `idx_expire_at` (`expire_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='知识库文档分享表';
+
+CREATE TABLE IF NOT EXISTS `knowledge_document_share_logs` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `share_id` BIGINT UNSIGNED NOT NULL COMMENT '分享记录ID',
+  `document_id` BIGINT UNSIGNED NOT NULL COMMENT '文档ID',
+  `access_user_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '访问用户ID',
+  `access_ip` VARCHAR(64) DEFAULT NULL COMMENT '访问IP',
+  `user_agent` VARCHAR(500) DEFAULT NULL COMMENT '访问UA',
+  `access_status` VARCHAR(32) DEFAULT 'success' COMMENT '访问状态(success/failed)',
+  `failure_reason` VARCHAR(255) DEFAULT NULL COMMENT '失败原因',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_share_id` (`share_id`),
+  KEY `idx_document_id` (`document_id`),
+  KEY `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='知识库文档分享访问日志';
+
+-- -----------------------------------------------------
+-- 增量变更：系统配置菜单收敛
+-- -----------------------------------------------------
+INSERT INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `status`)
+VALUES (1, 'menu:system-config', '系统配置菜单', 'MENU', '系统配置一级菜单入口', 1)
+ON DUPLICATE KEY UPDATE
+  `code` = VALUES(`code`),
+  `name` = VALUES(`name`),
+  `type` = VALUES(`type`),
+  `description` = VALUES(`description`),
+  `status` = VALUES(`status`);
+
+INSERT INTO `sys_menus` (
+  `id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`,
+  `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`
+)
+VALUES (
+  7, 0, '系统配置', 'DIRECTORY', NULL, NULL, NULL, 'Setting',
+  6, 'menu:system-config', 1, 1, 0
+)
+ON DUPLICATE KEY UPDATE
+  `parent_id` = VALUES(`parent_id`),
+  `name` = VALUES(`name`),
+  `menu_type` = VALUES(`menu_type`),
+  `path` = VALUES(`path`),
+  `route_name` = VALUES(`route_name`),
+  `component` = VALUES(`component`),
+  `icon` = VALUES(`icon`),
+  `sort_order` = VALUES(`sort_order`),
+  `permission_code` = VALUES(`permission_code`),
+  `visible` = VALUES(`visible`),
+  `enabled` = VALUES(`enabled`),
+  `keep_alive` = VALUES(`keep_alive`);
+
+UPDATE `sys_menus`
+SET `parent_id` = 7,
+    `sort_order` = CASE `id`
+      WHEN 11 THEN 1
+      WHEN 12 THEN 2
+      WHEN 13 THEN 3
+      WHEN 14 THEN 4
+      WHEN 15 THEN 5
+      ELSE `sort_order`
+    END
+WHERE `id` IN (11, 12, 13, 14, 15);
+
+UPDATE `sys_menus`
+SET `parent_id` = 0,
+    `sort_order` = CASE `id`
+      WHEN 6 THEN 7
+      WHEN 8 THEN 8
+      WHEN 10 THEN 9
+      WHEN 16 THEN 10
+      ELSE `sort_order`
+    END
+WHERE `id` IN (6, 8, 10, 16);
+
+INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_by`)
+VALUES (1, 1, 1);

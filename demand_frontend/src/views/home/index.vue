@@ -121,7 +121,7 @@ const statCards = computed(() => [
   {
     icon: Document,
     label: '总需求数',
-    value: statsData.value?.totalRequirements ?? 0,
+    value: statsData.value?.totalReqs ?? 0,
     tip: '全部需求',
     bgColor: '#ecf5ff',
     iconColor: '#409EFF',
@@ -129,7 +129,7 @@ const statCards = computed(() => [
   {
     icon: Loading,
     label: '进行中需求',
-    value: statsData.value?.inProgress ?? 0,
+    value: statsData.value?.inProgressReqs ?? 0,
     tip: '开发中',
     bgColor: '#fdf6ec',
     iconColor: '#E6A23C',
@@ -137,7 +137,7 @@ const statCards = computed(() => [
   {
     icon: CircleCheck,
     label: '已完成',
-    value: statsData.value?.completed ?? 0,
+    value: statsData.value?.completedReqs ?? 0,
     tip: '已交付',
     bgColor: '#f0f9eb',
     iconColor: '#67C23A',
@@ -145,7 +145,7 @@ const statCards = computed(() => [
   {
     icon: Warning,
     label: '已逾期',
-    value: statsData.value?.overdue ?? 0,
+    value: statsData.value?.overdueReqs ?? 0,
     tip: '超过截止日期',
     bgColor: '#fef0f0',
     iconColor: '#F56C6C',
@@ -210,12 +210,11 @@ function formatDate(dateStr: string) {
 async function loadDashboardData() {
   statsLoading.value = true
   try {
-    // 尝试从 API 获取，如果没有则使用默认值
     const res = await getDashboardData(1)
-    const data = (res as any).data?.data || (res as any).data || {}
-    statsData.value = data
+    const data = (res as any)?.data ?? (res as any)
+    statsData.value = data || {}
   } catch {
-    statsData.value = { totalRequirements: 0, inProgress: 0, completed: 0, overdue: 0 }
+    statsData.value = { totalReqs: 0, inProgressReqs: 0, completedReqs: 0, overdueReqs: 0 }
   } finally {
     statsLoading.value = false
   }
@@ -225,10 +224,10 @@ async function loadDistributionData() {
   distLoading.value = true
   try {
     const res = await getDistributionData(1)
-    const data = (res as any).data?.data || (res as any).data || {}
-    const typedData = data as Record<string, number>
-    distributionData.value = typedData
-    totalDistribution.value = Object.values(typedData).reduce((sum, v) => sum + Number(v), 0)
+    const data = (res as any)?.data ?? (res as any)
+    const statusDist = (data?.statusDist || data || {}) as Record<string, number>
+    distributionData.value = statusDist
+    totalDistribution.value = Object.values(statusDist).reduce((sum, v) => sum + Number(v), 0)
   } catch {
     distributionData.value = {}
   } finally {
@@ -245,8 +244,8 @@ async function loadRecentRequirements() {
       sortField: 'createdAt',
       sortOrder: 'desc',
     })
-    const data = (res as any).data?.data || (res as any).data || {}
-    recentRequirements.value = data.list || []
+    const data = (res as any)?.data ?? (res as any)
+    recentRequirements.value = data?.list || []
   } catch {
     recentRequirements.value = []
   } finally {
@@ -257,19 +256,8 @@ async function loadRecentRequirements() {
 async function loadProjectTable() {
   projectLoading.value = true
   try {
-    // 这里假设有一个项目列表接口，暂时使用模拟数据
-    projectTable.value = [
-      { name: '需求管理系统 v1.0', total: 0, completed: 0, rate: 0 },
-    ]
-    // 尝试从需求列表统计
-    const res = await getRequirementList({
-      pageNum: 1,
-      pageSize: 1000,
-    })
-    const data = (res as any).data?.data || (res as any).data || {}
-    const list: Requirement[] = data.list || []
-    const total = list.length
-    const completed = list.filter((r: Requirement) => r.status === '已完成').length
+    const total = statsData.value?.totalReqs ?? 0
+    const completed = statsData.value?.completedReqs ?? 0
     const rate = total > 0 ? Math.round((completed / total) * 100) : 0
     projectTable.value = [
       { name: '需求管理系统 v1.0', total, completed, rate },
@@ -281,8 +269,8 @@ async function loadProjectTable() {
   }
 }
 
-onMounted(() => {
-  loadDashboardData()
+onMounted(async () => {
+  await loadDashboardData()
   loadDistributionData()
   loadRecentRequirements()
   loadProjectTable()

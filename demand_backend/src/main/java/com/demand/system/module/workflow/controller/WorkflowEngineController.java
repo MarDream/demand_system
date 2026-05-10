@@ -1,6 +1,7 @@
 package com.demand.system.module.workflow.controller;
 
 import com.demand.system.common.result.Result;
+import com.demand.system.module.workflow.dto.WorkflowAvailableActionsDTO;
 import com.demand.system.module.workflow.dto.FlowTransitionRequest;
 import com.demand.system.module.workflow.dto.TransitionVO;
 import com.demand.system.module.workflow.service.WorkflowEngineService;
@@ -56,6 +57,12 @@ public class WorkflowEngineController {
     public Result<Void> saveDraft(@PathVariable Long requirementId) {
         engineService.saveDraft(requirementId);
         return Result.success();
+    }
+
+    @GetMapping("/actions/{requirementId}")
+    @Operation(summary = "获取当前需求可执行动作")
+    public Result<WorkflowAvailableActionsDTO> getAvailableActions(@PathVariable Long requirementId) {
+        return Result.success(engineService.getAvailableActions(requirementId));
     }
 
     @GetMapping("/transitions/{requirementId}")

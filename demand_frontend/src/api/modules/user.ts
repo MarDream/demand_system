@@ -22,6 +22,10 @@ export function deleteUser(id: number) {
   return request.delete<ApiResponse>(`/v1/users/${id}`)
 }
 
+export function sendInitialPassword(id: number) {
+  return request.post<string>(`/v1/users/${id}/send-init-password`)
+}
+
 export function getRegionTree() {
   return request.get<ApiResponse<Region[]>>('/v1/regions/tree')
 }

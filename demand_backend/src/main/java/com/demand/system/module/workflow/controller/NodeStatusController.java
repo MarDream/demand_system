@@ -1,6 +1,7 @@
 package com.demand.system.module.workflow.controller;
 
 import com.demand.system.common.result.Result;
+import com.demand.system.module.requirement.dto.SortRequest;
 import com.demand.system.module.workflow.entity.NodeStatus;
 import com.demand.system.module.workflow.service.NodeStatusService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -49,5 +50,12 @@ public class NodeStatusController {
     public Result<Void> delete(@PathVariable Long id) {
         nodeStatusService.delete(id);
         return Result.success();
+    }
+
+    @PostMapping("/sort")
+    @Operation(summary = "节点状态排序")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN')")
+    public Result<List<NodeStatus>> sort(@Valid @RequestBody List<SortRequest> sortRequests) {
+        return Result.success(nodeStatusService.sort(sortRequests));
     }
 }

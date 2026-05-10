@@ -21,6 +21,13 @@
             </el-form>
           </template>
           <template #right>
+            <input ref="importInputRef" type="file" accept=".xlsx,.xls" style="display: none" @change="handleImportFileChange" />
+            <el-button @click="handleDownloadTemplate">
+              <el-icon><Download /></el-icon> 模板
+            </el-button>
+            <el-button @click="triggerImport">
+              <el-icon><Plus /></el-icon> 导入
+            </el-button>
             <el-button @click="handleExport">
               <el-icon><Download /></el-icon> 导出
             </el-button>
@@ -38,7 +45,7 @@
           <template #default="{ row }">{{ row.team || '-' }}</template>
         </el-table-column>
         <el-table-column label="负责人" width="100">
-          <template #default="{ row }">{{ row.leaderName || '-' }}</template>
+          <template #default="{ row }">{{ getLeaderName(row.leaderId) }}</template>
         </el-table-column>
         <el-table-column label="起止时间" width="200">
           <template #default="{ row }">
@@ -132,9 +139,12 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Download } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
+import * as XLSX from 'xlsx'
+import { saveAs } from 'file-saver'
 import * as projectApi from '@/api/modules/project'
 import { getRegionTree } from '@/api/modules/organization'
 import * as userApi from '@/api/modules/user'
+import type { ProjectImportFailure, ProjectImportResult } from '@/types/project'
 import PageContainer from '@/components/common/PageContainer.vue'
 import TableCard from '@/components/common/TableCard.vue'
 import Toolbar from '@/components/common/Toolbar.vue'
@@ -158,6 +168,7 @@ const dialogVisible = ref(false)
 const isEdit = ref(false)
 const editId = ref<number | null>(null)
 const formRef = ref<FormInstance>()
+const importInputRef = ref<HTMLInputElement>()
 
 const form = reactive({
   name: '',
@@ -182,6 +193,12 @@ function getStatusLabel(row: any) {
   if (row.status === 'expired' || (row.endDate && new Date(row.endDate) < new Date())) return '已截止'
   if (row.status === 'active') return '进行中'
   return row.status
+}
+
+function getLeaderName(leaderId?: number | null) {
+  if (!leaderId) return '-'
+  const user = userList.value.find(item => item.id === leaderId)
+  return user ? (user.realName || user.username || '-') : '-'
 }
 
 async function loadOrgData() {
@@ -209,7 +226,74 @@ function handleReset() {
 }
 
 function handleExport() {
-  ElMessage.info('导出功能将在 Sprint 3 实现')
+  if (projectList.value.length === 0) {
+    ElMessage.warning('当前没有可导出的项目数据')
+    return
+  }
+  const exportData = projectList.value.map((item) => ({
+    项目名称: item.name,
+    归属团队: item.team || '',
+    负责人: getLeaderName(item.leaderId),
+    开始日期: item.startDate || '',
+    截止日期: item.endDate || '',
+    状态: getStatusLabel(item),
+    创建时间: item.createdAt || '',
+    描述: item.description || ''
+  }))
+  const worksheet = XLSX.utils.json_to_sheet(exportData)
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, worksheet, '项目列表')
+  const date = new Date().toISOString().slice(0, 10)
+  XLSX.writeFile(workbook, `项目列表_${date}.xlsx`)
+  ElMessage.success('导出成功')
+}
+
+async function handleDownloadTemplate() {
+  try {
+    const blob = await projectApi.downloadProjectTemplate() as Blob
+    saveAs(blob, '项目导入模板.xlsx')
+  } catch {
+    ElMessage.error('下载模板失败')
+  }
+}
+
+function triggerImport() {
+  importInputRef.value?.click()
+}
+
+async function handleImportFileChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  try {
+    const result = await projectApi.importProjects(file) as ProjectImportResult
+    const successCount = result?.successCount ?? 0
+    const failCount = result?.failCount ?? 0
+    if (failCount > 0 && Array.isArray(result.failures) && result.failures.length > 0) {
+      exportImportFailures(result.failures)
+      ElMessage.warning(`导入完成：成功 ${successCount} 条，失败 ${failCount} 条，失败明细已导出`)
+    } else {
+      ElMessage.success(`导入完成：成功 ${successCount} 条，失败 ${failCount} 条`)
+    }
+    await fetchList()
+  } catch {
+    ElMessage.error('项目导入失败')
+  } finally {
+    input.value = ''
+  }
+}
+
+function exportImportFailures(failures: ProjectImportFailure[]) {
+  const exportData = failures.map(item => ({
+    行号: item.rowNum,
+    项目名称: item.projectName || '',
+    失败原因: item.reason || '导入失败'
+  }))
+  const worksheet = XLSX.utils.json_to_sheet(exportData)
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, worksheet, '导入失败明细')
+  const date = new Date().toISOString().slice(0, 10)
+  XLSX.writeFile(workbook, `项目导入失败明细_${date}.xlsx`)
 }
 
 async function fetchList() {
@@ -217,6 +301,7 @@ async function fetchList() {
   try {
     const res: any = await projectApi.getProjectList({
       name: queryParams.name || undefined,
+      status: queryParams.status || undefined,
       pageNum: pageNum.value,
       pageSize: pageSize.value,
     })

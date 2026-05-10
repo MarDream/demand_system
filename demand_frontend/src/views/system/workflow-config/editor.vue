@@ -99,6 +99,17 @@
                 <el-tag>{{ getNodeTypeLabel(nodeForm.nodeType) }}</el-tag>
               </el-form-item>
 
+              <el-form-item label="绑定节点状态">
+                <el-select v-model="nodeForm.nodeStatusCode" placeholder="请选择节点状态" clearable filterable>
+                  <el-option
+                    v-for="status in nodeStatusOptions"
+                    :key="status.code"
+                    :label="status.name"
+                    :value="status.code"
+                  />
+                </el-select>
+              </el-form-item>
+
               <!-- 审批节点和抄送节点的配置 -->
               <template v-if="nodeForm.nodeType === 'approval' || nodeForm.nodeType === 'cc'">
                 <el-form-item label="处理人类型">
@@ -214,6 +225,7 @@ import {
   submitForApproval,
   getVersionConfig
 } from '@/api/modules/workflow-visual'
+import { nodeStatusApi, type NodeStatus } from '@/api/modules/workflow-engine'
 import type {
   WorkflowVersionDTO,
   WorkflowNodeDTO,
@@ -237,6 +249,7 @@ const drawerVisible = ref(false)
 const drawerTitle = ref('')
 const selectedNode = ref<any>(null)
 const selectedEdge = ref<any>(null)
+const nodeStatusOptions = ref<NodeStatus[]>([])
 
 // 节点类型定义
 const nodeTypes = [
@@ -248,7 +261,7 @@ const nodeTypes = [
 ]
 
 // 节点表单
-const nodeForm = reactive<Partial<WorkflowNodeDTO>>({
+const nodeForm = reactive<Partial<WorkflowNodeDTO> & { nodeStatusCode?: string }>({
   nodeId: '',
   nodeType: 'approval',
   nodeName: '',
@@ -259,6 +272,7 @@ const nodeForm = reactive<Partial<WorkflowNodeDTO>>({
   assigneeUserIds: [],
   timeoutHours: undefined,
   timeoutAction: undefined,
+  nodeStatusCode: undefined,
   properties: {}
 })
 
@@ -368,6 +382,7 @@ const handleNodeClick = (data: any) => {
     assigneeUserIds: data.properties?.assigneeUserIds || [],
     timeoutHours: data.properties?.timeoutHours,
     timeoutAction: data.properties?.timeoutAction,
+    nodeStatusCode: data.properties?.nodeStatusCode,
     properties: data.properties || {}
   })
 }
@@ -403,6 +418,7 @@ const handleSaveNodeConfig = () => {
       assigneeUserIds: nodeForm.assigneeUserIds,
       timeoutHours: nodeForm.timeoutHours,
       timeoutAction: nodeForm.timeoutAction,
+      nodeStatusCode: nodeForm.nodeStatusCode,
       ...nodeForm.properties
     }
   }
@@ -549,8 +565,7 @@ const handleSave = async () => {
       }))
     }
 
-    // 暂时使用项目ID=1
-    const projectId = 1
+    const projectId = Number(route.query.projectId || route.params.projectId || 1)
     await saveWorkflowConfig(projectId, config)
 
     ElMessage.success('保存成功')
@@ -571,8 +586,7 @@ const handleSubmit = async () => {
 
   submitting.value = true
   try {
-    // 暂时使用项目ID=1
-    const projectId = 1
+    const projectId = Number(route.query.projectId || route.params.projectId || 1)
     await submitForApproval(projectId)
 
     ElMessage.success('提交审核成功')
@@ -642,8 +656,19 @@ const loadWorkflowConfig = async () => {
   }
 }
 
+const loadNodeStatuses = async () => {
+  try {
+    const result = await nodeStatusApi.list() as any
+    nodeStatusOptions.value = Array.isArray(result) ? result : (result?.data || [])
+  } catch (error) {
+    console.error('加载节点状态失败:', error)
+    nodeStatusOptions.value = []
+  }
+}
+
 onMounted(() => {
   initLogicFlow()
+  loadNodeStatuses()
   loadWorkflowConfig()
 })
 

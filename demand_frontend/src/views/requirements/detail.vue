@@ -26,24 +26,39 @@
             </el-popconfirm>
             <el-select
               v-model="selectedTransitionTargetId"
-              :disabled="transitionLoading || availableTransitions.length === 0"
-              :placeholder="availableTransitions.length > 0 ? '选择目标状态' : '当前无可执行流转'"
+              :disabled="transitionLoading || transitionOptions.length === 0"
+              :placeholder="transitionOptions.length > 0 ? '选择目标状态' : '当前无可执行流转'"
               style="width: 140px; margin-right: 8px"
             >
               <el-option
-                v-for="transition in availableTransitions"
-                :key="transition.id || transition.toStateId"
+                v-for="transition in transitionOptions"
+                :key="transitionOptionKey(transition)"
                 :label="transitionOptionLabel(transition)"
-                :value="transition.toStateId"
+                :value="transitionOptionValue(transition)"
               />
             </el-select>
             <el-button
               type="primary"
               :loading="transitionLoading"
-              :disabled="availableTransitions.length === 0"
+              :disabled="transitionOptions.length === 0"
               @click="handleStatusTransition"
             >
               执行流转
+            </el-button>
+            <el-button
+              v-if="usingUnifiedEngine && workflowRuntime.canRollback"
+              :loading="transitionLoading"
+              @click="handleRollback"
+            >
+              回退
+            </el-button>
+            <el-button
+              v-if="usingUnifiedEngine && workflowRuntime.canCancel"
+              type="warning"
+              :loading="transitionLoading"
+              @click="handleCancel"
+            >
+              取消
             </el-button>
           </div>
         </div>
@@ -214,12 +229,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { requirementApi, projectApi } from '@/api'
 import { downloadRequirementAttachment } from '@/api/modules/file'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
+import { workflowEngineApi, type AvailableTransition, type WorkflowAvailableActions } from '@/api/modules/workflow-engine'
 import { executeTransition, getAvailableTransitions, getWorkflowStates } from '@/api/modules/workflow'
 import type { Requirement, RequirementAttachment, RequirementHistory, RequirementUpdate } from '@/types/requirement'
 import type { WorkflowState, WorkflowTransition } from '@/types/workflow'
@@ -243,8 +259,28 @@ const typeMap = ref<Record<string, string>>({})
 const priorityMap = ref<Record<string, string>>({})
 const workflowStates = ref<WorkflowState[]>([])
 const availableTransitions = ref<WorkflowTransition[]>([])
-const selectedTransitionTargetId = ref<number | null>(null)
+const workflowRuntime = ref<WorkflowAvailableActions>({
+  canTransition: false,
+  canRollback: false,
+  canCancel: false,
+  transitions: [],
+})
+const usingUnifiedEngine = ref(false)
+const selectedTransitionTargetId = ref<string | number | null>(null)
 const transitionLoading = ref(false)
+
+function resetWorkflowMeta() {
+  workflowStates.value = []
+  availableTransitions.value = []
+  workflowRuntime.value = {
+    canTransition: false,
+    canRollback: false,
+    canCancel: false,
+    transitions: [],
+  }
+  usingUnifiedEngine.value = false
+  selectedTransitionTargetId.value = null
+}
 
 // Fetch detail
 async function fetchDetail() {
@@ -290,12 +326,21 @@ async function loadConfig() {
 }
 
 async function loadWorkflowMeta() {
-  if (!detail.value?.projectId) {
-    workflowStates.value = []
-    availableTransitions.value = []
-    selectedTransitionTargetId.value = null
-    return
+  resetWorkflowMeta()
+
+  if (detail.value?.workflowInstanceId) {
+    try {
+      const actions = await workflowEngineApi.getAvailableActions(id)
+      workflowRuntime.value = actions
+      usingUnifiedEngine.value = true
+      selectedTransitionTargetId.value = actions.transitions[0]?.toNodeId ?? null
+      return
+    } catch {
+      usingUnifiedEngine.value = false
+    }
   }
+
+  if (!detail.value?.projectId) return
 
   try {
     const [statesRes, transitionsRes] = await Promise.all([
@@ -313,19 +358,34 @@ async function loadWorkflowMeta() {
       selectedTransitionTargetId.value = availableTransitions.value[0]?.toStateId ?? null
     }
   } catch {
-    workflowStates.value = []
-    availableTransitions.value = []
-    selectedTransitionTargetId.value = null
+    resetWorkflowMeta()
   }
 }
 
 // Fetch history
 async function fetchHistory() {
   try {
+    if (detail.value?.workflowInstanceId) {
+      const transitions = await workflowEngineApi.getTransitionHistory(id)
+      history.value = Array.isArray(transitions)
+        ? transitions.map((item: any) => ({
+            id: item.id,
+            requirementId: item.requirementId,
+            operatorId: item.operatorId,
+            operatorName: item.operatorName,
+            fieldName: item.action === 'rollback' ? '流程回退' : item.action === 'cancel' ? '流程取消' : '流程流转',
+            oldValue: item.fromNodeName || item.fromNodeId || '开始',
+            newValue: item.toNodeName || item.toNodeId || (item.durationDisplay ? `已处理（${item.durationDisplay}）` : '完成'),
+            createdAt: item.createdAt,
+          }))
+        : []
+      return
+    }
+
     const res = await requirementApi.getRequirementHistory(id)
-    history.value = res
+    history.value = Array.isArray(res) ? res : []
   } catch {
-    // history fetch failure is non-critical
+    history.value = []
   }
 }
 
@@ -394,7 +454,24 @@ function workflowStateName(stateId: number) {
   return workflowStates.value.find((state) => state.id === stateId)?.name || `状态${stateId}`
 }
 
-function transitionOptionLabel(transition: WorkflowTransition) {
+type TransitionOption = WorkflowTransition | AvailableTransition
+
+const transitionOptions = computed<TransitionOption[]>(() => (
+  usingUnifiedEngine.value ? workflowRuntime.value.transitions : availableTransitions.value
+))
+
+function transitionOptionKey(transition: TransitionOption) {
+  return 'toNodeId' in transition ? transition.toNodeId : (transition.id || transition.toStateId)
+}
+
+function transitionOptionValue(transition: TransitionOption) {
+  return 'toNodeId' in transition ? transition.toNodeId : transition.toStateId
+}
+
+function transitionOptionLabel(transition: TransitionOption) {
+  if ('toNodeId' in transition) {
+    return transition.label || transition.toNodeName
+  }
   return transition.label || workflowStateName(transition.toStateId)
 }
 
@@ -425,12 +502,59 @@ async function handleStatusTransition() {
 
   transitionLoading.value = true
   try {
-    await executeTransition(id, { targetStateId: selectedTransitionTargetId.value })
+    if (usingUnifiedEngine.value) {
+      await workflowEngineApi.transition({
+        requirementId: id,
+        toNodeId: String(selectedTransitionTargetId.value),
+        action: 'submit',
+      })
+    } else {
+      await executeTransition(id, { targetStateId: Number(selectedTransitionTargetId.value) })
+    }
     ElMessage.success('状态流转成功')
     selectedTransitionTargetId.value = null
     await Promise.all([fetchDetail(), fetchHistory()])
   } catch {
     ElMessage.error('状态流转失败')
+  } finally {
+    transitionLoading.value = false
+  }
+}
+
+async function handleRollback() {
+  await confirmAndExecute(
+    '请输入回退说明（可选）', '回退需求', '确认回退', '请输入回退说明',
+    (v) => workflowEngineApi.rollback(id, v || undefined),
+    '回退成功', '回退失败'
+  )
+}
+
+async function handleCancel() {
+  await confirmAndExecute(
+    '请输入取消原因', '取消需求', '确认取消', '取消原因必填',
+    (v) => workflowEngineApi.cancel(id, v),
+    '需求已取消', '取消失败',
+    (input) => !!input?.trim() || '请输入取消原因'
+  )
+}
+
+async function confirmAndExecute(
+  message: string, title: string, confirmText: string, placeholder: string,
+  action: (value: string) => Promise<any>,
+  successMsg: string, errorMsg: string,
+  validator?: (input: string) => string | boolean
+) {
+  try {
+    const opts: any = { confirmButtonText: confirmText, cancelButtonText: '取消', inputPlaceholder: placeholder }
+    if (validator) opts.inputValidator = validator
+    const { value } = await ElMessageBox.prompt(message, title, opts)
+    transitionLoading.value = true
+    await action(value)
+    ElMessage.success(successMsg)
+    await Promise.all([fetchDetail(), fetchHistory()])
+  } catch (error: any) {
+    if (error === 'cancel' || error?.action === 'cancel') return
+    ElMessage.error(errorMsg)
   } finally {
     transitionLoading.value = false
   }
@@ -442,11 +566,17 @@ function handleComment() {
   commentText.value = ''
 }
 
-onMounted(() => {
+async function initializePage() {
   loadConfig()
-  fetchDetail()
-  fetchHistory()
-  fetchChildren()
+  await fetchDetail()
+  await Promise.all([
+    fetchHistory(),
+    fetchChildren(),
+  ])
+}
+
+onMounted(() => {
+  void initializePage()
 })
 </script>
 

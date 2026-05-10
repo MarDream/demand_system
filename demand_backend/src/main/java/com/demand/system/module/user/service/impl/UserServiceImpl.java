@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.PageResult;
+import com.demand.system.module.auth.service.EmailService;
 import com.demand.system.module.user.dto.UserCreateDTO;
 import com.demand.system.module.user.dto.UserQueryDTO;
 import com.demand.system.module.user.dto.UserUpdateDTO;
@@ -34,6 +35,7 @@ public class UserServiceImpl implements UserService {
     private final DepartmentMapper departmentMapper;
     private final PositionMapper positionMapper;
     private final PasswordEncoder passwordEncoder;
+    private final EmailService emailService;
 
     @Override
     public PageResult<UserVO> list(UserQueryDTO query) {
@@ -65,18 +67,27 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public void create(UserCreateDTO dto) {
-        // Check username unique
         LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(User::getUsername, dto.getUsername());
         if (userMapper.selectCount(wrapper) > 0) {
             throw new BusinessException("用户名已存在");
         }
 
+        if (dto.getEmail() == null || dto.getEmail().isBlank()) {
+            throw new BusinessException("邮箱不能为空");
+        }
+        if (dto.getPhone() == null || dto.getPhone().length() < 3) {
+            throw new BusinessException("手机号不能为空且至少包含3位");
+        }
+
         User user = new User();
         BeanUtil.copyProperties(dto, user);
-        user.setPassword(passwordEncoder.encode(dto.getPassword()));
+        String initialPassword = buildInitialPassword(dto.getUsername(), dto.getPhone(), dto.getPassword());
+        user.setPassword(passwordEncoder.encode(initialPassword));
         user.setStatus(User.STATUS_ACTIVE);
         userMapper.insert(user);
+
+        emailService.sendInitialPasswordEmail(user.getEmail(), user.getUsername(), initialPassword);
     }
 
     @Override
@@ -120,6 +131,25 @@ public class UserServiceImpl implements UserService {
             throw new BusinessException("用户不存在");
         }
         userMapper.deleteById(id);
+    }
+
+    @Override
+    public boolean resetInitialPassword(Long id) {
+        User user = userMapper.selectById(id);
+        if (user == null) {
+            throw new BusinessException("用户不存在");
+        }
+        if (user.getEmail() == null || user.getEmail().isBlank()) {
+            throw new BusinessException("用户未配置邮箱，无法发送初始密码");
+        }
+        if (user.getPhone() == null || user.getPhone().length() < 3) {
+            throw new BusinessException("用户手机号不足3位，无法生成初始密码");
+        }
+
+        String initialPassword = buildInitialPassword(user.getUsername(), user.getPhone(), null);
+        user.setPassword(passwordEncoder.encode(initialPassword));
+        userMapper.updateById(user);
+        return emailService.sendInitialPasswordEmail(user.getEmail(), user.getUsername(), initialPassword);
     }
 
     private UserVO toVO(User user) {
@@ -182,5 +212,15 @@ public class UserServiceImpl implements UserService {
         }
 
         return String.join(" > ", pathList);
+    }
+
+    private String buildInitialPassword(String username, String phone, String fallbackPassword) {
+        if (fallbackPassword != null && !fallbackPassword.isBlank()) {
+            return fallbackPassword;
+        }
+        if (phone == null || phone.length() < 3) {
+            throw new BusinessException("手机号不足3位，无法生成初始密码");
+        }
+        return username + phone.substring(phone.length() - 3);
     }
 }

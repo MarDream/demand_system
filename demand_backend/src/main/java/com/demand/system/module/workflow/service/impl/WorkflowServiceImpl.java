@@ -56,6 +56,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class WorkflowServiceImpl implements WorkflowService {
 
+    private static final Long GLOBAL_PROJECT_ID = 0L;
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {
     };
     private static final TypeReference<List<Long>> LONG_LIST = new TypeReference<>() {
@@ -75,8 +76,9 @@ public class WorkflowServiceImpl implements WorkflowService {
 
     @Override
     public List<WorkflowState> getStates(Long projectId) {
+        Long runtimeProjectId = resolveRuntimeProjectId(projectId);
         return stateMapper.selectList(new LambdaQueryWrapper<WorkflowState>()
-                .eq(WorkflowState::getProjectId, projectId)
+                .eq(WorkflowState::getProjectId, runtimeProjectId)
                 .orderByAsc(WorkflowState::getSortOrder)
                 .orderByAsc(WorkflowState::getId));
     }
@@ -100,8 +102,9 @@ public class WorkflowServiceImpl implements WorkflowService {
 
     @Override
     public List<WorkflowTransition> getTransitions(Long projectId) {
+        Long runtimeProjectId = resolveRuntimeProjectId(projectId);
         return transitionMapper.selectList(new LambdaQueryWrapper<WorkflowTransition>()
-                .eq(WorkflowTransition::getProjectId, projectId)
+                .eq(WorkflowTransition::getProjectId, runtimeProjectId)
                 .orderByAsc(WorkflowTransition::getFromStateId)
                 .orderByAsc(WorkflowTransition::getToStateId)
                 .orderByAsc(WorkflowTransition::getId));
@@ -144,10 +147,10 @@ public class WorkflowServiceImpl implements WorkflowService {
                     .toList();
         }
 
-        List<WorkflowTransition> allTransitions = transitionMapper.selectList(new LambdaQueryWrapper<WorkflowTransition>()
-                .eq(WorkflowTransition::getFromStateId, currentState.getId())
-                .eq(WorkflowTransition::getProjectId, requirement.getProjectId())
-                .orderByAsc(WorkflowTransition::getId));
+        List<WorkflowTransition> allTransitions = getTransitions(requirement.getProjectId()).stream()
+                .filter(transition -> Objects.equals(transition.getFromStateId(), currentState.getId()))
+                .sorted(Comparator.comparing(WorkflowTransition::getId, Comparator.nullsLast(Long::compareTo)))
+                .toList();
 
         return allTransitions.stream()
                 .filter(t -> permissionEngine.canTransition(requirementId, currentState.getId(), t.getToStateId(), userId))
@@ -293,8 +296,9 @@ public class WorkflowServiceImpl implements WorkflowService {
     }
 
     private WorkflowState findStateByName(Long projectId, String status) {
+        Long runtimeProjectId = resolveRuntimeProjectId(projectId);
         return stateMapper.selectOne(new LambdaQueryWrapper<WorkflowState>()
-                .eq(WorkflowState::getProjectId, projectId)
+                .eq(WorkflowState::getProjectId, runtimeProjectId)
                 .eq(WorkflowState::getName, status)
                 .last("LIMIT 1"));
     }
@@ -480,6 +484,20 @@ public class WorkflowServiceImpl implements WorkflowService {
         transition.setRequiredFields(spec.requiredFieldsJson());
         transition.setConditions(spec.conditionsJson());
         return transition;
+    }
+
+    private Long resolveRuntimeProjectId(Long projectId) {
+        if (projectId == null || Objects.equals(projectId, GLOBAL_PROJECT_ID)) {
+            return projectId;
+        }
+        long projectStateCount = stateMapper.selectCount(new LambdaQueryWrapper<WorkflowState>()
+                .eq(WorkflowState::getProjectId, projectId));
+        if (projectStateCount > 0) {
+            return projectId;
+        }
+        long globalStateCount = stateMapper.selectCount(new LambdaQueryWrapper<WorkflowState>()
+                .eq(WorkflowState::getProjectId, GLOBAL_PROJECT_ID));
+        return globalStateCount > 0 ? GLOBAL_PROJECT_ID : projectId;
     }
 
     private String normalizeJsonStringList(String raw, boolean defaultEmptyArray) {

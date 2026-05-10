@@ -1,13 +1,16 @@
 package com.demand.system.module.requirement.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.demand.system.common.result.Result;
 import com.demand.system.module.requirement.dto.RequirementFieldAlias;
 import com.demand.system.module.requirement.dto.SortRequest;
 import com.demand.system.module.requirement.dto.RequirementFormConfigDTO;
 import com.demand.system.module.requirement.entity.PriorityConfig;
+import com.demand.system.module.requirement.entity.Requirement;
 import com.demand.system.module.requirement.entity.RequirementTypeConfig;
 import com.demand.system.module.requirement.mapper.PriorityMapper;
+import com.demand.system.module.requirement.mapper.RequirementMapper;
 import com.demand.system.module.requirement.mapper.RequirementTypeMapper;
 import com.demand.system.module.workflow.entity.WorkflowNodePermission;
 import com.demand.system.module.workflow.entity.WorkflowState;
@@ -36,11 +39,13 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class RequirementConfigService {
 
+    private static final Long GLOBAL_PROJECT_ID = 0L;
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {
     };
 
     private final RequirementTypeMapper typeMapper;
     private final PriorityMapper priorityMapper;
+    private final RequirementMapper requirementMapper;
     private final WorkflowVersionMapper workflowVersionMapper;
     private final WorkflowStateMapper workflowStateMapper;
     private final WorkflowTransitionMapper workflowTransitionMapper;
@@ -70,13 +75,7 @@ public class RequirementConfigService {
             config.setDefaultTypeColor(defaultType.getColor());
         }
 
-        WorkflowVersion activeVersion = workflowVersionMapper.selectOne(
-                new LambdaQueryWrapper<WorkflowVersion>()
-                        .eq(WorkflowVersion::getProjectId, projectId)
-                        .eq(WorkflowVersion::getIsActive, 1)
-                        .orderByDesc(WorkflowVersion::getVersion)
-                        .last("LIMIT 1")
-        );
+        WorkflowVersion activeVersion = findActiveVersion(projectId);
 
         if (activeVersion == null) {
             config.setVisibleFields(Collections.emptyList());
@@ -124,18 +123,44 @@ public class RequirementConfigService {
 
     @Transactional
     public Result<Void> createType(RequirementTypeConfig type) {
+        if (existsTypeCode(type.getCode(), null)) {
+            return Result.fail("需求类型编码已存在");
+        }
+        if (type.getSortOrder() == null) {
+            type.setSortOrder(nextTypeSortOrder());
+        }
+        syncTypeDefaultFlag(type.getId(), type.getIsDefault());
         typeMapper.insert(type);
         return Result.success();
     }
 
     @Transactional
     public Result<Void> updateType(RequirementTypeConfig type) {
+        RequirementTypeConfig existing = typeMapper.selectById(type.getId());
+        if (existing == null) {
+            return Result.fail("需求类型不存在");
+        }
+        if (existsTypeCode(type.getCode(), type.getId())) {
+            return Result.fail("需求类型编码已存在");
+        }
+        syncTypeDefaultFlag(type.getId(), type.getIsDefault());
         typeMapper.updateById(type);
         return Result.success();
     }
 
     @Transactional
     public Result<Void> deleteType(Long id) {
+        RequirementTypeConfig existing = typeMapper.selectById(id);
+        if (existing == null) {
+            return Result.fail("需求类型不存在");
+        }
+        long referenceCount = requirementMapper.selectCount(
+                new LambdaQueryWrapper<Requirement>()
+                        .eq(Requirement::getType, existing.getCode())
+        );
+        if (referenceCount > 0) {
+            return Result.fail("该需求类型已被需求引用，无法删除");
+        }
         typeMapper.deleteById(id);
         return Result.success();
     }
@@ -150,18 +175,44 @@ public class RequirementConfigService {
 
     @Transactional
     public Result<Void> createPriority(PriorityConfig priority) {
+        if (existsPriorityCode(priority.getCode(), null)) {
+            return Result.fail("优先级编码已存在");
+        }
+        if (priority.getSortOrder() == null) {
+            priority.setSortOrder(nextPrioritySortOrder());
+        }
+        syncPriorityDefaultFlag(priority.getId(), priority.getIsDefault());
         priorityMapper.insert(priority);
         return Result.success();
     }
 
     @Transactional
     public Result<Void> updatePriority(PriorityConfig priority) {
+        PriorityConfig existing = priorityMapper.selectById(priority.getId());
+        if (existing == null) {
+            return Result.fail("优先级不存在");
+        }
+        if (existsPriorityCode(priority.getCode(), priority.getId())) {
+            return Result.fail("优先级编码已存在");
+        }
+        syncPriorityDefaultFlag(priority.getId(), priority.getIsDefault());
         priorityMapper.updateById(priority);
         return Result.success();
     }
 
     @Transactional
     public Result<Void> deletePriority(Long id) {
+        PriorityConfig existing = priorityMapper.selectById(id);
+        if (existing == null) {
+            return Result.fail("优先级不存在");
+        }
+        long referenceCount = requirementMapper.selectCount(
+                new LambdaQueryWrapper<Requirement>()
+                        .eq(Requirement::getPriority, existing.getCode())
+        );
+        if (referenceCount > 0) {
+            return Result.fail("该优先级已被需求引用，无法删除");
+        }
         priorityMapper.deleteById(id);
         return Result.success();
     }
@@ -229,9 +280,10 @@ public class RequirementConfigService {
     }
 
     private WorkflowState findInitialState(Long projectId) {
+        Long runtimeProjectId = resolveRuntimeProjectId(projectId);
         List<WorkflowState> states = workflowStateMapper.selectList(
                 new LambdaQueryWrapper<WorkflowState>()
-                        .eq(WorkflowState::getProjectId, projectId)
+                        .eq(WorkflowState::getProjectId, runtimeProjectId)
                         .orderByAsc(WorkflowState::getSortOrder)
                         .orderByAsc(WorkflowState::getId)
         );
@@ -241,7 +293,7 @@ public class RequirementConfigService {
 
         List<Long> targetStateIds = workflowTransitionMapper.selectList(
                 new LambdaQueryWrapper<WorkflowTransition>()
-                        .eq(WorkflowTransition::getProjectId, projectId)
+                        .eq(WorkflowTransition::getProjectId, runtimeProjectId)
         ).stream()
                 .map(WorkflowTransition::getToStateId)
                 .filter(Objects::nonNull)
@@ -251,6 +303,104 @@ public class RequirementConfigService {
                 .filter(state -> !targetStateIds.contains(state.getId()))
                 .findFirst()
                 .orElse(states.get(0));
+    }
+
+    private WorkflowVersion findActiveVersion(Long projectId) {
+        WorkflowVersion activeVersion = workflowVersionMapper.selectOne(
+                new LambdaQueryWrapper<WorkflowVersion>()
+                        .eq(WorkflowVersion::getProjectId, projectId)
+                        .eq(WorkflowVersion::getIsActive, 1)
+                        .orderByDesc(WorkflowVersion::getVersion)
+                        .last("LIMIT 1")
+        );
+        if (activeVersion != null || projectId == null || Objects.equals(projectId, GLOBAL_PROJECT_ID)) {
+            return activeVersion;
+        }
+        return workflowVersionMapper.selectOne(
+                new LambdaQueryWrapper<WorkflowVersion>()
+                        .eq(WorkflowVersion::getProjectId, GLOBAL_PROJECT_ID)
+                        .eq(WorkflowVersion::getIsActive, 1)
+                        .orderByDesc(WorkflowVersion::getVersion)
+                        .last("LIMIT 1")
+        );
+    }
+
+    private Long resolveRuntimeProjectId(Long projectId) {
+        if (projectId == null || Objects.equals(projectId, GLOBAL_PROJECT_ID)) {
+            return projectId;
+        }
+        long projectStateCount = workflowStateMapper.selectCount(
+                new LambdaQueryWrapper<WorkflowState>()
+                        .eq(WorkflowState::getProjectId, projectId)
+        );
+        if (projectStateCount > 0) {
+            return projectId;
+        }
+        long globalStateCount = workflowStateMapper.selectCount(
+                new LambdaQueryWrapper<WorkflowState>()
+                        .eq(WorkflowState::getProjectId, GLOBAL_PROJECT_ID)
+        );
+        return globalStateCount > 0 ? GLOBAL_PROJECT_ID : projectId;
+    }
+
+    private boolean existsTypeCode(String code, Long excludeId) {
+        LambdaQueryWrapper<RequirementTypeConfig> wrapper = new LambdaQueryWrapper<RequirementTypeConfig>()
+                .eq(RequirementTypeConfig::getCode, code);
+        if (excludeId != null) {
+            wrapper.ne(RequirementTypeConfig::getId, excludeId);
+        }
+        return typeMapper.selectCount(wrapper) > 0;
+    }
+
+    private boolean existsPriorityCode(String code, Long excludeId) {
+        LambdaQueryWrapper<PriorityConfig> wrapper = new LambdaQueryWrapper<PriorityConfig>()
+                .eq(PriorityConfig::getCode, code);
+        if (excludeId != null) {
+            wrapper.ne(PriorityConfig::getId, excludeId);
+        }
+        return priorityMapper.selectCount(wrapper) > 0;
+    }
+
+    private Integer nextTypeSortOrder() {
+        RequirementTypeConfig last = typeMapper.selectOne(
+                new LambdaQueryWrapper<RequirementTypeConfig>()
+                        .orderByDesc(RequirementTypeConfig::getSortOrder)
+                        .last("LIMIT 1")
+        );
+        return last == null || last.getSortOrder() == null ? 0 : last.getSortOrder() + 1;
+    }
+
+    private Integer nextPrioritySortOrder() {
+        PriorityConfig last = priorityMapper.selectOne(
+                new LambdaQueryWrapper<PriorityConfig>()
+                        .orderByDesc(PriorityConfig::getSortOrder)
+                        .last("LIMIT 1")
+        );
+        return last == null || last.getSortOrder() == null ? 0 : last.getSortOrder() + 1;
+    }
+
+    private void syncTypeDefaultFlag(Long currentId, Boolean isDefault) {
+        if (!Boolean.TRUE.equals(isDefault)) {
+            return;
+        }
+        LambdaUpdateWrapper<RequirementTypeConfig> wrapper = new LambdaUpdateWrapper<RequirementTypeConfig>()
+                .set(RequirementTypeConfig::getIsDefault, false);
+        if (currentId != null) {
+            wrapper.ne(RequirementTypeConfig::getId, currentId);
+        }
+        typeMapper.update(null, wrapper);
+    }
+
+    private void syncPriorityDefaultFlag(Long currentId, Boolean isDefault) {
+        if (!Boolean.TRUE.equals(isDefault)) {
+            return;
+        }
+        LambdaUpdateWrapper<PriorityConfig> wrapper = new LambdaUpdateWrapper<PriorityConfig>()
+                .set(PriorityConfig::getIsDefault, false);
+        if (currentId != null) {
+            wrapper.ne(PriorityConfig::getId, currentId);
+        }
+        priorityMapper.update(null, wrapper);
     }
 
     private List<String> parseStringList(String raw) {

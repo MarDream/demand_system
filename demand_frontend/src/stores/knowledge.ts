@@ -4,6 +4,7 @@ import {
   createKnowledgeBase,
   deleteKnowledgeBase,
   deleteDocument,
+  generateDocumentShareLink,
   getAllKnowledgeBases,
   getDocuments,
   searchKnowledge,
@@ -75,6 +76,14 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     await fetchDocuments(knowledgeBaseId)
   }
 
+  async function getShareLink(
+    knowledgeBaseId: number,
+    documentId: number,
+    options?: { expireHours?: number; requireLogin?: boolean; oneTimeAccess?: boolean }
+  ) {
+    return await generateDocumentShareLink(knowledgeBaseId, documentId, options) as unknown as string
+  }
+
   async function search(query: string, mode: SearchMode = 'hybrid', knowledgeBaseId?: number) {
     loading.value = true
     try {
@@ -99,6 +108,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     fetchDocuments,
     uploadDoc,
     removeDoc,
+    getShareLink,
     search
   }
 })

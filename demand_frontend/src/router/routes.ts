@@ -61,12 +61,6 @@ export const routes: RouteRecordRaw[] = [
         meta: { title: '评审管理', icon: 'ChatDotRound', hidden: true },
       },
       {
-        path: 'workflow',
-        name: 'Workflow',
-        component: () => import('@/views/workflow/index.vue'),
-        meta: { title: '工作流配置', icon: 'Share', requiredRoles: ['admin', 'workflow:config'] },
-      },
-      {
         path: 'statistics',
         name: 'Statistics',
         component: () => import('@/views/statistics/index.vue'),
@@ -130,7 +124,7 @@ export const routes: RouteRecordRaw[] = [
         path: 'system/workflow-config',
         name: 'WorkflowConfig',
         component: () => import('@/views/system/workflow-config/index.vue'),
-        meta: { title: '工作流配置（新版）', icon: 'Share', requiredRoles: ['admin', 'workflow:config'], requiredPermissions: ['menu:settings:workflow'] },
+        meta: { title: '工作流配置', icon: 'Share', requiredRoles: ['admin', 'workflow:config'], requiredPermissions: ['menu:settings:workflow'] },
       },
       {
         path: 'system/workflow-config/editor',

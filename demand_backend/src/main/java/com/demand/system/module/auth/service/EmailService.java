@@ -21,4 +21,14 @@ public interface EmailService {
      * @param resetUrl 重置密码链接
      */
     void sendPasswordResetEmail(String to, String resetUrl);
+
+    /**
+     * 发送用户初始密码邮件
+     *
+     * @param to 收件人邮箱
+     * @param username 用户名
+     * @param initialPassword 初始密码
+     * @return 是否发送成功
+     */
+    boolean sendInitialPasswordEmail(String to, String username, String initialPassword);
 }

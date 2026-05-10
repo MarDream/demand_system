@@ -5,9 +5,11 @@ import com.demand.system.common.result.Result;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.knowledge.dto.KnowledgeDocumentVO;
 import com.demand.system.module.knowledge.service.KnowledgeDocumentService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 @RestController
 @RequestMapping("/api/v1/knowledge/bases/{knowledgeBaseId}/documents")
@@ -40,5 +42,23 @@ public class KnowledgeDocumentController {
             @PathVariable Long documentId) {
         documentService.delete(knowledgeBaseId, documentId);
         return Result.success();
+    }
+
+    @PostMapping("/{documentId}/share")
+    public Result<String> generateShareLink(
+            @PathVariable Long knowledgeBaseId,
+            @PathVariable Long documentId,
+            @RequestParam(defaultValue = "24") Integer expireHours,
+            @RequestParam(defaultValue = "false") Boolean requireLogin,
+            @RequestParam(defaultValue = "false") Boolean oneTimeAccess,
+            HttpServletRequest request) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        String token = documentService.generateShareLink(knowledgeBaseId, documentId, expireHours, requireLogin, oneTimeAccess, userId);
+        String shareLink = ServletUriComponentsBuilder.fromRequestUri(request)
+                .replacePath("/api/v1/public/knowledge/shares/" + token)
+                .replaceQuery(null)
+                .build()
+                .toUriString();
+        return Result.success(shareLink);
     }
 }

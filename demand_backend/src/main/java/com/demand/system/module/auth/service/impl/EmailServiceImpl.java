@@ -98,4 +98,34 @@ public class EmailServiceImpl implements EmailService {
             // 不抛出异常，避免影响接口返回
         }
     }
+
+    @Override
+    public boolean sendInitialPasswordEmail(String to, String username, String initialPassword) {
+        try {
+            log.info("准备发送初始密码邮件: to={}, username={}", to, username);
+
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(from);
+            message.setTo(to);
+            message.setSubject("【需求管理系统】账号初始密码通知");
+            message.setText(String.format(
+                "您好！\n\n" +
+                "您的需求管理系统账号已创建成功。\n\n" +
+                "用户名：%s\n" +
+                "初始密码：%s\n\n" +
+                "请尽快登录系统并修改密码。\n\n" +
+                "如果这不是您的账号，请联系管理员。\n\n" +
+                "需求管理系统",
+                username,
+                initialPassword
+            ));
+
+            mailSender.send(message);
+            log.info("初始密码邮件发送成功: to={}, username={}", to, username);
+            return true;
+        } catch (Exception e) {
+            log.error("发送初始密码邮件失败: to={}, username={}, error={}", to, username, e.getMessage(), e);
+            return false;
+        }
+    }
 }

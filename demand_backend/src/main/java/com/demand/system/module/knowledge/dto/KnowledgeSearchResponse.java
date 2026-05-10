@@ -15,6 +15,8 @@ public class KnowledgeSearchResponse {
 
     private String answer;
 
+    private String processSummary;
+
     @Data
     @Builder
     public static class SearchResultItem {
@@ -26,5 +28,16 @@ public class KnowledgeSearchResponse {
         private Integer pageNum;
         private Double score;
         private String knowledgeBaseId;
+        private RequirementReference requirement;
+    }
+
+    @Data
+    @Builder
+    public static class RequirementReference {
+        private Long id;
+        private String title;
+        private String status;
+        private String type;
+        private String summary;
     }
 }

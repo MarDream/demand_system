@@ -187,23 +187,26 @@ const getProgressColor = (rate: number) => {
 const loadDistributionData = async () => {
   try {
     const res = await getDistributionData(1)
-    const data = res as unknown as { statusDistribution: Record<string, number>; typeDistribution: Record<string, number>; priorityDistribution: Record<string, number> }
+    const raw = (res as any)?.data ?? (res as any)
+    const statusDistribution: Record<string, number> = raw?.statusDist || raw?.statusDistribution || {}
+    const typeDistribution: Record<string, number> = raw?.typeDist || raw?.typeDistribution || {}
+    const priorityDistribution: Record<string, number> = raw?.priorityDist || raw?.priorityDistribution || {}
 
     // 状态分布饼图
-    pieOption.value.series[0].data = Object.entries(data.statusDistribution || {}).map(([name, value]) => ({ name, value }))
+    pieOption.value.series[0].data = Object.entries(statusDistribution).map(([name, value]) => ({ name, value }))
     pieLoaded.value = true
 
     // 类型分布柱状图
-    barOption.value.xAxis.data = Object.keys(data.typeDistribution || {})
-    barOption.value.series[0].data = Object.values(data.typeDistribution || {})
+    barOption.value.xAxis.data = Object.keys(typeDistribution)
+    barOption.value.series[0].data = Object.values(typeDistribution)
     barLoaded.value = true
 
     // 统计卡片
-    const statusEntries = Object.entries(data.statusDistribution || {})
+    const statusEntries = Object.entries(statusDistribution)
     total.value = statusEntries.reduce((sum, [, v]) => sum + v, 0)
     statusCount.value = statusEntries.length
-    typeCount.value = Object.keys(data.typeDistribution || {}).length
-    priorityCount.value = Object.keys(data.priorityDistribution || {}).length
+    typeCount.value = Object.keys(typeDistribution).length
+    priorityCount.value = Object.keys(priorityDistribution).length
   } catch {
     // 模拟数据
     pieOption.value.series[0].data = [

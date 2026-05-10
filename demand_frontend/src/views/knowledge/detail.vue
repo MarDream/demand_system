@@ -30,8 +30,9 @@
               <el-tag size="small" :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="80" fixed="right">
+          <el-table-column label="操作" width="150" fixed="right">
             <template #default="{ row }">
+              <el-button link type="primary" size="small" @click="handleShare(row)">分享</el-button>
               <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
             </template>
           </el-table-column>
@@ -102,11 +103,42 @@
         <el-button type="primary" :loading="submitting" @click="handleUpdateKnowledgeBase">确定</el-button>
       </template>
     </AppDialog>
+
+    <AppDialog v-model="shareDialogVisible" title="文档分享" width="420px">
+      <div class="share-dialog">
+        <el-form label-width="96px" class="share-form">
+          <el-form-item label="有效期">
+            <el-select v-model="shareOptions.expireHours" style="width: 100%">
+              <el-option :value="24" label="24小时" />
+              <el-option :value="72" label="3天" />
+              <el-option :value="168" label="7天" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="访问控制">
+            <el-switch v-model="shareOptions.requireLogin" active-text="需登录" inactive-text="公开访问" />
+          </el-form-item>
+          <el-form-item label="链接类型">
+            <el-switch v-model="shareOptions.oneTimeAccess" active-text="一次性" inactive-text="可重复访问" />
+          </el-form-item>
+        </el-form>
+        <div class="share-link">{{ currentShareLink }}</div>
+        <img v-if="currentShareLink && qrCodeUrl" class="share-qr" :src="qrCodeUrl" alt="二维码" />
+        <div class="share-tip">
+          链接支持扫码访问，当前配置为{{ shareOptions.requireLogin ? '需登录' : '公开访问' }}、{{ shareOptions.oneTimeAccess ? '一次性链接' : '可重复访问链接' }}。
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="shareDialogVisible = false">关闭</el-button>
+        <el-button type="primary" @click="generateCurrentShareLink">生成链接</el-button>
+        <el-button :disabled="!currentShareLink" @click="copyCurrentShareLink">复制链接</el-button>
+      </template>
+    </AppDialog>
   </PageContainer>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
+import QRCode from 'qrcode'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PageContainer from '@/components/common/PageContainer.vue'
@@ -127,7 +159,32 @@ const showUploadDialog = ref(false)
 const editDialogVisible = ref(false)
 const submitting = ref(false)
 const deleting = ref(false)
+const shareDialogVisible = ref(false)
+const currentShareLink = ref('')
+const qrCodeUrl = ref('')
+const currentShareDocument = ref<KnowledgeDocument | null>(null)
 const editForm = reactive({ name: '', description: '' })
+const shareOptions = reactive({
+  expireHours: 24,
+  requireLogin: false,
+  oneTimeAccess: false
+})
+
+watch(currentShareLink, async (value) => {
+  if (!value) {
+    qrCodeUrl.value = ''
+    return
+  }
+  try {
+    qrCodeUrl.value = await QRCode.toDataURL(value, {
+      width: 220,
+      margin: 1
+    })
+  } catch {
+    qrCodeUrl.value = ''
+    ElMessage.warning('二维码生成失败，请直接复制链接')
+  }
+})
 
 onMounted(async () => {
   await fetchKnowledgeBase()
@@ -149,6 +206,42 @@ function handleDelete(doc: KnowledgeDocument) {
   ElMessageBox.confirm(`确定删除「${doc.fileName}」？`, '确认', { type: 'warning' })
     .then(() => store.removeDoc(kbId, doc.id).then(() => ElMessage.success('删除成功')))
     .catch(() => {})
+}
+
+function handleShare(doc: KnowledgeDocument) {
+  currentShareDocument.value = doc
+  currentShareLink.value = ''
+  qrCodeUrl.value = ''
+  shareOptions.expireHours = 24
+  shareOptions.requireLogin = false
+  shareOptions.oneTimeAccess = false
+  shareDialogVisible.value = true
+}
+
+async function generateCurrentShareLink() {
+  if (!currentShareDocument.value) return
+  try {
+    const shareLink = await store.getShareLink(kbId, currentShareDocument.value.id, {
+      expireHours: shareOptions.expireHours,
+      requireLogin: shareOptions.requireLogin,
+      oneTimeAccess: shareOptions.oneTimeAccess
+    })
+    await navigator.clipboard.writeText(shareLink)
+    currentShareLink.value = shareLink
+    ElMessage.success('分享链接已生成并复制到剪贴板')
+  } catch {
+    ElMessage.error('生成分享链接失败')
+  }
+}
+
+async function copyCurrentShareLink() {
+  if (!currentShareLink.value) return
+  try {
+    await navigator.clipboard.writeText(currentShareLink.value)
+    ElMessage.success('链接已复制')
+  } catch {
+    ElMessage.error('复制失败')
+  }
 }
 
 function handleSearch() {
@@ -290,5 +383,31 @@ function statusLabel(status: string) {
 .pagination {
   margin-top: 16px;
   justify-content: center;
+}
+.share-dialog {
+  text-align: center;
+}
+.share-form {
+  margin-bottom: 12px;
+  text-align: left;
+}
+.share-link {
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #f5f7fa;
+  color: #606266;
+  word-break: break-all;
+  text-align: left;
+  min-height: 42px;
+}
+.share-qr {
+  width: 220px;
+  height: 220px;
+  margin: 16px auto 8px;
+  display: block;
+}
+.share-tip {
+  color: #909399;
+  font-size: 12px;
 }
 </style>

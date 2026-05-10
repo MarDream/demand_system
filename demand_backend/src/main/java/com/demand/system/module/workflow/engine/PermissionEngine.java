@@ -165,7 +165,16 @@ public class PermissionEngine {
                 .eq(WorkflowVersion::getIsActive, 1)
                 .orderByDesc(WorkflowVersion::getVersion)
                 .last("LIMIT 1");
-        return Optional.ofNullable(workflowVersionMapper.selectOne(wrapper));
+        WorkflowVersion version = workflowVersionMapper.selectOne(wrapper);
+        if (version != null || projectId == null || projectId == 0L) {
+            return Optional.ofNullable(version);
+        }
+        LambdaQueryWrapper<WorkflowVersion> globalWrapper = new LambdaQueryWrapper<>();
+        globalWrapper.eq(WorkflowVersion::getProjectId, 0L)
+                .eq(WorkflowVersion::getIsActive, 1)
+                .orderByDesc(WorkflowVersion::getVersion)
+                .last("LIMIT 1");
+        return Optional.ofNullable(workflowVersionMapper.selectOne(globalWrapper));
     }
 
     private Set<String> getUserRoles(Long userId) {

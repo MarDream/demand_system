@@ -104,7 +104,14 @@
             </el-button>
           </div>
 
-          <el-table :data="nodeStatuses" border style="width: 100%">
+          <el-table ref="nodeStatusTableRef" :data="nodeStatuses" border style="width: 100%" row-key="id">
+            <el-table-column width="60" align="center">
+              <template>
+                <el-icon class="drag-handle" style="cursor: grab;">
+                  <Rank />
+                </el-icon>
+              </template>
+            </el-table-column>
             <el-table-column prop="name" label="状态名称" min-width="120" />
             <el-table-column prop="code" label="编码" min-width="150" />
             <el-table-column prop="color" label="颜色" min-width="100">
@@ -223,7 +230,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { Plus, Rank, Grid } from '@element-plus/icons-vue'
 import { requirementConfigApi, type RequirementType, type Priority, type SortItem } from '@/api/modules/requirementConfig'
-import { nodeStatusApi, type NodeStatus } from '@/api/modules/workflow-engine'
+import { nodeStatusApi, type NodeStatus, type SortItem as NodeStatusSortItem } from '@/api/modules/workflow-engine'
 import { normalizeText } from '@/utils/format'
 import Sortable, { type SortableEvent } from 'sortablejs'
 
@@ -234,6 +241,7 @@ const priorities = ref<Priority[]>([])
 // 表格ref
 const typeTableRef = ref()
 const priorityTableRef = ref()
+const nodeStatusTableRef = ref()
 
 // 类型对话框
 const typeDialogVisible = ref(false)
@@ -475,6 +483,40 @@ const initPrioritySortable = () => {
   })
 }
 
+const initNodeStatusSortable = () => {
+  nextTick(() => {
+    const el = nodeStatusTableRef.value?.$el.querySelector('.el-table__body-wrapper tbody')
+    if (!el) return
+
+    Sortable.create(el, {
+      handle: '.drag-handle',
+      animation: 150,
+      ghostClass: 'sortable-ghost',
+      onEnd: async (evt: SortableEvent) => {
+        const { oldIndex, newIndex } = evt
+        if (oldIndex === newIndex) return
+
+        const movedItem = nodeStatuses.value.splice(oldIndex!, 1)[0]
+        nodeStatuses.value.splice(newIndex!, 0, movedItem)
+
+        const items: NodeStatusSortItem[] = nodeStatuses.value.map((item, index) => ({
+          id: item.id,
+          sortOrder: index
+        }))
+
+        try {
+          await nodeStatusApi.sort(items)
+          ElMessage.success('排序已保存')
+          await loadNodeStatuses()
+        } catch (error) {
+          ElMessage.error('排序保存失败')
+          await loadNodeStatuses()
+        }
+      }
+    })
+  })
+}
+
 // 节点状态管理
 const nodeStatuses = ref<NodeStatus[]>([])
 const nodeStatusDialogVisible = ref(false)
@@ -555,12 +597,19 @@ const deleteNodeStatus = async (id: number) => {
   }
 }
 
-onMounted(() => {
-  loadTypes()
-  loadPriorities()
-  loadNodeStatuses()
+const initializePage = async () => {
+  await Promise.all([
+    loadTypes(),
+    loadPriorities(),
+    loadNodeStatuses()
+  ])
   initTypeSortable()
   initPrioritySortable()
+  initNodeStatusSortable()
+}
+
+onMounted(() => {
+  void initializePage()
 })
 </script>
 

@@ -284,11 +284,20 @@ public class WorkflowDefinitionEngine {
     }
 
     private Optional<WorkflowVersion> findActiveVersion(Long projectId) {
-        return Optional.ofNullable(workflowVersionMapper.selectOne(new LambdaQueryWrapper<WorkflowVersion>()
+        WorkflowVersion direct = workflowVersionMapper.selectOne(new LambdaQueryWrapper<WorkflowVersion>()
                 .eq(WorkflowVersion::getProjectId, projectId)
                 .eq(WorkflowVersion::getIsActive, 1)
                 .orderByDesc(WorkflowVersion::getVersion)
-                .last("LIMIT 1")));
+                .last("LIMIT 1"));
+        if (direct != null || projectId == null || projectId == 0L) {
+            return Optional.ofNullable(direct);
+        }
+        WorkflowVersion global = workflowVersionMapper.selectOne(new LambdaQueryWrapper<WorkflowVersion>()
+                .eq(WorkflowVersion::getProjectId, 0L)
+                .eq(WorkflowVersion::getIsActive, 1)
+                .orderByDesc(WorkflowVersion::getVersion)
+                .last("LIMIT 1"));
+        return Optional.ofNullable(global);
     }
 
     private WorkflowGraph parseGraph(String definition, List<String> errors) {

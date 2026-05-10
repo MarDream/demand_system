@@ -17,4 +17,6 @@ public interface UserService {
     void update(UserUpdateDTO dto);
 
     void delete(Long id);
+
+    boolean resetInitialPassword(Long id);
 }

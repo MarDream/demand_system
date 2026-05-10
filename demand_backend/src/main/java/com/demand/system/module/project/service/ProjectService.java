@@ -11,7 +11,7 @@ import java.util.List;
 
 public interface ProjectService {
 
-    PageResult<Project> list(String name, int pageNum, int pageSize);
+    PageResult<Project> list(String name, String status, int pageNum, int pageSize);
 
     Project getById(Long id);
 

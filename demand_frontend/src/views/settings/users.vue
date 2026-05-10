@@ -81,18 +81,23 @@
             :disabled="isEdit"
           />
         </el-form-item>
-        <el-form-item v-if="!isEdit" label="密码" prop="password">
-          <el-input v-model="form.password" type="password" placeholder="请输入密码" show-password />
-        </el-form-item>
+        <el-alert
+          v-if="!isEdit"
+          type="info"
+          :closable="false"
+          show-icon
+          title="初始密码默认生成为“用户名 + 手机号后3位”，创建成功后系统会通过邮箱发送给用户。"
+          style="margin-bottom: 16px"
+        />
         <el-form-item label="姓名" prop="realName">
           <el-input v-model="form.realName" placeholder="请输入姓名" />
         </el-form-item>
         <el-form-item label="邮箱" prop="email">
           <el-input v-model="form.email" placeholder="请输入邮箱" />
         </el-form-item>
-        <el-form-item label="手机号" prop="phone">
-          <el-input v-model="form.phone" placeholder="请输入手机号" @change="onPhoneChange" />
-        </el-form-item>
+          <el-form-item label="手机号" prop="phone">
+            <el-input v-model="form.phone" placeholder="请输入手机号" />
+          </el-form-item>
 
         <el-divider content-position="left">组织信息</el-divider>
 
@@ -180,7 +185,6 @@ const queryParams = reactive({
 
 interface UserForm {
   username: string
-  password: string
   realName: string
   email: string
   phone: string
@@ -192,7 +196,6 @@ interface UserForm {
 
 const form = reactive<UserForm>({
   username: '',
-  password: '',
   realName: '',
   email: '',
   phone: '',
@@ -235,16 +238,18 @@ const rules: FormRules = {
     { min: 3, max: 20, message: '用户名长度为3-20个字符', trigger: 'blur' },
     { validator: validateUsername, trigger: 'blur' },
   ],
-  password: [
-    { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, max: 20, message: '密码长度为6-20个字符', trigger: 'blur' },
-  ],
   realName: [
     { required: true, message: '请输入姓名', trigger: 'blur' },
     { max: 50, message: '姓名长度不能超过50个字符', trigger: 'blur' },
   ],
-  email: [{ validator: validateEmail, trigger: 'blur' }],
-  phone: [{ validator: validatePhone, trigger: 'blur' }],
+  email: [
+    { required: true, message: '请输入邮箱', trigger: 'blur' },
+    { validator: validateEmail, trigger: 'blur' },
+  ],
+  phone: [
+    { required: true, message: '请输入手机号', trigger: 'blur' },
+    { validator: validatePhone, trigger: 'blur' },
+  ],
 }
 
 // 加载组织架构数据
@@ -305,13 +310,6 @@ function handleCreate() {
   dialogVisible.value = true
 }
 
-// 手机号变化时自动生成默认密码
-function onPhoneChange() {
-  if (!isEdit.value && form.username && form.phone && form.phone.length >= 3) {
-    form.password = form.username + form.phone.slice(-3)
-  }
-}
-
 async function handleEdit(row: any) {
   isEdit.value = true
   editId.value = row.id
@@ -320,7 +318,6 @@ async function handleEdit(row: any) {
   try {
     const userDetail: any = await userApi.getUserById(row.id)
     form.username = userDetail.username
-    form.password = ''
     form.realName = userDetail.realName
     form.email = userDetail.email || ''
     form.phone = userDetail.phone || ''
@@ -358,8 +355,8 @@ async function handleResetPassword(row: any) {
       cancelButtonText: '取消',
       type: 'warning',
     })
-    // TODO: 调用重置密码接口
-    ElMessage.success('密码重置成功，新密码为：123456')
+    const result: any = await userApi.sendInitialPassword(row.id)
+    ElMessage.success(typeof result === 'string' ? result : '初始密码已重置')
   } catch {
     // user cancelled
   }
@@ -409,27 +406,17 @@ async function handleSubmit() {
       })
       ElMessage.success('更新成功')
     } else {
-      // 创建用户：先创建基本信息
       const createData = {
         username: form.username,
-        password: form.password,
         realName: form.realName,
         email: form.email || null,
         phone: form.phone || null,
+        regionId: form.regionId,
+        departmentId: form.departmentId,
+        positionId: form.positionId,
       }
-      const result: any = await userApi.createUser(createData)
-
-      // 如果选择了组织信息，再调用更新接口设置
-      const hasOrgInfo = form.regionId || form.departmentId || form.positionId
-      if (hasOrgInfo && result?.id) {
-        await userApi.updateUser(result.id, {
-          regionId: form.regionId,
-          departmentId: form.departmentId,
-          positionId: form.positionId,
-        })
-      }
-
-      ElMessage.success('创建成功')
+      await userApi.createUser(createData)
+      ElMessage.success('创建成功，系统已按默认规则生成初始密码并尝试发送邮件')
     }
     dialogVisible.value = false
     fetchList()
@@ -442,7 +429,6 @@ async function handleSubmit() {
 
 function resetForm() {
   form.username = ''
-  form.password = ''
   form.realName = ''
   form.email = ''
   form.phone = ''

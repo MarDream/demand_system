@@ -12,13 +12,20 @@ import com.demand.system.module.knowledge.dto.KnowledgeDocumentVO;
 import com.demand.system.module.knowledge.entity.KnowledgeBase;
 import com.demand.system.module.knowledge.entity.KnowledgeChunk;
 import com.demand.system.module.knowledge.entity.KnowledgeDocument;
+import com.demand.system.module.knowledge.entity.KnowledgeDocumentShare;
+import com.demand.system.module.knowledge.entity.KnowledgeDocumentShareLog;
 import com.demand.system.module.knowledge.mapper.KnowledgeBaseMapper;
 import com.demand.system.module.knowledge.mapper.KnowledgeChunkMapper;
 import com.demand.system.module.knowledge.mapper.KnowledgeDocumentMapper;
+import com.demand.system.module.knowledge.mapper.KnowledgeDocumentShareLogMapper;
+import com.demand.system.module.knowledge.mapper.KnowledgeDocumentShareMapper;
 import com.demand.system.module.knowledge.service.EmbeddingService;
 import com.demand.system.module.knowledge.service.KnowledgeDocumentService;
 import com.demand.system.module.knowledge.vectorstore.MilvusVectorStore;
 import com.demand.system.module.file.storage.MinioStorageService;
+import com.demand.system.module.requirement.dto.RequirementAttachmentDTO;
+import com.demand.system.module.requirement.entity.Requirement;
+import com.demand.system.module.requirement.mapper.RequirementMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -32,8 +39,12 @@ import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -46,11 +57,14 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     private final KnowledgeChunkMapper chunkMapper;
     private final KnowledgeBaseMapper knowledgeBaseMapper;
     private final SysUserMapper sysUserMapper;
+    private final RequirementMapper requirementMapper;
     private final MinioStorageService minioStorageService;
     private final EmbeddingService embeddingService;
     private final KnowledgeConfig knowledgeConfig;
     private final MilvusVectorStore milvusVectorStore;
     private final RabbitTemplate rabbitTemplate;
+    private final KnowledgeDocumentShareMapper shareMapper;
+    private final KnowledgeDocumentShareLogMapper shareLogMapper;
 
     @Override
     @Transactional
@@ -72,39 +86,18 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
         KnowledgeDocument doc = new KnowledgeDocument();
         doc.setKnowledgeBaseId(knowledgeBaseId);
+        doc.setProjectId(kb.getProjectId());
         doc.setFileName(originalName);
         doc.setFileType(fileType);
         doc.setFileSize(file.getSize());
         doc.setChunkCount(0);
         doc.setStatus("pending");
         doc.setMinioKey(minioKey);
+        doc.setSourceType("knowledge_base");
+        doc.setSourceId(knowledgeBaseId);
         doc.setUploaderId(uploaderId);
         documentMapper.insert(doc);
-
-        // 通过RabbitMQ异步处理文档，事务提交后再发消息避免竞态
-        try {
-            Long docId = doc.getId();
-            if (TransactionSynchronizationManager.isSynchronizationActive()) {
-                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                    @Override
-                    public void afterCommit() {
-                        try {
-                            rabbitTemplate.convertAndSend("knowledge.exchange", "knowledge.document.process", docId);
-                            log.info("文档处理任务已发送到消息队列: docId={}", docId);
-                        } catch (Exception e) {
-                            log.warn("消息队列发送失败，同步处理: docId={}", docId, e);
-                            processDocument(docId);
-                        }
-                    }
-                });
-            } else {
-                rabbitTemplate.convertAndSend("knowledge.exchange", "knowledge.document.process", docId);
-                log.info("文档处理任务已发送到消息队列: docId={}", docId);
-            }
-        } catch (Exception e) {
-            log.warn("消息队列发送失败，同步处理: docId={}", doc.getId(), e);
-            processDocument(doc.getId());
-        }
+        enqueueDocumentProcessing(doc.getId());
 
         return toVO(doc);
     }
@@ -152,6 +145,218 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
         // 更新知识库计数
         updateKnowledgeBaseCount(knowledgeBaseId);
+    }
+
+    @Override
+    public String generateShareLink(Long knowledgeBaseId,
+                                    Long documentId,
+                                    Integer expireHours,
+                                    Boolean requireLogin,
+                                    Boolean oneTimeAccess,
+                                    Long creatorId) {
+        KnowledgeDocument doc = documentMapper.selectById(documentId);
+        if (doc == null || !doc.getKnowledgeBaseId().equals(knowledgeBaseId)) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "文档不存在");
+        }
+        int hours = expireHours == null || expireHours <= 0 ? 24 : Math.min(expireHours, 168);
+        KnowledgeDocumentShare share = new KnowledgeDocumentShare();
+        share.setToken(UUID.randomUUID().toString().replace("-", ""));
+        share.setKnowledgeBaseId(knowledgeBaseId);
+        share.setDocumentId(documentId);
+        share.setCreatorId(creatorId);
+        share.setRequireLogin(Boolean.TRUE.equals(requireLogin) ? 1 : 0);
+        share.setOneTimeAccess(Boolean.TRUE.equals(oneTimeAccess) ? 1 : 0);
+        share.setUsedCount(0);
+        share.setStatus("active");
+        share.setExpireAt(LocalDateTime.now().plusHours(hours));
+        shareMapper.insert(share);
+        return share.getToken();
+    }
+
+    @Override
+    @Transactional
+    public void syncRequirementAttachments(Long projectId, Long requirementId, List<RequirementAttachmentDTO> attachments, Long uploaderId) {
+        if (projectId == null || requirementId == null || attachments == null || attachments.isEmpty()) {
+            return;
+        }
+
+        Long knowledgeBaseId = ensureProjectAttachmentKnowledgeBase(projectId, uploaderId);
+        for (RequirementAttachmentDTO attachment : attachments) {
+            if (attachment == null || attachment.getObjectName() == null || attachment.getObjectName().isBlank()) {
+                continue;
+            }
+            KnowledgeDocument exists = documentMapper.selectOne(new LambdaQueryWrapper<KnowledgeDocument>()
+                    .eq(KnowledgeDocument::getKnowledgeBaseId, knowledgeBaseId)
+                    .eq(KnowledgeDocument::getMinioKey, attachment.getObjectName())
+                    .last("LIMIT 1"));
+            if (exists != null) {
+                if (exists.getRequirementId() == null || !requirementId.equals(exists.getRequirementId())) {
+                    exists.setRequirementId(requirementId);
+                    documentMapper.updateById(exists);
+                }
+                continue;
+            }
+
+            KnowledgeDocument doc = new KnowledgeDocument();
+            doc.setKnowledgeBaseId(knowledgeBaseId);
+            doc.setFileName(attachment.getName());
+            doc.setFileType(extractFileType(attachment.getName()));
+            doc.setFileSize(attachment.getSize());
+            doc.setChunkCount(0);
+            doc.setStatus("pending");
+            doc.setMinioKey(attachment.getObjectName());
+            doc.setProjectId(projectId);
+            doc.setRequirementId(requirementId);
+            doc.setSourceType("requirement");
+            doc.setSourceId(requirementId);
+            doc.setUploaderId(uploaderId);
+            documentMapper.insert(doc);
+            enqueueDocumentProcessing(doc.getId());
+        }
+    }
+
+    @Override
+    @Transactional
+    public String resolveShareAccessUrl(String token, Long currentUserId, String accessIp, String userAgent) {
+        KnowledgeDocumentShare share = shareMapper.selectOne(new LambdaQueryWrapper<KnowledgeDocumentShare>()
+                .eq(KnowledgeDocumentShare::getToken, token)
+                .last("LIMIT 1"));
+        if (share == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "分享链接不存在");
+        }
+        if (!"active".equalsIgnoreCase(share.getStatus())) {
+            recordShareAccess(share, currentUserId, accessIp, userAgent, "failed", "分享链接已失效");
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "分享链接已失效");
+        }
+        if (share.getExpireAt() != null && share.getExpireAt().isBefore(LocalDateTime.now())) {
+            share.setStatus("expired");
+            shareMapper.updateById(share);
+            recordShareAccess(share, currentUserId, accessIp, userAgent, "failed", "分享链接已过期");
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "分享链接已过期");
+        }
+        if (Boolean.TRUE.equals(asBoolean(share.getRequireLogin())) && currentUserId == null) {
+            recordShareAccess(share, null, accessIp, userAgent, "failed", "需要登录访问");
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "该分享链接需要登录后访问");
+        }
+        if (Boolean.TRUE.equals(asBoolean(share.getOneTimeAccess())) && share.getUsedCount() != null && share.getUsedCount() > 0) {
+            share.setStatus("used");
+            shareMapper.updateById(share);
+            recordShareAccess(share, currentUserId, accessIp, userAgent, "failed", "分享链接已使用");
+            throw new BusinessException(ErrorCode.FORBIDDEN, "该分享链接已被使用");
+        }
+
+        KnowledgeDocument doc = documentMapper.selectById(share.getDocumentId());
+        if (doc == null || !Objects.equals(doc.getKnowledgeBaseId(), share.getKnowledgeBaseId())) {
+            recordShareAccess(share, currentUserId, accessIp, userAgent, "failed", "文档不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "分享文档不存在");
+        }
+        try {
+            String accessUrl = minioStorageService.getPresignedUrl(doc.getMinioKey(), 1);
+            share.setUsedCount((share.getUsedCount() == null ? 0 : share.getUsedCount()) + 1);
+            share.setUsedAt(LocalDateTime.now());
+            if (Boolean.TRUE.equals(asBoolean(share.getOneTimeAccess()))) {
+                share.setStatus("used");
+            }
+            shareMapper.updateById(share);
+            recordShareAccess(share, currentUserId, accessIp, userAgent, "success", null);
+            return accessUrl;
+        } catch (Exception e) {
+            recordShareAccess(share, currentUserId, accessIp, userAgent, "failed", "下载链接生成失败");
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "分享访问失败: " + e.getMessage());
+        }
+    }
+
+    @Override
+    @Transactional
+    public int backfillDocumentMetadata() {
+        List<KnowledgeDocument> documents = documentMapper.selectList(new LambdaQueryWrapper<KnowledgeDocument>()
+                .eq(KnowledgeDocument::getDeletedAt, 0)
+                .orderByAsc(KnowledgeDocument::getId));
+        if (documents.isEmpty()) {
+            return 0;
+        }
+
+        Map<Long, KnowledgeBase> knowledgeBaseMap = knowledgeBaseMapper.selectList(new LambdaQueryWrapper<KnowledgeBase>()
+                        .eq(KnowledgeBase::getDeletedAt, 0))
+                .stream()
+                .collect(Collectors.toMap(KnowledgeBase::getId, kb -> kb, (left, right) -> left));
+
+        List<Requirement> requirements = requirementMapper.selectList(new LambdaQueryWrapper<Requirement>()
+                .eq(Requirement::getDeletedAt, 0)
+                .isNotNull(Requirement::getAttachments)
+                .orderByDesc(Requirement::getUpdatedAt));
+        Map<String, Requirement> requirementByObjectName = new HashMap<>();
+        Map<String, Requirement> requirementByFileName = new HashMap<>();
+        for (Requirement requirement : requirements) {
+            if (requirement.getAttachments() == null) {
+                continue;
+            }
+            for (RequirementAttachmentDTO attachment : requirement.getAttachments()) {
+                if (attachment == null) {
+                    continue;
+                }
+                if (attachment.getObjectName() != null && !attachment.getObjectName().isBlank()) {
+                    requirementByObjectName.putIfAbsent(attachment.getObjectName(), requirement);
+                }
+                if (attachment.getName() != null && !attachment.getName().isBlank()) {
+                    requirementByFileName.putIfAbsent(attachment.getName().toLowerCase(), requirement);
+                }
+            }
+        }
+
+        int updatedCount = 0;
+        for (KnowledgeDocument doc : documents) {
+            boolean changed = false;
+            KnowledgeBase kb = knowledgeBaseMap.get(doc.getKnowledgeBaseId());
+            if (doc.getProjectId() == null && kb != null) {
+                doc.setProjectId(kb.getProjectId());
+                changed = true;
+            }
+
+            Requirement matchedRequirement = null;
+            if (doc.getRequirementId() != null) {
+                matchedRequirement = requirementMapper.selectById(doc.getRequirementId());
+            }
+            if (matchedRequirement == null && doc.getMinioKey() != null) {
+                matchedRequirement = requirementByObjectName.get(doc.getMinioKey());
+            }
+            if (matchedRequirement == null && doc.getFileName() != null) {
+                matchedRequirement = requirementByFileName.get(doc.getFileName().toLowerCase());
+            }
+            if (matchedRequirement != null) {
+                if (!Objects.equals(doc.getRequirementId(), matchedRequirement.getId())) {
+                    doc.setRequirementId(matchedRequirement.getId());
+                    changed = true;
+                }
+                if (!Objects.equals(doc.getProjectId(), matchedRequirement.getProjectId())) {
+                    doc.setProjectId(matchedRequirement.getProjectId());
+                    changed = true;
+                }
+                if (!"requirement".equals(doc.getSourceType())) {
+                    doc.setSourceType("requirement");
+                    changed = true;
+                }
+                if (!Objects.equals(doc.getSourceId(), matchedRequirement.getId())) {
+                    doc.setSourceId(matchedRequirement.getId());
+                    changed = true;
+                }
+            } else {
+                if (!"knowledge_base".equals(doc.getSourceType())) {
+                    doc.setSourceType("knowledge_base");
+                    changed = true;
+                }
+                if (!Objects.equals(doc.getSourceId(), doc.getKnowledgeBaseId())) {
+                    doc.setSourceId(doc.getKnowledgeBaseId());
+                    changed = true;
+                }
+            }
+
+            if (changed) {
+                documentMapper.updateById(doc);
+                updatedCount++;
+            }
+        }
+        return updatedCount;
     }
 
     @Override
@@ -224,6 +429,81 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
         // 更新知识库计数
         updateKnowledgeBaseCount(doc.getKnowledgeBaseId());
+    }
+
+    private void enqueueDocumentProcessing(Long docId) {
+        try {
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        sendDocumentProcessingMessage(docId);
+                    }
+                });
+            } else {
+                sendDocumentProcessingMessage(docId);
+            }
+        } catch (Exception e) {
+            log.warn("消息队列发送失败，同步处理: docId={}", docId, e);
+            processDocument(docId);
+        }
+    }
+
+    private void sendDocumentProcessingMessage(Long docId) {
+        try {
+            rabbitTemplate.convertAndSend("knowledge.exchange", "knowledge.document.process", docId);
+            log.info("文档处理任务已发送到消息队列: docId={}", docId);
+        } catch (Exception e) {
+            log.warn("消息队列发送失败，同步处理: docId={}", docId, e);
+            processDocument(docId);
+        }
+    }
+
+    private Long ensureProjectAttachmentKnowledgeBase(Long projectId, Long creatorId) {
+        KnowledgeBase kb = knowledgeBaseMapper.selectOne(new LambdaQueryWrapper<KnowledgeBase>()
+                .eq(KnowledgeBase::getProjectId, projectId)
+                .like(KnowledgeBase::getName, "项目附件知识库")
+                .orderByDesc(KnowledgeBase::getId)
+                .last("LIMIT 1"));
+        if (kb != null) {
+            return kb.getId();
+        }
+
+        KnowledgeBase created = new KnowledgeBase();
+        created.setName("项目附件知识库-" + projectId);
+        created.setDescription("系统自动归档需求流程附件");
+        created.setProjectId(projectId);
+        created.setCreatorId(uploaderOrZero(creatorId));
+        created.setDocCount(0);
+        created.setChunkCount(0);
+        created.setStatus("active");
+        knowledgeBaseMapper.insert(created);
+        return created.getId();
+    }
+
+    private Long uploaderOrZero(Long uploaderId) {
+        return uploaderId == null ? 0L : uploaderId;
+    }
+
+    private void recordShareAccess(KnowledgeDocumentShare share,
+                                   Long accessUserId,
+                                   String accessIp,
+                                   String userAgent,
+                                   String accessStatus,
+                                   String failureReason) {
+        KnowledgeDocumentShareLog logEntry = new KnowledgeDocumentShareLog();
+        logEntry.setShareId(share.getId());
+        logEntry.setDocumentId(share.getDocumentId());
+        logEntry.setAccessUserId(accessUserId);
+        logEntry.setAccessIp(accessIp);
+        logEntry.setUserAgent(userAgent);
+        logEntry.setAccessStatus(accessStatus);
+        logEntry.setFailureReason(failureReason);
+        shareLogMapper.insert(logEntry);
+    }
+
+    private Boolean asBoolean(Integer value) {
+        return value != null && value == 1;
     }
 
     private String readDocumentContent(KnowledgeDocument doc) throws Exception {
@@ -365,12 +645,16 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         return KnowledgeDocumentVO.builder()
                 .id(doc.getId())
                 .knowledgeBaseId(doc.getKnowledgeBaseId())
+                .projectId(doc.getProjectId())
                 .fileName(doc.getFileName())
                 .fileType(doc.getFileType())
                 .fileSize(doc.getFileSize())
                 .chunkCount(doc.getChunkCount())
                 .status(doc.getStatus())
                 .errorMessage(doc.getErrorMessage())
+                .requirementId(doc.getRequirementId())
+                .sourceType(doc.getSourceType())
+                .sourceId(doc.getSourceId())
                 .uploaderId(doc.getUploaderId())
                 .uploaderName(uploaderName)
                 .createdAt(doc.getCreatedAt())

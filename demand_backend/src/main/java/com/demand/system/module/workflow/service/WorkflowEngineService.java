@@ -9,8 +9,10 @@ import com.demand.system.module.requirement.entity.Requirement;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
 import com.demand.system.module.user.entity.User;
 import com.demand.system.module.user.mapper.UserMapper;
+import com.demand.system.module.workflow.dto.AvailableTransitionDTO;
 import com.demand.system.module.workflow.dto.FlowTransitionRequest;
 import com.demand.system.module.workflow.dto.TransitionVO;
+import com.demand.system.module.workflow.dto.WorkflowAvailableActionsDTO;
 import com.demand.system.module.workflow.entity.*;
 import com.demand.system.module.workflow.mapper.WorkflowEdgeMapper;
 import com.demand.system.module.workflow.mapper.WorkflowInstanceMapper;
@@ -22,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -219,6 +222,59 @@ public class WorkflowEngineService {
         );
     }
 
+    public WorkflowAvailableActionsDTO getAvailableActions(Long requirementId) {
+        WorkflowAvailableActionsDTO actions = new WorkflowAvailableActionsDTO();
+        actions.setCanTransition(false);
+        actions.setCanRollback(false);
+        actions.setCanCancel(false);
+        actions.setTransitions(Collections.emptyList());
+
+        Requirement requirement = requirementMapper.selectById(requirementId);
+        if (requirement == null || requirement.getWorkflowInstanceId() == null) {
+            return actions;
+        }
+
+        WorkflowInstance instance = instanceMapper.selectOne(
+                new LambdaQueryWrapper<WorkflowInstance>()
+                        .eq(WorkflowInstance::getRequirementId, requirementId)
+        );
+        if (instance == null || !"running".equals(instance.getStatus())) {
+            return actions;
+        }
+
+        WorkflowNode currentNode = getNode(instance.getWorkflowVersionId(), instance.getCurrentNodeId());
+        if (currentNode == null) {
+            return actions;
+        }
+
+        Long operatorId = SecurityUtils.getCurrentUserId();
+        if (!hasOperatePermission(currentNode, operatorId)) {
+            return actions;
+        }
+
+        List<AvailableTransitionDTO> transitions = edgeMapper.selectList(
+                new LambdaQueryWrapper<WorkflowEdge>()
+                        .eq(WorkflowEdge::getWorkflowVersionId, instance.getWorkflowVersionId())
+                        .eq(WorkflowEdge::getSourceNodeId, instance.getCurrentNodeId())
+        ).stream().map(edge -> {
+            WorkflowNode targetNode = getNode(instance.getWorkflowVersionId(), edge.getTargetNodeId());
+            if (targetNode == null) {
+                return null;
+            }
+            AvailableTransitionDTO dto = new AvailableTransitionDTO();
+            dto.setToNodeId(targetNode.getNodeId());
+            dto.setToNodeName(targetNode.getNodeName());
+            dto.setLabel(edge.getLabel());
+            return dto;
+        }).filter(java.util.Objects::nonNull).collect(Collectors.toList());
+
+        actions.setTransitions(transitions);
+        actions.setCanTransition(!transitions.isEmpty());
+        actions.setCanRollback(instance.getPreviousNodeId() != null && !"end".equals(currentNode.getNodeType()));
+        actions.setCanCancel(!"end".equals(currentNode.getNodeType()));
+        return actions;
+    }
+
     public List<TransitionVO> getTransitionHistory(Long requirementId) {
         List<WorkflowInstanceTransition> transitions = transitionMapper.selectList(
             new LambdaQueryWrapper<WorkflowInstanceTransition>()
@@ -289,6 +345,18 @@ public class WorkflowEngineService {
             // 角色校验由 Spring Security 处理，这里做简化检查
         }
         // 争抢式：绑定角色时所有有该角色的人可见可操作，谁先流转归谁
+    }
+
+    private boolean hasOperatePermission(WorkflowNode node, Long operatorId) {
+        try {
+            validatePermission(node, operatorId);
+            return true;
+        } catch (BusinessException ex) {
+            if (ex.getErrorCode() == ErrorCode.FORBIDDEN) {
+                return false;
+            }
+            throw ex;
+        }
     }
 
     private void closeCurrentTransition(Long instanceId) {

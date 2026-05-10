@@ -39,6 +39,20 @@
       <div v-if="store.searchResults?.results?.length" class="search-results">
         <p class="result-count">找到 {{ store.searchResults.total }} 条相关结果</p>
 
+        <el-alert
+          v-if="store.searchResults.processSummary"
+          type="info"
+          :closable="false"
+          show-icon
+          class="process-summary"
+          :title="store.searchResults.processSummary"
+        />
+
+        <el-card v-if="store.searchResults.answer" class="answer-card" shadow="never">
+          <template #header>检索结果摘要</template>
+          <div class="answer-content">{{ store.searchResults.answer }}</div>
+        </el-card>
+
         <el-card v-for="(item, index) in store.searchResults.results" :key="item.chunkId" class="result-card" shadow="hover">
           <div class="result-rank">{{ index + 1 }}</div>
           <div class="result-body">
@@ -54,6 +68,18 @@
             <div v-if="item.sectionTitle" class="result-title">{{ item.sectionTitle }}</div>
             <div class="result-content">
               <span v-html="highlightContent(item.content)"></span>
+            </div>
+            <div v-if="item.requirement" class="requirement-ref">
+              <div class="requirement-ref__title">关联需求</div>
+              <div class="requirement-ref__meta">
+                <span>#{{ item.requirement.id }}</span>
+                <span>{{ item.requirement.title }}</span>
+                <el-tag size="small">{{ item.requirement.status }}</el-tag>
+                <el-tag size="small" type="info">{{ item.requirement.type }}</el-tag>
+              </div>
+              <div v-if="item.requirement.summary" class="requirement-ref__summary">
+                {{ item.requirement.summary }}
+              </div>
             </div>
             <div class="result-footer">
               <span class="result-doc-id">文档ID: {{ item.documentId }}</span>
@@ -149,6 +175,16 @@ function escapeRegex(str: string) {
   font-size: 13px;
   margin-bottom: 16px;
 }
+.process-summary {
+  margin-bottom: 16px;
+}
+.answer-card {
+  margin-bottom: 16px;
+}
+.answer-content {
+  line-height: 1.8;
+  color: #606266;
+}
 .result-card {
   margin-bottom: 16px;
   position: relative;
@@ -202,6 +238,32 @@ function escapeRegex(str: string) {
   border-radius: 6px;
   max-height: 160px;
   overflow: hidden;
+}
+.requirement-ref {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #f0f9eb;
+}
+.requirement-ref__title {
+  font-size: 12px;
+  color: #67c23a;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.requirement-ref__meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: #303133;
+}
+.requirement-ref__summary {
+  margin-top: 6px;
+  color: #606266;
+  font-size: 12px;
+  line-height: 1.6;
 }
 .result-content :deep(mark) {
   background: #fef08a;
