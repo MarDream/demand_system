@@ -109,16 +109,10 @@ export const routes: RouteRecordRaw[] = [
         meta: { title: '用户管理', hidden: true, requiredPermissions: ['menu:settings:user'] },
       },
       {
-        path: 'settings/org',
-        name: 'OrgManage',
-        component: () => import('@/views/settings/org.vue'),
-        meta: { title: '组织架构', hidden: true, requiredPermissions: ['menu:settings:org'] },
-      },
-      {
-        path: 'system/organization',
-        name: 'OrganizationManagement',
-        component: () => import('@/views/system/organization/index.vue'),
-        meta: { title: '组织架构管理', icon: 'OfficeBuilding' },
+        path: 'settings/roles',
+        name: 'RoleManage',
+        component: () => import('@/views/settings/roles.vue'),
+        meta: { title: '角色管理', hidden: true, requiredPermissions: ['menu:settings:role'] },
       },
       {
         path: 'system/workflow-config',

@@ -570,7 +570,6 @@ const handleSave = async () => {
 
     ElMessage.success('保存成功')
   } catch (error) {
-    console.error('保存失败:', error)
     ElMessage.error('保存失败')
   } finally {
     saving.value = false
@@ -592,7 +591,6 @@ const handleSubmit = async () => {
     ElMessage.success('提交审核成功')
     router.push('/system/workflow-config')
   } catch (error) {
-    console.error('提交失败:', error)
     ElMessage.error('提交失败')
   } finally {
     submitting.value = false
@@ -650,7 +648,6 @@ const loadWorkflowConfig = async () => {
         }
       }
     } catch (error) {
-      console.error('加载配置失败:', error)
       ElMessage.error('加载配置失败')
     }
   }
@@ -661,7 +658,6 @@ const loadNodeStatuses = async () => {
     const result = await nodeStatusApi.list() as any
     nodeStatusOptions.value = Array.isArray(result) ? result : (result?.data || [])
   } catch (error) {
-    console.error('加载节点状态失败:', error)
     nodeStatusOptions.value = []
   }
 }

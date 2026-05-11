@@ -1,13 +1,12 @@
 package com.demand.system.module.rbac.controller;
 
 import com.demand.system.common.result.Result;
+import com.demand.system.module.rbac.dto.RoleCreateDTO;
 import com.demand.system.module.rbac.dto.RolePermissionSaveDTO;
 import com.demand.system.module.rbac.dto.RolePermissionVO;
+import com.demand.system.module.rbac.dto.RoleUpdateDTO;
 import com.demand.system.module.rbac.dto.RoleVO;
-import com.demand.system.module.rbac.entity.Role;
-import com.demand.system.module.rbac.mapper.RoleMapper;
 import com.demand.system.module.rbac.service.RolePermissionService;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -23,7 +22,31 @@ import java.util.List;
 public class RolePermissionController {
 
     private final RolePermissionService rolePermissionService;
-    private final RoleMapper roleMapper;
+
+    @Operation(summary = "查询角色列表")
+    @GetMapping
+    public Result<List<RoleVO>> listRoles() {
+        return rolePermissionService.listRoles();
+    }
+
+    @Operation(summary = "创建角色")
+    @PostMapping
+    public Result<RoleVO> createRole(@Valid @RequestBody RoleCreateDTO request) {
+        return rolePermissionService.createRole(request);
+    }
+
+    @Operation(summary = "更新角色")
+    @PutMapping("/{roleId}")
+    public Result<RoleVO> updateRole(@PathVariable Long roleId, @Valid @RequestBody RoleUpdateDTO request) {
+        request.setId(roleId);
+        return rolePermissionService.updateRole(request);
+    }
+
+    @Operation(summary = "删除角色")
+    @DeleteMapping("/{roleId}")
+    public Result<Void> deleteRole(@PathVariable Long roleId) {
+        return rolePermissionService.deleteRole(roleId);
+    }
 
     @Operation(summary = "查询角色权限")
     @GetMapping("/{roleId}/permissions")
@@ -45,11 +68,4 @@ public class RolePermissionController {
         return rolePermissionService.getCurrentGrantablePermissionCodes();
     }
 
-    @Operation(summary = "查询角色列表")
-    @GetMapping
-    public Result<List<RoleVO>> listRoles() {
-        List<Role> roles = roleMapper.selectList(new LambdaQueryWrapper<Role>().orderByAsc(Role::getId));
-        List<RoleVO> result = roles.stream().map(RoleVO::from).toList();
-        return Result.success(result);
-    }
 }

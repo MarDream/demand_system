@@ -17,12 +17,24 @@ scripts/            # Docker Compose
 
 ## 关键配置
 
-- 基础设施均为Docker容器部署 (MySQL/Redis/RabbitMQ/MinIO/Elasticsearch)
-- RabbitMQ: `admin/admin`, MinIO: `admin/admin123456`
+- 基础设施均为Docker容器部署 (MySQL/Redis/RabbitMQ/MinIO/Elasticsearch/Milvus)
+
+### 基础组件账号密码
+
+| 组件 | 端口 | 账号 | 密码 | 说明 |
+|------|------|------|------|------|
+| MySQL | 3306 | root | admin123 | 数据库: demand_system |
+| Redis | 6379 | - | (无密码) | DB 0 |
+| RabbitMQ | 5672/15672 | admin | admin | 管理界面: http://localhost:15672 |
+| MinIO | 9000/9001 | admin | admin123456 | 控制台: http://localhost:9001 |
+| Elasticsearch | 9200/9300 | - | - | 无认证 |
+| Milvus | 19530/9091 | - | - | 向量数据库 |
+
 - JWT: 256位+ secret, Access 2h, Refresh 7d
 - 配置文件: `demand_backend/src/main/resources/application-dev.yml`，启动先加载记录基础设施对应的访问账号密码信息
 - **端口占用处理**: 启动服务时若端口被占用，直接杀掉占用进程后重启，不手动排查
 - **SQL维护**: 所有SQL变更整合到 database/init.sql，不新增独立SQL文件
+- **Docker MySQL 中文乱码**: 通过 `docker exec mysql mysql` 执行SQL时必须加 `--default-character-set=utf8mb4`，否则中文会乱码
 
 ## 架构约定
 

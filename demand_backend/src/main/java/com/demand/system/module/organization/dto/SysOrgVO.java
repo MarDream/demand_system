@@ -6,7 +6,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 @Data
-public class RegionVO {
+public class SysOrgVO {
 
     private Long id;
 
@@ -14,15 +14,25 @@ public class RegionVO {
 
     private Long parentId;
 
+    private String orgType;
+
     private String code;
+
+    private Long leaderId;
+
+    private String leaderName;
 
     private String description;
 
     private Integer sortOrder;
 
+    private String path;
+
+    private Integer level;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
 
-    private List<RegionVO> children;
+    private List<SysOrgVO> children;
 }

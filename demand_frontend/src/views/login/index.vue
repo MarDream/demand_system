@@ -2,7 +2,7 @@
   <div class="login-container">
     <div class="login-card">
       <div class="login-header">
-        <el-icon class="login-logo"><Monitor /></el-icon>
+        <img src="@/assets/logo.png" alt="需求管理系统" class="login-logo" />
         <h1 class="login-title">需求管理系统</h1>
       </div>
       <el-form
@@ -61,7 +61,7 @@
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
-import { Monitor, User, Lock } from '@element-plus/icons-vue'
+import { User, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/modules/user'
 
@@ -126,9 +126,10 @@ async function handleLogin() {
 }
 
 .login-logo {
-  font-size: 48px;
-  color: #409EFF;
-  margin-bottom: 12px;
+  width: 116px;
+  height: 116px;
+  object-fit: contain;
+  margin-bottom: 16px;
 }
 
 .login-title {

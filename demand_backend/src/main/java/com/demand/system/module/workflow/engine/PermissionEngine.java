@@ -8,6 +8,7 @@ import com.demand.system.module.user.mapper.UserOrganizationMapper;
 import com.demand.system.module.workflow.entity.WorkflowNodePermission;
 import com.demand.system.module.workflow.entity.WorkflowState;
 import com.demand.system.module.workflow.entity.WorkflowTransition;
+import com.demand.system.module.workflow.engine.WorkflowVersionResolver;
 import com.demand.system.module.workflow.entity.WorkflowVersion;
 import com.demand.system.module.workflow.mapper.WorkflowNodePermissionMapper;
 import com.demand.system.module.workflow.mapper.WorkflowStateMapper;
@@ -41,6 +42,7 @@ public class PermissionEngine {
     private final WorkflowTransitionMapper transitionMapper;
     private final UserOrganizationMapper userOrganizationMapper;
     private final WorkflowVersionMapper workflowVersionMapper;
+    private final WorkflowVersionResolver workflowVersionResolver;
     private final WorkflowNodePermissionMapper nodePermissionMapper;
     private final WorkflowStateMapper stateMapper;
     private final RequirementMapper requirementMapper;
@@ -108,7 +110,7 @@ public class PermissionEngine {
             return true;
         }
 
-        WorkflowVersion activeVersion = getActiveVersion(projectId).orElse(null);
+        WorkflowVersion activeVersion = workflowVersionResolver.findActiveVersion(projectId).orElse(null);
         if (activeVersion == null) {
             return true;
         }
@@ -159,23 +161,6 @@ public class PermissionEngine {
         return userRoles.stream().anyMatch(allowedRoles::contains);
     }
 
-    private Optional<WorkflowVersion> getActiveVersion(Long projectId) {
-        LambdaQueryWrapper<WorkflowVersion> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(WorkflowVersion::getProjectId, projectId)
-                .eq(WorkflowVersion::getIsActive, 1)
-                .orderByDesc(WorkflowVersion::getVersion)
-                .last("LIMIT 1");
-        WorkflowVersion version = workflowVersionMapper.selectOne(wrapper);
-        if (version != null || projectId == null || projectId == 0L) {
-            return Optional.ofNullable(version);
-        }
-        LambdaQueryWrapper<WorkflowVersion> globalWrapper = new LambdaQueryWrapper<>();
-        globalWrapper.eq(WorkflowVersion::getProjectId, 0L)
-                .eq(WorkflowVersion::getIsActive, 1)
-                .orderByDesc(WorkflowVersion::getVersion)
-                .last("LIMIT 1");
-        return Optional.ofNullable(workflowVersionMapper.selectOne(globalWrapper));
-    }
 
     private Set<String> getUserRoles(Long userId) {
         LambdaQueryWrapper<UserOrganization> userRoleWrapper = new LambdaQueryWrapper<>();

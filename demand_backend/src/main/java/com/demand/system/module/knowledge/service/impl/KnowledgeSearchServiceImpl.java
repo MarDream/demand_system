@@ -52,7 +52,7 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         KnowledgeSearchResponse.KnowledgeSearchResponseBuilder responseBuilder = KnowledgeSearchResponse.builder()
                 .results(results)
                 .total(results.size())
-                .processSummary(buildProcessSummary(request, results));
+                .processSummary(buildProcessSummary(request, results.size(), results));
 
         // RAG模式：生成LLM答案
         if ("rag".equals(mode) && !results.isEmpty()) {
@@ -72,9 +72,9 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
             float[] queryVector, String knowledgeBaseId, int topK) {
         List<MilvusVectorStore.SearchResult> milvusResults =
                 milvusVectorStore.search(queryVector, knowledgeBaseId, topK);
-
+        Map<Long, KnowledgeSearchResponse.RequirementReference> reqMap = buildDocumentRequirementMap(milvusResults);
         return milvusResults.stream()
-                .map(this::toResultItem)
+                .map(sr -> toResultItem(sr, reqMap))
                 .collect(Collectors.toList());
     }
 
@@ -103,10 +103,11 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
 
             scored.sort(Comparator.comparingDouble(s -> -s.score));
 
+            Map<Long, KnowledgeSearchResponse.RequirementReference> reqMap = buildDocumentRequirementMap(scored.stream().map(s -> s.result).collect(Collectors.toList()));
             return scored.stream()
                     .limit(topK)
                     .map(s -> {
-                        KnowledgeSearchResponse.SearchResultItem item = toResultItem(s.result);
+                        KnowledgeSearchResponse.SearchResultItem item = toResultItem(s.result, reqMap);
                         item.setScore(s.score);
                         return item;
                     })
@@ -116,28 +117,81 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
             log.warn("Reranker调用失败，降级使用向量检索结果", e);
             return candidates.stream()
                     .limit(topK)
-                    .map(this::toResultItem)
+                    .map(sr -> toResultItem(sr, buildDocumentRequirementMap(candidates.stream().limit(topK).collect(Collectors.toList()))))
                     .collect(Collectors.toList());
         }
     }
 
-    private KnowledgeSearchResponse.SearchResultItem toResultItem(MilvusVectorStore.SearchResult sr) {
+    private KnowledgeSearchResponse.SearchResultItem toResultItem(
+            MilvusVectorStore.SearchResult sr, Map<Long, KnowledgeSearchResponse.RequirementReference> requirementMap) {
         Map<String, Object> entity = sr.getEntity();
-        String fileName = getString(entity.get("file_name"));
+        Long docId = parseLong(entity.get("document_id"));
         return KnowledgeSearchResponse.SearchResultItem.builder()
                 .chunkId(parseLong(entity.get("id")))
-                .documentId(parseLong(entity.get("document_id")))
-                .fileName(fileName)
+                .documentId(docId)
+                .fileName(getString(entity.get("file_name")))
                 .sectionTitle(getString(entity.get("section_title")))
                 .content(getString(entity.get("text")))
                 .pageNum(parseInteger(entity.get("page_num")))
                 .score((double) sr.getScore())
                 .knowledgeBaseId(getString(entity.get("knowledge_base_id")))
-                .requirement(findRequirementReference(parseLong(entity.get("document_id")), fileName))
+                .requirement(requirementMap.get(docId))
                 .build();
     }
 
-    private String buildProcessSummary(KnowledgeSearchRequest request, List<KnowledgeSearchResponse.SearchResultItem> results) {
+    private Map<Long, KnowledgeSearchResponse.RequirementReference> buildDocumentRequirementMap(
+            List<MilvusVectorStore.SearchResult> results) {
+        Set<Long> docIds = results.stream()
+                .map(sr -> parseLong(sr.getEntity().get("document_id")))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (docIds.isEmpty()) return Collections.emptyMap();
+
+        List<KnowledgeDocument> documents = knowledgeDocumentMapper.selectBatchIds(docIds);
+        Map<Long, Long> docToReqId = documents.stream()
+                .filter(d -> d.getRequirementId() != null)
+                .collect(Collectors.toMap(KnowledgeDocument::getId, KnowledgeDocument::getRequirementId, (a, b) -> a));
+
+        Map<Long, KnowledgeSearchResponse.RequirementReference> resultMap = new HashMap<>();
+        if (!docToReqId.isEmpty()) {
+            List<Requirement> reqs = requirementMapper.selectBatchIds(docToReqId.values());
+            Map<Long, Requirement> reqMap = reqs.stream().collect(Collectors.toMap(Requirement::getId, r -> r, (a, b) -> a));
+            for (Map.Entry<Long, Long> entry : docToReqId.entrySet()) {
+                Requirement req = reqMap.get(entry.getValue());
+                if (req != null) resultMap.put(entry.getKey(), toRequirementReference(req));
+            }
+        }
+
+        // Fallback: match by fileName for docs without requirementId
+        Set<String> unmatchedFileNames = results.stream()
+                .filter(sr -> !resultMap.containsKey(parseLong(sr.getEntity().get("document_id"))))
+                .map(sr -> getString(sr.getEntity().get("file_name")))
+                .filter(name -> name != null && !name.isBlank())
+                .collect(Collectors.toSet());
+        if (!unmatchedFileNames.isEmpty()) {
+            List<Requirement> allWithAttachments = requirementMapper.selectList(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Requirement>().isNotNull(Requirement::getAttachments));
+            for (Requirement req : allWithAttachments) {
+                if (req.getAttachments() == null) continue;
+                for (var attachment : req.getAttachments()) {
+                    if (attachment.getName() != null && unmatchedFileNames.stream()
+                            .anyMatch(fn -> fn.equalsIgnoreCase(attachment.getName()))) {
+                        // Find which docId this fileName belongs to
+                        for (var sr : results) {
+                            Long docId = parseLong(sr.getEntity().get("document_id"));
+                            String fn = getString(sr.getEntity().get("file_name"));
+                            if (!resultMap.containsKey(docId) && fn != null && fn.equalsIgnoreCase(attachment.getName())) {
+                                resultMap.putIfAbsent(docId, toRequirementReference(req));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return resultMap;
+    }
+
+    private String buildProcessSummary(KnowledgeSearchRequest request, int candidateCount, List<KnowledgeSearchResponse.SearchResultItem> results) {
         String mode = request.getMode() == null ? "hybrid" : request.getMode();
         if (results.isEmpty()) {
             return String.format("系统按%s模式检索了知识库内容，但未找到与“%s”相关的文档片段。", mode, request.getQuery());
@@ -147,43 +201,12 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                 "系统按%s模式解析问题“%s”，在%s个候选片段中返回前%d条结果，其中%d条结果可追溯到需求流程附件。",
                 mode,
                 request.getQuery(),
-                results.size(),
+                candidateCount,
                 results.size(),
                 relatedRequirementCount
         );
     }
 
-    private KnowledgeSearchResponse.RequirementReference findRequirementReference(Long documentId, String fileName) {
-        if (documentId != null) {
-            KnowledgeDocument document = knowledgeDocumentMapper.selectById(documentId);
-            if (document != null && document.getRequirementId() != null) {
-                Requirement requirement = requirementMapper.selectById(document.getRequirementId());
-                if (requirement != null) {
-                    return toRequirementReference(requirement);
-                }
-            }
-        }
-
-        if (fileName == null || fileName.isBlank()) {
-            return null;
-        }
-        List<Requirement> requirements = requirementMapper.selectList(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Requirement>()
-                .isNotNull(Requirement::getAttachments)
-                .orderByDesc(Requirement::getCreatedAt));
-        for (Requirement requirement : requirements) {
-            if (requirement.getAttachments() == null) {
-                continue;
-            }
-            boolean matched = requirement.getAttachments().stream()
-                    .map(RequirementAttachmentDTO::getName)
-                    .filter(Objects::nonNull)
-                    .anyMatch(fileName::equalsIgnoreCase);
-            if (matched) {
-                return toRequirementReference(requirement);
-            }
-        }
-        return null;
-    }
 
     private KnowledgeSearchResponse.RequirementReference toRequirementReference(Requirement requirement) {
         return KnowledgeSearchResponse.RequirementReference.builder()

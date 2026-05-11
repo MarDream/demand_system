@@ -31,8 +31,8 @@ const { hasPermission, hasAnyRole, hasAnyPermission } = usePermission()
 // path -> 卡片额外配置（描述、颜色等不从菜单获取的部分）
 const cardMeta: Record<string, { description: string; color: string; buttonType: string }> = {
   '/settings/projects': { description: '创建、编辑和管理项目，配置项目成员', color: '#409EFF', buttonType: 'primary' },
-  '/settings/users': { description: '管理系统用户、角色权限和账号状态', color: '#67C23A', buttonType: 'success' },
-  '/settings/org': { description: '管理区域、部门和岗位的层级结构', color: '#E6A23C', buttonType: 'warning' },
+  '/settings/users': { description: '管理成员账号、部门组织、角色权限和账号状态', color: '#67C23A', buttonType: 'success' },
+  '/settings/roles': { description: '维护团队角色、授权范围和高风险操作权限', color: '#3B82F6', buttonType: 'primary' },
   '/settings/requirements': { description: '管理系统需求类型和优先级配置', color: '#909399', buttonType: '' },
   '/system/workflow-config': { description: '在系统设置中维护工作流与审批配置', color: '#8E44AD', buttonType: 'primary' },
   '/settings/menus': { description: '维护菜单、按钮以及角色授权能力', color: '#F56C6C', buttonType: 'danger' },
@@ -45,7 +45,7 @@ const cardMeta: Record<string, { description: string; color: string; buttonType:
 const pathPermissions: Record<string, () => boolean> = {
   '/settings/projects': () => hasPermission('menu:settings:project') || hasPermission('menu:system-config'),
   '/settings/users': () => hasPermission('menu:settings:user') || hasPermission('menu:system-config'),
-  '/settings/org': () => hasPermission('menu:settings:org') || hasPermission('menu:system-config'),
+  '/settings/roles': () => hasPermission('menu:settings:role') || hasPermission('menu:system-config'),
   '/settings/requirements': () => hasPermission('menu:settings:requirement') || hasPermission('menu:system-config'),
   '/system/workflow-config': () => hasAnyRole(['admin', 'workflow:config']) || hasPermission('menu:settings:workflow'),
   '/settings/menus': () => hasPermission('menu:menu-management') || hasAnyPermission(['button:menu:create', 'button:menu:update', 'button:menu:delete']),

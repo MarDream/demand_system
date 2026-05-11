@@ -15,6 +15,7 @@ import com.demand.system.module.requirement.mapper.RequirementTypeMapper;
 import com.demand.system.module.workflow.entity.WorkflowNodePermission;
 import com.demand.system.module.workflow.entity.WorkflowState;
 import com.demand.system.module.workflow.entity.WorkflowTransition;
+import com.demand.system.module.workflow.engine.WorkflowVersionResolver;
 import com.demand.system.module.workflow.entity.WorkflowVersion;
 import com.demand.system.module.workflow.mapper.WorkflowNodePermissionMapper;
 import com.demand.system.module.workflow.mapper.WorkflowStateMapper;
@@ -39,7 +40,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class RequirementConfigService {
 
-    private static final Long GLOBAL_PROJECT_ID = 0L;
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {
     };
 
@@ -48,6 +48,7 @@ public class RequirementConfigService {
     private final RequirementMapper requirementMapper;
     private final WorkflowVersionMapper workflowVersionMapper;
     private final WorkflowStateMapper workflowStateMapper;
+    private final WorkflowVersionResolver workflowVersionResolver;
     private final WorkflowTransitionMapper workflowTransitionMapper;
     private final WorkflowNodePermissionMapper workflowNodePermissionMapper;
     private final ObjectMapper objectMapper;
@@ -75,7 +76,7 @@ public class RequirementConfigService {
             config.setDefaultTypeColor(defaultType.getColor());
         }
 
-        WorkflowVersion activeVersion = findActiveVersion(projectId);
+        WorkflowVersion activeVersion = workflowVersionResolver.findActiveVersion(projectId).orElse(null);
 
         if (activeVersion == null) {
             config.setVisibleFields(Collections.emptyList());
@@ -280,7 +281,7 @@ public class RequirementConfigService {
     }
 
     private WorkflowState findInitialState(Long projectId) {
-        Long runtimeProjectId = resolveRuntimeProjectId(projectId);
+        Long runtimeProjectId = workflowVersionResolver.resolveRuntimeProjectId(projectId);
         List<WorkflowState> states = workflowStateMapper.selectList(
                 new LambdaQueryWrapper<WorkflowState>()
                         .eq(WorkflowState::getProjectId, runtimeProjectId)
@@ -305,43 +306,7 @@ public class RequirementConfigService {
                 .orElse(states.get(0));
     }
 
-    private WorkflowVersion findActiveVersion(Long projectId) {
-        WorkflowVersion activeVersion = workflowVersionMapper.selectOne(
-                new LambdaQueryWrapper<WorkflowVersion>()
-                        .eq(WorkflowVersion::getProjectId, projectId)
-                        .eq(WorkflowVersion::getIsActive, 1)
-                        .orderByDesc(WorkflowVersion::getVersion)
-                        .last("LIMIT 1")
-        );
-        if (activeVersion != null || projectId == null || Objects.equals(projectId, GLOBAL_PROJECT_ID)) {
-            return activeVersion;
-        }
-        return workflowVersionMapper.selectOne(
-                new LambdaQueryWrapper<WorkflowVersion>()
-                        .eq(WorkflowVersion::getProjectId, GLOBAL_PROJECT_ID)
-                        .eq(WorkflowVersion::getIsActive, 1)
-                        .orderByDesc(WorkflowVersion::getVersion)
-                        .last("LIMIT 1")
-        );
-    }
 
-    private Long resolveRuntimeProjectId(Long projectId) {
-        if (projectId == null || Objects.equals(projectId, GLOBAL_PROJECT_ID)) {
-            return projectId;
-        }
-        long projectStateCount = workflowStateMapper.selectCount(
-                new LambdaQueryWrapper<WorkflowState>()
-                        .eq(WorkflowState::getProjectId, projectId)
-        );
-        if (projectStateCount > 0) {
-            return projectId;
-        }
-        long globalStateCount = workflowStateMapper.selectCount(
-                new LambdaQueryWrapper<WorkflowState>()
-                        .eq(WorkflowState::getProjectId, GLOBAL_PROJECT_ID)
-        );
-        return globalStateCount > 0 ? GLOBAL_PROJECT_ID : projectId;
-    }
 
     private boolean existsTypeCode(String code, Long excludeId) {
         LambdaQueryWrapper<RequirementTypeConfig> wrapper = new LambdaQueryWrapper<RequirementTypeConfig>()

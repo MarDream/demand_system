@@ -1,7 +1,10 @@
 <template>
   <div class="layout-container">
     <div class="sidebar" :class="{ 'sidebar--collapsed': !sidebarOpened }">
-      <div class="sidebar-logo">需求管理系统</div>
+      <div class="sidebar-logo">
+        <img src="@/assets/logo.png" alt="需求管理系统" class="sidebar-logo__image" />
+        <span class="sidebar-logo__text">需求管理系统</span>
+      </div>
       <el-menu
         :default-active="activeMenu"
         :collapse="!sidebarOpened"
@@ -213,15 +216,43 @@ async function handleLogout() {
 }
 
 .sidebar-logo {
-  height: $header-height;
+  height: 74px;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 0 18px;
   color: #fff;
   font-size: $font-size-lg;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
+}
+
+.sidebar-logo__image {
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.sidebar-logo__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar--collapsed .sidebar-logo__text {
+  display: none;
+}
+
+.sidebar--collapsed .sidebar-logo {
+  justify-content: center;
+  padding: 0;
+}
+
+.sidebar--collapsed .sidebar-logo__image {
+  width: 42px;
+  height: 42px;
 }
 
 .main-container {

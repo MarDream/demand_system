@@ -1,9 +1,9 @@
 package com.demand.system.module.organization.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.demand.system.module.organization.entity.Department;
+import com.demand.system.module.organization.entity.SysOrg;
 import org.apache.ibatis.annotations.Mapper;
 
 @Mapper
-public interface DepartmentMapper extends BaseMapper<Department> {
+public interface SysOrgMapper extends BaseMapper<SysOrg> {
 }

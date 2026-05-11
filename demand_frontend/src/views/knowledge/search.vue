@@ -67,7 +67,7 @@
             </div>
             <div v-if="item.sectionTitle" class="result-title">{{ item.sectionTitle }}</div>
             <div class="result-content">
-              <span v-html="highlightContent(item.content)"></span>
+              <HighlightText :content="item.content" :query="query" />
             </div>
             <div v-if="item.requirement" class="requirement-ref">
               <div class="requirement-ref__title">关联需求</div>
@@ -104,6 +104,7 @@
 import { onMounted, ref } from 'vue'
 import { Search, Document } from '@element-plus/icons-vue'
 import PageContainer from '@/components/common/PageContainer.vue'
+import HighlightText from '@/components/common/HighlightText.vue'
 import { useKnowledgeStore } from '@/stores/knowledge'
 import type { SearchMode } from '@/api/modules/knowledge'
 
@@ -128,25 +129,6 @@ function scoreType(score: number) {
   if (score >= 0.8) return 'success'
   if (score >= 0.5) return 'warning'
   return 'info'
-}
-
-function highlightContent(content: string) {
-  if (!query.value.trim()) return escapeHtml(content)
-  const terms = query.value.trim().split(/\s+/)
-  let result = escapeHtml(content)
-  for (const term of terms) {
-    const regex = new RegExp(`(${escapeRegex(term)})`, 'gi')
-    result = result.replace(regex, '<mark>$1</mark>')
-  }
-  return result
-}
-
-function escapeHtml(text: string) {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
-
-function escapeRegex(str: string) {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 </script>
 

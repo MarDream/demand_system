@@ -567,8 +567,7 @@ function handleComment() {
 }
 
 async function initializePage() {
-  loadConfig()
-  await fetchDetail()
+  await Promise.all([loadConfig(), fetchDetail()])
   await Promise.all([
     fetchHistory(),
     fetchChildren(),

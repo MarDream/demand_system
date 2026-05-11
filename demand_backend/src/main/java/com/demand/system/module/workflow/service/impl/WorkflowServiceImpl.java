@@ -14,6 +14,7 @@ import com.demand.system.module.workflow.dto.NodeConfigDTO;
 import com.demand.system.module.workflow.dto.TransitionResponse;
 import com.demand.system.module.workflow.dto.WorkflowDefinitionDTO;
 import com.demand.system.module.workflow.engine.PermissionEngine;
+import com.demand.system.module.workflow.engine.WorkflowVersionResolver;
 import com.demand.system.module.workflow.engine.StateMachine;
 import com.demand.system.module.workflow.engine.WorkflowDefinitionEngine;
 import com.demand.system.module.workflow.entity.WorkflowNodePermission;
@@ -56,7 +57,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class WorkflowServiceImpl implements WorkflowService {
 
-    private static final Long GLOBAL_PROJECT_ID = 0L;
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {
     };
     private static final TypeReference<List<Long>> LONG_LIST = new TypeReference<>() {
@@ -68,6 +68,7 @@ public class WorkflowServiceImpl implements WorkflowService {
     private final WorkflowNodePermissionMapper nodePermissionMapper;
     private final StateMachine stateMachine;
     private final PermissionEngine permissionEngine;
+    private final WorkflowVersionResolver workflowVersionResolver;
     private final WorkflowDefinitionEngine workflowDefinitionEngine;
     private final RequirementMapper requirementMapper;
     private final RequirementHistoryMapper requirementHistoryMapper;
@@ -76,7 +77,7 @@ public class WorkflowServiceImpl implements WorkflowService {
 
     @Override
     public List<WorkflowState> getStates(Long projectId) {
-        Long runtimeProjectId = resolveRuntimeProjectId(projectId);
+        Long runtimeProjectId = workflowVersionResolver.resolveRuntimeProjectId(projectId);
         return stateMapper.selectList(new LambdaQueryWrapper<WorkflowState>()
                 .eq(WorkflowState::getProjectId, runtimeProjectId)
                 .orderByAsc(WorkflowState::getSortOrder)
@@ -102,7 +103,7 @@ public class WorkflowServiceImpl implements WorkflowService {
 
     @Override
     public List<WorkflowTransition> getTransitions(Long projectId) {
-        Long runtimeProjectId = resolveRuntimeProjectId(projectId);
+        Long runtimeProjectId = workflowVersionResolver.resolveRuntimeProjectId(projectId);
         return transitionMapper.selectList(new LambdaQueryWrapper<WorkflowTransition>()
                 .eq(WorkflowTransition::getProjectId, runtimeProjectId)
                 .orderByAsc(WorkflowTransition::getFromStateId)
@@ -296,7 +297,7 @@ public class WorkflowServiceImpl implements WorkflowService {
     }
 
     private WorkflowState findStateByName(Long projectId, String status) {
-        Long runtimeProjectId = resolveRuntimeProjectId(projectId);
+        Long runtimeProjectId = workflowVersionResolver.resolveRuntimeProjectId(projectId);
         return stateMapper.selectOne(new LambdaQueryWrapper<WorkflowState>()
                 .eq(WorkflowState::getProjectId, runtimeProjectId)
                 .eq(WorkflowState::getName, status)
@@ -484,20 +485,6 @@ public class WorkflowServiceImpl implements WorkflowService {
         transition.setRequiredFields(spec.requiredFieldsJson());
         transition.setConditions(spec.conditionsJson());
         return transition;
-    }
-
-    private Long resolveRuntimeProjectId(Long projectId) {
-        if (projectId == null || Objects.equals(projectId, GLOBAL_PROJECT_ID)) {
-            return projectId;
-        }
-        long projectStateCount = stateMapper.selectCount(new LambdaQueryWrapper<WorkflowState>()
-                .eq(WorkflowState::getProjectId, projectId));
-        if (projectStateCount > 0) {
-            return projectId;
-        }
-        long globalStateCount = stateMapper.selectCount(new LambdaQueryWrapper<WorkflowState>()
-                .eq(WorkflowState::getProjectId, GLOBAL_PROJECT_ID));
-        return globalStateCount > 0 ? GLOBAL_PROJECT_ID : projectId;
     }
 
     private String normalizeJsonStringList(String raw, boolean defaultEmptyArray) {

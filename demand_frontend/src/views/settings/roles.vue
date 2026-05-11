@@ -1,0 +1,1721 @@
+<template>
+  <PageContainer :breadcrumb="false">
+    <div class="role-console">
+      <div class="role-topbar">
+        <div>
+          <div class="page-crumb">通讯录 / 角色管理</div>
+          <h2>角色管理</h2>
+        </div>
+      </div>
+
+      <div class="role-page" :style="{ gridTemplateColumns: roleSidebarCollapsed ? '0px 0px minmax(0, 1fr)' : `${roleSidebarWidth}px 4px minmax(0, 1fr)` }" v-loading="loading">
+      <aside class="role-sidebar" :class="{ 'is-collapsed': roleSidebarCollapsed }">
+        <el-input v-model="keyword" placeholder="搜索角色" clearable>
+          <template #prefix>
+            <el-icon><Search /></el-icon>
+          </template>
+        </el-input>
+
+        <div class="sidebar-actions">
+          <el-button @click="showTodo('新增角色组')">新增角色组</el-button>
+          <AppButton permission="button:role:create" @click="openCreate">新增角色</AppButton>
+          <input ref="importInputRef" type="file" accept=".xlsx,.xls" style="display: none" @change="handleImportFileChange" />
+          <el-dropdown @command="handleBatchCommand">
+            <el-button :loading="batchImporting">
+              批量管理
+              <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="import">批量导入</el-dropdown-item>
+                <el-dropdown-item command="export">批量导出</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          title="拖拽下方节点即可排序"
+        />
+
+        <el-button link type="primary" class="collapse-link" @click="toggleAllRoleGroups">
+          {{ roleGroupsExpanded ? '全部收起' : '全部展开' }}
+        </el-button>
+
+        <div class="role-group">
+          <button class="role-group__title" type="button" @click="roleGroupsExpanded = !roleGroupsExpanded">
+            <el-icon><component :is="roleGroupsExpanded ? ArrowDown : ArrowRight" /></el-icon>
+            <el-icon><UserFilled /></el-icon>
+            <span>默认</span>
+          </button>
+          <div v-show="roleGroupsExpanded" class="role-group__body">
+            <button
+              v-for="role in filteredSystemRoles"
+              :key="role.id"
+              class="role-item"
+              :class="{ 'is-active': selectedRole?.id === role.id }"
+              type="button"
+              @click="selectRole(role)"
+            >
+              <el-icon><User /></el-icon>
+              <span class="role-item__name">{{ role.name }}</span>
+            </button>
+            <button
+              v-for="role in filteredCustomRoles"
+              :key="role.id"
+              class="role-item"
+              :class="{ 'is-active': selectedRole?.id === role.id }"
+              type="button"
+              @click="selectRole(role)"
+            >
+              <el-icon><User /></el-icon>
+              <span class="role-item__name">{{ role.name }}</span>
+            </button>
+            <el-empty v-if="filteredRoles.length === 0" description="暂无匹配角色" :image-size="72" />
+          </div>
+        </div>
+      </aside>
+
+      <div class="sidebar-resizer" @mousedown="startResize" @dblclick="toggleRoleSidebar" />
+      <button
+        v-if="roleSidebarCollapsed"
+        class="sidebar-expand-btn"
+        type="button"
+        title="展开侧边栏"
+        @click="toggleRoleSidebar"
+      >
+        <el-icon><ArrowRight /></el-icon>
+      </button>
+
+      <main class="role-main">
+        <section v-if="selectedRole" class="role-detail">
+          <div class="detail-header">
+            <div>
+              <div class="detail-title">
+                <span>{{ selectedRole.name }}</span>
+                <el-tag v-if="isSystemRole(selectedRole)" size="small" type="info">系统角色</el-tag>
+                <el-tag v-else size="small" type="success">自定义角色</el-tag>
+              </div>
+              <div class="detail-code">{{ selectedRole.code }}</div>
+            </div>
+            <el-button link type="primary" @click="selectedRole = null">查看角色说明</el-button>
+          </div>
+
+          <p class="detail-description">{{ selectedRole.description || '暂无角色说明' }}</p>
+
+          <div class="role-actions-bar">
+            <AppButton type="primary" permission="button:role:create" @click="openCreate">
+              <el-icon><Plus /></el-icon>
+              新增角色
+            </AppButton>
+            <AppButton
+              permission="button:role:update"
+              :disabled="isSystemRole(selectedRole)"
+              @click="openEdit(selectedRole)"
+            >
+              编辑角色
+            </AppButton>
+            <AppButton
+              type="danger"
+              plain
+              permission="button:role:delete"
+              :disabled="isSystemRole(selectedRole)"
+              @click="handleDelete(selectedRole)"
+            >
+              删除角色
+            </AppButton>
+            <AppButton
+              type="primary"
+              permission="button:role:grant"
+              :loading="permissionSaving"
+              :disabled="!canGrantSelectedRole"
+              @click="handleSavePermissions"
+            >
+              保存权限
+            </AppButton>
+          </div>
+
+          <div class="permission-panel">
+            <div class="panel-head">
+              <div>
+                <h3>权限范围</h3>
+                <p>{{ canGrantSelectedRole ? '按菜单及菜单下按钮授权，保存后即时影响菜单可见性、需求操作和工作流处理范围。' : grantDisabledReason }}</p>
+              </div>
+            </div>
+
+            <el-skeleton v-if="permissionLoading" :rows="6" animated />
+            <div v-else class="permission-content">
+              <div class="permission-toolbar">
+                <el-input v-model="permissionKeyword" placeholder="搜索菜单、按钮或权限编码" clearable>
+                  <template #prefix>
+                    <el-icon><Search /></el-icon>
+                  </template>
+                </el-input>
+                <el-button :disabled="!canGrantSelectedRole" @click="selectAllVisiblePermissions">全选当前</el-button>
+                <el-button :disabled="!canGrantSelectedRole" @click="clearVisiblePermissions">清空当前</el-button>
+              </div>
+
+              <el-alert
+                v-if="isSuperAdminRole(selectedRole)"
+                type="warning"
+                :closable="false"
+                show-icon
+                title="超级管理员角色拥有系统最高权限，不支持在此调整权限范围。"
+              />
+
+              <div v-if="filteredMenuPermissionTree.length > 0" class="menu-permission-list">
+                <div v-for="node in filteredMenuPermissionTree" :key="node.key" class="menu-permission-node">
+                  <div class="menu-permission-row" :style="{ paddingLeft: `${node.level * 18}px` }">
+                    <el-button
+                      v-if="node.children.length || node.buttons.length"
+                      link
+                      class="expand-button"
+                      @click="toggleMenuExpand(node.key)"
+                    >
+                      <el-icon><component :is="expandedMenuKeys.includes(node.key) ? ArrowDown : ArrowRight" /></el-icon>
+                    </el-button>
+                    <span v-else class="expand-placeholder" />
+
+                    <el-checkbox
+                      :model-value="isMenuChecked(node)"
+                      :indeterminate="isMenuIndeterminate(node)"
+                      :disabled="!canGrantSelectedRole || !node.menuPermission"
+                      @change="(checked: boolean) => handleMenuCheck(node, checked)"
+                    >
+                      <span class="menu-name">{{ node.name }}</span>
+                      <el-tag size="small" effect="plain">{{ menuTypeLabel(node.menuType) }}</el-tag>
+                    </el-checkbox>
+
+                    <span v-if="node.menuPermission" class="permission-code">{{ node.menuPermission.code }}</span>
+                    <span class="menu-count">{{ selectedCount(node.allPermissions) }}/{{ node.allPermissions.length }}</span>
+                  </div>
+
+                  <div v-if="expandedMenuKeys.includes(node.key)" class="menu-permission-children">
+                    <div v-if="node.buttons.length" class="button-permission-grid" :style="{ marginLeft: `${34 + node.level * 18}px` }">
+                      <el-checkbox
+                        v-for="button in node.buttons"
+                        :key="button.code"
+                        :model-value="selectedPermissions.includes(button.code)"
+                        :disabled="!canGrantSelectedRole"
+                        border
+                        @change="(checked: boolean) => setPermissionChecked(button.code, checked)"
+                      >
+                        <span class="permission-name">{{ button.name }}</span>
+                        <span class="permission-code">{{ button.code }}</span>
+                      </el-checkbox>
+                    </div>
+                    <div v-if="node.children.length" class="nested-permission-list">
+                      <div
+                        v-for="child in node.children"
+                        :key="child.key"
+                        class="menu-permission-node is-nested"
+                      >
+                        <div class="menu-permission-row" :style="{ paddingLeft: `${child.level * 18}px` }">
+                          <el-button
+                            v-if="child.children.length || child.buttons.length"
+                            link
+                            class="expand-button"
+                            @click="toggleMenuExpand(child.key)"
+                          >
+                            <el-icon><component :is="expandedMenuKeys.includes(child.key) ? ArrowDown : ArrowRight" /></el-icon>
+                          </el-button>
+                          <span v-else class="expand-placeholder" />
+
+                          <el-checkbox
+                            :model-value="isMenuChecked(child)"
+                            :indeterminate="isMenuIndeterminate(child)"
+                            :disabled="!canGrantSelectedRole || !child.menuPermission"
+                            @change="(checked: boolean) => handleMenuCheck(child, checked)"
+                          >
+                            <span class="menu-name">{{ child.name }}</span>
+                            <el-tag size="small" effect="plain">{{ menuTypeLabel(child.menuType) }}</el-tag>
+                          </el-checkbox>
+
+                          <span v-if="child.menuPermission" class="permission-code">{{ child.menuPermission.code }}</span>
+                          <span class="menu-count">{{ selectedCount(child.allPermissions) }}/{{ child.allPermissions.length }}</span>
+                        </div>
+                        <div v-if="expandedMenuKeys.includes(child.key) && child.buttons.length" class="button-permission-grid" :style="{ marginLeft: `${34 + child.level * 18}px` }">
+                          <el-checkbox
+                            v-for="button in child.buttons"
+                            :key="button.code"
+                            :model-value="selectedPermissions.includes(button.code)"
+                            :disabled="!canGrantSelectedRole"
+                            border
+                            @change="(checked: boolean) => setPermissionChecked(button.code, checked)"
+                          >
+                            <span class="permission-name">{{ button.name }}</span>
+                            <span class="permission-code">{{ button.code }}</span>
+                          </el-checkbox>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="filteredOrphanPermissions.length" class="orphan-permissions">
+                <div class="orphan-title">未归类权限</div>
+                <div class="button-permission-grid">
+                  <el-checkbox
+                    v-for="permission in filteredOrphanPermissions"
+                    :key="permission.code"
+                    :model-value="selectedPermissions.includes(permission.code)"
+                    :disabled="!canGrantSelectedRole"
+                    border
+                    @change="(checked: boolean) => setPermissionChecked(permission.code, checked)"
+                  >
+                    <span class="permission-name">{{ permission.name }}</span>
+                    <span class="permission-code">{{ permission.code }}</span>
+                  </el-checkbox>
+                </div>
+              </div>
+
+              <el-empty
+                v-if="filteredMenuPermissionTree.length === 0 && filteredOrphanPermissions.length === 0"
+                description="暂无匹配权限"
+                :image-size="96"
+              />
+            </div>
+          </div>
+        </section>
+
+        <section v-else class="empty-guide">
+          <div class="guide-copy">
+            <h2>什么是角色？</h2>
+            <p>角色指团队成员的专业分工类别，如产品、研发、测试、项目负责人等。成员拥有角色后，会继承该角色对应的菜单、需求操作和工作流权限。</p>
+            <h3>怎么使用角色？</h3>
+            <ul>
+              <li>审批：在工作流配置中选择指定角色作为审批人，避免因成员离职或变动造成流程失效。</li>
+              <li>项目：把角色加入项目成员范围，让需求创建、评审、流转能按职责协作。</li>
+              <li>权限：给角色授予菜单和按钮权限，控制成员可见功能与高风险操作。</li>
+            </ul>
+            <div class="guide-actions">
+              <el-button type="primary" @click="openCreate">新增角色</el-button>
+              <el-button @click="$router.push('/system/workflow-config')">去审批设置流程</el-button>
+              <el-button @click="showTodo('使用手册')">使用手册</el-button>
+            </div>
+          </div>
+
+          <div class="flow-preview" aria-hidden="true">
+            <div class="flow-track">
+              <span>提交审批</span>
+              <span>流程不中断</span>
+            </div>
+            <div v-for="(node, index) in previewNodes" :key="node.label" class="flow-node">
+              <div class="flow-avatar" :style="{ background: node.color }">
+                <el-icon><component :is="node.icon" /></el-icon>
+              </div>
+              <div class="flow-label">角色：{{ node.label }}</div>
+              <div v-if="node.note" class="flow-note">{{ node.note }}</div>
+              <div v-if="index < previewNodes.length - 1" class="flow-line" />
+            </div>
+          </div>
+        </section>
+      </main>
+      </div>
+    </div>
+
+    <el-dialog v-model="dialogVisible" :title="editingRole ? '编辑角色' : '新增角色'" width="520px" @close="resetForm">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
+        <el-form-item label="角色名称" prop="name">
+          <el-input v-model="form.name" placeholder="请输入角色名称" @input="handleRoleNameInput" />
+        </el-form-item>
+        <el-form-item label="角色编码" prop="code">
+          <el-input
+            v-model="form.code"
+            placeholder="例如 PRODUCT_OWNER"
+            :disabled="!!editingRole"
+            @input="codeManuallyEdited = true"
+          />
+        </el-form-item>
+        <el-form-item label="角色说明" prop="description">
+          <el-input v-model="form.description" type="textarea" :rows="4" placeholder="说明角色职责与使用范围" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+      </template>
+    </el-dialog>
+  </PageContainer>
+</template>
+
+<script setup lang="ts">
+import { computed, onMounted, reactive, ref, type Component } from 'vue'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import { ArrowDown, ArrowRight, Search, Suitcase, Tickets, UserFilled, User, Tools } from '@element-plus/icons-vue'
+import * as XLSX from 'xlsx'
+import PageContainer from '@/components/common/PageContainer.vue'
+import AppButton from '@/components/common/AppButton.vue'
+import { useUserStore } from '@/stores/modules/user'
+import { exportToExcel } from '@/utils/excel'
+import {
+  createRole,
+  deleteRole,
+  getGrantablePermissions,
+  getRoleList,
+  getRolePermissions,
+  saveRolePermissions,
+  updateRole,
+  type RolePayload,
+} from '@/api/modules/role'
+import { getAllMenus, type MenuItem, type RoleItem } from '@/api/modules/menu'
+
+interface PermissionOption {
+  code: string
+  name: string
+}
+
+interface MenuPermissionNode {
+  key: string
+  id: number
+  name: string
+  menuType: string
+  level: number
+  menuPermission: PermissionOption | null
+  buttons: PermissionOption[]
+  children: MenuPermissionNode[]
+  allPermissions: PermissionOption[]
+}
+
+interface RoleImportRow {
+  code: string
+  name: string
+  description?: string | null
+}
+
+const SUPER_ADMIN_CODES = new Set(['super_admin', 'SUPER_ADMIN'])
+
+const permissionLoading = ref(false)
+const permissionSaving = ref(false)
+const loading = ref(false)
+const submitting = ref(false)
+const batchImporting = ref(false)
+const roles = ref<RoleItem[]>([])
+const selectedRole = ref<RoleItem | null>(null)
+const selectedPermissions = ref<string[]>([])
+const grantablePermissions = ref<string[]>([])
+const menuTree = ref<MenuItem[]>([])
+const expandedMenuKeys = ref<string[]>([])
+const roleGroupsExpanded = ref(true)
+const roleSidebarWidth = ref(360)
+const roleSidebarCollapsed = ref(false)
+const ROLE_SIDEBAR_DEFAULT = 360
+const keyword = ref('')
+const permissionKeyword = ref('')
+const dialogVisible = ref(false)
+const editingRole = ref<RoleItem | null>(null)
+const formRef = ref<FormInstance>()
+const importInputRef = ref<HTMLInputElement>()
+const userStore = useUserStore()
+const codeManuallyEdited = ref(false)
+
+const form = reactive<RolePayload>({
+  code: '',
+  name: '',
+  description: '',
+})
+
+const rules: FormRules = {
+  name: [
+    { required: true, message: '请输入角色名称', trigger: 'blur' },
+    { max: 100, message: '角色名称不能超过100个字符', trigger: 'blur' },
+    { validator: validateRoleNameUnique, trigger: 'blur' },
+  ],
+  code: [
+    { required: true, message: '请输入角色编码', trigger: 'blur' },
+    { pattern: /^[A-Z][A-Z0-9_]*$/, message: '仅支持大写字母、数字和下划线，且以字母开头', trigger: 'blur' },
+  ],
+  description: [
+    { max: 500, message: '角色说明不能超过500个字符', trigger: 'blur' },
+  ],
+}
+
+const previewNodes: Array<{ label: string; color: string; icon: Component; note?: string }> = [
+  { label: '发起人', color: '#0084ff', icon: User },
+  { label: '项目经理', color: '#1f6feb', icon: Suitcase },
+  { label: '技术负责人', color: '#20b26b', icon: Tickets },
+  { label: '测试负责人', color: '#8b5cf6', icon: Tools, note: '已离职' },
+  { label: '运维负责人', color: '#0ea5e9', icon: Tools },
+]
+
+const filteredRoles = computed(() => {
+  const value = keyword.value.trim().toLowerCase()
+  if (!value) return roles.value
+  return roles.value.filter(role => {
+    return role.name.toLowerCase().includes(value)
+      || role.code.toLowerCase().includes(value)
+      || (role.description || '').toLowerCase().includes(value)
+  })
+})
+
+const filteredSystemRoles = computed(() => filteredRoles.value.filter(isSystemRole))
+const filteredCustomRoles = computed(() => filteredRoles.value.filter(role => !isSystemRole(role)))
+const isCurrentSuperAdmin = computed(() => userStore.isSuperAdmin)
+const canGrantSelectedRole = computed(() => {
+  return !!selectedRole.value && !isSuperAdminRole(selectedRole.value) && (isCurrentSuperAdmin.value || !isSystemRole(selectedRole.value))
+})
+const grantDisabledReason = computed(() => {
+  if (!selectedRole.value) return '请先选择一个角色。'
+  if (isSuperAdminRole(selectedRole.value)) return '超级管理员角色拥有系统最高权限，不支持调整权限范围。'
+  if (isSystemRole(selectedRole.value) && !isCurrentSuperAdmin.value) return '系统角色仅允许超级管理员配置。'
+  return '当前账号无权配置该角色权限。'
+})
+
+const permissionOptions = computed<PermissionOption[]>(() => {
+  return grantablePermissions.value.map(code => ({ code, name: permissionName(code) }))
+})
+
+const permissionOptionMap = computed(() => {
+  return new Map(permissionOptions.value.map(item => [item.code, item]))
+})
+
+const menuPermissionTree = computed<MenuPermissionNode[]>(() => {
+  return buildMenuPermissionTree(menuTree.value, 0)
+})
+
+const menuPermissionCodes = computed(() => {
+  const codes = new Set<string>()
+  const walk = (nodes: MenuPermissionNode[]) => {
+    nodes.forEach(node => {
+      node.allPermissions.forEach(permission => codes.add(permission.code))
+      walk(node.children)
+    })
+  }
+  walk(menuPermissionTree.value)
+  return codes
+})
+
+const orphanPermissions = computed(() => {
+  return permissionOptions.value.filter(item => !menuPermissionCodes.value.has(item.code))
+})
+
+const filteredMenuPermissionTree = computed(() => {
+  const value = permissionKeyword.value.trim().toLowerCase()
+  if (!value) return menuPermissionTree.value
+  return filterMenuPermissionTree(menuPermissionTree.value, value)
+})
+
+const filteredOrphanPermissions = computed(() => {
+  const value = permissionKeyword.value.trim().toLowerCase()
+  if (!value) return orphanPermissions.value
+  return orphanPermissions.value.filter(item => isPermissionMatched(item, value))
+})
+
+onMounted(fetchRoles)
+
+function isSystemRole(role: RoleItem) {
+  return role.isSystem === 1
+}
+
+async function fetchRoles() {
+  loading.value = true
+  try {
+    roles.value = await getRoleList() as any
+    try {
+      menuTree.value = await getAllMenus() as any
+    } catch {
+      menuTree.value = []
+    }
+    if (selectedRole.value) {
+      selectedRole.value = roles.value.find(item => item.id === selectedRole.value?.id) || null
+    }
+  } finally {
+    loading.value = false
+  }
+}
+
+async function selectRole(role: RoleItem) {
+  selectedRole.value = role
+  permissionKeyword.value = ''
+  await fetchRolePermissions(role.id)
+}
+
+async function fetchRolePermissions(roleId: number) {
+  permissionLoading.value = true
+  try {
+    const [grantable, rolePermission] = await Promise.all([
+      getGrantablePermissions(),
+      getRolePermissions(roleId),
+    ]) as any[]
+    const permissionSet = new Set<string>([...(grantable || []), ...((rolePermission?.permissionCodes || []) as string[])])
+    grantablePermissions.value = Array.from(permissionSet)
+    selectedPermissions.value = rolePermission?.permissionCodes || []
+    expandedMenuKeys.value = defaultExpandedKeys(menuPermissionTree.value)
+  } finally {
+    permissionLoading.value = false
+  }
+}
+
+function openCreate() {
+  editingRole.value = null
+  codeManuallyEdited.value = false
+  resetForm()
+  dialogVisible.value = true
+}
+
+function openEdit(role: RoleItem) {
+  editingRole.value = role
+  codeManuallyEdited.value = true
+  form.name = role.name
+  form.code = role.code
+  form.description = role.description || ''
+  dialogVisible.value = true
+}
+
+async function handleSubmit() {
+  if (!formRef.value) return
+  if (!form.code && form.name) {
+    form.code = generateRoleCode(form.name)
+  }
+  await formRef.value.validate()
+  submitting.value = true
+  try {
+    const payload = {
+      code: form.code.trim().toUpperCase(),
+      name: form.name.trim(),
+      description: form.description?.trim() || null,
+    }
+    const saved = editingRole.value
+      ? await updateRole(editingRole.value.id, payload) as any
+      : await createRole(payload) as any
+    ElMessage.success('保存成功')
+    dialogVisible.value = false
+    await fetchRoles()
+    selectedRole.value = roles.value.find(item => item.id === saved?.id) || selectedRole.value
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function handleDelete(role: RoleItem) {
+  await ElMessageBox.confirm(`确认删除角色“${role.name}”吗？`, '删除角色', { type: 'warning' })
+  await deleteRole(role.id)
+  ElMessage.success('删除成功')
+  if (selectedRole.value?.id === role.id) {
+    selectedRole.value = null
+    selectedPermissions.value = []
+  }
+  await fetchRoles()
+}
+
+async function handleSavePermissions() {
+  if (!selectedRole.value || !canGrantSelectedRole.value) return
+  permissionSaving.value = true
+  try {
+    await saveRolePermissions(selectedRole.value.id, selectedPermissions.value)
+    ElMessage.success('权限保存成功')
+    await fetchRolePermissions(selectedRole.value.id)
+  } finally {
+    permissionSaving.value = false
+  }
+}
+
+function handleBatchCommand(command: string) {
+  if (command === 'import') {
+    triggerImport()
+    return
+  }
+  if (command === 'export') {
+    handleExportRoles()
+  }
+}
+
+function triggerImport() {
+  importInputRef.value?.click()
+}
+
+function handleExportRoles() {
+  const exportRows = filteredRoles.value.map(role => ({
+    角色名称: role.name,
+    角色编码: role.code,
+    角色类型: isSystemRole(role) ? '系统角色' : '自定义角色',
+    角色说明: role.description || '',
+  }))
+  if (exportRows.length === 0) {
+    ElMessage.warning('当前没有可导出的角色数据')
+    return
+  }
+  exportToExcel(exportRows, '角色列表', '角色列表', [
+    { wch: 24 },
+    { wch: 28 },
+    { wch: 14 },
+    { wch: 42 },
+  ])
+  ElMessage.success('导出成功')
+}
+
+async function handleImportFileChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  batchImporting.value = true
+  try {
+    const importRows = await readRoleImportRows(file)
+    if (importRows.length === 0) {
+      ElMessage.warning('导入文件中没有有效角色数据')
+      return
+    }
+    const existingCodes = new Set(roles.value.map(role => role.code.toUpperCase()))
+    const existingNames = new Set(roles.value.map(role => role.name.trim()))
+    let successCount = 0
+    const failures: Array<RoleImportRow & { reason: string }> = []
+
+    for (const row of importRows) {
+      if (existingCodes.has(row.code.toUpperCase())) {
+        failures.push({ ...row, reason: '角色编码已存在' })
+        continue
+      }
+      if (existingNames.has(row.name.trim())) {
+        failures.push({ ...row, reason: '角色名称已存在' })
+        continue
+      }
+      try {
+        await createRole(row)
+        successCount += 1
+        existingCodes.add(row.code.toUpperCase())
+        existingNames.add(row.name.trim())
+      } catch (error) {
+        failures.push({ ...row, reason: error instanceof Error ? error.message : '导入失败' })
+      }
+    }
+
+    await fetchRoles()
+    if (failures.length > 0) {
+      exportImportFailures(failures)
+      ElMessage.warning(`导入完成：成功 ${successCount} 条，失败 ${failures.length} 条，失败明细已导出`)
+    } else {
+      ElMessage.success(`导入完成：成功 ${successCount} 条`)
+    }
+  } catch {
+    ElMessage.error('角色导入失败，请检查文件格式')
+  } finally {
+    batchImporting.value = false
+    input.value = ''
+  }
+}
+
+function readRoleImportRows(file: File): Promise<RoleImportRow[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        const workbook = XLSX.read(reader.result, { type: 'array' })
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]]
+        if (!worksheet) {
+          resolve([])
+          return
+        }
+        const records = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '' })
+        const rows = records
+          .map(normalizeRoleImportRow)
+          .filter((row): row is RoleImportRow => !!row)
+        resolve(rows)
+      } catch (error) {
+        reject(error)
+      }
+    }
+    reader.onerror = () => reject(reader.error)
+    reader.readAsArrayBuffer(file)
+  })
+}
+
+function normalizeRoleImportRow(record: Record<string, unknown>): RoleImportRow | null {
+  const name = readCell(record, ['角色名称', '名称', 'name']).trim()
+  const rawCode = readCell(record, ['角色编码', '编码', 'code']).trim()
+  const description = readCell(record, ['角色说明', '说明', 'description']).trim()
+  const code = rawCode ? rawCode.toUpperCase() : generateRoleCode(name)
+  if (!name || !/^[A-Z][A-Z0-9_]*$/.test(code)) {
+    return null
+  }
+  return {
+    code,
+    name,
+    description: description || null,
+  }
+}
+
+function readCell(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key]
+    if (value !== undefined && value !== null) {
+      return String(value)
+    }
+  }
+  return ''
+}
+
+function exportImportFailures(failures: Array<RoleImportRow & { reason: string }>) {
+  const exportRows = failures.map(item => ({
+    角色名称: item.name,
+    角色编码: item.code,
+    角色说明: item.description || '',
+    失败原因: item.reason,
+  }))
+  exportToExcel(exportRows, '导入失败明细', '角色导入失败明细', [
+    { wch: 24 },
+    { wch: 28 },
+    { wch: 42 },
+    { wch: 32 },
+  ])
+}
+
+function selectAllVisiblePermissions() {
+  const values = [
+    ...collectPermissionCodes(filteredMenuPermissionTree.value),
+    ...filteredOrphanPermissions.value.map(item => item.code),
+  ]
+  selectedPermissions.value = Array.from(new Set([...selectedPermissions.value, ...values]))
+}
+
+function clearVisiblePermissions() {
+  const visible = new Set([
+    ...collectPermissionCodes(filteredMenuPermissionTree.value),
+    ...filteredOrphanPermissions.value.map(item => item.code),
+  ])
+  selectedPermissions.value = selectedPermissions.value.filter(code => !visible.has(code))
+}
+
+function selectedCount(items: PermissionOption[]) {
+  const selected = new Set(selectedPermissions.value)
+  return items.filter(item => selected.has(item.code)).length
+}
+
+function isSuperAdminRole(role: RoleItem | null) {
+  return !!role && SUPER_ADMIN_CODES.has(role.code)
+}
+
+function buildMenuPermissionTree(items: MenuItem[], level: number): MenuPermissionNode[] {
+  return items
+    .filter(item => item.menuType !== 'BUTTON')
+    .map(item => {
+      const menuPermission = item.permissionCode ? permissionOptionMap.value.get(item.permissionCode) || null : null
+      const buttons = (item.children || [])
+        .filter(child => child.menuType === 'BUTTON' && child.permissionCode)
+        .map(child => permissionOptionMap.value.get(child.permissionCode || '') || {
+          code: child.permissionCode || '',
+          name: child.name,
+        })
+        .filter(button => !!button.code)
+      const children = buildMenuPermissionTree(item.children || [], level + 1)
+      const allPermissions = [
+        ...(menuPermission ? [menuPermission] : []),
+        ...buttons,
+        ...children.flatMap(child => child.allPermissions),
+      ]
+      return {
+        key: `menu-${item.id}`,
+        id: item.id,
+        name: item.name,
+        menuType: item.menuType,
+        level,
+        menuPermission,
+        buttons,
+        children,
+        allPermissions,
+      }
+    })
+    .filter(item => item.allPermissions.length > 0 || item.children.length > 0)
+}
+
+function filterMenuPermissionTree(nodes: MenuPermissionNode[], keyword: string): MenuPermissionNode[] {
+  return nodes
+    .map(node => {
+      const children = filterMenuPermissionTree(node.children, keyword)
+      const buttons = node.buttons.filter(item => isPermissionMatched(item, keyword))
+      const selfMatched = node.name.toLowerCase().includes(keyword)
+        || node.menuType.toLowerCase().includes(keyword)
+        || (node.menuPermission ? isPermissionMatched(node.menuPermission, keyword) : false)
+      if (!selfMatched && children.length === 0 && buttons.length === 0) {
+        return null
+      }
+      const allPermissions = [
+        ...(node.menuPermission ? [node.menuPermission] : []),
+        ...buttons,
+        ...children.flatMap(child => child.allPermissions),
+      ]
+      return {
+        ...node,
+        buttons: selfMatched ? node.buttons : buttons,
+        children,
+        allPermissions: selfMatched ? node.allPermissions : allPermissions,
+      }
+    })
+    .filter((node): node is MenuPermissionNode => !!node)
+}
+
+function collectPermissionCodes(nodes: MenuPermissionNode[]) {
+  return nodes.flatMap(node => node.allPermissions.map(item => item.code))
+}
+
+function isPermissionMatched(permission: PermissionOption, keyword: string) {
+  return permission.name.toLowerCase().includes(keyword) || permission.code.toLowerCase().includes(keyword)
+}
+
+function isMenuChecked(node: MenuPermissionNode) {
+  const selected = new Set(selectedPermissions.value)
+  return node.allPermissions.length > 0 && node.allPermissions.every(item => selected.has(item.code))
+}
+
+function isMenuIndeterminate(node: MenuPermissionNode) {
+  const selected = new Set(selectedPermissions.value)
+  const count = node.allPermissions.filter(item => selected.has(item.code)).length
+  return count > 0 && count < node.allPermissions.length
+}
+
+function handleMenuCheck(node: MenuPermissionNode, checked: boolean) {
+  setPermissionsChecked(node.allPermissions.map(item => item.code), checked)
+  if (checked && !expandedMenuKeys.value.includes(node.key)) {
+    expandedMenuKeys.value.push(node.key)
+  }
+}
+
+function setPermissionChecked(code: string, checked: boolean) {
+  setPermissionsChecked([code], checked)
+}
+
+function setPermissionsChecked(codes: string[], checked: boolean) {
+  const next = new Set(selectedPermissions.value)
+  codes.forEach(code => {
+    if (checked) {
+      next.add(code)
+    } else {
+      next.delete(code)
+    }
+  })
+  selectedPermissions.value = Array.from(next)
+}
+
+function toggleMenuExpand(key: string) {
+  expandedMenuKeys.value = expandedMenuKeys.value.includes(key)
+    ? expandedMenuKeys.value.filter(item => item !== key)
+    : [...expandedMenuKeys.value, key]
+}
+
+function defaultExpandedKeys(nodes: MenuPermissionNode[]) {
+  const keys: string[] = []
+  const walk = (items: MenuPermissionNode[]) => {
+    items.forEach(item => {
+      const selected = selectedCount(item.allPermissions)
+      if (selected > 0 || item.level === 0) {
+        keys.push(item.key)
+      }
+      walk(item.children)
+    })
+  }
+  walk(nodes)
+  return Array.from(new Set(keys))
+}
+
+function menuTypeLabel(type: string) {
+  const labelMap: Record<string, string> = {
+    DIRECTORY: '目录',
+    MENU: '菜单',
+  }
+  return labelMap[type] || type
+}
+
+function resetForm() {
+  form.code = ''
+  form.name = ''
+  form.description = ''
+  codeManuallyEdited.value = false
+  formRef.value?.resetFields()
+}
+
+function toggleAllRoleGroups() {
+  roleGroupsExpanded.value = !roleGroupsExpanded.value
+}
+
+function startResize(e: MouseEvent) {
+  e.preventDefault()
+  if (roleSidebarCollapsed.value) return
+  const startX = e.clientX
+  const startWidth = roleSidebarWidth.value
+
+  const onMouseMove = (ev: MouseEvent) => {
+    const delta = ev.clientX - startX
+    roleSidebarWidth.value = Math.min(Math.max(startWidth + delta, 240), 520)
+  }
+  const onMouseUp = () => {
+    document.removeEventListener('mousemove', onMouseMove)
+    document.removeEventListener('mouseup', onMouseUp)
+  }
+  document.addEventListener('mousemove', onMouseMove)
+  document.addEventListener('mouseup', onMouseUp)
+}
+
+function toggleRoleSidebar() {
+  roleSidebarCollapsed.value = !roleSidebarCollapsed.value
+  if (roleSidebarCollapsed.value) {
+    roleSidebarWidth.value = 0
+  } else {
+    roleSidebarWidth.value = ROLE_SIDEBAR_DEFAULT
+  }
+}
+
+function handleRoleNameInput() {
+  if (!editingRole.value && !codeManuallyEdited.value) {
+    form.code = generateRoleCode(form.name)
+  }
+}
+
+function validateRoleNameUnique(_rule: unknown, value: string, callback: (error?: Error) => void) {
+  const name = value.trim()
+  const conflict = roles.value.some(role => {
+    return role.name.trim() === name && role.id !== editingRole.value?.id
+  })
+  if (conflict) {
+    callback(new Error('角色名称已存在'))
+  } else {
+    callback()
+  }
+}
+
+function generateRoleCode(name: string) {
+  const normalized = name.trim()
+  if (!normalized) return ''
+  const ascii = normalized
+    .replace(/([a-z])([A-Z])/g, '$1_$2')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toUpperCase()
+  if (/^[A-Z][A-Z0-9_]*$/.test(ascii)) {
+    return ascii.slice(0, 50)
+  }
+  const translated = translateChineseRoleName(normalized)
+  if (translated) {
+    return translated.slice(0, 50)
+  }
+  return `ROLE_${shortHash(normalized)}`.slice(0, 50)
+}
+
+function translateChineseRoleName(name: string) {
+  const exactMap: Record<string, string> = {
+    超级管理员: 'SUPER_ADMIN',
+    系统管理员: 'SYSTEM_ADMIN',
+    管理员: 'ADMIN',
+    产品经理: 'PRODUCT_MANAGER',
+    项目经理: 'PROJECT_MANAGER',
+    需求管理员: 'DEMAND_MANAGER',
+    需求负责人: 'DEMAND_OWNER',
+    需求评审人: 'DEMAND_REVIEWER',
+    开发负责人: 'DEVELOPMENT_LEAD',
+    技术负责人: 'TECH_LEAD',
+    测试负责人: 'QA_LEAD',
+    测试人员: 'TESTER',
+    开发人员: 'DEVELOPER',
+    运维负责人: 'OPS_LEAD',
+    运维人员: 'OPS_ENGINEER',
+    普通用户: 'USER',
+    访客: 'GUEST',
+  }
+  if (exactMap[name]) return exactMap[name]
+
+  const segments: Array<[RegExp, string]> = [
+    [/产品/g, 'PRODUCT'],
+    [/项目/g, 'PROJECT'],
+    [/需求/g, 'DEMAND'],
+    [/研发|开发/g, 'DEVELOPMENT'],
+    [/技术/g, 'TECH'],
+    [/测试|质量/g, 'QA'],
+    [/运维/g, 'OPS'],
+    [/系统/g, 'SYSTEM'],
+    [/安全/g, 'SECURITY'],
+    [/管理员|管理/g, 'ADMIN'],
+    [/负责人|主管/g, 'LEAD'],
+    [/经理/g, 'MANAGER'],
+    [/审核|评审|审批/g, 'REVIEWER'],
+    [/成员|人员|用户/g, 'USER'],
+    [/访客/g, 'GUEST'],
+  ]
+  const parts = segments
+    .filter(([pattern]) => pattern.test(name))
+    .map(([, word]) => word)
+  return Array.from(new Set(parts)).join('_')
+}
+
+function shortHash(value: string) {
+  let hash = 0
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash + value.charCodeAt(index)) >>> 0
+  }
+  return hash.toString(36).toUpperCase().padStart(6, '0')
+}
+
+function showTodo(action: string) {
+  ElMessage.info(`${action}能力将在后续接口完善后接入`)
+}
+
+function permissionName(code: string) {
+  const labelMap: Record<string, string> = {
+    'menu:system-config': '系统配置菜单',
+    'menu:settings:project': '项目管理菜单',
+    'menu:settings:user': '用户管理菜单',
+    'menu:settings:requirement': '需求配置菜单',
+    'menu:settings:workflow': '工作流配置菜单',
+    'menu:settings:role': '角色管理菜单',
+    'menu:menu-management': '菜单管理菜单',
+    'menu:rag': 'RAG文档中心菜单',
+    'menu:settings:llm': '模型配置菜单',
+    'button:role:create': '新增角色',
+    'button:role:update': '编辑角色',
+    'button:role:delete': '删除角色',
+    'button:role:grant': '角色授权',
+    'button:menu:create': '新增菜单',
+    'button:menu:update': '编辑菜单',
+    'button:menu:delete': '删除菜单',
+    'button:menu:grant': '菜单授权',
+    'button:user:create': '新增用户',
+    'button:user:update': '编辑用户',
+    'button:user:delete': '删除用户',
+    'button:workflow:config': '工作流配置',
+    'button:rag:upload': '文档上传',
+    'button:rag:search': '文档搜索',
+    'button:llm:create': '新增模型配置',
+    'button:llm:update': '编辑模型配置',
+    'button:llm:delete': '删除模型配置',
+  }
+  return labelMap[code] || code
+}
+</script>
+
+<style scoped lang="scss">
+.role-console {
+  min-height: calc(100vh - 82px);
+  background: $bg-container;
+  border: 1px solid $border-color;
+  border-radius: $card-radius;
+  overflow: hidden;
+}
+
+.role-topbar {
+  height: 66px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-md;
+  padding: 0 $spacing-lg;
+  border-bottom: 1px solid $border-color;
+  background: #fff;
+}
+
+.role-heading {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: $spacing-md;
+}
+
+.role-heading__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: $text-color;
+  font-size: $font-size-lg;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.role-heading__hint {
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: #606266;
+  color: #fff;
+  font-size: $font-size-sm;
+}
+
+.mode-switch {
+  flex-shrink: 0;
+  padding: 4px;
+  border-radius: 6px;
+  background: #e5e7ec;
+}
+
+.mode-switch :deep(.el-radio-button__inner) {
+  min-width: 140px;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  font-weight: 600;
+}
+
+.mode-switch :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
+  background: #fff;
+  color: $text-color;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+.role-page {
+  min-height: calc(100vh - 148px);
+  display: grid;
+  grid-template-columns: 360px 4px minmax(0, 1fr);
+  background: #fff;
+  position: relative;
+}
+
+.role-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+  padding: $spacing-md;
+  border-right: 1px solid $border-color;
+  background: #fff;
+  overflow: auto;
+}
+
+.role-sidebar.is-collapsed {
+  padding: 0;
+  border-right: 0;
+  overflow: hidden;
+}
+
+.sidebar-resizer {
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+  align-self: stretch;
+  z-index: 1;
+
+  &:hover,
+  &:active {
+    background: $primary-color;
+  }
+}
+
+.sidebar-expand-btn {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid $border-color;
+  border-left: 0;
+  border-radius: 0 6px 6px 0;
+  background: #fff;
+  cursor: pointer;
+  z-index: 2;
+  box-shadow: 2px 0 6px rgba(0, 0, 0, 0.06);
+
+  &:hover {
+    background: #f5f7fa;
+  }
+}
+
+.sidebar-actions {
+  display: flex;
+  gap: $spacing-sm;
+  flex-wrap: wrap;
+}
+
+.role-group {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+}
+
+.role-group__title {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: $text-color-secondary;
+  font-size: $font-size-sm;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.role-group__body {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+}
+
+.role-group__count {
+  margin-left: auto;
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #edf2f7;
+  color: $text-color-placeholder;
+  text-align: center;
+  font-size: $font-size-xs;
+}
+
+.role-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  padding: 12px;
+  border: 1px solid transparent;
+  border-radius: $border-radius-base;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: $text-color;
+}
+
+.role-item .el-icon {
+  flex-shrink: 0;
+}
+
+.role-item__main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-sm;
+}
+
+.role-item:hover {
+  background: #f5f7fa;
+}
+
+.role-item.is-active {
+  background: #ecf5ff;
+  border-color: #b3d8ff;
+}
+
+.role-item__name {
+  min-width: 0;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-item__meta {
+  color: $text-color-placeholder;
+  font-size: $font-size-xs;
+  word-break: break-all;
+}
+
+.role-main {
+  min-width: 0;
+  padding: $spacing-lg;
+}
+
+.role-detail {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+}
+
+.detail-header,
+.panel-head,
+.permission-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: $spacing-md;
+}
+
+.detail-title {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  font-size: 22px;
+  font-weight: 700;
+  color: $text-color;
+}
+
+.detail-code {
+  margin-top: 6px;
+  color: $text-color-placeholder;
+  font-size: $font-size-sm;
+}
+
+.detail-actions {
+  display: flex;
+  gap: $spacing-sm;
+  flex-wrap: wrap;
+}
+
+.detail-description {
+  margin: 0;
+  color: $text-color-secondary;
+  line-height: 1.7;
+}
+
+.role-actions-bar {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  flex-wrap: wrap;
+  padding: $spacing-sm 0 $spacing-md;
+}
+
+.permission-panel {
+  padding-top: $spacing-md;
+  border-top: 1px solid $border-color;
+}
+
+.panel-head {
+  margin-bottom: $spacing-md;
+}
+
+.panel-head h3 {
+  margin: 0 0 6px;
+  font-size: $font-size-lg;
+  color: $text-color;
+}
+
+.panel-head p {
+  margin: 0;
+  color: $text-color-secondary;
+  font-size: $font-size-sm;
+}
+
+.permission-content {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+}
+
+.permission-toolbar .el-input {
+  max-width: 360px;
+}
+
+.permission-table {
+  border-top: 1px solid $border-color;
+}
+
+.menu-permission-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid $border-color;
+}
+
+.menu-permission-node {
+  border-bottom: 1px solid $border-color;
+}
+
+.menu-permission-node.is-nested {
+  border-bottom: 0;
+}
+
+.menu-permission-row {
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: 28px minmax(220px, 1fr) minmax(180px, 320px) 88px;
+  align-items: center;
+  gap: $spacing-sm;
+  padding: 8px $spacing-md;
+  background: #fff;
+}
+
+.menu-permission-row:hover {
+  background: #f8fafc;
+}
+
+.expand-button {
+  width: 24px;
+  min-height: 24px;
+  padding: 0;
+}
+
+.expand-placeholder {
+  width: 24px;
+  height: 24px;
+}
+
+.menu-name {
+  margin-right: $spacing-sm;
+  color: $text-color;
+  font-weight: 600;
+}
+
+.menu-count {
+  color: $text-color-secondary;
+  text-align: right;
+  font-size: $font-size-sm;
+}
+
+.menu-permission-children {
+  padding: 0 0 $spacing-sm;
+  background: #fbfdff;
+}
+
+.nested-permission-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.button-permission-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: $spacing-sm;
+  padding: $spacing-sm $spacing-md $spacing-md;
+}
+
+.button-permission-grid :deep(.el-checkbox.is-bordered) {
+  height: auto;
+  min-height: 56px;
+  margin-right: 0;
+  padding: 9px 12px;
+  align-items: flex-start;
+  border-radius: $border-radius-base;
+  background: #fff;
+}
+
+.button-permission-grid :deep(.el-checkbox__label) {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.4;
+}
+
+.orphan-permissions {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+  padding-top: $spacing-md;
+}
+
+.orphan-title {
+  color: $text-color;
+  font-weight: 700;
+}
+
+.permission-table__row {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr) 90px;
+  gap: $spacing-md;
+  align-items: start;
+  min-height: 64px;
+  padding: $spacing-md 0;
+  border-bottom: 1px solid $border-color;
+}
+
+.permission-table__head {
+  min-height: 44px;
+  align-items: center;
+  padding: 0;
+  background: #f5f7fa;
+  color: $text-color-secondary;
+  font-weight: 600;
+}
+
+.permission-table__head > div {
+  padding: 0 $spacing-md;
+}
+
+.permission-module {
+  padding-left: $spacing-md;
+  color: $text-color;
+  font-weight: 600;
+  line-height: 32px;
+}
+
+.permission-count {
+  padding-right: $spacing-md;
+  color: $text-color-secondary;
+  line-height: 32px;
+  text-align: right;
+}
+
+.permission-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: $spacing-sm;
+}
+
+.permission-grid :deep(.el-checkbox.is-bordered) {
+  height: auto;
+  min-height: 56px;
+  margin-right: 0;
+  padding: 9px 12px;
+  align-items: flex-start;
+  border-radius: $border-radius-base;
+}
+
+.permission-grid :deep(.el-checkbox__label) {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.4;
+}
+
+.permission-name {
+  color: $text-color;
+}
+
+.permission-code {
+  color: $text-color-placeholder;
+  font-size: $font-size-xs;
+  word-break: break-all;
+}
+
+.empty-guide {
+  min-height: 560px;
+  display: grid;
+  grid-template-columns: minmax(280px, 520px) minmax(320px, 1fr);
+  align-items: center;
+  gap: $spacing-xl;
+}
+
+.guide-copy h2 {
+  margin: 0 0 $spacing-md;
+  font-size: 28px;
+  color: $text-color;
+}
+
+.guide-copy h3 {
+  margin: $spacing-xl 0 $spacing-sm;
+  font-size: $font-size-lg;
+  color: $text-color;
+}
+
+.guide-copy p,
+.guide-copy li {
+  color: $text-color-secondary;
+  line-height: 1.8;
+}
+
+.guide-copy ul {
+  padding-left: 18px;
+  margin-bottom: $spacing-lg;
+}
+
+.flow-preview {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xl;
+  align-items: center;
+}
+
+.flow-node {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: $spacing-md;
+}
+
+.flow-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 8px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+}
+
+.flow-label {
+  min-width: 132px;
+  padding: 10px 14px;
+  background: #ecf5ff;
+  border-radius: $border-radius-base;
+  color: $text-color;
+  font-weight: 600;
+}
+
+.flow-line {
+  position: absolute;
+  left: 36px;
+  top: 80px;
+  width: 1px;
+  height: $spacing-xl;
+  border-left: 1px dashed #a8abb2;
+}
+
+@media (max-width: 1100px) {
+  .role-topbar {
+    height: auto;
+    align-items: flex-start;
+    flex-direction: column;
+    padding: $spacing-md;
+  }
+
+  .role-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: $spacing-sm;
+  }
+
+  .mode-switch {
+    width: 100%;
+  }
+
+  .mode-switch :deep(.el-radio-button) {
+    width: 50%;
+  }
+
+  .mode-switch :deep(.el-radio-button__inner) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .role-page,
+  .empty-guide {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar-resizer {
+    display: none;
+  }
+
+  .role-sidebar {
+    border-right: 0;
+    border-bottom: 1px solid $border-color;
+  }
+
+  .flow-preview {
+    align-items: flex-start;
+  }
+
+  .permission-table__row {
+    grid-template-columns: 1fr;
+    gap: $spacing-sm;
+    padding: $spacing-md;
+  }
+
+  .permission-table__head {
+    display: none;
+  }
+
+  .permission-module,
+  .permission-count {
+    padding: 0;
+    text-align: left;
+  }
+
+  .menu-permission-row {
+    grid-template-columns: 28px minmax(180px, 1fr) 1fr 64px;
+  }
+}
+
+@media (max-width: 760px) {
+  .menu-permission-row {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .menu-permission-row > .permission-code,
+  .menu-count {
+    grid-column: 2;
+    text-align: left;
+  }
+
+  .button-permission-grid {
+    grid-template-columns: 1fr;
+    margin-left: 0 !important;
+  }
+}
+</style>

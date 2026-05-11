@@ -6,8 +6,8 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("departments")
-public class Department {
+@TableName("sys_org")
+public class SysOrg {
 
     @TableId(type = IdType.AUTO)
     private Long id;
@@ -16,17 +16,19 @@ public class Department {
 
     private Long parentId;
 
-    private Long regionId;
-
-    private Long leaderId;
+    private String orgType;
 
     private String code;
 
-    private String type;
+    private Long leaderId;
 
     private String description;
 
     private Integer sortOrder;
+
+    private String path;
+
+    private Integer level;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;

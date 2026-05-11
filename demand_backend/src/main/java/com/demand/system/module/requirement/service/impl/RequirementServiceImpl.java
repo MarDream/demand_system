@@ -20,8 +20,8 @@ import com.demand.system.module.requirement.service.RequirementConfigService;
 import com.demand.system.module.requirement.service.RequirementService;
 import com.demand.system.module.user.entity.User;
 import com.demand.system.module.user.mapper.UserMapper;
-import com.demand.system.module.organization.entity.Department;
-import com.demand.system.module.organization.mapper.DepartmentMapper;
+import com.demand.system.module.organization.dto.SysOrgVO;
+import com.demand.system.module.organization.service.SysOrgService;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.notification.service.NotificationService;
 import com.demand.system.module.knowledge.service.KnowledgeDocumentService;
@@ -50,7 +50,7 @@ public class RequirementServiceImpl implements RequirementService {
     private final RequirementHistoryMapper historyMapper;
     private final CustomFieldValueMapper customFieldValueMapper;
     private final UserMapper userMapper;
-    private final DepartmentMapper departmentMapper;
+    private final SysOrgService sysOrgService;
     private final NotificationService notificationService;
     private final WorkflowService workflowService;
     private final WorkflowTransitionRecordMapper workflowTransitionRecordMapper;
@@ -472,7 +472,7 @@ public class RequirementServiceImpl implements RequirementService {
             }
         }
         if (r.getDepartmentId() != null) {
-            Department dept = departmentMapper.selectById(r.getDepartmentId());
+            SysOrgVO dept = sysOrgService.getDetail(r.getDepartmentId());
             if (dept != null) {
                 vo.setDepartmentName(dept.getName());
             }

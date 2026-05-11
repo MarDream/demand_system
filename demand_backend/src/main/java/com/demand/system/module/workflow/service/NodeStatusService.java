@@ -39,11 +39,24 @@ public class NodeStatusService {
     private final WorkflowNodeMapper workflowNodeMapper;
 
     public List<NodeStatus> list() {
-        List<NodeStatus> statuses = nodeStatusMapper.selectList(
+        return nodeStatusMapper.selectList(
             new LambdaQueryWrapper<NodeStatus>().orderByAsc(NodeStatus::getSortOrder)
         );
-        repairGarbledBuiltInNames(statuses);
-        return statuses;
+    }
+
+    @Transactional
+    public int repairGarbledNames() {
+        List<NodeStatus> statuses = nodeStatusMapper.selectList(null);
+        int repaired = 0;
+        for (NodeStatus status : statuses) {
+            String builtInName = BUILT_IN_STATUS_NAMES.get(status.getCode());
+            if (builtInName != null && !builtInName.equals(status.getName()) && isGarbledName(status.getName())) {
+                status.setName(builtInName);
+                nodeStatusMapper.updateById(status);
+                repaired++;
+            }
+        }
+        return repaired;
     }
 
     @Transactional
@@ -83,10 +96,11 @@ public class NodeStatusService {
         }
         Map<Long, Integer> sortOrderMap = sortRequests.stream()
                 .collect(Collectors.toMap(SortRequest::getId, SortRequest::getSortOrder));
-        statuses.forEach(status -> {
-            status.setSortOrder(sortOrderMap.get(status.getId()));
-            nodeStatusMapper.updateById(status);
-        });
+        statuses.forEach(status ->
+            nodeStatusMapper.update(null, new LambdaUpdateWrapper<NodeStatus>()
+                .eq(NodeStatus::getId, status.getId())
+                .set(NodeStatus::getSortOrder, sortOrderMap.get(status.getId())))
+        );
         return list();
     }
 
@@ -108,17 +122,6 @@ public class NodeStatusService {
                         .last("LIMIT 1")
         );
         return last == null || last.getSortOrder() == null ? 0 : last.getSortOrder() + 1;
-    }
-
-    private void repairGarbledBuiltInNames(List<NodeStatus> statuses) {
-        statuses.forEach(status -> {
-            String builtInName = BUILT_IN_STATUS_NAMES.get(status.getCode());
-            if (builtInName == null || builtInName.equals(status.getName()) || !isGarbledName(status.getName())) {
-                return;
-            }
-            status.setName(builtInName);
-            nodeStatusMapper.updateById(status);
-        });
     }
 
     private boolean isGarbledName(String name) {

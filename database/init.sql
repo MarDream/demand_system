@@ -7,50 +7,7 @@ SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- -----------------------------------------------------
--- 1. 区域表 regions
--- -----------------------------------------------------
-DROP TABLE IF EXISTS `regions`;
-CREATE TABLE `regions` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `name` VARCHAR(100) NOT NULL COMMENT '区域名称',
-  `parent_id` INT UNSIGNED DEFAULT NULL COMMENT '父区域ID',
-  `code` VARCHAR(50) DEFAULT NULL COMMENT '区域编码',
-  `sort_order` INT DEFAULT 0 COMMENT '排序',
-  `description` TEXT COMMENT '区域描述',
-  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
-  PRIMARY KEY (`id`),
-  INDEX `idx_parent_id` (`parent_id`),
-  INDEX `idx_deleted_at` (`deleted_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='区域表';
-
--- -----------------------------------------------------
--- 2. 部门表 departments
--- -----------------------------------------------------
-DROP TABLE IF EXISTS `departments`;
-CREATE TABLE `departments` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `name` VARCHAR(100) NOT NULL COMMENT '部门名称',
-  `parent_id` INT UNSIGNED DEFAULT NULL COMMENT '父部门ID',
-  `region_id` INT UNSIGNED DEFAULT NULL COMMENT '所属区域ID',
-  `leader_id` INT UNSIGNED DEFAULT NULL COMMENT '部门负责人ID',
-  `code` VARCHAR(50) DEFAULT NULL COMMENT '部门编码',
-  `type` VARCHAR(50) DEFAULT NULL COMMENT '部门类型',
-  `sort_order` INT DEFAULT 0 COMMENT '排序',
-  `description` TEXT COMMENT '部门描述',
-  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
-  PRIMARY KEY (`id`),
-  INDEX `idx_parent_id` (`parent_id`),
-  INDEX `idx_region_id` (`region_id`),
-  INDEX `idx_leader_id` (`leader_id`),
-  INDEX `idx_deleted_at` (`deleted_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='部门表';
-
--- -----------------------------------------------------
--- 3. 职位表 positions
+-- 1. 职位表 positions
 -- -----------------------------------------------------
 DROP TABLE IF EXISTS `positions`;
 CREATE TABLE `positions` (
@@ -458,16 +415,6 @@ CREATE TABLE `priorities` (
 -- SEED DATA - 初始化数据
 -- =====================================================
 
--- 区域数据
-INSERT INTO `regions` (`id`, `name`, `parent_id`, `code`, `sort_order`) VALUES
-(1, '华东区', NULL, 'HD', 1),
-(2, '华南区', NULL, 'HN', 2),
-(3, '华北区', NULL, 'HB', 3);
-
--- 部门数据
-INSERT INTO `departments` (`id`, `name`, `parent_id`, `region_id`, `code`, `type`, `sort_order`) VALUES
-(1, '产品研发部', NULL, 1, 'RD001', '研发', 1);
-
 -- 职位数据
 INSERT INTO `positions` (`id`, `name`, `code`, `level`, `description`) VALUES
 (1, '产品经理', 'PM', 1, '负责产品规划和需求管理'),
@@ -616,22 +563,26 @@ INSERT INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `sta
 (1,  'menu:system-config', '系统配置菜单', 'MENU', '系统配置一级菜单入口', 1),
 (2,  'menu:settings:project', '项目管理菜单', 'MENU', '系统设置-项目管理', 1),
 (3,  'menu:settings:user', '用户管理菜单', 'MENU', '系统设置-用户管理', 1),
-(4,  'menu:settings:org', '组织架构菜单', 'MENU', '系统设置-组织架构', 1),
 (5,  'menu:settings:requirement', '需求配置菜单', 'MENU', '系统设置-需求配置', 1),
 (6,  'menu:settings:workflow', '工作流配置菜单', 'MENU', '系统设置-工作流配置', 1),
-(7,  'menu:menu-management', '菜单管理菜单', 'MENU', '系统设置-菜单管理', 1),
-(8,  'menu:rag', 'RAG文档中心菜单', 'MENU', 'RAG文档中心入口', 1),
+(7,  'menu:settings:role', '角色管理菜单', 'MENU', '系统设置-角色管理', 1),
+(8,  'menu:menu-management', '菜单管理菜单', 'MENU', '系统设置-菜单管理', 1),
+(9,  'menu:rag', 'RAG文档中心菜单', 'MENU', 'RAG文档中心入口', 1),
 -- 按钮权限
-(9,  'button:menu:create', '新增菜单按钮', 'BUTTON', '菜单管理-新增', 1),
-(10, 'button:menu:update', '编辑菜单按钮', 'BUTTON', '菜单管理-编辑', 1),
-(11, 'button:menu:delete', '删除菜单按钮', 'BUTTON', '菜单管理-删除', 1),
-(12, 'button:menu:grant', '角色授权按钮', 'BUTTON', '菜单管理-角色授权', 1),
-(13, 'button:user:create', '新增用户按钮', 'BUTTON', '用户管理-新增', 1),
-(14, 'button:user:update', '编辑用户按钮', 'BUTTON', '用户管理-编辑', 1),
-(15, 'button:user:delete', '删除用户按钮', 'BUTTON', '用户管理-删除', 1),
-(16, 'button:workflow:config', '工作流配置按钮', 'BUTTON', '工作流配置操作', 1),
-(17, 'button:rag:upload', 'RAG文档上传按钮', 'BUTTON', 'RAG-上传文档', 1),
-(18, 'button:rag:search', 'RAG文档搜索按钮', 'BUTTON', 'RAG-智能搜索', 1);
+(10, 'button:menu:create', '新增菜单按钮', 'BUTTON', '菜单管理-新增', 1),
+(11, 'button:menu:update', '编辑菜单按钮', 'BUTTON', '菜单管理-编辑', 1),
+(12, 'button:menu:delete', '删除菜单按钮', 'BUTTON', '菜单管理-删除', 1),
+(13, 'button:menu:grant', '角色授权按钮', 'BUTTON', '菜单管理-角色授权', 1),
+(14, 'button:user:create', '新增用户按钮', 'BUTTON', '用户管理-新增', 1),
+(15, 'button:user:update', '编辑用户按钮', 'BUTTON', '用户管理-编辑', 1),
+(16, 'button:user:delete', '删除用户按钮', 'BUTTON', '用户管理-删除', 1),
+(17, 'button:role:create', '新增角色按钮', 'BUTTON', '角色管理-新增', 1),
+(18, 'button:role:update', '编辑角色按钮', 'BUTTON', '角色管理-编辑', 1),
+(23, 'button:role:delete', '删除角色按钮', 'BUTTON', '角色管理-删除', 1),
+(24, 'button:role:grant', '角色授权按钮', 'BUTTON', '角色管理-授权', 1),
+(28, 'button:workflow:config', '工作流配置按钮', 'BUTTON', '工作流配置操作', 1),
+(29, 'button:rag:upload', 'RAG文档上传按钮', 'BUTTON', 'RAG-上传文档', 1),
+(30, 'button:rag:search', 'RAG文档搜索按钮', 'BUTTON', 'RAG-智能搜索', 1);
 
 -- -----------------------------------------------------
 -- 初始化菜单树数据
@@ -649,15 +600,20 @@ INSERT INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_
 -- 系统配置子菜单
 (10, 0, '项目管理', 'MENU', '/settings/projects', 'SettingsProjects', 'views/settings/projects.vue', 'Folder', 9, 'menu:settings:project', 1, 1, 0),
 (11, 7, '用户管理', 'MENU', '/settings/users', 'SettingsUsers', 'views/settings/users.vue', 'User', 1, 'menu:settings:user', 1, 1, 0),
-(12, 7, '组织架构', 'MENU', '/settings/org', 'SettingsOrg', 'views/settings/org.vue', 'OfficeBuilding', 2, 'menu:settings:org', 1, 1, 0),
-(13, 7, '需求配置', 'MENU', '/settings/requirements', 'SettingsRequirements', 'views/settings/requirements.vue', 'Setting', 3, 'menu:settings:requirement', 1, 1, 0),
-(14, 7, '工作流配置', 'MENU', '/system/workflow-config', 'WorkflowConfig', 'views/system/workflow-config/index.vue', 'Share', 4, 'menu:settings:workflow', 1, 1, 0),
-(15, 7, '菜单管理', 'MENU', '/settings/menus', 'MenuManagement', 'views/settings/menus.vue', 'Menu', 5, 'menu:menu-management', 1, 1, 0),
+(13, 7, '需求配置', 'MENU', '/settings/requirements', 'SettingsRequirements', 'views/settings/requirements.vue', 'Setting', 4, 'menu:settings:requirement', 1, 1, 0),
+(14, 7, '工作流配置', 'MENU', '/system/workflow-config', 'WorkflowConfig', 'views/system/workflow-config/index.vue', 'Share', 5, 'menu:settings:workflow', 1, 1, 0),
+(15, 7, '菜单管理', 'MENU', '/settings/menus', 'MenuManagement', 'views/settings/menus.vue', 'Menu', 6, 'menu:menu-management', 1, 1, 0),
+(17, 7, '角色管理', 'MENU', '/settings/roles', 'RoleManage', 'views/settings/roles.vue', 'UserFilled', 2, 'menu:settings:role', 1, 1, 0),
 -- 菜单管理下的按钮
 (20, 15, '新增菜单', 'BUTTON', NULL, NULL, NULL, NULL, 1, 'button:menu:create', 1, 1, 0),
 (21, 15, '编辑菜单', 'BUTTON', NULL, NULL, NULL, NULL, 2, 'button:menu:update', 1, 1, 0),
 (22, 15, '删除菜单', 'BUTTON', NULL, NULL, NULL, NULL, 3, 'button:menu:delete', 1, 1, 0),
 (23, 15, '角色授权', 'BUTTON', NULL, NULL, NULL, NULL, 4, 'button:menu:grant', 1, 1, 0),
+-- 角色管理下的按钮
+(24, 17, '新增角色', 'BUTTON', NULL, NULL, NULL, NULL, 1, 'button:role:create', 1, 1, 0),
+(25, 17, '编辑角色', 'BUTTON', NULL, NULL, NULL, NULL, 2, 'button:role:update', 1, 1, 0),
+(26, 17, '删除角色', 'BUTTON', NULL, NULL, NULL, NULL, 3, 'button:role:delete', 1, 1, 0),
+(27, 17, '角色授权', 'BUTTON', NULL, NULL, NULL, NULL, 4, 'button:role:grant', 1, 1, 0),
 -- 用户管理下的按钮
 (30, 11, '新增用户', 'BUTTON', NULL, NULL, NULL, NULL, 1, 'button:user:create', 1, 1, 0),
 (31, 11, '编辑用户', 'BUTTON', NULL, NULL, NULL, NULL, 2, 'button:user:update', 1, 1, 0),
@@ -667,8 +623,9 @@ INSERT INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_
 -- 初始化角色授权数据（SUPER_ADMIN获得全部权限）
 -- -----------------------------------------------------
 INSERT INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_by`) VALUES
-(1, 1, 1), (1, 2, 1), (1, 3, 1), (1, 4, 1), (1, 5, 1), (1, 6, 1), (1, 7, 1), (1, 8, 1),
-(1, 9, 1), (1, 10, 1), (1, 11, 1), (1, 12, 1), (1, 13, 1), (1, 14, 1), (1, 15, 1), (1, 16, 1), (1, 17, 1), (1, 18, 1);
+(1, 1, 1), (1, 2, 1), (1, 3, 1), (1, 5, 1), (1, 6, 1), (1, 7, 1), (1, 8, 1), (1, 9, 1),
+(1, 10, 1), (1, 11, 1), (1, 12, 1), (1, 13, 1), (1, 14, 1), (1, 15, 1), (1, 16, 1), (1, 17, 1), (1, 18, 1),
+(1, 23, 1), (1, 24, 1), (1, 28, 1), (1, 29, 1), (1, 30, 1);
 
 -- -----------------------------------------------------
 -- 27. 工作流节点表 workflow_nodes
@@ -1002,14 +959,14 @@ CREATE TABLE `llm_models` (
 
 -- 模型配置权限
 INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `status`) VALUES
-(19, 'menu:settings:llm', '模型配置菜单', 'MENU', '系统设置-模型配置', 1),
-(20, 'button:llm:create', '新增模型配置', 'BUTTON', '模型配置-新增', 1),
-(21, 'button:llm:update', '编辑模型配置', 'BUTTON', '模型配置-编辑', 1),
-(22, 'button:llm:delete', '删除模型配置', 'BUTTON', '模型配置-删除', 1);
+(31, 'menu:settings:llm', '模型配置菜单', 'MENU', '系统设置-模型配置', 1),
+(32, 'button:llm:create', '新增模型配置', 'BUTTON', '模型配置-新增', 1),
+(33, 'button:llm:update', '编辑模型配置', 'BUTTON', '模型配置-编辑', 1),
+(34, 'button:llm:delete', '删除模型配置', 'BUTTON', '模型配置-删除', 1);
 
 -- SUPER_ADMIN 授权模型配置权限
 INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`) VALUES
-(1, 19), (1, 20), (1, 21), (1, 22);
+(1, 31), (1, 32), (1, 33), (1, 34);
 
 -- 模型配置菜单（系统设置子菜单）
 INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
@@ -1220,13 +1177,14 @@ UPDATE `sys_menus`
 SET `parent_id` = 7,
     `sort_order` = CASE `id`
       WHEN 11 THEN 1
-      WHEN 12 THEN 2
-      WHEN 13 THEN 3
-      WHEN 14 THEN 4
-      WHEN 15 THEN 5
+      WHEN 17 THEN 2
+      WHEN 12 THEN 3
+      WHEN 13 THEN 4
+      WHEN 14 THEN 5
+      WHEN 15 THEN 6
       ELSE `sort_order`
     END
-WHERE `id` IN (11, 12, 13, 14, 15);
+WHERE `id` IN (11, 12, 13, 14, 15, 17);
 
 UPDATE `sys_menus`
 SET `parent_id` = 0,
@@ -1241,3 +1199,48 @@ WHERE `id` IN (6, 8, 10, 16);
 
 INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_by`)
 VALUES (1, 1, 1);
+
+-- =====================================================
+-- 统一组织架构表 sys_org（合并 regions + departments）
+-- =====================================================
+CREATE TABLE IF NOT EXISTS `sys_org` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name` VARCHAR(100) NOT NULL COMMENT '组织名称',
+  `parent_id` INT UNSIGNED DEFAULT NULL COMMENT '父节点ID',
+  `org_type` VARCHAR(20) NOT NULL COMMENT '类型: region/company/department/group',
+  `code` VARCHAR(50) DEFAULT NULL COMMENT '组织编码',
+  `leader_id` INT UNSIGNED DEFAULT NULL COMMENT '负责人ID',
+  `description` TEXT COMMENT '描述',
+  `sort_order` INT DEFAULT 0 COMMENT '同级排序号',
+  `path` VARCHAR(500) DEFAULT NULL COMMENT '物化路径 /1/3/7/',
+  `level` TINYINT UNSIGNED DEFAULT 0 COMMENT '层级深度',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除',
+  PRIMARY KEY (`id`),
+  INDEX `idx_parent_id` (`parent_id`),
+  INDEX `idx_org_type` (`org_type`),
+  INDEX `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一组织架构表';
+
+-- 关联表添加 org_id
+ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `org_id` INT UNSIGNED DEFAULT NULL COMMENT '所属组织ID';
+ALTER TABLE `user_organizations` ADD COLUMN IF NOT EXISTS `org_id` INT UNSIGNED DEFAULT NULL COMMENT '组织ID';
+ALTER TABLE `positions` ADD COLUMN IF NOT EXISTS `org_id` INT UNSIGNED DEFAULT NULL COMMENT '归属组织ID';
+ALTER TABLE `requirements` ADD COLUMN IF NOT EXISTS `org_id` INT UNSIGNED DEFAULT NULL COMMENT '归属组织ID';
+
+-- 初始化统一组织数据（直接插入，不再依赖旧 regions/departments 表）
+INSERT INTO `sys_org` (id, name, parent_id, org_type, code, description, sort_order, path, level, created_at, updated_at, deleted_at) VALUES
+(1, '东莞市', NULL, 'region', 'HD', '东莞市区域', 1, '/1/', 0, NOW(), NOW(), 0),
+(5, '开普云科技有限公司', 1, 'company', 'KP01', '开普云科技有限公司', 1, '/1/5/', 1, NOW(), NOW(), 0),
+(7, '市民服务中心', 5, 'department', 'SM01', '市民服务中心', 1, '/1/5/7/', 2, NOW(), NOW(), 0);
+
+-- 回填 path 和 level（确保数据一致性）
+WITH RECURSIVE org_tree AS (
+  SELECT id, parent_id, CAST(CONCAT('/', id, '/') AS CHAR(500)) AS path, 0 AS level
+  FROM `sys_org` WHERE parent_id IS NULL AND deleted_at = 0
+  UNION ALL
+  SELECT c.id, c.parent_id, CONCAT(p.path, c.id, '/'), p.level + 1
+  FROM `sys_org` c JOIN org_tree p ON c.parent_id = p.id
+)
+UPDATE `sys_org` o JOIN org_tree t ON o.id = t.id SET o.path = t.path, o.level = t.level;

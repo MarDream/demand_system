@@ -135,14 +135,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Download } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
-import * as XLSX from 'xlsx'
 import { saveAs } from 'file-saver'
+import { exportToExcel } from '@/utils/excel'
 import * as projectApi from '@/api/modules/project'
-import { getRegionTree } from '@/api/modules/organization'
+import { getOrgTree } from '@/api/modules/organization'
+import type { OrgNode } from '@/types/user'
 import * as userApi from '@/api/modules/user'
 import type { ProjectImportFailure, ProjectImportResult } from '@/types/project'
 import PageContainer from '@/components/common/PageContainer.vue'
@@ -156,8 +157,13 @@ const pageNum = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
 
-const regionTree = ref<any[]>([])
+const regionTree = ref<OrgNode[]>([])
 const userList = ref<any[]>([])
+const userMap = computed(() => {
+  const map = new Map<number, any>()
+  userList.value.forEach(u => map.set(u.id, u))
+  return map
+})
 
 const queryParams = reactive({
   name: '',
@@ -197,17 +203,25 @@ function getStatusLabel(row: any) {
 
 function getLeaderName(leaderId?: number | null) {
   if (!leaderId) return '-'
-  const user = userList.value.find(item => item.id === leaderId)
+  const user = userMap.value.get(leaderId)
   return user ? (user.realName || user.username || '-') : '-'
+}
+
+// 从统一组织树中过滤指定类型的节点
+function filterOrgTree(nodes: OrgNode[], targetType: string): OrgNode[] {
+  return nodes
+    .filter(n => n.orgType === targetType)
+    .map(n => ({ ...n, children: n.children ? filterOrgTree(n.children, targetType) : undefined }))
 }
 
 async function loadOrgData() {
   try {
-    const [regions, users] = await Promise.all([
-      getRegionTree(),
+    const [orgRes, users] = await Promise.all([
+      getOrgTree(),
       userApi.getUserList({ pageNum: 1, pageSize: 9999 }),
     ])
-    regionTree.value = (regions as any) || []
+    const orgTree = orgRes?.data?.data || []
+    regionTree.value = filterOrgTree(orgTree, 'company')
     userList.value = ((users as any)?.list ?? [])
   } catch (error) {
     console.error('加载数据失败:', error)
@@ -240,11 +254,7 @@ function handleExport() {
     创建时间: item.createdAt || '',
     描述: item.description || ''
   }))
-  const worksheet = XLSX.utils.json_to_sheet(exportData)
-  const workbook = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(workbook, worksheet, '项目列表')
-  const date = new Date().toISOString().slice(0, 10)
-  XLSX.writeFile(workbook, `项目列表_${date}.xlsx`)
+  exportToExcel(exportData, '项目列表', '项目列表')
   ElMessage.success('导出成功')
 }
 
@@ -289,11 +299,7 @@ function exportImportFailures(failures: ProjectImportFailure[]) {
     项目名称: item.projectName || '',
     失败原因: item.reason || '导入失败'
   }))
-  const worksheet = XLSX.utils.json_to_sheet(exportData)
-  const workbook = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(workbook, worksheet, '导入失败明细')
-  const date = new Date().toISOString().slice(0, 10)
-  XLSX.writeFile(workbook, `项目导入失败明细_${date}.xlsx`)
+  exportToExcel(exportData, '导入失败明细', '项目导入失败明细')
 }
 
 async function fetchList() {

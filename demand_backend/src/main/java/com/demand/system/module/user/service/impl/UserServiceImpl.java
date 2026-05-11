@@ -13,12 +13,10 @@ import com.demand.system.module.user.dto.UserVO;
 import com.demand.system.module.user.entity.User;
 import com.demand.system.module.user.mapper.UserMapper;
 import com.demand.system.module.user.service.UserService;
-import com.demand.system.module.organization.entity.Department;
+import com.demand.system.module.organization.dto.SysOrgVO;
 import com.demand.system.module.organization.entity.Position;
-import com.demand.system.module.organization.entity.Region;
-import com.demand.system.module.organization.mapper.DepartmentMapper;
 import com.demand.system.module.organization.mapper.PositionMapper;
-import com.demand.system.module.organization.mapper.RegionMapper;
+import com.demand.system.module.organization.service.SysOrgService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -31,9 +29,8 @@ import java.util.stream.Collectors;
 public class UserServiceImpl implements UserService {
 
     private final UserMapper userMapper;
-    private final RegionMapper regionMapper;
-    private final DepartmentMapper departmentMapper;
     private final PositionMapper positionMapper;
+    private final SysOrgService sysOrgService;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
 
@@ -169,16 +166,16 @@ public class UserServiceImpl implements UserService {
 
         // Fill region info and build region path
         if (user.getRegionId() != null) {
-            Region region = regionMapper.selectById(user.getRegionId());
+            SysOrgVO region = sysOrgService.getDetail(user.getRegionId());
             if (region != null) {
                 vo.setRegionName(region.getName());
-                vo.setRegionPath(buildRegionPath(region.getId()));
+                vo.setRegionPath(region.getPath() != null ? buildOrgPath(region.getPath()) : region.getName());
             }
         }
 
         // Fill department info
         if (user.getDepartmentId() != null) {
-            Department dept = departmentMapper.selectById(user.getDepartmentId());
+            SysOrgVO dept = sysOrgService.getDetail(user.getDepartmentId());
             if (dept != null) {
                 vo.setDepartmentName(dept.getName());
             }
@@ -196,22 +193,24 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
-     * 构建区域完整路径，如"华南区 > 深圳市 > 福田区"
+     * 根据物化路径构建显示路径，如 "/1/5/8/" -> "东莞市 > 开普云科技 > 研发中心"
      */
-    private String buildRegionPath(Long regionId) {
-        List<String> pathList = new ArrayList<>();
-        Long currentId = regionId;
-
-        while (currentId != null) {
-            Region region = regionMapper.selectById(currentId);
-            if (region == null) {
-                break;
-            }
-            pathList.add(0, region.getName());
-            currentId = region.getParentId();
+    private String buildOrgPath(String path) {
+        if (path == null || path.isBlank()) {
+            return "";
         }
-
-        return String.join(" > ", pathList);
+        String[] ids = path.split("/");
+        List<String> names = new ArrayList<>();
+        for (String idStr : ids) {
+            if (idStr.isBlank()) {
+                continue;
+            }
+            SysOrgVO org = sysOrgService.getDetail(Long.parseLong(idStr));
+            if (org != null) {
+                names.add(org.getName());
+            }
+        }
+        return String.join(" > ", names);
     }
 
     private String buildInitialPassword(String username, String phone, String fallbackPassword) {

@@ -132,7 +132,9 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { register } from '@/api/modules/auth'
-import { getRegionTree, getDepartmentTree, getPositionList } from '@/api/modules/organization'
+import { getOrgTree } from '@/api/modules/organization'
+import { getPositionList } from '@/api/modules/user'
+import type { OrgNode } from '@/types/user'
 
 const router = useRouter()
 const registerFormRef = ref<FormInstance>()
@@ -149,8 +151,8 @@ const registerForm = reactive({
   positionId: undefined as number | undefined
 })
 
-const regions = ref<Array<{ id: number; name: string }>>([])
-const departments = ref<Array<{ id: number; name: string }>>([])
+const regions = ref<OrgNode[]>([])
+const departments = ref<OrgNode[]>([])
 const positions = ref<Array<{ id: number; name: string }>>([])
 
 const validatePassword = (rule: any, value: any, callback: any) => {
@@ -193,47 +195,27 @@ const registerRules = reactive<FormRules>({
   ]
 })
 
-const loadRegions = async () => {
-  try {
-    const response = await getRegionTree()
-    if (response.data.code === 200) {
-      // 扁平化树形结构
-      const flattenRegions = (list: any[]): any[] => {
-        const result: any[] = []
-        for (const item of list) {
-          result.push({ id: item.id, name: item.name })
-          if (item.children) {
-            result.push(...flattenRegions(item.children))
-          }
-        }
-        return result
-      }
-      regions.value = flattenRegions(response.data.data || [])
+const flattenOrgTree = (list: OrgNode[]): OrgNode[] => {
+  const result: OrgNode[] = []
+  for (const item of list) {
+    result.push({ ...item, children: undefined })
+    if (item.children) {
+      result.push(...flattenOrgTree(item.children))
     }
-  } catch (error) {
-    console.error('加载区域列表失败:', error)
   }
+  return result
 }
 
-const loadDepartments = async () => {
+const loadRegionsAndDepartments = async () => {
   try {
-    const response = await getDepartmentTree()
+    const response = await getOrgTree()
     if (response.data.code === 200) {
-      // 扁平化树形结构
-      const flattenDepartments = (list: any[]): any[] => {
-        const result: any[] = []
-        for (const item of list) {
-          result.push({ id: item.id, name: item.name })
-          if (item.children) {
-            result.push(...flattenDepartments(item.children))
-          }
-        }
-        return result
-      }
-      departments.value = flattenDepartments(response.data.data || [])
+      const flat = flattenOrgTree(response.data.data || [])
+      regions.value = flat.filter(n => n.orgType === 'region')
+      departments.value = flat.filter(n => n.orgType === 'department')
     }
   } catch (error) {
-    console.error('加载部门列表失败:', error)
+    console.error('加载组织架构失败:', error)
   }
 }
 
@@ -281,8 +263,7 @@ const handleRegister = async () => {
 }
 
 onMounted(() => {
-  loadRegions()
-  loadDepartments()
+  loadRegionsAndDepartments()
   loadPositions()
 })
 </script>

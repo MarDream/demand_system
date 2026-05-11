@@ -6,6 +6,7 @@ import com.demand.system.module.requirement.entity.Requirement;
 import com.demand.system.module.workflow.dto.EdgeDTO;
 import com.demand.system.module.workflow.dto.NodeConfigDTO;
 import com.demand.system.module.workflow.dto.WorkflowDefinitionDTO;
+import com.demand.system.module.workflow.engine.WorkflowVersionResolver;
 import com.demand.system.module.workflow.entity.WorkflowVersion;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -47,10 +48,11 @@ public class WorkflowDefinitionEngine {
     private static final String TYPE_STATE = "state";
 
     private final WorkflowVersionMapper workflowVersionMapper;
+    private final WorkflowVersionResolver workflowVersionResolver;
     private final ObjectMapper objectMapper;
 
     public boolean hasActiveDefinition(Long projectId) {
-        return findActiveVersion(projectId)
+        return workflowVersionResolver.findActiveVersion(projectId)
                 .map(WorkflowVersion::getDefinition)
                 .filter(StringUtils::hasText)
                 .isPresent();
@@ -276,29 +278,13 @@ public class WorkflowDefinitionEngine {
     }
 
     private Optional<WorkflowGraph> loadActiveGraph(Long projectId) {
-        return findActiveVersion(projectId)
+        return workflowVersionResolver.findActiveVersion(projectId)
                 .map(WorkflowVersion::getDefinition)
                 .filter(StringUtils::hasText)
                 .map(definition -> parseGraph(definition, new ArrayList<>()))
                 .filter(Objects::nonNull);
     }
 
-    private Optional<WorkflowVersion> findActiveVersion(Long projectId) {
-        WorkflowVersion direct = workflowVersionMapper.selectOne(new LambdaQueryWrapper<WorkflowVersion>()
-                .eq(WorkflowVersion::getProjectId, projectId)
-                .eq(WorkflowVersion::getIsActive, 1)
-                .orderByDesc(WorkflowVersion::getVersion)
-                .last("LIMIT 1"));
-        if (direct != null || projectId == null || projectId == 0L) {
-            return Optional.ofNullable(direct);
-        }
-        WorkflowVersion global = workflowVersionMapper.selectOne(new LambdaQueryWrapper<WorkflowVersion>()
-                .eq(WorkflowVersion::getProjectId, 0L)
-                .eq(WorkflowVersion::getIsActive, 1)
-                .orderByDesc(WorkflowVersion::getVersion)
-                .last("LIMIT 1"));
-        return Optional.ofNullable(global);
-    }
 
     private WorkflowGraph parseGraph(String definition, List<String> errors) {
         if (!StringUtils.hasText(definition)) {

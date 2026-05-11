@@ -188,7 +188,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Setting, View, Edit, Delete, ArrowDown } from '@element-plus/icons-vue'
-import * as XLSX from 'xlsx'
+import { exportToExcel } from '@/utils/excel'
 import { requirementApi, userApi } from '@/api'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
 import { getColumnConfig, saveColumnConfig } from '@/api/modules/requirement'
@@ -483,18 +483,13 @@ async function handleExport() {
       '描述': row.description || '',
     }))
 
-    const ws = XLSX.utils.json_to_sheet(exportData)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, '需求列表')
-
-    ws['!cols'] = [
+    const columnWidths = [
       { wch: 30 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
       { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
       { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 40 },
     ]
 
-    const date = new Date().toISOString().slice(0, 10)
-    XLSX.writeFile(wb, `需求列表_${date}.xlsx`)
+    exportToExcel(exportData, '需求列表', '需求列表', columnWidths)
     ElMessage.success('导出成功')
   } catch {
     ElMessage.error('导出失败')

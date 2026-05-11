@@ -1,17 +1,21 @@
 package com.demand.system.module.organization.dto;
 
-import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
 @Data
-public class RegionCreateDTO {
+public class SysOrgUpdateDTO {
 
-    @NotBlank(message = "区域名称不能为空")
+    private Long id;
+
     private String name;
 
     private Long parentId;
 
+    private String orgType;
+
     private String code;
+
+    private Long leaderId;
 
     private String description;
 

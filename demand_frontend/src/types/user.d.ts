@@ -24,37 +24,6 @@ export interface UserQuery {
   pageSize: number
 }
 
-export interface UserOrg {
-  id: number
-  userId: number
-  regionId: number | null
-  departmentId: number | null
-  positionId: number | null
-  systemRole: string
-  managerId: number | null
-  effectiveDate: string
-}
-
-export interface Region {
-  id: number
-  name: string
-  parentId: number | null
-  code: string | null
-  sortOrder: number
-  children?: Region[]
-}
-
-export interface Department {
-  id: number
-  name: string
-  parentId: number | null
-  regionId: number | null
-  code: string | null
-  type: string | null
-  sortOrder: number
-  children?: Department[]
-}
-
 export interface Position {
   id: number
   name: string
@@ -62,4 +31,21 @@ export interface Position {
   level: number | null
   description: string | null
   sortOrder?: number
+}
+
+export interface OrgNode {
+  id: number
+  name: string
+  parentId: number | null
+  orgType: 'region' | 'company' | 'department' | 'group'
+  code: string | null
+  leaderId: number | null
+  leaderName: string | null
+  description: string | null
+  sortOrder: number
+  path: string | null
+  level: number
+  createdAt: string
+  updatedAt: string
+  children?: OrgNode[]
 }
