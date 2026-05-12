@@ -383,25 +383,56 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             return;
         }
 
+        if (content == null || content.isBlank()) {
+            doc.setChunkCount(0);
+            doc.setStatus("indexed");
+            doc.setErrorMessage(null);
+            doc.setUpdatedAt(LocalDateTime.now());
+            documentMapper.updateById(doc);
+            updateKnowledgeBaseCount(doc.getKnowledgeBaseId());
+            return;
+        }
+
         // 分块
         List<String> chunks = splitContent(content);
+        chunks = chunks.stream()
+                .map(KnowledgeDocumentServiceImpl::sanitizeText)
+                .filter(c -> !c.isBlank())
+                .toList();
+        if (chunks.isEmpty()) {
+            doc.setChunkCount(0);
+            doc.setStatus("indexed");
+            doc.setErrorMessage(null);
+            doc.setUpdatedAt(LocalDateTime.now());
+            documentMapper.updateById(doc);
+            updateKnowledgeBaseCount(doc.getKnowledgeBaseId());
+            return;
+        }
+
         doc.setStatus("indexing");
         doc.setUpdatedAt(LocalDateTime.now());
         documentMapper.updateById(doc);
 
         // 生成向量并存储到MySQL和Milvus
+        List<MilvusVectorStore.VectorDocument> milvusDocs = new ArrayList<>();
         try {
-            List<float[]> vectors = embeddingService.embed(chunks);
-            List<MilvusVectorStore.VectorDocument> milvusDocs = new ArrayList<>();
+            List<float[]> vectors = embedInBatches(chunks);
 
+            int validChunks = 0;
             for (int i = 0; i < chunks.size(); i++) {
+                float[] vector = vectors.get(i);
+                if (vector == null || vector.length == 0) {
+                    continue;
+                }
+
                 String vectorId = UUID.randomUUID().toString();
+                validChunks++;
 
                 // MySQL元数据
                 KnowledgeChunk chunk = new KnowledgeChunk();
                 chunk.setDocumentId(doc.getId());
                 chunk.setKnowledgeBaseId(doc.getKnowledgeBaseId());
-                chunk.setChunkIndex(i);
+                chunk.setChunkIndex(validChunks - 1);
                 chunk.setContent(chunks.get(i));
                 chunk.setCharCount(chunks.get(i).length());
                 chunk.setVectorId(vectorId);
@@ -409,15 +440,17 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
                 // Milvus向量
                 milvusDocs.add(new MilvusVectorStore.VectorDocument(
-                        vectorId, vectors.get(i),
+                        vectorId, vector,
                         doc.getKnowledgeBaseId(), doc.getId(),
-                        i, chunks.get(i), null, null,
+                        validChunks - 1, chunks.get(i), null, null,
                         doc.getFileName(), doc.getFileType()
                 ));
             }
 
             // 批量写入Milvus
-            milvusVectorStore.insertVectors(milvusDocs);
+            if (!milvusDocs.isEmpty()) {
+                milvusVectorStore.insertVectors(milvusDocs);
+            }
 
         } catch (Exception e) {
             doc.setStatus("failed");
@@ -427,7 +460,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             return;
         }
 
-        doc.setChunkCount(chunks.size());
+        doc.setChunkCount(milvusDocs.size());
         doc.setStatus("indexed");
         doc.setErrorMessage(null);
         doc.setUpdatedAt(LocalDateTime.now());
@@ -510,6 +543,37 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
     private Boolean asBoolean(Integer value) {
         return value != null && value == 1;
+    }
+
+    private List<float[]> embedInBatches(List<String> chunks) {
+        List<float[]> allVectors = new ArrayList<>();
+        int batchSize = 16;
+        for (int i = 0; i < chunks.size(); i += batchSize) {
+            List<String> batch = chunks.subList(i, Math.min(i + batchSize, chunks.size()));
+            try {
+                List<float[]> batchVectors = embeddingService.embed(batch);
+                allVectors.addAll(batchVectors);
+            } catch (Exception e) {
+                log.warn("批量Embedding失败，降级为逐条处理: {}", e.getMessage());
+                for (String text : batch) {
+                    try {
+                        allVectors.add(embeddingService.embed(text));
+                    } catch (Exception ex) {
+                        log.warn("单条Embedding失败，跳过: text长度={}", text.length());
+                        allVectors.add(new float[0]);
+                    }
+                }
+            }
+        }
+        return allVectors;
+    }
+
+    private static String sanitizeText(String text) {
+        if (text == null) return "";
+        return text.replaceAll("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]", "")
+                .replaceAll("\\t+", " ")
+                .replaceAll(" +", " ")
+                .trim();
     }
 
     private String readDocumentContent(KnowledgeDocument doc) throws Exception {
@@ -597,6 +661,19 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
         StringBuilder currentChunk = new StringBuilder();
         for (String para : paragraphs) {
+            if (para.length() > chunkSize) {
+                if (currentChunk.length() > 0) {
+                    chunks.add(currentChunk.toString().trim());
+                    currentChunk = new StringBuilder();
+                }
+                for (int i = 0; i < para.length(); i += chunkSize - overlap) {
+                    String sub = para.substring(i, Math.min(i + chunkSize, para.length()));
+                    if (!sub.isBlank()) {
+                        chunks.add(sub.trim());
+                    }
+                }
+                continue;
+            }
             if (currentChunk.length() + para.length() > chunkSize && currentChunk.length() > 0) {
                 chunks.add(currentChunk.toString().trim());
                 String overlapText = getOverlapText(currentChunk.toString(), overlap);

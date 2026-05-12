@@ -1,15 +1,1472 @@
 <template>
-  <div class="rag-page">
-    <DocumentCenter />
-  </div>
+  <PageContainer
+    title="文档检索工作台"
+    subtitle="按知识库组织问答记录、管理上下文，并在回答后直接查看命中文件证据"
+  >
+    <template #headerActions>
+      <el-button @click="refreshKnowledgeBases" :loading="refreshing">
+        <el-icon><RefreshRight /></el-icon>
+        <span>刷新知识库</span>
+      </el-button>
+      <el-button type="primary" plain @click="goToKnowledgeManagement">管理知识库</el-button>
+    </template>
+
+    <div class="rag-workspace">
+      <aside class="rag-shell rag-sidebar">
+        <section class="sidebar-section">
+          <div class="section-heading">
+            <div>
+              <div class="section-label">可选知识库</div>
+              <div class="section-tip">每个知识库维护独立会话与上下文</div>
+            </div>
+            <div class="section-badge">{{ store.knowledgeBases.length }}</div>
+          </div>
+
+          <div v-if="store.knowledgeBases.length" class="knowledge-grid">
+            <button
+              v-for="kb in store.knowledgeBases"
+              :key="kb.id"
+              type="button"
+              class="knowledge-card"
+              :class="{ 'knowledge-card--active': selectedKbId === kb.id }"
+              @click="handleSelectKnowledgeBase(kb.id)"
+            >
+              <div class="knowledge-card__title">
+                <span>{{ kb.name }}</span>
+                <el-tag size="small" :type="kb.status === 'active' ? 'success' : 'info'">
+                  {{ kb.status === 'active' ? '活跃' : '归档' }}
+                </el-tag>
+              </div>
+              <div class="knowledge-card__desc">{{ kb.description || '暂无描述，适合作为当前知识空间的入口。' }}</div>
+              <div class="knowledge-card__meta">
+                <span>{{ kb.docCount }} 份文档</span>
+                <span>{{ kb.chunkCount }} 个分块</span>
+              </div>
+            </button>
+          </div>
+
+          <el-empty v-else description="暂无知识库，请先在知识库管理中创建" />
+        </section>
+
+        <section v-if="selectedKnowledgeBase" class="sidebar-section sidebar-section--fill">
+          <div class="section-heading">
+            <div>
+              <div class="section-label">对话记录</div>
+              <div class="section-tip">{{ selectedKnowledgeBase.name }} 的历史问答会保存在本地</div>
+            </div>
+            <el-button type="primary" text @click="createSessionForCurrentKb">
+              <el-icon><Plus /></el-icon>
+              <span>新建</span>
+            </el-button>
+          </div>
+
+          <div v-if="sessionsForSelectedKb.length" class="session-list">
+            <button
+              v-for="session in sessionsForSelectedKb"
+              :key="session.id"
+              type="button"
+              class="session-item"
+              :class="{ 'session-item--active': activeSessionId === session.id }"
+              @click="activeSessionId = session.id"
+            >
+              <div class="session-item__main">
+                <div class="session-item__title">{{ session.title }}</div>
+                <div class="session-item__meta">
+                  <span>{{ formatDateTime(session.updatedAt) }}</span>
+                  <span>{{ session.messages.length }} 条消息</span>
+                </div>
+                <div class="session-item__context">
+                  {{ session.contextEnabled ? `上下文 ${session.contextTurns} 轮` : '单轮检索' }}
+                </div>
+              </div>
+              <el-button text type="danger" @click.stop="handleDeleteSession(session)">
+                <el-icon><Delete /></el-icon>
+              </el-button>
+            </button>
+          </div>
+
+          <el-empty v-else description="当前知识库还没有会话" />
+        </section>
+      </aside>
+
+      <section class="rag-shell rag-chat">
+        <header class="chat-header">
+          <div class="chat-title">
+            <div class="chat-title__label">检索问答</div>
+            <div class="chat-title__main">{{ selectedKnowledgeBase?.name || '请选择知识库' }}</div>
+          </div>
+          <div class="chat-filters">
+            <el-select v-model="searchMode" size="small" style="width: 124px">
+              <el-option label="混合模式" value="hybrid" />
+              <el-option label="语义检索" value="semantic" />
+              <el-option label="关键词" value="keyword" />
+            </el-select>
+            <el-select v-model="topK" size="small" style="width: 96px">
+              <el-option :value="5" label="Top 5" />
+              <el-option :value="10" label="Top 10" />
+              <el-option :value="20" label="Top 20" />
+            </el-select>
+            <el-button
+              v-if="selectedKnowledgeBase"
+              text
+              @click="goToKnowledgeDetail(selectedKnowledgeBase.id)"
+            >
+              查看文档
+            </el-button>
+          </div>
+        </header>
+
+        <div class="chat-stream">
+          <template v-if="activeSession && activeSession.messages.length">
+            <div
+              v-for="message in activeSession.messages"
+              :key="message.id"
+              class="message-row"
+              :class="[`message-row--${message.role}`]"
+            >
+              <div
+                class="message-bubble"
+                :class="{
+                  'message-bubble--assistant-active': message.role === 'assistant' && activeInsightMessageId === message.id,
+                  'message-bubble--error': message.failed
+                }"
+                @click="handleSelectInsight(message)"
+              >
+                <div class="message-bubble__role">
+                  {{ message.role === 'user' ? '提问' : '检索回答' }}
+                </div>
+                <div class="message-bubble__content">{{ message.content }}</div>
+
+                <div v-if="message.role === 'assistant'" class="message-bubble__footer">
+                  <span>{{ message.citations?.length || 0 }} 份证据文件</span>
+                  <span>{{ message.retrievedCount || 0 }} 条命中</span>
+                  <span>{{ formatDateTime(message.createdAt) }}</span>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <div v-else class="chat-empty">
+            <div class="chat-empty__title">从知识库开始一次结构化问答</div>
+            <div class="chat-empty__desc">
+              选择左侧知识库后输入问题，系统会保存该知识库下的会话记录，并在回答后展示关键点和涉及文件。
+            </div>
+          </div>
+
+          <div v-if="asking" class="message-row message-row--assistant">
+            <div class="message-bubble message-bubble--loading">
+              <div class="message-bubble__role">检索中</div>
+              <div class="thinking-loader">
+                <span class="thinking-loader__dot"></span>
+                <span class="thinking-loader__dot"></span>
+                <span class="thinking-loader__dot"></span>
+              </div>
+              <div class="message-bubble__hint">正在整理问题、召回文档并汇总答案...</div>
+            </div>
+          </div>
+        </div>
+
+        <footer class="composer-panel">
+          <div class="composer-toolbar">
+            <div class="composer-context">
+              <span class="composer-toolbar__label">上下文管理</span>
+              <el-switch
+                :model-value="activeSession?.contextEnabled ?? true"
+                @change="handleContextToggle"
+              />
+              <el-select
+                :model-value="activeSession?.contextTurns ?? 2"
+                size="small"
+                style="width: 110px"
+                :disabled="!(activeSession?.contextEnabled ?? true)"
+                @change="handleContextTurnsChange"
+              >
+                <el-option :value="1" label="最近 1 轮" />
+                <el-option :value="2" label="最近 2 轮" />
+                <el-option :value="3" label="最近 3 轮" />
+                <el-option :value="5" label="最近 5 轮" />
+              </el-select>
+            </div>
+            <div class="composer-toolbar__actions">
+              <el-button text @click="handleClearSession">清空上下文</el-button>
+            </div>
+          </div>
+
+          <el-input
+            v-model="draftQuestion"
+            type="textarea"
+            :rows="4"
+            resize="none"
+            :disabled="!selectedKnowledgeBase || asking"
+            placeholder="请输入你想在当前知识库中检索的问题，按 Enter 发送，Shift + Enter 换行"
+            @keydown.enter.exact.prevent="handleAsk"
+          />
+
+          <div class="composer-actions">
+            <span class="composer-actions__tip">
+              {{ activeSession?.contextEnabled ? '会携带最近上下文增强检索语义' : '当前按单轮问答检索' }}
+            </span>
+            <el-button type="primary" :loading="asking" :disabled="!selectedKnowledgeBase" @click="handleAsk">
+              开始检索
+            </el-button>
+          </div>
+        </footer>
+      </section>
+
+      <aside class="rag-shell rag-insights">
+        <template v-if="currentInsight">
+          <section class="insight-card insight-card--summary">
+            <div class="insight-card__header">
+              <div>
+                <div class="insight-card__label">关键问题总结</div>
+                <div class="insight-card__title">本轮输出概览</div>
+              </div>
+              <el-tag effect="dark" type="info">{{ currentInsight.retrievedCount || 0 }} 条片段</el-tag>
+            </div>
+            <div class="summary-content">{{ currentInsight.processSummary || currentInsight.content }}</div>
+          </section>
+
+          <section class="insight-card">
+            <div class="insight-card__header">
+              <div>
+                <div class="insight-card__label">模型思考摘要</div>
+                <div class="insight-card__title">可审阅的检索路径</div>
+              </div>
+            </div>
+            <div class="thinking-list">
+              <div v-for="(step, index) in currentInsight.thinkingSteps || []" :key="step.title" class="thinking-item">
+                <div class="thinking-item__index">{{ index + 1 }}</div>
+                <div class="thinking-item__body">
+                  <div class="thinking-item__title">{{ step.title }}</div>
+                  <div class="thinking-item__detail">{{ step.detail }}</div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="insight-card">
+            <div class="insight-card__header">
+              <div>
+                <div class="insight-card__label">关键点</div>
+                <div class="insight-card__title">便于快速复盘</div>
+              </div>
+            </div>
+            <ul class="keypoint-list">
+              <li v-for="point in currentInsight.summaryPoints || []" :key="point">{{ point }}</li>
+            </ul>
+          </section>
+
+          <section class="insight-card">
+            <div class="insight-card__header">
+              <div>
+                <div class="insight-card__label">涉及文件</div>
+                <div class="insight-card__title">点击可预览命中文档</div>
+              </div>
+            </div>
+
+            <div v-if="currentInsight.citations?.length" class="citation-list">
+              <button
+                v-for="citation in currentInsight.citations"
+                :key="`${citation.documentId}-${citation.fileName}`"
+                type="button"
+                class="citation-item"
+                @click="openPreview(citation)"
+              >
+                <div class="citation-item__top">
+                  <div class="citation-item__name">
+                    <el-icon><Document /></el-icon>
+                    <span>{{ citation.fileName }}</span>
+                  </div>
+                  <el-button text type="primary" @click.stop="openPreview(citation)">
+                    <el-icon><View /></el-icon>
+                    <span>预览</span>
+                  </el-button>
+                </div>
+                <div class="citation-item__meta">
+                  <span>{{ citation.hitCount }} 个片段</span>
+                  <span>{{ citation.pageText }}</span>
+                  <span>{{ Math.round(citation.score * 100) }}% 相关度</span>
+                </div>
+                <div class="citation-item__excerpt">
+                  <HighlightText :content="citation.excerpt" :query="currentInsight.question || ''" />
+                </div>
+              </button>
+            </div>
+
+            <el-empty v-else description="当前回答未返回可预览文件" />
+          </section>
+        </template>
+
+        <div v-else class="insight-empty">
+          <div class="insight-empty__title">这里会展示思考摘要与证据文件</div>
+          <div class="insight-empty__desc">
+            完成一次检索后，你可以在这里查看总结、关键点，以及命中文件的在线预览入口。
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <FilePreviewDialog
+      v-model="previewVisible"
+      :file-name="previewState.fileName"
+      :file-type="previewState.fileType"
+      :knowledge-base-id="previewState.knowledgeBaseId"
+      :document-id="previewState.documentId"
+      :download-url="previewState.downloadUrl"
+    />
+  </PageContainer>
 </template>
 
 <script setup lang="ts">
-import DocumentCenter from '@/components/document/DocumentCenter.vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Delete, Document, Plus, RefreshRight, View } from '@element-plus/icons-vue'
+import PageContainer from '@/components/common/PageContainer.vue'
+import HighlightText from '@/components/common/HighlightText.vue'
+import FilePreviewDialog from '@/components/document/FilePreviewDialog.vue'
+import { useKnowledgeStore } from '@/stores/knowledge'
+import storage from '@/utils/storage'
+import type { KnowledgeBase, SearchMode, SearchResponse, SearchResultItem } from '@/api/modules/knowledge'
+
+interface RagThinkingStep {
+  title: string
+  detail: string
+}
+
+interface RagCitation {
+  knowledgeBaseId: number
+  documentId: number
+  fileName: string
+  fileType: string
+  excerpt: string
+  score: number
+  hitCount: number
+  pageText: string
+}
+
+interface RagMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  createdAt: number
+  failed?: boolean
+  question?: string
+  processSummary?: string
+  summaryPoints?: string[]
+  thinkingSteps?: RagThinkingStep[]
+  citations?: RagCitation[]
+  retrievedCount?: number
+}
+
+interface RagSession {
+  id: string
+  knowledgeBaseId: number
+  title: string
+  createdAt: number
+  updatedAt: number
+  contextEnabled: boolean
+  contextTurns: number
+  messages: RagMessage[]
+}
+
+interface RagWorkspaceState {
+  selectedKbId: number | null
+  activeSessionId: string | null
+  sessions: RagSession[]
+}
+
+const RAG_WORKSPACE_STORAGE_KEY = 'rag-workspace-state-v1'
+
+const router = useRouter()
+const store = useKnowledgeStore()
+
+const sessions = ref<RagSession[]>([])
+const selectedKbId = ref<number | null>(null)
+const activeSessionId = ref<string | null>(null)
+const activeInsightMessageId = ref<string | null>(null)
+const draftQuestion = ref('')
+const searchMode = ref<SearchMode>('hybrid')
+const topK = ref(10)
+const asking = ref(false)
+const refreshing = ref(false)
+
+const previewVisible = ref(false)
+const previewState = ref({
+  knowledgeBaseId: 0,
+  documentId: 0,
+  fileName: '',
+  fileType: '',
+  downloadUrl: ''
+})
+
+const selectedKnowledgeBase = computed<KnowledgeBase | null>(() => {
+  return store.knowledgeBases.find(item => item.id === selectedKbId.value) || null
+})
+
+const sessionsForSelectedKb = computed(() => {
+  if (!selectedKbId.value) return []
+  return sessions.value
+    .filter(session => session.knowledgeBaseId === selectedKbId.value)
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+})
+
+const activeSession = computed<RagSession | null>(() => {
+  if (!activeSessionId.value) return null
+  return sessions.value.find(session => session.id === activeSessionId.value) || null
+})
+
+const currentInsight = computed<RagMessage | null>(() => {
+  const session = activeSession.value
+  if (!session) return null
+  if (activeInsightMessageId.value) {
+    const found = session.messages.find(message => message.id === activeInsightMessageId.value && message.role === 'assistant')
+    if (found) return found
+  }
+  return [...session.messages].reverse().find(message => message.role === 'assistant') || null
+})
+
+onMounted(async () => {
+  restoreWorkspace()
+  await store.fetchAllBases()
+  bootstrapWorkspace()
+})
+
+watch(
+  () => activeSession.value,
+  (session) => {
+    if (!session) {
+      activeInsightMessageId.value = null
+      return
+    }
+    const latestAssistant = [...session.messages].reverse().find(message => message.role === 'assistant')
+    activeInsightMessageId.value = latestAssistant?.id || null
+  },
+  { immediate: true }
+)
+
+watch(
+  [sessions, selectedKbId, activeSessionId],
+  () => {
+    persistWorkspace()
+  },
+  { deep: true }
+)
+
+function restoreWorkspace() {
+  const state = storage.get<RagWorkspaceState>(RAG_WORKSPACE_STORAGE_KEY)
+  if (!state) return
+  sessions.value = Array.isArray(state.sessions) ? state.sessions : []
+  selectedKbId.value = typeof state.selectedKbId === 'number' ? state.selectedKbId : null
+  activeSessionId.value = state.activeSessionId || null
+}
+
+function bootstrapWorkspace() {
+  if (!store.knowledgeBases.length) {
+    selectedKbId.value = null
+    activeSessionId.value = null
+    return
+  }
+
+  const currentKbExists = store.knowledgeBases.some(item => item.id === selectedKbId.value)
+  if (!currentKbExists) {
+    selectedKbId.value = store.knowledgeBases[0].id
+  }
+
+  ensureActiveSession()
+}
+
+function persistWorkspace() {
+  const payload: RagWorkspaceState = {
+    selectedKbId: selectedKbId.value,
+    activeSessionId: activeSessionId.value,
+    sessions: sessions.value
+  }
+  storage.set(RAG_WORKSPACE_STORAGE_KEY, payload)
+}
+
+function ensureActiveSession() {
+  if (!selectedKbId.value) return
+  const kbSessions = sessions.value.filter(session => session.knowledgeBaseId === selectedKbId.value)
+  if (!kbSessions.length) {
+    const session = createSession(selectedKbId.value)
+    sessions.value = [session, ...sessions.value]
+    activeSessionId.value = session.id
+    return
+  }
+
+  const currentSession = kbSessions.find(session => session.id === activeSessionId.value)
+  if (!currentSession) {
+    activeSessionId.value = [...kbSessions].sort((a, b) => b.updatedAt - a.updatedAt)[0].id
+  }
+}
+
+function createSession(knowledgeBaseId: number): RagSession {
+  const now = Date.now()
+  return {
+    id: createId('session'),
+    knowledgeBaseId,
+    title: '新对话',
+    createdAt: now,
+    updatedAt: now,
+    contextEnabled: true,
+    contextTurns: 2,
+    messages: []
+  }
+}
+
+function createSessionForCurrentKb() {
+  if (!selectedKbId.value) return
+  const session = createSession(selectedKbId.value)
+  sessions.value = [session, ...sessions.value]
+  activeSessionId.value = session.id
+  activeInsightMessageId.value = null
+}
+
+function handleSelectKnowledgeBase(knowledgeBaseId: number) {
+  selectedKbId.value = knowledgeBaseId
+  ensureActiveSession()
+}
+
+async function refreshKnowledgeBases() {
+  refreshing.value = true
+  try {
+    await store.fetchAllBases()
+    bootstrapWorkspace()
+    ElMessage.success('知识库列表已刷新')
+  } finally {
+    refreshing.value = false
+  }
+}
+
+function goToKnowledgeManagement() {
+  router.push('/settings/knowledge')
+}
+
+function goToKnowledgeDetail(knowledgeBaseId: number) {
+  router.push(`/settings/knowledge/${knowledgeBaseId}`)
+}
+
+async function handleDeleteSession(session: RagSession) {
+  try {
+    await ElMessageBox.confirm(`确定删除会话「${session.title}」？该知识库下保存的本地问答记录将被移除。`, '删除会话', {
+      type: 'warning'
+    })
+    sessions.value = sessions.value.filter(item => item.id !== session.id)
+    if (activeSessionId.value === session.id) {
+      activeSessionId.value = null
+      ensureActiveSession()
+    }
+    ElMessage.success('会话已删除')
+  } catch {
+    // 用户取消时保持原状态。
+  }
+}
+
+async function handleClearSession() {
+  const session = activeSession.value
+  if (!session) return
+  try {
+    await ElMessageBox.confirm('确定清空当前会话上下文？已保存的问答记录会被删除，但知识库不会受影响。', '清空上下文', {
+      type: 'warning'
+    })
+    session.messages = []
+    session.title = '新对话'
+    session.updatedAt = Date.now()
+    activeInsightMessageId.value = null
+    ElMessage.success('当前会话已清空')
+  } catch {
+    // 用户取消时保持原状态。
+  }
+}
+
+function handleContextToggle(value: string | number | boolean) {
+  if (!activeSession.value) return
+  activeSession.value.contextEnabled = Boolean(value)
+  activeSession.value.updatedAt = Date.now()
+}
+
+function handleContextTurnsChange(value: number) {
+  if (!activeSession.value) return
+  activeSession.value.contextTurns = value
+  activeSession.value.updatedAt = Date.now()
+}
+
+function handleSelectInsight(message: RagMessage) {
+  if (message.role !== 'assistant') return
+  activeInsightMessageId.value = message.id
+}
+
+async function handleAsk() {
+  const knowledgeBase = selectedKnowledgeBase.value
+  const session = activeSession.value
+  const question = draftQuestion.value.trim()
+
+  if (!knowledgeBase) {
+    ElMessage.warning('请先选择知识库')
+    return
+  }
+  if (!session) {
+    ElMessage.warning('当前知识库没有可用会话，请新建一个会话后再提问')
+    return
+  }
+  if (!question) {
+    ElMessage.warning('请输入检索问题')
+    return
+  }
+
+  const requestQuery = buildRequestQuery(session, question)
+  const askedAt = Date.now()
+  session.messages.push({
+    id: createId('msg'),
+    role: 'user',
+    content: question,
+    createdAt: askedAt
+  })
+  session.updatedAt = askedAt
+  if (session.title === '新对话') {
+    session.title = buildSessionTitle(question)
+  }
+  draftQuestion.value = ''
+  asking.value = true
+
+  try {
+    const response = await store.search(requestQuery, searchMode.value, knowledgeBase.id, topK.value)
+    const assistantMessage: RagMessage = {
+      id: createId('msg'),
+      role: 'assistant',
+      content: buildAnswerContent(response),
+      createdAt: Date.now(),
+      question,
+      processSummary: buildProcessSummary(response, knowledgeBase.name),
+      summaryPoints: extractSummaryPoints(response),
+      thinkingSteps: buildThinkingSteps({
+        knowledgeBaseName: knowledgeBase.name,
+        question,
+        session,
+        mode: searchMode.value,
+        response
+      }),
+      citations: buildCitations(response?.results || []),
+      retrievedCount: response?.total || response?.results?.length || 0
+    }
+    session.messages.push(assistantMessage)
+    session.updatedAt = assistantMessage.createdAt
+    activeInsightMessageId.value = assistantMessage.id
+  } catch {
+    const errorMessage: RagMessage = {
+      id: createId('msg'),
+      role: 'assistant',
+      content: '本次检索未能完成，请检查模型配置、知识库索引状态或稍后重试。',
+      createdAt: Date.now(),
+      failed: true,
+      question,
+      processSummary: '检索请求失败，当前未返回有效的知识文件证据。',
+      summaryPoints: ['请确认知识库已完成索引。', '请检查大模型与向量检索配置。', '如问题持续，请查看后台日志。'],
+      thinkingSteps: [
+        { title: '请求提交', detail: '已向检索服务提交本轮问题。' },
+        { title: '服务异常', detail: '当前接口未返回有效结果，因此未生成文件证据与回答摘要。' },
+        { title: '建议处理', detail: '优先确认模型、向量库和知识库文档状态是否正常。' }
+      ],
+      citations: [],
+      retrievedCount: 0
+    }
+    session.messages.push(errorMessage)
+    session.updatedAt = errorMessage.createdAt
+    activeInsightMessageId.value = errorMessage.id
+    ElMessage.error('检索失败，请稍后重试')
+  } finally {
+    asking.value = false
+  }
+}
+
+function openPreview(citation: RagCitation) {
+  previewState.value = {
+    knowledgeBaseId: citation.knowledgeBaseId,
+    documentId: citation.documentId,
+    fileName: citation.fileName,
+    fileType: citation.fileType,
+    downloadUrl: `/api/v1/knowledge/bases/${citation.knowledgeBaseId}/documents/${citation.documentId}/download`
+  }
+  previewVisible.value = true
+}
+
+function buildRequestQuery(session: RagSession, question: string) {
+  if (!session.contextEnabled) return question
+
+  const pairs = getConversationPairs(session.messages)
+  const contextPairs = pairs.slice(-session.contextTurns)
+  if (!contextPairs.length) return question
+
+  const contextText = contextPairs
+    .map((pair, index) => {
+      return `历史第 ${index + 1} 轮问题：${pair.question}\n历史第 ${index + 1} 轮回答：${pair.answer}`
+    })
+    .join('\n')
+
+  return `请基于以下历史上下文理解当前问题，但回答时优先使用本轮命中的知识库内容。\n${contextText}\n当前问题：${question}`
+}
+
+function getConversationPairs(messages: RagMessage[]) {
+  const pairs: Array<{ question: string; answer: string }> = []
+  for (let index = 0; index < messages.length; index += 1) {
+    const current = messages[index]
+    const next = messages[index + 1]
+    if (current?.role === 'user' && next?.role === 'assistant' && !next.failed) {
+      pairs.push({
+        question: current.content,
+        answer: next.content
+      })
+    }
+  }
+  return pairs
+}
+
+function buildAnswerContent(response?: SearchResponse | null) {
+  const answer = response?.answer?.trim()
+  if (answer) return answer
+
+  const firstResult = response?.results?.[0]
+  if (!firstResult) {
+    return '当前没有检索到相关文档片段，建议换一个描述方式或补充更明确的关键词。'
+  }
+
+  const summary = firstResult.content.replace(/\s+/g, ' ').trim()
+  return `已命中 ${response?.total || response?.results?.length || 1} 条相关片段，优先参考「${firstResult.fileName}」中的内容：${summary.slice(0, 120)}${summary.length > 120 ? '...' : ''}`
+}
+
+function buildProcessSummary(response: SearchResponse | null | undefined, knowledgeBaseName: string) {
+  if (response?.processSummary?.trim()) {
+    return response.processSummary.trim()
+  }
+
+  const uniqueDocs = new Set((response?.results || []).map(item => item.documentId)).size
+  if (!response?.results?.length) {
+    return `已在知识库「${knowledgeBaseName}」中完成检索，但当前没有找到可支撑回答的文档片段。`
+  }
+  return `已在知识库「${knowledgeBaseName}」中召回 ${response.total || response.results.length} 条片段，覆盖 ${uniqueDocs} 份文件，并基于命中文档生成本轮总结。`
+}
+
+function extractSummaryPoints(response: SearchResponse | null | undefined) {
+  const rawAnswer = response?.answer?.trim()
+  if (rawAnswer) {
+    const lines = rawAnswer
+      .split(/\n+/)
+      .map(line => line.replace(/^[-*•\d.\s]+/, '').trim())
+      .filter(Boolean)
+
+    if (lines.length >= 2) {
+      return lines.slice(0, 4)
+    }
+
+    const sentences = rawAnswer
+      .split(/[。；!?！？]/)
+      .map(item => item.trim())
+      .filter(Boolean)
+
+    if (sentences.length) {
+      return sentences.slice(0, 4)
+    }
+  }
+
+  return (response?.results || [])
+    .slice(0, 4)
+    .map(item => {
+      const section = item.sectionTitle ? ` / ${item.sectionTitle}` : ''
+      return `${item.fileName}${section} 命中，相关度 ${(item.score * 100).toFixed(0)}%`
+    })
+}
+
+function buildThinkingSteps(params: {
+  knowledgeBaseName: string
+  question: string
+  session: RagSession
+  mode: SearchMode
+  response: SearchResponse | null | undefined
+}) {
+  const { knowledgeBaseName, question, session, mode, response } = params
+  const resultCount = response?.total || response?.results?.length || 0
+  const fileCount = new Set((response?.results || []).map(item => item.documentId)).size
+
+  return [
+    {
+      title: '问题聚焦',
+      detail: `识别当前问题“${shortenText(question, 28)}”，并将检索范围限定在知识库「${knowledgeBaseName}」。`
+    },
+    {
+      title: '上下文处理',
+      detail: session.contextEnabled
+        ? `携带最近 ${session.contextTurns} 轮问答作为语义上下文，帮助模型理解延续性问题。`
+        : '当前按单轮问题检索，不携带历史上下文。'
+    },
+    {
+      title: '证据召回',
+      detail: `采用${modeLabel(mode)}召回 ${resultCount} 条文档片段，覆盖 ${fileCount} 份候选文件。`
+    },
+    {
+      title: '证据整合',
+      detail: response?.results?.length
+        ? `结合命中文档片段的相关度、章节信息和内容摘要，对证据进行排序并去重。`
+        : '当前没有召回有效文档片段，因此未形成可验证的证据集合。'
+    },
+    {
+      title: '输出总结',
+      detail: response?.answer?.trim()
+        ? '基于命中文档生成本轮总结，并将关键点与可预览文件一起输出。'
+        : '当前使用检索结果的高相关片段生成兜底说明，提醒继续补充问题或完善知识库。'
+    }
+  ]
+}
+
+function buildCitations(results: SearchResultItem[]) {
+  const grouped = new Map<number, RagCitation & { pageSet: Set<number> }>()
+
+  results.forEach((item) => {
+    const existing = grouped.get(item.documentId)
+    const knowledgeBaseId = Number(item.knowledgeBaseId || selectedKbId.value || 0)
+    const pageNum = item.pageNum || 0
+
+    if (!existing) {
+      grouped.set(item.documentId, {
+        knowledgeBaseId,
+        documentId: item.documentId,
+        fileName: item.fileName,
+        fileType: detectFileType(item.fileName),
+        excerpt: shortenText(item.content.replace(/\s+/g, ' ').trim(), 140),
+        score: item.score,
+        hitCount: 1,
+        pageText: pageNum > 0 ? `第 ${pageNum} 页` : '页码未标注',
+        pageSet: pageNum > 0 ? new Set([pageNum]) : new Set<number>()
+      })
+      return
+    }
+
+    existing.hitCount += 1
+    existing.score = Math.max(existing.score, item.score)
+    if (pageNum > 0) {
+      existing.pageSet.add(pageNum)
+      existing.pageText = formatPageText(existing.pageSet)
+    }
+  })
+
+  return Array.from(grouped.values())
+    .map(({ pageSet: _pageSet, ...citation }) => citation)
+    .sort((a, b) => b.score - a.score)
+}
+
+function formatPageText(pageSet: Set<number>) {
+  const values = Array.from(pageSet).sort((a, b) => a - b)
+  if (!values.length) return '页码未标注'
+  if (values.length === 1) return `第 ${values[0]} 页`
+  return `第 ${values[0]} / ${values[values.length - 1]} 页`
+}
+
+function buildSessionTitle(question: string) {
+  return shortenText(question.replace(/\s+/g, ' ').trim(), 18)
+}
+
+function modeLabel(mode: SearchMode) {
+  const labels: Record<SearchMode, string> = {
+    hybrid: '混合检索',
+    semantic: '语义检索',
+    keyword: '关键词检索'
+  }
+  return labels[mode]
+}
+
+function detectFileType(fileName: string) {
+  const segments = fileName.split('.')
+  return segments.length > 1 ? segments[segments.length - 1].toLowerCase() : ''
+}
+
+function shortenText(text: string, maxLength: number) {
+  if (text.length <= maxLength) return text
+  return `${text.slice(0, Math.max(0, maxLength - 1))}…`
+}
+
+function createId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function formatDateTime(timestamp: number) {
+  const date = new Date(timestamp)
+  const month = `${date.getMonth() + 1}`.padStart(2, '0')
+  const day = `${date.getDate()}`.padStart(2, '0')
+  const hours = `${date.getHours()}`.padStart(2, '0')
+  const minutes = `${date.getMinutes()}`.padStart(2, '0')
+  return `${month}-${day} ${hours}:${minutes}`
+}
 </script>
 
-<style scoped>
-.rag-page {
+<style scoped lang="scss">
+.rag-workspace {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr) 360px;
+  gap: 18px;
+  min-height: calc(100vh - 220px);
+}
+
+.rag-shell {
+  border-radius: 24px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.32), transparent 42%),
+    linear-gradient(180deg, #17202e 0%, #101826 100%);
+  color: #f8fafc;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.16);
+}
+
+.rag-sidebar,
+.rag-insights {
   padding: 20px;
+}
+
+.rag-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.sidebar-section {
+  border-radius: 20px;
+  background: rgba(15, 23, 42, 0.34);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  padding: 16px;
+}
+
+.sidebar-section--fill {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.section-heading,
+.insight-card__header,
+.chat-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.section-label,
+.insight-card__label,
+.chat-title__label {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(226, 232, 240, 0.65);
+}
+
+.section-tip,
+.chat-empty__desc,
+.insight-empty__desc {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: rgba(226, 232, 240, 0.7);
+}
+
+.section-badge {
+  min-width: 30px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.16);
+  color: #7dd3fc;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.knowledge-grid {
+  margin-top: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.knowledge-card,
+.session-item,
+.citation-item {
+  width: 100%;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.knowledge-card {
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(30, 41, 59, 0.78);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  color: #f8fafc;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.knowledge-card:hover,
+.session-item:hover,
+.citation-item:hover {
+  transform: translateY(-1px);
+}
+
+.knowledge-card--active {
+  border-color: rgba(56, 189, 248, 0.55);
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.22), rgba(30, 41, 59, 0.92));
+}
+
+.knowledge-card__title,
+.knowledge-card__meta,
+.session-item__meta,
+.citation-item__top,
+.citation-item__meta,
+.composer-toolbar,
+.composer-actions,
+.message-bubble__footer,
+.chat-filters {
+  display: flex;
+  align-items: center;
+}
+
+.knowledge-card__title,
+.citation-item__top {
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.knowledge-card__desc {
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: rgba(226, 232, 240, 0.78);
+}
+
+.knowledge-card__meta {
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: rgba(148, 163, 184, 0.92);
+}
+
+.session-list {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.session-item {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.54);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  color: #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.session-item--active {
+  border-color: rgba(96, 165, 250, 0.48);
+  background: rgba(30, 41, 59, 0.96);
+}
+
+.session-item__main {
+  min-width: 0;
+}
+
+.session-item__title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.session-item__meta,
+.message-bubble__footer,
+.citation-item__meta,
+.composer-actions__tip {
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.session-item__context {
+  margin-top: 8px;
+  color: #7dd3fc;
+  font-size: 12px;
+}
+
+.rag-chat {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chat-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.chat-title__main {
+  margin-top: 6px;
+  font-size: 24px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.chat-filters {
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.chat-stream {
+  flex: 1;
+  padding: 24px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.04), rgba(15, 23, 42, 0)),
+    radial-gradient(circle at top, rgba(125, 211, 252, 0.08), transparent 36%);
+}
+
+.chat-empty,
+.insight-empty {
+  border-radius: 22px;
+  padding: 28px;
+  border: 1px dashed rgba(148, 163, 184, 0.24);
+  background: rgba(15, 23, 42, 0.22);
+}
+
+.chat-empty__title,
+.insight-empty__title,
+.insight-card__title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.message-row {
+  display: flex;
+}
+
+.message-row--user {
+  justify-content: flex-end;
+}
+
+.message-row--assistant {
+  justify-content: flex-start;
+}
+
+.message-bubble {
+  max-width: min(78%, 760px);
+  padding: 16px 18px;
+  border-radius: 24px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.12);
+  cursor: default;
+}
+
+.message-row--user .message-bubble {
+  background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
+  border-top-right-radius: 8px;
+}
+
+.message-row--assistant .message-bubble {
+  border-top-left-radius: 8px;
+}
+
+.message-bubble--assistant-active {
+  border-color: rgba(56, 189, 248, 0.55);
+  background: rgba(15, 23, 42, 0.82);
+  cursor: pointer;
+}
+
+.message-bubble--loading {
+  min-width: 280px;
+}
+
+.message-bubble--error {
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(127, 29, 29, 0.26);
+}
+
+.message-bubble__role {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(226, 232, 240, 0.75);
+}
+
+.message-bubble__content {
+  margin-top: 10px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  color: #f8fafc;
+}
+
+.message-bubble__footer {
+  margin-top: 14px;
+}
+
+.message-bubble__hint {
+  margin-top: 10px;
+  font-size: 13px;
+  color: rgba(226, 232, 240, 0.78);
+}
+
+.thinking-loader {
+  display: inline-flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.thinking-loader__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #7dd3fc;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.thinking-loader__dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.thinking-loader__dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+.composer-panel {
+  padding: 18px 24px 22px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(15, 23, 42, 0.48);
+}
+
+.composer-toolbar {
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.composer-context {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.composer-toolbar__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.composer-actions {
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.rag-insights {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow: auto;
+}
+
+.insight-card {
+  border-radius: 20px;
+  padding: 18px;
+  background: rgba(15, 23, 42, 0.34);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.insight-card--summary {
+  background: linear-gradient(160deg, rgba(14, 165, 233, 0.18), rgba(15, 23, 42, 0.54));
+}
+
+.summary-content {
+  margin-top: 14px;
+  line-height: 1.8;
+  color: rgba(248, 250, 252, 0.92);
+}
+
+.thinking-list,
+.keypoint-list,
+.citation-list {
+  margin-top: 14px;
+}
+
+.thinking-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.thinking-item {
+  display: flex;
+  gap: 12px;
+}
+
+.thinking-item__index {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(56, 189, 248, 0.22);
+  color: #7dd3fc;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.thinking-item__title,
+.citation-item__name {
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.thinking-item__detail {
+  margin-top: 4px;
+  line-height: 1.7;
+  color: rgba(226, 232, 240, 0.82);
+}
+
+.keypoint-list {
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: rgba(248, 250, 252, 0.92);
+  line-height: 1.7;
+}
+
+.citation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.citation-item {
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  color: #e2e8f0;
+}
+
+.citation-item__name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.citation-item__meta {
+  margin-top: 8px;
+}
+
+.citation-item__excerpt {
+  margin-top: 10px;
+  line-height: 1.7;
+  color: rgba(226, 232, 240, 0.85);
+}
+
+.citation-item__excerpt :deep(mark) {
+  background: rgba(250, 204, 21, 0.88);
+  color: #111827;
+}
+
+.rag-workspace :deep(.el-empty__description p) {
+  color: rgba(226, 232, 240, 0.72);
+}
+
+.rag-workspace :deep(.el-select__wrapper),
+.rag-workspace :deep(.el-textarea__inner) {
+  background: rgba(15, 23, 42, 0.86);
+  box-shadow: none;
+  border-color: rgba(148, 163, 184, 0.2);
+  color: #f8fafc;
+}
+
+.rag-workspace :deep(.el-textarea__inner) {
+  min-height: 120px;
+}
+
+.rag-workspace :deep(.el-textarea__inner::placeholder) {
+  color: rgba(148, 163, 184, 0.78);
+}
+
+.rag-workspace :deep(.el-button.is-text) {
+  color: #93c5fd;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+@media (max-width: 1440px) {
+  .rag-workspace {
+    grid-template-columns: 280px minmax(0, 1fr) 320px;
+  }
+}
+
+@media (max-width: 1200px) {
+  .rag-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .rag-sidebar,
+  .rag-chat,
+  .rag-insights {
+    min-height: auto;
+  }
+
+  .chat-stream {
+    min-height: 440px;
+  }
+
+  .message-bubble {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .chat-header,
+  .composer-panel,
+  .rag-sidebar,
+  .rag-insights {
+    padding: 16px;
+  }
+
+  .chat-stream {
+    padding: 16px;
+  }
+
+  .chat-filters,
+  .composer-toolbar,
+  .composer-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .message-bubble {
+    max-width: 92%;
+  }
 }
 </style>

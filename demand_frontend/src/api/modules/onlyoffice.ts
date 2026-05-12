@@ -6,7 +6,13 @@ export interface OnlyOfficeEditorConfig {
     url: string
     title: string
     fileType: string
+    permissions?: {
+      edit: boolean
+      download: boolean
+      print: boolean
+    }
   }
+  documentType?: 'word' | 'cell' | 'slide'
   editorConfig: {
     callbackUrl: string
     user: {

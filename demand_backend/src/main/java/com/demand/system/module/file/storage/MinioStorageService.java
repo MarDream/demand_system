@@ -50,6 +50,26 @@ public class MinioStorageService {
                 .build());
     }
 
+    public InputStream download(String fileName, long offset, long length) throws Exception {
+        GetObjectArgs.Builder builder = GetObjectArgs.builder()
+                .bucket(bucketName)
+                .object(fileName)
+                .offset(offset);
+
+        if (length > 0) {
+            builder.length(length);
+        }
+
+        return minioClient.getObject(builder.build());
+    }
+
+    public StatObjectResponse stat(String fileName) throws Exception {
+        return minioClient.statObject(StatObjectArgs.builder()
+                .bucket(bucketName)
+                .object(fileName)
+                .build());
+    }
+
     public void delete(String fileName) throws Exception {
         minioClient.removeObject(RemoveObjectArgs.builder()
                 .bucket(bucketName)

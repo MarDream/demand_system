@@ -3,6 +3,8 @@ package com.demand.system.module.onlyoffice.controller;
 import com.demand.system.common.result.Result;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.onlyoffice.service.OnlyOfficeService;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -23,6 +25,16 @@ public class OnlyOfficeController {
         Long userId = SecurityUtils.getCurrentUserId();
         Map<String, Object> config = onlyOfficeService.buildEditorConfig(knowledgeBaseId, documentId, userId, mode);
         return Result.success(config);
+    }
+
+    @GetMapping("/files/{documentId}")
+    public void downloadDocument(
+            @RequestParam Long knowledgeBaseId,
+            @PathVariable Long documentId,
+            @RequestParam String accessToken,
+            HttpServletRequest request,
+            HttpServletResponse response) {
+        onlyOfficeService.downloadDocument(knowledgeBaseId, documentId, accessToken, request, response);
     }
 
     @PostMapping("/callback")

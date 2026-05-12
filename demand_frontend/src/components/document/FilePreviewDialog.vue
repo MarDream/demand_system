@@ -1,7 +1,23 @@
 <template>
   <AppDialog v-model="visible" :title="fileName || '文件预览'" width="95%" top="3vh" @close="handleClose">
-    <div class="preview-container">
-      <div v-if="onlyOfficeMode" class="preview-onlyoffice-wrap">
+    <div class="preview-toolbar">
+      <div class="zoom-controls">
+        <el-button size="small" :disabled="zoomLevel <= 25" @click="zoomOut">
+          <el-icon><ZoomOut /></el-icon>
+        </el-button>
+        <span class="zoom-label">{{ zoomLevel }}%</span>
+        <el-button size="small" :disabled="zoomLevel >= 300" @click="zoomIn">
+          <el-icon><ZoomIn /></el-icon>
+        </el-button>
+        <el-button size="small" @click="zoomReset">重置</el-button>
+      </div>
+      <el-button size="small" @click="toggleFullscreen">
+        <el-icon><FullScreen /></el-icon>
+        <span>{{ isFullscreen ? '退出全屏' : '全屏' }}</span>
+      </el-button>
+    </div>
+    <div ref="previewContainerRef" class="preview-container" :class="{ 'preview-container--fullscreen': isFullscreen }">
+      <div v-if="onlyOfficeMode" class="preview-onlyoffice-wrap" :style="{ transform: onlyOfficeZoomTransform, transformOrigin: 'top left' }">
         <div v-if="!onlyOfficeReady" class="preview-loading preview-overlay">
           <el-icon class="preview-spin" :size="32"><Loading /></el-icon>
           <span>{{ onlyOfficeAvailable ? '正在加载 OnlyOffice 编辑器...' : 'OnlyOffice 服务不可用，请下载后查看' }}</span>
@@ -11,18 +27,19 @@
           class="editor-container"
           :class="{ 'editor-container--hidden': !onlyOfficeReady }"
         ></div>
+        <div class="onlyoffice-brand-mask"></div>
       </div>
       <div v-else-if="loading" class="preview-loading">
         <el-icon class="preview-spin" :size="32"><Loading /></el-icon>
         <span>加载中...</span>
       </div>
-      <div v-else-if="previewType === 'pdf'" class="preview-iframe-wrap">
+      <div v-else-if="previewType === 'pdf'" class="preview-iframe-wrap" :style="{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top center' }">
         <iframe :src="fileUrl" class="preview-iframe" frameborder="0" />
       </div>
       <div v-else-if="previewType === 'image'" class="preview-image-wrap">
-        <img :src="fileUrl" :alt="fileName" class="preview-image" />
+        <img :src="fileUrl" :alt="fileName" class="preview-image" :style="{ transform: `scale(${zoomLevel / 100})` }" />
       </div>
-      <div v-else-if="previewType === 'text'" class="preview-text-wrap">
+      <div v-else-if="previewType === 'text'" class="preview-text-wrap" :style="{ fontSize: `${zoomLevel / 100 * 13}px` }">
         <pre class="preview-text">{{ textContent }}</pre>
       </div>
       <div v-else class="preview-unsupported">
@@ -48,7 +65,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount, nextTick } from 'vue'
-import { Download, Loading, Document, EditPen } from '@element-plus/icons-vue'
+import { Download, Loading, Document, EditPen, ZoomIn, ZoomOut, FullScreen } from '@element-plus/icons-vue'
 import AppDialog from '@/components/common/AppDialog.vue'
 import { getDocumentPreviewUrl } from '@/api/modules/knowledge'
 import { getEditorConfig } from '@/api/modules/onlyoffice'
@@ -85,6 +102,10 @@ const onlyOfficeReady = ref(false)
 const onlyOfficeAvailable = ref(true)
 let editorInstance: any = null
 
+const zoomLevel = ref(100)
+const isFullscreen = ref(false)
+const previewContainerRef = ref<HTMLElement>()
+
 declare global {
   interface Window {
     DocsAPI?: any
@@ -110,6 +131,9 @@ const unsupportedMessage = computed(() => {
 watch(() => props.modelValue, async (open) => {
   if (!open) {
     destroyOnlyOffice()
+    if (isFullscreen.value) {
+      try { document.exitFullscreen() } catch { /* ignore */ }
+    }
     return
   }
   textContent.value = ''
@@ -118,6 +142,7 @@ watch(() => props.modelValue, async (open) => {
   onlyOfficeAvailable.value = true
   onlyOfficeMode.value = false
   onlyOfficeReady.value = false
+  zoomLevel.value = 100
 
   if (previewType.value === 'office') {
     await openWithOnlyOffice('view')
@@ -200,6 +225,44 @@ function handleOnlyOfficeError() {
   loading.value = false
 }
 
+const onlyOfficeZoomTransform = computed(() => {
+  if (!onlyOfficeMode.value || zoomLevel.value === 100) return undefined
+  const container = document.querySelector('.preview-onlyoffice-wrap') as HTMLElement
+  if (!container) return undefined
+  const width = container.clientWidth
+  return `scale(${zoomLevel.value / 100})`
+})
+
+function zoomIn() {
+  zoomLevel.value = Math.min(300, zoomLevel.value + 25)
+}
+
+function zoomOut() {
+  zoomLevel.value = Math.max(25, zoomLevel.value - 25)
+}
+
+function zoomReset() {
+  zoomLevel.value = 100
+}
+
+function toggleFullscreen() {
+  const el = previewContainerRef.value
+  if (!el) return
+  if (!isFullscreen.value) {
+    if (el.requestFullscreen) el.requestFullscreen()
+    else if ((el as any).webkitRequestFullscreen) (el as any).webkitRequestFullscreen()
+    else if ((el as any).msRequestFullscreen) (el as any).msRequestFullscreen()
+  } else {
+    if (document.exitFullscreen) document.exitFullscreen()
+    else if ((document as any).webkitExitFullscreen) (document as any).webkitExitFullscreen()
+    else if ((document as any).msExitFullscreen) (document as any).msExitFullscreen()
+  }
+}
+
+function onFullscreenChange() {
+  isFullscreen.value = !!document.fullscreenElement
+}
+
 async function switchToEditMode() {
   await openWithOnlyOffice('edit')
 }
@@ -232,14 +295,38 @@ function handleClose() {
 
 onBeforeUnmount(() => {
   destroyOnlyOffice()
+  document.removeEventListener('fullscreenchange', onFullscreenChange)
 })
+
+document.addEventListener('fullscreenchange', onFullscreenChange)
 </script>
 
 <style scoped>
+.preview-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.zoom-label {
+  min-width: 48px;
+  text-align: center;
+  font-size: 13px;
+  color: #606266;
+}
 .preview-container {
   min-height: 60vh;
   max-height: 75vh;
   overflow: hidden;
+}
+.preview-container--fullscreen {
+  max-height: none;
+  height: 100vh;
 }
 .preview-loading {
   display: flex;
@@ -307,10 +394,36 @@ onBeforeUnmount(() => {
   height: 75vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+.onlyoffice-brand-mask {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  background: #fff;
+  z-index: 10;
+  pointer-events: none;
 }
 .editor-container {
   flex: 1;
   min-height: 600px;
+  overflow: hidden;
+}
+.editor-container :deep(div[id^="onlyoffice-editor-placeholder"]) {
+  overflow: hidden;
+}
+.editor-container :deep(iframe) {
+  overflow: hidden;
+}
+.editor-container :deep(.EmbeddedViewer) {
+  overflow: hidden;
+}
+.editor-container :deep([class*="left-panel"]),
+.editor-container :deep([class*="formpreview"]),
+.editor-container :deep(a[href*="onlyoffice"]) {
+  display: none !important;
 }
 .editor-container--hidden {
   visibility: hidden;
