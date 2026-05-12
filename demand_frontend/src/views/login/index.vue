@@ -2,8 +2,8 @@
   <div class="login-container">
     <div class="login-card">
       <div class="login-header">
-        <img src="@/assets/logo.png" alt="需求管理系统" class="login-logo" />
-        <h1 class="login-title">需求管理系统</h1>
+        <img src="@/assets/logo.png" alt="综合运营管理平台" class="login-logo" />
+        <h1 class="login-title">综合运营管理平台</h1>
       </div>
       <el-form
         ref="formRef"

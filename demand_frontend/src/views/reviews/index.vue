@@ -49,10 +49,14 @@
             {{ row.reviewedAt || '-' }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200">
+        <el-table-column label="操作" width="100">
           <template #default="{ row }">
-            <el-button link type="primary" @click="viewDetail(row)">查看详情</el-button>
-            <el-button link type="primary" @click="editReview(row)">编辑</el-button>
+            <el-tooltip content="查看详情">
+              <el-button link type="primary" @click="viewDetail(row)"><el-icon><View /></el-icon></el-button>
+            </el-tooltip>
+            <el-tooltip content="编辑">
+              <el-button link type="primary" @click="editReview(row)"><el-icon><EditPen /></el-icon></el-button>
+            </el-tooltip>
           </template>
         </el-table-column>
       </el-table>
@@ -120,6 +124,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { View, EditPen } from '@element-plus/icons-vue'
 import { updateReview } from '@/api/modules/review'
 
 interface ReviewRecord {

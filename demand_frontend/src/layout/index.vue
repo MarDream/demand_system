@@ -2,7 +2,7 @@
   <div class="layout-container">
     <el-container>
       <el-header>
-        <span>需求管理系统</span>
+        <span>综合运营管理平台</span>
       </el-header>
       <el-main>
         <router-view />

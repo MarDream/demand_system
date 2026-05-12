@@ -52,20 +52,23 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="190" fixed="right">
+            <el-table-column label="操作" width="120" fixed="right">
               <template #default="{ row }">
-                <AppButton type="primary" link size="small" permission="button:menu:update" @click="openEdit(row)">编辑</AppButton>
-                <AppButton
-                  v-if="row.menuType !== 'BUTTON'"
-                  type="warning"
-                  link
-                  size="small"
-                  permission="button:menu:grant"
-                  @click="openGrantDrawer"
-                >
-                  授权
-                </AppButton>
-                <AppButton type="danger" link size="small" permission="button:menu:delete" @click="handleDelete(row)">删除</AppButton>
+                <el-tooltip content="编辑">
+                  <AppButton type="primary" link size="small" permission="button:menu:update" @click="openEdit(row)"><el-icon><EditPen /></el-icon></AppButton>
+                </el-tooltip>
+                <el-tooltip v-if="row.menuType !== 'BUTTON'" content="授权">
+                  <AppButton
+                    type="warning"
+                    link
+                    size="small"
+                    permission="button:menu:grant"
+                    @click="openGrantDrawer"
+                  ><el-icon><Key /></el-icon></AppButton>
+                </el-tooltip>
+                <el-tooltip content="删除">
+                  <AppButton type="danger" link size="small" permission="button:menu:delete" @click="handleDelete(row)"><el-icon><Delete /></el-icon></AppButton>
+                </el-tooltip>
               </template>
             </el-table-column>
           </el-table>
@@ -125,9 +128,11 @@
       <el-table :data="roleList" v-loading="roleLoading" border>
         <el-table-column prop="name" label="角色名称" min-width="120" />
         <el-table-column prop="code" label="角色编码" min-width="120" />
-        <el-table-column label="操作" width="120">
+        <el-table-column label="操作" width="80">
           <template #default="{ row }">
-            <el-button link size="small" type="primary" @click="openRolePermission(row)">设置权限</el-button>
+            <el-tooltip content="设置权限">
+              <el-button link size="small" type="primary" @click="openRolePermission(row)"><el-icon><Setting /></el-icon></el-button>
+            </el-tooltip>
           </template>
         </el-table-column>
       </el-table>

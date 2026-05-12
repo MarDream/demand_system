@@ -40,10 +40,14 @@
                 <span v-else>-</span>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="180" fixed="right">
+            <el-table-column label="操作" width="100" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" @click="openTypeDialog(row)">编辑</el-button>
-                <el-button link type="danger" @click="deleteType(row.id!)">删除</el-button>
+                <el-tooltip content="编辑">
+                  <el-button link type="primary" @click="openTypeDialog(row)"><el-icon><EditPen /></el-icon></el-button>
+                </el-tooltip>
+                <el-tooltip content="删除">
+                  <el-button link type="danger" @click="deleteType(row.id!)"><el-icon><Delete /></el-icon></el-button>
+                </el-tooltip>
               </template>
             </el-table-column>
           </el-table>
@@ -85,10 +89,14 @@
                 <span v-else>-</span>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="180" fixed="right">
+            <el-table-column label="操作" width="100" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" @click="openPriorityDialog(row)">编辑</el-button>
-                <el-button link type="danger" @click="deletePriority(row.id!)">删除</el-button>
+                <el-tooltip content="编辑">
+                  <el-button link type="primary" @click="openPriorityDialog(row)"><el-icon><EditPen /></el-icon></el-button>
+                </el-tooltip>
+                <el-tooltip content="删除">
+                  <el-button link type="danger" @click="deletePriority(row.id!)"><el-icon><Delete /></el-icon></el-button>
+                </el-tooltip>
               </template>
             </el-table-column>
           </el-table>
@@ -130,10 +138,14 @@
               </template>
             </el-table-column>
             <el-table-column prop="sortOrder" label="排序" width="80" align="center" />
-            <el-table-column label="操作" width="180" fixed="right">
+            <el-table-column label="操作" width="100" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" @click="openNodeStatusDialog(row)">编辑</el-button>
-                <el-button link type="danger" @click="deleteNodeStatus(row.id)">删除</el-button>
+                <el-tooltip content="编辑">
+                  <el-button link type="primary" @click="openNodeStatusDialog(row)"><el-icon><EditPen /></el-icon></el-button>
+                </el-tooltip>
+                <el-tooltip content="删除">
+                  <el-button link type="danger" @click="deleteNodeStatus(row.id)"><el-icon><Delete /></el-icon></el-button>
+                </el-tooltip>
               </template>
             </el-table-column>
           </el-table>
@@ -228,7 +240,7 @@
 import { ref, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { Plus, Rank, Grid } from '@element-plus/icons-vue'
+import { Plus, Rank, Grid, EditPen, Delete } from '@element-plus/icons-vue'
 import { requirementConfigApi, type RequirementType, type Priority, type SortItem } from '@/api/modules/requirementConfig'
 import { nodeStatusApi, type NodeStatus, type SortItem as NodeStatusSortItem } from '@/api/modules/workflow-engine'
 import { normalizeText } from '@/utils/format'

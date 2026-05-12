@@ -300,7 +300,7 @@ function loadProjectRates() {
   const completed = statsData.value?.completedReqs ?? 0
   const rate = total > 0 ? Math.round((completed / total) * 100) : 0
   if (total > 0) {
-    projectRates.value = [{ name: '需求管理系统 v1.0', total, completed, rate }]
+    projectRates.value = [{ name: '综合运营管理平台 v1.0', total, completed, rate }]
   } else {
     projectRates.value = []
   }

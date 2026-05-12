@@ -103,7 +103,6 @@ public class LlmGateway {
 
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
             String base = provider.getBaseUrl().replaceAll("/+$", "");
-            if (!base.endsWith("/v1")) base = base + "/v1";
             String url = base + path;
             ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
             return objectMapper.readTree(response.getBody());
@@ -162,7 +161,6 @@ public class LlmGateway {
 
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
             String base = provider.getBaseUrl().replaceAll("/+$", "");
-            if (!base.endsWith("/v1")) base = base + "/v1";
             String url = base + "/messages";
             ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
 
@@ -242,7 +240,6 @@ public class LlmGateway {
 
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
             String base = provider.getBaseUrl().replaceAll("/+$", "");
-            if (!base.endsWith("/v1")) base = base + "/v1";
             String url = base + "/messages";
             ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
             return objectMapper.readTree(response.getBody());

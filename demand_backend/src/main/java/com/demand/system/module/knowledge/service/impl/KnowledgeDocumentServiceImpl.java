@@ -368,6 +368,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
 
         doc.setStatus("parsed");
+        doc.setUpdatedAt(LocalDateTime.now());
         documentMapper.updateById(doc);
 
         // 读取文件内容
@@ -377,6 +378,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         } catch (Exception e) {
             doc.setStatus("failed");
             doc.setErrorMessage("文件读取失败: " + e.getMessage());
+            doc.setUpdatedAt(LocalDateTime.now());
             documentMapper.updateById(doc);
             return;
         }
@@ -384,6 +386,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         // 分块
         List<String> chunks = splitContent(content);
         doc.setStatus("indexing");
+        doc.setUpdatedAt(LocalDateTime.now());
         documentMapper.updateById(doc);
 
         // 生成向量并存储到MySQL和Milvus
@@ -419,12 +422,15 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         } catch (Exception e) {
             doc.setStatus("failed");
             doc.setErrorMessage("向量化失败: " + e.getMessage());
+            doc.setUpdatedAt(LocalDateTime.now());
             documentMapper.updateById(doc);
             return;
         }
 
         doc.setChunkCount(chunks.size());
         doc.setStatus("indexed");
+        doc.setErrorMessage(null);
+        doc.setUpdatedAt(LocalDateTime.now());
         documentMapper.updateById(doc);
 
         // 更新知识库计数
@@ -632,6 +638,81 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         int dotIndex = fileName.lastIndexOf('.');
         if (dotIndex < 0) return "unknown";
         return fileName.substring(dotIndex + 1).toLowerCase();
+    }
+
+    @Override
+    @Transactional
+    public int retryDocuments(Long knowledgeBaseId, List<Long> documentIds) {
+        int retried = 0;
+        for (Long docId : documentIds) {
+            KnowledgeDocument doc = documentMapper.selectById(docId);
+            if (doc == null || !doc.getKnowledgeBaseId().equals(knowledgeBaseId)) {
+                continue;
+            }
+            if (!"failed".equals(doc.getStatus())) {
+                continue;
+            }
+            // 清理旧的分块数据
+            chunkMapper.delete(new LambdaQueryWrapper<KnowledgeChunk>()
+                    .eq(KnowledgeChunk::getDocumentId, docId));
+            try {
+                milvusVectorStore.deleteByDocumentId(String.valueOf(docId));
+            } catch (Exception e) {
+                log.warn("Milvus向量清理失败: documentId={}", docId, e);
+            }
+            doc.setStatus("pending");
+            doc.setErrorMessage(null);
+            doc.setChunkCount(0);
+            documentMapper.updateById(doc);
+            enqueueDocumentProcessing(docId);
+            retried++;
+        }
+        return retried;
+    }
+
+    @Override
+    @Transactional
+    public int batchDelete(Long knowledgeBaseId, List<Long> documentIds) {
+        int deleted = 0;
+        for (Long docId : documentIds) {
+            try {
+                delete(knowledgeBaseId, docId);
+                deleted++;
+            } catch (Exception e) {
+                log.warn("批量删除文档失败: documentId={}", docId, e);
+            }
+        }
+        return deleted;
+    }
+
+    @Override
+    public String getPreviewUrl(Long knowledgeBaseId, Long documentId) {
+        KnowledgeDocument doc = documentMapper.selectById(documentId);
+        if (doc == null || !doc.getKnowledgeBaseId().equals(knowledgeBaseId)) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "文档不存在");
+        }
+        try {
+            return minioStorageService.getPresignedUrl(doc.getMinioKey(), 1);
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "获取预览地址失败: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void downloadDocument(Long knowledgeBaseId, Long documentId, jakarta.servlet.http.HttpServletResponse response) {
+        KnowledgeDocument doc = documentMapper.selectById(documentId);
+        if (doc == null || !doc.getKnowledgeBaseId().equals(knowledgeBaseId)) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "文档不存在");
+        }
+        try (InputStream is = minioStorageService.download(doc.getMinioKey())) {
+            String encodedName = java.net.URLEncoder.encode(doc.getFileName(), StandardCharsets.UTF_8).replace("+", "%20");
+            response.setContentType("application/octet-stream");
+            response.setHeader("Content-Disposition", "attachment; filename*=UTF-8''" + encodedName);
+            is.transferTo(response.getOutputStream());
+            response.getOutputStream().flush();
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "文件下载失败: " + e.getMessage());
+        }
     }
 
     private KnowledgeDocumentVO toVO(KnowledgeDocument doc) {

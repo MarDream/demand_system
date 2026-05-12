@@ -106,6 +106,18 @@ export function deleteDocument(knowledgeBaseId: number, documentId: number) {
   return request.delete(`/v1/knowledge/bases/${knowledgeBaseId}/documents/${documentId}`)
 }
 
+export function retryDocuments(knowledgeBaseId: number, documentIds: number[]) {
+  return request.post<{ retried: number }>(`/v1/knowledge/bases/${knowledgeBaseId}/documents/retry`, { documentIds })
+}
+
+export function batchDeleteDocuments(knowledgeBaseId: number, documentIds: number[]) {
+  return request.post<{ deleted: number }>(`/v1/knowledge/bases/${knowledgeBaseId}/documents/batch-delete`, { documentIds })
+}
+
+export function getDocumentPreviewUrl(knowledgeBaseId: number, documentId: number) {
+  return request.get<string>(`/v1/knowledge/bases/${knowledgeBaseId}/documents/${documentId}/preview`)
+}
+
 export function generateDocumentShareLink(
   knowledgeBaseId: number,
   documentId: number,

@@ -246,7 +246,7 @@ const loadDurationData = async () => {
 
 const loadProjectRates = () => {
   projectRates.value = [
-    { name: '需求管理系统', rate: 68, completed: 34, total: 50 },
+    { name: '综合运营管理平台', rate: 68, completed: 34, total: 50 },
     { name: '用户中心', rate: 85, completed: 17, total: 20 },
     { name: '数据平台', rate: 42, completed: 21, total: 50 },
     { name: '消息服务', rate: 91, completed: 20, total: 22 },

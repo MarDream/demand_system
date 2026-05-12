@@ -40,15 +40,21 @@
             />
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="260">
+        <el-table-column label="操作" width="140">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
+            <el-tooltip content="编辑">
+              <el-button link type="primary" @click="openDialog(row)"><el-icon><EditPen /></el-icon></el-button>
+            </el-tooltip>
             <el-popconfirm title="确定删除该迭代吗？" @confirm="handleDelete(row)">
               <template #reference>
-                <el-button link type="danger">删除</el-button>
+                <el-tooltip content="删除">
+                  <el-button link type="danger"><el-icon><Delete /></el-icon></el-button>
+                </el-tooltip>
               </template>
             </el-popconfirm>
-            <el-button link type="info" @click="viewBurndown(row)">查看燃尽图</el-button>
+            <el-tooltip content="查看燃尽图">
+              <el-button link type="info" @click="viewBurndown(row)"><el-icon><TrendCharts /></el-icon></el-button>
+            </el-tooltip>
           </template>
         </el-table-column>
         </el-table>
@@ -135,6 +141,7 @@
 import { ref, nextTick, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { EditPen, Delete, TrendCharts } from '@element-plus/icons-vue'
 import type { FormInstance } from 'element-plus'
 import * as echarts from 'echarts'
 import { getIterationList, createIteration, updateIteration, deleteIteration } from '@/api/modules/iteration'

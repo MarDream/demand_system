@@ -2,8 +2,8 @@
   <div class="layout-container">
     <div class="sidebar" :class="{ 'sidebar--collapsed': !sidebarOpened }">
       <div class="sidebar-logo">
-        <img src="@/assets/logo.png" alt="需求管理系统" class="sidebar-logo__image" />
-        <span class="sidebar-logo__text">需求管理系统</span>
+        <img src="@/assets/logo.png" alt="综合运营管理平台" class="sidebar-logo__image" />
+        <span class="sidebar-logo__text">综合运营管理平台</span>
       </div>
       <el-menu
         :default-active="activeMenu"

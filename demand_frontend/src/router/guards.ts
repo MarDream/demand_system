@@ -10,7 +10,7 @@ NProgress.configure({ showSpinner: false })
 export function setupGuards(router: Router) {
   router.beforeEach(async (to, _from, next) => {
     NProgress.start()
-    document.title = `${to.meta.title || ''} - 需求管理系统`
+    document.title = `${to.meta.title || ''} - 综合运营管理平台`
 
     const token = getToken()
     const userStore = useUserStore()

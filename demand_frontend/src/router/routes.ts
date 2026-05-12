@@ -145,6 +145,12 @@ export const routes: RouteRecordRaw[] = [
         meta: { title: '模型配置', hidden: true, requiredPermissions: ['menu:settings:llm'] },
       },
       {
+        path: 'settings/onlyoffice',
+        name: 'OnlyOfficeSettings',
+        component: () => import('@/views/settings/onlyoffice.vue'),
+        meta: { title: '在线办公', hidden: true, requiredPermissions: ['menu:rag'] },
+      },
+      {
         path: 'notifications',
         name: 'Notifications',
         component: () => import('@/views/notifications/index.vue'),

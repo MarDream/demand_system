@@ -6,10 +6,14 @@ import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.knowledge.dto.KnowledgeDocumentVO;
 import com.demand.system.module.knowledge.service.KnowledgeDocumentService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
+
+import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/knowledge/bases/{knowledgeBaseId}/documents")
@@ -60,5 +64,45 @@ public class KnowledgeDocumentController {
                 .build()
                 .toUriString();
         return Result.success(shareLink);
+    }
+
+    @PostMapping("/retry")
+    public Result<Map<String, Object>> retryDocuments(
+            @PathVariable Long knowledgeBaseId,
+            @RequestBody Map<String, List<Long>> body) {
+        List<Long> documentIds = body.get("documentIds");
+        if (documentIds == null || documentIds.isEmpty()) {
+            return Result.fail(400, "请选择要重传的文档");
+        }
+        int retried = documentService.retryDocuments(knowledgeBaseId, documentIds);
+        return Result.success(Map.of("retried", retried));
+    }
+
+    @PostMapping("/batch-delete")
+    public Result<Map<String, Object>> batchDelete(
+            @PathVariable Long knowledgeBaseId,
+            @RequestBody Map<String, List<Long>> body) {
+        List<Long> documentIds = body.get("documentIds");
+        if (documentIds == null || documentIds.isEmpty()) {
+            return Result.fail(400, "请选择要删除的文档");
+        }
+        int deleted = documentService.batchDelete(knowledgeBaseId, documentIds);
+        return Result.success(Map.of("deleted", deleted));
+    }
+
+    @GetMapping("/{documentId}/preview")
+    public Result<String> preview(
+            @PathVariable Long knowledgeBaseId,
+            @PathVariable Long documentId) {
+        String url = documentService.getPreviewUrl(knowledgeBaseId, documentId);
+        return Result.success(url);
+    }
+
+    @GetMapping("/{documentId}/download")
+    public void download(
+            @PathVariable Long knowledgeBaseId,
+            @PathVariable Long documentId,
+            HttpServletResponse response) {
+        documentService.downloadDocument(knowledgeBaseId, documentId, response);
     }
 }

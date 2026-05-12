@@ -29,4 +29,12 @@ public interface KnowledgeDocumentService {
     String resolveShareAccessUrl(String token, Long currentUserId, String accessIp, String userAgent);
 
     int backfillDocumentMetadata();
+
+    int retryDocuments(Long knowledgeBaseId, List<Long> documentIds);
+
+    int batchDelete(Long knowledgeBaseId, List<Long> documentIds);
+
+    String getPreviewUrl(Long knowledgeBaseId, Long documentId);
+
+    void downloadDocument(Long knowledgeBaseId, Long documentId, jakarta.servlet.http.HttpServletResponse response);
 }

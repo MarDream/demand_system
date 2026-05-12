@@ -47,22 +47,17 @@
             {{ formatDate(row.createdAt) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="viewWorkflow(row)">
-              查看
-            </el-button>
-            <el-button link type="primary" @click="editWorkflow(row)">
-              编辑
-            </el-button>
-            <el-button
-              v-if="row.isActive !== 1"
-              link
-              type="success"
-              @click="activateVersion(row)"
-            >
-              启用
-            </el-button>
+            <el-tooltip content="查看">
+              <el-button link type="primary" @click="viewWorkflow(row)"><el-icon><View /></el-icon></el-button>
+            </el-tooltip>
+            <el-tooltip content="编辑">
+              <el-button link type="primary" @click="editWorkflow(row)"><el-icon><EditPen /></el-icon></el-button>
+            </el-tooltip>
+            <el-tooltip v-if="row.isActive !== 1" content="启用">
+              <el-button link type="success" @click="activateVersion(row)"><el-icon><CircleCheck /></el-icon></el-button>
+            </el-tooltip>
           </template>
         </el-table-column>
       </el-table>
@@ -87,7 +82,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, View, EditPen, CircleCheck } from '@element-plus/icons-vue'
 import { getVersionHistory } from '@/api/modules/workflow-visual'
 import type { WorkflowVersionDTO } from '@/types/workflow-visual'
 import dayjs from 'dayjs'

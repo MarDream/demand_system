@@ -23,6 +23,12 @@ public class MinioStorageService {
     @Value("${minio.endpoint}")
     private String endpoint;
 
+    @Value("${minio.access-key}")
+    private String accessKey;
+
+    @Value("${minio.secret-key}")
+    private String secretKey;
+
     public String getBucketName() {
         return bucketName;
     }
@@ -52,7 +58,17 @@ public class MinioStorageService {
     }
 
     public String getPresignedUrl(String fileName, int expiryHours) throws Exception {
-        return minioClient.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
+        return getPresignedUrl(fileName, expiryHours, endpoint);
+    }
+
+    public String getPresignedUrl(String fileName, int expiryHours, String targetEndpoint) throws Exception {
+        MinioClient client = MinioClient.builder()
+                .endpoint(targetEndpoint)
+                .region("us-east-1")
+                .credentials(accessKey, secretKey)
+                .build();
+
+        return client.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
                 .bucket(bucketName)
                 .object(fileName)
                 .method(Method.GET)
