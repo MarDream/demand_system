@@ -137,6 +137,7 @@ export function searchKnowledge(data: {
   knowledgeBaseId?: number
   mode?: SearchMode
   topK?: number
+  llmModelId?: number
 }) {
   return request.post<SearchResponse>('/v1/knowledge/search', data)
 }

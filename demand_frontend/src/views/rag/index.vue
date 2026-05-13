@@ -8,6 +8,7 @@
         <el-icon><RefreshRight /></el-icon>
         <span>刷新知识库</span>
       </el-button>
+      <el-button plain @click="goToModelCenter">模型配置</el-button>
       <el-button type="primary" plain @click="goToKnowledgeManagement">管理知识库</el-button>
     </template>
 
@@ -140,6 +141,7 @@
                 <div v-if="message.role === 'assistant'" class="message-bubble__footer">
                   <span>{{ message.citations?.length || 0 }} 份证据文件</span>
                   <span>{{ message.retrievedCount || 0 }} 条命中</span>
+                  <span v-if="message.llmModelLabel">模型：{{ message.llmModelLabel }}</span>
                   <span>{{ formatDateTime(message.createdAt) }}</span>
                 </div>
               </div>
@@ -167,48 +169,129 @@
         </div>
 
         <footer class="composer-panel">
-          <div class="composer-toolbar">
-            <div class="composer-context">
-              <span class="composer-toolbar__label">上下文管理</span>
-              <el-switch
-                :model-value="activeSession?.contextEnabled ?? true"
-                @change="handleContextToggle"
+          <div class="composer-shell" :class="{ 'composer-shell--disabled': !selectedKnowledgeBase }">
+            <div class="composer-shell__body">
+              <el-input
+                v-model="draftQuestion"
+                type="textarea"
+                resize="none"
+                :autosize="{ minRows: 4, maxRows: 8 }"
+                class="composer-input"
+                :disabled="!selectedKnowledgeBase || asking"
+                placeholder="请输入你想在当前知识库中检索的问题，按 Enter 发送，Shift + Enter 换行"
+                @keydown.enter.exact.prevent="handleAsk"
               />
-              <el-select
-                :model-value="activeSession?.contextTurns ?? 2"
-                size="small"
-                style="width: 110px"
-                :disabled="!(activeSession?.contextEnabled ?? true)"
-                @change="handleContextTurnsChange"
-              >
-                <el-option :value="1" label="最近 1 轮" />
-                <el-option :value="2" label="最近 2 轮" />
-                <el-option :value="3" label="最近 3 轮" />
-                <el-option :value="5" label="最近 5 轮" />
-              </el-select>
             </div>
-            <div class="composer-toolbar__actions">
-              <el-button text @click="handleClearSession">清空上下文</el-button>
+
+            <div class="composer-bottom">
+              <div class="composer-bottom__left">
+                <button
+                  type="button"
+                  class="composer-ghost-action"
+                  :disabled="!activeSession || asking"
+                  @click="handleClearSession"
+                >
+                  清空对话
+                </button>
+                <span class="composer-tipline">{{ composerTip }}</span>
+              </div>
+
+              <div class="composer-bottom__right">
+                <el-popover
+                  v-model:visible="contextPopoverVisible"
+                  trigger="click"
+                  placement="top-start"
+                  width="260"
+                  popper-class="rag-composer-popover"
+                >
+                  <template #reference>
+                    <button
+                      type="button"
+                      class="composer-pill composer-pill--interactive"
+                      :disabled="!activeSession || asking"
+                    >
+                      <span>{{ contextDisplayLabel }}</span>
+                      <el-icon><ArrowDown /></el-icon>
+                    </button>
+                  </template>
+
+                  <div class="composer-menu">
+                    <div class="composer-menu__title">上下文</div>
+                    <button
+                      v-for="option in contextOptions"
+                      :key="option.value"
+                      type="button"
+                      class="composer-menu__item"
+                      :class="{ 'composer-menu__item--active': contextDisplayLabel === (option.value === 'off' ? '单轮' : `上下文 ${option.value} 轮`) }"
+                      @click="applyContextOption(option.value)"
+                    >
+                      <div>
+                        <div class="composer-menu__label">{{ option.label }}</div>
+                        <div class="composer-menu__hint">{{ option.hint }}</div>
+                      </div>
+                      <span class="composer-menu__check">{{ contextDisplayLabel === (option.value === 'off' ? '单轮' : `上下文 ${option.value} 轮`) ? '✓' : '' }}</span>
+                    </button>
+                  </div>
+                </el-popover>
+
+                <span class="composer-provider-badge">
+                  {{ selectedProviderName }}
+                </span>
+
+                <el-popover
+                  v-model:visible="modelPopoverVisible"
+                  trigger="click"
+                  placement="top-end"
+                  width="320"
+                  popper-class="rag-composer-popover"
+                >
+                  <template #reference>
+                    <button
+                      type="button"
+                      class="composer-pill composer-pill--interactive composer-pill--model"
+                      :disabled="!availableChatModels.length || asking"
+                    >
+                      <span>{{ selectedModelDisplay }}</span>
+                      <el-icon><ArrowDown /></el-icon>
+                    </button>
+                  </template>
+
+                  <div class="composer-menu">
+                    <div class="composer-menu__title">模型</div>
+                    <div
+                      v-for="group in groupedChatModels"
+                      :key="group.providerName"
+                      class="composer-menu__group"
+                    >
+                      <div class="composer-menu__group-label">{{ group.providerName }}</div>
+                      <button
+                        v-for="model in group.items"
+                        :key="model.id"
+                        type="button"
+                        class="composer-menu__item"
+                        :class="{ 'composer-menu__item--active': selectedLlmModelId === model.id }"
+                        @click="handleModelSelect(model.id)"
+                      >
+                        <div>
+                          <div class="composer-menu__label">{{ model.name }}</div>
+                          <div class="composer-menu__hint">{{ model.modelId }}</div>
+                        </div>
+                        <span class="composer-menu__check">{{ selectedLlmModelId === model.id ? '✓' : '' }}</span>
+                      </button>
+                    </div>
+                  </div>
+                </el-popover>
+
+                <button
+                  type="button"
+                  class="composer-send"
+                  :disabled="!selectedKnowledgeBase || asking"
+                  @click="handleAsk"
+                >
+                  <span class="composer-send__icon">{{ asking ? '...' : '↑' }}</span>
+                </button>
+              </div>
             </div>
-          </div>
-
-          <el-input
-            v-model="draftQuestion"
-            type="textarea"
-            :rows="4"
-            resize="none"
-            :disabled="!selectedKnowledgeBase || asking"
-            placeholder="请输入你想在当前知识库中检索的问题，按 Enter 发送，Shift + Enter 换行"
-            @keydown.enter.exact.prevent="handleAsk"
-          />
-
-          <div class="composer-actions">
-            <span class="composer-actions__tip">
-              {{ activeSession?.contextEnabled ? '会携带最近上下文增强检索语义' : '当前按单轮问答检索' }}
-            </span>
-            <el-button type="primary" :loading="asking" :disabled="!selectedKnowledgeBase" @click="handleAsk">
-              开始检索
-            </el-button>
           </div>
         </footer>
       </section>
@@ -221,7 +304,10 @@
                 <div class="insight-card__label">关键问题总结</div>
                 <div class="insight-card__title">本轮输出概览</div>
               </div>
-              <el-tag effect="dark" type="info">{{ currentInsight.retrievedCount || 0 }} 条片段</el-tag>
+              <div class="insight-card__tags">
+                <el-tag v-if="currentInsight.llmModelLabel" effect="dark" type="success">{{ currentInsight.llmModelLabel }}</el-tag>
+                <el-tag effect="dark" type="info">{{ currentInsight.retrievedCount || 0 }} 条片段</el-tag>
+              </div>
             </div>
             <div class="summary-content">{{ currentInsight.processSummary || currentInsight.content }}</div>
           </section>
@@ -284,6 +370,7 @@
                 </div>
                 <div class="citation-item__meta">
                   <span>{{ citation.hitCount }} 个片段</span>
+                  <span v-if="citation.sectionTitle">{{ citation.sectionTitle }}</span>
                   <span>{{ citation.pageText }}</span>
                   <span>{{ Math.round(citation.score * 100) }}% 相关度</span>
                 </div>
@@ -321,10 +408,11 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, Document, Plus, RefreshRight, View } from '@element-plus/icons-vue'
+import { ArrowDown, Delete, Document, Plus, RefreshRight, View } from '@element-plus/icons-vue'
 import PageContainer from '@/components/common/PageContainer.vue'
 import HighlightText from '@/components/common/HighlightText.vue'
 import FilePreviewDialog from '@/components/document/FilePreviewDialog.vue'
+import { llmProviderApi, type LlmModel, type LlmProvider } from '@/api/modules/llmProvider'
 import { useKnowledgeStore } from '@/stores/knowledge'
 import storage from '@/utils/storage'
 import type { KnowledgeBase, SearchMode, SearchResponse, SearchResultItem } from '@/api/modules/knowledge'
@@ -339,10 +427,22 @@ interface RagCitation {
   documentId: number
   fileName: string
   fileType: string
+  sectionTitle?: string
   excerpt: string
   score: number
   hitCount: number
   pageText: string
+}
+
+interface RagModelOption {
+  id: number
+  providerId: number
+  providerName: string
+  name: string
+  label: string
+  modelId: string
+  modelType: string
+  isDefault: boolean
 }
 
 interface RagMessage {
@@ -357,6 +457,8 @@ interface RagMessage {
   thinkingSteps?: RagThinkingStep[]
   citations?: RagCitation[]
   retrievedCount?: number
+  llmModelId?: number | null
+  llmModelLabel?: string | null
 }
 
 interface RagSession {
@@ -373,6 +475,7 @@ interface RagSession {
 interface RagWorkspaceState {
   selectedKbId: number | null
   activeSessionId: string | null
+  selectedLlmModelId?: number | null
   sessions: RagSession[]
 }
 
@@ -385,11 +488,13 @@ const sessions = ref<RagSession[]>([])
 const selectedKbId = ref<number | null>(null)
 const activeSessionId = ref<string | null>(null)
 const activeInsightMessageId = ref<string | null>(null)
+const selectedLlmModelId = ref<number | null>(null)
 const draftQuestion = ref('')
 const searchMode = ref<SearchMode>('hybrid')
 const topK = ref(10)
 const asking = ref(false)
 const refreshing = ref(false)
+const availableChatModels = ref<RagModelOption[]>([])
 
 const previewVisible = ref(false)
 const previewState = ref({
@@ -402,6 +507,70 @@ const previewState = ref({
 
 const selectedKnowledgeBase = computed<KnowledgeBase | null>(() => {
   return store.knowledgeBases.find(item => item.id === selectedKbId.value) || null
+})
+
+const selectedChatModel = computed<RagModelOption | null>(() => {
+  if (selectedLlmModelId.value == null) return null
+  return availableChatModels.value.find(item => item.id === selectedLlmModelId.value) || null
+})
+
+const contextPopoverVisible = ref(false)
+const modelPopoverVisible = ref(false)
+
+const contextOptions = [
+  { value: 'off', label: '单轮检索', hint: '不携带历史上下文，适合独立问题' },
+  { value: '1', label: '最近 1 轮', hint: '轻量保留上轮语义' },
+  { value: '2', label: '最近 2 轮', hint: '适合连续追问，响应更稳妥' },
+  { value: '3', label: '最近 3 轮', hint: '保留更多上下文细节' },
+  { value: '5', label: '最近 5 轮', hint: '适合复杂多轮分析' }
+]
+
+const groupedChatModels = computed(() => {
+  const groups = new Map<string, RagModelOption[]>()
+  availableChatModels.value.forEach((model) => {
+    const providerName = model.providerName || '未命名提供商'
+    if (!groups.has(providerName)) {
+      groups.set(providerName, [])
+    }
+    groups.get(providerName)!.push(model)
+  })
+  return Array.from(groups.entries()).map(([providerName, items]) => ({
+    providerName,
+    items
+  }))
+})
+
+const contextDisplayLabel = computed(() => {
+  const session = activeSession.value
+  if (!session || !session.contextEnabled) return '单轮'
+  return `上下文 ${session.contextTurns} 轮`
+})
+
+const selectedProviderName = computed(() => {
+  return selectedChatModel.value?.providerName || '未配置提供商'
+})
+
+const selectedModelDisplay = computed(() => {
+  if (!selectedChatModel.value) {
+    return availableChatModels.value.length ? '选择模型' : '未配置模型'
+  }
+  return compactModelName(selectedChatModel.value)
+})
+
+const composerTip = computed(() => {
+  const contextText = activeSession.value?.contextEnabled
+    ? `会携带最近 ${activeSession.value.contextTurns} 轮上下文增强检索语义`
+    : '当前按单轮问答检索'
+
+  if (selectedChatModel.value) {
+    return `${contextText}，回答模型为 ${selectedChatModel.value.label}`
+  }
+
+  if (availableChatModels.value.length === 0) {
+    return `${contextText}，当前未加载到可用问答模型，将只输出检索证据摘要`
+  }
+
+  return `${contextText}，如需大模型生成回答，请先选择问答模型`
 })
 
 const sessionsForSelectedKb = computed(() => {
@@ -428,7 +597,7 @@ const currentInsight = computed<RagMessage | null>(() => {
 
 onMounted(async () => {
   restoreWorkspace()
-  await store.fetchAllBases()
+  await Promise.all([store.fetchAllBases(), loadAvailableLlmModels()])
   bootstrapWorkspace()
 })
 
@@ -446,7 +615,7 @@ watch(
 )
 
 watch(
-  [sessions, selectedKbId, activeSessionId],
+  [sessions, selectedKbId, activeSessionId, selectedLlmModelId],
   () => {
     persistWorkspace()
   },
@@ -459,6 +628,7 @@ function restoreWorkspace() {
   sessions.value = Array.isArray(state.sessions) ? state.sessions : []
   selectedKbId.value = typeof state.selectedKbId === 'number' ? state.selectedKbId : null
   activeSessionId.value = state.activeSessionId || null
+  selectedLlmModelId.value = typeof state.selectedLlmModelId === 'number' ? state.selectedLlmModelId : null
 }
 
 function bootstrapWorkspace() {
@@ -480,9 +650,38 @@ function persistWorkspace() {
   const payload: RagWorkspaceState = {
     selectedKbId: selectedKbId.value,
     activeSessionId: activeSessionId.value,
+    selectedLlmModelId: selectedLlmModelId.value,
     sessions: sessions.value
   }
   storage.set(RAG_WORKSPACE_STORAGE_KEY, payload)
+}
+
+async function loadAvailableLlmModels() {
+  try {
+    const res = await llmProviderApi.list() as any
+    const providers = (res?.data ?? res ?? []) as LlmProvider[]
+    availableChatModels.value = providers
+      .filter(provider => provider.enabled)
+      .flatMap((provider) => {
+        return (provider.models || [])
+          .filter(model => model.enabled && isChatModel(model))
+          .map((model) => toModelOption(provider, model))
+      })
+      .sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.label.localeCompare(b.label, 'zh-CN'))
+
+    if (!availableChatModels.value.length) {
+      selectedLlmModelId.value = null
+      return
+    }
+
+    const stillExists = availableChatModels.value.some(item => item.id === selectedLlmModelId.value)
+    if (!stillExists) {
+      selectedLlmModelId.value = availableChatModels.value.find(item => item.isDefault)?.id || availableChatModels.value[0].id
+    }
+  } catch {
+    availableChatModels.value = []
+    selectedLlmModelId.value = null
+  }
 }
 
 function ensureActiveSession() {
@@ -543,6 +742,10 @@ function goToKnowledgeManagement() {
   router.push('/settings/knowledge')
 }
 
+function goToModelCenter() {
+  router.push('/settings/llm')
+}
+
 function goToKnowledgeDetail(knowledgeBaseId: number) {
   router.push(`/settings/knowledge/${knowledgeBaseId}`)
 }
@@ -592,6 +795,25 @@ function handleContextTurnsChange(value: number) {
   activeSession.value.updatedAt = Date.now()
 }
 
+function applyContextOption(value: string) {
+  if (!activeSession.value) return
+
+  if (value === 'off') {
+    activeSession.value.contextEnabled = false
+  } else {
+    activeSession.value.contextEnabled = true
+    activeSession.value.contextTurns = Number(value)
+  }
+
+  activeSession.value.updatedAt = Date.now()
+  contextPopoverVisible.value = false
+}
+
+function handleModelSelect(modelId: number) {
+  selectedLlmModelId.value = modelId
+  modelPopoverVisible.value = false
+}
+
 function handleSelectInsight(message: RagMessage) {
   if (message.role !== 'assistant') return
   activeInsightMessageId.value = message.id
@@ -631,24 +853,33 @@ async function handleAsk() {
   asking.value = true
 
   try {
-    const response = await store.search(requestQuery, searchMode.value, knowledgeBase.id, topK.value)
+    const response = await store.search(
+      requestQuery,
+      searchMode.value,
+      knowledgeBase.id,
+      topK.value,
+      selectedChatModel.value?.id
+    )
     const assistantMessage: RagMessage = {
       id: createId('msg'),
       role: 'assistant',
-      content: buildAnswerContent(response),
+      content: buildAnswerContent(response, question),
       createdAt: Date.now(),
       question,
       processSummary: buildProcessSummary(response, knowledgeBase.name),
-      summaryPoints: extractSummaryPoints(response),
+      summaryPoints: extractSummaryPoints(response, question),
       thinkingSteps: buildThinkingSteps({
         knowledgeBaseName: knowledgeBase.name,
         question,
         session,
         mode: searchMode.value,
-        response
+        response,
+        llmModelLabel: selectedChatModel.value?.label || null
       }),
-      citations: buildCitations(response?.results || []),
-      retrievedCount: response?.total || response?.results?.length || 0
+      citations: buildCitations(response?.results || [], question),
+      retrievedCount: response?.total || response?.results?.length || 0,
+      llmModelId: selectedChatModel.value?.id || null,
+      llmModelLabel: selectedChatModel.value?.label || null
     }
     session.messages.push(assistantMessage)
     session.updatedAt = assistantMessage.createdAt
@@ -669,7 +900,9 @@ async function handleAsk() {
         { title: '建议处理', detail: '优先确认模型、向量库和知识库文档状态是否正常。' }
       ],
       citations: [],
-      retrievedCount: 0
+      retrievedCount: 0,
+      llmModelId: selectedChatModel.value?.id || null,
+      llmModelLabel: selectedChatModel.value?.label || null
     }
     session.messages.push(errorMessage)
     session.updatedAt = errorMessage.createdAt
@@ -722,7 +955,7 @@ function getConversationPairs(messages: RagMessage[]) {
   return pairs
 }
 
-function buildAnswerContent(response?: SearchResponse | null) {
+function buildAnswerContent(response: SearchResponse | null | undefined, question: string) {
   const answer = response?.answer?.trim()
   if (answer) return answer
 
@@ -731,8 +964,8 @@ function buildAnswerContent(response?: SearchResponse | null) {
     return '当前没有检索到相关文档片段，建议换一个描述方式或补充更明确的关键词。'
   }
 
-  const summary = firstResult.content.replace(/\s+/g, ' ').trim()
-  return `已命中 ${response?.total || response?.results?.length || 1} 条相关片段，优先参考「${firstResult.fileName}」中的内容：${summary.slice(0, 120)}${summary.length > 120 ? '...' : ''}`
+  const summary = extractCoreExcerpt([firstResult.content], question, firstResult.sectionTitle || '')
+  return `已命中 ${response?.total || response?.results?.length || 1} 条相关片段，优先参考「${firstResult.fileName}」中的核心命中内容：${summary}`
 }
 
 function buildProcessSummary(response: SearchResponse | null | undefined, knowledgeBaseName: string) {
@@ -747,33 +980,27 @@ function buildProcessSummary(response: SearchResponse | null | undefined, knowle
   return `已在知识库「${knowledgeBaseName}」中召回 ${response.total || response.results.length} 条片段，覆盖 ${uniqueDocs} 份文件，并基于命中文档生成本轮总结。`
 }
 
-function extractSummaryPoints(response: SearchResponse | null | undefined) {
-  const rawAnswer = response?.answer?.trim()
-  if (rawAnswer) {
-    const lines = rawAnswer
-      .split(/\n+/)
-      .map(line => line.replace(/^[-*•\d.\s]+/, '').trim())
-      .filter(Boolean)
+function extractSummaryPoints(response: SearchResponse | null | undefined, question: string) {
+  const candidateTexts: string[] = []
+  if (response?.answer?.trim()) {
+    candidateTexts.push(response.answer.trim())
+  }
 
-    if (lines.length >= 2) {
-      return lines.slice(0, 4)
-    }
+  for (const item of response?.results || []) {
+    candidateTexts.push([item.sectionTitle, item.content].filter(Boolean).join('。'))
+  }
 
-    const sentences = rawAnswer
-      .split(/[。；!?！？]/)
-      .map(item => item.trim())
-      .filter(Boolean)
-
-    if (sentences.length) {
-      return sentences.slice(0, 4)
-    }
+  const extracted = collectRepresentativePoints(candidateTexts, question, 4)
+  if (extracted.length) {
+    return extracted
   }
 
   return (response?.results || [])
     .slice(0, 4)
     .map(item => {
+      const excerpt = extractCoreExcerpt([item.content], question, item.sectionTitle || '')
       const section = item.sectionTitle ? ` / ${item.sectionTitle}` : ''
-      return `${item.fileName}${section} 命中，相关度 ${(item.score * 100).toFixed(0)}%`
+      return `${item.fileName}${section}：${excerpt}`
     })
 }
 
@@ -783,8 +1010,9 @@ function buildThinkingSteps(params: {
   session: RagSession
   mode: SearchMode
   response: SearchResponse | null | undefined
+  llmModelLabel?: string | null
 }) {
-  const { knowledgeBaseName, question, session, mode, response } = params
+  const { knowledgeBaseName, question, session, mode, response, llmModelLabel } = params
   const resultCount = response?.total || response?.results?.length || 0
   const fileCount = new Set((response?.results || []).map(item => item.documentId)).size
 
@@ -812,14 +1040,16 @@ function buildThinkingSteps(params: {
     {
       title: '输出总结',
       detail: response?.answer?.trim()
-        ? '基于命中文档生成本轮总结，并将关键点与可预览文件一起输出。'
-        : '当前使用检索结果的高相关片段生成兜底说明，提醒继续补充问题或完善知识库。'
+        ? `基于命中文档生成本轮总结${llmModelLabel ? `，回答模型为 ${llmModelLabel}` : ''}，并同步输出关键点与可预览文件。`
+        : llmModelLabel
+          ? `已选择模型 ${llmModelLabel}，但当前未拿到模型总结，页面改用高相关片段生成兜底说明。`
+          : '当前未选择问答模型，页面使用检索结果的高相关片段生成兜底说明。'
     }
   ]
 }
 
-function buildCitations(results: SearchResultItem[]) {
-  const grouped = new Map<number, RagCitation & { pageSet: Set<number> }>()
+function buildCitations(results: SearchResultItem[], question: string) {
+  const grouped = new Map<number, RagCitation & { pageSet: Set<number>; textPool: string[]; sectionPool: string[] }>()
 
   results.forEach((item) => {
     const existing = grouped.get(item.documentId)
@@ -832,17 +1062,27 @@ function buildCitations(results: SearchResultItem[]) {
         documentId: item.documentId,
         fileName: item.fileName,
         fileType: detectFileType(item.fileName),
-        excerpt: shortenText(item.content.replace(/\s+/g, ' ').trim(), 140),
+        sectionTitle: item.sectionTitle || '',
+        excerpt: '',
         score: item.score,
         hitCount: 1,
         pageText: pageNum > 0 ? `第 ${pageNum} 页` : '页码未标注',
-        pageSet: pageNum > 0 ? new Set([pageNum]) : new Set<number>()
+        pageSet: pageNum > 0 ? new Set([pageNum]) : new Set<number>(),
+        textPool: [item.content],
+        sectionPool: item.sectionTitle ? [item.sectionTitle] : []
       })
       return
     }
 
     existing.hitCount += 1
     existing.score = Math.max(existing.score, item.score)
+    existing.textPool.push(item.content)
+    if (item.sectionTitle) {
+      existing.sectionPool.push(item.sectionTitle)
+    }
+    if (!existing.sectionTitle && item.sectionTitle) {
+      existing.sectionTitle = item.sectionTitle
+    }
     if (pageNum > 0) {
       existing.pageSet.add(pageNum)
       existing.pageText = formatPageText(existing.pageSet)
@@ -850,8 +1090,136 @@ function buildCitations(results: SearchResultItem[]) {
   })
 
   return Array.from(grouped.values())
-    .map(({ pageSet: _pageSet, ...citation }) => citation)
+    .map(({ pageSet: _pageSet, textPool, sectionPool, ...citation }) => {
+      const preferredSection = pickBestSectionTitle(sectionPool, question)
+      return {
+        ...citation,
+        sectionTitle: preferredSection || citation.sectionTitle,
+        excerpt: extractCoreExcerpt(textPool, question, preferredSection || citation.sectionTitle || '')
+      }
+    })
     .sort((a, b) => b.score - a.score)
+}
+
+function collectRepresentativePoints(texts: string[], question: string, limit: number) {
+  const queryTerms = extractQueryTerms(question)
+  const candidates = texts
+    .flatMap(text => splitIntoSegments(text))
+    .map((segment) => ({
+      text: cleanupSegment(segment),
+      score: scoreSegment(segment, queryTerms)
+    }))
+    .filter(item => item.text.length >= 10)
+    .sort((a, b) => b.score - a.score || a.text.length - b.text.length)
+
+  const result: string[] = []
+  for (const candidate of candidates) {
+    if (result.length >= limit) break
+    if (result.some(existing => isSimilarText(existing, candidate.text))) continue
+    result.push(shortenText(candidate.text, 72))
+  }
+  return result
+}
+
+function extractCoreExcerpt(texts: string[], question: string, sectionTitle = '') {
+  const queryTerms = extractQueryTerms(question)
+  const segments = texts
+    .flatMap(text => splitIntoSegments(text))
+    .map(item => cleanupSegment(item))
+    .filter(Boolean)
+
+  const bestSegment = [...segments]
+    .sort((a, b) => scoreSegment(b, queryTerms, sectionTitle) - scoreSegment(a, queryTerms, sectionTitle))[0]
+
+  if (bestSegment) {
+    return shortenText(bestSegment, 88)
+  }
+
+  const fallback = cleanupSegment(texts.join(' '))
+  return shortenText(fallback || '未提取到可展示的命中摘要。', 88)
+}
+
+function pickBestSectionTitle(sectionTitles: string[], question: string) {
+  const titles = sectionTitles
+    .map(item => cleanupSegment(item))
+    .filter(Boolean)
+
+  if (!titles.length) return ''
+
+  const queryTerms = extractQueryTerms(question)
+  return [...titles]
+    .sort((a, b) => scoreSegment(b, queryTerms) - scoreSegment(a, queryTerms) || a.length - b.length)[0]
+}
+
+function splitIntoSegments(text: string) {
+  return (text || '')
+    .replace(/\r/g, '\n')
+    .split(/[\n。！？；;]/)
+    .flatMap(part => part.split(/[,:：]/))
+    .map(item => item.trim())
+    .filter(Boolean)
+}
+
+function cleanupSegment(text: string) {
+  return text
+    .replace(/\s+/g, ' ')
+    .replace(/[|•]/g, ' ')
+    .replace(/【来源：[^】]+】/g, '')
+    .replace(/^[-*•\d.\s]+/, '')
+    .trim()
+}
+
+function extractQueryTerms(question: string) {
+  const raw = question.toLowerCase()
+  const tokens = raw.match(/[a-z0-9_-]+|[\u4e00-\u9fa5]{2,}/g) || []
+  return Array.from(new Set(tokens.filter(token => token.length >= 2)))
+}
+
+function scoreSegment(text: string, queryTerms: string[], sectionTitle = '') {
+  const normalized = text.toLowerCase()
+  let score = 0
+
+  for (const term of queryTerms) {
+    if (normalized.includes(term)) {
+      score += Math.min(4, term.length)
+    }
+  }
+
+  if (sectionTitle && normalized.includes(sectionTitle.toLowerCase())) {
+    score += 2
+  }
+
+  if (text.length >= 18 && text.length <= 100) {
+    score += 2
+  }
+
+  if (/命中|支持|用于|流程|配置|调用|处理|同步|异步|检索|审批|文档/.test(text)) {
+    score += 1
+  }
+
+  return score
+}
+
+function isSimilarText(left: string, right: string) {
+  const leftNormalized = normalizeCompareText(left)
+  const rightNormalized = normalizeCompareText(right)
+  if (!leftNormalized || !rightNormalized) return false
+  if (leftNormalized === rightNormalized) return true
+  if (leftNormalized.includes(rightNormalized) || rightNormalized.includes(leftNormalized)) return true
+
+  const leftTerms = new Set(leftNormalized.split(' ').filter(Boolean))
+  const rightTerms = new Set(rightNormalized.split(' ').filter(Boolean))
+  const intersection = Array.from(leftTerms).filter(item => rightTerms.has(item)).length
+  const union = new Set([...leftTerms, ...rightTerms]).size || 1
+  return intersection / union >= 0.65
+}
+
+function normalizeCompareText(text: string) {
+  return cleanupSegment(text)
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 function formatPageText(pageSet: Set<number>) {
@@ -859,6 +1227,30 @@ function formatPageText(pageSet: Set<number>) {
   if (!values.length) return '页码未标注'
   if (values.length === 1) return `第 ${values[0]} 页`
   return `第 ${values[0]} / ${values[values.length - 1]} 页`
+}
+
+function isChatModel(model: LlmModel) {
+  const type = (model.modelType || '').toLowerCase()
+  return type !== 'embedding' && type !== 'rerank'
+}
+
+function compactModelName(model: RagModelOption) {
+  const source = (model.name || model.modelId || model.label).trim()
+  const compact = source.replace(/^(gpt|claude|glm|qwen|deepseek|gemini)[-_:\s]*/i, '').trim()
+  return compact || source
+}
+
+function toModelOption(provider: LlmProvider, model: LlmModel): RagModelOption {
+  return {
+    id: model.id || 0,
+    providerId: provider.id || 0,
+    providerName: provider.name,
+    name: model.name,
+    label: `${provider.name} / ${model.name}`,
+    modelId: model.modelId,
+    modelType: model.modelType,
+    isDefault: Boolean(model.isDefault)
+  }
 }
 
 function buildSessionTitle(question: string) {
@@ -1243,34 +1635,242 @@ function formatDateTime(timestamp: number) {
 }
 
 .composer-panel {
-  padding: 18px 24px 22px;
+  padding: 18px 24px 24px;
   border-top: 1px solid rgba(148, 163, 184, 0.12);
-  background: rgba(15, 23, 42, 0.48);
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.48), rgba(15, 23, 42, 0.72)),
+    radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.18), transparent 32%);
 }
 
-.composer-toolbar {
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
-}
-
-.composer-context {
+.insight-card__tags {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
 }
 
-.composer-toolbar__label {
-  font-size: 13px;
-  font-weight: 600;
-  color: #e2e8f0;
+.composer-shell {
+  border-radius: 28px;
+  padding: 18px 22px 16px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background:
+    linear-gradient(180deg, rgba(41, 37, 36, 0.96), rgba(28, 25, 23, 0.98)),
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.04), transparent 46%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 18px 40px rgba(15, 23, 42, 0.22);
 }
 
-.composer-actions {
+.composer-shell--disabled {
+  opacity: 0.76;
+}
+
+.composer-shell__body {
+  min-height: 128px;
+}
+
+.composer-input {
+  :deep(.el-textarea__inner) {
+    min-height: 128px !important;
+    padding: 4px 0 0;
+    border: 0;
+    background: transparent;
+    color: #f5f5f4;
+    box-shadow: none;
+    font-size: 24px;
+    line-height: 1.55;
+    letter-spacing: -0.02em;
+  }
+
+  :deep(.el-textarea__inner::placeholder) {
+    color: rgba(214, 211, 209, 0.34);
+  }
+}
+
+.composer-bottom {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.composer-bottom__left,
+.composer-bottom__right,
+.composer-pill,
+.composer-provider-badge,
+.composer-ghost-action {
+  display: flex;
+  align-items: center;
+}
+
+.composer-bottom__left {
+  min-width: 0;
+  gap: 14px;
+  flex: 1;
+}
+
+.composer-bottom__right {
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.composer-tipline {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(214, 211, 209, 0.7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer-ghost-action,
+.composer-pill,
+.composer-provider-badge,
+.composer-send {
+  border: 0;
+  transition: transform 0.2s ease, background-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+}
+
+.composer-ghost-action,
+.composer-pill {
+  border-radius: 18px;
+  padding: 0 14px;
+  min-height: 42px;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(245, 245, 244, 0.9);
+  gap: 10px;
+}
+
+.composer-ghost-action {
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.composer-pill {
+  cursor: pointer;
+  font-size: 15px;
+}
+
+.composer-pill--model {
+  min-width: 110px;
+  justify-content: space-between;
+}
+
+.composer-provider-badge {
+  border-radius: 16px;
+  padding: 0 14px;
+  min-height: 42px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(245, 245, 244, 0.82);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.composer-pill--interactive:hover,
+.composer-ghost-action:hover,
+.composer-send:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.composer-pill--interactive:hover,
+.composer-ghost-action:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.composer-send {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: #f5f5f4;
+  color: #1c1917;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.24);
+}
+
+.composer-send__icon {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.composer-ghost-action:disabled,
+.composer-pill:disabled,
+.composer-send:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.composer-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.composer-menu__title,
+.composer-menu__group-label {
+  color: rgba(245, 245, 244, 0.52);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.composer-menu__group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.composer-menu__group + .composer-menu__group {
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.composer-menu__item {
+  width: 100%;
+  border: 0;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #f5f5f4;
+  display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.composer-menu__item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  transform: translateY(-1px);
+}
+
+.composer-menu__item--active {
+  background: rgba(255, 255, 255, 0.11);
+}
+
+.composer-menu__label {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.composer-menu__hint {
+  margin-top: 4px;
+  color: rgba(214, 211, 209, 0.68);
+  font-size: 12px;
+}
+
+.composer-menu__check {
+  min-width: 16px;
+  text-align: right;
+  font-size: 22px;
+  color: #f5f5f4;
 }
 
 .rag-insights {
@@ -1407,6 +2007,16 @@ function formatDateTime(timestamp: number) {
   color: #93c5fd;
 }
 
+.rag-workspace :deep(.rag-composer-popover.el-popover) {
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(46, 43, 42, 0.98), rgba(34, 31, 30, 0.98)),
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.04), transparent 52%);
+  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.28);
+  padding: 14px;
+}
+
 @keyframes pulse {
   0%,
   100% {
@@ -1459,10 +2069,19 @@ function formatDateTime(timestamp: number) {
   }
 
   .chat-filters,
-  .composer-toolbar,
-  .composer-actions {
+  .composer-bottom {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .composer-bottom__left,
+  .composer-bottom__right {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .composer-tipline {
+    white-space: normal;
   }
 
   .message-bubble {

@@ -142,7 +142,7 @@ export const routes: RouteRecordRaw[] = [
         path: 'settings/llm',
         name: 'LlmConfig',
         component: () => import('@/views/settings/llm.vue'),
-        meta: { title: '模型配置', hidden: true, requiredPermissions: ['menu:settings:llm'] },
+        meta: { title: '模型配置', requiredPermissions: ['menu:settings:llm'] },
       },
       {
         path: 'settings/onlyoffice',

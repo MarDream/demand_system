@@ -77,6 +77,7 @@ declare module 'vue' {
     OnlyOfficeEditor: typeof import('./src/components/document/OnlyOfficeEditor.vue')['default']
     PageContainer: typeof import('./src/components/common/PageContainer.vue')['default']
     RAGSearchResult: typeof import('./src/components/document/RAGSearchResult.vue')['default']
+    RemixIcon: typeof import('./src/components/common/RemixIcon.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SmartSearchBar: typeof import('./src/components/document/SmartSearchBar.vue')['default']

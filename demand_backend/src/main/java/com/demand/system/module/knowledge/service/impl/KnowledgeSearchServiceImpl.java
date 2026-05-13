@@ -54,10 +54,15 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                 .total(results.size())
                 .processSummary(buildProcessSummary(request, results.size(), results));
 
-        // RAG模式：生成LLM答案
-        if ("rag".equals(mode) && !results.isEmpty()) {
+        boolean shouldGenerateAnswer = !results.isEmpty() && ("rag".equals(mode) || request.getLlmModelId() != null);
+        if (shouldGenerateAnswer) {
             try {
-                String answer = ragAnswerService.generateAnswer(request.getQuery(), results, request.getKnowledgeBaseId());
+                String answer = ragAnswerService.generateAnswer(
+                        request.getQuery(),
+                        results,
+                        request.getKnowledgeBaseId(),
+                        request.getLlmModelId()
+                );
                 responseBuilder.answer(answer);
             } catch (Exception e) {
                 log.warn("RAG答案生成失败，仅返回检索结果", e);

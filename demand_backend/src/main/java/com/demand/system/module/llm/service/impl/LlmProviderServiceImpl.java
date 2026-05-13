@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -211,6 +212,33 @@ public class LlmProviderServiceImpl implements LlmProviderService {
         }
         if (model == null) throw new RuntimeException("类型 [" + type + "] 下没有可用的模型配置");
         return toModelVO(model);
+    }
+
+    // ==================== Sniff ====================
+
+    @Override
+    public List<SniffedModelVO> sniffModels(Long id) {
+        LlmProvider provider = providerMapper.selectById(id);
+        if (provider == null) throw new RuntimeException("接入组不存在");
+
+        LlmGatewayConfig.Provider gwProvider = new LlmGatewayConfig.Provider();
+        gwProvider.setProtocol(provider.getProtocol());
+        gwProvider.setBaseUrl(provider.getBaseUrl());
+        gwProvider.setApiKey(provider.getApiKey());
+
+        List<LlmGateway.ModelInfo> remoteModels = llmGateway.fetchModelList(gwProvider);
+
+        Set<String> existingModelIds = modelMapper.selectList(
+                new LambdaQueryWrapper<LlmModel>().eq(LlmModel::getProviderId, id)
+        ).stream().map(LlmModel::getModelId).collect(Collectors.toSet());
+
+        return remoteModels.stream().map(m -> {
+            SniffedModelVO vo = new SniffedModelVO();
+            vo.setModelId(m.getId());
+            vo.setOwnedBy(m.getOwnedBy());
+            vo.setAlreadyExists(existingModelIds.contains(m.getId()));
+            return vo;
+        }).collect(Collectors.toList());
     }
 
     // ==================== Private ====================

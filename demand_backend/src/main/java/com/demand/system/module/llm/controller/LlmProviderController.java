@@ -105,4 +105,11 @@ public class LlmProviderController {
     public ResponseEntity<Map<String, Object>> getRoles() {
         return ResponseEntity.ok(Map.of("code", 200, "message", "操作成功", "data", LlmModelRole.PRESET_ROLES));
     }
+
+    // ==================== Sniff ====================
+
+    @PostMapping("/{id}/sniff-models")
+    public ResponseEntity<Map<String, Object>> sniffModels(@PathVariable Long id) {
+        return ResponseEntity.ok(Map.of("code", 200, "message", "操作成功", "data", providerService.sniffModels(id)));
+    }
 }

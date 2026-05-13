@@ -17,31 +17,34 @@
             :tree-props="{ children: 'children' }"
             class="menu-table"
           >
-            <el-table-column prop="name" label="名称" min-width="220">
+            <el-table-column prop="name" label="名称" min-width="220" header-align="center">
               <template #default="{ row }">
                 <span
                   class="menu-name-content"
                   :class="`menu-name-content--${row.menuType.toLowerCase()}`"
                   title="拖拽调整同级排序"
                 >
-                  <el-icon v-if="row.icon && iconMap[row.icon]" class="menu-icon">
+                  <template v-if="row.icon && isRemixIcon(row.icon)">
+                    <i :class="row.icon" class="menu-remix-icon" />
+                  </template>
+                  <el-icon v-else-if="row.icon && iconMap[row.icon]" class="menu-icon">
                     <component :is="iconMap[row.icon]" />
                   </el-icon>
                   <span>{{ row.name }}</span>
                 </span>
               </template>
             </el-table-column>
-            <el-table-column prop="menuType" label="类型" width="90">
+            <el-table-column prop="menuType" label="类型" width="90" align="center">
               <template #default="{ row }">
                 <el-tag size="small" :type="menuTypeTagType(row.menuType)">
                   {{ typeLabel(row.menuType) }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="path" label="路径" min-width="170" show-overflow-tooltip>
+            <el-table-column prop="path" label="路径" min-width="170" show-overflow-tooltip header-align="center">
               <template #default="{ row }">{{ row.path || '-' }}</template>
             </el-table-column>
-            <el-table-column prop="permissionCode" label="权限编码" min-width="190" show-overflow-tooltip>
+            <el-table-column prop="permissionCode" label="权限编码" min-width="190" show-overflow-tooltip header-align="center">
               <template #default="{ row }">{{ row.permissionCode || '-' }}</template>
             </el-table-column>
             <el-table-column prop="sortOrder" label="排序" width="80" align="center" />
@@ -52,7 +55,7 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="120" fixed="right">
+            <el-table-column label="操作" width="160" align="center" header-align="center" fixed="right">
               <template #default="{ row }">
                 <el-tooltip content="编辑">
                   <AppButton type="primary" link size="small" permission="button:menu:update" @click="openEdit(row)"><el-icon><EditPen /></el-icon></AppButton>
@@ -155,7 +158,9 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, type Component } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as ElementPlusIcons from '@element-plus/icons-vue'
+import { EditPen, Key, Delete, Setting } from '@element-plus/icons-vue'
 import Sortable, { type MoveEvent, type SortableEvent } from 'sortablejs'
+import { isRemixIcon } from '@/components/common/RemixIconData'
 import AppButton from '@/components/common/AppButton.vue'
 import PageContainer from '@/components/common/PageContainer.vue'
 import TableCard from '@/components/common/TableCard.vue'
@@ -477,6 +482,12 @@ async function handleSavePermission() {
 }
 
 .menu-icon {
+  margin-right: 6px;
+  vertical-align: -2px;
+}
+
+.menu-remix-icon {
+  font-size: 16px;
   margin-right: 6px;
   vertical-align: -2px;
 }

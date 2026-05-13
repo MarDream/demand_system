@@ -84,10 +84,16 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     return await generateDocumentShareLink(knowledgeBaseId, documentId, options) as unknown as string
   }
 
-  async function search(query: string, mode: SearchMode = 'hybrid', knowledgeBaseId?: number, topK?: number) {
+  async function search(
+    query: string,
+    mode: SearchMode = 'hybrid',
+    knowledgeBaseId?: number,
+    topK?: number,
+    llmModelId?: number
+  ) {
     loading.value = true
     try {
-      const res = await searchKnowledge({ query, mode, knowledgeBaseId, topK })
+      const res = await searchKnowledge({ query, mode, knowledgeBaseId, topK, llmModelId })
       searchResults.value = (res as any)?.data || res
       return searchResults.value
     } finally {

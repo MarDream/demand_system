@@ -8,7 +8,8 @@
       <el-col v-for="item in visibleCards" :key="item.path" :span="8">
         <el-card shadow="hover" class="settings-card" @click="$router.push(item.path)">
           <div class="card-content">
-            <el-icon :size="48" :color="item.color"><component :is="item.icon" /></el-icon>
+            <template v-if="item.isRemix"><i :class="item.icon" class="card-remix-icon" :style="{ color: item.color }" /></template>
+            <el-icon v-else :size="48" :color="item.color"><component :is="item.icon" /></el-icon>
             <h3>{{ item.title }}</h3>
             <p>{{ item.description }}</p>
             <el-button :type="item.buttonType" text>进入管理 &rarr;</el-button>
@@ -23,6 +24,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, type Component } from 'vue'
 import * as ElementPlusIcons from '@element-plus/icons-vue'
+import { isRemixIcon } from '@/components/common/RemixIconData'
 import { usePermission } from '@/composables/usePermission'
 import { getCurrentMenus, type MenuItem } from '@/api/modules/menu'
 
@@ -62,6 +64,7 @@ for (const [name, comp] of Object.entries(ElementPlusIcons)) {
 }
 
 const menuItems = ref<MenuItem[]>([])
+const fallbackPaths = ['/settings/llm']
 
 onMounted(async () => {
   try {
@@ -80,29 +83,54 @@ interface CardItem {
   path: string
   title: string
   description: string
-  icon: Component
+  icon: Component | string
+  isRemix: boolean
   color: string
   buttonType: string
   visible: () => boolean
 }
 
 const visibleCards = computed<CardItem[]>(() => {
-  return menuItems.value
+  const cards = menuItems.value
     .filter(m => m.menuType === 'MENU' && m.enabled === 1 && m.visible === 1)
     .map(m => {
       const path = m.path || ''
       const meta = cardMeta[path] || { description: m.name, color: '#909399', buttonType: '' }
+      const iconName = m.icon || 'Setting'
+      const remix = isRemixIcon(iconName)
       return {
         path,
         title: m.name,
         description: meta.description,
-        icon: iconMap[m.icon || 'Setting'] || iconMap['Setting'],
+        icon: remix ? iconName : (iconMap[iconName] || iconMap['Setting']),
+        isRemix: remix,
         color: meta.color,
         buttonType: meta.buttonType,
         visible: pathPermissions[path] || (() => true),
       }
     })
     .filter(item => item.visible())
+
+  const existingPaths = new Set(cards.map(item => item.path))
+  for (const path of fallbackPaths) {
+    if (existingPaths.has(path)) continue
+    const isVisible = pathPermissions[path]?.() ?? false
+    if (!isVisible) continue
+    const meta = cardMeta[path]
+    if (!meta) continue
+    cards.push({
+      path,
+      title: path === '/settings/llm' ? '模型配置' : path,
+      description: meta.description,
+      icon: path === '/settings/llm' ? 'ri-robot-2-line' : 'Setting',
+      isRemix: path === '/settings/llm',
+      color: meta.color,
+      buttonType: meta.buttonType,
+      visible: () => true,
+    })
+  }
+
+  return cards
 })
 </script>
 
@@ -143,6 +171,11 @@ const visibleCards = computed<CardItem[]>(() => {
 
   .card-content {
     text-align: center;
+
+    .card-remix-icon {
+      font-size: 48px;
+      line-height: 1;
+    }
 
     h3 {
       margin: 16px 0 8px;

@@ -14,4 +14,6 @@ public class KnowledgeSearchRequest {
     private String mode = "hybrid";
 
     private Integer topK = 20;
+
+    private Long llmModelId;
 }

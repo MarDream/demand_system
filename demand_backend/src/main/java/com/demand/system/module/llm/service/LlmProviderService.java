@@ -23,4 +23,7 @@ public interface LlmProviderService {
 
     // Role
     LlmModelVO getModelByType(String type);
+
+    // Sniff
+    List<SniffedModelVO> sniffModels(Long id);
 }

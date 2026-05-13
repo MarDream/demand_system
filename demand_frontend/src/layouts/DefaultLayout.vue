@@ -16,16 +16,19 @@
         <template v-for="item in visibleMenus" :key="item.index">
           <el-sub-menu v-if="item.children.length" :index="item.index">
             <template #title>
-              <el-icon><component :is="item.icon" /></el-icon>
+              <template v-if="item.isRemix"><i :class="item.icon" class="sidebar-remix-icon" /></template>
+              <el-icon v-else><component :is="item.icon" /></el-icon>
               <span>{{ item.title }}</span>
             </template>
             <el-menu-item v-for="child in item.children" :key="child.index" :index="child.path">
-              <el-icon><component :is="child.icon" /></el-icon>
+              <template v-if="child.isRemix"><i :class="child.icon" class="sidebar-remix-icon" /></template>
+              <el-icon v-else><component :is="child.icon" /></el-icon>
               <span>{{ child.title }}</span>
             </el-menu-item>
           </el-sub-menu>
           <el-menu-item v-else :index="item.path">
-            <el-icon><component :is="item.icon" /></el-icon>
+            <template v-if="item.isRemix"><i :class="item.icon" class="sidebar-remix-icon" /></template>
+            <el-icon v-else><component :is="item.icon" /></el-icon>
             <span>{{ item.title }}</span>
           </el-menu-item>
         </template>
@@ -99,8 +102,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/modules/app'
 import { useUserStore } from '@/stores/modules/user'
 import { useNotification } from '@/composables/useNotification'
+import { usePermission } from '@/composables/usePermission'
 import * as ElementPlusIcons from '@element-plus/icons-vue'
 import { Fold, Expand, Bell } from '@element-plus/icons-vue'
+import { isRemixIcon } from '@/components/common/RemixIconData'
 import Breadcrumb from '@/components/layout/Breadcrumb.vue'
 import { getNotificationList, markAsRead } from '@/api/modules/notification'
 import { getCurrentMenus, type MenuItem } from '@/api/modules/menu'
@@ -110,6 +115,7 @@ const router = useRouter()
 const appStore = useAppStore()
 const userStore = useUserStore()
 const { unreadCount } = useNotification()
+const { hasPermission } = usePermission()
 
 const recentNotifications = ref<any[]>([])
 const menuList = ref<MenuItem[]>([])
@@ -124,6 +130,7 @@ async function fetchMenus() {
     const res = await getCurrentMenus() as any
     const data = res.data ?? res
     menuList.value = Array.isArray(data) ? data : []
+    appStore.setMenuList(menuList.value)
   } catch {
     menuList.value = []
   }
@@ -133,7 +140,8 @@ interface SidebarItem {
   index: string
   path: string
   title: string
-  icon: Component
+  icon: Component | string
+  isRemix: boolean
   children: SidebarItem[]
 }
 
@@ -144,17 +152,35 @@ const visibleMenus = computed<SidebarItem[]>(() => {
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
       .map(m => {
         const children = build(m.children || [])
+        const iconName = m.icon || 'Document'
+        const remix = isRemixIcon(iconName)
         return {
           index: m.path || `menu-${m.id}`,
           path: m.path || (children[0]?.path ?? ''),
           title: m.name,
-          icon: iconMap[m.icon || 'Document'] || iconMap['Document'],
+          icon: remix ? iconName : (iconMap[iconName] || iconMap['Document']),
+          isRemix: remix,
           children,
         }
       })
       .filter(item => item.path || item.children.length)
   }
-  return build(menuList.value)
+  const builtMenus = build(menuList.value)
+  const settingsMenu = builtMenus.find(item => item.path === '/settings' || item.title === '系统配置')
+  const canAccessLlm = hasPermission('menu:settings:llm') || hasPermission('menu:system-config')
+
+  if (settingsMenu && canAccessLlm && !settingsMenu.children.some(child => child.path === '/settings/llm')) {
+    settingsMenu.children.push({
+      index: '/settings/llm',
+      path: '/settings/llm',
+      title: '模型配置',
+      icon: 'ri-robot-2-line',
+      isRemix: true,
+      children: [],
+    })
+  }
+
+  return builtMenus
 })
 
 onMounted(fetchMenus)
@@ -281,6 +307,17 @@ async function handleLogout() {
 .hamburger {
   cursor: pointer;
   font-size: $font-size-md;
+}
+
+.sidebar-remix-icon {
+  font-size: 18px;
+  margin-right: 5px;
+  width: 24px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .header-right {

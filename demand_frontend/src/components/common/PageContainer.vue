@@ -8,7 +8,7 @@
         <div v-if="props.title || props.subtitle || $slots.title" class="app-page__title">
           <div class="app-page__title-main">
             <slot name="title">
-              <h2 class="app-page__h2">{{ props.title }}</h2>
+              <h2 class="app-page__h2">{{ displayTitle }}</h2>
             </slot>
           </div>
           <div v-if="props.subtitle" class="app-page__subtitle">{{ props.subtitle }}</div>
@@ -31,7 +31,12 @@
 
 <script setup lang="ts">
 import { computed, useSlots } from 'vue'
+import { useRoute } from 'vue-router'
 import Breadcrumb from '@/components/layout/Breadcrumb.vue'
+import { useAppStore } from '@/stores/modules/app'
+
+const route = useRoute()
+const appStore = useAppStore()
 
 const props = withDefaults(defineProps<{
   title?: string
@@ -44,6 +49,11 @@ const props = withDefaults(defineProps<{
 })
 
 const slots = useSlots()
+
+const displayTitle = computed(() => {
+  if (!props.title) return ''
+  return appStore.getMenuNameByPath(route.path) || props.title
+})
 
 const showHeader = computed(() => {
   return !!(

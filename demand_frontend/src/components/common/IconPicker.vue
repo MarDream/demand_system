@@ -1,5 +1,14 @@
 <template>
-  <el-popover :width="480" trigger="click" :visible="visible" @update:visible="$emit('update:visible', $event)">
+  <el-popover
+    v-model:visible="visible"
+    :width="520"
+    trigger="click"
+    placement="bottom-start"
+    :teleported="false"
+    :persistent="false"
+    @show="emit('update:visible', true)"
+    @hide="emit('update:visible', false)"
+  >
     <template #reference>
       <el-input
         :model-value="modelValue"
@@ -9,9 +18,12 @@
         @click="visible = true"
       >
         <template #prefix>
-          <el-icon v-if="modelValue" style="margin-right: 4px">
-            <component :is="iconComponent" />
-          </el-icon>
+          <template v-if="modelValue">
+            <i v-if="isRemixIcon(modelValue)" :class="modelValue" style="margin-right: 4px; font-size: 16px;" />
+            <el-icon v-else style="margin-right: 4px">
+              <component :is="iconComponent" />
+            </el-icon>
+          </template>
         </template>
       </el-input>
     </template>
@@ -21,7 +33,20 @@
 
       <div class="icon-picker-tabs">
         <span
-          v-for="cat in categories"
+          class="icon-picker-tab"
+          :class="{ active: activeSource === 'element' }"
+          @click="activeSource = 'element'"
+        >Element Plus</span>
+        <span
+          class="icon-picker-tab"
+          :class="{ active: activeSource === 'remix' }"
+          @click="activeSource = 'remix'"
+        >Remix Icon</span>
+      </div>
+
+      <div v-if="activeSource === 'element'" class="icon-picker-tabs icon-picker-sub-tabs">
+        <span
+          v-for="cat in elementCategories"
           :key="cat.label"
           class="icon-picker-tab"
           :class="{ active: activeCategory === cat.label }"
@@ -29,23 +54,48 @@
         >{{ cat.label }}</span>
       </div>
 
-      <div class="icon-picker-grid">
-        <div
-          v-for="name in filteredIcons"
-          :key="name"
-          class="icon-picker-item"
-          :class="{ selected: name === modelValue }"
-          :title="name"
-          @click="handleSelect(name)"
-        >
-          <el-icon :size="20"><component :is="iconMap[name]" /></el-icon>
-          <span class="icon-picker-item-name">{{ name }}</span>
-        </div>
-        <el-empty v-if="filteredIcons.length === 0" description="无匹配图标" :image-size="60" />
+      <div v-if="activeSource === 'remix'" class="icon-picker-tabs icon-picker-sub-tabs">
+        <span
+          v-for="cat in remixCategories"
+          :key="cat.label"
+          class="icon-picker-tab"
+          :class="{ active: activeRemixCategory === cat.label }"
+          @click="activeRemixCategory = cat.label"
+        >{{ cat.label }}</span>
+      </div>
+
+      <div class="icon-picker-grid" :class="{ 'icon-picker-grid--remix': activeSource === 'remix' }">
+        <template v-if="activeSource === 'element'">
+          <div
+            v-for="name in filteredElementIcons"
+            :key="name"
+            class="icon-picker-item"
+            :class="{ selected: name === modelValue }"
+            :title="name"
+            @click="handleSelect(name)"
+          >
+            <el-icon :size="20"><component :is="elementIconMap[name]" /></el-icon>
+            <span class="icon-picker-item-name">{{ name }}</span>
+          </div>
+        </template>
+        <template v-else>
+          <div
+            v-for="name in filteredRemixIcons"
+            :key="name"
+            class="icon-picker-item"
+            :class="{ selected: name === modelValue }"
+            :title="name"
+            @click="handleSelect(name)"
+          >
+            <i :class="name" style="font-size: 20px;" />
+            <span class="icon-picker-item-name">{{ name.replace('ri-', '').replace(/-line$/, '').replace(/-fill$/, '') }}</span>
+          </div>
+        </template>
+        <el-empty v-if="currentFilteredIcons.length === 0" description="无匹配图标" :image-size="60" />
       </div>
 
       <div class="icon-picker-footer">
-        <span class="icon-picker-count">共 {{ filteredIcons.length }} 个图标</span>
+        <span class="icon-picker-count">共 {{ currentFilteredIcons.length }} 个图标</span>
         <el-button v-if="modelValue" size="small" text type="danger" @click="handleClear">清除</el-button>
       </div>
     </div>
@@ -56,6 +106,7 @@
 import { ref, computed, type Component } from 'vue'
 import * as ElementPlusIcons from '@element-plus/icons-vue'
 import { iconCategories } from './IconPickerData'
+import { remixIconCategories, isRemixIcon } from './RemixIconData'
 
 const props = defineProps<{
   modelValue: string
@@ -68,22 +119,35 @@ const emit = defineEmits<{
 
 const visible = ref(false)
 const keyword = ref('')
+const activeSource = ref<'element' | 'remix'>('element')
 const activeCategory = ref('全部')
+const activeRemixCategory = ref('全部')
 
-const iconMap: Record<string, Component> = {}
+const elementIconMap: Record<string, Component> = {}
 for (const [name, comp] of Object.entries(ElementPlusIcons)) {
-  iconMap[name] = comp as Component
+  elementIconMap[name] = comp as Component
 }
 
-const categories = computed(() => [
-  { label: '全部', icons: Object.keys(iconMap).sort() },
+const elementCategories = computed(() => [
+  { label: '全部', icons: Object.keys(elementIconMap).sort() },
   ...iconCategories,
 ])
 
-const iconComponent = computed(() => iconMap[props.modelValue] || null)
+const remixCategories = computed(() => [
+  { label: '全部', icons: getAllRemixNames() },
+  ...remixIconCategories,
+])
 
-const filteredIcons = computed(() => {
-  const cat = categories.value.find(c => c.label === activeCategory.value)
+function getAllRemixNames(): string[] {
+  const names: string[] = []
+  remixIconCategories.forEach(c => c.icons.forEach(i => names.push(i)))
+  return names
+}
+
+const iconComponent = computed(() => elementIconMap[props.modelValue] || null)
+
+const filteredElementIcons = computed(() => {
+  const cat = elementCategories.value.find(c => c.label === activeCategory.value)
   if (!cat) return []
   let icons = cat.icons
   if (keyword.value.trim()) {
@@ -92,6 +156,21 @@ const filteredIcons = computed(() => {
   }
   return icons
 })
+
+const filteredRemixIcons = computed(() => {
+  const cat = remixCategories.value.find(c => c.label === activeRemixCategory.value)
+  if (!cat) return []
+  let icons = cat.icons
+  if (keyword.value.trim()) {
+    const lower = keyword.value.toLowerCase()
+    icons = icons.filter(n => n.toLowerCase().includes(lower))
+  }
+  return icons
+})
+
+const currentFilteredIcons = computed(() =>
+  activeSource.value === 'element' ? filteredElementIcons.value : filteredRemixIcons.value
+)
 
 function handleSelect(name: string) {
   emit('update:modelValue', name)
@@ -106,7 +185,7 @@ function handleClear() {
 
 <style scoped>
 .icon-picker {
-  max-height: 420px;
+  max-height: 440px;
   display: flex;
   flex-direction: column;
 }
@@ -117,9 +196,13 @@ function handleClear() {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin-bottom: 8px;
-  padding-bottom: 8px;
+  margin-bottom: 4px;
+  padding-bottom: 4px;
   border-bottom: 1px solid #ebeef5;
+}
+.icon-picker-sub-tabs {
+  border-bottom: none;
+  margin-bottom: 8px;
 }
 .icon-picker-tab {
   padding: 2px 8px;
@@ -128,6 +211,7 @@ function handleClear() {
   cursor: pointer;
   color: #606266;
   white-space: nowrap;
+  transition: all 0.15s;
 }
 .icon-picker-tab:hover {
   background: #f0f2f5;
@@ -143,6 +227,9 @@ function handleClear() {
   max-height: 280px;
   overflow-y: auto;
   padding: 4px 0;
+}
+.icon-picker-grid--remix {
+  grid-template-columns: repeat(7, 1fr);
 }
 .icon-picker-item {
   display: flex;

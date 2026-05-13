@@ -12,6 +12,16 @@ export function setupGuards(router: Router) {
     NProgress.start()
     document.title = `${to.meta.title || ''} - 综合运营管理平台`
 
+    // Override with dynamic menu name if available
+    try {
+      const { useAppStore } = await import('@/stores/modules/app')
+      const appStore = useAppStore()
+      const menuName = appStore.getMenuNameByPath(to.path)
+      if (menuName) {
+        document.title = `${menuName} - 综合运营管理平台`
+      }
+    } catch { /* ignore */ }
+
     const token = getToken()
     const userStore = useUserStore()
 

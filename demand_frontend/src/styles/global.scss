@@ -26,6 +26,12 @@ html, body {
   background: transparent;
 }
 
+// ===== Table Header Center Alignment =====
+
+.el-table .el-table__header-wrapper th .cell {
+  text-align: center;
+}
+
 // ===== Dashboard & Common Utility Styles =====
 
 .stat-card {

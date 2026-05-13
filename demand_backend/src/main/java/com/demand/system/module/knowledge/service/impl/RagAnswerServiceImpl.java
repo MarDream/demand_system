@@ -2,7 +2,12 @@ package com.demand.system.module.knowledge.service.impl;
 
 import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse;
 import com.demand.system.module.knowledge.llm.LlmGateway;
+import com.demand.system.module.knowledge.llm.LlmGatewayConfig;
 import com.demand.system.module.knowledge.service.RagAnswerService;
+import com.demand.system.module.llm.entity.LlmModel;
+import com.demand.system.module.llm.entity.LlmProvider;
+import com.demand.system.module.llm.mapper.LlmModelMapper;
+import com.demand.system.module.llm.mapper.LlmProviderMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -16,6 +21,8 @@ import java.util.stream.Collectors;
 public class RagAnswerServiceImpl implements RagAnswerService {
 
     private final LlmGateway llmGateway;
+    private final LlmModelMapper llmModelMapper;
+    private final LlmProviderMapper llmProviderMapper;
 
     private static final String SYSTEM_PROMPT = """
             你是一个专业的知识库问答助手。根据提供的参考资料回答用户问题。
@@ -28,16 +35,56 @@ public class RagAnswerServiceImpl implements RagAnswerService {
             """;
 
     @Override
-    public String generateAnswer(String query, List<KnowledgeSearchResponse.SearchResultItem> searchResults, Long knowledgeBaseId) {
+    public String generateAnswer(
+            String query,
+            List<KnowledgeSearchResponse.SearchResultItem> searchResults,
+            Long knowledgeBaseId,
+            Long llmModelId
+    ) {
         String context = buildContext(searchResults);
         String userMessage = "问题：" + query + "\n\n参考资料：\n" + context;
 
         try {
+            if (llmModelId != null) {
+                return chatWithSelectedModel(llmModelId, userMessage);
+            }
             return llmGateway.chat(SYSTEM_PROMPT, userMessage);
         } catch (Exception e) {
             log.error("RAG答案生成失败: query={}", query, e);
             throw new RuntimeException("答案生成失败: " + e.getMessage());
         }
+    }
+
+    private String chatWithSelectedModel(Long llmModelId, String userMessage) {
+        LlmModel model = llmModelMapper.selectById(llmModelId);
+        if (model == null) {
+            throw new RuntimeException("所选问答模型不存在");
+        }
+        if (!Boolean.TRUE.equals(model.getEnabled())) {
+            throw new RuntimeException("所选问答模型未启用");
+        }
+
+        LlmProvider provider = llmProviderMapper.selectById(model.getProviderId());
+        if (provider == null) {
+            throw new RuntimeException("所选模型的接入组不存在");
+        }
+        if (!Boolean.TRUE.equals(provider.getEnabled())) {
+            throw new RuntimeException("所选模型的接入组未启用");
+        }
+
+        LlmGatewayConfig.Provider chatProvider = new LlmGatewayConfig.Provider();
+        chatProvider.setProtocol(provider.getProtocol());
+        chatProvider.setBaseUrl(provider.getBaseUrl());
+        chatProvider.setApiKey(provider.getApiKey());
+        chatProvider.setModel(model.getModelId());
+
+        return llmGateway.chatWithProvider(
+                chatProvider,
+                SYSTEM_PROMPT,
+                userMessage,
+                model.getTemperature(),
+                model.getMaxTokens()
+        ).getContent();
     }
 
     private String buildContext(List<KnowledgeSearchResponse.SearchResultItem> results) {

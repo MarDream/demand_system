@@ -119,9 +119,12 @@
           </el-table-column>
           <el-table-column
             v-else-if="col.key === 'operations'"
-            label="操作" width="100" fixed="right" align="center"
+            label="操作" width="140" fixed="right" align="center"
           >
             <template #default="{ row }">
+              <el-tooltip content="嗅探模型" placement="top">
+                <el-icon class="action-icon" style="color: #E6A23C;" @click="handleSniff(row)"><Search /></el-icon>
+              </el-tooltip>
               <el-tooltip content="查看密钥" placement="top">
                 <el-icon class="action-icon" @click="handleViewApiKey(row)"><View /></el-icon>
               </el-tooltip>
@@ -153,45 +156,63 @@
     </el-dialog>
 
     <!-- Provider 对话框 -->
-    <el-dialog v-model="providerDialogVisible" :title="editingProviderId ? '编辑接入组' : '新增接入组'" width="560px">
-      <el-form :model="providerForm" :rules="providerRules" ref="providerFormRef" label-width="110px" class="provider-form">
-        <div class="form-section-title">接入信息</div>
-        <el-form-item label="名称" prop="name">
-          <el-input v-model="providerForm.name" placeholder="如 OpenAI 官方、智谱 GLM" />
-        </el-form-item>
-        <div class="form-row">
-          <el-form-item label="协议类型" prop="protocol" class="form-row-item">
-            <el-select v-model="providerForm.protocol" style="width: 100%">
-              <el-option label="OpenAI" value="openai" />
-              <el-option label="Anthropic" value="anthropic" />
-            </el-select>
+    <el-dialog
+      v-model="providerDialogVisible"
+      :title="editingProviderId ? '编辑接入组' : '新增接入组'"
+      width="620px"
+      class="provider-dialog"
+    >
+      <el-form
+        ref="providerFormRef"
+        :model="providerForm"
+        :rules="providerRules"
+        label-width="126px"
+        class="provider-form provider-dialog-form"
+      >
+        <section class="form-section-card">
+          <div class="form-section-title">接入信息</div>
+          <el-form-item label="名称" prop="name">
+            <el-input v-model="providerForm.name" placeholder="如 OpenAI 官方、智谱 GLM" />
           </el-form-item>
-          <el-form-item label="启用" class="form-row-item" label-width="60px">
-            <el-switch v-model="providerForm.enabled" />
+          <div class="form-row form-row--provider">
+            <el-form-item label="协议类型" prop="protocol" class="form-row-item">
+              <el-select v-model="providerForm.protocol" style="width: 100%">
+                <el-option label="OpenAI" value="openai" />
+                <el-option label="Anthropic" value="anthropic" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="启用" class="form-row-item form-switch-item" label-width="60px">
+              <el-switch v-model="providerForm.enabled" />
+            </el-form-item>
+          </div>
+        </section>
+
+        <section class="form-section-card">
+          <div class="form-section-title">接入配置</div>
+          <el-form-item label="API Base URL" prop="baseUrl">
+            <el-input v-model="providerForm.baseUrl" placeholder="https://api.openai.com" />
           </el-form-item>
-        </div>
-        <div class="form-section-title">接入配置</div>
-        <el-form-item label="API Base URL" prop="baseUrl">
-          <el-input v-model="providerForm.baseUrl" placeholder="https://api.openai.com" />
-        </el-form-item>
-        <el-form-item label="API Key" prop="apiKey">
-          <el-input
-            v-model="providerForm.apiKey"
-            :type="apiKeyVisible ? 'text' : 'password'"
-            :placeholder="editingProviderId ? '不修改请留空' : '请输入 API Key'"
-          >
-            <template #suffix>
-              <el-icon class="apiKey-eye" @click="toggleApiKeyVisible" style="cursor: pointer">
-                <View v-if="!apiKeyVisible" />
-                <Hide v-else />
-              </el-icon>
-            </template>
-          </el-input>
-        </el-form-item>
+          <el-form-item label="API Key" prop="apiKey">
+            <el-input
+              v-model="providerForm.apiKey"
+              :type="apiKeyVisible ? 'text' : 'password'"
+              :placeholder="editingProviderId ? '不修改请留空' : '请输入 API Key'"
+            >
+              <template #suffix>
+                <el-icon class="apiKey-eye" @click="toggleApiKeyVisible" style="cursor: pointer">
+                  <View v-if="!apiKeyVisible" />
+                  <Hide v-else />
+                </el-icon>
+              </template>
+            </el-input>
+          </el-form-item>
+        </section>
       </el-form>
       <template #footer>
-        <el-button @click="providerDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleProviderSubmit">保存</el-button>
+        <div class="dialog-footer">
+          <el-button @click="providerDialogVisible = false">取消</el-button>
+          <el-button type="primary" :loading="submitting" @click="handleProviderSubmit">保存</el-button>
+        </div>
       </template>
     </el-dialog>
 
@@ -236,13 +257,45 @@
         <el-button type="primary" :loading="submitting" @click="handleModelSubmit">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 嗅探模型对话框 -->
+    <el-dialog v-model="sniffDialogVisible" title="嗅探模型" width="560px">
+      <div v-loading="sniffing" style="min-height: 100px;">
+        <el-alert
+          v-if="!sniffing && sniffedModels.length > 0"
+          type="info"
+          :closable="false"
+          style="margin-bottom: 12px;"
+        >
+          发现 {{ sniffedModels.length }} 个可用模型，已自动选择未导入的模型。已导入的模型将显示为灰色。
+        </el-alert>
+        <el-empty v-if="!sniffing && sniffedModels.length === 0" description="未发现可用模型" />
+        <el-checkbox-group v-model="sniffSelectedModelIds">
+          <div v-for="model in sniffedModels" :key="model.modelId" style="margin-bottom: 6px;">
+            <el-checkbox :label="model.modelId" :disabled="model.alreadyExists">
+              <span :style="{ color: model.alreadyExists ? '#c0c4cc' : '' }">
+                {{ model.modelId }}
+                <el-tag v-if="model.alreadyExists" size="small" type="info" style="margin-left: 6px;">已导入</el-tag>
+                <el-tag v-if="model.ownedBy" size="small" style="margin-left: 6px;">{{ model.ownedBy }}</el-tag>
+              </span>
+            </el-checkbox>
+          </div>
+        </el-checkbox-group>
+      </div>
+      <template #footer>
+        <el-button @click="sniffDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" :disabled="sniffSelectedModelIds.length === 0" @click="handleSniffImport">
+          导入选中 ({{ sniffSelectedModelIds.length }})
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Loading, View, Hide, Setting, EditPen, Delete, Connection } from '@element-plus/icons-vue'
+import { Plus, Loading, View, Hide, Setting, EditPen, Delete, Connection, Search } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
   llmProviderApi,
@@ -252,6 +305,7 @@ import {
   type LlmProviderForm,
   type LlmModel,
   type LlmModelForm,
+  type SniffedModel,
 } from '@/api/modules/llmProvider'
 
 // ==================== State ====================
@@ -355,6 +409,13 @@ const modelRules = reactive<FormRules>({
 
 // Testing state
 const testingModels = reactive<Record<number, boolean>>({})
+
+// Sniff state
+const sniffDialogVisible = ref(false)
+const sniffing = ref(false)
+const sniffedModels = ref<SniffedModel[]>([])
+const sniffSelectedModelIds = ref<string[]>([])
+const sniffProviderId = ref<number | null>(null)
 
 // ==================== Lifecycle ====================
 
@@ -612,6 +673,60 @@ function typeTagType(modelType: string): string {
   }
   return map[modelType] ?? ''
 }
+
+// ==================== Sniff ====================
+
+async function handleSniff(row: LlmProvider) {
+  sniffProviderId.value = row.id!
+  sniffing.value = true
+  sniffDialogVisible.value = true
+  sniffedModels.value = []
+  sniffSelectedModelIds.value = []
+  try {
+    const res = await llmProviderApi.sniffModels(row.id!) as any
+    const data = res?.data ?? res ?? []
+    sniffedModels.value = data
+    sniffSelectedModelIds.value = data.filter((m: SniffedModel) => !m.alreadyExists).map((m: SniffedModel) => m.modelId)
+  } catch {
+    ElMessage.error('嗅探模型失败，请检查接入配置')
+    sniffDialogVisible.value = false
+  } finally {
+    sniffing.value = false
+  }
+}
+
+async function handleSniffImport() {
+  if (!sniffProviderId.value || sniffSelectedModelIds.value.length === 0) {
+    ElMessage.warning('请选择要导入的模型')
+    return
+  }
+  submitting.value = true
+  let imported = 0
+  try {
+    for (const modelId of sniffSelectedModelIds.value) {
+      const model = sniffedModels.value.find(m => m.modelId === modelId)
+      if (model && !model.alreadyExists) {
+        await llmProviderApi.addModel(sniffProviderId.value!, {
+          name: modelId,
+          modelId: model.modelId,
+          modelType: 'general',
+          temperature: 0.3,
+          maxTokens: 2048,
+          isDefault: false,
+          enabled: true,
+        })
+        imported++
+      }
+    }
+    ElMessage.success(`成功导入 ${imported} 个模型`)
+    sniffDialogVisible.value = false
+    await loadProviders()
+  } catch {
+    ElMessage.error('导入模型失败')
+  } finally {
+    submitting.value = false
+  }
+}
 </script>
 
 <style scoped lang="scss">
@@ -717,5 +832,75 @@ function typeTagType(modelType: string): string {
   display: flex;
   gap: 16px;
   .form-row-item { flex: 1; min-width: 0; }
+}
+
+.form-section-card {
+  margin-bottom: 18px;
+  padding: 18px 18px 6px;
+  border: 1px solid #e7edf5;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+}
+
+.form-row--provider {
+  align-items: flex-start;
+}
+
+.form-switch-item {
+  flex: 0 0 132px !important;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.provider-dialog-form {
+  :deep(.el-form-item__label) {
+    white-space: nowrap;
+    color: #4b5563;
+    font-weight: 500;
+  }
+
+  :deep(.el-input__wrapper),
+  :deep(.el-select__wrapper) {
+    min-height: 44px;
+    border-radius: 12px;
+    box-shadow: 0 0 0 1px #d8e2f0 inset;
+  }
+
+  :deep(.el-input__wrapper.is-focus),
+  :deep(.el-select__wrapper.is-focused) {
+    box-shadow: 0 0 0 1px var(--el-color-primary) inset;
+  }
+}
+
+.provider-dialog {
+  :deep(.el-dialog) {
+    border-radius: 20px;
+    overflow: hidden;
+  }
+
+  :deep(.el-dialog__header) {
+    margin-right: 0;
+    padding: 24px 24px 18px;
+    border-bottom: 1px solid #eef2f7;
+  }
+
+  :deep(.el-dialog__title) {
+    font-size: 28px;
+    font-weight: 700;
+    color: #1f2937;
+    letter-spacing: 0.02em;
+  }
+
+  :deep(.el-dialog__body) {
+    padding: 20px 24px 8px;
+  }
+
+  :deep(.el-dialog__footer) {
+    padding: 8px 24px 24px;
+  }
 }
 </style>

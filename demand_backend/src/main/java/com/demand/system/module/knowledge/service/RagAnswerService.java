@@ -6,5 +6,10 @@ import java.util.List;
 
 public interface RagAnswerService {
 
-    String generateAnswer(String query, List<KnowledgeSearchResponse.SearchResultItem> searchResults, Long knowledgeBaseId);
+    String generateAnswer(
+            String query,
+            List<KnowledgeSearchResponse.SearchResultItem> searchResults,
+            Long knowledgeBaseId,
+            Long llmModelId
+    );
 }

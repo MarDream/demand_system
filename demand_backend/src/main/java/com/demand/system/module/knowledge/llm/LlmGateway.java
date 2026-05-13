@@ -9,6 +9,7 @@ import org.springframework.http.*;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
+import java.math.BigDecimal;
 import java.util.*;
 
 @Slf4j
@@ -83,9 +84,9 @@ public class LlmGateway {
             Protocol protocol = config.resolveProtocol(provider);
 
             if (protocol == Protocol.ANTHROPIC) {
-                return callAnthropicChat(provider, systemPrompt, userMessage);
+                return callAnthropicChat(provider, systemPrompt, userMessage, null, null);
             } else {
-                return callOpenAIChat(provider, systemPrompt, userMessage);
+                return callOpenAIChat(provider, systemPrompt, userMessage, null, null);
             }
         } catch (Exception e) {
             log.error("Chat调用失败: model={}", provider.getModel(), e);
@@ -127,44 +128,30 @@ public class LlmGateway {
         return headers;
     }
 
-    private String callOpenAIChat(LlmGatewayConfig.Provider provider, String systemPrompt, String userMessage) {
+    private String callOpenAIChat(
+            LlmGatewayConfig.Provider provider,
+            String systemPrompt,
+            String userMessage,
+            BigDecimal temperature,
+            Integer maxTokens
+    ) {
         try {
-            Map<String, Object> body = new HashMap<>();
-            body.put("model", provider.getModel());
-            body.put("messages", List.of(
-                    Map.of("role", "system", "content", systemPrompt),
-                    Map.of("role", "user", "content", userMessage)
-            ));
-            body.put("temperature", 0.3);
-            body.put("max_tokens", 2048);
-
-            JsonNode root = call(provider, "/chat/completions", body);
+            JsonNode root = callOpenAIChatRaw(provider, systemPrompt, userMessage, temperature, maxTokens);
             return root.path("choices").path(0).path("message").path("content").asText();
         } catch (Exception e) {
             throw new RuntimeException("OpenAI Chat调用失败: " + e.getMessage(), e);
         }
     }
 
-    private String callAnthropicChat(LlmGatewayConfig.Provider provider, String systemPrompt, String userMessage) {
+    private String callAnthropicChat(
+            LlmGatewayConfig.Provider provider,
+            String systemPrompt,
+            String userMessage,
+            BigDecimal temperature,
+            Integer maxTokens
+    ) {
         try {
-            RestTemplate restTemplate = new RestTemplate();
-            HttpHeaders headers = buildHeaders(provider);
-            headers.setContentType(MediaType.APPLICATION_JSON);
-
-            Map<String, Object> body = new HashMap<>();
-            body.put("model", provider.getModel());
-            body.put("max_tokens", 2048);
-            body.put("system", systemPrompt);
-            body.put("messages", List.of(
-                    Map.of("role", "user", "content", userMessage)
-            ));
-
-            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
-            String base = provider.getBaseUrl().replaceAll("/+$", "");
-            String url = base + "/messages";
-            ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
-
-            JsonNode root = objectMapper.readTree(response.getBody());
+            JsonNode root = callAnthropicChatRaw(provider, systemPrompt, userMessage, temperature, maxTokens);
             return root.path("content").path(0).path("text").asText();
         } catch (Exception e) {
             throw new RuntimeException("Anthropic Chat调用失败: " + e.getMessage(), e);
@@ -174,15 +161,25 @@ public class LlmGateway {
     // ==================== Chat with arbitrary provider (for test) ====================
 
     public ChatResult chatWithProvider(LlmGatewayConfig.Provider provider, String systemPrompt, String userMessage) {
+        return chatWithProvider(provider, systemPrompt, userMessage, null, null);
+    }
+
+    public ChatResult chatWithProvider(
+            LlmGatewayConfig.Provider provider,
+            String systemPrompt,
+            String userMessage,
+            BigDecimal temperature,
+            Integer maxTokens
+    ) {
         long start = System.currentTimeMillis();
         try {
             Protocol protocol = config.resolveProtocol(provider);
 
             JsonNode root;
             if (protocol == Protocol.ANTHROPIC) {
-                root = callAnthropicChatRaw(provider, systemPrompt, userMessage);
+                root = callAnthropicChatRaw(provider, systemPrompt, userMessage, temperature, maxTokens);
             } else {
-                root = callOpenAIChatRaw(provider, systemPrompt, userMessage);
+                root = callOpenAIChatRaw(provider, systemPrompt, userMessage, temperature, maxTokens);
             }
 
             long durationMs = System.currentTimeMillis() - start;
@@ -212,19 +209,31 @@ public class LlmGateway {
         }
     }
 
-    private JsonNode callOpenAIChatRaw(LlmGatewayConfig.Provider provider, String systemPrompt, String userMessage) {
+    private JsonNode callOpenAIChatRaw(
+            LlmGatewayConfig.Provider provider,
+            String systemPrompt,
+            String userMessage,
+            BigDecimal temperature,
+            Integer maxTokens
+    ) {
         Map<String, Object> body = new HashMap<>();
         body.put("model", provider.getModel());
         body.put("messages", List.of(
                 Map.of("role", "system", "content", systemPrompt),
                 Map.of("role", "user", "content", userMessage)
         ));
-        body.put("temperature", 0.3);
-        body.put("max_tokens", 2048);
+        body.put("temperature", normalizeTemperature(temperature));
+        body.put("max_tokens", normalizeMaxTokens(maxTokens));
         return call(provider, "/chat/completions", body);
     }
 
-    private JsonNode callAnthropicChatRaw(LlmGatewayConfig.Provider provider, String systemPrompt, String userMessage) {
+    private JsonNode callAnthropicChatRaw(
+            LlmGatewayConfig.Provider provider,
+            String systemPrompt,
+            String userMessage,
+            BigDecimal temperature,
+            Integer maxTokens
+    ) {
         try {
             RestTemplate restTemplate = new RestTemplate();
             HttpHeaders headers = buildHeaders(provider);
@@ -232,11 +241,12 @@ public class LlmGateway {
 
             Map<String, Object> body = new HashMap<>();
             body.put("model", provider.getModel());
-            body.put("max_tokens", 2048);
+            body.put("max_tokens", normalizeMaxTokens(maxTokens));
             body.put("system", systemPrompt);
             body.put("messages", List.of(
                     Map.of("role", "user", "content", userMessage)
             ));
+            body.put("temperature", normalizeTemperature(temperature));
 
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
             String base = provider.getBaseUrl().replaceAll("/+$", "");
@@ -246,6 +256,69 @@ public class LlmGateway {
         } catch (Exception e) {
             throw new RuntimeException("Anthropic Chat调用失败: " + e.getMessage(), e);
         }
+    }
+
+    private double normalizeTemperature(BigDecimal temperature) {
+        return temperature != null ? temperature.doubleValue() : 0.3d;
+    }
+
+    private int normalizeMaxTokens(Integer maxTokens) {
+        return maxTokens != null && maxTokens > 0 ? maxTokens : 2048;
+    }
+
+    // ==================== Model List (Sniff) ====================
+
+    public List<ModelInfo> fetchModelList(LlmGatewayConfig.Provider provider) {
+        Protocol protocol = config.resolveProtocol(provider);
+        try {
+            RestTemplate restTemplate = new RestTemplate();
+            HttpHeaders headers = buildHeaders(provider);
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            HttpEntity<Void> entity = new HttpEntity<>(headers);
+            String base = provider.getBaseUrl().replaceAll("/+$", "");
+            String url;
+            if (protocol == Protocol.ANTHROPIC) {
+                url = base + "/models";
+            } else {
+                url = base + "/models";
+            }
+
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            JsonNode root = objectMapper.readTree(response.getBody());
+
+            List<ModelInfo> models = new ArrayList<>();
+            JsonNode dataNode = root.get("data");
+            if (dataNode != null && dataNode.isArray()) {
+                for (JsonNode item : dataNode) {
+                    String id = item.has("id") ? item.get("id").asText() : null;
+                    if (id == null || id.isEmpty()) continue;
+                    String ownedBy = item.has("owned_by") ? item.get("owned_by").asText() : null;
+                    models.add(new ModelInfo(id, ownedBy));
+                }
+            }
+
+            // Anthropic: root itself may be array
+            if (models.isEmpty() && root.isArray()) {
+                for (JsonNode item : root) {
+                    String id = item.has("id") ? item.get("id").asText() : null;
+                    if (id == null || id.isEmpty()) continue;
+                    String ownedBy = item.has("owned_by") ? item.get("owned_by").asText() : null;
+                    models.add(new ModelInfo(id, ownedBy));
+                }
+            }
+
+            return models;
+        } catch (Exception e) {
+            throw new RuntimeException("获取模型列表失败: " + e.getMessage(), e);
+        }
+    }
+
+    @lombok.Data
+    @lombok.AllArgsConstructor
+    public static class ModelInfo {
+        private String id;
+        private String ownedBy;
     }
 
     @lombok.Data

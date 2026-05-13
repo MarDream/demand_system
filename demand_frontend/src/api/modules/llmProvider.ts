@@ -70,6 +70,12 @@ export interface LlmTestResult {
   model: string | null
 }
 
+export interface SniffedModel {
+  modelId: string
+  ownedBy: string | null
+  alreadyExists: boolean
+}
+
 // ---- Column Config ----
 
 export function getColumnConfig(pageKey: string) {
@@ -106,4 +112,8 @@ export const llmProviderApi = {
 
   // Roles
   getRoles: () => request.get<string[]>('/v1/llm-providers/models/roles'),
+
+  // Sniff
+  sniffModels: (id: number) =>
+    request.post<SniffedModel[]>(`/v1/llm-providers/${id}/sniff-models`, null, { timeout: 30000 }),
 }

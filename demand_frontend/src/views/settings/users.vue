@@ -7,8 +7,8 @@
           <h2>成员管理</h2>
         </div>
         <el-radio-group v-model="managementMode" class="mode-switch">
-          <el-radio-button label="basic">基础管理模式</el-radio-button>
-          <el-radio-button label="hr">人事管理模式</el-radio-button>
+          <el-radio-button value="basic">基础管理模式</el-radio-button>
+          <el-radio-button value="hr">人事管理模式</el-radio-button>
         </el-radio-group>
       </div>
 
@@ -431,6 +431,7 @@
             placeholder="请选择区域"
             clearable
             check-strictly
+            :disabled="!isEdit"
             style="width: 100%"
           />
         </el-form-item>
@@ -442,6 +443,7 @@
             placeholder="请选择部门"
             clearable
             check-strictly
+            :disabled="!isEdit"
             style="width: 100%"
           />
         </el-form-item>
@@ -471,13 +473,13 @@
 
     <el-drawer
       v-model="departmentDrawerVisible"
-      :title="departmentEditingId ? '编辑部门' : '添加子部门'"
+      :title="departmentEditingId ? '编辑部门' : '新增组织'"
       direction="rtl"
       size="492px"
       class="department-drawer"
       @close="resetDepartmentForm"
     >
-      <div class="drawer-section-title">部门信息</div>
+      <div class="drawer-section-title">组织信息</div>
       <el-form
         ref="departmentFormRef"
         :model="departmentForm"
@@ -485,29 +487,32 @@
         label-position="top"
         class="department-form"
       >
-        <el-form-item label="部门名称" prop="name" required>
+        <el-form-item label="名称" prop="name" required>
           <el-input v-model="departmentForm.name" placeholder="请输入" clearable />
         </el-form-item>
 
-        <div class="effective-tip">
-          设置添加的部门信息在指定日期生效
-          <el-button link type="primary" @click="showTodo('部门生效日期设置')">查看详情</el-button>
-        </div>
+        <el-form-item v-if="!departmentEditingId" label="组织类型" prop="orgType" required>
+          <el-radio-group v-model="departmentForm.orgType">
+            <el-radio value="region">区域</el-radio>
+            <el-radio value="department">部门</el-radio>
+          </el-radio-group>
+        </el-form-item>
 
-        <el-form-item label="上级部门" prop="parentId" required>
+        <el-form-item label="上级组织" prop="parentId" required>
           <el-tree-select
             v-model="departmentForm.parentId"
             :data="orgTree"
             :props="{ label: 'name', value: 'id', children: 'children' }"
-            placeholder="请选择上级部门"
+            placeholder="请选择上级组织"
             clearable
             check-strictly
             style="width: 100%"
           >
             <template #default="{ data }">
               <span class="department-option">
-                <el-icon><OfficeBuilding /></el-icon>
+                <el-icon><component :is="data.orgType === 'department' ? FolderOpened : OfficeBuilding" /></el-icon>
                 {{ data.name }}
+                <el-tag size="small" :type="data.orgType === 'department' ? 'info' : 'warning'" style="margin-left: 4px;">{{ data.orgType === 'department' ? '部门' : '区域' }}</el-tag>
               </span>
             </template>
           </el-tree-select>
@@ -568,6 +573,7 @@ interface FlatOrgNode {
   icon: Component
   hasChildren: boolean
   parentKey: string | null
+  orgType?: string | null
 }
 
 interface DepartmentRow {
@@ -641,6 +647,7 @@ const form = reactive<UserForm>({
 const departmentForm = reactive({
   name: '',
   parentId: null as number | null,
+  orgType: 'department' as 'region' | 'department',
   createGroup: false,
 })
 const departmentEditingId = ref<number | null>(null)
@@ -685,6 +692,7 @@ const flatOrgNodes = computed<FlatOrgNode[]>(() => {
         icon: item.orgType === 'department' ? FolderOpened : OfficeBuilding,
         hasChildren: (item.children?.length ?? 0) > 0,
         parentKey,
+        orgType: item.orgType,
       })
       if (item.children?.length) {
         walk(item.children, level + 1, key)
@@ -810,12 +818,39 @@ function handleCreate() {
   isEdit.value = false
   editId.value = null
   resetForm()
+
+  // Auto-fill org info based on current selected node
+  const node = activeOrgNode.value
+  if (node && node.id) {
+    if (node.orgType === 'region' || node.orgType === 'company') {
+      form.regionId = node.id
+    } else if (node.orgType === 'department' || node.orgType === 'group') {
+      form.departmentId = node.id
+      // Walk up to find parent region
+      const parent = flatOrgNodes.value.find(n => n.key === node.parentKey)
+      if (parent?.id && (parent.orgType === 'region' || parent.orgType === 'company')) {
+        form.regionId = parent.id
+      }
+    }
+  }
+
   dialogVisible.value = true
 }
 
 function openCreateDepartment() {
   resetDepartmentForm()
-  departmentForm.parentId = activeOrgNode.value?.id ?? orgTree.value[0]?.id ?? null
+  const node = activeOrgNode.value
+  if (node && node.id) {
+    departmentForm.parentId = node.id
+    // Default orgType based on current node type
+    if (node.orgType === 'region' || node.orgType === 'company') {
+      departmentForm.orgType = 'region'
+    } else {
+      departmentForm.orgType = 'department'
+    }
+  } else {
+    departmentForm.parentId = orgTree.value[0]?.id ?? null
+  }
   departmentDrawerVisible.value = true
 }
 
@@ -967,6 +1002,7 @@ function resetForm() {
 function resetDepartmentForm() {
   departmentForm.name = ''
   departmentForm.parentId = null
+  departmentForm.orgType = 'department'
   departmentForm.createGroup = false
   departmentEditingId.value = null
   departmentFormRef.value?.resetFields()
@@ -980,15 +1016,15 @@ async function handleSubmitDepartment() {
     const payload = {
       name: departmentForm.name.trim(),
       parentId: departmentForm.parentId,
-      orgType: 'department',
+      orgType: departmentForm.orgType,
       description: departmentForm.createGroup ? '创建部门时勾选了关联企业群' : null,
     }
     if (departmentEditingId.value) {
       await userApi.updateOrg(departmentEditingId.value, payload)
-      ElMessage.success('部门更新成功')
+      ElMessage.success('组织更新成功')
     } else {
       await userApi.createOrg(payload)
-      ElMessage.success('子部门添加成功')
+      ElMessage.success(`${departmentForm.orgType === 'region' ? '子区域' : '子部门'}添加成功`)
     }
     departmentDrawerVisible.value = false
     await loadOrgData()
@@ -1217,7 +1253,7 @@ onMounted(() => {
   flex-shrink: 0;
   padding: 4px;
   border-radius: 6px;
-  background: #e5e7ec;
+  background: #fff;
 }
 
 .mode-switch :deep(.el-radio-button__inner) {
@@ -1226,12 +1262,14 @@ onMounted(() => {
   background: transparent;
   box-shadow: none;
   color: $text-color;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .mode-switch :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
-  background: #fff;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  background: #ecf5ff;
+  color: #409eff;
+  font-weight: 600;
+  box-shadow: none;
 }
 
 .member-layout,
