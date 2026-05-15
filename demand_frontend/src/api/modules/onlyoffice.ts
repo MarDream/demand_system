@@ -12,7 +12,7 @@ export interface OnlyOfficeEditorConfig {
       print: boolean
     }
   }
-  documentType?: 'word' | 'cell' | 'slide'
+  documentType?: 'word' | 'cell' | 'slide' | 'pdf'
   editorConfig: {
     callbackUrl: string
     user: {
@@ -30,11 +30,19 @@ export interface OnlyOfficeEditorConfig {
 export interface OnlyOfficeStatus {
   available: boolean
   message: string
+  apiJsUrl: string
 }
 
 export async function getEditorConfig(knowledgeBaseId: number, documentId: number, mode: 'edit' | 'view' = 'edit'): Promise<OnlyOfficeEditorConfig> {
   const res = await request.post<OnlyOfficeEditorConfig>('/v1/onlyoffice/editor-config', null, {
     params: { knowledgeBaseId, documentId, mode }
+  })
+  return res as unknown as OnlyOfficeEditorConfig
+}
+
+export async function getPublicEditorConfig(accessToken: string, mode: 'edit' | 'view' = 'view'): Promise<OnlyOfficeEditorConfig> {
+  const res = await request.post<OnlyOfficeEditorConfig>('/v1/onlyoffice/public/editor-config', null, {
+    params: { accessToken, mode }
   })
   return res as unknown as OnlyOfficeEditorConfig
 }

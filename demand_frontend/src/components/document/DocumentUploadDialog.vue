@@ -17,7 +17,7 @@
         >
           <el-icon :size="24" class="upload-zone__icon"><Upload /></el-icon>
           <span class="upload-zone__text">点击选择文件或拖拽至此处</span>
-          <span class="upload-zone__hint">支持 txt / md / pdf / doc / docx / xls / xlsx</span>
+          <span class="upload-zone__hint">支持 txt / md / pdf / doc / docx / xls / xlsx / png / jpg / zip / rar</span>
         </div>
         <input ref="fileInputRef" type="file" multiple style="display: none" @change="onFileInputChange" />
         <input ref="folderInputRef" type="file" webkitdirectory multiple style="display: none" @change="onFolderInputChange" />
@@ -55,7 +55,7 @@ import { ElMessage } from 'element-plus'
 import { Upload, Delete } from '@element-plus/icons-vue'
 import { getKnowledgeBases, uploadDocument, type KnowledgeBase } from '@/api/modules/knowledge'
 
-const ALLOWED_EXTENSIONS = ['txt', 'md', 'pdf', 'doc', 'docx', 'xls', 'xlsx']
+const ALLOWED_EXTENSIONS = ['txt', 'md', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'png', 'jpg', 'jpeg', 'zip', 'rar']
 
 const props = withDefaults(defineProps<{
   modelValue: boolean

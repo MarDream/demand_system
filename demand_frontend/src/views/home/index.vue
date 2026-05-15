@@ -141,6 +141,7 @@ import { TitleComponent, TooltipComponent, LegendComponent, GridComponent } from
 import { getDashboardData, getDistributionData, getDurationData } from '@/api/modules/statistics'
 import { getRequirementList } from '@/api/modules/requirement'
 import { useUserStore } from '@/stores/modules/user'
+import { formatDate } from '@/utils/format'
 import type { Requirement } from '@/types/requirement'
 
 use([CanvasRenderer, PieChart, BarChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent])
@@ -230,10 +231,7 @@ function getPriorityType(priority: string) {
   return (map[priority] || 'info') as any
 }
 
-function formatDate(dateStr: string) {
-  if (!dateStr) return ''
-  return new Date(dateStr).toLocaleDateString('zh-CN')
-}
+
 
 async function loadDashboardData() {
   statsLoading.value = true

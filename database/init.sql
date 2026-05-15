@@ -39,6 +39,7 @@ CREATE TABLE `users` (
   `region_id` INT UNSIGNED DEFAULT NULL COMMENT '所属区域ID',
   `department_id` INT UNSIGNED DEFAULT NULL COMMENT '所属部门ID',
   `position_id` INT UNSIGNED DEFAULT NULL COMMENT '岗位ID',
+  `job_number` VARCHAR(20) DEFAULT NULL COMMENT '工号(A001~Z999, AA001...)',
   `status` ENUM('active', 'inactive') DEFAULT 'active' COMMENT '状态',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -1207,7 +1208,7 @@ CREATE TABLE IF NOT EXISTS `sys_org` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `name` VARCHAR(100) NOT NULL COMMENT '组织名称',
   `parent_id` INT UNSIGNED DEFAULT NULL COMMENT '父节点ID',
-  `org_type` VARCHAR(20) NOT NULL COMMENT '类型: region/company/department/group',
+  `org_type` VARCHAR(20) NOT NULL COMMENT '类型: region/company/bureau/department/group',
   `code` VARCHAR(50) DEFAULT NULL COMMENT '组织编码',
   `leader_id` INT UNSIGNED DEFAULT NULL COMMENT '负责人ID',
   `description` TEXT COMMENT '描述',
@@ -1224,6 +1225,7 @@ CREATE TABLE IF NOT EXISTS `sys_org` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一组织架构表';
 
 -- 关联表添加 org_id
+ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `job_number` VARCHAR(20) DEFAULT NULL COMMENT '工号(A001~Z999, AA001...)' AFTER `position_id`;
 ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `org_id` INT UNSIGNED DEFAULT NULL COMMENT '所属组织ID';
 ALTER TABLE `user_organizations` ADD COLUMN IF NOT EXISTS `org_id` INT UNSIGNED DEFAULT NULL COMMENT '组织ID';
 ALTER TABLE `positions` ADD COLUMN IF NOT EXISTS `org_id` INT UNSIGNED DEFAULT NULL COMMENT '归属组织ID';

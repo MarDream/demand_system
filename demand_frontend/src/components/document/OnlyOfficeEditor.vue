@@ -33,7 +33,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
-import { getEditorConfig } from '@/api/modules/onlyoffice'
+import { getEditorConfig, getOnlyOfficeStatus } from '@/api/modules/onlyoffice'
 import type { OnlyOfficeEditorConfig } from '@/api/modules/onlyoffice'
 
 const props = defineProps<{
@@ -63,6 +63,22 @@ const errorTitle = ref('加载失败')
 const errorMessage = ref('')
 const editorPlaceholder = ref<HTMLElement>()
 let editorInstance: any = null
+let cachedApiJsUrl: string | null = null
+let isRefreshingOnlyOffice = false
+let readyObserver: MutationObserver | null = null
+let readyTimer: number | null = null
+
+async function resolveApiJsUrl(forceReload = false): Promise<string> {
+  if (cachedApiJsUrl && !forceReload) return cachedApiJsUrl
+  const status = await getOnlyOfficeStatus()
+  if (!status.available || !status.apiJsUrl) {
+    throw new Error(status.message || '文档编辑服务不可用')
+  }
+  cachedApiJsUrl = status.apiJsUrl
+  if (!forceReload) return cachedApiJsUrl
+  const sep = cachedApiJsUrl.includes('?') ? '&' : '?'
+  return `${cachedApiJsUrl}${sep}_dc=${Date.now()}`
+}
 
 const dialogTitle = computed(() => {
   const name = props.documentName || '文档'
@@ -80,7 +96,7 @@ watch(visible, (val) => {
   emit('update:modelValue', val)
 })
 
-function loadEditor() {
+async function loadEditor() {
   if (!props.knowledgeBaseId || !props.documentId) {
     showError('参数错误', '缺少必要参数')
     return
@@ -89,40 +105,187 @@ function loadEditor() {
   loading.value = true
   error.value = false
 
-  getEditorConfig(props.knowledgeBaseId, props.documentId, props.mode || 'edit')
-    .then(res => {
-      const config: OnlyOfficeEditorConfig = res
-      initOnlyOffice(config)
-    })
-    .catch(err => {
-      showError('获取编辑器配置失败', err.message || '请检查网络连接')
-    })
-    .finally(() => {
-      loading.value = false
-    })
+  try {
+    const mode = props.mode || 'edit'
+    const config: OnlyOfficeEditorConfig = await getEditorConfig(props.knowledgeBaseId, props.documentId, mode)
+    await initOnlyOffice(buildEditorConfig(config, mode))
+  } catch (err: any) {
+    showError('获取编辑器配置失败', err.message || '请检查网络连接')
+  } finally {
+    loading.value = false
+  }
 }
 
-function initOnlyOffice(config: OnlyOfficeEditorConfig) {
-  const script = document.createElement('script')
-  script.src = 'http://localhost:8443/web-apps/apps/api/documents/api.js'
-  script.onload = () => {
-    if (window.DocsAPI) {
-      setTimeout(() => {
-        if (editorPlaceholder.value && window.DocsAPI) {
-          editorInstance = new window.DocsAPI.DocEditor('onlyoffice-editor-placeholder', config)
-        }
-      }, 100)
-    } else {
-      showError('OnlyOffice 脚本加载失败', '请确认 OnlyOffice 服务已启动')
+function buildEditorConfig(config: OnlyOfficeEditorConfig, mode: 'edit' | 'view'): OnlyOfficeEditorConfig & { events: Record<string, any> } {
+  return {
+    ...config,
+    events: {
+      ...((config as any)?.events || {}),
+      onAppReady: () => {
+        markEditorReady()
+      },
+      onDocumentReady: () => {
+        markEditorReady()
+      },
+      onOutdatedVersion: () => {
+        refreshOnlyOffice(mode)
+      },
+      onRequestRefreshFile: () => {
+        refreshOnlyOffice(mode)
+      },
+      onRequestClose: () => {
+        visible.value = false
+      }
     }
   }
-  script.onerror = () => {
-    showError('OnlyOffice 脚本加载失败', '无法连接到 OnlyOffice 服务')
+}
+
+function markEditorReady() {
+  loading.value = false
+  error.value = false
+  clearEditorReadyFallback()
+}
+
+function clearEditorReadyFallback() {
+  if (readyObserver) {
+    readyObserver.disconnect()
+    readyObserver = null
   }
-  document.head.appendChild(script)
+  if (readyTimer !== null) {
+    window.clearTimeout(readyTimer)
+    readyTimer = null
+  }
+}
+
+function setupEditorReadyFallback() {
+  clearEditorReadyFallback()
+  const container = editorPlaceholder.value
+  if (!container) return
+
+  const armReadyTimer = () => {
+    if (readyTimer !== null) {
+      window.clearTimeout(readyTimer)
+    }
+    readyTimer = window.setTimeout(() => {
+      if (container.querySelector('iframe')) {
+        markEditorReady()
+      }
+    }, 1500)
+  }
+
+  const attachIframeListener = (iframe: HTMLIFrameElement) => {
+    iframe.addEventListener('load', () => {
+      window.setTimeout(() => {
+        markEditorReady()
+      }, 200)
+    }, { once: true })
+    armReadyTimer()
+  }
+
+  const existingIframe = container.querySelector('iframe')
+  if (existingIframe instanceof HTMLIFrameElement) {
+    attachIframeListener(existingIframe)
+    return
+  }
+
+  readyObserver = new MutationObserver(() => {
+    const iframe = container.querySelector('iframe')
+    if (!(iframe instanceof HTMLIFrameElement)) return
+    attachIframeListener(iframe)
+    readyObserver?.disconnect()
+    readyObserver = null
+  })
+
+  readyObserver.observe(container, {
+    childList: true,
+    subtree: true,
+  })
+}
+
+async function refreshOnlyOffice(mode: 'edit' | 'view') {
+  if (isRefreshingOnlyOffice) return
+  isRefreshingOnlyOffice = true
+  loading.value = true
+  error.value = false
+  cachedApiJsUrl = null
+  try {
+    handleClose()
+    const config: OnlyOfficeEditorConfig = await getEditorConfig(props.knowledgeBaseId, props.documentId, mode)
+    await initOnlyOffice(buildEditorConfig(config, mode), true)
+  } catch (err: any) {
+    showError('刷新文档失败', err?.message || '请稍后重试')
+  } finally {
+    isRefreshingOnlyOffice = false
+  }
+}
+
+async function initOnlyOffice(config: OnlyOfficeEditorConfig, forceReload = false) {
+  let apiJsUrl: string
+  try {
+    apiJsUrl = await resolveApiJsUrl(forceReload)
+  } catch {
+    showError('获取文档服务配置失败', '请检查网络连接')
+    return
+  }
+
+  if (forceReload) {
+    document
+      .querySelectorAll('script[src*="/web-apps/apps/api/documents/api.js"]')
+      .forEach(node => node.parentNode?.removeChild(node))
+    try {
+      delete window.DocsAPI
+    } catch {
+      window.DocsAPI = undefined
+    }
+  }
+
+  if (window.DocsAPI && !forceReload) {
+    if (editorPlaceholder.value) {
+      editorInstance = new window.DocsAPI.DocEditor('onlyoffice-editor-placeholder', config)
+      setupEditorReadyFallback()
+    }
+    return
+  }
+
+  const existing = document.querySelector(`script[src="${apiJsUrl}"]`)
+  if (existing) {
+    await new Promise<void>((resolve) => {
+      existing.addEventListener('load', () => resolve())
+    })
+    if (window.DocsAPI && editorPlaceholder.value) {
+      editorInstance = new window.DocsAPI.DocEditor('onlyoffice-editor-placeholder', config)
+      setupEditorReadyFallback()
+    }
+    return
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const script = document.createElement('script')
+    script.src = apiJsUrl
+    script.onload = () => {
+      if (window.DocsAPI) {
+        setTimeout(() => {
+          if (editorPlaceholder.value && window.DocsAPI) {
+            editorInstance = new window.DocsAPI.DocEditor('onlyoffice-editor-placeholder', config)
+            setupEditorReadyFallback()
+          }
+          resolve()
+        }, 100)
+      } else {
+        showError('文档服务脚本加载失败', '请确认文档编辑服务已启动')
+        resolve()
+      }
+    }
+    script.onerror = () => {
+      showError('文档服务脚本加载失败', '无法连接到文档编辑服务')
+      resolve()
+    }
+    document.head.appendChild(script)
+  })
 }
 
 function showError(title: string, message: string) {
+  clearEditorReadyFallback()
   errorTitle.value = title
   errorMessage.value = message
   error.value = true
@@ -135,6 +298,7 @@ function retry() {
 }
 
 function handleClose() {
+  clearEditorReadyFallback()
   if (editorInstance) {
     try {
       editorInstance.destroyEditor()
@@ -142,6 +306,9 @@ function handleClose() {
       // ignore
     }
     editorInstance = null
+  }
+  if (editorPlaceholder.value) {
+    editorPlaceholder.value.innerHTML = ''
   }
   emit('saved')
 }

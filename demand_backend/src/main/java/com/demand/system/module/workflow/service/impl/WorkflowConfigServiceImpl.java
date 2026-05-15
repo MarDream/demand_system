@@ -85,6 +85,7 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             draftVersion.setProjectId(projectId);
             draftVersion.setVersion(maxVersion + 1);
             draftVersion.setName("草稿版本 v" + (maxVersion + 1));
+            draftVersion.setDefinition("{}");
             draftVersion.setIsActive(0);
             draftVersion.setCreatorId(currentUserId);
             draftVersion.setCreatedAt(LocalDateTime.now());

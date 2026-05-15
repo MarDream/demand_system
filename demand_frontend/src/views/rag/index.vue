@@ -415,6 +415,7 @@ import FilePreviewDialog from '@/components/document/FilePreviewDialog.vue'
 import { llmProviderApi, type LlmModel, type LlmProvider } from '@/api/modules/llmProvider'
 import { useKnowledgeStore } from '@/stores/knowledge'
 import storage from '@/utils/storage'
+import { formatDate } from '@/utils/format'
 import type { KnowledgeBase, SearchMode, SearchResponse, SearchResultItem } from '@/api/modules/knowledge'
 
 interface RagThinkingStep {
@@ -1281,12 +1282,7 @@ function createId(prefix: string) {
 }
 
 function formatDateTime(timestamp: number) {
-  const date = new Date(timestamp)
-  const month = `${date.getMonth() + 1}`.padStart(2, '0')
-  const day = `${date.getDate()}`.padStart(2, '0')
-  const hours = `${date.getHours()}`.padStart(2, '0')
-  const minutes = `${date.getMinutes()}`.padStart(2, '0')
-  return `${month}-${day} ${hours}:${minutes}`
+  return formatDate(new Date(timestamp))
 }
 </script>
 

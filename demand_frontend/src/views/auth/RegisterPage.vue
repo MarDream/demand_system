@@ -211,7 +211,7 @@ const loadRegionsAndDepartments = async () => {
     const response = await getOrgTree()
     if (response.data.code === 200) {
       const flat = flattenOrgTree(response.data.data || [])
-      regions.value = flat.filter(n => n.orgType === 'region')
+      regions.value = flat.filter(n => n.orgType === 'region' || n.orgType === 'company' || n.orgType === 'bureau')
       departments.value = flat.filter(n => n.orgType === 'department')
     }
   } catch (error) {

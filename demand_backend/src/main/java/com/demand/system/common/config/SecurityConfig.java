@@ -63,6 +63,8 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/public/**").permitAll()
                 .requestMatchers("/api/v1/onlyoffice/callback").permitAll()
                 .requestMatchers("/api/v1/onlyoffice/files/**").permitAll()
+                .requestMatchers("/api/v1/onlyoffice/public/**").permitAll()
+                .requestMatchers("/api/v1/onlyoffice/status").permitAll()
                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/v3/api-docs.yaml").permitAll()
                 .anyRequest().authenticated()
             )

@@ -24,7 +24,7 @@ public class WorkflowVisualConfigController {
      * 获取当前工作流配置（节点+连线）
      */
     @GetMapping("/workflows/{projectId}/config")
-    @PreAuthorize("hasAnyAuthority('admin', 'workflow:config')")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
     public Result<WorkflowConfigDTO> getWorkflowConfig(@PathVariable Long projectId) {
         return Result.success(workflowConfigService.getWorkflowConfig(projectId));
     }
@@ -33,7 +33,7 @@ public class WorkflowVisualConfigController {
      * 保存工作流配置（草稿）
      */
     @PostMapping("/workflows/{projectId}/config")
-    @PreAuthorize("hasAnyAuthority('admin', 'workflow:config')")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
     public Result<Void> saveWorkflowConfig(@PathVariable Long projectId,
                                            @RequestBody WorkflowConfigDTO configDTO) {
         workflowConfigService.saveWorkflowConfig(projectId, configDTO);
@@ -44,7 +44,7 @@ public class WorkflowVisualConfigController {
      * 提交审核
      */
     @PostMapping("/workflows/{projectId}/publish")
-    @PreAuthorize("hasAnyAuthority('admin', 'workflow:config')")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
     public Result<Void> submitForApproval(@PathVariable Long projectId) {
         workflowConfigService.submitForApproval(projectId);
         return Result.success();
@@ -54,7 +54,7 @@ public class WorkflowVisualConfigController {
      * 获取历史版本列表
      */
     @GetMapping("/workflows/{projectId}/versions")
-    @PreAuthorize("hasAnyAuthority('admin', 'workflow:config')")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
     public Result<List<WorkflowVersionDTO>> getVersionHistory(@PathVariable Long projectId) {
         return Result.success(workflowConfigService.getVersionHistory(projectId));
     }
@@ -63,7 +63,7 @@ public class WorkflowVisualConfigController {
      * 获取指定版本配置
      */
     @GetMapping("/workflows/versions/{versionId}")
-    @PreAuthorize("hasAnyAuthority('admin', 'workflow:config')")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
     public Result<WorkflowVersionDTO> getVersionConfig(@PathVariable Long versionId) {
         return Result.success(workflowConfigService.getVersionConfig(versionId));
     }
@@ -72,7 +72,7 @@ public class WorkflowVisualConfigController {
      * 获取待审核列表（仅超级管理员）
      */
     @GetMapping("/workflow-approvals/pending")
-    @PreAuthorize("hasAuthority('super_admin')")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN')")
     public Result<List<WorkflowApprovalDTO>> getPendingApprovals() {
         return Result.success(workflowConfigService.getPendingApprovals());
     }
@@ -81,7 +81,7 @@ public class WorkflowVisualConfigController {
      * 审核通过
      */
     @PostMapping("/workflow-approvals/{id}/approve")
-    @PreAuthorize("hasAuthority('super_admin')")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN')")
     public Result<Void> approveWorkflow(@PathVariable Long id,
                                        @Valid @RequestBody ApprovalRequestDTO requestDTO) {
         workflowConfigService.approveWorkflow(id, requestDTO.getComment());
@@ -92,7 +92,7 @@ public class WorkflowVisualConfigController {
      * 审核拒绝
      */
     @PostMapping("/workflow-approvals/{id}/reject")
-    @PreAuthorize("hasAuthority('super_admin')")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN')")
     public Result<Void> rejectWorkflow(@PathVariable Long id,
                                       @Valid @RequestBody ApprovalRequestDTO requestDTO) {
         workflowConfigService.rejectWorkflow(id, requestDTO.getComment());

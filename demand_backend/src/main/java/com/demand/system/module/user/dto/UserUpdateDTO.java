@@ -21,5 +21,7 @@ public class UserUpdateDTO {
 
     private Long departmentId;
 
+    private Long orgId;
+
     private Long positionId;
 }

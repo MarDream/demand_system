@@ -142,6 +142,18 @@ public class SysOrgServiceImpl implements SysOrgService {
         reindexSiblingSortOrders(org.getParentId());
     }
 
+    @Override
+    public List<Long> getDescendantIds(Long orgId) {
+        SysOrg org = sysOrgMapper.selectById(orgId);
+        if (org == null || org.getPath() == null) return List.of(orgId);
+        List<SysOrg> descendants = sysOrgMapper.selectList(
+                new LambdaQueryWrapper<SysOrg>().likeRight(SysOrg::getPath, org.getPath())
+        );
+        List<Long> ids = descendants.stream().map(SysOrg::getId).collect(Collectors.toList());
+        ids.add(orgId);
+        return ids;
+    }
+
     private boolean isDescendant(Long ancestorId, Long nodeId) {
         SysOrg node = sysOrgMapper.selectById(nodeId);
         if (node == null || node.getPath() == null) return false;

@@ -4,7 +4,7 @@
       <div class="status-container">
         <el-result
           :icon="status.available ? 'success' : 'warning'"
-          :title="status.available ? 'OnlyOffice 服务已连接' : 'OnlyOffice 服务不可用'"
+          :title="status.available ? '文档编辑服务已连接' : '文档编辑服务不可用'"
           :sub-title="status.message"
         >
           <template #extra>
@@ -21,10 +21,10 @@
           <h3>服务说明</h3>
           <el-alert type="info" :closable="false" show-icon>
             <template #title>
-              OnlyOffice Document Server
+              在线文档编辑服务
             </template>
             <div>
-              <p>OnlyOffice 是一款开源的在线办公套件，支持：</p>
+              <p>在线文档编辑服务支持：</p>
               <ul>
                 <li>Word 文档在线编辑和协同</li>
                 <li>Excel 表格在线编辑和协同</li>
@@ -44,7 +44,7 @@
               部署说明
             </template>
             <div>
-              <p>OnlyOffice Document Server 需要通过 Docker 部署。</p>
+              <p>文档编辑服务需要通过 Docker 部署。</p>
               <p>部署命令：</p>
               <code class="code-block">docker-compose up -d onlyoffice</code>
               <p class="mt-2">或使用 <code>docker-compose up -d</code> 启动所有服务。</p>
@@ -63,7 +63,7 @@
               功能已启用
             </template>
             <div>
-              <p>您可以在知识库详情页对 Office 文档（Word/Excel/PowerPoint）使用 OnlyOffice 进行在线编辑。</p>
+              <p>您可以在知识库详情页对 Office 文档（Word/Excel/PowerPoint）进行在线编辑。</p>
             </div>
           </el-alert>
         </div>

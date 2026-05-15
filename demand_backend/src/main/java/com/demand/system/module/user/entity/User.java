@@ -34,7 +34,11 @@ public class User {
 
     private Long departmentId;
 
+    private Long orgId;
+
     private Long positionId;
+
+    private String jobNumber;
 
     private String status;
 

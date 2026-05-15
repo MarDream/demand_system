@@ -1,12 +1,15 @@
 package com.demand.system.module.knowledge.controller;
 
+import com.demand.system.common.result.Result;
 import com.demand.system.module.auth.security.SecurityUtils;
+import com.demand.system.module.knowledge.dto.KnowledgePublicShareContextVO;
 import com.demand.system.module.knowledge.service.KnowledgeDocumentService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -23,13 +26,36 @@ public class KnowledgePublicShareController {
     public void accessShare(@PathVariable String token,
                             HttpServletRequest request,
                             HttpServletResponse response) throws IOException {
-        String accessUrl = documentService.resolveShareAccessUrl(
+        String accessUrl = documentService.resolveShareAccessUrl(token);
+        response.sendRedirect(accessUrl);
+    }
+
+    @GetMapping("/{token}/context")
+    public Result<KnowledgePublicShareContextVO> getShareContext(@PathVariable String token,
+                                                                 HttpServletRequest request) {
+        KnowledgePublicShareContextVO context = documentService.getPublicShareContext(
                 token,
                 SecurityUtils.getCurrentUserId(),
                 extractClientIp(request),
                 request.getHeader("User-Agent")
         );
-        response.sendRedirect(accessUrl);
+        return Result.success(context);
+    }
+
+    @GetMapping("/{token}/file")
+    public void previewShareFile(@PathVariable String token,
+                                 @RequestParam String accessToken,
+                                 HttpServletRequest request,
+                                 HttpServletResponse response) {
+        documentService.streamSharedDocument(accessToken, false, request, response);
+    }
+
+    @GetMapping("/{token}/download")
+    public void downloadShareFile(@PathVariable String token,
+                                  @RequestParam String accessToken,
+                                  HttpServletRequest request,
+                                  HttpServletResponse response) {
+        documentService.streamSharedDocument(accessToken, true, request, response);
     }
 
     private String extractClientIp(HttpServletRequest request) {

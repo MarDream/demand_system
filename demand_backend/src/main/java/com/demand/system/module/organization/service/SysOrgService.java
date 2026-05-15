@@ -17,4 +17,6 @@ public interface SysOrgService {
     void delete(Long id);
 
     void move(SysOrgMoveDTO dto);
+
+    List<Long> getDescendantIds(Long orgId);
 }

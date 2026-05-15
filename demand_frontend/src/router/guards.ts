@@ -12,6 +12,11 @@ export function setupGuards(router: Router) {
     NProgress.start()
     document.title = `${to.meta.title || ''} - 综合运营管理平台`
 
+    if (to.meta.publicAccess) {
+      next()
+      return
+    }
+
     // Override with dynamic menu name if available
     try {
       const { useAppStore } = await import('@/stores/modules/app')

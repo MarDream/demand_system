@@ -4,6 +4,12 @@ export default defineConfig({
   testDir: './e2e',
   timeout: 60_000,
   expect: { timeout: 10_000 },
+  webServer: {
+    command: '.\\node_modules\\.bin\\vite.cmd --host 127.0.0.1 --port 5176',
+    url: 'http://127.0.0.1:5176/login',
+    reuseExistingServer: true,
+    timeout: 120_000,
+  },
   use: {
     baseURL: process.env.E2E_BASE_URL || 'http://localhost:5176',
     launchOptions: process.env.CHROME_PATH

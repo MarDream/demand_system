@@ -9,6 +9,7 @@ import com.demand.system.module.auth.entity.SysUser;
 import com.demand.system.module.auth.mapper.SysUserMapper;
 import com.demand.system.module.knowledge.config.KnowledgeConfig;
 import com.demand.system.module.knowledge.dto.KnowledgeDocumentVO;
+import com.demand.system.module.knowledge.dto.KnowledgePublicShareContextVO;
 import com.demand.system.module.knowledge.entity.KnowledgeBase;
 import com.demand.system.module.knowledge.entity.KnowledgeChunk;
 import com.demand.system.module.knowledge.entity.KnowledgeDocument;
@@ -26,8 +27,13 @@ import com.demand.system.module.file.storage.MinioStorageService;
 import com.demand.system.module.requirement.dto.RequirementAttachmentDTO;
 import com.demand.system.module.requirement.entity.Requirement;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,14 +45,19 @@ import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.net.URLEncoder;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+
+import javax.crypto.SecretKey;
 
 @Slf4j
 @Service
@@ -65,6 +76,9 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     private final RabbitTemplate rabbitTemplate;
     private final KnowledgeDocumentShareMapper shareMapper;
     private final KnowledgeDocumentShareLogMapper shareLogMapper;
+
+    @Value("${jwt.secret}")
+    private String jwtSecret;
 
     @Override
     @Transactional
@@ -217,52 +231,83 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
     @Override
     @Transactional
-    public String resolveShareAccessUrl(String token, Long currentUserId, String accessIp, String userAgent) {
-        KnowledgeDocumentShare share = shareMapper.selectOne(new LambdaQueryWrapper<KnowledgeDocumentShare>()
-                .eq(KnowledgeDocumentShare::getToken, token)
-                .last("LIMIT 1"));
-        if (share == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "分享链接不存在");
-        }
-        if (!"active".equalsIgnoreCase(share.getStatus())) {
-            recordShareAccess(share, currentUserId, accessIp, userAgent, "failed", "分享链接已失效");
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "分享链接已失效");
-        }
-        if (share.getExpireAt() != null && share.getExpireAt().isBefore(LocalDateTime.now())) {
-            share.setStatus("expired");
-            shareMapper.updateById(share);
-            recordShareAccess(share, currentUserId, accessIp, userAgent, "failed", "分享链接已过期");
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "分享链接已过期");
-        }
-        if (Boolean.TRUE.equals(asBoolean(share.getRequireLogin())) && currentUserId == null) {
-            recordShareAccess(share, null, accessIp, userAgent, "failed", "需要登录访问");
-            throw new BusinessException(ErrorCode.UNAUTHORIZED, "该分享链接需要登录后访问");
-        }
-        if (Boolean.TRUE.equals(asBoolean(share.getOneTimeAccess())) && share.getUsedCount() != null && share.getUsedCount() > 0) {
-            share.setStatus("used");
-            shareMapper.updateById(share);
-            recordShareAccess(share, currentUserId, accessIp, userAgent, "failed", "分享链接已使用");
-            throw new BusinessException(ErrorCode.FORBIDDEN, "该分享链接已被使用");
-        }
+    public String resolveShareAccessUrl(String token) {
+        return "/public/share/" + token;
+    }
 
-        KnowledgeDocument doc = documentMapper.selectById(share.getDocumentId());
-        if (doc == null || !Objects.equals(doc.getKnowledgeBaseId(), share.getKnowledgeBaseId())) {
-            recordShareAccess(share, currentUserId, accessIp, userAgent, "failed", "文档不存在");
+    @Override
+    @Transactional
+    public KnowledgePublicShareContextVO getPublicShareContext(String token, Long currentUserId, String accessIp, String userAgent) {
+        ShareValidationResult result = validateShareForAccess(token, currentUserId, accessIp, userAgent, true);
+        String accessToken = generateShareAccessToken(result.share(), result.document(), currentUserId);
+        return KnowledgePublicShareContextVO.builder()
+                .shareToken(result.share().getToken())
+                .accessToken(accessToken)
+                .knowledgeBaseId(result.share().getKnowledgeBaseId())
+                .documentId(result.share().getDocumentId())
+                .fileName(result.document().getFileName())
+                .fileType(result.document().getFileType())
+                .expireAt(result.share().getExpireAt())
+                .requireLogin(asBoolean(result.share().getRequireLogin()))
+                .oneTimeAccess(asBoolean(result.share().getOneTimeAccess()))
+                .build();
+    }
+
+    @Override
+    public void streamSharedDocument(String shareAccessToken, boolean download, HttpServletRequest request, HttpServletResponse response) {
+        ShareAccessClaims claims = parseShareAccessToken(shareAccessToken);
+        KnowledgeDocument document = documentMapper.selectById(claims.documentId());
+        if (document == null || !Objects.equals(document.getKnowledgeBaseId(), claims.knowledgeBaseId())) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "分享文档不存在");
         }
+
+        String rangeHeader = request.getHeader("Range");
+        boolean headOnly = "HEAD".equalsIgnoreCase(request.getMethod());
+
         try {
-            String accessUrl = minioStorageService.getPresignedUrl(doc.getMinioKey(), 1);
-            share.setUsedCount((share.getUsedCount() == null ? 0 : share.getUsedCount()) + 1);
-            share.setUsedAt(LocalDateTime.now());
-            if (Boolean.TRUE.equals(asBoolean(share.getOneTimeAccess()))) {
-                share.setStatus("used");
+            long fileSize = resolveFileSize(document);
+            String encodedName = URLEncoder.encode(document.getFileName(), StandardCharsets.UTF_8).replace("+", "%20");
+
+            response.setHeader("Accept-Ranges", "bytes");
+            response.setHeader(
+                    "Content-Disposition",
+                    (download ? "attachment" : "inline") + "; filename*=UTF-8''" + encodedName
+            );
+            response.setContentType(getContentType(document.getFileType()));
+
+            ByteRange range = parseRange(rangeHeader, fileSize);
+            if (rangeHeader != null && range == null) {
+                response.setStatus(HttpServletResponse.SC_REQUESTED_RANGE_NOT_SATISFIABLE);
+                response.setHeader("Content-Range", "bytes */" + fileSize);
+                return;
             }
-            shareMapper.updateById(share);
-            recordShareAccess(share, currentUserId, accessIp, userAgent, "success", null);
-            return accessUrl;
+
+            if (range != null) {
+                long length = range.end() - range.start() + 1;
+                response.setStatus(HttpServletResponse.SC_PARTIAL_CONTENT);
+                response.setHeader("Content-Range", "bytes " + range.start() + "-" + range.end() + "/" + fileSize);
+                response.setContentLengthLong(length);
+                if (headOnly) {
+                    return;
+                }
+                try (InputStream is = minioStorageService.download(document.getMinioKey(), range.start(), length)) {
+                    is.transferTo(response.getOutputStream());
+                }
+            } else {
+                response.setContentLengthLong(fileSize);
+                if (headOnly) {
+                    return;
+                }
+                try (InputStream is = minioStorageService.download(document.getMinioKey())) {
+                    is.transferTo(response.getOutputStream());
+                }
+            }
+
+            response.getOutputStream().flush();
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
-            recordShareAccess(share, currentUserId, accessIp, userAgent, "failed", "下载链接生成失败");
-            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "分享访问失败: " + e.getMessage());
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "分享文件访问失败: " + e.getMessage());
         }
     }
 
@@ -361,9 +406,26 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
     @Override
     @Transactional
+    private static final Set<String> SKIP_EMBEDDING_TYPES = Set.of(
+            "png", "jpg", "jpeg", "gif", "bmp", "webp", "svg",
+            "zip", "rar", "7z", "tar", "gz", "bz2"
+    );
+
+    @Override
     public void processDocument(Long documentId) {
         KnowledgeDocument doc = documentMapper.selectById(documentId);
         if (doc == null) {
+            return;
+        }
+
+        // 图片和压缩包无需文本解析和向量化，直接标记完成
+        if (SKIP_EMBEDDING_TYPES.contains(doc.getFileType() != null ? doc.getFileType().toLowerCase() : "")) {
+            doc.setChunkCount(0);
+            doc.setStatus("indexed");
+            doc.setErrorMessage(null);
+            doc.setUpdatedAt(LocalDateTime.now());
+            documentMapper.updateById(doc);
+            updateKnowledgeBaseCount(doc.getKnowledgeBaseId());
             return;
         }
 
@@ -543,6 +605,184 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
     private Boolean asBoolean(Integer value) {
         return value != null && value == 1;
+    }
+
+    private ShareValidationResult validateShareForAccess(String token,
+                                                         Long currentUserId,
+                                                         String accessIp,
+                                                         String userAgent,
+                                                         boolean consumeAccess) {
+        KnowledgeDocumentShare share = shareMapper.selectOne(new LambdaQueryWrapper<KnowledgeDocumentShare>()
+                .eq(KnowledgeDocumentShare::getToken, token)
+                .last("LIMIT 1"));
+        if (share == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "分享链接不存在");
+        }
+        if (!"active".equalsIgnoreCase(share.getStatus())) {
+            recordShareAccess(share, currentUserId, accessIp, userAgent, "failed", "分享链接已失效");
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "分享链接已失效");
+        }
+        if (share.getExpireAt() != null && share.getExpireAt().isBefore(LocalDateTime.now())) {
+            share.setStatus("expired");
+            shareMapper.updateById(share);
+            recordShareAccess(share, currentUserId, accessIp, userAgent, "failed", "分享链接已过期");
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "分享链接已过期");
+        }
+        if (Boolean.TRUE.equals(asBoolean(share.getRequireLogin())) && currentUserId == null) {
+            recordShareAccess(share, null, accessIp, userAgent, "failed", "需要登录访问");
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "该分享链接需要登录后访问");
+        }
+        if (Boolean.TRUE.equals(asBoolean(share.getOneTimeAccess())) && share.getUsedCount() != null && share.getUsedCount() > 0) {
+            share.setStatus("used");
+            shareMapper.updateById(share);
+            recordShareAccess(share, currentUserId, accessIp, userAgent, "failed", "分享链接已使用");
+            throw new BusinessException(ErrorCode.FORBIDDEN, "该分享链接已被使用");
+        }
+
+        KnowledgeDocument doc = documentMapper.selectById(share.getDocumentId());
+        if (doc == null || !Objects.equals(doc.getKnowledgeBaseId(), share.getKnowledgeBaseId())) {
+            recordShareAccess(share, currentUserId, accessIp, userAgent, "failed", "文档不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "分享文档不存在");
+        }
+
+        if (consumeAccess) {
+            share.setUsedCount((share.getUsedCount() == null ? 0 : share.getUsedCount()) + 1);
+            share.setUsedAt(LocalDateTime.now());
+            if (Boolean.TRUE.equals(asBoolean(share.getOneTimeAccess()))) {
+                share.setStatus("used");
+            }
+            shareMapper.updateById(share);
+            recordShareAccess(share, currentUserId, accessIp, userAgent, "success", null);
+        }
+
+        return new ShareValidationResult(share, doc);
+    }
+
+    private String generateShareAccessToken(KnowledgeDocumentShare share, KnowledgeDocument doc, Long currentUserId) {
+        SecretKey key = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
+        return Jwts.builder()
+                .subject("knowledge-share")
+                .claim("shareId", share.getId())
+                .claim("shareToken", share.getToken())
+                .claim("knowledgeBaseId", share.getKnowledgeBaseId())
+                .claim("documentId", share.getDocumentId())
+                .claim("minioKey", doc.getMinioKey())
+                .claim("userId", currentUserId)
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + 3600000))
+                .signWith(key)
+                .compact();
+    }
+
+    private ShareAccessClaims parseShareAccessToken(String shareAccessToken) {
+        if (shareAccessToken == null || shareAccessToken.isBlank()) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "分享访问令牌缺失");
+        }
+
+        try {
+            SecretKey key = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
+            var claims = Jwts.parser()
+                    .verifyWith(key)
+                    .build()
+                    .parseSignedClaims(shareAccessToken)
+                    .getPayload();
+            return new ShareAccessClaims(
+                    toLong(claims.get("shareId")),
+                    (String) claims.get("shareToken"),
+                    toLong(claims.get("knowledgeBaseId")),
+                    toLong(claims.get("documentId")),
+                    (String) claims.get("minioKey")
+            );
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "分享访问令牌无效");
+        }
+    }
+
+    private Long toLong(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value instanceof String str && !str.isBlank()) {
+            return Long.parseLong(str);
+        }
+        return null;
+    }
+
+    private long resolveFileSize(KnowledgeDocument document) throws Exception {
+        if (document.getFileSize() != null && document.getFileSize() > 0) {
+            return document.getFileSize();
+        }
+        return minioStorageService.stat(document.getMinioKey()).size();
+    }
+
+    private String getContentType(String fileType) {
+        return switch (fileType.toLowerCase()) {
+            case "pdf" -> "application/pdf";
+            case "doc" -> "application/msword";
+            case "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            case "xls" -> "application/vnd.ms-excel";
+            case "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+            case "ppt" -> "application/vnd.ms-powerpoint";
+            case "pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+            case "txt" -> "text/plain; charset=UTF-8";
+            case "md" -> "text/markdown; charset=UTF-8";
+            case "csv" -> "text/csv; charset=UTF-8";
+            case "json" -> "application/json; charset=UTF-8";
+            case "xml" -> "application/xml; charset=UTF-8";
+            case "log" -> "text/plain; charset=UTF-8";
+            case "yml", "yaml" -> "text/yaml; charset=UTF-8";
+            case "png" -> "image/png";
+            case "jpg", "jpeg" -> "image/jpeg";
+            case "gif" -> "image/gif";
+            case "bmp" -> "image/bmp";
+            case "webp" -> "image/webp";
+            case "svg" -> "image/svg+xml";
+            case "zip" -> "application/zip";
+            case "rar" -> "application/vnd.rar";
+            default -> "application/octet-stream";
+        };
+    }
+
+    private ByteRange parseRange(String rangeHeader, long fileSize) {
+        if (rangeHeader == null || rangeHeader.isBlank()) {
+            return null;
+        }
+        if (!rangeHeader.startsWith("bytes=") || rangeHeader.contains(",")) {
+            return null;
+        }
+
+        String value = rangeHeader.substring("bytes=".length()).trim();
+        String[] parts = value.split("-", 2);
+        if (parts.length != 2) {
+            return null;
+        }
+
+        try {
+            long start;
+            long end;
+
+            if (parts[0].isBlank()) {
+                long suffixLength = Long.parseLong(parts[1]);
+                if (suffixLength <= 0) {
+                    return null;
+                }
+                start = Math.max(0, fileSize - suffixLength);
+                end = fileSize - 1;
+            } else {
+                start = Long.parseLong(parts[0]);
+                end = parts[1].isBlank() ? fileSize - 1 : Long.parseLong(parts[1]);
+            }
+
+            if (start < 0 || start >= fileSize || end < start) {
+                return null;
+            }
+
+            return new ByteRange(start, Math.min(end, fileSize - 1));
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private List<float[]> embedInBatches(List<String> chunks) {
@@ -817,5 +1057,14 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 .uploaderName(uploaderName)
                 .createdAt(doc.getCreatedAt())
                 .build();
+    }
+
+    private record ShareValidationResult(KnowledgeDocumentShare share, KnowledgeDocument document) {
+    }
+
+    private record ShareAccessClaims(Long shareId, String shareToken, Long knowledgeBaseId, Long documentId, String minioKey) {
+    }
+
+    private record ByteRange(long start, long end) {
     }
 }

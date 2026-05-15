@@ -29,7 +29,7 @@
                   </el-tag>
                 </div>
                 <p class="item-text">{{ item.content }}</p>
-                <span class="item-time">{{ item.createdAt }}</span>
+                <span class="item-time">{{ formatDate(item.createdAt) }}</span>
               </div>
             </div>
           </div>
@@ -57,6 +57,7 @@ import { ElMessage } from 'element-plus'
 import { getNotificationList, markAsRead, markAllAsRead } from '@/api/modules/notification'
 import PageContainer from '@/components/common/PageContainer.vue'
 import TableCard from '@/components/common/TableCard.vue'
+import { formatDate } from '@/utils/format'
 
 const router = useRouter()
 const loading = ref(false)

@@ -118,6 +118,13 @@ export function getDocumentPreviewUrl(knowledgeBaseId: number, documentId: numbe
   return request.get<string>(`/v1/knowledge/bases/${knowledgeBaseId}/documents/${documentId}/preview`)
 }
 
+export async function downloadDocumentBlob(knowledgeBaseId: number, documentId: number): Promise<Blob> {
+  const res = await request.get<Blob>(`/v1/knowledge/bases/${knowledgeBaseId}/documents/${documentId}/download`, {
+    responseType: 'blob',
+  })
+  return res as unknown as Blob
+}
+
 export function generateDocumentShareLink(
   knowledgeBaseId: number,
   documentId: number,

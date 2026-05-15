@@ -9,8 +9,7 @@
     </template>
 
     <div class="detail-layout">
-      <!-- 左侧：文档列表 -->
-      <div class="detail-left">
+      <div>
         <div class="section-header">
           <h3>文档列表</h3>
           <el-button type="primary" size="small" @click="showUploadDialog = true">上传文档</el-button>
@@ -20,7 +19,8 @@
           <el-table-column type="selection" width="45" />
           <el-table-column prop="fileName" label="文件名" min-width="200" show-overflow-tooltip>
             <template #default="{ row }">
-              <span class="file-name-link" @click="handlePreview(row)">{{ row.fileName }}</span>
+              <span v-if="canPreview(row.fileType)" class="file-name-link" @click="handlePreview(row)">{{ row.fileName }}</span>
+              <span v-else>{{ row.fileName }}</span>
             </template>
           </el-table-column>
           <el-table-column prop="fileType" label="类型" width="80" />
@@ -40,7 +40,7 @@
           </el-table-column>
           <el-table-column label="操作" width="220" fixed="right">
             <template #default="{ row }">
-              <el-tooltip content="预览">
+              <el-tooltip v-if="canPreview(row.fileType)" content="预览">
                 <el-button link type="primary" size="small" @click="handlePreview(row)"><el-icon><View /></el-icon></el-button>
               </el-tooltip>
               <el-tooltip content="下载">
@@ -79,39 +79,6 @@
           class="pagination"
           @current-change="(p: number) => store.fetchDocuments(kbId, p, 10)"
         />
-      </div>
-
-      <!-- 右侧：检索区 -->
-      <div class="detail-right">
-        <h3>语义检索</h3>
-        <el-input
-          v-model="searchQuery"
-          placeholder="输入检索内容..."
-          @keyup.enter="handleSearch"
-          clearable
-        >
-          <template #append>
-            <el-button @click="handleSearch">检索</el-button>
-          </template>
-        </el-input>
-        <el-radio-group v-model="searchMode" size="small" class="mode-group">
-          <el-radio-button value="hybrid">混合</el-radio-button>
-          <el-radio-button value="semantic">语义</el-radio-button>
-          <el-radio-button value="keyword">关键词</el-radio-button>
-        </el-radio-group>
-
-        <div v-if="store.searchResults?.results?.length" class="search-results">
-          <p class="result-count">找到 {{ store.searchResults.total }} 条结果</p>
-          <el-card v-for="item in store.searchResults.results" :key="item.chunkId" class="result-card" shadow="never">
-            <div class="result-header">
-              <span class="result-file">{{ item.fileName }}</span>
-              <el-tag size="small" type="success">{{ Math.round(item.score * 100) }}% 相关</el-tag>
-            </div>
-            <div v-if="item.sectionTitle" class="result-title">{{ item.sectionTitle }}</div>
-            <div class="result-content">{{ item.content }}</div>
-          </el-card>
-        </div>
-        <el-empty v-else-if="store.searchResults" description="未找到相关结果" />
       </div>
     </div>
 
@@ -229,21 +196,25 @@ import QRCode from 'qrcode'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading, View, Download, Share, RefreshRight, Delete, Document } from '@element-plus/icons-vue'
+
+const NO_PREVIEW_TYPES = ['zip', 'rar', '7z', 'tar', 'gz', 'bz2']
+
+function canPreview(fileType: string): boolean {
+  return !NO_PREVIEW_TYPES.includes(fileType?.toLowerCase())
+}
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppDialog from '@/components/common/AppDialog.vue'
 import DocumentUploadDialog from '@/components/document/DocumentUploadDialog.vue'
 import FilePreviewDialog from '@/components/document/FilePreviewDialog.vue'
 import { useKnowledgeStore } from '@/stores/knowledge'
 import { deleteKnowledgeBase, getKnowledgeBase, updateKnowledgeBase, retryDocuments, batchDeleteDocuments } from '@/api/modules/knowledge'
-import type { KnowledgeBase, KnowledgeDocument, SearchMode } from '@/api/modules/knowledge'
+import type { KnowledgeBase, KnowledgeDocument } from '@/api/modules/knowledge'
 
 const route = useRoute()
 const router = useRouter()
 const store = useKnowledgeStore()
 const kbId = Number(route.params.id)
 const kbInfo = ref<KnowledgeBase | null>(null)
-const searchQuery = ref('')
-const searchMode = ref<SearchMode>('hybrid')
 const showUploadDialog = ref(false)
 const editDialogVisible = ref(false)
 const submitting = ref(false)
@@ -428,11 +399,6 @@ async function copyCurrentShareLink() {
   }
 }
 
-function handleSearch() {
-  if (!searchQuery.value.trim()) return
-  store.search(searchQuery.value, searchMode.value, kbId)
-}
-
 function goBack() {
   router.push('/settings/knowledge')
 }
@@ -504,72 +470,12 @@ function statusLabel(status: string) {
 </script>
 
 <style scoped>
-.detail-layout {
-  display: flex;
-  gap: 24px;
-}
-.detail-left {
-  flex: 1;
-  min-width: 0;
-}
 .file-name-link {
   color: var(--el-color-primary);
   cursor: pointer;
   &:hover {
     text-decoration: underline;
   }
-}
-.detail-right {
-  width: 400px;
-  flex-shrink: 0;
-}
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-.section-header h3 {
-  margin: 0;
-}
-.mode-group {
-  margin: 8px 0 16px;
-}
-.search-results {
-  margin-top: 16px;
-}
-.result-count {
-  color: #909399;
-  font-size: 13px;
-  margin-bottom: 12px;
-}
-.result-card {
-  margin-bottom: 12px;
-}
-.result-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-.result-file {
-  font-weight: 600;
-  font-size: 14px;
-}
-.result-title {
-  font-size: 12px;
-  color: #909399;
-  margin-bottom: 6px;
-}
-.result-content {
-  font-size: 13px;
-  color: #606266;
-  line-height: 1.6;
-  max-height: 120px;
-  overflow: hidden;
-  background: #f5f7fa;
-  padding: 8px;
-  border-radius: 4px;
 }
 .pagination {
   margin-top: 16px;

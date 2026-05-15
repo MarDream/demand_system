@@ -1,6 +1,8 @@
 package com.demand.system.module.onlyoffice.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.demand.system.common.exception.BusinessException;
+import com.demand.system.common.result.ErrorCode;
 import com.demand.system.module.file.storage.MinioStorageService;
 import com.demand.system.module.knowledge.entity.KnowledgeDocument;
 import com.demand.system.module.knowledge.mapper.KnowledgeDocumentMapper;
@@ -14,6 +16,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.web.client.RestTemplate;
@@ -23,6 +26,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.net.URLEncoder;
 import java.time.LocalDateTime;
+import java.util.Date;
 import java.util.*;
 
 @Slf4j
@@ -35,86 +39,131 @@ public class OnlyOfficeServiceImpl implements OnlyOfficeService {
     private final UserMapper userMapper;
     private final MinioStorageService minioStorageService;
 
+    @Value("${jwt.secret}")
+    private String jwtSecret;
+
     private static final Set<String> SUPPORTED_TYPES = Set.of(
-            "doc", "docx", "xls", "xlsx", "ppt", "pptx"
+            "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx"
     );
 
     @Override
     public Map<String, Object> buildEditorConfig(Long knowledgeBaseId, Long documentId, Long userId, String mode) {
         KnowledgeDocument document = getDocument(knowledgeBaseId, documentId);
-
-        String fileType = Optional.ofNullable(document.getFileType()).orElse("").toLowerCase();
-        if (!SUPPORTED_TYPES.contains(fileType.toLowerCase())) {
-            throw new IllegalArgumentException("OnlyOffice 不支持该文件类型: " + fileType);
-        }
-
         User user = userMapper.selectById(userId);
         String userName = user != null ? (user.getRealName() != null ? user.getRealName() : user.getUsername()) : "Guest";
 
         try {
             String documentUrl = buildOnlyOfficeDocumentUrl(knowledgeBaseId, documentId, document.getMinioKey());
-            String callbackUrl = onlyOfficeConfig.getCallbackUrl();
-            boolean editMode = !"view".equals(mode);
-
-            String documentKey = documentId + "_" + (document.getUpdatedAt() != null ?
-                    document.getUpdatedAt().toString().replace("-", "").replace(":", "").replace(" ", "T") :
-                    LocalDateTime.now().toString());
-
-            Map<String, Object> documentConfig = new LinkedHashMap<>();
-            documentConfig.put("key", documentKey);
-            documentConfig.put("url", documentUrl);
-            documentConfig.put("title", document.getFileName());
-            documentConfig.put("fileType", fileType);
-            documentConfig.put("permissions", Map.of(
-                    "edit", editMode,
-                    "download", true,
-                    "print", true
-            ));
-
-            Map<String, Object> editorConfig = new LinkedHashMap<>();
-            editorConfig.put("callbackUrl", callbackUrl + "?docId=" + documentId + "&kbId=" + knowledgeBaseId);
-
-            Map<String, Object> userConfig = new LinkedHashMap<>();
-            userConfig.put("id", userId != null ? userId.toString() : "0");
-            userConfig.put("name", userName);
-            editorConfig.put("user", userConfig);
-
-            editorConfig.put("mode", editMode ? "edit" : "view");
-
-            Map<String, Object> customization = new LinkedHashMap<>();
-            customization.put("about", false);
-            customization.put("feedback", false);
-            customization.put("compactHeader", true);
-            customization.put("compactToolbar", true);
-            Map<String, Object> logoConfig = new LinkedHashMap<>();
-            logoConfig.put("image", "");
-            logoConfig.put("imageEmbedded", "");
-            logoConfig.put("imageDark", "");
-            logoConfig.put("imageDarkEmbedded", "");
-            customization.put("logo", logoConfig);
-            Map<String, Object> features = new LinkedHashMap<>();
-            features.put("spellcheck", editMode);
-            customization.put("features", features);
-            editorConfig.put("customization", customization);
-
-            Map<String, Object> config = new LinkedHashMap<>();
-            config.put("document", documentConfig);
-            config.put("documentType", resolveDocumentType(fileType));
-            config.put("editorConfig", editorConfig);
-
-            String token = generateToken(config);
-            config.put("token", token);
-
-            config.put("type", "desktop");
-            config.put("height", "100%");
-            config.put("width", "100%");
-
-            return config;
-
+            return buildEditorConfig(document, userId, userName, mode, documentUrl);
         } catch (Exception e) {
             log.error("构建 OnlyOffice 配置失败", e);
             throw new RuntimeException("构建编辑器配置失败: " + e.getMessage());
         }
+    }
+
+    @Override
+    public Map<String, Object> buildPublicEditorConfig(String shareAccessToken, String mode) {
+        ShareAccessClaims claims = parseShareAccessToken(shareAccessToken);
+        KnowledgeDocument document = getDocument(claims.knowledgeBaseId(), claims.documentId());
+
+        try {
+            String documentUrl = buildPublicOnlyOfficeDocumentUrl(claims.documentId(), shareAccessToken);
+            return buildEditorConfig(document, claims.userId(), "Guest", mode, documentUrl);
+        } catch (Exception e) {
+            log.error("构建公开分享 OnlyOffice 配置失败", e);
+            throw new RuntimeException("构建编辑器配置失败: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void downloadSharedDocument(Long documentId, String shareAccessToken,
+                                       HttpServletRequest request, HttpServletResponse response) {
+        ShareAccessClaims claims = parseShareAccessToken(shareAccessToken);
+        if (!Objects.equals(documentId, claims.documentId())) {
+            sendError(response, HttpServletResponse.SC_UNAUTHORIZED, "OnlyOffice 文件访问令牌无效");
+            return;
+        }
+        KnowledgeDocument document = getDocument(claims.knowledgeBaseId(), documentId);
+        streamDocument(document, request, response);
+    }
+
+    private Map<String, Object> buildEditorConfig(KnowledgeDocument document,
+                                                  Long userId,
+                                                  String userName,
+                                                  String mode,
+                                                  String documentUrl) {
+        String fileType = Optional.ofNullable(document.getFileType()).orElse("").toLowerCase();
+        if (!SUPPORTED_TYPES.contains(fileType)) {
+            throw new IllegalArgumentException("OnlyOffice 不支持该文件类型: " + fileType);
+        }
+
+        String callbackUrl = onlyOfficeConfig.getCallbackUrl();
+        boolean editMode = !"view".equals(mode);
+        String documentKey = document.getId() + "_" + (document.getUpdatedAt() != null ?
+                document.getUpdatedAt().toString().replace("-", "").replace(":", "").replace(" ", "T") :
+                LocalDateTime.now().toString());
+
+        Map<String, Object> documentConfig = new LinkedHashMap<>();
+        documentConfig.put("key", documentKey);
+        documentConfig.put("url", documentUrl);
+        documentConfig.put("title", document.getFileName());
+        documentConfig.put("fileType", fileType);
+        documentConfig.put("permissions", Map.of(
+                "edit", editMode,
+                "download", true,
+                "print", true
+        ));
+
+        Map<String, Object> editorConfig = new LinkedHashMap<>();
+        editorConfig.put("callbackUrl", callbackUrl + "?docId=" + document.getId() + "&kbId=" + document.getKnowledgeBaseId());
+
+        Map<String, Object> userConfig = new LinkedHashMap<>();
+        userConfig.put("id", userId != null ? userId.toString() : "0");
+        userConfig.put("name", userName);
+        editorConfig.put("user", userConfig);
+
+        editorConfig.put("mode", editMode ? "edit" : "view");
+
+        Map<String, Object> customization = new LinkedHashMap<>();
+        customization.put("about", false);
+        customization.put("feedback", false);
+        customization.put("help", false);
+        customization.put("compactHeader", true);
+        customization.put("compactToolbar", true);
+        Map<String, Object> logoConfig = new LinkedHashMap<>();
+        logoConfig.put("visible", false);
+        logoConfig.put("image", "");
+        logoConfig.put("imageEmbedded", "");
+        logoConfig.put("imageDark", "");
+        logoConfig.put("imageDarkEmbedded", "");
+        customization.put("logo", logoConfig);
+        Map<String, Object> customerConfig = new LinkedHashMap<>();
+        customerConfig.put("name", "");
+        customerConfig.put("address", "");
+        customerConfig.put("mail", "");
+        customerConfig.put("www", "");
+        customerConfig.put("info", "");
+        customerConfig.put("logo", "");
+        customerConfig.put("logoDark", "");
+        customization.put("customer", customerConfig);
+        Map<String, Object> features = new LinkedHashMap<>();
+        features.put("spellcheck", editMode);
+        customization.put("features", features);
+        editorConfig.put("customization", customization);
+
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("document", documentConfig);
+        config.put("documentType", resolveDocumentType(fileType));
+        config.put("editorConfig", editorConfig);
+
+        String token = generateToken(config);
+        config.put("token", token);
+
+        config.put("type", "desktop");
+        config.put("height", "100%");
+        config.put("width", "100%");
+
+        return config;
     }
 
     @Override
@@ -126,6 +175,12 @@ public class OnlyOfficeServiceImpl implements OnlyOfficeService {
         }
 
         KnowledgeDocument document = getDocument(knowledgeBaseId, documentId);
+        streamDocument(document, request, response);
+    }
+
+    private void streamDocument(KnowledgeDocument document,
+                                HttpServletRequest request,
+                                HttpServletResponse response) {
         String rangeHeader = request.getHeader("Range");
         boolean headOnly = "HEAD".equalsIgnoreCase(request.getMethod());
 
@@ -167,7 +222,7 @@ public class OnlyOfficeServiceImpl implements OnlyOfficeService {
 
             response.getOutputStream().flush();
         } catch (Exception e) {
-            log.error("OnlyOffice 文件访问失败: kbId={}, docId={}", knowledgeBaseId, documentId, e);
+            log.error("OnlyOffice 文件访问失败: kbId={}, docId={}", document.getKnowledgeBaseId(), document.getId(), e);
             if (!response.isCommitted()) {
                 sendError(response, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "OnlyOffice 文件访问失败");
             }
@@ -260,6 +315,15 @@ public class OnlyOfficeServiceImpl implements OnlyOfficeService {
                 .toUriString();
     }
 
+    private String buildPublicOnlyOfficeDocumentUrl(Long documentId, String shareAccessToken) {
+        String baseUrl = resolveDocumentAccessBaseUrl();
+        return UriComponentsBuilder.fromHttpUrl(baseUrl)
+                .path("/api/v1/onlyoffice/public/files/{documentId}")
+                .queryParam("accessToken", shareAccessToken)
+                .buildAndExpand(documentId)
+                .toUriString();
+    }
+
     private String resolveDocumentAccessBaseUrl() {
         String endpoint = onlyOfficeConfig.getDocumentAccessEndpoint();
         if (endpoint != null && !endpoint.isBlank()) {
@@ -305,6 +369,32 @@ public class OnlyOfficeServiceImpl implements OnlyOfficeService {
         }
     }
 
+    private ShareAccessClaims parseShareAccessToken(String shareAccessToken) {
+        if (shareAccessToken == null || shareAccessToken.isBlank()) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "分享访问令牌缺失");
+        }
+        try {
+            SecretKey key = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
+            var claims = Jwts.parser()
+                    .verifyWith(key)
+                    .build()
+                    .parseSignedClaims(shareAccessToken)
+                    .getPayload();
+            return new ShareAccessClaims(
+                    toLong(claims.get("shareId")),
+                    (String) claims.get("shareToken"),
+                    toLong(claims.get("knowledgeBaseId")),
+                    toLong(claims.get("documentId")),
+                    (String) claims.get("minioKey"),
+                    toLong(claims.get("userId"))
+            );
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "分享访问令牌无效");
+        }
+    }
+
     private Long toLong(Object value) {
         if (value instanceof Number number) {
             return number.longValue();
@@ -329,6 +419,7 @@ public class OnlyOfficeServiceImpl implements OnlyOfficeService {
 
     private String resolveDocumentType(String fileType) {
         return switch (fileType.toLowerCase()) {
+            case "pdf" -> "pdf";
             case "doc", "docx" -> "word";
             case "xls", "xlsx" -> "cell";
             case "ppt", "pptx" -> "slide";
@@ -423,6 +514,7 @@ public class OnlyOfficeServiceImpl implements OnlyOfficeService {
 
     private String getContentType(String fileType) {
         return switch (fileType.toLowerCase()) {
+            case "pdf" -> "application/pdf";
             case "doc" -> "application/msword";
             case "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
             case "xls" -> "application/vnd.ms-excel";
@@ -434,5 +526,13 @@ public class OnlyOfficeServiceImpl implements OnlyOfficeService {
     }
 
     private record ByteRange(long start, long end) {
+    }
+
+    private record ShareAccessClaims(Long shareId,
+                                     String shareToken,
+                                     Long knowledgeBaseId,
+                                     Long documentId,
+                                     String minioKey,
+                                     Long userId) {
     }
 }

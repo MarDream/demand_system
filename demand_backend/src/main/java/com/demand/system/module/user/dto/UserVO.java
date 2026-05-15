@@ -19,11 +19,15 @@ public class UserVO {
 
     private String avatar;
 
+    private String jobNumber;
+
     private String status;
 
     private Long regionId;
 
     private Long departmentId;
+
+    private Long orgId;
 
     private Long positionId;
 

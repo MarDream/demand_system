@@ -11,6 +11,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/v1/users")
 @RequiredArgsConstructor
@@ -54,5 +56,16 @@ public class UserController {
             return Result.success("初始密码已重置并发送至用户邮箱");
         }
         return Result.success("初始密码已重置，但邮件发送失败，请检查邮箱配置后重试");
+    }
+
+    @PutMapping("/{id}/roles")
+    public Result<Void> assignRoles(@PathVariable Long id, @RequestBody List<Long> roleIds) {
+        userService.assignRoles(id, roleIds);
+        return Result.success();
+    }
+
+    @GetMapping("/{id}/roles")
+    public Result<List<Long>> getUserRoles(@PathVariable Long id) {
+        return Result.success(userService.getUserRoleIds(id));
     }
 }

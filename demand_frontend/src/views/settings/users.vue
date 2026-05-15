@@ -2,10 +2,7 @@
   <PageContainer :breadcrumb="false">
     <div class="member-console">
       <div class="member-topbar">
-        <div>
-          <div class="page-crumb">通讯录 / 成员管理</div>
-          <h2>成员管理</h2>
-        </div>
+        <div />
         <el-radio-group v-model="managementMode" class="mode-switch">
           <el-radio-button value="basic">基础管理模式</el-radio-button>
           <el-radio-button value="hr">人事管理模式</el-radio-button>
@@ -13,7 +10,7 @@
       </div>
 
       <div
-        v-if="managementMode === 'basic' && memberView === 'members'"
+        v-if="managementMode === 'basic'"
         class="member-layout"
         :style="{ gridTemplateColumns: sidebarCollapsed ? '0px 0px minmax(0, 1fr)' : `${sidebarWidth}px 4px minmax(0, 1fr)` }"
         v-loading="loading"
@@ -26,13 +23,13 @@
           </el-input>
 
           <div class="sidebar-actions">
-            <el-button @click="openCreateDepartment">
+            <el-button v-if="allowedNewTypes.length > 0" @click="openCreateDepartment">
               <el-icon><Plus /></el-icon>
-              添加子部门
+              添加{{ allowedNewTypes.length === 1 ? ORG_TYPE_LABELS[allowedNewTypes[0]] : '子组织' }}
             </el-button>
             <el-button @click="openDepartmentManagement">
               <el-icon><Operation /></el-icon>
-              部门管理
+              组织管理
             </el-button>
           </div>
 
@@ -73,17 +70,24 @@
         </button>
 
         <main class="member-main">
+          <template v-if="memberView === 'members'">
           <div class="org-header">
             <div>
+              <nav v-if="orgBreadcrumb.length > 1" class="org-breadcrumb">
+                <template v-for="(item, idx) in orgBreadcrumb" :key="item.key">
+                  <span v-if="idx < orgBreadcrumb.length - 1" class="org-breadcrumb-link" @click="selectOrgByKey(item.key)">{{ item.name }}</span>
+                  <span v-else class="org-breadcrumb-current">{{ item.name }}</span>
+                  <span v-if="idx < orgBreadcrumb.length - 1" class="org-breadcrumb-sep">/</span>
+                </template>
+              </nav>
               <div class="org-title">
                 {{ activeOrgName }}
-                <el-tag size="small" type="warning" effect="plain">全员群</el-tag>
+                <el-tag size="small" type="warning" effect="plain">{{ orgTypeLabel }}</el-tag>
               </div>
-              <p>你是主管理员，拥有全部权限</p>
             </div>
-            <el-button link type="primary" @click="showTodo('编辑部门')">
+            <el-button link type="primary" @click="openEditOrgDrawer">
               <el-icon><Setting /></el-icon>
-              编辑部门
+              {{ editOrgButtonText }}
             </el-button>
           </div>
 
@@ -151,7 +155,9 @@
             <el-table-column label="职位" min-width="140">
               <template #default="{ row }">{{ positionName(row.positionId) }}</template>
             </el-table-column>
-            <el-table-column prop="id" label="工号" width="120" />
+            <el-table-column label="工号" width="120">
+              <template #default="{ row }">{{ row.jobNumber || '-' }}</template>
+            </el-table-column>
             <el-table-column prop="email" label="邮箱" min-width="190" show-overflow-tooltip />
             <el-table-column label="员工UserID" min-width="150">
               <template #default="{ row }">{{ row.username }}</template>
@@ -165,11 +171,9 @@
                     </el-button>
                   </el-tooltip>
                 <el-dropdown @command="(command: string) => handleUserCommand(command, row)">
-                    <el-tooltip content="更多操作" placement="top">
-                      <el-button link type="primary" size="small">
+                      <el-button link type="primary" size="small" title="更多操作">
                         <el-icon><MoreFilled /></el-icon>
                       </el-button>
-                    </el-tooltip>
                   <template #dropdown>
                     <el-dropdown-menu>
                       <el-dropdown-item command="reset">
@@ -191,83 +195,80 @@
               </template>
             </el-table-column>
           </el-table>
-        </main>
-      </div>
+          </template>
 
-      <div v-else-if="managementMode === 'basic'" class="department-management" v-loading="loading">
-        <div class="department-head">
-          <div>
-            <div class="department-title">一体化运营运维团队</div>
-            <p>你是主管理员，拥有全部权限</p>
+          <template v-else>
+          <div class="department-head">
+            <div>
+              <div class="department-title">{{ activeOrgName }}</div>
+              <p>你是主管理员，拥有全部权限</p>
+            </div>
+            <el-button link type="primary" @click="memberView = 'members'">返回成员列表</el-button>
           </div>
-          <el-button link type="primary" @click="memberView = 'members'">返回成员列表</el-button>
-        </div>
 
-        <div class="department-actions">
-          <el-button type="primary" @click="openCreateDepartment">
-            <el-icon><Plus /></el-icon>
-            添加部门
-          </el-button>
-          <el-button @click="showTodo('批量创建部门')">批量创建部门</el-button>
-          <el-button :disabled="selectedDepartments.length !== 1" @click="openEditDepartment">
-            编辑选中部门
-          </el-button>
-          <el-button type="danger" plain :disabled="selectedDepartments.length === 0" @click="handleDeleteDepartments">
-            删除选中部门
-          </el-button>
-          <el-button link type="primary" @click="showTodo('使用手册')">使用手册</el-button>
-        </div>
+          <div class="department-actions">
+            <el-button type="primary" @click="openCreateDepartment">
+              <el-icon><Plus /></el-icon>
+              添加部门
+            </el-button>
+            <el-button @click="showTodo('批量创建部门')">批量创建部门</el-button>
+            <el-button :disabled="selectedDepartments.length !== 1" @click="openEditDepartment">
+              编辑选中部门
+            </el-button>
+            <el-button type="danger" plain :disabled="selectedDepartments.length === 0" @click="handleDeleteDepartments">
+              删除选中部门
+            </el-button>
+          </div>
 
-        <el-table
-          :data="departmentRows"
-          border
-          row-key="id"
-          class="department-table"
-          @selection-change="selectedDepartments = $event"
-        >
-          <el-table-column type="selection" width="52" />
-          <el-table-column label="部门名称" min-width="260">
-            <template #default="{ row }">
-              <div class="department-name-cell" :style="{ paddingLeft: `${row.level * 20}px` }">
-                <el-icon><ArrowDown /></el-icon>
-                <span>{{ row.name }}</span>
-              </div>
-            </template>
-          </el-table-column>
-          <el-table-column label="成员数" width="200">
-            <template #default="{ row }">{{ row.count }}</template>
-          </el-table-column>
-          <el-table-column label="部门成员查看范围" min-width="260">
-            <template #default>全员</template>
-          </el-table-column>
-          <el-table-column label="操作" width="86">
-            <template #default="{ row }">
-              <el-dropdown @command="(command: string) => handleDepartmentCommand(command, row)">
-                <el-tooltip content="部门操作" placement="top">
-                  <el-button link type="primary" size="small">
+          <el-table
+            :data="departmentRows"
+            border
+            row-key="id"
+            class="department-table"
+            @selection-change="selectedDepartments = $event"
+          >
+            <el-table-column type="selection" width="52" />
+            <el-table-column label="部门名称" min-width="260" prop="name">
+              <template #default="{ row }">
+                <div class="department-name-cell" :style="{ paddingLeft: `${row.level * 20}px` }">
+                  <span>{{ row.name }}</span>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column label="成员数" width="200">
+              <template #default="{ row }">{{ row.count }}</template>
+            </el-table-column>
+            <el-table-column label="部门成员查看范围" min-width="260">
+              <template #default>全员</template>
+            </el-table-column>
+            <el-table-column label="操作" width="86">
+              <template #default="{ row }">
+                <el-dropdown @command="(command: string) => handleDepartmentCommand(command, row)">
+                  <el-button link type="primary" size="small" title="部门操作">
                     <el-icon><MoreFilled /></el-icon>
                   </el-button>
-                </el-tooltip>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item command="add">
-                      <el-icon><Plus /></el-icon>
-                      添加子部门
-                    </el-dropdown-item>
-                    <el-dropdown-item command="edit">
-                      <el-icon><Edit /></el-icon>
-                      编辑部门
-                    </el-dropdown-item>
-                    <el-dropdown-item command="delete" divided>
-                      <el-icon><Delete /></el-icon>
-                      删除部门
-                    </el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-            </template>
-          </el-table-column>
-        </el-table>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="add">
+                        <el-icon><Plus /></el-icon>
+                        添加子部门
+                      </el-dropdown-item>
+                      <el-dropdown-item command="edit">
+                        <el-icon><Edit /></el-icon>
+                        编辑部门
+                      </el-dropdown-item>
+                      <el-dropdown-item command="delete" divided>
+                        <el-icon><Delete /></el-icon>
+                        删除部门
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+              </template>
+            </el-table-column>
+          </el-table>
+          </template>
+        </main>
       </div>
 
       <div v-else class="roster-layout" v-loading="loading">
@@ -359,7 +360,7 @@
               <template #default="{ row }">{{ positionName(row.positionId) }}</template>
             </el-table-column>
             <el-table-column label="入职时间" width="160">
-              <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
+              <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
             </el-table-column>
             <el-table-column label="员工类型" width="130">
               <template #default="{ row }">{{ row.status === 'active' ? '全职' : '待确认' }}</template>
@@ -423,30 +424,32 @@
 
         <el-divider content-position="left">组织信息</el-divider>
 
-        <el-form-item label="区域" prop="regionId">
-          <el-tree-select
-            v-model="form.regionId"
-            :data="regionTree"
-            :props="{ label: 'name', value: 'id' }"
-            placeholder="请选择区域"
-            clearable
-            check-strictly
-            :disabled="!isEdit"
-            style="width: 100%"
-          />
-        </el-form-item>
-        <el-form-item label="部门" prop="departmentId">
-          <el-tree-select
-            v-model="form.departmentId"
-            :data="departmentTree"
-            :props="{ label: 'name', value: 'id' }"
-            placeholder="请选择部门"
-            clearable
-            check-strictly
-            :disabled="!isEdit"
-            style="width: 100%"
-          />
-        </el-form-item>
+        <template v-if="isEdit && isSuperAdmin">
+          <el-form-item label="所属组织" prop="orgId">
+            <el-tree-select
+              v-model="form.orgId"
+              :data="orgTree"
+              :props="{ label: 'name', value: 'id', children: 'children' }"
+              placeholder="请选择组织"
+              clearable
+              check-strictly
+              style="width: 100%"
+            >
+              <template #default="{ data }">
+                <span class="department-option">
+                  <el-icon><component :is="orgIcon(data.orgType)" /></el-icon>
+                  {{ data.name }}
+                  <el-tag size="small" :type="data.orgType === 'department' || data.orgType === 'group' ? 'info' : 'warning'" style="margin-left: 4px;">{{ ORG_TYPE_LABELS[data.orgType] || data.orgType }}</el-tag>
+                </span>
+              </template>
+            </el-tree-select>
+          </el-form-item>
+        </template>
+        <template v-else>
+          <el-form-item label="所属组织">
+            <span class="org-chain-text">{{ createOrgChainText }}</span>
+          </el-form-item>
+        </template>
         <el-form-item label="岗位" prop="positionId">
           <el-select v-model="form.positionId" placeholder="请选择岗位" clearable style="width: 100%">
             <el-option
@@ -473,7 +476,7 @@
 
     <el-drawer
       v-model="departmentDrawerVisible"
-      :title="departmentEditingId ? '编辑部门' : '新增组织'"
+      :title="departmentEditingId ? `编辑${editDrawerOrgTypeLabel}` : '新增组织'"
       direction="rtl"
       size="492px"
       class="department-drawer"
@@ -493,15 +496,21 @@
 
         <el-form-item v-if="!departmentEditingId" label="组织类型" prop="orgType" required>
           <el-radio-group v-model="departmentForm.orgType">
-            <el-radio value="region">区域</el-radio>
-            <el-radio value="department">部门</el-radio>
+            <el-radio v-for="t in allowedNewTypes" :key="t" :value="t">{{ ORG_TYPE_LABELS[t] }}</el-radio>
           </el-radio-group>
         </el-form-item>
 
-        <el-form-item label="上级组织" prop="parentId" required>
+        <el-form-item v-if="departmentEditingId && editAllowedTypes.length > 1" label="组织类型" prop="orgType" required>
+          <el-radio-group v-model="departmentForm.orgType" @change="onEditOrgTypeChange">
+            <el-radio v-for="t in editAllowedTypes" :key="t" :value="t" :disabled="!canChangeEditType(t)">{{ ORG_TYPE_LABELS[t] }}</el-radio>
+          </el-radio-group>
+          <div v-if="editTypeChangeWarning" class="effective-tip">{{ editTypeChangeWarning }}</div>
+        </el-form-item>
+
+        <el-form-item v-if="!editingIsRoot" label="上级组织" prop="parentId" required>
           <el-tree-select
             v-model="departmentForm.parentId"
-            :data="orgTree"
+            :data="orgTreeForParentSelect"
             :props="{ label: 'name', value: 'id', children: 'children' }"
             placeholder="请选择上级组织"
             clearable
@@ -510,19 +519,14 @@
           >
             <template #default="{ data }">
               <span class="department-option">
-                <el-icon><component :is="data.orgType === 'department' ? FolderOpened : OfficeBuilding" /></el-icon>
+                <el-icon><component :is="orgIcon(data.orgType)" /></el-icon>
                 {{ data.name }}
-                <el-tag size="small" :type="data.orgType === 'department' ? 'info' : 'warning'" style="margin-left: 4px;">{{ data.orgType === 'department' ? '部门' : '区域' }}</el-tag>
+                <el-tag size="small" :type="data.orgType === 'department' || data.orgType === 'group' ? 'info' : 'warning'" style="margin-left: 4px;">{{ ORG_TYPE_LABELS[data.orgType] || data.orgType }}</el-tag>
               </span>
             </template>
           </el-tree-select>
         </el-form-item>
 
-        <el-form-item label="创建部门群">
-          <el-checkbox v-model="departmentForm.createGroup">
-            创建一个关联此部门的企业群，如果有新人加入部门会自动加入该群
-          </el-checkbox>
-        </el-form-item>
       </el-form>
 
       <template #footer>
@@ -548,12 +552,15 @@ import {
   Filter,
   FolderOpened,
   Key,
+  MapLocation,
   MoreFilled,
   OfficeBuilding,
   Operation,
   Plus,
   Search,
   Setting,
+  Stamp,
+  Suitcase,
   SwitchButton,
   User,
   UserFilled,
@@ -563,10 +570,12 @@ import * as userApi from '@/api/modules/user'
 import type { OrgNode, Position, User as UserInfo } from '@/types/user'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppButton from '@/components/common/AppButton.vue'
+import { formatDate as formatDateTime } from '@/utils/format'
+import { useUserStore } from '@/stores/modules/user'
 
 interface FlatOrgNode {
   key: string
-  id: number | null
+  id: number
   name: string
   level: number
   count: number
@@ -590,6 +599,7 @@ interface UserForm {
   realName: string
   email: string
   phone: string
+  orgId: number | null
   regionId: number | null
   departmentId: number | null
   positionId: number | null
@@ -598,6 +608,8 @@ interface UserForm {
 
 const loading = ref(false)
 const submitting = ref(false)
+const userStore = useUserStore()
+const isSuperAdmin = computed(() => userStore.isSuperAdmin)
 const userList = ref<UserInfo[]>([])
 const selectedUsers = ref<UserInfo[]>([])
 const pageNum = ref(1)
@@ -606,9 +618,9 @@ const total = ref(0)
 const managementMode = ref<'basic' | 'hr'>('basic')
 const memberView = ref<'members' | 'departments'>('members')
 const orgKeyword = ref('')
-const activeOrgKey = ref('all')
+const activeOrgKey = ref('')
 const selectedDepartments = ref<DepartmentRow[]>([])
-const expandedKeys = ref<Set<string>>(new Set(['all']))
+const expandedKeys = ref<Set<string>>(new Set())
 const sidebarWidth = ref(284)
 const sidebarCollapsed = ref(false)
 const SIDEBAR_DEFAULT = 284
@@ -630,6 +642,8 @@ const queryParams = reactive({
   username: '',
   realName: '',
   status: '',
+  orgId: undefined as number | undefined,
+  regionId: undefined as number | undefined,
   departmentId: undefined as number | undefined,
 })
 
@@ -638,6 +652,7 @@ const form = reactive<UserForm>({
   realName: '',
   email: '',
   phone: '',
+  orgId: null,
   regionId: null,
   departmentId: null,
   positionId: null,
@@ -647,16 +662,129 @@ const form = reactive<UserForm>({
 const departmentForm = reactive({
   name: '',
   parentId: null as number | null,
-  orgType: 'department' as 'region' | 'department',
+  orgType: 'department' as 'region' | 'company' | 'bureau' | 'department',
   createGroup: false,
 })
 const departmentEditingId = ref<number | null>(null)
+const canChangeOrgType = ref(true)
 
 const hrNavItems = ['入职管理', '新人成长', '转正管理', '异动管理', '离职管理', '合同管理', '退休管理', '员工关怀']
 
 const activeUsers = computed(() => userList.value.filter(user => user.status === 'active'))
-const activeOrgName = computed(() => visibleOrgNodes.value.find(node => node.key === activeOrgKey.value)?.name || '全体成员')
 const activeOrgNode = computed(() => flatOrgNodes.value.find(node => node.key === activeOrgKey.value))
+const activeOrgName = computed(() => activeOrgNode.value?.name || '')
+const editOrgButtonText = computed(() => {
+  const t = activeOrgNode.value?.orgType
+  if (t === 'region') return '编辑区域'
+  if (t === 'company') return '编辑公司'
+  if (t === 'bureau') return '编辑委办局'
+  if (t === 'department') return '编辑部门'
+  if (t === 'group') return '编辑团队'
+  return '编辑'
+})
+const orgTypeLabel = computed(() => {
+  const t = activeOrgNode.value?.orgType
+  return ORG_TYPE_LABELS[t ?? ''] || ''
+})
+
+const createOrgChainText = computed(() => {
+  const targetId = isEdit.value ? form.orgId : activeOrgNode.value?.id
+  if (!targetId) return '-'
+  const targetNode = flatOrgNodes.value.find(n => n.id === targetId)
+  if (!targetNode) return '-'
+  const chain: string[] = []
+  let node: FlatOrgNode | undefined = targetNode
+  while (node) {
+    chain.unshift(node.name)
+    node = node.parentKey ? flatOrgNodes.value.find(n => n.key === node!.parentKey) : undefined
+  }
+  return chain.join(' / ') || '-'
+})
+
+const orgBreadcrumb = computed(() => {
+  const chain: { key: string; name: string }[] = []
+  let node = activeOrgNode.value
+  while (node) {
+    chain.unshift({ key: node.key, name: node.name })
+    node = node.parentKey ? flatOrgNodes.value.find(n => n.key === node!.parentKey) : undefined
+  }
+  return chain
+})
+
+function selectOrgByKey(key: string) {
+  const node = flatOrgNodes.value.find(n => n.key === key)
+  if (node) selectOrg(node)
+}
+
+const editingIsRoot = computed(() => {
+  if (!departmentEditingId.value) return false
+  return !flatOrgNodes.value.find(n => n.id === departmentEditingId.value)?.parentKey
+})
+
+const editAllowedTypes = computed<string[]>(() => {
+  if (!departmentEditingId.value) return []
+  const node = flatOrgNodes.value.find(n => n.id === departmentEditingId.value)
+  if (!node) return []
+  const nodeUserCount = node.count
+  if (node.orgType === 'group' && nodeUserCount > 0) return ['group']
+  if (node.orgType === 'group' && nodeUserCount === 0) return ['region', 'company', 'bureau', 'department', 'group']
+  const parentType = node.parentKey ? flatOrgNodes.value.find(n => n.key === node.parentKey)?.orgType : null
+  if (parentType) {
+    const allowed = ALLOWED_CHILD_TYPES[parentType] || []
+    return [...new Set([...allowed, node.orgType])].filter(Boolean) as string[]
+  }
+  return ['region', 'company']
+})
+
+const editTypeChangeWarning = computed(() => {
+  if (!departmentEditingId.value) return ''
+  const node = flatOrgNodes.value.find(n => n.id === departmentEditingId.value)
+  if (!node) return ''
+  if (node.orgType === 'department' && departmentForm.orgType !== 'department') {
+    const hasChildDepts = hasChildOfType(node.id, 'department') || hasChildOfType(node.id, 'group')
+    if (hasChildDepts) return '该部门下存在子部门或团队，无法修改类型'
+  }
+  return ''
+})
+
+function hasChildOfType(orgId: number, targetType: string): boolean {
+  function check(nodes: OrgNode[]): boolean {
+    for (const n of nodes) {
+      if (n.id === orgId && n.children?.length) {
+        if (n.children.some(c => c.orgType === targetType)) return true
+        if (n.children.some(c => check([c]))) return true
+      }
+      if (n.children?.length && check(n.children)) return true
+    }
+    return false
+  }
+  return check(orgTree.value)
+}
+
+function canChangeEditType(t: string): boolean {
+  if (!departmentEditingId.value) return false
+  const node = flatOrgNodes.value.find(n => n.id === departmentEditingId.value)
+  if (!node) return false
+  if (node.orgType === t) return true
+  if (node.orgType === 'department' && (hasChildOfType(node.id, 'department') || hasChildOfType(node.id, 'group'))) return false
+  return true
+}
+
+function onEditOrgTypeChange() {
+  // reset warning state — computed handles it
+}
+
+const orgTreeForParentSelect = computed(() => {
+  if (!departmentEditingId.value) return orgTree.value
+  const editingId = departmentEditingId.value
+  function excludeNode(nodes: OrgNode[]): OrgNode[] {
+    return nodes
+      .filter(n => n.id !== editingId)
+      .map(n => ({ ...n, children: n.children ? excludeNode(n.children) : undefined }))
+  }
+  return excludeNode(orgTree.value)
+})
+const editDrawerOrgTypeLabel = computed(() => ORG_TYPE_LABELS[departmentForm.orgType] || '')
 const rosterStats = computed(() => [
   { label: '全职', value: activeUsers.value.length },
   { label: '兼职', value: 0 },
@@ -668,19 +796,27 @@ const rosterStats = computed(() => [
   { label: '待离职', value: 0 },
 ])
 
-const flatOrgNodes = computed<FlatOrgNode[]>(() => {
-  const nodes: FlatOrgNode[] = [{
-    key: 'all',
-    id: null,
-    name: '一体化运营运维团队',
-    level: 0,
-    count: total.value,
-    icon: OfficeBuilding,
-    hasChildren: orgTree.value.length > 0,
-    parentKey: null,
-  }]
+const ORG_TYPE_LABELS: Record<string, string> = {
+  region: '区域',
+  company: '公司',
+  bureau: '委办局',
+  department: '部门',
+  group: '团队',
+}
 
-  const walk = (items: OrgNode[], level: number, parentKey: string) => {
+function orgIcon(orgType: string): Component {
+  if (orgType === 'region') return MapLocation
+  if (orgType === 'company') return OfficeBuilding
+  if (orgType === 'bureau') return Stamp
+  if (orgType === 'department') return Suitcase
+  if (orgType === 'group') return UserFilled
+  return OfficeBuilding
+}
+
+const flatOrgNodes = computed<FlatOrgNode[]>(() => {
+  const nodes: FlatOrgNode[] = []
+
+  const walk = (items: OrgNode[], level: number, parentKey: string | null) => {
     items.forEach(item => {
       const key = `org-${item.id}`
       nodes.push({
@@ -689,7 +825,7 @@ const flatOrgNodes = computed<FlatOrgNode[]>(() => {
         name: item.name,
         level,
         count: countUsersByOrg(item.id),
-        icon: item.orgType === 'department' ? FolderOpened : OfficeBuilding,
+        icon: orgIcon(item.orgType),
         hasChildren: (item.children?.length ?? 0) > 0,
         parentKey,
         orgType: item.orgType,
@@ -699,7 +835,7 @@ const flatOrgNodes = computed<FlatOrgNode[]>(() => {
       }
     })
   }
-  walk(orgTree.value, 1, 'all')
+  walk(orgTree.value, 0, null)
   return nodes
 })
 
@@ -767,8 +903,21 @@ function filterOrgTree(nodes: OrgNode[], targetType: string): OrgNode[] {
     }))
 }
 
+function filterOrgTreeMulti(nodes: OrgNode[], types: string[]): OrgNode[] {
+  return nodes
+    .filter(n => types.includes(n.orgType) || n.children?.some(child => hasOrgTypeMulti(child, types)))
+    .map(n => ({
+      ...n,
+      children: n.children ? filterOrgTreeMulti(n.children, types) : undefined,
+    }))
+}
+
 function hasOrgType(node: OrgNode, targetType: string): boolean {
   return node.orgType === targetType || !!node.children?.some(child => hasOrgType(child, targetType))
+}
+
+function hasOrgTypeMulti(node: OrgNode, types: string[]): boolean {
+  return types.includes(node.orgType) || !!node.children?.some(child => hasOrgTypeMulti(child, types))
 }
 
 async function loadOrgData() {
@@ -778,9 +927,14 @@ async function loadOrgData() {
       userApi.getPositionList(),
     ])
     orgTree.value = normalizeArray<OrgNode>(orgRes)
-    regionTree.value = filterOrgTree(orgTree.value, 'region')
-    departmentTree.value = filterOrgTree(orgTree.value, 'department')
+    regionTree.value = filterOrgTreeMulti(orgTree.value, ['region', 'company', 'bureau'])
+    departmentTree.value = filterOrgTreeMulti(orgTree.value, ['company', 'bureau', 'department'])
     positionList.value = normalizeArray<Position>(positionsRes)
+
+    if (!activeOrgKey.value && orgTree.value.length > 0) {
+      activeOrgKey.value = `org-${orgTree.value[0].id}`
+      expandedKeys.value = new Set(orgTree.value.map(n => `org-${n.id}`))
+    }
   } catch (error) {
     console.error('加载组织架构数据失败:', error)
   }
@@ -793,6 +947,8 @@ async function fetchList() {
       username: queryParams.username || undefined,
       realName: queryParams.realName || undefined,
       status: queryParams.status || undefined,
+      orgId: queryParams.orgId,
+      regionId: queryParams.regionId,
       departmentId: queryParams.departmentId,
       pageNum: pageNum.value,
       pageSize: pageSize.value,
@@ -808,8 +964,12 @@ async function fetchList() {
 }
 
 function handleSearch() {
+  queryParams.orgId = undefined
+  queryParams.regionId = undefined
   queryParams.departmentId = undefined
-  activeOrgKey.value = 'all'
+  if (orgTree.value.length > 0) {
+    activeOrgKey.value = `org-${orgTree.value[0].id}`
+  }
   pageNum.value = 1
   fetchList()
 }
@@ -819,38 +979,46 @@ function handleCreate() {
   editId.value = null
   resetForm()
 
-  // Auto-fill org info based on current selected node
   const node = activeOrgNode.value
   if (node && node.id) {
-    if (node.orgType === 'region' || node.orgType === 'company') {
-      form.regionId = node.id
-    } else if (node.orgType === 'department' || node.orgType === 'group') {
-      form.departmentId = node.id
-      // Walk up to find parent region
-      const parent = flatOrgNodes.value.find(n => n.key === node.parentKey)
-      if (parent?.id && (parent.orgType === 'region' || parent.orgType === 'company')) {
-        form.regionId = parent.id
-      }
-    }
+    form.orgId = node.id
   }
 
   dialogVisible.value = true
 }
 
+const ALLOWED_CHILD_TYPES: Record<string, string[]> = {
+  region: ['region', 'company', 'bureau'],
+  company: ['company', 'department'],
+  bureau: ['department'],
+  department: ['group'],
+  group: [],
+}
+
+const allowedNewTypes = computed<string[]>(() => {
+  const t = activeOrgNode.value?.orgType
+  if (!t) return ['region', 'company']
+  return ALLOWED_CHILD_TYPES[t] || []
+})
+
 function openCreateDepartment() {
-  resetDepartmentForm()
+  departmentForm.name = ''
+  departmentForm.parentId = null
+  departmentForm.orgType = 'department'
+  departmentForm.createGroup = false
+  departmentEditingId.value = null
   const node = activeOrgNode.value
-  if (node && node.id) {
-    departmentForm.parentId = node.id
-    // Default orgType based on current node type
-    if (node.orgType === 'region' || node.orgType === 'company') {
-      departmentForm.orgType = 'region'
-    } else {
-      departmentForm.orgType = 'department'
-    }
-  } else {
-    departmentForm.parentId = orgTree.value[0]?.id ?? null
+  if (!node) return
+
+  const allowed = allowedNewTypes.value
+  if (allowed.length === 0) {
+    ElMessage.warning('该节点类型下不允许添加子节点')
+    return
   }
+
+  departmentForm.parentId = node.id
+  departmentForm.orgType = allowed[0] as any
+  canChangeOrgType.value = allowed.length > 1
   departmentDrawerVisible.value = true
 }
 
@@ -869,6 +1037,19 @@ function openEditDepartment() {
   departmentDrawerVisible.value = true
 }
 
+function openEditOrgDrawer() {
+  const node = activeOrgNode.value
+  if (!node || !node.id) return
+
+  resetDepartmentForm()
+  departmentEditingId.value = node.id
+  departmentForm.name = node.name
+  departmentForm.parentId = node.parentKey ? (flatOrgNodes.value.find(n => n.key === node.parentKey)?.id ?? null) : null
+  departmentForm.orgType = (node.orgType as any) || 'region'
+  departmentForm.createGroup = false
+  departmentDrawerVisible.value = true
+}
+
 async function handleEdit(row: UserInfo) {
   isEdit.value = true
   editId.value = row.id
@@ -879,6 +1060,7 @@ async function handleEdit(row: UserInfo) {
     form.email = userDetail.email || ''
     form.phone = userDetail.phone || ''
     form.status = userDetail.status || 'active'
+    form.orgId = userDetail.orgId || null
     form.regionId = userDetail.regionId || null
     form.departmentId = userDetail.departmentId || null
     form.positionId = userDetail.positionId || null
@@ -949,6 +1131,7 @@ async function handleSubmit() {
         email: form.email || null,
         phone: form.phone || null,
         status: form.status,
+        orgId: form.orgId,
         regionId: form.regionId,
         departmentId: form.departmentId,
         positionId: form.positionId,
@@ -960,6 +1143,7 @@ async function handleSubmit() {
         realName: form.realName,
         email: form.email || null,
         phone: form.phone || null,
+        orgId: form.orgId,
         regionId: form.regionId,
         departmentId: form.departmentId,
         positionId: form.positionId,
@@ -992,6 +1176,7 @@ function resetForm() {
   form.realName = ''
   form.email = ''
   form.phone = ''
+  form.orgId = null
   form.regionId = null
   form.departmentId = null
   form.positionId = null
@@ -1011,6 +1196,18 @@ function resetDepartmentForm() {
 async function handleSubmitDepartment() {
   if (!departmentFormRef.value) return
   await departmentFormRef.value.validate()
+
+  if (departmentEditingId.value) {
+    const node = flatOrgNodes.value.find(n => n.id === departmentEditingId.value)
+    if (node && node.orgType === 'department' && departmentForm.orgType !== 'department') {
+      if (hasChildOfType(node.id, 'department') || hasChildOfType(node.id, 'group')) {
+        ElMessage.warning('该部门下存在子部门或团队，无法修改类型')
+        return
+      }
+    }
+  }
+
+  departmentSubmitting.value = true
   departmentSubmitting.value = true
   try {
     const payload = {
@@ -1024,7 +1221,7 @@ async function handleSubmitDepartment() {
       ElMessage.success('组织更新成功')
     } else {
       await userApi.createOrg(payload)
-      ElMessage.success(`${departmentForm.orgType === 'region' ? '子区域' : '子部门'}添加成功`)
+      ElMessage.success(`${ORG_TYPE_LABELS[departmentForm.orgType] || '组织'}添加成功`)
     }
     departmentDrawerVisible.value = false
     await loadOrgData()
@@ -1073,7 +1270,9 @@ function selectOrg(node: FlatOrgNode) {
   queryParams.username = ''
   queryParams.realName = ''
   queryParams.status = ''
-  queryParams.departmentId = node.id ?? undefined
+  queryParams.orgId = node.id
+  queryParams.regionId = undefined
+  queryParams.departmentId = undefined
   pageNum.value = 1
   fetchList()
 }
@@ -1115,8 +1314,8 @@ function toggleSidebar() {
   }
 }
 
-function countUsersByOrg(orgId: number) {
-  return userList.value.filter(user => user.departmentId === orgId || user.regionId === orgId).length
+function countUsersByOrg(id: number) {
+  return userList.value.filter(user => user.orgId === id || user.departmentId === id || user.regionId === id).length
 }
 
 function orgName(id?: number | null) {
@@ -1139,10 +1338,6 @@ function maskPhone(phone?: string | null) {
   return phone.replace(/^(\+?\d{0,4})?(\d{3})\d{4}(\d{4})$/, (_match, prefix = '', start, end) => `${prefix}${start}****${end}`)
 }
 
-function formatDate(value?: string | null) {
-  if (!value) return '-'
-  return value.slice(0, 10)
-}
 
 function showTodo(action: string) {
   ElMessage.info(`${action}能力将在后续接口完善后接入`)
@@ -1212,9 +1407,14 @@ function findOrgChildren(parentId: number) {
   return []
 }
 
-onMounted(() => {
-  loadOrgData()
-  fetchList()
+onMounted(async () => {
+  await loadOrgData()
+  const node = activeOrgNode.value
+  if (node) {
+    selectOrg(node)
+  } else {
+    fetchList()
+  }
 })
 </script>
 
@@ -1445,6 +1645,33 @@ onMounted(() => {
   flex-wrap: wrap;
 }
 
+.org-breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+  font-size: $font-size-sm;
+}
+
+.org-breadcrumb-link {
+  color: $primary-color;
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.org-breadcrumb-current {
+  color: $text-color;
+  font-weight: 500;
+}
+
+.org-breadcrumb-sep {
+  color: $text-color-placeholder;
+}
+
 .org-title {
   display: flex;
   align-items: center;
@@ -1665,6 +1892,12 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: $spacing-xs;
+}
+
+.org-chain-text {
+  color: $text-color;
+  font-size: $font-size-base;
+  line-height: 32px;
 }
 
 .drawer-footer {

@@ -6,6 +6,8 @@ import com.demand.system.module.user.dto.UserQueryDTO;
 import com.demand.system.module.user.dto.UserUpdateDTO;
 import com.demand.system.module.user.dto.UserVO;
 
+import java.util.List;
+
 public interface UserService {
 
     PageResult<UserVO> list(UserQueryDTO query);
@@ -19,4 +21,8 @@ public interface UserService {
     void delete(Long id);
 
     boolean resetInitialPassword(Long id);
+
+    void assignRoles(Long userId, List<Long> roleIds);
+
+    List<Long> getUserRoleIds(Long userId);
 }

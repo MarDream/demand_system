@@ -20,6 +20,12 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: '找回密码' },
   },
   {
+    path: '/public/share/:token',
+    name: 'KnowledgePublicShare',
+    component: () => import('@/views/public/KnowledgeSharePage.vue'),
+    meta: { title: '文档分享', publicAccess: true },
+  },
+  {
     path: '/',
     component: () => import('@/layouts/DefaultLayout.vue'),
     redirect: '/dashboard',

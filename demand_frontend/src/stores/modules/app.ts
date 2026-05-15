@@ -12,13 +12,29 @@ export const useAppStore = defineStore('app', () => {
   const device = ref<'desktop' | 'mobile'>('desktop')
   const menuList = ref<MenuItem[]>([])
 
+  const DEFAULT_SIDEBAR_WIDTH = 210
+  const MIN_SIDEBAR_WIDTH = 150
+  const MAX_SIDEBAR_WIDTH = 420
+
+  const sidebarWidth = ref(DEFAULT_SIDEBAR_WIDTH)
+
   // Restore from localStorage
   const saved = localStorage.getItem('sidebar-opened')
   if (saved !== null) sidebarOpened.value = saved === 'true'
+  const savedWidth = localStorage.getItem('sidebar-width')
+  if (savedWidth !== null) {
+    const w = Number(savedWidth)
+    if (w >= MIN_SIDEBAR_WIDTH && w <= MAX_SIDEBAR_WIDTH) sidebarWidth.value = w
+  }
 
   function toggleSidebar() {
     sidebarOpened.value = !sidebarOpened.value
     localStorage.setItem('sidebar-opened', String(sidebarOpened.value))
+  }
+
+  function setSidebarWidth(width: number) {
+    sidebarWidth.value = Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width))
+    localStorage.setItem('sidebar-width', String(sidebarWidth.value))
   }
 
   function setDevice(d: 'desktop' | 'mobile') {
@@ -70,5 +86,5 @@ export const useAppStore = defineStore('app', () => {
     return chain
   }
 
-  return { sidebarOpened, device, menuList, toggleSidebar, setDevice, setMenuList, getMenuNameByPath, getBreadcrumbChain }
+  return { sidebarOpened, sidebarWidth, toggleSidebar, setSidebarWidth, device, menuList, setDevice, setMenuList, getMenuNameByPath, getBreadcrumbChain }
 })

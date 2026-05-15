@@ -1,6 +1,10 @@
 <template>
   <div class="layout-container">
-    <div class="sidebar" :class="{ 'sidebar--collapsed': !sidebarOpened }">
+    <div
+      class="sidebar"
+      :class="{ 'sidebar--collapsed': !sidebarOpened }"
+      :style="sidebarOpened ? { width: sidebarWidth + 'px', transition: isResizing ? 'none' : 'width 0.3s' } : {}"
+    >
       <div class="sidebar-logo">
         <img src="@/assets/logo.png" alt="综合运营管理平台" class="sidebar-logo__image" />
         <span class="sidebar-logo__text">综合运营管理平台</span>
@@ -33,6 +37,11 @@
           </el-menu-item>
         </template>
       </el-menu>
+      <div
+        v-if="sidebarOpened"
+        class="sidebar-resizer"
+        @mousedown="startResize"
+      />
     </div>
     <div class="main-container">
       <div class="header">
@@ -66,7 +75,7 @@
                 >
                   <div class="popover-item-title">{{ item.title }}</div>
                   <div class="popover-item-content">{{ item.content }}</div>
-                  <div class="popover-item-time">{{ formatTime(item.createdAt) }}</div>
+                  <div class="popover-item-time">{{ formatDate(item.createdAt) }}</div>
                 </div>
               </div>
             </div>
@@ -107,6 +116,7 @@ import * as ElementPlusIcons from '@element-plus/icons-vue'
 import { Fold, Expand, Bell } from '@element-plus/icons-vue'
 import { isRemixIcon } from '@/components/common/RemixIconData'
 import Breadcrumb from '@/components/layout/Breadcrumb.vue'
+import { formatDate } from '@/utils/format'
 import { getNotificationList, markAsRead } from '@/api/modules/notification'
 import { getCurrentMenus, type MenuItem } from '@/api/modules/menu'
 
@@ -205,17 +215,37 @@ async function handleNotificationClick(item: any) {
   }
 }
 
-function formatTime(time: string) {
-  if (!time) return ''
-  return time.replace('T', ' ').substring(0, 16)
-}
 
 watch(unreadCount, () => {
   fetchRecentNotifications()
 }, { immediate: true })
 
 const sidebarOpened = computed(() => appStore.sidebarOpened)
+const sidebarWidth = computed(() => appStore.sidebarWidth)
 const activeMenu = computed(() => route.path)
+
+const isResizing = ref(false)
+
+function startResize(e: MouseEvent) {
+  e.preventDefault()
+  isResizing.value = true
+  const startX = e.clientX
+  const startWidth = sidebarWidth.value
+
+  const onMouseMove = (ev: MouseEvent) => {
+    const delta = ev.clientX - startX
+    appStore.setSidebarWidth(startWidth + delta)
+  }
+
+  const onMouseUp = () => {
+    isResizing.value = false
+    document.removeEventListener('mousemove', onMouseMove)
+    document.removeEventListener('mouseup', onMouseUp)
+  }
+
+  document.addEventListener('mousemove', onMouseMove)
+  document.addEventListener('mouseup', onMouseUp)
+}
 
 async function handleLogout() {
   await userStore.logout()
@@ -235,9 +265,26 @@ async function handleLogout() {
   transition: width 0.3s;
   flex-shrink: 0;
   overflow: hidden;
+  position: relative;
 
   &--collapsed {
     width: $sidebar-collapsed-width;
+  }
+}
+
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 4px;
+  cursor: col-resize;
+  z-index: 10;
+  transition: background-color 0.2s;
+
+  &:hover,
+  &:active {
+    background-color: rgba(64, 158, 255, 0.5);
   }
 }
 

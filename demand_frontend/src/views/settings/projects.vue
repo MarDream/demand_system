@@ -58,7 +58,9 @@
             <el-tag :type="getStatusType(row)">{{ getStatusLabel(row) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="createdAt" label="创建时间" width="180" />
+        <el-table-column label="创建时间" width="180">
+          <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="100" fixed="right">
           <template #default="{ row }">
             <el-tooltip content="编辑">
@@ -153,6 +155,7 @@ import type { ProjectImportFailure, ProjectImportResult } from '@/types/project'
 import PageContainer from '@/components/common/PageContainer.vue'
 import TableCard from '@/components/common/TableCard.vue'
 import Toolbar from '@/components/common/Toolbar.vue'
+import { formatDate } from '@/utils/format'
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -255,7 +258,7 @@ function handleExport() {
     开始日期: item.startDate || '',
     截止日期: item.endDate || '',
     状态: getStatusLabel(item),
-    创建时间: item.createdAt || '',
+    创建时间: formatDate(item.createdAt),
     描述: item.description || ''
   }))
   exportToExcel(exportData, '项目列表', '项目列表')

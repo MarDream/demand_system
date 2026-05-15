@@ -78,7 +78,7 @@
             </el-descriptions-item>
             <el-descriptions-item label="负责人">{{ detail.assigneeName || '-' }}</el-descriptions-item>
             <el-descriptions-item label="创建人">{{ detail.creatorName || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="创建时间">{{ detail.createdAt }}</el-descriptions-item>
+            <el-descriptions-item label="创建时间">{{ formatDate(detail.createdAt) }}</el-descriptions-item>
             <el-descriptions-item label="所属迭代">{{ detail.iterationId || '-' }}</el-descriptions-item>
             <el-descriptions-item label="截止日期">{{ detail.dueDate || '-' }}</el-descriptions-item>
             <el-descriptions-item label="估算工时">{{ detail.estimatedHours ? detail.estimatedHours + ' 小时' : '-' }}</el-descriptions-item>
@@ -141,7 +141,7 @@
             <el-timeline-item
               v-for="item in history"
               :key="item.id"
-              :timestamp="item.createdAt"
+              :timestamp="formatDate(item.createdAt)"
               placement="top"
             >
               <el-card>
@@ -216,7 +216,7 @@
             <div class="comment-content">
               <div class="comment-header">
                 <strong>{{ comment.userName || '用户' }}</strong>
-                <span class="comment-time">{{ comment.createdAt }}</span>
+                <span class="comment-time">{{ formatDate(comment.createdAt) }}</span>
               </div>
               <p>{{ comment.content }}</p>
             </div>
@@ -239,7 +239,7 @@ import { workflowEngineApi, type AvailableTransition, type WorkflowAvailableActi
 import { executeTransition, getAvailableTransitions, getWorkflowStates } from '@/api/modules/workflow'
 import type { Requirement, RequirementAttachment, RequirementHistory, RequirementUpdate } from '@/types/requirement'
 import type { WorkflowState, WorkflowTransition } from '@/types/workflow'
-import { normalizeText } from '@/utils/format'
+import { normalizeText, formatDate } from '@/utils/format'
 import PageContainer from '@/components/common/PageContainer.vue'
 
 const route = useRoute()

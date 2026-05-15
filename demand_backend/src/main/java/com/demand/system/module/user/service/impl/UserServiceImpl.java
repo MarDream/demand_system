@@ -17,10 +17,16 @@ import com.demand.system.module.organization.dto.SysOrgVO;
 import com.demand.system.module.organization.entity.Position;
 import com.demand.system.module.organization.mapper.PositionMapper;
 import com.demand.system.module.organization.service.SysOrgService;
+import com.demand.system.module.rbac.entity.Role;
+import com.demand.system.module.rbac.entity.UserRole;
+import com.demand.system.module.rbac.mapper.RoleMapper;
+import com.demand.system.module.rbac.mapper.UserRoleMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -33,6 +39,8 @@ public class UserServiceImpl implements UserService {
     private final SysOrgService sysOrgService;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
+    private final UserRoleMapper userRoleMapper;
+    private final RoleMapper roleMapper;
 
     @Override
     public PageResult<UserVO> list(UserQueryDTO query) {
@@ -42,10 +50,26 @@ public class UserServiceImpl implements UserService {
         wrapper.like(query.getUsername() != null, User::getUsername, query.getUsername())
                 .like(query.getRealName() != null, User::getRealName, query.getRealName())
                 .eq(query.getStatus() != null, User::getStatus, query.getStatus())
-                .eq(query.getRegionId() != null, User::getRegionId, query.getRegionId())
-                .eq(query.getDepartmentId() != null, User::getDepartmentId, query.getDepartmentId())
                 .eq(query.getPositionId() != null, User::getPositionId, query.getPositionId())
                 .orderByDesc(User::getCreatedAt);
+
+        if (query.getOrgId() != null) {
+            List<Long> orgIds = sysOrgService.getDescendantIds(query.getOrgId());
+            orgIds.add(query.getOrgId());
+            wrapper.in(User::getOrgId, orgIds);
+        } else {
+            // Fallback to old fields for backward compatibility
+            if (query.getRegionId() != null) {
+                List<Long> orgIds = sysOrgService.getDescendantIds(query.getRegionId());
+                orgIds.add(query.getRegionId());
+                wrapper.and(w -> w.in(User::getOrgId, orgIds).or().in(User::getRegionId, orgIds));
+            }
+            if (query.getDepartmentId() != null) {
+                List<Long> orgIds = sysOrgService.getDescendantIds(query.getDepartmentId());
+                orgIds.add(query.getDepartmentId());
+                wrapper.and(w -> w.in(User::getOrgId, orgIds).or().in(User::getDepartmentId, orgIds));
+            }
+        }
 
         Page<User> userPage = userMapper.selectPage(page, wrapper);
 
@@ -79,9 +103,14 @@ public class UserServiceImpl implements UserService {
 
         User user = new User();
         BeanUtil.copyProperties(dto, user);
+        // Derive regionId/departmentId from orgId
+        if (dto.getOrgId() != null) {
+            deriveOrgFields(user, dto.getOrgId());
+        }
         String initialPassword = buildInitialPassword(dto.getUsername(), dto.getPhone(), dto.getPassword());
         user.setPassword(passwordEncoder.encode(initialPassword));
         user.setStatus(User.STATUS_ACTIVE);
+        user.setJobNumber(generateJobNumber());
         userMapper.insert(user);
 
         emailService.sendInitialPasswordEmail(user.getEmail(), user.getUsername(), initialPassword);
@@ -114,6 +143,10 @@ public class UserServiceImpl implements UserService {
         }
         if (dto.getDepartmentId() != null) {
             user.setDepartmentId(dto.getDepartmentId());
+        }
+        if (dto.getOrgId() != null) {
+            user.setOrgId(dto.getOrgId());
+            deriveOrgFields(user, dto.getOrgId());
         }
         if (dto.getPositionId() != null) {
             user.setPositionId(dto.getPositionId());
@@ -149,6 +182,60 @@ public class UserServiceImpl implements UserService {
         return emailService.sendInitialPasswordEmail(user.getEmail(), user.getUsername(), initialPassword);
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void assignRoles(Long userId, List<Long> roleIds) {
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException("用户不存在");
+        }
+
+        List<Long> normalizedRoleIds = roleIds == null
+                ? List.of()
+                : roleIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+
+        if (!normalizedRoleIds.isEmpty()) {
+            List<Role> roles = roleMapper.selectBatchIds(normalizedRoleIds);
+            if (roles.size() != normalizedRoleIds.size()) {
+                throw new BusinessException("存在无效的角色");
+            }
+        }
+
+        userRoleMapper.delete(new LambdaQueryWrapper<UserRole>()
+                .eq(UserRole::getUserId, userId));
+
+        if (normalizedRoleIds.isEmpty()) {
+            return;
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        for (Long roleId : normalizedRoleIds) {
+            UserRole relation = new UserRole();
+            relation.setUserId(userId);
+            relation.setRoleId(roleId);
+            relation.setCreatedAt(now);
+            userRoleMapper.insert(relation);
+        }
+    }
+
+    @Override
+    public List<Long> getUserRoleIds(Long userId) {
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException("用户不存在");
+        }
+        return userRoleMapper.selectList(new LambdaQueryWrapper<UserRole>()
+                        .eq(UserRole::getUserId, userId)
+                        .orderByAsc(UserRole::getId))
+                .stream()
+                .map(UserRole::getRoleId)
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
     private UserVO toVO(User user) {
         UserVO vo = new UserVO();
         vo.setId(user.getId());
@@ -157,23 +244,38 @@ public class UserServiceImpl implements UserService {
         vo.setEmail(user.getEmail());
         vo.setPhone(user.getPhone());
         vo.setAvatar(user.getAvatar());
+        vo.setJobNumber(user.getJobNumber());
         vo.setStatus(user.getStatus());
         vo.setRegionId(user.getRegionId());
         vo.setDepartmentId(user.getDepartmentId());
+        vo.setOrgId(user.getOrgId());
         vo.setPositionId(user.getPositionId());
         vo.setCreatedAt(user.getCreatedAt());
         vo.setUpdatedAt(user.getUpdatedAt());
 
-        // Fill region info and build region path
+        // Prefer orgId for display, fallback to regionId/departmentId
+        Long displayOrgId = user.getOrgId() != null ? user.getOrgId() : user.getDepartmentId();
+        if (displayOrgId == null) {
+            displayOrgId = user.getRegionId();
+        }
+
+        if (displayOrgId != null) {
+            SysOrgVO org = sysOrgService.getDetail(displayOrgId);
+            if (org != null && org.getPath() != null) {
+                String chainPath = buildOrgPath(org.getPath());
+                vo.setRegionPath(chainPath);
+            }
+        }
+
+        // Fill region name from regionId
         if (user.getRegionId() != null) {
             SysOrgVO region = sysOrgService.getDetail(user.getRegionId());
             if (region != null) {
                 vo.setRegionName(region.getName());
-                vo.setRegionPath(region.getPath() != null ? buildOrgPath(region.getPath()) : region.getName());
             }
         }
 
-        // Fill department info
+        // Fill department name from departmentId
         if (user.getDepartmentId() != null) {
             SysOrgVO dept = sysOrgService.getDetail(user.getDepartmentId());
             if (dept != null) {
@@ -190,6 +292,38 @@ public class UserServiceImpl implements UserService {
         }
 
         return vo;
+    }
+
+    /**
+     * Derive regionId and departmentId from the org the user belongs to.
+     * region/company/bureau -> regionId, department/group -> departmentId
+     * Walks up the tree to fill both fields.
+     */
+    private void deriveOrgFields(User user, Long orgId) {
+        user.setOrgId(orgId);
+        SysOrgVO org = sysOrgService.getDetail(orgId);
+        if (org == null) return;
+
+        String orgType = org.getOrgType();
+        if ("region".equals(orgType) || "company".equals(orgType) || "bureau".equals(orgType)) {
+            user.setRegionId(orgId);
+        } else if ("department".equals(orgType) || "group".equals(orgType)) {
+            user.setDepartmentId(orgId);
+            // Walk up to find regionId
+            if (org.getPath() != null) {
+                String[] ids = org.getPath().split("/");
+                for (String idStr : ids) {
+                    if (idStr.isBlank()) continue;
+                    SysOrgVO ancestor = sysOrgService.getDetail(Long.parseLong(idStr));
+                    if (ancestor != null && ("region".equals(ancestor.getOrgType())
+                            || "company".equals(ancestor.getOrgType())
+                            || "bureau".equals(ancestor.getOrgType()))) {
+                        user.setRegionId(ancestor.getId());
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -221,5 +355,59 @@ public class UserServiceImpl implements UserService {
             throw new BusinessException("手机号不足3位，无法生成初始密码");
         }
         return username + phone.substring(phone.length() - 3);
+    }
+
+    /**
+     * 自动生成工号：A001~A999, B001~B999, ... Z001~Z999, AA001~AA999 ...
+     */
+    private String generateJobNumber() {
+        LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
+        wrapper.isNotNull(User::getJobNumber)
+                .orderByDesc(User::getJobNumber)
+                .last("LIMIT 1");
+        User maxUser = userMapper.selectOne(wrapper);
+        if (maxUser == null || maxUser.getJobNumber() == null) {
+            return "A001";
+        }
+        return incrementJobNumber(maxUser.getJobNumber());
+    }
+
+    private String incrementJobNumber(String current) {
+        // Split letter prefix and number suffix: "A001" -> prefix="A", num=1
+        int splitIdx = 0;
+        while (splitIdx < current.length() && !Character.isDigit(current.charAt(splitIdx))) {
+            splitIdx++;
+        }
+        if (splitIdx == 0 || splitIdx == current.length()) {
+            return "A001";
+        }
+        String prefix = current.substring(0, splitIdx);
+        int num;
+        try {
+            num = Integer.parseInt(current.substring(splitIdx));
+        } catch (NumberFormatException e) {
+            return "A001";
+        }
+
+        if (num < 999) {
+            return prefix + String.format("%03d", num + 1);
+        }
+        // num == 999, advance letter: A -> B, ... Z -> AA
+        return incrementLetterPrefix(prefix) + "001";
+    }
+
+    private String incrementLetterPrefix(String prefix) {
+        char[] chars = prefix.toCharArray();
+        int i = chars.length - 1;
+        while (i >= 0) {
+            if (chars[i] < 'Z') {
+                chars[i]++;
+                return new String(chars);
+            }
+            chars[i] = 'A';
+            i--;
+        }
+        // All Z's, add one more A: Z -> AA, ZZ -> AAA
+        return "A" + new String(chars);
     }
 }

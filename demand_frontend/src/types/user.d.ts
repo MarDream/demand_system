@@ -6,7 +6,9 @@ export interface User {
   phone: string | null
   avatar: string | null
   status: string
+  jobNumber?: string | null
   password?: string
+  orgId?: number | null
   regionId?: number | null
   departmentId?: number | null
   positionId?: number | null
@@ -18,6 +20,7 @@ export interface UserQuery {
   username?: string
   realName?: string
   status?: string
+  orgId?: number
   regionId?: number
   departmentId?: number
   pageNum: number
@@ -37,7 +40,7 @@ export interface OrgNode {
   id: number
   name: string
   parentId: number | null
-  orgType: 'region' | 'company' | 'department' | 'group'
+  orgType: 'region' | 'company' | 'bureau' | 'department' | 'group'
   code: string | null
   leaderId: number | null
   leaderName: string | null

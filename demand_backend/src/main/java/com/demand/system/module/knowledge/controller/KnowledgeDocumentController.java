@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 
@@ -58,9 +59,9 @@ public class KnowledgeDocumentController {
             HttpServletRequest request) {
         Long userId = SecurityUtils.getCurrentUserId();
         String token = documentService.generateShareLink(knowledgeBaseId, documentId, expireHours, requireLogin, oneTimeAccess, userId);
-        String shareLink = ServletUriComponentsBuilder.fromRequestUri(request)
-                .replacePath("/api/v1/public/knowledge/shares/" + token)
-                .replaceQuery(null)
+        String publicBaseUrl = resolvePublicBaseUrl(request);
+        String shareLink = ServletUriComponentsBuilder.fromUriString(publicBaseUrl)
+                .path("/public/share/" + token)
                 .build()
                 .toUriString();
         return Result.success(shareLink);
@@ -104,5 +105,33 @@ public class KnowledgeDocumentController {
             @PathVariable Long documentId,
             HttpServletResponse response) {
         documentService.downloadDocument(knowledgeBaseId, documentId, response);
+    }
+
+    private String resolvePublicBaseUrl(HttpServletRequest request) {
+        for (String headerName : List.of("Origin", "Referer")) {
+            String headerValue = request.getHeader(headerName);
+            if (headerValue == null || headerValue.isBlank()) {
+                continue;
+            }
+            try {
+                URI uri = URI.create(headerValue);
+                if (uri.getScheme() != null && uri.getHost() != null) {
+                    StringBuilder builder = new StringBuilder(uri.getScheme())
+                            .append("://")
+                            .append(uri.getHost());
+                    if (uri.getPort() > 0) {
+                        builder.append(':').append(uri.getPort());
+                    }
+                    return builder.toString();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        return ServletUriComponentsBuilder.fromRequestUri(request)
+                .replacePath("")
+                .replaceQuery(null)
+                .build()
+                .toUriString();
     }
 }

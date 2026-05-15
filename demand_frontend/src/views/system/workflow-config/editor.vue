@@ -124,18 +124,13 @@
 
                 <el-form-item v-if="nodeForm.assigneeType === 'SPECIFIED_ROLE'" label="指定角色">
                   <el-select v-model="nodeForm.assigneeRoleId" placeholder="请选择角色">
-                    <el-option label="管理员" :value="1" />
-                    <el-option label="产品经理" :value="2" />
-                    <el-option label="开发" :value="3" />
-                    <el-option label="测试" :value="4" />
+                    <el-option v-for="role in roleList" :key="role.id" :label="role.name" :value="role.id" />
                   </el-select>
                 </el-form-item>
 
                 <el-form-item v-if="nodeForm.assigneeType === 'SPECIFIED_USER'" label="指定用户">
                   <el-select v-model="nodeForm.assigneeUserIds" multiple placeholder="请选择用户">
-                    <el-option label="用户1" :value="1" />
-                    <el-option label="用户2" :value="2" />
-                    <el-option label="用户3" :value="3" />
+                    <el-option v-for="user in allUserList" :key="user.id" :label="user.realName || user.username" :value="user.id" />
                   </el-select>
                 </el-form-item>
 
@@ -226,6 +221,8 @@ import {
   getVersionConfig
 } from '@/api/modules/workflow-visual'
 import { nodeStatusApi, type NodeStatus } from '@/api/modules/workflow-engine'
+import * as roleApi from '@/api/modules/role'
+import * as userApi from '@/api/modules/user'
 import type {
   WorkflowVersionDTO,
   WorkflowNodeDTO,
@@ -244,6 +241,8 @@ const isEditMode = ref(false)
 const currentVersion = ref<WorkflowVersionDTO>()
 const saving = ref(false)
 const submitting = ref(false)
+const roleList = ref<Array<{ id: number; name: string; code: string }>>([])
+const allUserList = ref<Array<{ id: number; realName: string; username: string }>>([])
 
 const drawerVisible = ref(false)
 const drawerTitle = ref('')
@@ -666,7 +665,21 @@ onMounted(() => {
   initLogicFlow()
   loadNodeStatuses()
   loadWorkflowConfig()
+  loadRoleAndUserList()
 })
+
+async function loadRoleAndUserList() {
+  try {
+    const [rolesRes, usersRes]: any[] = await Promise.all([
+      roleApi.getRoleList(),
+      userApi.getUserList({ pageNum: 1, pageSize: 999 })
+    ])
+    roleList.value = (rolesRes?.data ?? rolesRes ?? [])
+    allUserList.value = (usersRes?.list ?? [])
+  } catch {
+    // ignore
+  }
+}
 
 onBeforeUnmount(() => {
   if (lf) {

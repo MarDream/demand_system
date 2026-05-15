@@ -127,6 +127,9 @@
                 <template v-else-if="col.key === 'status'">
                   <el-tag :type="statusTagType(row.status)">{{ row.status }}</el-tag>
                 </template>
+                <template v-else-if="col.key.endsWith('At') || col.key === 'createdAt'">
+                  {{ formatDate(row[col.key]) }}
+                </template>
                 <template v-else-if="col.key === 'operations'">
                   <el-tooltip content="查看详情" placement="top">
                     <el-button link type="primary" :icon="View" @click="handleViewDetail(row.id)" />
@@ -194,7 +197,7 @@ import { requirementConfigApi } from '@/api/modules/requirementConfig'
 import { getColumnConfig, saveColumnConfig } from '@/api/modules/requirement'
 import type { Requirement, RequirementQuery } from '@/types/requirement'
 import type { User } from '@/types/user'
-import { normalizeText } from '@/utils/format'
+import { normalizeText, formatDate } from '@/utils/format'
 import PageContainer from '@/components/common/PageContainer.vue'
 import FilterCard from '@/components/common/FilterCard.vue'
 import TableCard from '@/components/common/TableCard.vue'
@@ -476,10 +479,10 @@ async function handleExport() {
       '运营跟进人': row.opsFollowName || '-',
       '运维跟进人': row.maintFollowName || '-',
       '归属部门': row.departmentName || '-',
-      '创建时间': row.createdAt || '',
-      '分析完成时间': row.analysisCompletedAt || '',
-      '需求确认时间': row.confirmAt || '',
-      '开发完成时间': row.developmentCompletedAt || '',
+      '创建时间': formatDate(row.createdAt),
+      '分析完成时间': formatDate(row.analysisCompletedAt),
+      '需求确认时间': formatDate(row.confirmAt),
+      '开发完成时间': formatDate(row.developmentCompletedAt),
       '描述': row.description || '',
     }))
 
