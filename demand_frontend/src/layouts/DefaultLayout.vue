@@ -10,7 +10,9 @@
         <span class="sidebar-logo__text">综合运营管理平台</span>
       </div>
       <el-menu
+        ref="menuRef"
         :default-active="activeMenu"
+        :default-openeds="defaultOpeneds"
         :collapse="!sidebarOpened"
         background-color="#304156"
         text-color="#BFCBD9"
@@ -20,9 +22,11 @@
         <template v-for="item in visibleMenus" :key="item.index">
           <el-sub-menu v-if="item.children.length" :index="item.index">
             <template #title>
-              <template v-if="item.isRemix"><i :class="item.icon" class="sidebar-remix-icon" /></template>
-              <el-icon v-else><component :is="item.icon" /></el-icon>
-              <span>{{ item.title }}</span>
+              <div class="sidebar-submenu-title" @click="handleSubmenuNavigate(item)">
+                <template v-if="item.isRemix"><i :class="item.icon" class="sidebar-remix-icon" /></template>
+                <el-icon v-else><component :is="item.icon" /></el-icon>
+                <span>{{ item.title }}</span>
+              </div>
             </template>
             <el-menu-item v-for="child in item.children" :key="child.index" :index="child.path">
               <template v-if="child.isRemix"><i :class="child.icon" class="sidebar-remix-icon" /></template>
@@ -125,7 +129,7 @@ const router = useRouter()
 const appStore = useAppStore()
 const userStore = useUserStore()
 const { unreadCount } = useNotification()
-const { hasPermission } = usePermission()
+const { hasPermission, hasAnyRole } = usePermission()
 
 const recentNotifications = ref<any[]>([])
 const menuList = ref<MenuItem[]>([])
@@ -155,6 +159,16 @@ interface SidebarItem {
   children: SidebarItem[]
 }
 
+const settingsMenuOrder: Record<string, number> = {
+  '/settings/users': 1,
+  '/settings/roles': 2,
+  '/settings/requirements': 4,
+  '/system/workflow-config': 5,
+  '/settings/workflow-approvals': 6,
+  '/settings/menus': 7,
+  '/settings/llm': 10,
+}
+
 const visibleMenus = computed<SidebarItem[]>(() => {
   function build(items: MenuItem[]): SidebarItem[] {
     return items
@@ -164,9 +178,12 @@ const visibleMenus = computed<SidebarItem[]>(() => {
         const children = build(m.children || [])
         const iconName = m.icon || 'Document'
         const remix = isRemixIcon(iconName)
+        const isDirectory = m.menuType === 'DIRECTORY'
+        const defaultChildPath = children[0]?.path ?? ''
+        const ownPath = m.path ?? ''
         return {
           index: m.path || `menu-${m.id}`,
-          path: m.path || (children[0]?.path ?? ''),
+          path: isDirectory ? (defaultChildPath || ownPath) : (ownPath || defaultChildPath),
           title: m.name,
           icon: remix ? iconName : (iconMap[iconName] || iconMap['Document']),
           isRemix: remix,
@@ -178,6 +195,7 @@ const visibleMenus = computed<SidebarItem[]>(() => {
   const builtMenus = build(menuList.value)
   const settingsMenu = builtMenus.find(item => item.path === '/settings' || item.title === '系统配置')
   const canAccessLlm = hasPermission('menu:settings:llm') || hasPermission('menu:system-config')
+  const canAccessWorkflowApprovals = hasAnyRole(['admin']) || hasPermission('menu:settings:workflow')
 
   if (settingsMenu && canAccessLlm && !settingsMenu.children.some(child => child.path === '/settings/llm')) {
     settingsMenu.children.push({
@@ -187,6 +205,26 @@ const visibleMenus = computed<SidebarItem[]>(() => {
       icon: 'ri-robot-2-line',
       isRemix: true,
       children: [],
+    })
+  }
+
+  if (settingsMenu && canAccessWorkflowApprovals && !settingsMenu.children.some(child => child.path === '/settings/workflow-approvals')) {
+    settingsMenu.children.push({
+      index: '/settings/workflow-approvals',
+      path: '/settings/workflow-approvals',
+      title: '工作流审核',
+      icon: 'ri-task-line',
+      isRemix: true,
+      children: [],
+    })
+  }
+
+  if (settingsMenu) {
+    settingsMenu.children.sort((left, right) => {
+      const leftOrder = settingsMenuOrder[left.path] ?? 999
+      const rightOrder = settingsMenuOrder[right.path] ?? 999
+      if (leftOrder !== rightOrder) return leftOrder - rightOrder
+      return left.title.localeCompare(right.title, 'zh-CN')
     })
   }
 
@@ -223,6 +261,26 @@ watch(unreadCount, () => {
 const sidebarOpened = computed(() => appStore.sidebarOpened)
 const sidebarWidth = computed(() => appStore.sidebarWidth)
 const activeMenu = computed(() => route.path)
+const defaultOpeneds = computed(() => {
+  const opened: string[] = []
+  const current = route.path
+  for (const item of visibleMenus.value) {
+    if (!item.children.length) continue
+    if (item.children.some(child => child.path === current || (child.path && current.startsWith(child.path + '/')))) {
+      opened.push(item.index)
+    }
+  }
+  return opened
+})
+
+const menuRef = ref<any>()
+
+function handleSubmenuNavigate(item: SidebarItem) {
+  if (item.path) {
+    router.push(item.path)
+  }
+  menuRef.value?.open?.(item.index)
+}
 
 const isResizing = ref(false)
 
@@ -365,6 +423,14 @@ async function handleLogout() {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+}
+
+.sidebar-submenu-title {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  cursor: pointer;
 }
 
 .header-right {

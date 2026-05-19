@@ -1,20 +1,22 @@
 package com.demand.system.module.notification.sender;
 
 import com.demand.system.common.config.RabbitMQConfig;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
 import java.util.Map;
 
-@Slf4j
 @Component
-@RequiredArgsConstructor
 public class NotificationSender {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(NotificationSender.class);
+
     private final RabbitTemplate rabbitTemplate;
+
+    public NotificationSender(RabbitTemplate rabbitTemplate) {
+        this.rabbitTemplate = rabbitTemplate;
+    }
 
     public void sendSystemNotification(Long userId, String title, String content) {
         sendNotification(userId, title, content, "system");

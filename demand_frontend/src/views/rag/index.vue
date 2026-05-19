@@ -1289,37 +1289,36 @@ function formatDateTime(timestamp: number) {
 <style scoped lang="scss">
 .rag-workspace {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr) 360px;
-  gap: 18px;
+  grid-template-columns: 320px minmax(0, 1fr) 340px;
+  gap: $spacing-md;
   min-height: calc(100vh - 220px);
 }
 
 .rag-shell {
-  border-radius: 24px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background:
-    radial-gradient(circle at top, rgba(255, 255, 255, 0.32), transparent 42%),
-    linear-gradient(180deg, #17202e 0%, #101826 100%);
-  color: #f8fafc;
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.16);
+  border-radius: 12px;
+  border: 1px solid $border-color;
+  background: $bg-container;
+  color: $text-color;
+  box-shadow: $shadow-sm;
+  overflow: hidden;
 }
 
 .rag-sidebar,
 .rag-insights {
-  padding: 20px;
+  padding: $spacing-md;
 }
 
 .rag-sidebar {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: $spacing-md;
 }
 
 .sidebar-section {
-  border-radius: 20px;
-  background: rgba(15, 23, 42, 0.34);
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  padding: 16px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid rgba(235, 238, 245, 0.9);
+  padding: $spacing-md;
 }
 
 .sidebar-section--fill {
@@ -1335,42 +1334,41 @@ function formatDateTime(timestamp: number) {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: $spacing-sm;
 }
 
 .section-label,
 .insight-card__label,
 .chat-title__label {
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(226, 232, 240, 0.65);
+  font-size: $font-size-sm;
+  font-weight: 600;
+  color: $text-color;
 }
 
 .section-tip,
 .chat-empty__desc,
 .insight-empty__desc {
-  margin-top: 6px;
-  font-size: 12px;
+  margin-top: 4px;
+  font-size: $font-size-xs;
   line-height: 1.6;
-  color: rgba(226, 232, 240, 0.7);
+  color: $text-color-secondary;
 }
 
 .section-badge {
-  min-width: 30px;
-  padding: 4px 10px;
+  min-width: 34px;
+  padding: 2px 10px;
   border-radius: 999px;
-  background: rgba(56, 189, 248, 0.16);
-  color: #7dd3fc;
-  font-size: 12px;
-  font-weight: 700;
+  background: rgba(64, 158, 255, 0.12);
+  color: $primary-color;
+  font-size: $font-size-xs;
+  font-weight: 600;
   text-align: center;
 }
 
 .knowledge-grid {
-  margin-top: 16px;
+  margin-top: $spacing-sm;
   display: grid;
-  gap: 12px;
+  gap: $spacing-sm;
 }
 
 .knowledge-card,
@@ -1383,12 +1381,12 @@ function formatDateTime(timestamp: number) {
 }
 
 .knowledge-card {
-  padding: 14px;
-  border-radius: 18px;
-  background: rgba(30, 41, 59, 0.78);
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  color: #f8fafc;
-  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  padding: 12px;
+  border-radius: 10px;
+  background: $bg-container;
+  border: 1px solid $border-color;
+  color: $text-color;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }
 
 .knowledge-card:hover,
@@ -1397,9 +1395,13 @@ function formatDateTime(timestamp: number) {
   transform: translateY(-1px);
 }
 
+.knowledge-card:hover {
+  box-shadow: $shadow-sm;
+}
+
 .knowledge-card--active {
-  border-color: rgba(56, 189, 248, 0.55);
-  background: linear-gradient(135deg, rgba(14, 165, 233, 0.22), rgba(30, 41, 59, 0.92));
+  border-color: rgba(64, 158, 255, 0.55);
+  box-shadow: 0 0 0 4px rgba(64, 158, 255, 0.12);
 }
 
 .knowledge-card__title,
@@ -1418,47 +1420,56 @@ function formatDateTime(timestamp: number) {
 .knowledge-card__title,
 .citation-item__top {
   justify-content: space-between;
-  gap: 8px;
+  gap: $spacing-sm;
+}
+
+.knowledge-card__title span {
+  font-weight: 600;
 }
 
 .knowledge-card__desc {
-  margin-top: 10px;
-  font-size: 12px;
-  line-height: 1.7;
-  color: rgba(226, 232, 240, 0.78);
+  margin-top: 6px;
+  font-size: $font-size-xs;
+  line-height: 1.6;
+  color: $text-color-secondary;
 }
 
 .knowledge-card__meta {
-  gap: 10px;
-  margin-top: 12px;
+  gap: $spacing-sm;
+  margin-top: $spacing-sm;
   flex-wrap: wrap;
-  font-size: 12px;
-  color: rgba(148, 163, 184, 0.92);
+  font-size: $font-size-xs;
+  color: $text-color-placeholder;
 }
 
 .session-list {
-  margin-top: 16px;
+  margin-top: $spacing-sm;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: $spacing-sm;
   min-height: 0;
   overflow: auto;
 }
 
 .session-item {
-  padding: 12px 14px;
-  border-radius: 16px;
-  background: rgba(15, 23, 42, 0.54);
-  border: 1px solid rgba(148, 163, 184, 0.12);
-  color: #e2e8f0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: $bg-container;
+  border: 1px solid $border-color;
+  color: $text-color;
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: $spacing-sm;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.session-item:hover {
+  box-shadow: $shadow-sm;
 }
 
 .session-item--active {
-  border-color: rgba(96, 165, 250, 0.48);
-  background: rgba(30, 41, 59, 0.96);
+  border-color: rgba(64, 158, 255, 0.55);
+  box-shadow: 0 0 0 4px rgba(64, 158, 255, 0.12);
 }
 
 .session-item__main {
@@ -1466,7 +1477,7 @@ function formatDateTime(timestamp: number) {
 }
 
 .session-item__title {
-  font-size: 14px;
+  font-size: $font-size-base;
   font-weight: 600;
 }
 
@@ -1474,16 +1485,16 @@ function formatDateTime(timestamp: number) {
 .message-bubble__footer,
 .citation-item__meta,
 .composer-actions__tip {
-  gap: 10px;
+  gap: $spacing-sm;
   flex-wrap: wrap;
-  font-size: 12px;
-  color: rgba(148, 163, 184, 0.95);
+  font-size: $font-size-xs;
+  color: $text-color-placeholder;
 }
 
 .session-item__context {
-  margin-top: 8px;
-  color: #7dd3fc;
-  font-size: 12px;
+  margin-top: 6px;
+  color: $primary-color;
+  font-size: $font-size-xs;
 }
 
 .rag-chat {
@@ -1493,49 +1504,48 @@ function formatDateTime(timestamp: number) {
 }
 
 .chat-header {
-  padding: 20px 24px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  padding: $spacing-md $spacing-lg;
+  border-bottom: 1px solid $border-color;
+  background: linear-gradient(180deg, #ffffff, #fbfcfe);
 }
 
 .chat-title__main {
-  margin-top: 6px;
-  font-size: 24px;
-  line-height: 1.2;
+  margin-top: 4px;
+  font-size: 18px;
+  line-height: 1.3;
   font-weight: 700;
 }
 
 .chat-filters {
-  gap: 10px;
+  gap: $spacing-sm;
   flex-wrap: wrap;
   justify-content: flex-end;
 }
 
 .chat-stream {
   flex: 1;
-  padding: 24px;
+  padding: $spacing-lg;
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  background:
-    linear-gradient(180deg, rgba(15, 23, 42, 0.04), rgba(15, 23, 42, 0)),
-    radial-gradient(circle at top, rgba(125, 211, 252, 0.08), transparent 36%);
+  gap: $spacing-md;
+  background: $bg-container;
 }
 
 .chat-empty,
 .insight-empty {
-  border-radius: 22px;
-  padding: 28px;
-  border: 1px dashed rgba(148, 163, 184, 0.24);
-  background: rgba(15, 23, 42, 0.22);
+  border-radius: 12px;
+  padding: $spacing-lg;
+  border: 1px dashed rgba(144, 147, 153, 0.35);
+  background: #fbfcfe;
 }
 
 .chat-empty__title,
 .insight-empty__title,
 .insight-card__title {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
-  color: #f8fafc;
+  color: $text-color;
 }
 
 .message-row {
@@ -1552,26 +1562,26 @@ function formatDateTime(timestamp: number) {
 
 .message-bubble {
   max-width: min(78%, 760px);
-  padding: 16px 18px;
-  border-radius: 24px;
-  background: rgba(15, 23, 42, 0.55);
-  border: 1px solid rgba(148, 163, 184, 0.12);
-  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.12);
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid $border-color;
   cursor: default;
 }
 
 .message-row--user .message-bubble {
-  background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
-  border-top-right-radius: 8px;
+  background: $primary-color;
+  border-color: rgba(64, 158, 255, 0.65);
+  border-top-right-radius: 6px;
 }
 
 .message-row--assistant .message-bubble {
-  border-top-left-radius: 8px;
+  border-top-left-radius: 6px;
 }
 
 .message-bubble--assistant-active {
-  border-color: rgba(56, 189, 248, 0.55);
-  background: rgba(15, 23, 42, 0.82);
+  border-color: rgba(64, 158, 255, 0.55);
+  box-shadow: 0 0 0 4px rgba(64, 158, 255, 0.12);
   cursor: pointer;
 }
 
@@ -1580,45 +1590,51 @@ function formatDateTime(timestamp: number) {
 }
 
 .message-bubble--error {
-  border-color: rgba(248, 113, 113, 0.45);
-  background: rgba(127, 29, 29, 0.26);
+  border-color: rgba(245, 108, 108, 0.6);
+  background: rgba(245, 108, 108, 0.08);
 }
 
 .message-bubble__role {
-  font-size: 12px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: rgba(226, 232, 240, 0.75);
+  font-size: $font-size-xs;
+  color: $text-color-placeholder;
+}
+
+.message-row--user .message-bubble__role {
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .message-bubble__content {
-  margin-top: 10px;
-  line-height: 1.8;
+  margin-top: 6px;
+  line-height: 1.75;
   white-space: pre-wrap;
-  color: #f8fafc;
+  color: $text-color;
+}
+
+.message-row--user .message-bubble__content {
+  color: #ffffff;
 }
 
 .message-bubble__footer {
-  margin-top: 14px;
+  margin-top: 10px;
 }
 
 .message-bubble__hint {
-  margin-top: 10px;
-  font-size: 13px;
-  color: rgba(226, 232, 240, 0.78);
+  margin-top: 8px;
+  font-size: $font-size-sm;
+  color: $text-color-secondary;
 }
 
 .thinking-loader {
   display: inline-flex;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 10px;
 }
 
 .thinking-loader__dot {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: #7dd3fc;
+  background: rgba(64, 158, 255, 0.65);
   animation: pulse 1.2s ease-in-out infinite;
 }
 
@@ -1631,30 +1647,23 @@ function formatDateTime(timestamp: number) {
 }
 
 .composer-panel {
-  padding: 18px 24px 24px;
-  border-top: 1px solid rgba(148, 163, 184, 0.12);
-  background:
-    linear-gradient(180deg, rgba(15, 23, 42, 0.48), rgba(15, 23, 42, 0.72)),
-    radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.18), transparent 32%);
+  padding: $spacing-md $spacing-lg $spacing-lg;
+  border-top: 1px solid $border-color;
+  background: #fbfcfe;
 }
 
 .insight-card__tags {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: $spacing-sm;
   flex-wrap: wrap;
 }
 
 .composer-shell {
-  border-radius: 28px;
-  padding: 18px 22px 16px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  background:
-    linear-gradient(180deg, rgba(41, 37, 36, 0.96), rgba(28, 25, 23, 0.98)),
-    radial-gradient(circle at top, rgba(255, 255, 255, 0.04), transparent 46%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 18px 40px rgba(15, 23, 42, 0.22);
+  border-radius: 12px;
+  padding: 12px 14px;
+  border: 1px solid $border-color;
+  background: $bg-container;
 }
 
 .composer-shell--disabled {
@@ -1662,33 +1671,32 @@ function formatDateTime(timestamp: number) {
 }
 
 .composer-shell__body {
-  min-height: 128px;
+  min-height: 104px;
 }
 
 .composer-input {
   :deep(.el-textarea__inner) {
-    min-height: 128px !important;
-    padding: 4px 0 0;
+    min-height: 104px !important;
+    padding: 0;
     border: 0;
     background: transparent;
-    color: #f5f5f4;
+    color: $text-color;
     box-shadow: none;
-    font-size: 24px;
-    line-height: 1.55;
-    letter-spacing: -0.02em;
+    font-size: 16px;
+    line-height: 1.6;
   }
 
   :deep(.el-textarea__inner::placeholder) {
-    color: rgba(214, 211, 209, 0.34);
+    color: $text-color-placeholder;
   }
 }
 
 .composer-bottom {
-  margin-top: 16px;
+  margin-top: $spacing-md;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: $spacing-md;
 }
 
 .composer-bottom__left,
@@ -1702,21 +1710,21 @@ function formatDateTime(timestamp: number) {
 
 .composer-bottom__left {
   min-width: 0;
-  gap: 14px;
+  gap: $spacing-sm;
   flex: 1;
 }
 
 .composer-bottom__right {
   justify-content: flex-end;
-  gap: 12px;
+  gap: $spacing-sm;
   flex-wrap: wrap;
 }
 
 .composer-tipline {
   min-width: 0;
-  font-size: 13px;
+  font-size: $font-size-xs;
   line-height: 1.6;
-  color: rgba(214, 211, 209, 0.7);
+  color: $text-color-secondary;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1727,27 +1735,27 @@ function formatDateTime(timestamp: number) {
 .composer-provider-badge,
 .composer-send {
   border: 0;
-  transition: transform 0.2s ease, background-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+  transition: transform 0.18s ease, background-color 0.18s ease, color 0.18s ease, opacity 0.18s ease;
 }
 
 .composer-ghost-action,
 .composer-pill {
-  border-radius: 18px;
-  padding: 0 14px;
-  min-height: 42px;
-  background: rgba(255, 255, 255, 0.07);
-  color: rgba(245, 245, 244, 0.9);
-  gap: 10px;
+  border-radius: 10px;
+  padding: 0 12px;
+  min-height: 36px;
+  background: rgba(64, 158, 255, 0.1);
+  color: $text-color;
+  gap: 8px;
 }
 
 .composer-ghost-action {
   cursor: pointer;
-  font-size: 14px;
+  font-size: $font-size-sm;
 }
 
 .composer-pill {
   cursor: pointer;
-  font-size: 15px;
+  font-size: $font-size-sm;
 }
 
 .composer-pill--model {
@@ -1756,12 +1764,12 @@ function formatDateTime(timestamp: number) {
 }
 
 .composer-provider-badge {
-  border-radius: 16px;
-  padding: 0 14px;
-  min-height: 42px;
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(245, 245, 244, 0.82);
-  font-size: 15px;
+  border-radius: 999px;
+  padding: 0 12px;
+  min-height: 36px;
+  background: rgba(64, 158, 255, 0.12);
+  color: $primary-color;
+  font-size: $font-size-sm;
   font-weight: 600;
 }
 
@@ -1773,24 +1781,23 @@ function formatDateTime(timestamp: number) {
 
 .composer-pill--interactive:hover,
 .composer-ghost-action:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(64, 158, 255, 0.16);
 }
 
 .composer-send {
-  width: 58px;
-  height: 58px;
-  border-radius: 50%;
-  background: #f5f5f4;
-  color: #1c1917;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: $primary-color;
+  color: #ffffff;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.24);
 }
 
 .composer-send__icon {
-  font-size: 28px;
+  font-size: 18px;
   line-height: 1;
 }
 
@@ -1810,8 +1817,8 @@ function formatDateTime(timestamp: number) {
 
 .composer-menu__title,
 .composer-menu__group-label {
-  color: rgba(245, 245, 244, 0.52);
-  font-size: 13px;
+  color: $text-color-secondary;
+  font-size: $font-size-xs;
   font-weight: 600;
 }
 
@@ -1823,194 +1830,183 @@ function formatDateTime(timestamp: number) {
 
 .composer-menu__group + .composer-menu__group {
   padding-top: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid $border-color;
 }
 
 .composer-menu__item {
   width: 100%;
   border: 0;
-  padding: 12px 14px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.03);
-  color: #f5f5f4;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: $text-color;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: $spacing-sm;
   cursor: pointer;
   text-align: left;
-  transition: background-color 0.2s ease, transform 0.2s ease;
+  transition: background-color 0.18s ease, transform 0.18s ease;
 }
 
 .composer-menu__item:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(64, 158, 255, 0.1);
   transform: translateY(-1px);
 }
 
 .composer-menu__item--active {
-  background: rgba(255, 255, 255, 0.11);
+  background: rgba(64, 158, 255, 0.12);
 }
 
 .composer-menu__label {
-  font-size: 16px;
+  font-size: $font-size-base;
   font-weight: 600;
 }
 
 .composer-menu__hint {
   margin-top: 4px;
-  color: rgba(214, 211, 209, 0.68);
-  font-size: 12px;
+  color: $text-color-secondary;
+  font-size: $font-size-xs;
 }
 
 .composer-menu__check {
   min-width: 16px;
   text-align: right;
-  font-size: 22px;
-  color: #f5f5f4;
+  font-size: 18px;
+  color: $primary-color;
 }
 
 .rag-insights {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: $spacing-sm;
   overflow: auto;
 }
 
 .insight-card {
-  border-radius: 20px;
-  padding: 18px;
-  background: rgba(15, 23, 42, 0.34);
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 10px;
+  padding: $spacing-md;
+  background: #fbfcfe;
+  border: 1px solid $border-color;
 }
 
 .insight-card--summary {
-  background: linear-gradient(160deg, rgba(14, 165, 233, 0.18), rgba(15, 23, 42, 0.54));
+  border-color: rgba(64, 158, 255, 0.22);
+  background: rgba(64, 158, 255, 0.06);
 }
 
 .summary-content {
-  margin-top: 14px;
+  margin-top: $spacing-sm;
   line-height: 1.8;
-  color: rgba(248, 250, 252, 0.92);
+  color: $text-color;
 }
 
 .thinking-list,
 .keypoint-list,
 .citation-list {
-  margin-top: 14px;
+  margin-top: $spacing-sm;
 }
 
 .thinking-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: $spacing-sm;
 }
 
 .thinking-item {
   display: flex;
-  gap: 12px;
+  gap: $spacing-sm;
 }
 
 .thinking-item__index {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: rgba(56, 189, 248, 0.22);
-  color: #7dd3fc;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(64, 158, 255, 0.12);
+  color: $primary-color;
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  font-size: $font-size-xs;
 }
 
 .thinking-item__title,
 .citation-item__name {
   font-weight: 600;
-  color: #f8fafc;
+  color: $text-color;
 }
 
 .thinking-item__detail {
   margin-top: 4px;
   line-height: 1.7;
-  color: rgba(226, 232, 240, 0.82);
+  color: $text-color-secondary;
 }
 
 .keypoint-list {
   padding-left: 18px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  color: rgba(248, 250, 252, 0.92);
+  gap: $spacing-sm;
+  color: $text-color;
   line-height: 1.7;
 }
 
 .citation-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: $spacing-sm;
 }
 
 .citation-item {
-  padding: 14px;
-  border-radius: 16px;
-  background: rgba(30, 41, 59, 0.9);
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  color: #e2e8f0;
+  padding: 12px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid $border-color;
+  color: $text-color;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.citation-item:hover {
+  box-shadow: $shadow-sm;
 }
 
 .citation-item__name {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: $spacing-sm;
 }
 
 .citation-item__meta {
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 .citation-item__excerpt {
-  margin-top: 10px;
+  margin-top: 8px;
   line-height: 1.7;
-  color: rgba(226, 232, 240, 0.85);
+  color: $text-color-secondary;
 }
 
 .citation-item__excerpt :deep(mark) {
-  background: rgba(250, 204, 21, 0.88);
-  color: #111827;
+  background: rgba(64, 158, 255, 0.16);
+  color: $text-color;
 }
 
 .rag-workspace :deep(.el-empty__description p) {
-  color: rgba(226, 232, 240, 0.72);
-}
-
-.rag-workspace :deep(.el-select__wrapper),
-.rag-workspace :deep(.el-textarea__inner) {
-  background: rgba(15, 23, 42, 0.86);
-  box-shadow: none;
-  border-color: rgba(148, 163, 184, 0.2);
-  color: #f8fafc;
-}
-
-.rag-workspace :deep(.el-textarea__inner) {
-  min-height: 120px;
-}
-
-.rag-workspace :deep(.el-textarea__inner::placeholder) {
-  color: rgba(148, 163, 184, 0.78);
+  color: $text-color-secondary;
 }
 
 .rag-workspace :deep(.el-button.is-text) {
-  color: #93c5fd;
+  padding: 0;
 }
 
 .rag-workspace :deep(.rag-composer-popover.el-popover) {
-  border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background:
-    linear-gradient(180deg, rgba(46, 43, 42, 0.98), rgba(34, 31, 30, 0.98)),
-    radial-gradient(circle at top, rgba(255, 255, 255, 0.04), transparent 52%);
-  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.28);
-  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid $border-color;
+  background: $bg-container;
+  box-shadow: $shadow-base;
+  padding: $spacing-sm;
 }
 
 @keyframes pulse {
@@ -2028,7 +2024,7 @@ function formatDateTime(timestamp: number) {
 
 @media (max-width: 1440px) {
   .rag-workspace {
-    grid-template-columns: 280px minmax(0, 1fr) 320px;
+    grid-template-columns: 300px minmax(0, 1fr) 320px;
   }
 }
 
@@ -2057,11 +2053,11 @@ function formatDateTime(timestamp: number) {
   .composer-panel,
   .rag-sidebar,
   .rag-insights {
-    padding: 16px;
+    padding: $spacing-md;
   }
 
   .chat-stream {
-    padding: 16px;
+    padding: $spacing-md;
   }
 
   .chat-filters,

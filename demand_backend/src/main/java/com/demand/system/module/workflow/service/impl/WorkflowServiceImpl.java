@@ -28,8 +28,6 @@ import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.demand.system.module.workflow.service.WorkflowService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -52,10 +50,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-@Slf4j
+
 @Service
-@RequiredArgsConstructor
 public class WorkflowServiceImpl implements WorkflowService {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(WorkflowServiceImpl.class);
 
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {
     };
@@ -74,6 +72,26 @@ public class WorkflowServiceImpl implements WorkflowService {
     private final RequirementHistoryMapper requirementHistoryMapper;
     private final NotificationService notificationService;
     private final ObjectMapper objectMapper;
+
+    public WorkflowServiceImpl(WorkflowStateMapper stateMapper, WorkflowTransitionMapper transitionMapper,
+                            WorkflowVersionMapper versionMapper, WorkflowNodePermissionMapper nodePermissionMapper,
+                            StateMachine stateMachine, PermissionEngine permissionEngine,
+                            WorkflowVersionResolver workflowVersionResolver, WorkflowDefinitionEngine workflowDefinitionEngine,
+                            RequirementMapper requirementMapper, RequirementHistoryMapper requirementHistoryMapper,
+                            NotificationService notificationService, ObjectMapper objectMapper) {
+        this.stateMapper = stateMapper;
+        this.transitionMapper = transitionMapper;
+        this.versionMapper = versionMapper;
+        this.nodePermissionMapper = nodePermissionMapper;
+        this.stateMachine = stateMachine;
+        this.permissionEngine = permissionEngine;
+        this.workflowVersionResolver = workflowVersionResolver;
+        this.workflowDefinitionEngine = workflowDefinitionEngine;
+        this.requirementMapper = requirementMapper;
+        this.requirementHistoryMapper = requirementHistoryMapper;
+        this.notificationService = notificationService;
+        this.objectMapper = objectMapper;
+    }
 
     @Override
     public List<WorkflowState> getStates(Long projectId) {

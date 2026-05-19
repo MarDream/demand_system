@@ -11,7 +11,6 @@ import com.demand.system.module.llm.entity.LlmProvider;
 import com.demand.system.module.llm.mapper.LlmModelMapper;
 import com.demand.system.module.llm.mapper.LlmProviderMapper;
 import com.demand.system.module.llm.service.LlmProviderService;
-import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,12 +21,18 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 public class LlmProviderServiceImpl implements LlmProviderService {
-
     private final LlmProviderMapper providerMapper;
     private final LlmModelMapper modelMapper;
     private final LlmGateway llmGateway;
+
+    public LlmProviderServiceImpl(LlmProviderMapper providerMapper,
+                                  LlmModelMapper modelMapper,
+                                  LlmGateway llmGateway) {
+        this.providerMapper = providerMapper;
+        this.modelMapper = modelMapper;
+        this.llmGateway = llmGateway;
+    }
 
     // ==================== Provider ====================
 

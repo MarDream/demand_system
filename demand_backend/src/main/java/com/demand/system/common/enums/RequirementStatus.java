@@ -1,8 +1,5 @@
 package com.demand.system.common.enums;
 
-import lombok.Getter;
-
-@Getter
 public enum RequirementStatus {
 
     NEW("新建"),
@@ -23,5 +20,9 @@ public enum RequirementStatus {
 
     RequirementStatus(String label) {
         this.label = label;
+    }
+
+    public String getLabel() {
+        return label;
     }
 }

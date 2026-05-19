@@ -10,7 +10,7 @@ import java.util.Map;
 
 public interface RequirementRelationMapper extends BaseMapper<RequirementRelation> {
 
-    @Select("SELECT rr.*, r.title as target_title, r.status as target_status, r.priority as target_priority " +
+    @Select("SELECT rr.*, r.title as target_title, r.type as target_type, r.status as target_status, r.priority as target_priority " +
             "FROM requirement_relations rr " +
             "LEFT JOIN requirements r ON rr.target_id = r.id " +
             "WHERE rr.source_id = #{sourceId}")

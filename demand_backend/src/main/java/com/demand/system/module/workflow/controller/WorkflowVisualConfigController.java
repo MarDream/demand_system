@@ -4,10 +4,10 @@ import com.demand.system.common.result.Result;
 import com.demand.system.module.workflow.dto.ApprovalRequestDTO;
 import com.demand.system.module.workflow.dto.WorkflowApprovalDTO;
 import com.demand.system.module.workflow.dto.WorkflowConfigDTO;
+import com.demand.system.module.workflow.dto.WorkflowVersionMetaUpdateDTO;
 import com.demand.system.module.workflow.dto.WorkflowVersionDTO;
 import com.demand.system.module.workflow.service.WorkflowConfigService;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -15,10 +15,13 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1")
-@RequiredArgsConstructor
 public class WorkflowVisualConfigController {
 
     private final WorkflowConfigService workflowConfigService;
+
+    public WorkflowVisualConfigController(WorkflowConfigService workflowConfigService) {
+        this.workflowConfigService = workflowConfigService;
+    }
 
     /**
      * 获取当前工作流配置（节点+连线）
@@ -34,10 +37,9 @@ public class WorkflowVisualConfigController {
      */
     @PostMapping("/workflows/{projectId}/config")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
-    public Result<Void> saveWorkflowConfig(@PathVariable Long projectId,
-                                           @RequestBody WorkflowConfigDTO configDTO) {
-        workflowConfigService.saveWorkflowConfig(projectId, configDTO);
-        return Result.success();
+    public Result<WorkflowVersionDTO> saveWorkflowConfig(@PathVariable Long projectId,
+                                                         @RequestBody WorkflowConfigDTO configDTO) {
+        return Result.success(workflowConfigService.saveWorkflowConfig(projectId, configDTO));
     }
 
     /**
@@ -69,12 +71,31 @@ public class WorkflowVisualConfigController {
     }
 
     /**
+     * 更新版本元数据
+     */
+    @PutMapping("/workflows/versions/{versionId}/meta")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
+    public Result<WorkflowVersionDTO> updateVersionMeta(@PathVariable Long versionId,
+                                                        @Valid @RequestBody WorkflowVersionMetaUpdateDTO updateDTO) {
+        return Result.success(workflowConfigService.updateVersionMeta(versionId, updateDTO));
+    }
+
+    /**
      * 获取待审核列表（仅超级管理员）
      */
     @GetMapping("/workflow-approvals/pending")
-    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config', 'menu:settings:workflow')")
     public Result<List<WorkflowApprovalDTO>> getPendingApprovals() {
         return Result.success(workflowConfigService.getPendingApprovals());
+    }
+
+    /**
+     * 获取审核记录列表（仅超级管理员）
+     */
+    @GetMapping("/workflow-approvals")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config', 'menu:settings:workflow')")
+    public Result<List<WorkflowApprovalDTO>> getWorkflowApprovals() {
+        return Result.success(workflowConfigService.getWorkflowApprovals());
     }
 
     /**

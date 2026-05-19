@@ -3,8 +3,8 @@ package com.demand.system.module.knowledge.llm;
 import com.demand.system.module.knowledge.llm.LlmGatewayConfig.Protocol;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.*;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
@@ -12,13 +12,17 @@ import org.springframework.web.client.RestTemplate;
 import java.math.BigDecimal;
 import java.util.*;
 
-@Slf4j
 @Component
-@RequiredArgsConstructor
 public class LlmGateway {
+    private static final Logger log = LoggerFactory.getLogger(LlmGateway.class);
 
     private final LlmGatewayConfig config;
     private final ObjectMapper objectMapper;
+
+    public LlmGateway(LlmGatewayConfig config, ObjectMapper objectMapper) {
+        this.config = config;
+        this.objectMapper = objectMapper;
+    }
 
     // ==================== Embedding ====================
 
@@ -314,15 +318,23 @@ public class LlmGateway {
         }
     }
 
-    @lombok.Data
-    @lombok.AllArgsConstructor
     public static class ModelInfo {
         private String id;
         private String ownedBy;
+
+        public ModelInfo() {}
+
+        public ModelInfo(String id, String ownedBy) {
+            this.id = id;
+            this.ownedBy = ownedBy;
+        }
+
+        public String getId() { return id; }
+        public void setId(String id) { this.id = id; }
+        public String getOwnedBy() { return ownedBy; }
+        public void setOwnedBy(String ownedBy) { this.ownedBy = ownedBy; }
     }
 
-    @lombok.Data
-    @lombok.Builder
     public static class ChatResult {
         private String content;
         private long durationMs;
@@ -330,5 +342,46 @@ public class LlmGateway {
         private Integer completionTokens;
         private Integer totalTokens;
         private String model;
+
+        public String getContent() { return content; }
+        public void setContent(String content) { this.content = content; }
+        public long getDurationMs() { return durationMs; }
+        public void setDurationMs(long durationMs) { this.durationMs = durationMs; }
+        public Integer getPromptTokens() { return promptTokens; }
+        public void setPromptTokens(Integer promptTokens) { this.promptTokens = promptTokens; }
+        public Integer getCompletionTokens() { return completionTokens; }
+        public void setCompletionTokens(Integer completionTokens) { this.completionTokens = completionTokens; }
+        public Integer getTotalTokens() { return totalTokens; }
+        public void setTotalTokens(Integer totalTokens) { this.totalTokens = totalTokens; }
+        public String getModel() { return model; }
+        public void setModel(String model) { this.model = model; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private String content;
+            private long durationMs;
+            private Integer promptTokens;
+            private Integer completionTokens;
+            private Integer totalTokens;
+            private String model;
+
+            public Builder content(String content) { this.content = content; return this; }
+            public Builder durationMs(long durationMs) { this.durationMs = durationMs; return this; }
+            public Builder promptTokens(Integer promptTokens) { this.promptTokens = promptTokens; return this; }
+            public Builder completionTokens(Integer completionTokens) { this.completionTokens = completionTokens; return this; }
+            public Builder totalTokens(Integer totalTokens) { this.totalTokens = totalTokens; return this; }
+            public Builder model(String model) { this.model = model; return this; }
+            public ChatResult build() {
+                ChatResult r = new ChatResult();
+                r.content = this.content;
+                r.durationMs = this.durationMs;
+                r.promptTokens = this.promptTokens;
+                r.completionTokens = this.completionTokens;
+                r.totalTokens = this.totalTokens;
+                r.model = this.model;
+                return r;
+            }
+        }
     }
 }

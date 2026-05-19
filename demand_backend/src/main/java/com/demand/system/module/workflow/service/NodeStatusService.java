@@ -9,7 +9,6 @@ import com.demand.system.module.workflow.entity.NodeStatus;
 import com.demand.system.module.workflow.entity.WorkflowNode;
 import com.demand.system.module.workflow.mapper.NodeStatusMapper;
 import com.demand.system.module.workflow.mapper.WorkflowNodeMapper;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
@@ -20,7 +19,6 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 public class NodeStatusService {
 
     private static final Map<String, String> BUILT_IN_STATUS_NAMES = Map.ofEntries(
@@ -37,6 +35,11 @@ public class NodeStatusService {
 
     private final NodeStatusMapper nodeStatusMapper;
     private final WorkflowNodeMapper workflowNodeMapper;
+
+    public NodeStatusService(NodeStatusMapper nodeStatusMapper, WorkflowNodeMapper workflowNodeMapper) {
+        this.nodeStatusMapper = nodeStatusMapper;
+        this.workflowNodeMapper = workflowNodeMapper;
+    }
 
     public List<NodeStatus> list() {
         return nodeStatusMapper.selectList(

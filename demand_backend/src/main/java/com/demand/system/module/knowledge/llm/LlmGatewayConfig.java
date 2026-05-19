@@ -1,12 +1,10 @@
 package com.demand.system.module.knowledge.llm;
 
-import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
 import java.util.Map;
 
-@Data
 @Configuration
 @ConfigurationProperties(prefix = "llm")
 public class LlmGatewayConfig {
@@ -15,13 +13,76 @@ public class LlmGatewayConfig {
     private Provider reranker = new Provider();
     private Provider chat = new Provider();
 
-    @Data
+    public Provider getEmbedding() {
+        return embedding;
+    }
+
+    public void setEmbedding(Provider embedding) {
+        this.embedding = embedding;
+    }
+
+    public Provider getReranker() {
+        return reranker;
+    }
+
+    public void setReranker(Provider reranker) {
+        this.reranker = reranker;
+    }
+
+    public Provider getChat() {
+        return chat;
+    }
+
+    public void setChat(Provider chat) {
+        this.chat = chat;
+    }
+
     public static class Provider {
         private String protocol = "openai";
         private String baseUrl = "";
         private String apiKey = "";
         private String model = "";
         private String dimension = "1024";
+
+        public String getProtocol() {
+            return protocol;
+        }
+
+        public void setProtocol(String protocol) {
+            this.protocol = protocol;
+        }
+
+        public String getBaseUrl() {
+            return baseUrl;
+        }
+
+        public void setBaseUrl(String baseUrl) {
+            this.baseUrl = baseUrl;
+        }
+
+        public String getApiKey() {
+            return apiKey;
+        }
+
+        public void setApiKey(String apiKey) {
+            this.apiKey = apiKey;
+        }
+
+        public String getModel() {
+            return model;
+        }
+
+        public void setModel(String model) {
+            this.model = model;
+        }
+
+        public String getDimension() {
+            return dimension;
+        }
+
+        public void setDimension(String dimension) {
+            this.dimension = dimension;
+        }
     }
 
     public enum Protocol {

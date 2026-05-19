@@ -5,20 +5,23 @@ import com.demand.system.module.workflow.entity.WorkflowState;
 import com.demand.system.module.workflow.entity.WorkflowVersion;
 import com.demand.system.module.workflow.mapper.WorkflowStateMapper;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.Objects;
 import java.util.Optional;
 
 @Component
-@RequiredArgsConstructor
 public class WorkflowVersionResolver {
 
     public static final Long GLOBAL_PROJECT_ID = 0L;
 
     private final WorkflowVersionMapper workflowVersionMapper;
     private final WorkflowStateMapper workflowStateMapper;
+
+    public WorkflowVersionResolver(WorkflowVersionMapper workflowVersionMapper, WorkflowStateMapper workflowStateMapper) {
+        this.workflowVersionMapper = workflowVersionMapper;
+        this.workflowStateMapper = workflowStateMapper;
+    }
 
     public Optional<WorkflowVersion> findActiveVersion(Long projectId) {
         WorkflowVersion direct = workflowVersionMapper.selectOne(new LambdaQueryWrapper<WorkflowVersion>()

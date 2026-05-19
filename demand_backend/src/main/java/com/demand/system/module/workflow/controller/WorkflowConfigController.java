@@ -6,7 +6,6 @@ import com.demand.system.module.workflow.entity.WorkflowTransition;
 import com.demand.system.module.workflow.entity.WorkflowVersion;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.demand.system.module.workflow.service.WorkflowService;
-import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -14,12 +13,16 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1")
-@RequiredArgsConstructor
 @PreAuthorize("hasAnyAuthority('admin', 'workflow:config')")
 public class WorkflowConfigController {
 
     private final WorkflowService workflowService;
     private final WorkflowVersionMapper workflowVersionMapper;
+
+    public WorkflowConfigController(WorkflowService workflowService, WorkflowVersionMapper workflowVersionMapper) {
+        this.workflowService = workflowService;
+        this.workflowVersionMapper = workflowVersionMapper;
+    }
 
     @GetMapping("/projects/{id}/workflow/states")
     public Result<List<WorkflowState>> getStates(@PathVariable("id") Long projectId) {

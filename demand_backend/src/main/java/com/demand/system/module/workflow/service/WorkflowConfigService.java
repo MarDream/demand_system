@@ -2,6 +2,7 @@ package com.demand.system.module.workflow.service;
 
 import com.demand.system.module.workflow.dto.WorkflowApprovalDTO;
 import com.demand.system.module.workflow.dto.WorkflowConfigDTO;
+import com.demand.system.module.workflow.dto.WorkflowVersionMetaUpdateDTO;
 import com.demand.system.module.workflow.dto.WorkflowVersionDTO;
 
 import java.util.List;
@@ -16,7 +17,7 @@ public interface WorkflowConfigService {
     /**
      * 保存工作流配置（草稿）
      */
-    void saveWorkflowConfig(Long projectId, WorkflowConfigDTO configDTO);
+    WorkflowVersionDTO saveWorkflowConfig(Long projectId, WorkflowConfigDTO configDTO);
 
     /**
      * 提交审核
@@ -34,9 +35,19 @@ public interface WorkflowConfigService {
     WorkflowVersionDTO getVersionConfig(Long versionId);
 
     /**
+     * 更新版本元数据
+     */
+    WorkflowVersionDTO updateVersionMeta(Long versionId, WorkflowVersionMetaUpdateDTO updateDTO);
+
+    /**
      * 获取待审核列表（仅超级管理员）
      */
     List<WorkflowApprovalDTO> getPendingApprovals();
+
+    /**
+     * 获取审核记录列表（仅超级管理员）
+     */
+    List<WorkflowApprovalDTO> getWorkflowApprovals();
 
     /**
      * 审核通过

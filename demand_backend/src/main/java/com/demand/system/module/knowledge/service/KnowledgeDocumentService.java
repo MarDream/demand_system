@@ -14,7 +14,13 @@ public interface KnowledgeDocumentService {
 
     KnowledgeDocumentVO upload(Long knowledgeBaseId, MultipartFile file, Long uploaderId);
 
-    PageResult<KnowledgeDocumentVO> list(Long knowledgeBaseId, int pageNum, int pageSize);
+    PageResult<KnowledgeDocumentVO> list(Long knowledgeBaseId,
+                                         int pageNum,
+                                         int pageSize,
+                                         String fileName,
+                                         String status,
+                                         String createdAtStart,
+                                         String createdAtEnd);
 
     void delete(Long knowledgeBaseId, Long documentId);
 

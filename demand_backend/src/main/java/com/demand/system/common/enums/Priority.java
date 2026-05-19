@@ -1,8 +1,5 @@
 package com.demand.system.common.enums;
 
-import lombok.Getter;
-
-@Getter
 public enum Priority {
 
     P0_URGENT("P0-紧急"),
@@ -14,5 +11,9 @@ public enum Priority {
 
     Priority(String label) {
         this.label = label;
+    }
+
+    public String getLabel() {
+        return label;
     }
 }

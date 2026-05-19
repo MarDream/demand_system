@@ -7,7 +7,6 @@ import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.statistics.dto.BurndownPoint;
 import com.demand.system.module.statistics.dto.CfdPoint;
 import com.demand.system.module.statistics.service.StatisticsService;
-import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -15,10 +14,13 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/projects")
-@RequiredArgsConstructor
 public class StatisticsController {
 
     private final StatisticsService statisticsService;
+
+    public StatisticsController(StatisticsService statisticsService) {
+        this.statisticsService = statisticsService;
+    }
 
     @GetMapping("/{id}/stats/dashboard")
     public Result<Map<String, Object>> getDashboard(@PathVariable("id") Long projectId) {

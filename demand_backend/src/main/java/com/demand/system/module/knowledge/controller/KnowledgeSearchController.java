@@ -5,7 +5,6 @@ import com.demand.system.module.knowledge.dto.KnowledgeSearchRequest;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse;
 import com.demand.system.module.knowledge.service.KnowledgeSearchService;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -13,10 +12,12 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/knowledge")
-@RequiredArgsConstructor
 public class KnowledgeSearchController {
-
     private final KnowledgeSearchService searchService;
+
+    public KnowledgeSearchController(KnowledgeSearchService searchService) {
+        this.searchService = searchService;
+    }
 
     @PostMapping("/search")
     public Result<KnowledgeSearchResponse> search(@Valid @RequestBody KnowledgeSearchRequest request) {

@@ -2,9 +2,12 @@ import request from '@/api/request'
 import type {
   WorkflowConfigDTO,
   WorkflowVersionDTO,
+  WorkflowVersionMetaUpdateDTO,
   WorkflowApprovalDTO,
   ApprovalRequestDTO
 } from '@/types/workflow-visual'
+
+export const GLOBAL_WORKFLOW_PROJECT_ID = 0
 
 /**
  * 获取当前工作流配置（节点+连线）
@@ -17,7 +20,7 @@ export function getWorkflowConfig(projectId: number) {
  * 保存工作流配置（草稿）
  */
 export function saveWorkflowConfig(projectId: number, config: WorkflowConfigDTO) {
-  return request.post<void>(`/v1/workflows/${projectId}/config`, config) as unknown as Promise<void>
+  return request.post<WorkflowVersionDTO>(`/v1/workflows/${projectId}/config`, config) as unknown as Promise<WorkflowVersionDTO>
 }
 
 /**
@@ -42,10 +45,24 @@ export function getVersionConfig(versionId: number) {
 }
 
 /**
+ * 更新工作流版本元数据
+ */
+export function updateWorkflowVersionMeta(versionId: number, data: WorkflowVersionMetaUpdateDTO) {
+  return request.put<WorkflowVersionDTO>(`/v1/workflows/versions/${versionId}/meta`, data) as unknown as Promise<WorkflowVersionDTO>
+}
+
+/**
  * 获取待审核列表（仅超级管理员）
  */
 export function getPendingApprovals() {
   return request.get<WorkflowApprovalDTO[]>('/v1/workflow-approvals/pending') as unknown as Promise<WorkflowApprovalDTO[]>
+}
+
+/**
+ * 获取全部审核记录（仅超级管理员）
+ */
+export function getWorkflowApprovals() {
+  return request.get<WorkflowApprovalDTO[]>('/v1/workflow-approvals') as unknown as Promise<WorkflowApprovalDTO[]>
 }
 
 /**

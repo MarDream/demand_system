@@ -8,17 +8,19 @@ import com.demand.system.module.workflow.dto.TransitionRequest;
 import com.demand.system.module.workflow.dto.TransitionResponse;
 import com.demand.system.module.workflow.entity.WorkflowTransition;
 import com.demand.system.module.workflow.service.WorkflowService;
-import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/requirements")
-@RequiredArgsConstructor
 public class WorkflowTransitionController {
 
     private final WorkflowService workflowService;
+
+    public WorkflowTransitionController(WorkflowService workflowService) {
+        this.workflowService = workflowService;
+    }
 
     @GetMapping("/{id}/available-transitions")
     public Result<List<WorkflowTransition>> available(@PathVariable("id") Long requirementId) {

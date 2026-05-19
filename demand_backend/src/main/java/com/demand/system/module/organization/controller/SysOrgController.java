@@ -4,17 +4,19 @@ import com.demand.system.common.result.Result;
 import com.demand.system.module.organization.dto.*;
 import com.demand.system.module.organization.service.SysOrgService;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/org")
-@RequiredArgsConstructor
 public class SysOrgController {
 
     private final SysOrgService sysOrgService;
+
+    public SysOrgController(SysOrgService sysOrgService) {
+        this.sysOrgService = sysOrgService;
+    }
 
     @GetMapping("/tree")
     public Result<List<SysOrgVO>> getTree() {

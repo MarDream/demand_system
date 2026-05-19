@@ -32,7 +32,17 @@ export interface KnowledgeDocument {
   sourceId?: number | null
   uploaderId: number
   uploaderName: string | null
+  downloadCount: number
   createdAt: string
+}
+
+export interface KnowledgeDocumentQueryParams {
+  pageNum?: number
+  pageSize?: number
+  fileName?: string
+  status?: string
+  createdAtStart?: string
+  createdAtEnd?: string
 }
 
 export interface SearchResultItem {
@@ -98,7 +108,7 @@ export function uploadDocument(knowledgeBaseId: number, file: File) {
   })
 }
 
-export function getDocuments(knowledgeBaseId: number, params: { pageNum?: number; pageSize?: number }) {
+export function getDocuments(knowledgeBaseId: number, params: KnowledgeDocumentQueryParams) {
   return request.get<{ list: KnowledgeDocument[]; total: number }>(`/v1/knowledge/bases/${knowledgeBaseId}/documents`, { params })
 }
 

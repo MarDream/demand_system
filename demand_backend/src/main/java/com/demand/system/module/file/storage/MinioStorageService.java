@@ -2,26 +2,31 @@ package com.demand.system.module.file.storage;
 
 import io.minio.*;
 import io.minio.http.Method;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.InputStream;
 import java.util.concurrent.TimeUnit;
 
-@Slf4j
 @Component
-@RequiredArgsConstructor
 public class MinioStorageService {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(MinioStorageService.class);
+
     private final MinioClient minioClient;
+
+    public MinioStorageService(MinioClient minioClient) {
+        this.minioClient = minioClient;
+    }
 
     @Value("${minio.bucket-name}")
     private String bucketName;
 
     @Value("${minio.endpoint}")
     private String endpoint;
+
+    @Value("${minio.public-endpoint}")
+    private String publicEndpoint;
 
     @Value("${minio.access-key}")
     private String accessKey;
@@ -84,6 +89,24 @@ public class MinioStorageService {
     public String getPresignedUrl(String fileName, int expiryHours, String targetEndpoint) throws Exception {
         MinioClient client = MinioClient.builder()
                 .endpoint(targetEndpoint)
+                .region("us-east-1")
+                .credentials(accessKey, secretKey)
+                .build();
+
+        return client.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
+                .bucket(bucketName)
+                .object(fileName)
+                .method(Method.GET)
+                .expiry(expiryHours, TimeUnit.HOURS)
+                .build());
+    }
+
+    /**
+     * 获取用于在线预览的预签名 URL，优先使用对外可访问地址。
+     */
+    public String getPresignedUrlForDocker(String fileName, int expiryHours) throws Exception {
+        MinioClient client = MinioClient.builder()
+                .endpoint(publicEndpoint)
                 .region("us-east-1")
                 .credentials(accessKey, secretKey)
                 .build();

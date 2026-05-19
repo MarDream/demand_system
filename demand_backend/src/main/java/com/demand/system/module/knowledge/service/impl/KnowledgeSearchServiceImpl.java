@@ -12,17 +12,16 @@ import com.demand.system.module.knowledge.service.EmbeddingService;
 import com.demand.system.module.knowledge.service.KnowledgeSearchService;
 import com.demand.system.module.knowledge.service.RagAnswerService;
 import com.demand.system.module.knowledge.vectorstore.MilvusVectorStore;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
 import java.util.stream.Collectors;
 
-@Slf4j
 @Service
-@RequiredArgsConstructor
 public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
+    private static final Logger log = LoggerFactory.getLogger(KnowledgeSearchServiceImpl.class);
 
     private final EmbeddingService embeddingService;
     private final MilvusVectorStore milvusVectorStore;
@@ -30,6 +29,20 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
     private final RagAnswerService ragAnswerService;
     private final RequirementMapper requirementMapper;
     private final KnowledgeDocumentMapper knowledgeDocumentMapper;
+
+    public KnowledgeSearchServiceImpl(EmbeddingService embeddingService,
+                                     MilvusVectorStore milvusVectorStore,
+                                     KnowledgeConfig knowledgeConfig,
+                                     RagAnswerService ragAnswerService,
+                                     RequirementMapper requirementMapper,
+                                     KnowledgeDocumentMapper knowledgeDocumentMapper) {
+        this.embeddingService = embeddingService;
+        this.milvusVectorStore = milvusVectorStore;
+        this.knowledgeConfig = knowledgeConfig;
+        this.ragAnswerService = ragAnswerService;
+        this.requirementMapper = requirementMapper;
+        this.knowledgeDocumentMapper = knowledgeDocumentMapper;
+    }
 
     @Override
     public KnowledgeSearchResponse search(KnowledgeSearchRequest request) {
@@ -199,11 +212,11 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
     private String buildProcessSummary(KnowledgeSearchRequest request, int candidateCount, List<KnowledgeSearchResponse.SearchResultItem> results) {
         String mode = request.getMode() == null ? "hybrid" : request.getMode();
         if (results.isEmpty()) {
-            return String.format("系统按%s模式检索了知识库内容，但未找到与“%s”相关的文档片段。", mode, request.getQuery());
+            return String.format("系统按%s模式检索了知识库内容，但未找到与\"%s\"相关的文档片段。", mode, request.getQuery());
         }
         long relatedRequirementCount = results.stream().filter(item -> item.getRequirement() != null).count();
         return String.format(
-                "系统按%s模式解析问题“%s”，在%s个候选片段中返回前%d条结果，其中%d条结果可追溯到需求流程附件。",
+                "系统按%s模式解析问题\"%s\"，在%s个候选片段中返回前%d条结果，其中%d条结果可追溯到需求流程附件。",
                 mode,
                 request.getQuery(),
                 candidateCount,
@@ -211,7 +224,6 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                 relatedRequirementCount
         );
     }
-
 
     private KnowledgeSearchResponse.RequirementReference toRequirementReference(Requirement requirement) {
         return KnowledgeSearchResponse.RequirementReference.builder()

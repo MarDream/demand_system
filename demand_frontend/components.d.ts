@@ -74,7 +74,7 @@ declare module 'vue' {
     FilterCard: typeof import('./src/components/common/FilterCard.vue')['default']
     HighlightText: typeof import('./src/components/common/HighlightText.vue')['default']
     IconPicker: typeof import('./src/components/common/IconPicker.vue')['default']
-    OnlyOfficeEditor: typeof import('./src/components/document/OnlyOfficeEditor.vue')['default']
+    OmniDocEditor: typeof import('./src/components/document/OmniDocEditor.vue')['default']
     PageContainer: typeof import('./src/components/common/PageContainer.vue')['default']
     RAGSearchResult: typeof import('./src/components/document/RAGSearchResult.vue')['default']
     RemixIcon: typeof import('./src/components/common/RemixIcon.vue')['default']

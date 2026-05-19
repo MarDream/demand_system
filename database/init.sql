@@ -100,7 +100,7 @@ CREATE TABLE `projects` (
 DROP TABLE IF EXISTS `project_members`;
 CREATE TABLE `project_members` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `project_id` INT UNSIGNED NOT NULL COMMENT '项目ID',
+  `project_id` INT UNSIGNED NOT NULL COMMENT '项目ID，0=未绑定项目',
   `user_id` INT UNSIGNED NOT NULL COMMENT '用户ID',
   `role` VARCHAR(50) NOT NULL COMMENT '项目内角色',
   `joined_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -258,6 +258,7 @@ CREATE TABLE `requirements` (
   `ops_follow_id` INT UNSIGNED DEFAULT NULL COMMENT '运维跟进人ID',
   `maint_follow_id` INT UNSIGNED DEFAULT NULL COMMENT '维护跟进人ID',
   `department_id` INT UNSIGNED DEFAULT NULL COMMENT '所属部门ID',
+  `requirement_no` VARCHAR(64) DEFAULT NULL COMMENT '需求编号',
   `title` VARCHAR(500) NOT NULL COMMENT '标题',
   `description` LONGTEXT COMMENT '描述',
   `type` VARCHAR(50) NOT NULL COMMENT '类型(feature/bug/improvement等)',
@@ -287,7 +288,8 @@ CREATE TABLE `requirements` (
   INDEX `idx_iteration_id` (`iteration_id`),
   INDEX `idx_creator_id` (`creator_id`),
   INDEX `idx_type` (`type`),
-  INDEX `idx_priority` (`priority`)
+  INDEX `idx_priority` (`priority`),
+  UNIQUE INDEX `uk_requirement_no` (`requirement_no`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='需求表';
 
 -- -----------------------------------------------------
@@ -362,7 +364,23 @@ CREATE TABLE `requirement_history` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='需求历史表';
 
 -- -----------------------------------------------------
--- 19. 评审表 reviews
+-- 19. 需求评论表 requirement_comments
+-- -----------------------------------------------------
+DROP TABLE IF EXISTS `requirement_comments`;
+CREATE TABLE `requirement_comments` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `requirement_id` INT UNSIGNED NOT NULL COMMENT '需求ID',
+  `user_id` INT UNSIGNED NOT NULL COMMENT '评论人ID',
+  `content` VARCHAR(500) NOT NULL COMMENT '评论内容',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `idx_requirement_id` (`requirement_id`),
+  INDEX `idx_user_id` (`user_id`),
+  INDEX `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='需求评论表';
+
+-- -----------------------------------------------------
+-- 20. 评审表 reviews
 -- -----------------------------------------------------
 DROP TABLE IF EXISTS `reviews`;
 CREATE TABLE `reviews` (
@@ -380,7 +398,7 @@ CREATE TABLE `reviews` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='评审表';
 
 -- -----------------------------------------------------
--- 20. 需求类型表 requirement_types
+-- 21. 需求类型表 requirement_types
 -- -----------------------------------------------------
 DROP TABLE IF EXISTS `requirement_types`;
 CREATE TABLE `requirement_types` (
@@ -396,7 +414,7 @@ CREATE TABLE `requirement_types` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='需求类型表';
 
 -- -----------------------------------------------------
--- 21. 优先级表 priorities
+-- 22. 优先级表 priorities
 -- -----------------------------------------------------
 DROP TABLE IF EXISTS `priorities`;
 CREATE TABLE `priorities` (
@@ -809,13 +827,14 @@ CREATE TABLE `knowledge_documents` (
   `file_type` VARCHAR(32) DEFAULT NULL COMMENT '文件类型(pdf/txt/md/docx)',
   `file_size` BIGINT UNSIGNED DEFAULT 0 COMMENT '文件大小(字节)',
   `chunk_count` INT UNSIGNED DEFAULT 0 COMMENT '分块数量',
-  `status` VARCHAR(50) DEFAULT 'pending' COMMENT '状态(pending/parsed/indexing/indexed/failed)',
+  `status` VARCHAR(50) DEFAULT 'pending' COMMENT '状态(pending/parsed/indexing/indexed/stored/failed)',
   `error_message` VARCHAR(500) DEFAULT NULL COMMENT '错误信息',
   `minio_key` VARCHAR(500) DEFAULT NULL COMMENT 'MinIO存储Key',
   `requirement_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联需求ID',
   `source_type` VARCHAR(50) DEFAULT NULL COMMENT '来源类型(requirement/knowledge_base)',
   `source_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '来源业务ID',
   `uploader_id` BIGINT UNSIGNED NOT NULL COMMENT '上传人ID',
+  `download_count` INT UNSIGNED DEFAULT 0 COMMENT '下载次数',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
@@ -902,9 +921,25 @@ SET FOREIGN_KEY_CHECKS = 1;
 ALTER TABLE requirements ADD COLUMN IF NOT EXISTS ops_follow_id BIGINT UNSIGNED DEFAULT NULL COMMENT '运营跟进人ID' AFTER assignee_id;
 ALTER TABLE requirements ADD COLUMN IF NOT EXISTS maint_follow_id BIGINT UNSIGNED DEFAULT NULL COMMENT '运维跟进人ID' AFTER ops_follow_id;
 ALTER TABLE requirements ADD COLUMN IF NOT EXISTS department_id BIGINT UNSIGNED DEFAULT NULL COMMENT '归属部门ID' AFTER maint_follow_id;
+ALTER TABLE requirements ADD COLUMN IF NOT EXISTS requirement_no VARCHAR(64) DEFAULT NULL COMMENT '需求编号' AFTER department_id;
 ALTER TABLE requirements ADD COLUMN IF NOT EXISTS analysis_completed_at DATETIME DEFAULT NULL COMMENT '分析完成时间' AFTER due_date;
 ALTER TABLE requirements ADD COLUMN IF NOT EXISTS confirm_at DATETIME DEFAULT NULL COMMENT '需求确认时间' AFTER analysis_completed_at;
 ALTER TABLE requirements ADD COLUMN IF NOT EXISTS development_completed_at DATETIME DEFAULT NULL COMMENT '开发完成时间' AFTER confirm_at;
+SET @requirements_no_index_exists := (
+  SELECT COUNT(1)
+  FROM information_schema.statistics
+  WHERE table_schema = DATABASE()
+    AND table_name = 'requirements'
+    AND index_name = 'uk_requirement_no'
+);
+SET @requirements_no_index_sql := IF(
+  @requirements_no_index_exists = 0,
+  'ALTER TABLE requirements ADD UNIQUE INDEX uk_requirement_no (requirement_no)',
+  'SELECT 1'
+);
+PREPARE stmt_requirements_no_index FROM @requirements_no_index_sql;
+EXECUTE stmt_requirements_no_index;
+DEALLOCATE PREPARE stmt_requirements_no_index;
 
 -- -----------------------------------------------------
 -- 增量变更：用户列配置表
@@ -972,6 +1007,18 @@ INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`) VALUES
 -- 模型配置菜单（系统设置子菜单）
 INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
 (16, 0, '模型配置', 'MENU', '/settings/llm', 'LlmConfig', 'views/settings/llm.vue', 'MagicStick', 10, 'menu:settings:llm', 1, 1, 0);
+
+-- 工作流审批菜单权限
+INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `status`) VALUES
+(35, 'menu:settings:workflow:approval', '工作流审批菜单', 'MENU', '工作流审批菜单入口', 1);
+
+-- 工作流审批菜单（系统配置子菜单）
+INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
+(33, 7, '工作流审批', 'MENU', '/settings/workflow-approvals', 'WorkflowApprovals', 'views/todo/index.vue', 'Stamp', 7, 'menu:settings:workflow:approval', 1, 1, 0);
+
+-- SUPER_ADMIN 授权工作流审批权限
+INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_by`) VALUES
+(1, 35, 1);
 
 -- =====================================================
 -- Sprint 1 增量变更：工作流实例 + 流转记录 + 项目/岗位字段补全
@@ -1086,6 +1133,7 @@ ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS `project_id` BIGINT UNS
 ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS `requirement_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联需求ID' AFTER minio_key;
 ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS `source_type` VARCHAR(50) DEFAULT NULL COMMENT '来源类型(requirement/knowledge_base)' AFTER requirement_id;
 ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS `source_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '来源业务ID' AFTER source_type;
+ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS `download_count` INT UNSIGNED DEFAULT 0 COMMENT '下载次数' AFTER uploader_id;
 
 -- -----------------------------------------------------
 -- 岗位表字段补全
@@ -1100,6 +1148,21 @@ ALTER TABLE positions ADD COLUMN IF NOT EXISTS `menu_permissions` JSON DEFAULT N
 ALTER TABLE requirements ADD COLUMN IF NOT EXISTS `workflow_instance_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '工作流实例ID' AFTER iteration_id;
 ALTER TABLE requirements ADD COLUMN IF NOT EXISTS `node_status` VARCHAR(50) DEFAULT 'DRAFT' COMMENT '当前节点状态' AFTER workflow_instance_id;
 ALTER TABLE requirements ADD COLUMN IF NOT EXISTS `is_draft` TINYINT DEFAULT 1 COMMENT '是否草稿 0=否 1=是' AFTER node_status;
+ALTER TABLE requirements ADD COLUMN IF NOT EXISTS `creator_role_codes` JSON DEFAULT NULL COMMENT '创建人角色码快照（SecurityUtils.getCurrentUserRoles），用于草稿可见性(同部门同角色)' AFTER is_draft;
+
+-- -----------------------------------------------------
+-- 部门管理者角色配置（部门维度配置角色码集合）
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `department_manager_roles` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `department_id` BIGINT UNSIGNED NOT NULL COMMENT '部门ID（SysOrg 部门节点ID）',
+  `manager_role_codes` JSON NOT NULL COMMENT '部门管理者角色码列表（部门维度配置）',
+  `updated_by` BIGINT UNSIGNED DEFAULT NULL,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `uk_department_id` (`department_id`),
+  INDEX `idx_updated_at` (`updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='部门管理者角色配置表';
 
 -- -----------------------------------------------------
 -- 增量变更：知识库文档分享与访问审计

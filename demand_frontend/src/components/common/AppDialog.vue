@@ -26,12 +26,14 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{
+withDefaults(defineProps<{
   modelValue: boolean
   title: string
   width?: string
   showFooter?: boolean
-}>()
+}>(), {
+  showFooter: true,
+})
 
 defineEmits<{
   'update:modelValue': [value: boolean]

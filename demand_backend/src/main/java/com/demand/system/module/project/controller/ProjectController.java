@@ -14,7 +14,6 @@ import com.demand.system.module.project.entity.ProjectMember;
 import com.demand.system.module.project.service.ProjectService;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.web.bind.annotation.*;
@@ -29,10 +28,13 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/projects")
-@RequiredArgsConstructor
 public class ProjectController {
 
     private final ProjectService projectService;
+
+    public ProjectController(ProjectService projectService) {
+        this.projectService = projectService;
+    }
 
     @GetMapping
     public Result<PageResult<Project>> list(

@@ -6,9 +6,15 @@ import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.ErrorCode;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.requirement.entity.Requirement;
+import com.demand.system.module.requirement.entity.RequirementHistory;
+import com.demand.system.module.requirement.mapper.RequirementHistoryMapper;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
+import com.demand.system.module.project.entity.Project;
+import com.demand.system.module.project.mapper.ProjectMapper;
 import com.demand.system.module.user.entity.User;
 import com.demand.system.module.user.mapper.UserMapper;
+import com.demand.system.module.rbac.entity.Role;
+import com.demand.system.module.rbac.mapper.RoleMapper;
 import com.demand.system.module.workflow.dto.AvailableTransitionDTO;
 import com.demand.system.module.workflow.dto.FlowTransitionRequest;
 import com.demand.system.module.workflow.dto.TransitionVO;
@@ -18,18 +24,19 @@ import com.demand.system.module.workflow.mapper.WorkflowEdgeMapper;
 import com.demand.system.module.workflow.mapper.WorkflowInstanceMapper;
 import com.demand.system.module.workflow.mapper.WorkflowInstanceTransitionMapper;
 import com.demand.system.module.workflow.mapper.WorkflowNodeMapper;
-import lombok.RequiredArgsConstructor;
+import com.demand.system.module.workflow.mapper.NodeStatusMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 public class WorkflowEngineService {
 
     private final WorkflowInstanceMapper instanceMapper;
@@ -37,7 +44,28 @@ public class WorkflowEngineService {
     private final WorkflowNodeMapper nodeMapper;
     private final WorkflowEdgeMapper edgeMapper;
     private final RequirementMapper requirementMapper;
+    private final RequirementHistoryMapper requirementHistoryMapper;
+    private final ProjectMapper projectMapper;
     private final UserMapper userMapper;
+    private final RoleMapper roleMapper;
+    private final NodeStatusMapper nodeStatusMapper;
+
+    public WorkflowEngineService(WorkflowInstanceMapper instanceMapper, WorkflowInstanceTransitionMapper transitionMapper,
+                               WorkflowNodeMapper nodeMapper, WorkflowEdgeMapper edgeMapper,
+                               RequirementMapper requirementMapper, RequirementHistoryMapper requirementHistoryMapper,
+                               ProjectMapper projectMapper, UserMapper userMapper, RoleMapper roleMapper,
+                               NodeStatusMapper nodeStatusMapper) {
+        this.instanceMapper = instanceMapper;
+        this.transitionMapper = transitionMapper;
+        this.nodeMapper = nodeMapper;
+        this.edgeMapper = edgeMapper;
+        this.requirementMapper = requirementMapper;
+        this.requirementHistoryMapper = requirementHistoryMapper;
+        this.projectMapper = projectMapper;
+        this.userMapper = userMapper;
+        this.roleMapper = roleMapper;
+        this.nodeStatusMapper = nodeStatusMapper;
+    }
 
     @Transactional
     public void initWorkflow(Long requirementId, Long workflowVersionId) {
@@ -67,10 +95,12 @@ public class WorkflowEngineService {
         transition.setStartedAt(LocalDateTime.now());
         transitionMapper.insert(transition);
 
+        String startNodeStatusCode = resolveNodeStatusCode(startNode);
         requirementMapper.update(null, new LambdaUpdateWrapper<Requirement>()
             .eq(Requirement::getId, requirementId)
             .set(Requirement::getWorkflowInstanceId, instance.getId())
-            .set(Requirement::getNodeStatus, "DRAFT")
+            .set(Requirement::getStatus, resolveNodeStatusName(startNodeStatusCode))
+            .set(Requirement::getNodeStatus, startNodeStatusCode)
             .set(Requirement::getIsDraft, false)
         );
     }
@@ -96,6 +126,8 @@ public class WorkflowEngineService {
 
         WorkflowNode currentNode = getNode(instance.getWorkflowVersionId(), instance.getCurrentNodeId());
         WorkflowNode targetNode = getNode(instance.getWorkflowVersionId(), request.getToNodeId());
+        bindProjectIfNecessary(requirement, request.getProjectId(), operatorId);
+        requirement = requirementMapper.selectById(request.getRequirementId());
 
         validateTransition(instance, currentNode, targetNode, request.getAction(), operatorId);
 
@@ -128,9 +160,10 @@ public class WorkflowEngineService {
             .set(WorkflowInstance::getStatus, newStatus)
         );
 
-        String nodeStatusCode = getNodeStatusCode(targetNode);
+        String nodeStatusCode = resolveNodeStatusCode(targetNode);
         requirementMapper.update(null, new LambdaUpdateWrapper<Requirement>()
             .eq(Requirement::getId, request.getRequirementId())
+            .set(Requirement::getStatus, resolveNodeStatusName(nodeStatusCode))
             .set(Requirement::getNodeStatus, nodeStatusCode)
         );
     }
@@ -145,6 +178,7 @@ public class WorkflowEngineService {
         }
 
         WorkflowNode currentNode = getNode(instance.getWorkflowVersionId(), instance.getCurrentNodeId());
+        validatePermission(currentNode, operatorId);
         if ("end".equals(currentNode.getNodeType())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "结束节点不可回退");
         }
@@ -172,9 +206,10 @@ public class WorkflowEngineService {
             .set(WorkflowInstance::getPreviousNodeId, instance.getCurrentNodeId())
         );
 
-        String nodeStatusCode = getNodeStatusCode(previousNode);
+        String nodeStatusCode = resolveNodeStatusCode(previousNode);
         requirementMapper.update(null, new LambdaUpdateWrapper<Requirement>()
             .eq(Requirement::getId, requirementId)
+            .set(Requirement::getStatus, resolveNodeStatusName(nodeStatusCode))
             .set(Requirement::getNodeStatus, nodeStatusCode)
         );
     }
@@ -182,11 +217,21 @@ public class WorkflowEngineService {
     @Transactional
     public void cancel(Long requirementId, String comment) {
         Long operatorId = SecurityUtils.getCurrentUserId();
+        Requirement requirement = requirementMapper.selectById(requirementId);
+        if (requirement == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "需求不存在");
+        }
         WorkflowInstance instance = getRunningInstance(requirementId);
 
         WorkflowNode currentNode = getNode(instance.getWorkflowVersionId(), instance.getCurrentNodeId());
         if ("end".equals(currentNode.getNodeType())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "结束节点不可取消");
+        }
+        if (!canCancelRequirement(requirement, currentNode, operatorId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限取消当前需求");
+        }
+        if (comment == null || comment.trim().isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "取消原因不能为空");
         }
 
         closeCurrentTransition(instance.getId());
@@ -211,6 +256,7 @@ public class WorkflowEngineService {
 
         requirementMapper.update(null, new LambdaUpdateWrapper<Requirement>()
             .eq(Requirement::getId, requirementId)
+            .set(Requirement::getStatus, resolveNodeStatusName("CANCELLED"))
             .set(Requirement::getNodeStatus, "CANCELLED")
         );
     }
@@ -248,30 +294,36 @@ public class WorkflowEngineService {
         }
 
         Long operatorId = SecurityUtils.getCurrentUserId();
-        if (!hasOperatePermission(currentNode, operatorId)) {
-            return actions;
+        boolean canOperate = hasOperatePermission(currentNode, operatorId);
+        boolean canCancel = canCancelRequirement(requirement, currentNode, operatorId);
+
+        List<AvailableTransitionDTO> transitions = Collections.emptyList();
+        if (canOperate) {
+            transitions = edgeMapper.selectList(
+                    new LambdaQueryWrapper<WorkflowEdge>()
+                            .eq(WorkflowEdge::getWorkflowVersionId, instance.getWorkflowVersionId())
+                            .eq(WorkflowEdge::getSourceNodeId, instance.getCurrentNodeId())
+            ).stream().map(edge -> {
+                WorkflowNode targetNode = getNode(instance.getWorkflowVersionId(), edge.getTargetNodeId());
+                if (targetNode == null) {
+                    return null;
+                }
+                AvailableTransitionDTO dto = new AvailableTransitionDTO();
+                dto.setToNodeId(targetNode.getNodeId());
+                dto.setToNodeName(targetNode.getNodeName());
+                dto.setLabel(edge.getLabel());
+                String nodeStatusCode = resolveNodeStatusCode(targetNode);
+                dto.setBindStatusCode(nodeStatusCode);
+                dto.setBindStatusName(resolveNodeStatusName(nodeStatusCode));
+                dto.setProjectRequired(isProjectRequired(targetNode));
+                return dto;
+            }).filter(java.util.Objects::nonNull).collect(Collectors.toList());
         }
 
-        List<AvailableTransitionDTO> transitions = edgeMapper.selectList(
-                new LambdaQueryWrapper<WorkflowEdge>()
-                        .eq(WorkflowEdge::getWorkflowVersionId, instance.getWorkflowVersionId())
-                        .eq(WorkflowEdge::getSourceNodeId, instance.getCurrentNodeId())
-        ).stream().map(edge -> {
-            WorkflowNode targetNode = getNode(instance.getWorkflowVersionId(), edge.getTargetNodeId());
-            if (targetNode == null) {
-                return null;
-            }
-            AvailableTransitionDTO dto = new AvailableTransitionDTO();
-            dto.setToNodeId(targetNode.getNodeId());
-            dto.setToNodeName(targetNode.getNodeName());
-            dto.setLabel(edge.getLabel());
-            return dto;
-        }).filter(java.util.Objects::nonNull).collect(Collectors.toList());
-
         actions.setTransitions(transitions);
-        actions.setCanTransition(!transitions.isEmpty());
-        actions.setCanRollback(instance.getPreviousNodeId() != null && !"end".equals(currentNode.getNodeType()));
-        actions.setCanCancel(!"end".equals(currentNode.getNodeType()));
+        actions.setCanTransition(canOperate && !transitions.isEmpty());
+        actions.setCanRollback(canOperate && instance.getPreviousNodeId() != null && !"end".equals(currentNode.getNodeType()));
+        actions.setCanCancel(canCancel);
         return actions;
     }
 
@@ -313,9 +365,6 @@ public class WorkflowEngineService {
     private void validateTransition(WorkflowInstance instance, WorkflowNode currentNode,
                                      WorkflowNode targetNode, String action, Long operatorId) {
         if ("cancel".equals(action)) {
-            if ("end".equals(currentNode.getNodeType())) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "结束节点不可取消");
-            }
             return;
         }
 
@@ -333,6 +382,13 @@ public class WorkflowEngineService {
         if (currentNode.getAssigneeType() != null) {
             validatePermission(currentNode, operatorId);
         }
+
+        if (isProjectRequired(targetNode)) {
+            Requirement requirement = requirementMapper.selectById(instance.getRequirementId());
+            if (requirement == null || requirement.getProjectId() == null || requirement.getProjectId() <= 0) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "目标节点要求必须绑定项目后才能提交流转");
+            }
+        }
     }
 
     private void validatePermission(WorkflowNode node, Long operatorId) {
@@ -342,7 +398,17 @@ public class WorkflowEngineService {
                 throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
             }
         } else if ("SPECIFIED_ROLE".equals(assigneeType)) {
-            // 角色校验由 Spring Security 处理，这里做简化检查
+            Integer roleId = node.getAssigneeRoleId();
+            if (roleId == null) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
+            }
+            Role role = roleMapper.selectById(roleId.longValue());
+            if (role == null || role.getCode() == null || role.getCode().isBlank()) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
+            }
+            if (!SecurityUtils.getCurrentUserRoles().contains(role.getCode().trim())) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
+            }
         }
         // 争抢式：绑定角色时所有有该角色的人可见可操作，谁先流转归谁
     }
@@ -357,6 +423,131 @@ public class WorkflowEngineService {
             }
             throw ex;
         }
+    }
+
+    private void bindProjectIfNecessary(Requirement requirement, Long requestedProjectId, Long operatorId) {
+        Long normalizedRequestedProjectId = normalizeProjectId(requestedProjectId);
+        Long currentProjectId = normalizeProjectId(requirement.getProjectId());
+
+        if (normalizedRequestedProjectId <= 0) {
+            return;
+        }
+        if (currentProjectId > 0 && !Objects.equals(currentProjectId, normalizedRequestedProjectId)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "需求已绑定项目，不允许在流转时修改");
+        }
+        ensureProjectCanBeBound(normalizedRequestedProjectId);
+        if (currentProjectId > 0) {
+            return;
+        }
+
+        requirementMapper.update(null, new LambdaUpdateWrapper<Requirement>()
+                .eq(Requirement::getId, requirement.getId())
+                .set(Requirement::getProjectId, normalizedRequestedProjectId));
+        recordProjectBindingHistory(requirement.getId(), operatorId, normalizedRequestedProjectId);
+    }
+
+    private boolean canCancelRequirement(Requirement requirement, WorkflowNode currentNode, Long operatorId) {
+        if (currentNode == null || "end".equals(currentNode.getNodeType())) {
+            return false;
+        }
+        if (!isCancelAllowed(currentNode)) {
+            return false;
+        }
+        if (isCreatorOrAdmin(requirement, operatorId)) {
+            return true;
+        }
+        return hasOperatePermission(currentNode, operatorId);
+    }
+
+    private boolean isCreatorOrAdmin(Requirement requirement, Long operatorId) {
+        if (requirement != null && requirement.getCreatorId() != null && requirement.getCreatorId().equals(operatorId)) {
+            return true;
+        }
+        return SecurityUtils.getCurrentUserRoles().contains("admin");
+    }
+
+    private boolean isCancelAllowed(WorkflowNode node) {
+        return readNodeBooleanProperty(node, "allowCancel", true);
+    }
+
+    private boolean isProjectRequired(WorkflowNode node) {
+        return readNodeBooleanProperty(node, "projectRequired", false);
+    }
+
+    private boolean readNodeBooleanProperty(WorkflowNode node, String key, boolean defaultValue) {
+        if (node == null || node.getProperties() == null) {
+            return defaultValue;
+        }
+
+        Object directValue = node.getProperties().get(key);
+        if (directValue != null) {
+            return parseBooleanValue(directValue, defaultValue);
+        }
+
+        Object nestedProperties = node.getProperties().get("properties");
+        if (nestedProperties instanceof java.util.Map<?, ?> nestedMap) {
+            Object nestedValue = nestedMap.get(key);
+            if (nestedValue != null) {
+                return parseBooleanValue(nestedValue, defaultValue);
+            }
+        }
+        return defaultValue;
+    }
+
+    private boolean parseBooleanValue(Object value, boolean defaultValue) {
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value instanceof Boolean booleanValue) {
+            return booleanValue;
+        }
+        if (value instanceof Number numberValue) {
+            return numberValue.intValue() != 0;
+        }
+        String text = String.valueOf(value).trim();
+        if (text.isEmpty()) {
+            return defaultValue;
+        }
+        return Boolean.parseBoolean(text);
+    }
+
+    private void ensureProjectCanBeBound(Long projectId) {
+        if (projectId == null || projectId <= 0) {
+            return;
+        }
+
+        Project project = projectMapper.selectById(projectId);
+        if (project == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "所选项目不存在");
+        }
+        if (isProjectExpired(project)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "已截止项目不可绑定到需求");
+        }
+    }
+
+    private boolean isProjectExpired(Project project) {
+        if (project == null) {
+            return true;
+        }
+        if ("expired".equalsIgnoreCase(project.getStatus())) {
+            return true;
+        }
+        return project.getEndDate() != null && project.getEndDate().isBefore(LocalDate.now());
+    }
+
+    private Long normalizeProjectId(Long projectId) {
+        return projectId == null || projectId <= 0 ? 0L : projectId;
+    }
+
+    private void recordProjectBindingHistory(Long requirementId, Long operatorId, Long projectId) {
+        RequirementHistory history = new RequirementHistory();
+        history.setRequirementId(requirementId);
+        history.setOperatorId(operatorId);
+        history.setFieldName("projectId");
+        history.setOldValue("未绑定");
+        history.setNewValue("绑定项目#" + projectId);
+        history.setCreatedAt(LocalDateTime.now());
+        requirementHistoryMapper.insert(history);
     }
 
     private void closeCurrentTransition(Long instanceId) {
@@ -400,12 +591,38 @@ public class WorkflowEngineService {
         return instance;
     }
 
-    private String getNodeStatusCode(WorkflowNode node) {
+    private String resolveNodeStatusCode(WorkflowNode node) {
         if (node == null) return "DRAFT";
-        if (node.getProperties() != null && node.getProperties().get("nodeStatusCode") != null) {
-            return node.getProperties().get("nodeStatusCode").toString();
+        if (node.getProperties() != null) {
+            Object nodeStatusCode = node.getProperties().get("nodeStatusCode");
+            if (nodeStatusCode != null) {
+                return nodeStatusCode.toString();
+            }
+
+            Object nestedProperties = node.getProperties().get("properties");
+            if (nestedProperties instanceof java.util.Map<?, ?> nestedMap) {
+                Object nestedNodeStatusCode = nestedMap.get("nodeStatusCode");
+                if (nestedNodeStatusCode != null) {
+                    return nestedNodeStatusCode.toString();
+                }
+            }
         }
         return "DRAFT";
+    }
+
+    private String resolveNodeStatusName(String nodeStatusCode) {
+        if (nodeStatusCode == null || nodeStatusCode.isBlank()) {
+            return "新建";
+        }
+        NodeStatus nodeStatus = nodeStatusMapper.selectOne(
+            new LambdaQueryWrapper<NodeStatus>()
+                .eq(NodeStatus::getCode, nodeStatusCode)
+                .last("LIMIT 1")
+        );
+        if (nodeStatus != null && nodeStatus.getName() != null && !nodeStatus.getName().isBlank()) {
+            return nodeStatus.getName();
+        }
+        return nodeStatusCode;
     }
 
     private String formatDuration(Long seconds) {

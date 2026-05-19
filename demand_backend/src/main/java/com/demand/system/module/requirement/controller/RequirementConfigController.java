@@ -9,18 +9,20 @@ import com.demand.system.module.requirement.service.RequirementConfigService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/requirement-config")
-@RequiredArgsConstructor
 @Tag(name = "需求配置管理", description = "需求类型和优先级配置")
 public class RequirementConfigController {
 
     private final RequirementConfigService configService;
+
+    public RequirementConfigController(RequirementConfigService configService) {
+        this.configService = configService;
+    }
 
     @GetMapping("/types")
     @Operation(summary = "获取需求类型列表")

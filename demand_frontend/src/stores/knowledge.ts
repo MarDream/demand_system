@@ -12,6 +12,7 @@ import {
   uploadDocument,
   type KnowledgeBase,
   type KnowledgeDocument,
+  type KnowledgeDocumentQueryParams,
   type SearchMode,
   type SearchResponse
 } from '@/api/modules/knowledge'
@@ -51,10 +52,10 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     await fetchAllBases()
   }
 
-  async function fetchDocuments(knowledgeBaseId: number, pageNum = 1, pageSize = 20) {
+  async function fetchDocuments(knowledgeBaseId: number, params: KnowledgeDocumentQueryParams = { pageNum: 1, pageSize: 20 }) {
     loading.value = true
     try {
-      const res = await getDocuments(knowledgeBaseId, { pageNum, pageSize })
+      const res = await getDocuments(knowledgeBaseId, params)
       const data = (res as any)?.data || res
       documents.value = data?.list || []
       totalDocs.value = data?.total || 0

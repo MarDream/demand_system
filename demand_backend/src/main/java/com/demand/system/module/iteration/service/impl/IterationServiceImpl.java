@@ -11,7 +11,6 @@ import com.demand.system.module.iteration.mapper.IterationMapper;
 import com.demand.system.module.iteration.service.IterationService;
 import com.demand.system.module.requirement.entity.Requirement;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
-import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,11 +20,15 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 public class IterationServiceImpl implements IterationService {
 
     private final IterationMapper iterationMapper;
     private final RequirementMapper requirementMapper;
+
+    public IterationServiceImpl(IterationMapper iterationMapper, RequirementMapper requirementMapper) {
+        this.iterationMapper = iterationMapper;
+        this.requirementMapper = requirementMapper;
+    }
 
     @Override
     public List<IterationVO> listByProject(Long projectId) {

@@ -13,8 +13,6 @@ import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.auth.service.AuthService;
 import com.demand.system.module.auth.service.VerificationCodeService;
 import com.demand.system.module.rbac.support.RbacPermissionResolver;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -26,9 +24,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-@Slf4j
 @Service
-@RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
 
     private final SysUserMapper sysUserMapper;
@@ -46,6 +42,15 @@ public class AuthServiceImpl implements AuthService {
 
     @Value("${jwt.refresh-token-expiration}")
     private long refreshTokenExpiration;
+
+    public AuthServiceImpl(SysUserMapper sysUserMapper, UserOrganizationMapper userOrganizationMapper, StringRedisTemplate stringRedisTemplate, PasswordEncoder passwordEncoder, VerificationCodeService verificationCodeService, RbacPermissionResolver rbacPermissionResolver) {
+        this.sysUserMapper = sysUserMapper;
+        this.userOrganizationMapper = userOrganizationMapper;
+        this.stringRedisTemplate = stringRedisTemplate;
+        this.passwordEncoder = passwordEncoder;
+        this.verificationCodeService = verificationCodeService;
+        this.rbacPermissionResolver = rbacPermissionResolver;
+    }
 
     @Override
     public TokenResponse login(LoginRequest request) {
@@ -186,8 +191,6 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public TokenResponse register(RegisterRequest request) {
-        log.info("用户注册: username={}, email={}", request.getUsername(), request.getEmail());
-
         if (!verificationCodeService.verifyCode(request.getEmail(), request.getVerificationCode(), "register")) {
             throw new BusinessException("验证码错误或已过期");
         }
@@ -220,7 +223,6 @@ public class AuthServiceImpl implements AuthService {
         user.setDeletedAt(0);
 
         sysUserMapper.insert(user);
-        log.info("用户注册成功: userId={}, username={}", user.getId(), user.getUsername());
 
         verificationCodeService.markCodeAsUsed(request.getEmail(), request.getVerificationCode(), "register");
 
@@ -253,8 +255,6 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public void sendVerificationCode(SendVerificationCodeRequest request) {
-        log.info("发送验证码: email={}, type={}", request.getEmail(), request.getType());
-
         if (!"register".equals(request.getType()) && !"reset_password".equals(request.getType())) {
             throw new BusinessException("验证码类型不正确");
         }
@@ -280,13 +280,10 @@ public class AuthServiceImpl implements AuthService {
         }
 
         verificationCodeService.generateAndSendCode(request.getEmail(), request.getType());
-        log.info("验证码发送成功: email={}, type={}", request.getEmail(), request.getType());
     }
 
     @Override
     public void requestPasswordReset(ResetPasswordRequest request) {
-        log.info("请求密码重置: email={}", request.getEmail());
-
         SysUser user = sysUserMapper.selectOne(
                 new LambdaQueryWrapper<SysUser>()
                         .eq(SysUser::getEmail, request.getEmail())
@@ -296,14 +293,11 @@ public class AuthServiceImpl implements AuthService {
         }
 
         verificationCodeService.generateAndSendCode(request.getEmail(), "reset_password");
-        log.info("密码重置验证码发送成功: email={}", request.getEmail());
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void confirmPasswordReset(ConfirmResetPasswordRequest request) {
-        log.info("确认密码重置: email={}", request.getEmail());
-
         if (!verificationCodeService.verifyCode(request.getEmail(), request.getVerificationCode(), "reset_password")) {
             throw new BusinessException("验证码错误或已过期");
         }
@@ -321,6 +315,5 @@ public class AuthServiceImpl implements AuthService {
         sysUserMapper.updateById(user);
 
         verificationCodeService.markCodeAsUsed(request.getEmail(), request.getVerificationCode(), "reset_password");
-        log.info("密码重置成功: userId={}, email={}", user.getId(), request.getEmail());
     }
 }

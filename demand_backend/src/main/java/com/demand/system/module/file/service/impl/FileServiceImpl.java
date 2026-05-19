@@ -7,9 +7,8 @@ import com.demand.system.module.file.entity.FileRecord;
 import com.demand.system.module.file.mapper.FileRecordMapper;
 import com.demand.system.module.file.service.FileService;
 import com.demand.system.module.file.storage.MinioStorageService;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -19,19 +18,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-@Slf4j
 @Service
-@RequiredArgsConstructor
 public class FileServiceImpl implements FileService {
+    private static final Logger log = LoggerFactory.getLogger(FileServiceImpl.class);
+    private static final long MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+    private static final List<String> ALLOWED_TYPES = List.of(
+            "jpg", "png", "gif", "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "zip", "rar"
+    );
 
     private final MinioStorageService minioStorageService;
     private final FileRecordMapper fileRecordMapper;
 
-    private static final long MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
-
-    private static final List<String> ALLOWED_TYPES = List.of(
-            "jpg", "png", "gif", "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "zip", "rar"
-    );
+    public FileServiceImpl(MinioStorageService minioStorageService, FileRecordMapper fileRecordMapper) {
+        this.minioStorageService = minioStorageService;
+        this.fileRecordMapper = fileRecordMapper;
+    }
 
     @Override
     public FileUploadDTO upload(MultipartFile file, Long uploaderId) {

@@ -61,6 +61,12 @@ export const routes: RouteRecordRaw[] = [
         meta: { title: '迭代管理', icon: 'Calendar' },
       },
       {
+        path: 'todo',
+        name: 'TodoTasks',
+        component: () => import('@/views/todo/index.vue'),
+        meta: { title: '待办任务', icon: 'List' },
+      },
+      {
         path: 'reviews',
         name: 'Reviews',
         component: () => import('@/views/reviews/index.vue'),
@@ -121,6 +127,12 @@ export const routes: RouteRecordRaw[] = [
         meta: { title: '角色管理', hidden: true, requiredPermissions: ['menu:settings:role'] },
       },
       {
+        path: 'settings/workflow-approvals',
+        name: 'WorkflowApprovals',
+        component: () => import('@/views/todo/index.vue'),
+        meta: { title: '工作流审核', hidden: true, requiredPermissions: ['menu:settings:workflow'] },
+      },
+      {
         path: 'system/workflow-config',
         name: 'WorkflowConfig',
         component: () => import('@/views/system/workflow-config/index.vue'),
@@ -151,9 +163,9 @@ export const routes: RouteRecordRaw[] = [
         meta: { title: '模型配置', requiredPermissions: ['menu:settings:llm'] },
       },
       {
-        path: 'settings/onlyoffice',
-        name: 'OnlyOfficeSettings',
-        component: () => import('@/views/settings/onlyoffice.vue'),
+        path: 'settings/omnidoc',
+        name: 'OmniDocSettings',
+        component: () => import('@/views/settings/omnidoc.vue'),
         meta: { title: '在线办公', hidden: true, requiredPermissions: ['menu:rag'] },
       },
       {

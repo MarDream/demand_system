@@ -37,10 +37,25 @@
                 :value="transitionOptionValue(transition)"
               />
             </el-select>
+            <el-select
+              v-if="requiresProjectBinding"
+              v-model="bindingProjectId"
+              filterable
+              clearable
+              placeholder="流转前绑定项目"
+              style="width: 180px; margin-right: 8px"
+            >
+              <el-option
+                v-for="project in bindableProjects"
+                :key="project.id"
+                :label="projectOptionLabel(project)"
+                :value="project.id"
+              />
+            </el-select>
             <el-button
               type="primary"
               :loading="transitionLoading"
-              :disabled="transitionOptions.length === 0"
+              :disabled="transitionOptions.length === 0 || (requiresProjectBinding && !bindingProjectId)"
               @click="handleStatusTransition"
             >
               执行流转
@@ -69,6 +84,7 @@
         <el-tab-pane label="基本信息" name="basic">
           <el-descriptions :column="2" border>
             <el-descriptions-item label="所属项目">{{ projectLabel(detail.projectId) }}</el-descriptions-item>
+            <el-descriptions-item label="需求编号">{{ detail.requirementNo || '-' }}</el-descriptions-item>
             <el-descriptions-item label="需求类型">{{ typeLabel(detail.type) }}</el-descriptions-item>
             <el-descriptions-item label="优先级">
               <el-tag :type="priorityTagType(detail.priority)">{{ priorityLabel(detail.priority) }}</el-tag>
@@ -95,7 +111,7 @@
               <span v-else>-</span>
             </el-descriptions-item>
             <el-descriptions-item label="描述" :span="2">
-              <div v-if="detail.description" class="rich-content" v-html="detail.description"></div>
+              <div v-if="detail.description" class="rich-content" v-html="richDescription"></div>
               <span v-else>-</span>
             </el-descriptions-item>
           </el-descriptions>
@@ -116,6 +132,9 @@
                     {{ row.title }}
                   </el-link>
                 </template>
+              </el-table-column>
+              <el-table-column label="需求编号" min-width="180" align="center">
+                <template #default="{ row }">{{ row.requirementNo || '-' }}</template>
               </el-table-column>
               <el-table-column label="类型" width="80" align="center">
                 <template #default="{ row }">{{ typeLabel(row.type) }}</template>
@@ -232,14 +251,16 @@
 import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { requirementApi, projectApi } from '@/api'
+import { requirementApi, projectApi, relationApi } from '@/api'
 import { downloadRequirementAttachment } from '@/api/modules/file'
+import type { RelationItem } from '@/api/modules/relation'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
 import { workflowEngineApi, type AvailableTransition, type WorkflowAvailableActions } from '@/api/modules/workflow-engine'
 import { executeTransition, getAvailableTransitions, getWorkflowStates } from '@/api/modules/workflow'
-import type { Requirement, RequirementAttachment, RequirementHistory, RequirementUpdate } from '@/types/requirement'
+import type { Requirement, RequirementAttachment, RequirementComment, RequirementHistory, RequirementUpdate } from '@/types/requirement'
 import type { WorkflowState, WorkflowTransition } from '@/types/workflow'
 import { normalizeText, formatDate } from '@/utils/format'
+import { hydrateRichTextImageHtml } from '@/utils/richTextFileImage'
 import PageContainer from '@/components/common/PageContainer.vue'
 
 const route = useRoute()
@@ -250,11 +271,12 @@ const loading = ref(false)
 const detail = ref<Requirement | null>(null)
 const history = ref<RequirementHistory[]>([])
 const relatedRequirements = ref<any[]>([])
-const comments = ref<any[]>([])
+const comments = ref<RequirementComment[]>([])
 const children = ref<any[]>([])
 const activeTab = ref('basic')
 const commentText = ref('')
 const projectName = ref<string>('')
+const projectOptions = ref<Array<{ id: number; name: string; status?: string | null; endDate?: string | null }>>([])
 const typeMap = ref<Record<string, string>>({})
 const priorityMap = ref<Record<string, string>>({})
 const workflowStates = ref<WorkflowState[]>([])
@@ -267,7 +289,9 @@ const workflowRuntime = ref<WorkflowAvailableActions>({
 })
 const usingUnifiedEngine = ref(false)
 const selectedTransitionTargetId = ref<string | number | null>(null)
+const bindingProjectId = ref<number | null>(null)
 const transitionLoading = ref(false)
+const richDescription = computed(() => hydrateRichTextImageHtml(detail.value?.description || ''))
 
 function resetWorkflowMeta() {
   workflowStates.value = []
@@ -280,6 +304,12 @@ function resetWorkflowMeta() {
   }
   usingUnifiedEngine.value = false
   selectedTransitionTargetId.value = null
+  bindingProjectId.value = null
+}
+
+function resolveErrorMessage(error: unknown, fallback: string) {
+  const message = (error as any)?.response?.data?.message || (error as any)?.message
+  return typeof message === 'string' && message.trim() ? message : fallback
 }
 
 // Fetch detail
@@ -327,6 +357,7 @@ async function loadConfig() {
 
 async function loadWorkflowMeta() {
   resetWorkflowMeta()
+  bindingProjectId.value = detail.value?.projectId && detail.value.projectId > 0 ? detail.value.projectId : null
 
   if (detail.value?.workflowInstanceId) {
     try {
@@ -399,6 +430,43 @@ async function fetchChildren() {
   }
 }
 
+async function loadProjectOptions() {
+  try {
+    const res = await projectApi.getProjectList({ pageNum: 1, pageSize: 100 }) as any
+    const list = Array.isArray(res?.list) ? res.list : []
+    projectOptions.value = list.filter((project: any) => !isProjectExpired(project))
+  } catch {
+    projectOptions.value = []
+  }
+}
+
+async function fetchRelations() {
+  try {
+    const res = await relationApi.getRelationList(id)
+    relatedRequirements.value = Array.isArray(res)
+      ? res.map((item: RelationItem) => ({
+          id: item.targetId,
+          title: item.targetTitle,
+          type: item.targetType,
+          status: item.targetStatus,
+          priority: item.targetPriority,
+          relationType: item.relationType,
+        }))
+      : []
+  } catch {
+    relatedRequirements.value = []
+  }
+}
+
+async function fetchComments() {
+  try {
+    const res = await requirementApi.getRequirementComments(id)
+    comments.value = Array.isArray(res) ? res : []
+  } catch {
+    comments.value = []
+  }
+}
+
 // Tag type helpers
 function priorityTagType(priority: string): string {
   const map: Record<string, string> = { P0: 'danger', P1: 'warning', P2: 'info', P3: 'success' }
@@ -407,8 +475,9 @@ function priorityTagType(priority: string): string {
 
 function statusTagType(status: string): string {
   const map: Record<string, string> = {
-    '新建': 'info', '待评审': 'info', '评审中': 'warning', '已通过': 'success',
-    '开发中': 'primary', '测试中': 'info', '已上线': 'success', '已验收': 'success',
+    '新建': 'info', '待分析': 'warning', '待确认': 'warning', '待评审': 'warning',
+    '评审中': 'warning', '已通过': 'success', '开发中': 'primary', '测试中': 'info',
+    '已上线': 'success', '已验收': 'success', '已取消': 'info',
   }
   return map[status] || 'info'
 }
@@ -422,7 +491,18 @@ function priorityLabel(code: string) {
 }
 
 function projectLabel(projectId: number) {
-  return projectName.value || String(projectId || '-')
+  if (!projectId) return '未绑定'
+  return projectName.value || String(projectId)
+}
+
+function isProjectExpired(project: { status?: string | null; endDate?: string | null }) {
+  if (project.status === 'expired') return true
+  if (!project.endDate) return false
+  return new Date(project.endDate).getTime() < Date.now() - 24 * 60 * 60 * 1000
+}
+
+function projectOptionLabel(project: { name: string }) {
+  return project.name
 }
 
 function formatAttachmentMeta(attachment: RequirementAttachment) {
@@ -460,6 +540,21 @@ const transitionOptions = computed<TransitionOption[]>(() => (
   usingUnifiedEngine.value ? workflowRuntime.value.transitions : availableTransitions.value
 ))
 
+const selectedUnifiedTransition = computed<AvailableTransition | null>(() => {
+  if (!usingUnifiedEngine.value) return null
+  return workflowRuntime.value.transitions.find(
+    (transition) => transition.toNodeId === String(selectedTransitionTargetId.value ?? ''),
+  ) || null
+})
+
+const requiresProjectBinding = computed(() => (
+  usingUnifiedEngine.value
+  && !detail.value?.projectId
+  && Boolean(selectedUnifiedTransition.value?.projectRequired)
+))
+
+const bindableProjects = computed(() => projectOptions.value)
+
 function transitionOptionKey(transition: TransitionOption) {
   return 'toNodeId' in transition ? transition.toNodeId : (transition.id || transition.toStateId)
 }
@@ -470,7 +565,10 @@ function transitionOptionValue(transition: TransitionOption) {
 
 function transitionOptionLabel(transition: TransitionOption) {
   if ('toNodeId' in transition) {
-    return transition.label || transition.toNodeName
+    const baseLabel = transition.label || transition.toNodeName
+    const statusLabel = transition.bindStatusName ? ` (${transition.bindStatusName})` : ''
+    const projectLabel = transition.projectRequired ? ' [需绑定项目]' : ''
+    return `${baseLabel}${statusLabel}${projectLabel}`
   }
   return transition.label || workflowStateName(transition.toStateId)
 }
@@ -506,6 +604,7 @@ async function handleStatusTransition() {
       await workflowEngineApi.transition({
         requirementId: id,
         toNodeId: String(selectedTransitionTargetId.value),
+        projectId: requiresProjectBinding.value ? bindingProjectId.value : undefined,
         action: 'submit',
       })
     } else {
@@ -514,8 +613,8 @@ async function handleStatusTransition() {
     ElMessage.success('状态流转成功')
     selectedTransitionTargetId.value = null
     await Promise.all([fetchDetail(), fetchHistory()])
-  } catch {
-    ElMessage.error('状态流转失败')
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '状态流转失败'))
   } finally {
     transitionLoading.value = false
   }
@@ -554,23 +653,37 @@ async function confirmAndExecute(
     await Promise.all([fetchDetail(), fetchHistory()])
   } catch (error: any) {
     if (error === 'cancel' || error?.action === 'cancel') return
-    ElMessage.error(errorMsg)
+    ElMessage.error(resolveErrorMessage(error, errorMsg))
   } finally {
     transitionLoading.value = false
   }
 }
 
 function handleComment() {
-  if (!commentText.value.trim()) return
-  ElMessage.info('评论功能开发中')
-  commentText.value = ''
+  void submitComment()
+}
+
+async function submitComment() {
+  const content = commentText.value.trim()
+  if (!content) return
+
+  try {
+    await requirementApi.createRequirementComment(id, { content })
+    ElMessage.success('评论已提交')
+    commentText.value = ''
+    await Promise.all([fetchComments(), fetchHistory()])
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '评论提交失败'))
+  }
 }
 
 async function initializePage() {
-  await Promise.all([loadConfig(), fetchDetail()])
+  await Promise.all([loadConfig(), loadProjectOptions(), fetchDetail()])
   await Promise.all([
     fetchHistory(),
     fetchChildren(),
+    fetchRelations(),
+    fetchComments(),
   ])
 }
 

@@ -16,8 +16,6 @@ import com.demand.system.module.workflow.mapper.WorkflowTransitionMapper;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -29,10 +27,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-@Slf4j
+
 @Component
-@RequiredArgsConstructor
 public class PermissionEngine {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(PermissionEngine.class);
 
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {
     };
@@ -48,6 +46,22 @@ public class PermissionEngine {
     private final RequirementMapper requirementMapper;
     private final WorkflowDefinitionEngine workflowDefinitionEngine;
     private final ObjectMapper objectMapper;
+
+    public PermissionEngine(WorkflowTransitionMapper transitionMapper, UserOrganizationMapper userOrganizationMapper,
+                           WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver,
+                           WorkflowNodePermissionMapper nodePermissionMapper, WorkflowStateMapper stateMapper,
+                           RequirementMapper requirementMapper, WorkflowDefinitionEngine workflowDefinitionEngine,
+                           ObjectMapper objectMapper) {
+        this.transitionMapper = transitionMapper;
+        this.userOrganizationMapper = userOrganizationMapper;
+        this.workflowVersionMapper = workflowVersionMapper;
+        this.workflowVersionResolver = workflowVersionResolver;
+        this.nodePermissionMapper = nodePermissionMapper;
+        this.stateMapper = stateMapper;
+        this.requirementMapper = requirementMapper;
+        this.workflowDefinitionEngine = workflowDefinitionEngine;
+        this.objectMapper = objectMapper;
+    }
 
     public boolean canTransition(Long requirementId, Long fromStateId, Long toStateId, Long userId) {
         Requirement requirement = requirementMapper.selectById(requirementId);

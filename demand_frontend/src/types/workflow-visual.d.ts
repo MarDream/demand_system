@@ -37,11 +37,21 @@ export interface WorkflowVersionDTO {
   creatorId: number
   creatorName: string
   createdAt: string
+  latestApprovalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED'
+  latestApprovalComment?: string
+  latestSubmittedAt?: string
+  latestApprovedAt?: string
   config?: WorkflowConfigDTO
+}
+
+export interface WorkflowVersionMetaUpdateDTO {
+  version: number
+  name: string
 }
 
 export interface WorkflowApprovalDTO {
   id: number
+  workflowVersionId: number
   projectId: number
   projectName: string
   version: number

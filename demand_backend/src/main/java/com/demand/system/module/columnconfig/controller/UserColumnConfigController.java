@@ -3,7 +3,6 @@ package com.demand.system.module.columnconfig.controller;
 import com.demand.system.common.result.Result;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.columnconfig.service.UserColumnConfigService;
-import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -11,10 +10,13 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/column-config")
-@RequiredArgsConstructor
 public class UserColumnConfigController {
 
     private final UserColumnConfigService service;
+
+    public UserColumnConfigController(UserColumnConfigService service) {
+        this.service = service;
+    }
 
     @GetMapping("/{pageKey}")
     public Result<List<String>> getConfig(@PathVariable String pageKey) {

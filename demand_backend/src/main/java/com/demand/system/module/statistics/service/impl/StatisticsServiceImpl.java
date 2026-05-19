@@ -7,7 +7,6 @@ import com.demand.system.module.statistics.dto.DistributionData;
 import com.demand.system.module.statistics.dto.DurationData;
 import com.demand.system.module.statistics.mapper.StatisticsMapper;
 import com.demand.system.module.statistics.service.StatisticsService;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -15,10 +14,13 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 public class StatisticsServiceImpl implements StatisticsService {
 
     private final StatisticsMapper statisticsMapper;
+
+    public StatisticsServiceImpl(StatisticsMapper statisticsMapper) {
+        this.statisticsMapper = statisticsMapper;
+    }
 
     @Override
     public Map<String, Object> getDashboardData(Long projectId, Long userId) {

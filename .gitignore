@@ -40,6 +40,12 @@ Temp/
 # Codex temp
 .codex-tmp/
 
+# Codex deps (npm packages downloaded by codex)
+.codex-deps/
+
+# All codex runtime directories
+.codex-*/
+
 # Test reports
 demand_frontend/playwright-report/
 demand_frontend/test-results/

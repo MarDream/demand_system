@@ -1,8 +1,5 @@
 package com.demand.system.common.enums;
 
-import lombok.Getter;
-
-@Getter
 public enum IterationStatus {
 
     NOT_STARTED("未开始"),
@@ -14,5 +11,9 @@ public enum IterationStatus {
 
     IterationStatus(String label) {
         this.label = label;
+    }
+
+    public String getLabel() {
+        return label;
     }
 }

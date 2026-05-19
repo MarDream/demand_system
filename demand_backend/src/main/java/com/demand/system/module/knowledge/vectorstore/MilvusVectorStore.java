@@ -17,19 +17,22 @@ import io.milvus.v2.service.vector.request.SearchReq;
 import io.milvus.v2.service.vector.response.SearchResp;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
 
-@Slf4j
 @Component
-@RequiredArgsConstructor
 public class MilvusVectorStore {
+    private static final Logger log = LoggerFactory.getLogger(MilvusVectorStore.class);
 
     private final MilvusConfig milvusConfig;
     private MilvusClientV2 client;
+
+    public MilvusVectorStore(MilvusConfig milvusConfig) {
+        this.milvusConfig = milvusConfig;
+    }
 
     @PostConstruct
     public void init() {
@@ -252,9 +255,13 @@ public class MilvusVectorStore {
         public String getFileType() { return fileType; }
     }
 
-    @lombok.Data
     public static class SearchResult {
         private float score;
         private Map<String, Object> entity;
+
+        public float getScore() { return score; }
+        public void setScore(float score) { this.score = score; }
+        public Map<String, Object> getEntity() { return entity; }
+        public void setEntity(Map<String, Object> entity) { this.entity = entity; }
     }
 }

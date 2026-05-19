@@ -7,7 +7,6 @@ import com.demand.system.module.knowledge.dto.KnowledgeDocumentVO;
 import com.demand.system.module.knowledge.service.KnowledgeDocumentService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -18,10 +17,12 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/knowledge/bases/{knowledgeBaseId}/documents")
-@RequiredArgsConstructor
 public class KnowledgeDocumentController {
-
     private final KnowledgeDocumentService documentService;
+
+    public KnowledgeDocumentController(KnowledgeDocumentService documentService) {
+        this.documentService = documentService;
+    }
 
     @PostMapping("/upload")
     public Result<KnowledgeDocumentVO> upload(
@@ -36,8 +37,20 @@ public class KnowledgeDocumentController {
     public Result<PageResult<KnowledgeDocumentVO>> list(
             @PathVariable Long knowledgeBaseId,
             @RequestParam(defaultValue = "1") int pageNum,
-            @RequestParam(defaultValue = "10") int pageSize) {
-        PageResult<KnowledgeDocumentVO> result = documentService.list(knowledgeBaseId, pageNum, pageSize);
+            @RequestParam(defaultValue = "10") int pageSize,
+            @RequestParam(required = false) String fileName,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String createdAtStart,
+            @RequestParam(required = false) String createdAtEnd) {
+        PageResult<KnowledgeDocumentVO> result = documentService.list(
+                knowledgeBaseId,
+                pageNum,
+                pageSize,
+                fileName,
+                status,
+                createdAtStart,
+                createdAtEnd
+        );
         return Result.success(result);
     }
 

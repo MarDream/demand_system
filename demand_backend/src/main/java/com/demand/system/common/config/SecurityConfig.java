@@ -5,7 +5,6 @@ import com.demand.system.common.utils.JwtUtils;
 import com.demand.system.module.auth.security.UserPrincipal;
 import com.demand.system.module.rbac.support.RbacPermissionResolver;
 import jakarta.servlet.FilterChain;
-import lombok.RequiredArgsConstructor;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -61,11 +60,15 @@ public class SecurityConfig {
                 .requestMatchers(org.springframework.http.HttpMethod.OPTIONS).permitAll()
                 .requestMatchers("/api/v1/auth/login", "/api/v1/auth/refresh").permitAll()
                 .requestMatchers("/api/v1/public/**").permitAll()
-                .requestMatchers("/api/v1/onlyoffice/callback").permitAll()
-                .requestMatchers("/api/v1/onlyoffice/files/**").permitAll()
-                .requestMatchers("/api/v1/onlyoffice/public/**").permitAll()
-                .requestMatchers("/api/v1/onlyoffice/status").permitAll()
-                .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/v3/api-docs.yaml").permitAll()
+                .requestMatchers(
+                    "/swagger-ui/**",
+                    "/swagger-ui.html",
+                    "/swagger-ui/index.html",
+                    "/webjars/**",
+                    "/v3/api-docs/**",
+                    "/v3/api-docs.yaml",
+                    "/doc.html"
+            ).permitAll()
                 .anyRequest().authenticated()
             )
             .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
@@ -79,19 +82,22 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
-    @RequiredArgsConstructor
     public static class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         private final String jwtSecret;
         private final RbacPermissionResolver rbacPermissionResolver;
 
+        public JwtAuthenticationFilter(String jwtSecret, RbacPermissionResolver rbacPermissionResolver) {
+            this.jwtSecret = jwtSecret;
+            this.rbacPermissionResolver = rbacPermissionResolver;
+        }
+
         @Override
         protected void doFilterInternal(HttpServletRequest request,
                                          HttpServletResponse response,
                                          FilterChain filterChain) throws ServletException, IOException {
-            String authorization = request.getHeader("Authorization");
-            if (authorization != null && authorization.startsWith("Bearer ")) {
-                String token = authorization.substring(7);
+            String token = resolveToken(request);
+            if (token != null && !token.isBlank()) {
                 try {
                     if (JwtUtils.isTokenValid(token, jwtSecret)) {
                         Long userId = JwtUtils.getUserId(token, jwtSecret);
@@ -116,6 +122,22 @@ public class SecurityConfig {
                 }
             }
             filterChain.doFilter(request, response);
+        }
+
+        private String resolveToken(HttpServletRequest request) {
+            String authorization = request.getHeader("Authorization");
+            if (authorization != null && authorization.startsWith("Bearer ")) {
+                return authorization.substring(7);
+            }
+
+            if ("GET".equalsIgnoreCase(request.getMethod()) && request.getRequestURI().startsWith("/api/v1/files/")) {
+                String accessToken = request.getParameter("accessToken");
+                if (accessToken != null && !accessToken.isBlank()) {
+                    return accessToken;
+                }
+            }
+
+            return null;
         }
     }
 }

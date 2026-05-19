@@ -3,23 +3,25 @@ package com.demand.system.module.knowledge.consumer;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.demand.system.module.knowledge.entity.KnowledgeDocument;
 import com.demand.system.module.knowledge.mapper.KnowledgeDocumentMapper;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
-@Slf4j
 @Component
-@RequiredArgsConstructor
 public class KnowledgeDocumentTimeoutChecker {
-
+    private static final Logger log = LoggerFactory.getLogger(KnowledgeDocumentTimeoutChecker.class);
     private static final int TIMEOUT_MINUTES = 20;
     private static final List<String> PROCESSING_STATES = List.of("pending", "parsed", "indexing");
 
     private final KnowledgeDocumentMapper documentMapper;
+
+    public KnowledgeDocumentTimeoutChecker(KnowledgeDocumentMapper documentMapper) {
+        this.documentMapper = documentMapper;
+    }
 
     @Scheduled(fixedRate = 300000)
     public void checkTimeout() {

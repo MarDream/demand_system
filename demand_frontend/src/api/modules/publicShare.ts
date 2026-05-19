@@ -10,6 +10,7 @@ export interface PublicShareContext {
   expireAt?: string | null
   requireLogin: boolean
   oneTimeAccess: boolean
+  previewUrl?: string | null
 }
 
 export async function getPublicShareContext(token: string): Promise<PublicShareContext> {

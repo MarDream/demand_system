@@ -12,7 +12,6 @@ import com.demand.system.module.rbac.entity.SysMenu;
 import com.demand.system.module.rbac.mapper.SysMenuMapper;
 import com.demand.system.module.rbac.service.MenuService;
 import com.demand.system.module.rbac.support.RbacPermissionResolver;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -27,11 +26,15 @@ import java.util.Objects;
 import java.util.Set;
 
 @Service
-@RequiredArgsConstructor
 public class MenuServiceImpl implements MenuService {
 
     private final SysMenuMapper sysMenuMapper;
     private final RbacPermissionResolver rbacPermissionResolver;
+
+    public MenuServiceImpl(SysMenuMapper sysMenuMapper, RbacPermissionResolver rbacPermissionResolver) {
+        this.sysMenuMapper = sysMenuMapper;
+        this.rbacPermissionResolver = rbacPermissionResolver;
+    }
 
     @Override
     public Result<List<MenuVO>> listAllMenus() {

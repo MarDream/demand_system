@@ -11,8 +11,6 @@ import com.demand.system.module.workflow.entity.WorkflowTransitionRecord;
 import com.demand.system.module.workflow.mapper.WorkflowStateMapper;
 import com.demand.system.module.workflow.mapper.WorkflowTransitionMapper;
 import com.demand.system.module.workflow.mapper.WorkflowTransitionRecordMapper;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -20,10 +18,10 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
-@Slf4j
+
 @Component
-@RequiredArgsConstructor
 public class StateMachine {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(StateMachine.class);
 
     private final RequirementMapper requirementMapper;
     private final WorkflowTransitionMapper transitionMapper;
@@ -31,6 +29,17 @@ public class StateMachine {
     private final WorkflowTransitionRecordMapper transitionRecordMapper;
     private final PermissionEngine permissionEngine;
     private final WorkflowDefinitionEngine workflowDefinitionEngine;
+
+    public StateMachine(RequirementMapper requirementMapper, WorkflowTransitionMapper transitionMapper,
+                       WorkflowStateMapper stateMapper, WorkflowTransitionRecordMapper transitionRecordMapper,
+                       PermissionEngine permissionEngine, WorkflowDefinitionEngine workflowDefinitionEngine) {
+        this.requirementMapper = requirementMapper;
+        this.transitionMapper = transitionMapper;
+        this.stateMapper = stateMapper;
+        this.transitionRecordMapper = transitionRecordMapper;
+        this.permissionEngine = permissionEngine;
+        this.workflowDefinitionEngine = workflowDefinitionEngine;
+    }
 
     /**
      * 执行状态转换

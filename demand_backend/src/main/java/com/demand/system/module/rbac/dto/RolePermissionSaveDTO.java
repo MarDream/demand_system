@@ -1,15 +1,29 @@
 package com.demand.system.module.rbac.dto;
 
 import jakarta.validation.constraints.NotNull;
-import lombok.Data;
 
 import java.util.List;
 
-@Data
 public class RolePermissionSaveDTO {
 
     @NotNull(message = "角色ID不能为空")
     private Long roleId;
 
     private List<String> permissionCodes;
+
+    public Long getRoleId() {
+        return roleId;
+    }
+
+    public void setRoleId(Long roleId) {
+        this.roleId = roleId;
+    }
+
+    public List<String> getPermissionCodes() {
+        return permissionCodes;
+    }
+
+    public void setPermissionCodes(List<String> permissionCodes) {
+        this.permissionCodes = permissionCodes;
+    }
 }

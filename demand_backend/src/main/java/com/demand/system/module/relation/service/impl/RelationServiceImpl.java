@@ -7,17 +7,20 @@ import com.demand.system.module.relation.entity.RequirementRelation;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
 import com.demand.system.module.relation.mapper.RequirementRelationMapper;
 import com.demand.system.module.relation.service.RelationService;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
 
 @Service
-@RequiredArgsConstructor
 public class RelationServiceImpl implements RelationService {
 
     private final RequirementRelationMapper relationMapper;
     private final RequirementMapper requirementMapper;
+
+    public RelationServiceImpl(RequirementRelationMapper relationMapper, RequirementMapper requirementMapper) {
+        this.relationMapper = relationMapper;
+        this.requirementMapper = requirementMapper;
+    }
 
     @Override
     public List<RelationVO> listByRequirement(Long requirementId) {
@@ -30,6 +33,7 @@ public class RelationServiceImpl implements RelationService {
             vo.setTargetId(getLong(row, "target_id"));
             vo.setRelationType((String) row.get("relation_type"));
             vo.setTargetTitle((String) row.get("target_title"));
+            vo.setTargetType((String) row.get("target_type"));
             vo.setTargetStatus((String) row.get("target_status"));
             vo.setTargetPriority((String) row.get("target_priority"));
             result.add(vo);

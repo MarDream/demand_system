@@ -12,8 +12,6 @@ import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -35,10 +33,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-@Slf4j
+
 @Component
-@RequiredArgsConstructor
 public class WorkflowDefinitionEngine {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(WorkflowDefinitionEngine.class);
 
     private static final String TYPE_START_EVENT = "startEvent";
     private static final String TYPE_USER_TASK = "userTask";
@@ -50,6 +48,13 @@ public class WorkflowDefinitionEngine {
     private final WorkflowVersionMapper workflowVersionMapper;
     private final WorkflowVersionResolver workflowVersionResolver;
     private final ObjectMapper objectMapper;
+
+    public WorkflowDefinitionEngine(WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver,
+                                  ObjectMapper objectMapper) {
+        this.workflowVersionMapper = workflowVersionMapper;
+        this.workflowVersionResolver = workflowVersionResolver;
+        this.objectMapper = objectMapper;
+    }
 
     public boolean hasActiveDefinition(Long projectId) {
         return workflowVersionResolver.findActiveVersion(projectId)

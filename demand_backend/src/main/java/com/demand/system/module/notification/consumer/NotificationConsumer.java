@@ -2,19 +2,21 @@ package com.demand.system.module.notification.consumer;
 
 import com.demand.system.module.notification.entity.Notification;
 import com.demand.system.module.notification.mapper.NotificationMapper;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
 
-@Slf4j
 @Component
-@RequiredArgsConstructor
 public class NotificationConsumer {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(NotificationConsumer.class);
+
     private final NotificationMapper notificationMapper;
+
+    public NotificationConsumer(NotificationMapper notificationMapper) {
+        this.notificationMapper = notificationMapper;
+    }
 
     @RabbitListener(queues = "notification.system.queue")
     public void handleNotification(Map<String, Object> message) {

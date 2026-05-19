@@ -1,7 +1,7 @@
 # 配置化需求流转升级 - 产品需求说明书 (PRD)
 
-> 版本：v1.1
-> 日期：2026-05-09
+> 版本：v1.2
+> 日期：2026-05-16
 > 适用范围：需求管理系统 Web 端
 > 关联文档：`docs/PRD-需求管理系统.md`
 
@@ -150,11 +150,13 @@
 ### 4.3 开始节点规则
 
 - 开始节点为需求创建节点。
-- 开始节点对应需求状态为“新建”。
-- 开始节点支持“保存草稿”和“提交”两个动作。
+- 开始节点对应需求状态为“开始节点绑定状态”（由工作流配置绑定，非硬编码）。
+- 开始节点支持“保存草稿”和“提交”两个动作：
+  - 保存草稿：需求保留在开始节点状态，标记为草稿，不推进流程。
+  - 提交：取消草稿标记并推进流程（下一节点=1 自动推进；下一节点>1 由用户选择目标节点后推进）。
 - 草稿需求可长期保留。
 - 草稿需求不进入正式待办流。
-- 开始节点允许直接取消需求。
+- 开始节点允许直接取消需求（按取消权限配置）。
 
 ### 4.4 取消规则
 
@@ -168,11 +170,10 @@
 
 ### 4.5 节点处理规则
 
-- 节点可绑定角色，也可绑定具体人员。
-- 绑定角色时，满足该角色的用户均可查看并处理该节点。
-- 角色处理方式为争抢式，谁先提交动作即记录为该节点实际处理人。
-- 绑定具体人员时，仅该人员可见并可处理。
-- 节点可同时绑定角色和人员，满足任一条件即可处理。
+- 节点处理权限采用“角色集合”表达。
+- 节点可配置多个权限组合，但运行态按“角色并集”计算可处理角色集合。
+- 满足可处理角色集合的用户均可查看并处理该节点（同时仍需满足项目/组织归属的数据隔离规则）。
+- 角色处理方式为争抢式：谁先提交动作即记录为该节点实际处理人；后续操作需提示“已被处理”并阻止重复流转。
 
 ### 4.6 项目绑定规则
 
@@ -195,9 +196,821 @@
 - 检索结果必须展示引用来源和命中文档片段。
 - 本期重点不在重建独立文档管理平台，而在于打通“需求附件归档、知识库检索、需求关联展示”。
 
----
+### 4.8 流转与权限详细设计说明
 
-## 5. 功能需求
+本节为研发实现提供可直接落地的“状态机 + 可见性 + 并发 + 审计 + 接口”详细设计口径，作为后续升级改造的统一实现标准。
+
+#### 4.8.1 名词与边界
+
+- 工作流定义（Workflow Definition）：当前启用的流程模板，定义节点、节点绑定状态、节点权限与节点间连线。
+- 工作流实例（Workflow Instance）：某个需求对应的一次流程执行实例，记录当前节点与历史流转轨迹。
+- 流程节点（Node）：流程中的一个环节，必须绑定一个“节点状态”，并配置“可处理角色集合”。
+- 节点状态（Status）：需求当前的状态展示值（如“新建 / 待评审 / 处理中 / 已完成”等），由节点绑定。
+- 草稿（Draft）：开始节点中的一种状态形态，用于创建人暂存；草稿不进入正式待办流。
+- 待办（My Pending）：仅展示“我可处理”的需求列表（本期采用 B 模式），并受项目/组织归属隔离。
+
+#### 4.8.2 需求字段与状态机约束
+
+需求（Requirement）需具备以下与流程/并发相关的核心字段（字段名以实现为准，本节仅约束语义）：
+
+- `workflowDefinitionId`：当前启用工作流定义 ID（或引用键）。
+- `workflowInstanceId`：工作流实例 ID。
+- `currentNodeId`：当前所在流程节点 ID。
+- `statusCode`：当前节点绑定的状态编码。
+- `isDraft`：是否草稿（仅在开始节点生效）。
+- `creatorId`：创建人 ID。
+- `creatorDeptId`：创建人部门 ID（建议创建时快照，避免后续组织变更导致草稿可见性漂移）。
+- `creatorRoleIds`：创建人角色集合（建议创建时快照，用于“同部门同角色可见”判定）。
+- `version`：并发控制版本号（用于防止重复流转与并发覆盖）。
+- `projectId / orgScope`：项目与组织隔离字段（以系统既有数据隔离实现为准，本期必须叠加）。
+
+状态机约束：
+
+- 需求状态只能通过工作流动作改变；禁止直接改状态。
+- 草稿仅允许存在于开始节点；非开始节点禁止 `isDraft=1`。
+- “保存草稿”不推进流程；“提交”推进流程。
+
+#### 4.8.3 草稿可见性（开始节点）
+
+草稿需求对用户可见当且仅当满足以下任一条件：
+
+- 创建人本人可见：`userId == creatorId`
+- 同部门且同角色可见：`userDeptId == creatorDeptId` 且 `userRoleIds ∩ creatorRoleIds ≠ ∅`
+- 部门管理者角色可见：`userRoleIds ∩ deptManagerRoleIds(creatorDeptId) ≠ ∅`
+
+其中：
+
+- `deptManagerRoleIds(creatorDeptId)` 为部门维度配置的“管理者角色集合”（每个部门可不同，本期仅支持角色维度配置）。
+- 草稿不进入正式待办流，但可作为“我的草稿”列表展示。
+
+#### 4.8.4 待办可见性（仅展示我可处理）
+
+本期列表模式采用 B：列表仅展示“我可处理”的需求（待办箱），并受项目/组织归属隔离。
+
+待办列表返回条件：
+
+- 非草稿：`isDraft=0`
+- 当前节点可处理角色命中：`userRoleIds ∩ nodeHandlerRoleIds(currentNodeId) ≠ ∅`
+- 数据隔离通过：必须满足项目归属与组织归属隔离规则（不得绕过 RBAC/组织隔离）。
+
+#### 4.8.5 提交与流转（下一节点选择）
+
+开始节点动作：
+
+- 保存草稿：
+  - 仅创建人发起（或满足草稿可见性且具备创建/编辑权限的用户发起，按权限策略实现）。
+  - 持久化需求内容与流程实例（如系统以实例驱动），但不推进到下一节点。
+  - `isDraft` 置为 `1`。
+- 提交：
+  - 取消草稿：`isDraft` 置为 `0`。
+  - 计算下一节点候选集（基于当前启用工作流定义与当前节点连线）：
+    - 候选集大小=1：自动推进到该节点。
+    - 候选集大小>1：前端必须展示“下一环节”下拉选择（节点名称列表），由用户选择目标节点后才允许提交。
+
+非开始节点动作（本期仅定义统一口径，具体动作类型按工作流配置扩展）：
+
+- 提交流转必须由当前节点可处理角色命中且满足数据隔离的用户发起。
+- 目标节点必须属于“当前节点的下一节点候选集”，否则视为目标非法。
+
+#### 4.8.6 并发控制与提示策略
+
+目标：以首个成功流转者为准，后续重复提交必须阻止，并提示“谁在什么时间已处理完成”。
+
+实现建议：
+
+- 采用乐观锁（`version`）控制流转一致性：流转 API 请求需携带当前 `version`。
+- 更新时以 `(id, version, currentNodeId, statusCode, isDraft)` 为条件执行原子更新：
+  - 若更新成功（影响行数=1）：写入流转记录，`version+1`。
+  - 若更新失败（影响行数=0）：返回冲突信息，并附带最近一次成功流转记录（处理人、处理时间、从/到节点与状态）。
+
+前端提示示例：
+
+- “该需求已于 {handledAt} 被 {handledBy} 处理并流转至 {toNodeName}/{toStatusName}，请刷新后查看最新状态。”
+
+#### 4.8.7 审计与流转记录
+
+所有关键动作必须记录审计：
+
+- 动作类型：保存草稿 / 提交 / 流转 / 回退 / 取消
+- 操作人、操作时间
+- fromNode/fromStatus → toNode/toStatus
+- 备注/原因（取消原因、回退原因等）
+- 并发冲突失败也需返回明确原因（无权限/状态已变更/目标非法）。
+
+#### 4.8.8 接口设计（建议）
+
+统一响应遵循系统约定：`{ code, message, data }`，分页遵循 `{ list, total, pageNum, pageSize }`。
+
+1）保存草稿（开始节点）
+
+- `POST /api/v1/requirements/{id}/draft`
+- 入参（示例，字段以需求表单为准）：
+  - `payload`：需求表单内容
+  - `version`：当前版本号（新建草稿可不传或传 0）
+- 结果：
+  - 返回最新 `requirementId`、`version`、`statusCode`、`isDraft`
+
+2）提交（开始节点/通用流转）
+
+- `POST /api/v1/requirements/{id}/submit`
+- 入参：
+  - `version`：当前版本号
+  - `nextNodeId`：可选；当候选下一节点>1 时必填
+- 错误码（示例）：
+  - 403：无权限
+  - 409：并发冲突（返回 latestTransitionInfo）
+  - 400：目标节点非法/缺少 nextNodeId/状态不允许提交
+
+3）获取下一节点候选集
+
+- `GET /api/v1/requirements/{id}/next-nodes`
+- 返回：候选节点列表（nodeId、nodeName、bindStatusCode、bindStatusName）
+
+4）我的草稿列表
+
+- `GET /api/v1/requirements/my-drafts`
+- 条件：草稿可见性规则命中（创建人/同部门同角色/部门管理者角色），并叠加数据隔离（项目/组织）。
+
+5）我的待办列表（仅展示我可处理）
+
+- `GET /api/v1/requirements/my-pending`
+- 条件：非草稿 + 节点可处理角色命中 + 数据隔离。
+
+6）流转记录
+
+- `GET /api/v1/requirements/{id}/transitions`
+- 返回：流转记录列表（用于详情页展示审计轨迹与并发提示来源）。
+
+#### 4.8.9 前端交互设计（建议）
+
+- 需求创建/编辑（开始节点）：
+  - 操作按钮：保存草稿 / 提交
+  - 提交时：
+    - 候选下一节点=1：直接提交并自动推进
+    - 候选下一节点>1：在提交区域展示“下一环节”下拉（节点名称），选择后才允许提交
+  - 草稿可见性：创建人同部门同角色、部门管理者角色可看到草稿，但默认仅创建人可编辑（如需支持协作编辑需另行定义编辑权限口径）
+
+- 待办列表：
+  - 默认进入“我的待办（我可处理）”
+  - 支持切换到“我的草稿”
+  - 列表仅展示符合可见性条件的数据，避免无意义的信息堆叠
+
+#### 4.8.10 数据库设计（建议）
+
+本节以当前 `database/init.sql` 为基线，定义为满足“草稿可见性 / 待办过滤 / 并发控制 / 审计轨迹”的最小新增与约束。
+
+（1）需求表 requirements
+
+现状已包含（或通过增量语句补齐）与流程有关字段：
+
+- `workflow_instance_id`：工作流实例 ID
+- `node_status`：当前节点状态编码（与工作流节点绑定的状态）
+- `is_draft`：草稿标记（0/1）
+- `version`：乐观锁版本号
+- `department_id`：所属部门 ID（本期定义为“创建时部门快照”，用于草稿可见性判定）
+
+本期建议新增字段（用于“同部门同角色可见”稳定判定）：
+
+- `creator_role_codes` JSON DEFAULT NULL COMMENT '创建人角色码快照（取 SecurityUtils.getCurrentUserRoles），用于草稿可见性(同部门同角色)'
+
+索引建议：
+
+- `idx_is_draft_department`：(`is_draft`, `department_id`)
+- `idx_is_draft_creator`：(`is_draft`, `creator_id`)
+- `idx_workflow_instance_id`：(`workflow_instance_id`)
+- 保留现有 `idx_status` 与 `node_status` 的一致性（建议逐步以 `node_status` 作为流程展示/过滤字段，`status` 作为兼容展示字段）
+
+（2）部门管理者角色配置
+
+当前 `init.sql` 未定义部门实体表，为支持“部门维度配置管理者角色集合（每个部门可不同）”，本期建议新增独立配置表：
+
+- 表：`department_manager_roles`
+- 字段：
+  - `id` BIGINT UNSIGNED AUTO_INCREMENT
+  - `department_id` BIGINT UNSIGNED NOT NULL
+  - `manager_role_codes` JSON NOT NULL COMMENT '部门管理者角色码列表（部门维度配置）'
+  - `updated_by` BIGINT UNSIGNED DEFAULT NULL
+  - `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+- 约束：
+  - `uk_department_id`：(`department_id`) 唯一
+- 索引：
+  - `idx_updated_at`：(`updated_at`)
+
+（3）工作流实例与流转记录
+
+现状已有：
+
+- `workflow_instances`：需求对应的实例（唯一绑定 requirement_id）
+- `workflow_instance_transitions`：流转记录（含 from/to 节点、操作人、动作、进入/离开时间、停留时长）
+
+本期约束补充：
+
+- 任意“提交/流转/回退/取消”必须写入 `workflow_instance_transitions`（失败则返回明确原因；如需要留存失败尝试，可另外引入失败日志表，但本期不强制）。
+
+#### 4.8.11 接口定义（详细）
+
+接口基线：
+
+- Base Path：`/api/v1/`
+- 认证：`Authorization: Bearer <token>`
+- 统一响应：`{ code, message, data }`
+- 分页响应：`{ list, total, pageNum, pageSize }`
+
+（1）保存草稿（开始节点）
+
+- `POST /api/v1/requirements/{id}/draft`
+- 请求体（示例）：
+  - `version`：number（可选；新建草稿默认 0）
+  - `payload`：需求表单字段（以现有需求创建/编辑 DTO 为准）
+- 返回 `data`（示例）：
+  - `id`：number
+  - `version`：number
+  - `isDraft`：boolean
+  - `nodeStatus`：string
+  - `workflowInstanceId`：number | null
+
+规则：
+
+- 保存草稿不会推进流程，不产生“待办”。
+- 保存草稿时必须将 `isDraft=1`，并更新 `department_id`（创建人部门快照）与 `creator_role_codes`（创建人角色快照）。
+
+（2）获取下一环节候选节点
+
+- `GET /api/v1/requirements/{id}/next-nodes`
+- 返回 `data`：
+  - `list`：候选节点数组
+    - `nodeId`：string
+    - `nodeName`：string
+    - `bindStatusCode`：string
+    - `bindStatusName`：string
+
+规则：
+
+- 候选集大小=1 时前端可直接提交无需选择；>1 时前端必须提供下拉选择 `nextNodeId`。
+
+（3）提交（开始节点/通用流转）
+
+- `POST /api/v1/requirements/{id}/submit`
+- 请求体：
+  - `version`：number（必填）
+  - `nextNodeId`：string（当候选集>1 时必填）
+  - `comment`：string（可选，记录到流转轨迹）
+- 返回 `data`：
+  - `id`：number
+  - `version`：number（更新后的版本）
+  - `isDraft`：boolean（提交后必须为 false）
+  - `nodeStatus`：string（更新后的节点状态）
+  - `currentNodeId`：string（更新后的节点ID）
+  - `workflowInstanceId`：number
+
+错误码与错误体建议：
+
+- 400：目标节点非法 / 缺少 nextNodeId / 状态不允许提交
+- 403：无权限（角色不匹配/数据隔离不通过）
+- 409：并发冲突（返回最新处理信息）
+  - `data.latestTransition`：
+    - `operatorId`：number
+    - `operatorName`：string
+    - `completedAt`：string（ISO 或 yyyy-MM-dd HH:mm:ss）
+    - `toNodeName`：string
+    - `toStatusName`：string
+
+（4）我的草稿列表
+
+- `GET /api/v1/requirements/my-drafts`
+- 返回分页：`{ list, total, pageNum, pageSize }`
+- 查询条件：
+  - 草稿可见性规则命中（创建人/同部门同角色/部门管理者角色）
+  - 叠加项目/组织数据隔离
+
+（5）我的待办列表（仅展示我可处理）
+
+- `GET /api/v1/requirements/my-pending`
+- 返回分页：`{ list, total, pageNum, pageSize }`
+- 查询条件：
+  - 非草稿 `isDraft=0`
+  - 节点可处理角色集合命中
+  - 叠加项目/组织数据隔离
+
+（6）流转记录
+
+- `GET /api/v1/requirements/{id}/transitions`
+- 返回 `data`：
+  - `list`：流转记录数组（按时间倒序或正序统一约定）
+    - `action`：submit/cancel/rollback/approve/reject 等
+    - `fromNodeName` / `toNodeName`
+    - `operatorName`
+    - `startedAt` / `completedAt`
+    - `comment`
+
+#### 4.8.12 页面与交互（原型级描述）
+
+（1）需求创建页（开始节点）
+
+- 表单区：标题、描述、类型、优先级、附件、项目（可选/按节点配置必填）。
+- 操作区：
+  - 按钮：保存草稿 / 提交
+  - 当 `nextNodes.length > 1`：
+    - 提交按钮旁展示“下一环节”下拉（节点名称列表）
+    - 未选择时提交按钮置灰或提交报错提示
+
+（2）我的待办（仅展示我可处理）
+
+- 默认入口为“我的待办”
+- 列表字段建议：
+  - 需求编号、标题、类型、优先级、当前状态（node_status）、创建人、更新时间、项目
+- 操作：
+  - 点击行进入详情
+  - 详情页根据“当前节点可执行动作”渲染按钮（提交/回退/取消等）
+
+（3）我的草稿
+
+- 默认展示满足草稿可见性规则的数据
+- 区分权限：
+  - 创建人：可编辑、可提交
+  - 同部门同角色/部门管理者：默认仅可查看（如需协作编辑需另行定义“可编辑草稿”规则）
+
+#### 4.8.13 权限矩阵（关键动作）
+
+| 动作 | 创建人 | 同部门同角色 | 部门管理者角色 | 当前节点处理角色 | 超级管理员 |
+| --- | --- | --- | --- | --- | --- |
+| 查看草稿 | 是 | 是 | 是 | 否 | 是 |
+| 编辑草稿 | 是 | 否（默认） | 否（默认） | 否 | 是（可选，需审计） |
+| 保存草稿 | 是 | 否 | 否 | 否 | 是（可选，需审计） |
+| 提交草稿 | 是 | 否（默认） | 否（默认） | 否 | 是（可选，需审计） |
+| 查看待办 | 否（除非可处理） | 否（除非可处理） | 否（除非可处理） | 是 | 是 |
+| 提交流转 | 否（除非可处理） | 否（除非可处理） | 否（除非可处理） | 是 | 是 |
+
+备注：
+
+- “部门管理者角色”配置来源：`department_manager_roles.manager_role_ids`（部门维度配置，角色并集判断）。
+- “部门管理者角色”配置来源：`department_manager_roles.manager_role_codes`（部门维度配置，角色并集判断，角色码来源同 SecurityUtils.getCurrentUserRoles）。
+- 项目/组织数据隔离始终叠加，不因角色命中而绕过。
+
+#### 4.8.14 兼容与迁移（建议）
+
+- 当前 `requirements` 已存在 `status` 字段与新增 `node_status` 字段：
+  - 目标态：列表与详情展示优先使用 `node_status`（与工作流节点绑定）。
+  - 兼容策略：保留 `status` 作为历史字段或与 `node_status` 同步（以现有代码现状为准，迁移期内允许双写）。
+- `project_id` 当前为 NOT NULL：
+  - 若要支持“创建时不选项目”，建议使用 `project_id=0` 作为“未绑定项目”的兼容值，并在节点配置要求项目必选时校验 `project_id != 0`。
+
+#### 4.8.15 验收用例（关键路径）
+
+- 草稿保存：
+  - 创建人保存草稿后再次进入可继续编辑，`isDraft=1` 不推进流程
+- 草稿可见：
+  - 同部门且与创建人有相同角色的用户可见草稿
+  - 部门管理者角色用户可见草稿
+  - 非同部门/无相同角色/非部门管理者不可见草稿
+- 提交推进：
+  - 候选下一节点=1 自动推进，状态与节点正确变化，写入流转记录
+  - 候选下一节点>1 必须选择下一环节才能提交，推进后写入流转记录
+- 待办过滤：
+  - 待办仅返回我可处理的需求（角色命中 + 数据隔离）
+- 并发冲突：
+  - 两个处理人同时提交流转：首个成功，后者返回 409 并提示处理人和处理时间
+
+#### 4.8.16 DTO 与返回结构（字段级）
+
+本节给出接口入参/出参的字段级定义与示例，作为前后端联调与测试用例编写依据。字段命名以系统现有风格为准（下述以 camelCase 举例，后端可按项目既有 DTO 命名规范落地）。
+
+（1）统一响应 Envelope
+
+- `code`：number，0 表示成功，其它为业务错误码
+- `message`：string，错误提示或成功提示
+- `data`：T，业务数据
+
+示例：
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {}
+}
+```
+
+（2）分页响应 Page<T>
+
+- `list`：T[]
+- `total`：number
+- `pageNum`：number
+- `pageSize`：number
+
+示例：
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "list": [],
+    "total": 0,
+    "pageNum": 1,
+    "pageSize": 20
+  }
+}
+```
+
+（3）保存草稿
+
+- `POST /api/v1/requirements/{id}/draft`
+
+Request Body：`RequirementDraftSaveRequest`
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| version | number | 否 | 乐观锁版本，新建草稿可不传或传 0 |
+| payload | object | 是 | 需求表单字段（标题、描述、类型、优先级、附件、项目等） |
+
+Response Data：`RequirementDraftSaveResponse`
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| id | number | 是 | 需求ID |
+| version | number | 是 | 更新后的版本号 |
+| isDraft | boolean | 是 | 是否草稿，必须为 true |
+| nodeStatus | string | 是 | 当前节点状态编码（开始节点绑定的状态） |
+| workflowInstanceId | number \| null | 是 | 工作流实例ID（按实现，允许草稿即创建实例或延后创建） |
+
+示例：
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "id": 10001,
+    "version": 3,
+    "isDraft": true,
+    "nodeStatus": "DRAFT",
+    "workflowInstanceId": 90001
+  }
+}
+```
+
+（4）获取下一环节候选节点
+
+- `GET /api/v1/requirements/{id}/next-nodes`
+
+Response Data：`NextNodeListResponse`
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| list | NextNodeOption[] | 是 | 候选节点列表 |
+
+`NextNodeOption`
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| nodeId | string | 是 | 节点ID |
+| nodeName | string | 是 | 节点名称（用于下拉展示） |
+| bindStatusCode | string | 是 | 目标节点绑定状态编码 |
+| bindStatusName | string | 是 | 目标节点绑定状态名称 |
+
+示例：
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "list": [
+      {
+        "nodeId": "N_ANALYSIS",
+        "nodeName": "需求分析",
+        "bindStatusCode": "PENDING_ANALYSIS",
+        "bindStatusName": "待分析"
+      },
+      {
+        "nodeId": "N_CANCEL",
+        "nodeName": "取消",
+        "bindStatusCode": "CANCELLED",
+        "bindStatusName": "已取消"
+      }
+    ]
+  }
+}
+```
+
+（5）提交（开始节点/通用流转）
+
+- `POST /api/v1/requirements/{id}/submit`
+
+Request Body：`RequirementSubmitRequest`
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| version | number | 是 | 乐观锁版本号 |
+| nextNodeId | string | 条件必填 | 当下一节点候选集 > 1 时必填 |
+| comment | string | 否 | 操作意见，记录到流转记录 |
+
+Response Data：`RequirementSubmitResponse`
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| id | number | 是 | 需求ID |
+| version | number | 是 | 更新后的版本号 |
+| isDraft | boolean | 是 | 必须为 false |
+| nodeStatus | string | 是 | 更新后的节点状态 |
+| currentNodeId | string | 是 | 更新后的当前节点ID |
+| workflowInstanceId | number | 是 | 工作流实例ID |
+
+示例：
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "id": 10001,
+    "version": 4,
+    "isDraft": false,
+    "nodeStatus": "PENDING_ANALYSIS",
+    "currentNodeId": "N_ANALYSIS",
+    "workflowInstanceId": 90001
+  }
+}
+```
+
+并发冲突（409）返回建议：`RequirementSubmitConflictResponse`
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| latestTransition | object | 是 | 最近一次成功流转信息，用于提示 |
+
+`latestTransition`
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| operatorId | number | 是 | 处理人ID |
+| operatorName | string | 是 | 处理人名称 |
+| completedAt | string | 是 | 处理完成时间 |
+| toNodeName | string | 是 | 目标节点名称 |
+| toStatusName | string | 是 | 目标状态名称 |
+
+示例：
+
+```json
+{
+  "code": 409,
+  "message": "状态已变更",
+  "data": {
+    "latestTransition": {
+      "operatorId": 20001,
+      "operatorName": "张三",
+      "completedAt": "2026-05-16 15:12:33",
+      "toNodeName": "需求分析",
+      "toStatusName": "待分析"
+    }
+  }
+}
+```
+
+（6）我的草稿列表
+
+- `GET /api/v1/requirements/my-drafts`
+
+Query（示例）：
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| pageNum | number | 否 | 默认 1 |
+| pageSize | number | 否 | 默认 20 |
+| keyword | string | 否 | 标题/编号关键字 |
+| projectId | number | 否 | 项目过滤（叠加隔离） |
+
+List Item：`RequirementDraftListItem`
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| id | number | 是 | 需求ID |
+| requirementNo | string | 否 | 需求编号 |
+| title | string | 是 | 标题 |
+| priority | string | 是 | 优先级 |
+| type | string | 是 | 类型 |
+| nodeStatus | string | 是 | 当前节点状态 |
+| creatorId | number | 是 | 创建人 |
+| creatorName | string | 否 | 创建人名称 |
+| departmentId | number | 否 | 创建人部门快照 |
+| updatedAt | string | 是 | 更新时间 |
+
+（7）我的待办列表
+
+- `GET /api/v1/requirements/my-pending`
+
+Query（示例）：
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| pageNum | number | 否 | 默认 1 |
+| pageSize | number | 否 | 默认 20 |
+| keyword | string | 否 | 标题/编号关键字 |
+| nodeStatus | string | 否 | 状态过滤 |
+| projectId | number | 否 | 项目过滤（叠加隔离） |
+
+List Item：`RequirementPendingListItem`
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| id | number | 是 | 需求ID |
+| requirementNo | string | 否 | 需求编号 |
+| title | string | 是 | 标题 |
+| priority | string | 是 | 优先级 |
+| type | string | 是 | 类型 |
+| nodeStatus | string | 是 | 当前节点状态 |
+| currentNodeId | string | 是 | 当前节点ID |
+| creatorName | string | 否 | 创建人 |
+| projectName | string | 否 | 项目名称 |
+| updatedAt | string | 是 | 更新时间 |
+
+（8）流转记录
+
+- `GET /api/v1/requirements/{id}/transitions`
+
+Response Data：`TransitionRecordListResponse`
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| list | TransitionRecord[] | 是 | 流转记录 |
+
+`TransitionRecord`
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| action | string | 是 | submit/cancel/rollback/... |
+| fromNodeName | string | 否 | 源节点名称 |
+| toNodeName | string | 是 | 目标节点名称 |
+| operatorName | string | 是 | 操作人 |
+| startedAt | string | 是 | 进入该节点时间 |
+| completedAt | string | 否 | 离开该节点时间 |
+| comment | string | 否 | 意见/备注 |
+
+#### 4.8.17 时序与异常流程（文字时序图）
+
+（1）保存草稿
+
+1. 用户在开始节点编辑需求 → 点击“保存草稿”
+2. 前端调用（新建草稿）`POST /api/v1/requirements/drafts` 或（更新草稿）`PUT /api/v1/requirements/{id}/draft`
+3. 后端：
+   - 校验：用户是否具备保存草稿权限（至少创建人；其它可见者默认只读）
+   - 写入：`requirements.is_draft=1`、更新表单字段、更新 `department_id`（创建人部门快照）与 `creator_role_codes`（创建人角色快照）
+   - 返回：最新 `version` 与草稿状态
+4. 前端提示“已保存草稿”
+
+（2）提交流转（下一节点=1）
+
+1. 用户点击“提交”
+2. 前端请求 `GET /requirements/{id}/next-nodes`
+3. 若返回候选节点为 1：
+   - 前端直接调用 `POST /requirements/{id}/submit`（不传 `nextNodeId` 或由后端默认）
+4. 后端：
+   - 校验：草稿状态可提交、用户权限、数据隔离
+   - 并发：按 `(id, version, currentNodeId, nodeStatus, isDraft)` 原子更新
+   - 写入：`workflow_instance_transitions` 记录
+   - 返回：新 `version`、新 `nodeStatus/currentNodeId`
+5. 前端刷新详情/列表，显示新状态
+
+（3）提交流转（下一节点>1）
+
+1. 用户点击“提交”
+2. 前端请求 `GET /requirements/{id}/next-nodes`
+3. 若候选节点>1：
+   - 前端展示“下一环节”下拉（节点名称）
+   - 用户选择 `nextNodeId` 后点击确认提交
+4. 后端：
+   - 校验：`nextNodeId` 必须在候选集中
+   - 其余同（2）
+
+（4）并发冲突（409）
+
+1. A、B 两个处理人几乎同时提交
+2. A 先成功更新并写入流转记录
+3. B 提交时原子更新影响行数=0
+4. 后端返回 409，并携带最近一次成功流转信息（operatorName/completedAt/toNodeName/toStatusName）
+5. 前端弹窗提示：
+   - “该需求已于 {completedAt} 被 {operatorName} 处理并流转至 {toNodeName}/{toStatusName}，请刷新后查看最新状态。”
+
+#### 4.8.18 研发直接照抄 - 数据库增量脚本（DDL）
+
+以下 DDL 可直接追加到 `database/init.sql` 末尾（本仓库约定仅维护此文件，不新增迁移脚本文件）。
+
+（1）requirements：补齐草稿可见性角色快照字段
+
+```sql
+ALTER TABLE `requirements`
+  ADD COLUMN IF NOT EXISTS `creator_role_codes` JSON DEFAULT NULL COMMENT '创建人角色码快照（SecurityUtils.getCurrentUserRoles）';
+```
+
+（2）department_manager_roles：部门维度管理者角色集合（角色码）
+
+```sql
+CREATE TABLE IF NOT EXISTS `department_manager_roles` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `department_id` BIGINT UNSIGNED NOT NULL COMMENT '部门ID（SysOrg 部门节点ID）',
+  `manager_role_codes` JSON NOT NULL COMMENT '部门管理者角色码列表（部门维度配置）',
+  `updated_by` BIGINT UNSIGNED DEFAULT NULL,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `uk_department_id` (`department_id`),
+  INDEX `idx_updated_at` (`updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='部门管理者角色配置表';
+```
+
+#### 4.8.19 研发直接照抄 - 后端实现清单（接口/权限/并发）
+
+本节以“最少改动、直接可跑”为原则，给出后端接口与关键业务逻辑的直接实现口径。
+
+（1）接口清单（最终以代码为准）
+
+- 创建草稿：`POST /api/v1/requirements/drafts`
+- 更新草稿：`PUT /api/v1/requirements/{id}/draft`
+- 查询草稿：`GET /api/v1/requirements/my-drafts`
+- 查询待办（仅我可处理）：`GET /api/v1/requirements/my-pending`
+- 查询开始节点下一环节：`GET /api/v1/requirements/{id}/next-nodes`
+- 提交：`POST /api/v1/requirements/{id}/submit`
+
+（2）草稿创建/保存规则（直接照抄）
+
+- 创建草稿默认写入：
+  - `is_draft=1`
+  - `node_status='DRAFT'`
+  - `workflow_instance_id=NULL`
+  - `department_id=创建人 departmentId 快照`
+  - `org_id=创建人 orgId 快照（无 orgId 时退化为 departmentId/regionId）`
+  - `creator_role_codes=SecurityUtils.getCurrentUserRoles()`
+
+（3）草稿可见性判定（直接照抄）
+
+给定草稿 requirement r 与当前用户 u：
+
+- `u.id == r.creator_id`
+- 或 `u.department_id == r.department_id` 且 `intersect(u.roleCodes, r.creator_role_codes)`
+- 或 `intersect(u.roleCodes, department_manager_roles(r.department_id).manager_role_codes)`
+
+其中：
+
+- `u.roleCodes` 取自 `SecurityUtils.getCurrentUserRoles()`（既包含 legacy system_role 也包含 RBAC roles.code）
+- `intersect(a,b)`：任一相等即命中
+
+（4）待办判定（仅展示我可处理）
+
+- 基础条件：`is_draft=0` 且 `workflow_instance_id IS NOT NULL` 且 `deleted_at=0`
+- 数据隔离：`org_id` 必须在当前用户所属组织及其子组织范围内（使用 `SysOrgService.getDescendantIds`）
+- 可处理判定：按工作流引擎当前节点权限判定（SPECIFIED_USER / SPECIFIED_ROLE）
+  - SPECIFIED_USER：operatorId 在 node.assigneeUserIds 中
+  - SPECIFIED_ROLE：将 node.assigneeRoleId 映射为 roles.code，要求当前用户角色码包含该 code
+
+（5）提交并发控制（直接照抄）
+
+- 提交时必须携带 `version`
+- 后端使用 `WHERE id=? AND version=?` 原子更新（影响行数=0 视为并发冲突）
+- 并发冲突提示从 `workflow_instance_transitions` 取最近一次完成的流转记录，拼接到 message：
+  - “该需求已于 {completedAt} 被 {operatorName} 处理并流转至 {toNodeName}/{toStatusName}，请刷新后查看最新状态。”
+
+#### 4.8.20 研发直接照抄 - 前端实现清单（组件/交互/文案）
+
+（1）需求列表（src/views/requirements/index.vue）
+
+- 默认页签：我的待办
+- 页签切换：
+  - 我的待办 → 调用 `GET /v1/requirements/my-pending`
+  - 我的草稿 → 调用 `GET /v1/requirements/my-drafts`
+- 列表字段：
+  - 标题、需求编号、优先级、类型、nodeStatus、创建人、更新时间
+- 交互：
+  - 点击行进入详情
+  - 草稿行标签展示“草稿”
+
+（2）需求创建（src/views/requirements/create.vue）
+
+- 操作栏：
+  - 保存草稿：允许部分字段为空（但 projectId 必填）
+  - 提交：需先校验标题与优先级必填；当 nextNodes>1 必须选择下一环节
+- 提交流程：
+  1. 若未生成 requirementId → 先创建草稿
+  2. 请求 `GET /v1/requirements/{id}/next-nodes`
+  3. nextNodes=1 → 直接提交；>1 → 下拉选择 nodeName 对应的 nodeId，再提交
+  4. 成功后跳转详情页
+- 文案（统一）：
+  - 草稿保存成功：“已保存草稿”
+  - 提交成功：“已提交”
+  - 并发冲突提示：直接使用后端返回 message 展示弹窗
+
+#### 4.8.21 错误码与提示文案全集（研发/测试照抄）
+
+| 场景 | code | message（建议） |
+| --- | --- | --- |
+| 未登录 | 401 | 未登录或登录已过期 |
+| 无权限 | 403 | 您没有权限操作此节点 |
+| 需求不存在 | 404 | 需求不存在 |
+| 工作流未启用 | 400 | 项目未启用工作流，无法提交 |
+| 下一环节缺失 | 400 | 请先选择下一环节 |
+| 目标节点非法 | 400 | 目标节点不在可选范围内 |
+| 并发冲突 | 409 | 该需求已于 {completedAt} 被 {operatorName} 处理并流转至 {toNodeName}/{toStatusName}，请刷新后查看最新状态。 |
+
+
 
 ## 5.1 需求配置
 

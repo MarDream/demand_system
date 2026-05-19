@@ -1,14 +1,12 @@
 package com.demand.system.module.workflow.entity;
 
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.Data;
+import com.baomidou.mybatisplus.annotation.*;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 
 import java.time.LocalDateTime;
+import java.util.Objects;
 
-@Data
-@TableName("workflow_instances")
+@TableName(value = "workflow_instances", autoResultMap = true)
 public class WorkflowInstance {
 
     @TableId(type = IdType.AUTO)
@@ -27,4 +25,81 @@ public class WorkflowInstance {
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public Long getRequirementId() {
+        return requirementId;
+    }
+
+    public void setRequirementId(Long requirementId) {
+        this.requirementId = requirementId;
+    }
+
+    public Long getWorkflowVersionId() {
+        return workflowVersionId;
+    }
+
+    public void setWorkflowVersionId(Long workflowVersionId) {
+        this.workflowVersionId = workflowVersionId;
+    }
+
+    public String getCurrentNodeId() {
+        return currentNodeId;
+    }
+
+    public void setCurrentNodeId(String currentNodeId) {
+        this.currentNodeId = currentNodeId;
+    }
+
+    public String getPreviousNodeId() {
+        return previousNodeId;
+    }
+
+    public void setPreviousNodeId(String previousNodeId) {
+        this.previousNodeId = previousNodeId;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        WorkflowInstance that = (WorkflowInstance) o;
+        return Objects.equals(id, that.id);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(id);
+    }
 }

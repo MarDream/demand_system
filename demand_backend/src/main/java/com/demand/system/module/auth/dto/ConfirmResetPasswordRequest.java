@@ -4,12 +4,10 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
-import lombok.Data;
 
 /**
  * 确认密码重置请求DTO（验证码+新密码）
  */
-@Data
 @Schema(description = "确认密码重置请求")
 public class ConfirmResetPasswordRequest {
 
@@ -27,4 +25,28 @@ public class ConfirmResetPasswordRequest {
     @Size(min = 6, max = 20, message = "密码长度必须在6-20个字符之间")
     @Schema(description = "新密码", example = "newpassword123")
     private String newPassword;
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
+
+    public String getVerificationCode() {
+        return verificationCode;
+    }
+
+    public void setVerificationCode(String verificationCode) {
+        this.verificationCode = verificationCode;
+    }
+
+    public String getNewPassword() {
+        return newPassword;
+    }
+
+    public void setNewPassword(String newPassword) {
+        this.newPassword = newPassword;
+    }
 }

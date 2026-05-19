@@ -5,13 +5,13 @@
         <slot name="breadcrumb">
           <Breadcrumb v-if="props.breadcrumb" />
         </slot>
-        <div v-if="props.title || props.subtitle || $slots.title" class="app-page__title">
+        <div v-if="props.showTitle && (props.title || props.subtitle || $slots.title)" class="app-page__title">
           <div class="app-page__title-main">
             <slot name="title">
               <h2 class="app-page__h2">{{ displayTitle }}</h2>
             </slot>
           </div>
-          <div v-if="props.subtitle" class="app-page__subtitle">{{ props.subtitle }}</div>
+          <div v-if="props.subtitle && props.showTitle" class="app-page__subtitle">{{ props.subtitle }}</div>
         </div>
       </div>
       <div v-if="$slots.headerActions" class="app-page__header-actions">
@@ -43,9 +43,11 @@ const props = withDefaults(defineProps<{
   subtitle?: string
   breadcrumb?: boolean
   variant?: 'plain' | 'card'
+  showTitle?: boolean
 }>(), {
   breadcrumb: false,
   variant: 'plain',
+  showTitle: false,
 })
 
 const slots = useSlots()
@@ -56,12 +58,11 @@ const displayTitle = computed(() => {
 })
 
 const showHeader = computed(() => {
+  const hasTitle = props.showTitle && !!(props.title || props.subtitle || slots.title)
   return !!(
-    props.title ||
-    props.subtitle ||
+    hasTitle ||
     props.breadcrumb ||
     slots.breadcrumb ||
-    slots.title ||
     slots.headerActions
   )
 })

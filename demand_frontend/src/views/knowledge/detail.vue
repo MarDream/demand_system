@@ -15,6 +15,35 @@
           <el-button type="primary" size="small" @click="showUploadDialog = true">上传文档</el-button>
         </div>
 
+        <div class="table-filters">
+          <el-input
+            v-model="documentFilters.fileName"
+            clearable
+            placeholder="按文档名称检索"
+            class="table-filters__name"
+            @keyup.enter="applyFilters"
+          />
+          <el-select v-model="documentFilters.status" clearable placeholder="按状态筛选" class="table-filters__status">
+            <el-option label="待处理" value="pending" />
+            <el-option label="已解析" value="parsed" />
+            <el-option label="索引中" value="indexing" />
+            <el-option label="已索引" value="indexed" />
+            <el-option label="已入库" value="stored" />
+            <el-option label="失败" value="failed" />
+          </el-select>
+          <el-date-picker
+            v-model="documentFilters.createdAtRange"
+            type="datetimerange"
+            value-format="YYYY-MM-DD HH:mm:ss"
+            range-separator="至"
+            start-placeholder="上传开始时间"
+            end-placeholder="上传结束时间"
+            class="table-filters__time"
+          />
+          <el-button type="primary" @click="applyFilters">检索</el-button>
+          <el-button @click="resetFilters">重置</el-button>
+        </div>
+
         <el-table :data="store.documents" v-loading="store.loading" stripe @selection-change="handleSelectionChange">
           <el-table-column type="selection" width="45" />
           <el-table-column prop="fileName" label="文件名" min-width="200" show-overflow-tooltip>
@@ -27,6 +56,17 @@
           <el-table-column prop="fileSize" label="大小" width="100">
             <template #default="{ row }">
               {{ formatSize(row.fileSize) }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="downloadCount" label="下载次数" width="96" />
+          <el-table-column prop="uploaderName" label="上传人" width="120" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ row.uploaderName || '-' }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="createdAt" label="上传时间" width="180">
+            <template #default="{ row }">
+              {{ formatDateTime(row.createdAt) }}
             </template>
           </el-table-column>
           <el-table-column prop="chunkCount" label="分块" width="80" />
@@ -74,10 +114,11 @@
         <el-pagination
           v-if="store.totalDocs > 10"
           :total="store.totalDocs"
-          :page-size="10"
+          :current-page="documentFilters.pageNum"
+          :page-size="documentFilters.pageSize"
           layout="prev, pager, next"
           class="pagination"
-          @current-change="(p: number) => store.fetchDocuments(kbId, p, 10)"
+          @current-change="handlePageChange"
         />
       </div>
     </div>
@@ -168,6 +209,9 @@
               <span>文本分块与向量化</span>
               <el-icon v-if="isStepProcessing(logDocument?.status, 'indexing')" class="step-spin"><Loading /></el-icon>
             </el-timeline-item>
+            <el-timeline-item v-if="logDocument?.status === 'stored'" type="success" :timestamp="statusLabel('stored')">
+              文档已入库，仅支持预览和下载
+            </el-timeline-item>
             <el-timeline-item v-if="logDocument?.status === 'indexed'" type="success" :timestamp="statusLabel('indexed')">处理完成</el-timeline-item>
             <el-timeline-item v-if="logDocument?.status === 'failed'" type="danger" :timestamp="statusLabel('failed')">处理失败</el-timeline-item>
           </el-timeline>
@@ -186,6 +230,7 @@
       :knowledge-base-id="kbId"
       :document-id="previewFile?.id || 0"
       :download-url="previewDownloadUrl"
+      @downloaded="handleDocumentDownloaded"
     />
   </PageContainer>
 </template>
@@ -196,19 +241,22 @@ import QRCode from 'qrcode'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading, View, Download, Share, RefreshRight, Delete, Document } from '@element-plus/icons-vue'
-
-const NO_PREVIEW_TYPES = ['zip', 'rar', '7z', 'tar', 'gz', 'bz2']
-
-function canPreview(fileType: string): boolean {
-  return !NO_PREVIEW_TYPES.includes(fileType?.toLowerCase())
-}
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppDialog from '@/components/common/AppDialog.vue'
 import DocumentUploadDialog from '@/components/document/DocumentUploadDialog.vue'
 import FilePreviewDialog from '@/components/document/FilePreviewDialog.vue'
 import { useKnowledgeStore } from '@/stores/knowledge'
-import { deleteKnowledgeBase, getKnowledgeBase, updateKnowledgeBase, retryDocuments, batchDeleteDocuments } from '@/api/modules/knowledge'
+import {
+  batchDeleteDocuments,
+  deleteDocument,
+  deleteKnowledgeBase,
+  downloadDocumentBlob,
+  getKnowledgeBase,
+  retryDocuments,
+  updateKnowledgeBase,
+} from '@/api/modules/knowledge'
 import type { KnowledgeBase, KnowledgeDocument } from '@/api/modules/knowledge'
+import { KKFILEVIEW_SUPPORTED_EXTENSION_SET, normalizeFileExtension } from '@/constants/knowledgeDocument'
 
 const route = useRoute()
 const router = useRouter()
@@ -238,6 +286,13 @@ const logDocument = ref<KnowledgeDocument | null>(null)
 const previewVisible = ref(false)
 const previewFile = ref<KnowledgeDocument | null>(null)
 const previewDownloadUrl = ref('')
+const documentFilters = reactive({
+  fileName: '',
+  status: '',
+  createdAtRange: [] as string[],
+  pageNum: 1,
+  pageSize: 10,
+})
 
 watch(currentShareLink, async (value) => {
   if (!value) {
@@ -257,7 +312,7 @@ watch(currentShareLink, async (value) => {
 
 onMounted(async () => {
   await fetchKnowledgeBase()
-  store.fetchDocuments(kbId, 1, 10)
+  await fetchDocumentList()
 })
 
 async function fetchKnowledgeBase() {
@@ -267,22 +322,76 @@ async function fetchKnowledgeBase() {
   } catch {}
 }
 
+function canPreview(fileType: string): boolean {
+  return KKFILEVIEW_SUPPORTED_EXTENSION_SET.has(normalizeFileExtension(fileType))
+}
+
+async function fetchDocumentList(pageNum = documentFilters.pageNum) {
+  documentFilters.pageNum = pageNum
+  const [createdAtStart, createdAtEnd] = documentFilters.createdAtRange
+  await store.fetchDocuments(kbId, {
+    pageNum: documentFilters.pageNum,
+    pageSize: documentFilters.pageSize,
+    fileName: documentFilters.fileName.trim() || undefined,
+    status: documentFilters.status || undefined,
+    createdAtStart: createdAtStart || undefined,
+    createdAtEnd: createdAtEnd || undefined,
+  })
+  syncActiveDocumentRefs()
+}
+
+function syncActiveDocumentRefs() {
+  if (previewFile.value) {
+    previewFile.value = store.documents.find(item => item.id === previewFile.value?.id) || previewFile.value
+  }
+  if (logDocument.value) {
+    logDocument.value = store.documents.find(item => item.id === logDocument.value?.id) || logDocument.value
+  }
+}
+
 function handleUploaded() {
-  store.fetchDocuments(kbId, 1, 10)
+  documentFilters.pageNum = 1
+  fetchDocumentList(1)
+}
+
+function applyFilters() {
+  fetchDocumentList(1)
+}
+
+function resetFilters() {
+  documentFilters.fileName = ''
+  documentFilters.status = ''
+  documentFilters.createdAtRange = []
+  fetchDocumentList(1)
+}
+
+function handlePageChange(page: number) {
+  fetchDocumentList(page)
+}
+
+function handleDocumentDownloaded() {
+  fetchDocumentList()
 }
 
 function handleDelete(doc: KnowledgeDocument) {
   ElMessageBox.confirm(`确定删除「${doc.fileName}」？`, '确认', { type: 'warning' })
-    .then(() => store.removeDoc(kbId, doc.id).then(() => ElMessage.success('删除成功')))
+    .then(async () => {
+      await deleteDocument(kbId, doc.id)
+      ElMessage.success('删除成功')
+      selectedRows.value = selectedRows.value.filter(item => item.id !== doc.id)
+      const nextPage = store.documents.length === 1 && documentFilters.pageNum > 1
+        ? documentFilters.pageNum - 1
+        : documentFilters.pageNum
+      await fetchDocumentList(nextPage)
+    })
     .catch(() => {})
 }
 
 async function handleRetry(doc: KnowledgeDocument) {
   try {
-    const res = await retryDocuments(kbId, [doc.id]) as any
-    const data = res.data ?? res
+    await retryDocuments(kbId, [doc.id])
     ElMessage.success(`已提交重传任务`)
-    store.fetchDocuments(kbId, 1, 10)
+    await fetchDocumentList()
   } catch {
     ElMessage.error('重传失败')
   }
@@ -305,7 +414,7 @@ async function handleBatchRetry() {
     const res = await retryDocuments(kbId, ids) as any
     const data = res.data ?? res
     ElMessage.success(`已提交 ${data.retried || failedDocs.length} 个文档的重传任务`)
-    store.fetchDocuments(kbId, 1, 10)
+    await fetchDocumentList()
     selectedRows.value = []
   } catch {
     // 用户取消
@@ -323,7 +432,10 @@ async function handleBatchDelete() {
     const res = await batchDeleteDocuments(kbId, ids) as any
     const data = res.data ?? res
     ElMessage.success(`已删除 ${data.deleted || selectedRows.value.length} 个文档`)
-    store.fetchDocuments(kbId, 1, 10)
+    const nextPage = data.deleted >= store.documents.length && documentFilters.pageNum > 1
+      ? documentFilters.pageNum - 1
+      : documentFilters.pageNum
+    await fetchDocumentList(nextPage)
     selectedRows.value = []
   } catch {
     // 用户取消
@@ -333,13 +445,30 @@ async function handleBatchDelete() {
 }
 
 function handlePreview(doc: KnowledgeDocument) {
+  if (!canPreview(doc.fileType)) {
+    ElMessage.warning('该文件类型暂不支持在线预览')
+    return
+  }
   previewFile.value = doc
   previewDownloadUrl.value = `/api/v1/knowledge/bases/${kbId}/documents/${doc.id}/download`
   previewVisible.value = true
 }
 
-function handleDownload(doc: KnowledgeDocument) {
-  window.open(`/api/v1/knowledge/bases/${kbId}/documents/${doc.id}/download`, '_blank')
+async function handleDownload(doc: KnowledgeDocument) {
+  try {
+    const blob = await downloadDocumentBlob(kbId, doc.id)
+    const url = window.URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = doc.fileName || 'document'
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    window.URL.revokeObjectURL(url)
+    await fetchDocumentList()
+  } catch {
+    ElMessage.error('下载失败')
+  }
 }
 
 function showLog(doc: KnowledgeDocument) {
@@ -352,6 +481,9 @@ function getTimelineType(currentStatus: string | undefined, stepStatus: string):
   const order = ['pending', 'parsed', 'indexing', 'indexed']
   const currentIdx = order.indexOf(currentStatus)
   const stepIdx = order.indexOf(stepStatus)
+  if (currentStatus === 'stored') {
+    return stepStatus === 'pending' || stepStatus === 'parsed' ? 'success' : 'info'
+  }
   if (currentStatus === 'failed') return stepIdx < 2 ? 'success' : (stepIdx === 2 ? 'danger' : 'info')
   if (stepIdx <= currentIdx) return 'success'
   return 'info'
@@ -381,9 +513,13 @@ async function generateCurrentShareLink() {
       requireLogin: shareOptions.requireLogin,
       oneTimeAccess: shareOptions.oneTimeAccess
     })
-    await navigator.clipboard.writeText(shareLink)
     currentShareLink.value = shareLink
-    ElMessage.success('分享链接已生成并复制到剪贴板')
+    try {
+      await navigator.clipboard.writeText(shareLink)
+      ElMessage.success('分享链接已生成并复制到剪贴板')
+    } catch {
+      ElMessage.warning('分享链接已生成，请手动复制')
+    }
   } catch {
     ElMessage.error('生成分享链接失败')
   }
@@ -458,18 +594,57 @@ function formatSize(bytes: number) {
   return (bytes / 1024 / 1024).toFixed(1) + ' MB'
 }
 
+function formatDateTime(value?: string) {
+  if (!value) return '-'
+  return value.replace('T', ' ').slice(0, 19)
+}
+
 function statusType(status: string) {
-  const map: Record<string, string> = { pending: 'info', parsed: 'warning', indexing: 'warning', indexed: 'success', failed: 'danger' }
+  const map: Record<string, string> = {
+    pending: 'info',
+    parsed: 'warning',
+    indexing: 'warning',
+    indexed: 'success',
+    stored: 'success',
+    failed: 'danger',
+  }
   return map[status] || 'info'
 }
 
 function statusLabel(status: string) {
-  const map: Record<string, string> = { pending: '待处理', parsed: '已解析', indexing: '索引中', indexed: '已索引', failed: '失败' }
+  const map: Record<string, string> = {
+    pending: '待处理',
+    parsed: '已解析',
+    indexing: '索引中',
+    indexed: '已索引',
+    stored: '已入库',
+    failed: '失败',
+  }
   return map[status] || status
 }
 </script>
 
 <style scoped>
+.table-filters {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.table-filters__name {
+  width: 240px;
+}
+
+.table-filters__status {
+  width: 160px;
+}
+
+.table-filters__time {
+  width: 360px;
+}
+
 .file-name-link {
   color: var(--el-color-primary);
   cursor: pointer;

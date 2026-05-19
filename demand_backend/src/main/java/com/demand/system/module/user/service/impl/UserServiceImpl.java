@@ -21,7 +21,6 @@ import com.demand.system.module.rbac.entity.Role;
 import com.demand.system.module.rbac.entity.UserRole;
 import com.demand.system.module.rbac.mapper.RoleMapper;
 import com.demand.system.module.rbac.mapper.UserRoleMapper;
-import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,7 +30,6 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
 
     private final UserMapper userMapper;
@@ -41,6 +39,16 @@ public class UserServiceImpl implements UserService {
     private final EmailService emailService;
     private final UserRoleMapper userRoleMapper;
     private final RoleMapper roleMapper;
+
+    public UserServiceImpl(UserMapper userMapper, PositionMapper positionMapper, SysOrgService sysOrgService, PasswordEncoder passwordEncoder, EmailService emailService, UserRoleMapper userRoleMapper, RoleMapper roleMapper) {
+        this.userMapper = userMapper;
+        this.positionMapper = positionMapper;
+        this.sysOrgService = sysOrgService;
+        this.passwordEncoder = passwordEncoder;
+        this.emailService = emailService;
+        this.userRoleMapper = userRoleMapper;
+        this.roleMapper = roleMapper;
+    }
 
     @Override
     public PageResult<UserVO> list(UserQueryDTO query) {

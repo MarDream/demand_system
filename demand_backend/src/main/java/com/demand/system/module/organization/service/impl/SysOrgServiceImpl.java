@@ -8,8 +8,9 @@ import com.demand.system.module.organization.dto.*;
 import com.demand.system.module.organization.entity.SysOrg;
 import com.demand.system.module.organization.mapper.SysOrgMapper;
 import com.demand.system.module.organization.service.SysOrgService;
+import com.demand.system.module.user.entity.UserOrganization;
 import com.demand.system.module.user.mapper.UserMapper;
-import lombok.RequiredArgsConstructor;
+import com.demand.system.module.user.mapper.UserOrganizationMapper;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,11 +19,17 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 public class SysOrgServiceImpl implements SysOrgService {
 
     private final SysOrgMapper sysOrgMapper;
     private final UserMapper userMapper;
+    private final UserOrganizationMapper userOrganizationMapper;
+
+    public SysOrgServiceImpl(SysOrgMapper sysOrgMapper, UserMapper userMapper, UserOrganizationMapper userOrganizationMapper) {
+        this.sysOrgMapper = sysOrgMapper;
+        this.userMapper = userMapper;
+        this.userOrganizationMapper = userOrganizationMapper;
+    }
 
     @Override
     public List<SysOrgVO> getTree() {
@@ -204,7 +211,34 @@ public class SysOrgServiceImpl implements SysOrgService {
     private SysOrgVO toVO(SysOrg org) {
         SysOrgVO vo = new SysOrgVO();
         BeanUtils.copyProperties(org, vo);
+        // 递归统计该组织及其所有子组织的成员数量
+        vo.setMemberCount(countMembersRecursively(org.getId()));
         return vo;
+    }
+
+    /**
+     * 递归统计组织及其所有子组织的成员数量
+     * @param orgId 组织ID
+     * @return 成员总数
+     */
+    private int countMembersRecursively(Long orgId) {
+        // 获取当前组织及其所有子组织的ID列表
+        List<Long> orgIds = getDescendantIds(orgId);
+        
+        // 统计这些组织中的所有成员（去重）
+        // 使用 IN 查询，统计 orgId、regionId 或 departmentId 在列表中的用户
+        long memberCount = userOrganizationMapper.selectCount(
+                new LambdaQueryWrapper<UserOrganization>()
+                        .and(wrapper -> wrapper
+                                .in(UserOrganization::getOrgId, orgIds)
+                                .or()
+                                .in(UserOrganization::getRegionId, orgIds)
+                                .or()
+                                .in(UserOrganization::getDepartmentId, orgIds)
+                        )
+        );
+        
+        return (int) memberCount;
     }
 
     private List<SysOrgVO> buildTree(List<SysOrgVO> all) {

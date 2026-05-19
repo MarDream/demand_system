@@ -5,17 +5,19 @@ import com.demand.system.module.relation.dto.RelationCreateDTO;
 import com.demand.system.module.relation.dto.RelationVO;
 import com.demand.system.module.relation.service.RelationService;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/requirements")
-@RequiredArgsConstructor
 public class RelationController {
 
     private final RelationService relationService;
+
+    public RelationController(RelationService relationService) {
+        this.relationService = relationService;
+    }
 
     @GetMapping("/{id}/relations")
     public Result<List<RelationVO>> listRelations(@PathVariable Long id) {

@@ -3,7 +3,6 @@ package com.demand.system.module.llm.controller;
 import com.demand.system.module.llm.constant.LlmModelRole;
 import com.demand.system.module.llm.dto.*;
 import com.demand.system.module.llm.service.LlmProviderService;
-import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -13,10 +12,12 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/llm-providers")
-@RequiredArgsConstructor
 public class LlmProviderController {
-
     private final LlmProviderService providerService;
+
+    public LlmProviderController(LlmProviderService providerService) {
+        this.providerService = providerService;
+    }
 
     // ==================== Provider ====================
 

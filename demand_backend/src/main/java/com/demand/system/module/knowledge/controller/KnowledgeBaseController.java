@@ -8,17 +8,18 @@ import com.demand.system.module.knowledge.dto.KnowledgeBaseUpdateDTO;
 import com.demand.system.module.knowledge.dto.KnowledgeBaseVO;
 import com.demand.system.module.knowledge.service.KnowledgeBaseService;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/knowledge/bases")
-@RequiredArgsConstructor
 public class KnowledgeBaseController {
-
     private final KnowledgeBaseService knowledgeBaseService;
+
+    public KnowledgeBaseController(KnowledgeBaseService knowledgeBaseService) {
+        this.knowledgeBaseService = knowledgeBaseService;
+    }
 
     @PostMapping
     public Result<KnowledgeBaseVO> create(@Valid @RequestBody KnowledgeBaseCreateDTO dto) {

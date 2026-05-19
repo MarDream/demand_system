@@ -1,10 +1,8 @@
 package com.demand.system.module.llm.dto;
 
 import jakarta.validation.constraints.*;
-import lombok.Data;
 import java.math.BigDecimal;
 
-@Data
 public class LlmModelDTO {
     @NotBlank(message = "模型名称不能为空")
     private String name;
@@ -17,4 +15,19 @@ public class LlmModelDTO {
     private Integer maxTokens = 2048;
     private Boolean isDefault = false;
     private Boolean enabled = true;
+
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+    public String getModelId() { return modelId; }
+    public void setModelId(String modelId) { this.modelId = modelId; }
+    public String getModelType() { return modelType; }
+    public void setModelType(String modelType) { this.modelType = modelType; }
+    public BigDecimal getTemperature() { return temperature; }
+    public void setTemperature(BigDecimal temperature) { this.temperature = temperature; }
+    public Integer getMaxTokens() { return maxTokens; }
+    public void setMaxTokens(Integer maxTokens) { this.maxTokens = maxTokens; }
+    public Boolean getIsDefault() { return isDefault; }
+    public void setIsDefault(Boolean isDefault) { this.isDefault = isDefault; }
+    public Boolean getEnabled() { return enabled; }
+    public void setEnabled(Boolean enabled) { this.enabled = enabled; }
 }

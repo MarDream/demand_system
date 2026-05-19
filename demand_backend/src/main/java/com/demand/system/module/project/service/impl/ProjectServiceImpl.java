@@ -11,17 +11,20 @@ import com.demand.system.module.project.entity.ProjectMember;
 import com.demand.system.module.project.mapper.ProjectMapper;
 import com.demand.system.module.project.mapper.ProjectMemberMapper;
 import com.demand.system.module.project.service.ProjectService;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 
 @Service
-@RequiredArgsConstructor
 public class ProjectServiceImpl implements ProjectService {
 
     private final ProjectMapper projectMapper;
     private final ProjectMemberMapper projectMemberMapper;
+
+    public ProjectServiceImpl(ProjectMapper projectMapper, ProjectMemberMapper projectMemberMapper) {
+        this.projectMapper = projectMapper;
+        this.projectMemberMapper = projectMemberMapper;
+    }
 
     @Override
     public PageResult<Project> list(String name, String status, int pageNum, int pageSize) {

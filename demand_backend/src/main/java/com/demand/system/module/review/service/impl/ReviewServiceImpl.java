@@ -7,7 +7,6 @@ import com.demand.system.module.review.entity.Review;
 import com.demand.system.module.review.mapper.ReviewMapper;
 import com.demand.system.module.review.service.ReviewService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -15,10 +14,13 @@ import java.util.List;
 import java.util.Map;
 
 @Service
-@RequiredArgsConstructor
 public class ReviewServiceImpl implements ReviewService {
 
     private final ReviewMapper reviewMapper;
+
+    public ReviewServiceImpl(ReviewMapper reviewMapper) {
+        this.reviewMapper = reviewMapper;
+    }
 
     @Override
     public List<Map<String, Object>> listByRequirement(Long requirementId) {

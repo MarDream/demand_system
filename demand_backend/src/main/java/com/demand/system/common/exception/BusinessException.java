@@ -1,8 +1,5 @@
 package com.demand.system.common.exception;
 
-import lombok.Getter;
-
-@Getter
 public class BusinessException extends RuntimeException {
 
     private final int errorCode;
@@ -18,5 +15,13 @@ public class BusinessException extends RuntimeException {
         super(message);
         this.errorCode = errorCode;
         this.message = message;
+    }
+
+    public int getErrorCode() {
+        return errorCode;
+    }
+
+    public String getMessage() {
+        return message;
     }
 }

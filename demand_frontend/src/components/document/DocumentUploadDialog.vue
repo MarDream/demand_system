@@ -17,7 +17,7 @@
         >
           <el-icon :size="24" class="upload-zone__icon"><Upload /></el-icon>
           <span class="upload-zone__text">点击选择文件或拖拽至此处</span>
-          <span class="upload-zone__hint">支持 txt / md / pdf / doc / docx / xls / xlsx / png / jpg / zip / rar</span>
+          <span class="upload-zone__hint">支持 kkFileView 可预览的 {{ supportedExtensionCount }} 种扩展名类型</span>
         </div>
         <input ref="fileInputRef" type="file" multiple style="display: none" @change="onFileInputChange" />
         <input ref="folderInputRef" type="file" webkitdirectory multiple style="display: none" @change="onFolderInputChange" />
@@ -54,8 +54,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Upload, Delete } from '@element-plus/icons-vue'
 import { getKnowledgeBases, uploadDocument, type KnowledgeBase } from '@/api/modules/knowledge'
-
-const ALLOWED_EXTENSIONS = ['txt', 'md', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'png', 'jpg', 'jpeg', 'zip', 'rar']
+import { KKFILEVIEW_SUPPORTED_EXTENSION_COUNT, KKFILEVIEW_SUPPORTED_EXTENSION_SET, normalizeFileExtension } from '@/constants/knowledgeDocument'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
@@ -85,6 +84,7 @@ const fileInputRef = ref<HTMLInputElement>()
 const folderInputRef = ref<HTMLInputElement>()
 
 const effectiveKnowledgeBaseId = computed(() => props.knowledgeBaseId || selectedKbId.value)
+const supportedExtensionCount = KKFILEVIEW_SUPPORTED_EXTENSION_COUNT
 
 watch(() => props.knowledgeBaseId, value => {
   selectedKbId.value = value || null
@@ -101,8 +101,8 @@ onMounted(async () => {
 })
 
 function isFileAllowed(file: File): boolean {
-  const ext = file.name.split('.').pop()?.toLowerCase()
-  return !!ext && ALLOWED_EXTENSIONS.includes(ext)
+  const ext = normalizeFileExtension(file.name)
+  return !!ext && KKFILEVIEW_SUPPORTED_EXTENSION_SET.has(ext)
 }
 
 function addFiles(files: File[] | FileList) {
@@ -117,7 +117,7 @@ function addFiles(files: File[] | FileList) {
     }
   }
   if (rejectedCount > 0) {
-    ElMessage.warning(`已忽略 ${rejectedCount} 个不支持的文件`)
+    ElMessage.warning(`已忽略 ${rejectedCount} 个超出 kkFileView 支持范围的文件`)
   }
 }
 
@@ -146,7 +146,21 @@ function onFileInputChange(e: Event) {
   input.value = ''
 }
 
-function triggerFolderSelect() {
+async function triggerFolderSelect() {
+  const picker = (window as any).showDirectoryPicker
+  if (typeof picker === 'function') {
+    try {
+      const directoryHandle = await picker()
+      const files = await collectFilesFromDirectory(directoryHandle)
+      addFiles(files)
+      return
+    } catch (error: any) {
+      if (error?.name !== 'AbortError') {
+        ElMessage.warning('选择文件夹失败，请重试')
+      }
+      return
+    }
+  }
   folderInputRef.value?.click()
 }
 
@@ -154,6 +168,20 @@ function onFolderInputChange(e: Event) {
   const input = e.target as HTMLInputElement
   if (input.files) addFiles(input.files)
   input.value = ''
+}
+
+async function collectFilesFromDirectory(directoryHandle: any): Promise<File[]> {
+  const files: File[] = []
+  for await (const entry of directoryHandle.values()) {
+    if (entry.kind === 'file') {
+      files.push(await entry.getFile())
+      continue
+    }
+    if (entry.kind === 'directory') {
+      files.push(...await collectFilesFromDirectory(entry))
+    }
+  }
+  return files
 }
 
 function onDialogDrop(e: DragEvent) {

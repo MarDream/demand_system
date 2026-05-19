@@ -21,18 +21,17 @@ import com.demand.system.module.knowledge.vectorstore.MilvusVectorStore;
 import com.demand.system.module.file.storage.MinioStorageService;
 import com.demand.system.module.project.entity.Project;
 import com.demand.system.module.project.mapper.ProjectMapper;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
-@Slf4j
 @Service
-@RequiredArgsConstructor
 public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
+    private static final Logger log = LoggerFactory.getLogger(KnowledgeBaseServiceImpl.class);
 
     private final KnowledgeBaseMapper knowledgeBaseMapper;
     private final KnowledgeChunkMapper knowledgeChunkMapper;
@@ -41,6 +40,22 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     private final MilvusVectorStore milvusVectorStore;
     private final SysUserMapper sysUserMapper;
     private final ProjectMapper projectMapper;
+
+    public KnowledgeBaseServiceImpl(KnowledgeBaseMapper knowledgeBaseMapper,
+                                   KnowledgeChunkMapper knowledgeChunkMapper,
+                                   KnowledgeDocumentMapper knowledgeDocumentMapper,
+                                   MinioStorageService minioStorageService,
+                                   MilvusVectorStore milvusVectorStore,
+                                   SysUserMapper sysUserMapper,
+                                   ProjectMapper projectMapper) {
+        this.knowledgeBaseMapper = knowledgeBaseMapper;
+        this.knowledgeChunkMapper = knowledgeChunkMapper;
+        this.knowledgeDocumentMapper = knowledgeDocumentMapper;
+        this.minioStorageService = minioStorageService;
+        this.milvusVectorStore = milvusVectorStore;
+        this.sysUserMapper = sysUserMapper;
+        this.projectMapper = projectMapper;
+    }
 
     @Override
     @Transactional

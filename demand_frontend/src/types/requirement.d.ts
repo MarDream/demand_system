@@ -7,6 +7,8 @@ export interface Requirement {
   opsFollowId: number | null
   maintFollowId: number | null
   departmentId: number | null
+  orgId?: number | null
+  requirementNo: string | null
   title: string
   description: string
   type: string
@@ -68,6 +70,47 @@ export interface RequirementUpdate extends Partial<RequirementCreate> {
   status?: string
 }
 
+export interface RequirementDraftCreate {
+  projectId: number
+  parentId?: number
+  title: string
+  description: string
+  priority: string
+  assigneeId?: number
+  moduleId?: number
+  startDate?: string
+  dueDate?: string
+  estimatedHours?: number
+  attachments?: RequirementAttachment[]
+}
+
+export interface RequirementDraftUpdate extends Partial<RequirementDraftCreate> {
+  id: number
+  version: number
+}
+
+export interface RequirementMyListQuery {
+  projectId?: number
+  keyword?: string
+  pageNum: number
+  pageSize: number
+}
+
+export interface NextNodeOption {
+  nodeId: string
+  nodeName: string
+  bindStatusCode?: string | null
+  bindStatusName?: string | null
+  projectRequired?: boolean | null
+}
+
+export interface RequirementSubmit {
+  version: number
+  nextNodeId?: string
+  projectId?: number | null
+  comment?: string
+}
+
 export interface RequirementQuery {
   projectId?: number
   parentId?: number
@@ -100,6 +143,19 @@ export interface RequirementHistory {
   newValue: string
   createdAt: string
   operatorName?: string
+}
+
+export interface RequirementComment {
+  id: number
+  requirementId: number
+  userId: number
+  userName?: string
+  content: string
+  createdAt: string
+}
+
+export interface RequirementCommentCreate {
+  content: string
 }
 
 export interface CustomField {

@@ -8,22 +8,16 @@ import com.demand.system.module.llm.entity.LlmModel;
 import com.demand.system.module.llm.entity.LlmProvider;
 import com.demand.system.module.llm.mapper.LlmModelMapper;
 import com.demand.system.module.llm.mapper.LlmProviderMapper;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
-@Slf4j
 @Service
-@RequiredArgsConstructor
 public class RagAnswerServiceImpl implements RagAnswerService {
-
-    private final LlmGateway llmGateway;
-    private final LlmModelMapper llmModelMapper;
-    private final LlmProviderMapper llmProviderMapper;
-
+    private static final Logger log = LoggerFactory.getLogger(RagAnswerServiceImpl.class);
     private static final String SYSTEM_PROMPT = """
             你是一个专业的知识库问答助手。根据提供的参考资料回答用户问题。
 
@@ -33,6 +27,18 @@ public class RagAnswerServiceImpl implements RagAnswerService {
             3. 在回答中标注引用来源（文档名称）
             4. 回答要简洁、准确、有条理
             """;
+
+    private final LlmGateway llmGateway;
+    private final LlmModelMapper llmModelMapper;
+    private final LlmProviderMapper llmProviderMapper;
+
+    public RagAnswerServiceImpl(LlmGateway llmGateway,
+                               LlmModelMapper llmModelMapper,
+                               LlmProviderMapper llmProviderMapper) {
+        this.llmGateway = llmGateway;
+        this.llmModelMapper = llmModelMapper;
+        this.llmProviderMapper = llmProviderMapper;
+    }
 
     @Override
     public String generateAnswer(

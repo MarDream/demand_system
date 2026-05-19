@@ -6,7 +6,6 @@ import com.demand.system.module.knowledge.dto.KnowledgePublicShareContextVO;
 import com.demand.system.module.knowledge.service.KnowledgeDocumentService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -17,10 +16,12 @@ import java.io.IOException;
 
 @RestController
 @RequestMapping("/api/v1/public/knowledge/shares")
-@RequiredArgsConstructor
 public class KnowledgePublicShareController {
-
     private final KnowledgeDocumentService documentService;
+
+    public KnowledgePublicShareController(KnowledgeDocumentService documentService) {
+        this.documentService = documentService;
+    }
 
     @GetMapping("/{token}")
     public void accessShare(@PathVariable String token,

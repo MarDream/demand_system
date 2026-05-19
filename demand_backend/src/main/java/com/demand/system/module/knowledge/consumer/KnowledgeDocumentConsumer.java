@@ -1,17 +1,18 @@
 package com.demand.system.module.knowledge.consumer;
 
 import com.demand.system.module.knowledge.service.KnowledgeDocumentService;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
 
-@Slf4j
 @Component
-@RequiredArgsConstructor
 public class KnowledgeDocumentConsumer {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(KnowledgeDocumentConsumer.class);
 
     private final KnowledgeDocumentService documentService;
+
+    public KnowledgeDocumentConsumer(KnowledgeDocumentService documentService) {
+        this.documentService = documentService;
+    }
 
     @RabbitListener(queues = "knowledge.document.process.queue")
     public void handleDocumentProcess(Long documentId) {

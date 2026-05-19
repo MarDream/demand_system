@@ -1,6 +1,7 @@
 package com.demand.system.module.knowledge.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.ErrorCode;
@@ -22,6 +23,7 @@ import com.demand.system.module.knowledge.mapper.KnowledgeDocumentShareLogMapper
 import com.demand.system.module.knowledge.mapper.KnowledgeDocumentShareMapper;
 import com.demand.system.module.knowledge.service.EmbeddingService;
 import com.demand.system.module.knowledge.service.KnowledgeDocumentService;
+import com.demand.system.module.knowledge.support.KnowledgeDocumentSupport;
 import com.demand.system.module.knowledge.vectorstore.MilvusVectorStore;
 import com.demand.system.module.file.storage.MinioStorageService;
 import com.demand.system.module.requirement.dto.RequirementAttachmentDTO;
@@ -31,38 +33,34 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.crypto.SecretKey;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.UUID;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.*;
 import java.util.stream.Collectors;
 
-import javax.crypto.SecretKey;
-
-@Slf4j
 @Service
-@RequiredArgsConstructor
 public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
+    private static final Logger log = LoggerFactory.getLogger(KnowledgeDocumentServiceImpl.class);
+    private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     private final KnowledgeDocumentMapper documentMapper;
     private final KnowledgeChunkMapper chunkMapper;
@@ -80,6 +78,32 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     @Value("${jwt.secret}")
     private String jwtSecret;
 
+    public KnowledgeDocumentServiceImpl(KnowledgeDocumentMapper documentMapper,
+                                        KnowledgeChunkMapper chunkMapper,
+                                        KnowledgeBaseMapper knowledgeBaseMapper,
+                                        SysUserMapper sysUserMapper,
+                                        RequirementMapper requirementMapper,
+                                        MinioStorageService minioStorageService,
+                                        EmbeddingService embeddingService,
+                                        KnowledgeConfig knowledgeConfig,
+                                        MilvusVectorStore milvusVectorStore,
+                                        RabbitTemplate rabbitTemplate,
+                                        KnowledgeDocumentShareMapper shareMapper,
+                                        KnowledgeDocumentShareLogMapper shareLogMapper) {
+        this.documentMapper = documentMapper;
+        this.chunkMapper = chunkMapper;
+        this.knowledgeBaseMapper = knowledgeBaseMapper;
+        this.sysUserMapper = sysUserMapper;
+        this.requirementMapper = requirementMapper;
+        this.minioStorageService = minioStorageService;
+        this.embeddingService = embeddingService;
+        this.knowledgeConfig = knowledgeConfig;
+        this.milvusVectorStore = milvusVectorStore;
+        this.rabbitTemplate = rabbitTemplate;
+        this.shareMapper = shareMapper;
+        this.shareLogMapper = shareLogMapper;
+    }
+
     @Override
     @Transactional
     public KnowledgeDocumentVO upload(Long knowledgeBaseId, MultipartFile file, Long uploaderId) {
@@ -90,6 +114,9 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
         String originalName = file.getOriginalFilename();
         String fileType = extractFileType(originalName);
+        if (!KnowledgeDocumentSupport.isSupported(fileType)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "该文件格式暂不支持上传预览: " + (originalName == null ? "未知文件" : originalName));
+        }
         String minioKey = "knowledge/" + knowledgeBaseId + "/" + UUID.randomUUID() + "/" + originalName;
 
         try {
@@ -104,22 +131,83 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         doc.setFileName(originalName);
         doc.setFileType(fileType);
         doc.setFileSize(file.getSize());
+        boolean vectorizable = KnowledgeDocumentSupport.isVectorizable(fileType);
         doc.setChunkCount(0);
-        doc.setStatus("pending");
+        doc.setStatus(vectorizable ? "pending" : "stored");
         doc.setMinioKey(minioKey);
         doc.setSourceType("knowledge_base");
         doc.setSourceId(knowledgeBaseId);
         doc.setUploaderId(uploaderId);
+        doc.setDownloadCount(0);
         documentMapper.insert(doc);
-        enqueueDocumentProcessing(doc.getId());
+        if (vectorizable) {
+            enqueueDocumentProcessing(doc.getId());
+        }
 
         return toVO(doc);
     }
 
     @Override
-    public PageResult<KnowledgeDocumentVO> list(Long knowledgeBaseId, int pageNum, int pageSize) {
+    @Transactional
+    public void syncRequirementAttachments(Long projectId, Long requirementId, List<RequirementAttachmentDTO> attachments, Long uploaderId) {
+        if (attachments == null || attachments.isEmpty()) {
+            return;
+        }
+        Long kbId = ensureProjectAttachmentKnowledgeBase(projectId, uploaderId);
+        for (RequirementAttachmentDTO attachment : attachments) {
+            if (attachment == null) {
+                continue;
+            }
+            String fileType = extractFileType(attachment.getName());
+            KnowledgeDocument doc = new KnowledgeDocument();
+            doc.setKnowledgeBaseId(kbId);
+            doc.setProjectId(projectId);
+            doc.setRequirementId(requirementId);
+            doc.setFileName(attachment.getName());
+            doc.setFileType(fileType);
+            doc.setFileSize(attachment.getSize());
+            doc.setChunkCount(0);
+            doc.setStatus(KnowledgeDocumentSupport.isSupported(fileType)
+                    ? (KnowledgeDocumentSupport.isVectorizable(fileType) ? "pending" : "stored")
+                    : "failed");
+            doc.setErrorMessage(KnowledgeDocumentSupport.isSupported(fileType) ? null : "该文件格式暂不支持在线预览");
+            doc.setMinioKey(attachment.getObjectName());
+            doc.setSourceType("requirement");
+            doc.setSourceId(requirementId);
+            doc.setUploaderId(uploaderId);
+            doc.setDownloadCount(0);
+            documentMapper.insert(doc);
+            if ("pending".equals(doc.getStatus())) {
+                enqueueDocumentProcessing(doc.getId());
+            }
+        }
+        updateKnowledgeBaseCount(kbId);
+    }
+
+    @Override
+    public PageResult<KnowledgeDocumentVO> list(Long knowledgeBaseId,
+                                                int pageNum,
+                                                int pageSize,
+                                                String fileName,
+                                                String status,
+                                                String createdAtStart,
+                                                String createdAtEnd) {
         LambdaQueryWrapper<KnowledgeDocument> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(KnowledgeDocument::getKnowledgeBaseId, knowledgeBaseId);
+        if (fileName != null && !fileName.isBlank()) {
+            wrapper.like(KnowledgeDocument::getFileName, fileName.trim());
+        }
+        if (status != null && !status.isBlank()) {
+            wrapper.eq(KnowledgeDocument::getStatus, status.trim());
+        }
+        LocalDateTime start = parseDateTime(createdAtStart, false);
+        LocalDateTime end = parseDateTime(createdAtEnd, true);
+        if (start != null) {
+            wrapper.ge(KnowledgeDocument::getCreatedAt, start);
+        }
+        if (end != null) {
+            wrapper.le(KnowledgeDocument::getCreatedAt, end);
+        }
         wrapper.orderByDesc(KnowledgeDocument::getCreatedAt);
         Page<KnowledgeDocument> page = documentMapper.selectPage(new Page<>(pageNum, pageSize), wrapper);
         List<KnowledgeDocumentVO> voList = page.getRecords().stream().map(this::toVO).collect(Collectors.toList());
@@ -134,18 +222,15 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "文档不存在");
         }
 
-        // 删除Milvus中的向量
         try {
             milvusVectorStore.deleteByDocumentId(String.valueOf(documentId));
         } catch (Exception e) {
             log.warn("Milvus向量删除失败: documentId={}", documentId, e);
         }
 
-        // 删除分块记录
         chunkMapper.delete(new LambdaQueryWrapper<KnowledgeChunk>()
                 .eq(KnowledgeChunk::getDocumentId, documentId));
 
-        // 删除MinIO文件
         if (doc.getMinioKey() != null) {
             try {
                 minioStorageService.delete(doc.getMinioKey());
@@ -154,10 +239,8 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             }
         }
 
-        // 删除文档记录
         documentMapper.deleteById(documentId);
 
-        // 更新知识库计数
         updateKnowledgeBaseCount(knowledgeBaseId);
     }
 
@@ -189,48 +272,6 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
     @Override
     @Transactional
-    public void syncRequirementAttachments(Long projectId, Long requirementId, List<RequirementAttachmentDTO> attachments, Long uploaderId) {
-        if (projectId == null || requirementId == null || attachments == null || attachments.isEmpty()) {
-            return;
-        }
-
-        Long knowledgeBaseId = ensureProjectAttachmentKnowledgeBase(projectId, uploaderId);
-        for (RequirementAttachmentDTO attachment : attachments) {
-            if (attachment == null || attachment.getObjectName() == null || attachment.getObjectName().isBlank()) {
-                continue;
-            }
-            KnowledgeDocument exists = documentMapper.selectOne(new LambdaQueryWrapper<KnowledgeDocument>()
-                    .eq(KnowledgeDocument::getKnowledgeBaseId, knowledgeBaseId)
-                    .eq(KnowledgeDocument::getMinioKey, attachment.getObjectName())
-                    .last("LIMIT 1"));
-            if (exists != null) {
-                if (exists.getRequirementId() == null || !requirementId.equals(exists.getRequirementId())) {
-                    exists.setRequirementId(requirementId);
-                    documentMapper.updateById(exists);
-                }
-                continue;
-            }
-
-            KnowledgeDocument doc = new KnowledgeDocument();
-            doc.setKnowledgeBaseId(knowledgeBaseId);
-            doc.setFileName(attachment.getName());
-            doc.setFileType(extractFileType(attachment.getName()));
-            doc.setFileSize(attachment.getSize());
-            doc.setChunkCount(0);
-            doc.setStatus("pending");
-            doc.setMinioKey(attachment.getObjectName());
-            doc.setProjectId(projectId);
-            doc.setRequirementId(requirementId);
-            doc.setSourceType("requirement");
-            doc.setSourceId(requirementId);
-            doc.setUploaderId(uploaderId);
-            documentMapper.insert(doc);
-            enqueueDocumentProcessing(doc.getId());
-        }
-    }
-
-    @Override
-    @Transactional
     public String resolveShareAccessUrl(String token) {
         return "/public/share/" + token;
     }
@@ -240,6 +281,14 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     public KnowledgePublicShareContextVO getPublicShareContext(String token, Long currentUserId, String accessIp, String userAgent) {
         ShareValidationResult result = validateShareForAccess(token, currentUserId, accessIp, userAgent, true);
         String accessToken = generateShareAccessToken(result.share(), result.document(), currentUserId);
+
+        String previewUrl = null;
+        try {
+            previewUrl = minioStorageService.getPresignedUrlForDocker(result.document().getMinioKey(), 1);
+        } catch (Exception e) {
+            log.warn("生成分享文档预签名 URL 失败: {}", e.getMessage());
+        }
+
         return KnowledgePublicShareContextVO.builder()
                 .shareToken(result.share().getToken())
                 .accessToken(accessToken)
@@ -250,6 +299,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 .expireAt(result.share().getExpireAt())
                 .requireLogin(asBoolean(result.share().getRequireLogin()))
                 .oneTimeAccess(asBoolean(result.share().getOneTimeAccess()))
+                .previewUrl(previewUrl)
                 .build();
     }
 
@@ -304,6 +354,9 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             }
 
             response.getOutputStream().flush();
+            if (download && !headOnly) {
+                incrementDownloadCount(document.getId());
+            }
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
@@ -405,23 +458,26 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     }
 
     @Override
-    @Transactional
-    private static final Set<String> SKIP_EMBEDDING_TYPES = Set.of(
-            "png", "jpg", "jpeg", "gif", "bmp", "webp", "svg",
-            "zip", "rar", "7z", "tar", "gz", "bz2"
-    );
-
-    @Override
     public void processDocument(Long documentId) {
         KnowledgeDocument doc = documentMapper.selectById(documentId);
         if (doc == null) {
             return;
         }
 
-        // 图片和压缩包无需文本解析和向量化，直接标记完成
-        if (SKIP_EMBEDDING_TYPES.contains(doc.getFileType() != null ? doc.getFileType().toLowerCase() : "")) {
+        String fileType = doc.getFileType() != null ? doc.getFileType().toLowerCase() : "";
+        if (!KnowledgeDocumentSupport.isSupported(fileType)) {
             doc.setChunkCount(0);
-            doc.setStatus("indexed");
+            doc.setStatus("failed");
+            doc.setErrorMessage("该文件格式暂不支持在线预览");
+            doc.setUpdatedAt(LocalDateTime.now());
+            documentMapper.updateById(doc);
+            updateKnowledgeBaseCount(doc.getKnowledgeBaseId());
+            return;
+        }
+
+        if (!KnowledgeDocumentSupport.isVectorizable(fileType)) {
+            doc.setChunkCount(0);
+            doc.setStatus("stored");
             doc.setErrorMessage(null);
             doc.setUpdatedAt(LocalDateTime.now());
             documentMapper.updateById(doc);
@@ -433,7 +489,6 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         doc.setUpdatedAt(LocalDateTime.now());
         documentMapper.updateById(doc);
 
-        // 读取文件内容
         String content;
         try {
             content = readDocumentContent(doc);
@@ -447,7 +502,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
         if (content == null || content.isBlank()) {
             doc.setChunkCount(0);
-            doc.setStatus("indexed");
+            doc.setStatus("stored");
             doc.setErrorMessage(null);
             doc.setUpdatedAt(LocalDateTime.now());
             documentMapper.updateById(doc);
@@ -455,7 +510,6 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             return;
         }
 
-        // 分块
         List<String> chunks = splitContent(content);
         chunks = chunks.stream()
                 .map(KnowledgeDocumentServiceImpl::sanitizeText)
@@ -463,7 +517,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 .toList();
         if (chunks.isEmpty()) {
             doc.setChunkCount(0);
-            doc.setStatus("indexed");
+            doc.setStatus("stored");
             doc.setErrorMessage(null);
             doc.setUpdatedAt(LocalDateTime.now());
             documentMapper.updateById(doc);
@@ -475,7 +529,6 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         doc.setUpdatedAt(LocalDateTime.now());
         documentMapper.updateById(doc);
 
-        // 生成向量并存储到MySQL和Milvus
         List<MilvusVectorStore.VectorDocument> milvusDocs = new ArrayList<>();
         try {
             List<float[]> vectors = embedInBatches(chunks);
@@ -490,7 +543,6 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 String vectorId = UUID.randomUUID().toString();
                 validChunks++;
 
-                // MySQL元数据
                 KnowledgeChunk chunk = new KnowledgeChunk();
                 chunk.setDocumentId(doc.getId());
                 chunk.setKnowledgeBaseId(doc.getKnowledgeBaseId());
@@ -500,7 +552,6 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 chunk.setVectorId(vectorId);
                 chunkMapper.insert(chunk);
 
-                // Milvus向量
                 milvusDocs.add(new MilvusVectorStore.VectorDocument(
                         vectorId, vector,
                         doc.getKnowledgeBaseId(), doc.getId(),
@@ -509,7 +560,6 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 ));
             }
 
-            // 批量写入Milvus
             if (!milvusDocs.isEmpty()) {
                 milvusVectorStore.insertVectors(milvusDocs);
             }
@@ -528,7 +578,6 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         doc.setUpdatedAt(LocalDateTime.now());
         documentMapper.updateById(doc);
 
-        // 更新知识库计数
         updateKnowledgeBaseCount(doc.getKnowledgeBaseId());
     }
 
@@ -819,13 +868,15 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     private String readDocumentContent(KnowledgeDocument doc) throws Exception {
         String type = doc.getFileType();
         try (InputStream is = minioStorageService.download(doc.getMinioKey())) {
+            if (KnowledgeDocumentSupport.isDirectTextPreview(type)) {
+                return readText(is);
+            }
             return switch (type) {
-                case "txt", "md" -> readText(is);
                 case "pdf" -> readPdf(is);
                 case "docx" -> readDocx(is);
                 case "doc" -> readDoc(is);
                 case "xlsx", "xls" -> readExcel(is);
-                default -> readText(is);
+                default -> "";
             };
         }
     }
@@ -966,10 +1017,9 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             if (doc == null || !doc.getKnowledgeBaseId().equals(knowledgeBaseId)) {
                 continue;
             }
-            if (!"failed".equals(doc.getStatus())) {
+            if (!"failed".equals(doc.getStatus()) || !KnowledgeDocumentSupport.isVectorizable(doc.getFileType())) {
                 continue;
             }
-            // 清理旧的分块数据
             chunkMapper.delete(new LambdaQueryWrapper<KnowledgeChunk>()
                     .eq(KnowledgeChunk::getDocumentId, docId));
             try {
@@ -1009,7 +1059,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "文档不存在");
         }
         try {
-            return minioStorageService.getPresignedUrl(doc.getMinioKey(), 1);
+            return minioStorageService.getPresignedUrlForDocker(doc.getMinioKey(), 1);
         } catch (Exception e) {
             throw new BusinessException(ErrorCode.INTERNAL_ERROR, "获取预览地址失败: " + e.getMessage());
         }
@@ -1027,6 +1077,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             response.setHeader("Content-Disposition", "attachment; filename*=UTF-8''" + encodedName);
             is.transferTo(response.getOutputStream());
             response.getOutputStream().flush();
+            incrementDownloadCount(doc.getId());
         } catch (Exception e) {
             throw new BusinessException(ErrorCode.INTERNAL_ERROR, "文件下载失败: " + e.getMessage());
         }
@@ -1055,8 +1106,35 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 .sourceId(doc.getSourceId())
                 .uploaderId(doc.getUploaderId())
                 .uploaderName(uploaderName)
+                .downloadCount(doc.getDownloadCount() == null ? 0 : doc.getDownloadCount())
                 .createdAt(doc.getCreatedAt())
                 .build();
+    }
+
+    private void incrementDownloadCount(Long documentId) {
+        documentMapper.update(
+                null,
+                new LambdaUpdateWrapper<KnowledgeDocument>()
+                        .eq(KnowledgeDocument::getId, documentId)
+                        .setSql("download_count = COALESCE(download_count, 0) + 1")
+        );
+    }
+
+    private LocalDateTime parseDateTime(String value, boolean endOfDay) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String trimmed = value.trim();
+        try {
+            return LocalDateTime.parse(trimmed, DATE_TIME_FORMATTER);
+        } catch (DateTimeParseException ignored) {
+            try {
+                var date = java.time.LocalDate.parse(trimmed, DATE_FORMATTER);
+                return LocalDateTime.of(date, endOfDay ? LocalTime.MAX : LocalTime.MIN);
+            } catch (DateTimeParseException ex) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "时间范围格式错误");
+            }
+        }
     }
 
     private record ShareValidationResult(KnowledgeDocumentShare share, KnowledgeDocument document) {

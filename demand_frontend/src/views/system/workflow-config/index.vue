@@ -24,21 +24,51 @@
           工作流配置说明
         </template>
         <div>
-          <p>1. 工作流配置是全局的，可以被多个项目复用</p>
-          <p>2. 保存配置后需要提交审核，审核通过后才能启用</p>
+          <p>1. 当前页面维护的是全局标准工作流，审核通过后对全系统生效</p>
+          <p>2. 保存配置后需要提交审核，审核通过后系统会自动切换到最新版本</p>
           <p>3. 支持5种节点类型：开始节点、审批节点、抄送节点、条件节点、结束节点</p>
         </div>
       </el-alert>
 
+      <div class="table-toolbar">
+        <el-select v-model="approvalStatusFilter" placeholder="筛选审核状态" clearable style="width: 180px">
+          <el-option label="全部状态" value="" />
+          <el-option label="草稿" value="DRAFT" />
+          <el-option label="审核中" value="PENDING" />
+          <el-option label="已通过" value="APPROVED" />
+          <el-option label="已拒绝" value="REJECTED" />
+        </el-select>
+      </div>
+
       <!-- 版本列表 -->
-      <el-table :data="versions" border v-loading="loading">
+      <el-table :data="filteredVersions" border v-loading="loading">
         <el-table-column prop="version" label="版本号" width="100" />
         <el-table-column prop="name" label="版本名称" min-width="200" />
-        <el-table-column prop="projectId" label="项目ID" width="100" />
+        <el-table-column label="适用范围" width="120">
+          <template #default="{ row }">
+            <el-tag :type="row.projectId === GLOBAL_WORKFLOW_PROJECT_ID ? 'primary' : 'info'" effect="light">
+              {{ row.projectId === GLOBAL_WORKFLOW_PROJECT_ID ? '全局流程' : `项目 ${row.projectId}` }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="状态" width="120">
           <template #default="{ row }">
             <el-tag v-if="row.isActive === 1" type="success">已启用</el-tag>
             <el-tag v-else type="info">未启用</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="审核状态" width="140">
+          <template #default="{ row }">
+            <el-tag v-if="row.latestApprovalStatus === 'PENDING'" type="warning">审核中</el-tag>
+            <el-tag v-else-if="row.latestApprovalStatus === 'APPROVED'" type="success">已通过</el-tag>
+            <el-tooltip
+              v-else-if="row.latestApprovalStatus === 'REJECTED'"
+              :content="row.latestApprovalComment || '审核已拒绝'"
+              placement="top"
+            >
+              <el-tag type="danger">已拒绝</el-tag>
+            </el-tooltip>
+            <el-tag v-else type="info">草稿</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="creatorName" label="创建人" width="120" />
@@ -47,7 +77,12 @@
             {{ formatDate(row.createdAt) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="120" fixed="right">
+        <el-table-column label="最近提交" width="180">
+          <template #default="{ row }">
+            {{ row.latestSubmittedAt ? formatDate(row.latestSubmittedAt) : '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="210" fixed="right">
           <template #default="{ row }">
             <el-tooltip content="查看">
               <el-button link type="primary" @click="viewWorkflow(row)"><el-icon><View /></el-icon></el-button>
@@ -55,8 +90,18 @@
             <el-tooltip content="编辑">
               <el-button link type="primary" @click="editWorkflow(row)"><el-icon><EditPen /></el-icon></el-button>
             </el-tooltip>
-            <el-tooltip v-if="row.isActive !== 1" content="启用">
-              <el-button link type="success" @click="activateVersion(row)"><el-icon><CircleCheck /></el-icon></el-button>
+            <el-tooltip content="审核记录">
+              <el-button link type="info" @click="viewApprovalHistory(row)">记录</el-button>
+            </el-tooltip>
+            <el-tooltip content="版本信息">
+              <el-button
+                link
+                type="warning"
+                :disabled="row.latestApprovalStatus === 'PENDING'"
+                @click="openVersionMetaDialog(row)"
+              >
+                <el-icon><Edit /></el-icon>
+              </el-button>
             </el-tooltip>
           </template>
         </el-table-column>
@@ -75,21 +120,63 @@
         />
       </div>
     </el-card>
+
+    <el-dialog v-model="versionDialogVisible" title="编辑版本信息" width="460px">
+      <el-form label-position="top">
+        <el-form-item label="版本号">
+          <el-input-number
+            v-model="versionDialogForm.version"
+            :min="1"
+            :step="1"
+            step-strictly
+            controls-position="right"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="版本名称">
+          <el-input
+            v-model="versionDialogForm.name"
+            maxlength="50"
+            show-word-limit
+            placeholder="请输入版本名称"
+          />
+        </el-form-item>
+        <div v-if="versionDialogHint" class="dialog-hint" :class="versionDialogHint.type">
+          {{ versionDialogHint.message }}
+        </div>
+      </el-form>
+      <template #footer>
+        <el-button @click="versionDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="versionSaving" @click="handleSaveVersionMeta">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted, reactive } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, View, EditPen, CircleCheck } from '@element-plus/icons-vue'
-import { getVersionHistory } from '@/api/modules/workflow-visual'
-import type { WorkflowVersionDTO } from '@/types/workflow-visual'
+import { ElMessage } from 'element-plus'
+import { Plus, View, EditPen, Edit } from '@element-plus/icons-vue'
+import {
+  GLOBAL_WORKFLOW_PROJECT_ID,
+  getVersionHistory,
+  updateWorkflowVersionMeta
+} from '@/api/modules/workflow-visual'
+import type { WorkflowVersionDTO, WorkflowVersionMetaUpdateDTO } from '@/types/workflow-visual'
 import dayjs from 'dayjs'
 
 const router = useRouter()
 const loading = ref(false)
 const versions = ref<WorkflowVersionDTO[]>([])
+const approvalStatusFilter = ref('')
+const versionDialogVisible = ref(false)
+const versionSaving = ref(false)
+const editingVersion = ref<WorkflowVersionDTO>()
+const versionDialogForm = reactive<WorkflowVersionMetaUpdateDTO>({
+  version: 1,
+  name: ''
+})
 
 const pagination = ref({
   page: 1,
@@ -97,13 +184,41 @@ const pagination = ref({
   total: 0
 })
 
+const duplicatedVersion = computed(() => {
+  if (!editingVersion.value?.id || !versionDialogForm.version) return undefined
+  return versions.value.find((item) => item.version === versionDialogForm.version && item.id !== editingVersion.value?.id)
+})
+
+const versionDialogHint = computed(() => {
+  const trimmedName = versionDialogForm.name.trim()
+  if (!versionDialogForm.version || versionDialogForm.version < 1) {
+    return { type: 'warning', message: '版本号需大于 0' }
+  }
+  if (duplicatedVersion.value) {
+    return { type: 'error', message: `版本号 V${versionDialogForm.version} 已存在` }
+  }
+  if (!trimmedName) {
+    return { type: 'warning', message: '版本名称不能为空' }
+  }
+  return { type: 'success', message: '版本信息可保存' }
+})
+
+const filteredVersions = computed(() => {
+  if (!approvalStatusFilter.value) {
+    return versions.value
+  }
+
+  return versions.value.filter((item) => {
+    const approvalStatus = item.latestApprovalStatus || 'DRAFT'
+    return approvalStatus === approvalStatusFilter.value
+  })
+})
+
 // 加载版本列表
 const loadVersions = async () => {
   loading.value = true
   try {
-    // 暂时使用项目ID=1，后续可以改为全局配置
-    const projectId = 1
-    versions.value = await getVersionHistory(projectId) || []
+    versions.value = await getVersionHistory(GLOBAL_WORKFLOW_PROJECT_ID) || []
     pagination.value.total = versions.value.length
   } catch (error) {
     console.error('加载版本列表失败:', error)
@@ -120,14 +235,21 @@ const formatDate = (date: string) => {
 
 // 新建工作流
 const createNewWorkflow = () => {
-  router.push('/system/workflow-config/editor')
+  router.push({
+    path: '/system/workflow-config/editor',
+    query: { projectId: String(GLOBAL_WORKFLOW_PROJECT_ID) }
+  })
 }
 
 // 查看工作流
 const viewWorkflow = (row: WorkflowVersionDTO) => {
   router.push({
     path: '/system/workflow-config/editor',
-    query: { versionId: row.id, mode: 'view' }
+    query: {
+      versionId: row.id,
+      projectId: String(row.projectId ?? GLOBAL_WORKFLOW_PROJECT_ID),
+      mode: 'view'
+    }
   })
 }
 
@@ -135,28 +257,60 @@ const viewWorkflow = (row: WorkflowVersionDTO) => {
 const editWorkflow = (row: WorkflowVersionDTO) => {
   router.push({
     path: '/system/workflow-config/editor',
-    query: { versionId: row.id, mode: 'edit' }
+    query: {
+      versionId: row.id,
+      projectId: String(row.projectId ?? GLOBAL_WORKFLOW_PROJECT_ID),
+      mode: 'edit'
+    }
   })
 }
 
-// 启用版本
-const activateVersion = async (row: WorkflowVersionDTO) => {
-  try {
-    await ElMessageBox.confirm(
-      `确定要启用版本 V${row.version} - ${row.name} 吗？启用后将替换当前生效的版本。`,
-      '确认启用',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
+const viewApprovalHistory = (row: WorkflowVersionDTO) => {
+  router.push({
+    path: '/settings/workflow-approvals',
+    query: {
+      projectId: row.projectId,
+      keyword: row.name,
+      status: row.latestApprovalStatus || ''
+    }
+  })
+}
 
-    // TODO: 调用启用接口
-    ElMessage.success('启用成功')
-    loadVersions()
-  } catch (error) {
-    // 用户取消
+const openVersionMetaDialog = (row: WorkflowVersionDTO) => {
+  editingVersion.value = row
+  versionDialogForm.version = row.version
+  versionDialogForm.name = row.name
+  versionDialogVisible.value = true
+}
+
+const handleSaveVersionMeta = async () => {
+  if (!editingVersion.value) return
+
+  const trimmedName = versionDialogForm.name.trim()
+  if (!versionDialogForm.version || versionDialogForm.version < 1) {
+    ElMessage.warning('版本号需大于 0')
+    return
+  }
+  if (duplicatedVersion.value) {
+    ElMessage.warning(`版本号 V${versionDialogForm.version} 已存在，请重新输入`)
+    return
+  }
+  if (!trimmedName) {
+    ElMessage.warning('版本名称不能为空')
+    return
+  }
+
+  versionSaving.value = true
+  try {
+    await updateWorkflowVersionMeta(editingVersion.value.id, {
+      version: versionDialogForm.version,
+      name: trimmedName
+    })
+    ElMessage.success('版本信息已更新')
+    versionDialogVisible.value = false
+    await loadVersions()
+  } finally {
+    versionSaving.value = false
   }
 }
 
@@ -191,6 +345,12 @@ onMounted(() => {
     margin-bottom: 16px;
   }
 
+  .table-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 16px;
+  }
+
   :deep(.el-alert__description) {
     p {
       margin: 4px 0;
@@ -202,6 +362,23 @@ onMounted(() => {
     margin-top: 20px;
     display: flex;
     justify-content: flex-end;
+  }
+
+  .dialog-hint {
+    font-size: 12px;
+    line-height: 1.6;
+
+    &.success {
+      color: #67c23a;
+    }
+
+    &.warning {
+      color: #e6a23c;
+    }
+
+    &.error {
+      color: #f56c6c;
+    }
   }
 }
 </style>

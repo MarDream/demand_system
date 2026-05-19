@@ -7,7 +7,6 @@ import com.demand.system.module.iteration.dto.IterationUpdateDTO;
 import com.demand.system.module.iteration.dto.IterationVO;
 import com.demand.system.module.iteration.service.IterationService;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -15,10 +14,13 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1")
-@RequiredArgsConstructor
 public class IterationController {
 
     private final IterationService iterationService;
+
+    public IterationController(IterationService iterationService) {
+        this.iterationService = iterationService;
+    }
 
     @GetMapping("/projects/{id}/iterations")
     public Result<List<IterationVO>> listByProject(@PathVariable Long id) {

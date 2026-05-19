@@ -8,18 +8,21 @@ import com.demand.system.module.columnconfig.service.UserColumnConfigService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
 
 @Service
-@RequiredArgsConstructor
 public class UserColumnConfigServiceImpl implements UserColumnConfigService {
 
     private final UserColumnConfigMapper mapper;
     private final ObjectMapper objectMapper;
+
+    public UserColumnConfigServiceImpl(UserColumnConfigMapper mapper, ObjectMapper objectMapper) {
+        this.mapper = mapper;
+        this.objectMapper = objectMapper;
+    }
 
     @Override
     public List<String> getVisibleColumns(Long userId, String pageKey) {

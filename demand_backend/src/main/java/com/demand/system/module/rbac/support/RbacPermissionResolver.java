@@ -11,7 +11,6 @@ import com.demand.system.module.rbac.mapper.SysRolePermissionMapper;
 import com.demand.system.module.rbac.mapper.UserRoleMapper;
 import com.demand.system.module.user.entity.UserOrganization;
 import com.demand.system.module.user.mapper.UserOrganizationMapper;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -26,7 +25,6 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Component
-@RequiredArgsConstructor
 public class RbacPermissionResolver {
 
     private final UserOrganizationMapper userOrganizationMapper;
@@ -34,6 +32,14 @@ public class RbacPermissionResolver {
     private final RoleMapper roleMapper;
     private final SysRolePermissionMapper sysRolePermissionMapper;
     private final SysPermissionMapper sysPermissionMapper;
+
+    public RbacPermissionResolver(UserOrganizationMapper userOrganizationMapper, UserRoleMapper userRoleMapper, RoleMapper roleMapper, SysRolePermissionMapper sysRolePermissionMapper, SysPermissionMapper sysPermissionMapper) {
+        this.userOrganizationMapper = userOrganizationMapper;
+        this.userRoleMapper = userRoleMapper;
+        this.roleMapper = roleMapper;
+        this.sysRolePermissionMapper = sysRolePermissionMapper;
+        this.sysPermissionMapper = sysPermissionMapper;
+    }
 
     public List<String> resolveRoles(Long userId) {
         LinkedHashSet<String> roles = new LinkedHashSet<>(resolveLegacyRoles(userId));

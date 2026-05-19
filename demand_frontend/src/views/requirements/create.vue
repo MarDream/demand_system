@@ -5,9 +5,9 @@
       <el-breadcrumb separator="/">
         <el-breadcrumb-item :to="{ name: 'Requirements' }">需求管理</el-breadcrumb-item>
         <el-breadcrumb-item v-if="parentId" :to="{ name: 'RequirementDetail', params: { id: parentId } }">父需求</el-breadcrumb-item>
-        <el-breadcrumb-item>{{ isEditMode ? '编辑需求' : '新建需求' }}</el-breadcrumb-item>
+        <el-breadcrumb-item>{{ pageTitle }}</el-breadcrumb-item>
       </el-breadcrumb>
-      <h2 class="page-title">{{ isEditMode ? '编辑需求' : '新建需求' }}</h2>
+      <h2 class="page-title">{{ pageTitle }}</h2>
     </div>
 
     <el-row :gutter="20" class="form-container">
@@ -164,12 +164,19 @@
           </template>
           <el-form ref="infoFormRef" :model="formData" :rules="formRules" label-position="top">
             <el-form-item label="所属项目" prop="projectId">
-              <el-select v-model="formData.projectId" placeholder="请选择项目" style="width: 100%">
+              <el-select
+                v-model="formData.projectId"
+                placeholder="可暂不选择，后续节点可补绑"
+                clearable
+                :value-on-clear="0"
+                style="width: 100%"
+              >
                 <el-option
                   v-for="project in projects"
                   :key="project.id"
-                  :label="project.name"
+                  :label="projectOptionLabel(project)"
                   :value="project.id"
+                  :disabled="isProjectExpired(project)"
                 />
               </el-select>
             </el-form-item>
@@ -277,8 +284,14 @@
     <!-- Action Bar -->
     <div class="action-bar">
       <el-button @click="handleCancel">取消</el-button>
-      <el-button type="primary" :loading="submitting" @click="handleSubmit">
-        {{ isEditMode ? '保存' : '创建' }}
+      <template v-if="isDraftMode">
+        <el-button :loading="submitting" @click="handleSaveDraft">保存草稿</el-button>
+        <el-button type="primary" :loading="submitting" @click="handleSubmit">
+          提交流转
+        </el-button>
+      </template>
+      <el-button v-else type="primary" :loading="submitting" @click="handleSubmit">
+        保存
       </el-button>
     </div>
 
@@ -317,7 +330,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, h, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -327,6 +340,7 @@ import {
 } from '@element-plus/icons-vue'
 import { IsleEditor, IsleEditorToolbar, RichTextKit } from '@isle-editor/vue3'
 import { addLocale } from '@isle-editor/core'
+import Image from '@tiptap/extension-image'
 import '@isle-editor/vue3/dist/style.css'
 
 // 在编辑器实例化前注册中文 locale（补充新增字体翻译）
@@ -416,13 +430,15 @@ addLocale('zh', {
   placeholder: '写点什么 ...',
 })
 
-import { requirementApi, projectApi, userApi, iterationApi } from '@/api'
+import { requirementApi, projectApi, relationApi, userApi, iterationApi } from '@/api'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
 import { downloadRequirementAttachment, uploadRequirementAttachment } from '@/api/modules/file'
+import type { RelationItem } from '@/api/modules/relation'
+import { buildRichTextImagePreviewUrl, hydrateRichTextImageHtml, serializeRichTextImageHtml } from '@/utils/richTextFileImage'
 import { normalizeText } from '@/utils/format'
 import PageContainer from '@/components/common/PageContainer.vue'
 import { useUserStore } from '@/stores'
-import type { RequirementAttachment } from '@/types/requirement'
+import type { NextNodeOption, Requirement, RequirementAttachment } from '@/types/requirement'
 
 const route = useRoute()
 const router = useRouter()
@@ -438,6 +454,7 @@ const attachmentUploading = ref(false)
 const attachmentDragover = ref(false)
 const createFormVisibleFields = ref<string[]>([])
 const createFormRequiredFields = ref<string[]>([])
+const currentRequirement = ref<Requirement | null>(null)
 
 // Data
 const projects = ref<any[]>([])
@@ -446,7 +463,17 @@ const iterations = ref<any[]>([])
 const allRequirements = ref<any[]>([])
 
 // Related requirements
-const relatedRequirements = ref<any[]>([])
+interface EditableRelationItem {
+  id: number
+  title: string
+  type?: string | null
+  status?: string | null
+  priority?: string | null
+  relationType: string
+  relationId?: number
+}
+
+const relatedRequirements = ref<EditableRelationItem[]>([])
 
 // Requirement config types and priorities
 const configTypes = ref<any[]>([])
@@ -459,12 +486,18 @@ const editId = computed(() => {
 
 const parentId = computed(() => {
   const q = route.query.parentId
-  return q ? Number(q) : undefined
+  if (q) return Number(q)
+  return currentRequirement.value?.parentId || undefined
 })
 
 const isEditMode = computed(() => editId.value > 0)
+const isDraftMode = computed(() => !isEditMode.value || currentRequirement.value?.isDraft === true)
+const pageTitle = computed(() => {
+  if (!isEditMode.value) return '新建需求'
+  return currentRequirement.value?.isDraft ? '编辑草稿' : '编辑需求'
+})
 
-const DEFAULT_PROJECT_ID = 1
+const DEFAULT_PROJECT_ID = 0
 const CREATE_VISIBLE_FIELD_FALLBACK = ['startDate', 'dueDate', 'estimatedHours']
 const FIELD_NAME_ALIASES: Record<string, string> = {
   startDate: 'startDate',
@@ -494,7 +527,6 @@ const formData = reactive({
 
 const formRules = computed<FormRules>(() => ({
   title: [{ required: true, message: '请输入需求标题', trigger: 'blur' }],
-  projectId: [{ required: true, message: '请选择所属项目', trigger: 'change' }],
   type: isEditMode.value ? [{ required: true, message: '请选择需求类型', trigger: 'change' }] : [],
   priority: [{ required: true, message: '请选择优先级', trigger: 'change' }],
 }))
@@ -532,6 +564,20 @@ const editorExtensions = [
       type: 'complex',
     },
   }),
+  Image.configure({
+    inline: false,
+    allowBase64: true,
+    resize: {
+      enabled: true,
+      directions: ['top-left', 'top-right', 'bottom-left', 'bottom-right'],
+      minWidth: 100,
+      minHeight: 100,
+      alwaysPreserveAspectRatio: true,
+    },
+    HTMLAttributes: {
+      class: 'requirement-editor-image',
+    },
+  }),
 ]
 
 const editorInstance = ref<any>(null)
@@ -539,7 +585,7 @@ const editorInstance = ref<any>(null)
 function onEditorCreate({ editor }: { editor: any }) {
   editorInstance.value = editor
   if (formData.description && isEditMode.value) {
-    editor.commands.setContent(formData.description)
+    editor.commands.setContent(hydrateRichTextImageHtml(formData.description))
   }
   // 绑定粘贴事件到编辑器 DOM，支持粘贴文件/截图上传
   const editorEl = editor.view.dom as HTMLElement
@@ -565,10 +611,28 @@ watch(
   { immediate: true },
 )
 
+watch(
+  editId,
+  (value) => {
+    if (value > 0) {
+      void loadEditData(value)
+      return
+    }
+    currentRequirement.value = null
+  },
+  { immediate: true },
+)
+
 // Filtered requirements for relation dialog
 const filteredRequirements = computed(() => {
-  if (!relationSearchText.value) return allRequirements.value
-  return allRequirements.value.filter(r =>
+  const candidates = allRequirements.value.filter((requirement) => {
+    if (editId.value > 0 && requirement.id === editId.value) {
+      return false
+    }
+    return !relatedRequirements.value.some((related) => related.id === requirement.id)
+  })
+  if (!relationSearchText.value) return candidates
+  return candidates.filter(r =>
     r.title.toLowerCase().includes(relationSearchText.value.toLowerCase())
   )
 })
@@ -578,8 +642,8 @@ async function loadProjects() {
   try {
     const res = await projectApi.getProjectList({ pageNum: 1, pageSize: 100 }) as any
     projects.value = res?.list || []
-    if (!projects.value.some((project: any) => project.id === formData.projectId)) {
-      formData.projectId = projects.value[0]?.id || DEFAULT_PROJECT_ID
+    if (formData.projectId > 0 && !projects.value.some((project: any) => project.id === formData.projectId)) {
+      formData.projectId = DEFAULT_PROJECT_ID
     }
   } catch {
     projects.value = []
@@ -629,22 +693,56 @@ async function loadRequirements(projectId = formData.projectId) {
   }
 }
 
-async function loadEditData() {
-  if (!isEditMode.value) return
+function mapRelationToEditableItem(relation: RelationItem): EditableRelationItem {
+  return {
+    id: relation.targetId,
+    title: relation.targetTitle,
+    type: relation.targetType,
+    status: relation.targetStatus,
+    priority: relation.targetPriority,
+    relationType: relation.relationType,
+    relationId: relation.id,
+  }
+}
+
+async function loadRelations(requirementId: number) {
   try {
-    const data = await requirementApi.getRequirementById(editId.value) as any
-    formData.projectId = data.projectId || DEFAULT_PROJECT_ID
-    formData.title = data.title
-    formData.description = data.description
-    formData.type = data.type
-    formData.priority = data.priority
-    formData.assigneeId = data.assigneeId || undefined
-    formData.iterationId = data.iterationId || undefined
-    formData.startDate = data.startDate || undefined
-    formData.dueDate = data.dueDate || undefined
-    formData.estimatedHours = data.estimatedHours || undefined
-    formData.ccUserIds = data.ccUserIds || []
-    formData.attachments = Array.isArray(data.attachments) ? data.attachments : []
+    const relations = await relationApi.getRelationList(requirementId)
+    relatedRequirements.value = Array.isArray(relations)
+      ? relations.map(mapRelationToEditableItem)
+      : []
+  } catch {
+    relatedRequirements.value = []
+    ElMessage.error('加载关联需求失败')
+  }
+}
+
+function applyRequirementToForm(data: Requirement) {
+  currentRequirement.value = data
+  formData.projectId = data.projectId && data.projectId > 0 ? data.projectId : DEFAULT_PROJECT_ID
+  formData.title = data.title
+  formData.description = hydrateRichTextImageHtml(data.description)
+  formData.type = data.type
+  formData.priority = data.priority
+  formData.assigneeId = data.assigneeId || undefined
+  formData.iterationId = data.iterationId || undefined
+  formData.startDate = data.startDate || undefined
+  formData.dueDate = data.dueDate || undefined
+  formData.estimatedHours = data.estimatedHours || undefined
+  formData.ccUserIds = (data as any).ccUserIds || []
+  formData.attachments = Array.isArray(data.attachments) ? data.attachments : []
+}
+
+async function loadEditData(targetId = editId.value) {
+  if (!targetId) {
+    currentRequirement.value = null
+    relatedRequirements.value = []
+    return
+  }
+  try {
+    const data = await requirementApi.getRequirementById(targetId) as Requirement
+    applyRequirementToForm(data)
+    await loadRelations(targetId)
   } catch {
     ElMessage.error('加载需求数据失败')
   }
@@ -730,21 +828,86 @@ async function handleAttachmentDrop(event: DragEvent) {
   ElMessage.success('附件上传成功')
 }
 
+function getFileExtension(mimeType: string): string {
+  const mimeToExt: Record<string, string> = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/gif': 'gif',
+    'image/webp': 'webp',
+    'image/bmp': 'bmp',
+    'image/svg+xml': 'svg',
+    'application/pdf': 'pdf',
+    'application/msword': 'doc',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+    'application/vnd.ms-excel': 'xls',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+    'application/vnd.ms-powerpoint': 'ppt',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+    'text/plain': 'txt',
+    'application/zip': 'zip',
+    'application/x-rar-compressed': 'rar',
+  }
+  return mimeToExt[mimeType] || 'bin'
+}
+
+function createFileWithName(file: File, filename: string): File {
+  return new File([file], filename, { type: file.type })
+}
+
 async function handleAttachmentPaste(event: ClipboardEvent) {
   const files = event.clipboardData?.files
   if (!files || files.length === 0) return
   // 有文件时阻止默认粘贴行为，避免编辑器重复处理
   event.preventDefault()
+
   for (const file of Array.from(files)) {
-    if (!beforeAttachmentUpload(file)) continue
-    try {
-      attachmentUploading.value = true
-      const attachment = await uploadRequirementAttachment(file)
-      formData.attachments.push(attachment)
-    } catch {
-      ElMessage.error('附件上传失败')
-    } finally {
-      attachmentUploading.value = false
+    const isImage = file.type.startsWith('image/')
+
+    // 为剪贴板文件生成正确的文件名（如果没有的话）
+    let processedFile = file
+    if (!file.name || file.name === 'image' || !file.name.includes('.')) {
+      const ext = getFileExtension(file.type)
+      const timestamp = Date.now()
+      const newName = `clipboard_${timestamp}.${ext}`
+      processedFile = createFileWithName(file, newName)
+    }
+
+    if (isImage) {
+      // 图片直接插入编辑器
+      try {
+        attachmentUploading.value = true
+        ElMessage.info(`上传图片中: ${processedFile.name}`)
+        const attachment = await uploadRequirementAttachment(processedFile)
+        if (attachment.fileId && editorInstance.value) {
+          editorInstance.value
+            .chain()
+            .focus()
+            .setImage({ src: buildRichTextImagePreviewUrl(attachment.fileId), alt: processedFile.name })
+            .run()
+          ElMessage.success(`图片 ${processedFile.name} 已插入`)
+        } else if (attachment.url && editorInstance.value) {
+          editorInstance.value.chain().focus().setImage({ src: attachment.url, alt: processedFile.name }).run()
+          ElMessage.success(`图片 ${processedFile.name} 已插入`)
+        }
+      } catch (error) {
+        ElMessage.error(`图片 ${processedFile.name} 插入失败`)
+      } finally {
+        attachmentUploading.value = false
+      }
+    } else {
+      // 非图片作为附件上传
+      if (!beforeAttachmentUpload(processedFile)) continue
+      try {
+        attachmentUploading.value = true
+        ElMessage.info(`上传附件中: ${processedFile.name}`)
+        const attachment = await uploadRequirementAttachment(processedFile)
+        formData.attachments.push(attachment)
+        ElMessage.success(`附件 ${processedFile.name} 已添加`)
+      } catch (error) {
+        ElMessage.error(`附件 ${processedFile.name} 上传失败`)
+      } finally {
+        attachmentUploading.value = false
+      }
     }
   }
 }
@@ -773,6 +936,21 @@ function normalizeNumberValue(value?: number) {
   return typeof value === 'number' ? value : undefined
 }
 
+function resolveErrorMessage(error: unknown, fallback: string) {
+  const message = (error as any)?.response?.data?.message || (error as any)?.message
+  return typeof message === 'string' && message.trim() ? message : fallback
+}
+
+function isProjectExpired(project: { status?: string | null; endDate?: string | null }) {
+  if (project.status === 'expired') return true
+  if (!project.endDate) return false
+  return new Date(project.endDate).getTime() < Date.now() - 24 * 60 * 60 * 1000
+}
+
+function projectOptionLabel(project: { name: string; status?: string | null; endDate?: string | null }) {
+  return isProjectExpired(project) ? `${project.name}（已截止）` : project.name
+}
+
 // Relation operations
 function handleRelationSelection(val: any[]) {
   selectedRelations.value = val
@@ -793,59 +971,222 @@ function removeRelation(row: any) {
   relatedRequirements.value = relatedRequirements.value.filter(r => r.id !== row.id)
 }
 
-// Submit
-async function handleSubmit() {
+async function syncRelations(requirementId: number) {
+  const existingRelations = await relationApi.getRelationList(requirementId)
+  const existingKeyMap = new Map(existingRelations.map((relation) => [
+    `${relation.targetId}__${relation.relationType}`,
+    relation,
+  ]))
+  const currentKeySet = new Set(
+    relatedRequirements.value.map((relation) => `${relation.id}__${relation.relationType}`),
+  )
+
+  for (const relation of existingRelations) {
+    const key = `${relation.targetId}__${relation.relationType}`
+    if (!currentKeySet.has(key)) {
+      await relationApi.deleteRelation(requirementId, relation.id)
+    }
+  }
+
+  for (const relation of relatedRequirements.value) {
+    const key = `${relation.id}__${relation.relationType}`
+    if (!existingKeyMap.has(key)) {
+      await relationApi.createRelation(requirementId, {
+        targetId: relation.id,
+        relationType: relation.relationType,
+      })
+    }
+  }
+
+  await loadRelations(requirementId)
+}
+
+async function validateForms() {
   const basicValid = await formRef.value?.validate().catch(() => false)
   const infoValid = await infoFormRef.value?.validate().catch(() => false)
-  if (!basicValid || !infoValid) return
+  return !!basicValid && !!infoValid
+}
+
+function buildRequirementPayload() {
+  const payload: any = {
+    projectId: formData.projectId || 0,
+    title: formData.title,
+    description: serializeRichTextImageHtml(formData.description),
+    type: formData.type,
+    priority: formData.priority,
+    assigneeId: formData.assigneeId,
+    attachments: formData.attachments,
+    parentId: parentId.value,
+  }
+
+  if (isEditMode.value) {
+    payload.iterationId = formData.iterationId
+    payload.ccUserIds = formData.ccUserIds
+    payload.startDate = normalizeDateValue(formData.startDate)
+    payload.dueDate = normalizeDateValue(formData.dueDate)
+    payload.estimatedHours = normalizeNumberValue(formData.estimatedHours)
+    return payload
+  }
+
+  if (shouldShowField('startDate')) payload.startDate = normalizeDateValue(formData.startDate)
+  if (shouldShowField('dueDate')) payload.dueDate = normalizeDateValue(formData.dueDate)
+  if (shouldShowField('estimatedHours')) payload.estimatedHours = normalizeNumberValue(formData.estimatedHours)
+  return payload
+}
+
+function buildDraftPayload() {
+  const payload: any = {
+    projectId: formData.projectId || 0,
+    title: formData.title,
+    description: serializeRichTextImageHtml(formData.description),
+    priority: formData.priority,
+    assigneeId: formData.assigneeId,
+    attachments: formData.attachments,
+    parentId: parentId.value ?? currentRequirement.value?.parentId,
+  }
+
+  if (shouldShowField('startDate') || isEditMode.value) payload.startDate = normalizeDateValue(formData.startDate)
+  if (shouldShowField('dueDate') || isEditMode.value) payload.dueDate = normalizeDateValue(formData.dueDate)
+  if (shouldShowField('estimatedHours') || isEditMode.value) payload.estimatedHours = normalizeNumberValue(formData.estimatedHours)
+  return payload
+}
+
+async function persistDraft(showSuccess = true) {
+  const payload = buildDraftPayload()
+
+  if (isEditMode.value && currentRequirement.value?.isDraft) {
+    await requirementApi.updateRequirementDraft(editId.value, {
+      ...payload,
+      id: editId.value,
+      version: currentRequirement.value.version,
+    })
+    const latest = await requirementApi.getRequirementById(editId.value) as Requirement
+    applyRequirementToForm(latest)
+    if (showSuccess) {
+      ElMessage.success('草稿已保存')
+    }
+    return latest
+  }
+
+  const draftId = await requirementApi.createRequirementDraft(payload)
+  const latest = await requirementApi.getRequirementById(draftId) as Requirement
+  applyRequirementToForm(latest)
+  await router.replace({ name: 'RequirementCreate', query: { id: draftId } })
+  if (showSuccess) {
+    ElMessage.success('草稿已保存')
+  }
+  return latest
+}
+
+async function chooseNextNode(options: NextNodeOption[]) {
+  if (options.length === 0) {
+    ElMessage.error('当前工作流未配置可提交的下一环节')
+    return null
+  }
+
+  if (options.length === 1) {
+    return options[0].nodeId
+  }
+
+  let selectedNodeId = options[0].nodeId
+  try {
+    await ElMessageBox({
+      title: '选择下一环节',
+      message: () => h('div', { class: 'next-node-selector' }, [
+        h('div', { class: 'next-node-selector__tip' }, '存在多个可提交环节，请先选择目标节点。'),
+        ...options.map((option) => h('label', {
+          class: 'next-node-selector__option',
+        }, [
+          h('input', {
+            type: 'radio',
+            name: 'next-node',
+            checked: selectedNodeId === option.nodeId,
+            onChange: () => {
+              selectedNodeId = option.nodeId
+            },
+          }),
+          h(
+            'span',
+            `${option.nodeName}${option.bindStatusName ? ` (${option.bindStatusName})` : ''}${option.projectRequired ? ' [需绑定项目]' : ''}`,
+          ),
+        ])),
+      ]),
+      showCancelButton: true,
+      confirmButtonText: '确认提交',
+      cancelButtonText: '取消',
+      closeOnClickModal: false,
+    })
+  } catch {
+    return null
+  }
+  return selectedNodeId
+}
+
+async function handleSaveDraft() {
+  if (!(await validateForms())) return
 
   submitting.value = true
   try {
-    const payload: any = {
-      projectId: formData.projectId,
-      title: formData.title,
-      description: formData.description,
-      type: formData.type,
-      priority: formData.priority,
-      assigneeId: formData.assigneeId,
-      attachments: formData.attachments,
-      parentId: parentId.value,
-    }
+    const draft = await persistDraft(false)
+    await syncRelations(draft.id)
+    ElMessage.success('草稿已保存')
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '保存草稿失败'))
+  } finally {
+    submitting.value = false
+  }
+}
 
-    if (isEditMode.value) {
-      payload.iterationId = formData.iterationId
-      payload.ccUserIds = formData.ccUserIds
-      payload.startDate = normalizeDateValue(formData.startDate)
-      payload.dueDate = normalizeDateValue(formData.dueDate)
-      payload.estimatedHours = normalizeNumberValue(formData.estimatedHours)
-    } else {
-      if (shouldShowField('startDate')) payload.startDate = normalizeDateValue(formData.startDate)
-      if (shouldShowField('dueDate')) payload.dueDate = normalizeDateValue(formData.dueDate)
-      if (shouldShowField('estimatedHours')) payload.estimatedHours = normalizeNumberValue(formData.estimatedHours)
-    }
+// Submit
+async function handleSubmit() {
+  if (!(await validateForms())) return
 
-    if (isEditMode.value) {
+  submitting.value = true
+  try {
+    if (!isDraftMode.value) {
+      const payload = buildRequirementPayload()
       payload.id = editId.value
       await requirementApi.updateRequirement(editId.value, payload)
+      await syncRelations(editId.value)
       ElMessage.success('更新成功')
-    } else {
-      await requirementApi.createRequirement(payload)
-      ElMessage.success('创建成功')
+      if (parentId.value) {
+        router.push({ name: 'RequirementDetail', params: { id: parentId.value } })
+      } else {
+        router.push({ name: 'Requirements' })
+      }
+      return
     }
 
-    if (parentId.value) {
-      router.push({ name: 'RequirementDetail', params: { id: parentId.value } })
-    } else {
-      router.push({ name: 'Requirements' })
+    const draft = await persistDraft(false)
+    await syncRelations(draft.id)
+    const nextNodes = await requirementApi.getRequirementNextNodes(draft.id)
+    const nextNodeId = await chooseNextNode(nextNodes)
+    if (!nextNodeId) return
+    const selectedNode = nextNodes.find((item) => item.nodeId === nextNodeId)
+    if (selectedNode?.projectRequired && !(formData.projectId > 0)) {
+      ElMessage.warning('所选下一环节要求绑定项目，请先在基础信息中选择所属项目')
+      return
     }
-  } catch {
-    ElMessage.error(isEditMode.value ? '更新失败' : '创建失败')
+
+    const submitted = await requirementApi.submitRequirementDraft(draft.id, {
+      version: draft.version,
+      nextNodeId,
+      projectId: formData.projectId || 0,
+    })
+    ElMessage.success('提交流转成功')
+    router.push({ name: 'RequirementDetail', params: { id: submitted.id || draft.id } })
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, isDraftMode.value ? '提交流转失败' : '更新失败'))
   } finally {
     submitting.value = false
   }
 }
 
 function handleCancel() {
+  if (currentRequirement.value?.isDraft) {
+    router.push({ name: 'Requirements', query: { view: 'drafts' } })
+    return
+  }
   router.push({ name: 'Requirements' })
 }
 
@@ -898,7 +1239,6 @@ onMounted(async () => {
   await Promise.all([
     loadProjects(),
     loadUsers(),
-    loadEditData(),
     loadConfig(),
   ])
 })
@@ -999,6 +1339,66 @@ onMounted(async () => {
   flex-direction: column;
   height: clamp(360px, calc(100vh - 520px), 760px);
   position: relative;
+}
+
+.editor-wrapper :deep(.requirement-editor-image) {
+  display: block;
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+.editor-wrapper :deep([data-resize-container]) {
+  margin-top: 12px;
+  margin-bottom: 12px;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.editor-wrapper :deep([data-resize-wrapper]) {
+  display: inline-block !important;
+  max-width: 100%;
+}
+
+.editor-wrapper :deep([data-resize-container].ProseMirror-selectednode .requirement-editor-image),
+.editor-wrapper :deep([data-resize-container][data-resize-state='true'] .requirement-editor-image),
+.editor-wrapper :deep([data-resize-wrapper].ProseMirror-selectednode .requirement-editor-image) {
+  outline: 2px solid rgba(64, 158, 255, 0.45);
+  outline-offset: 2px;
+}
+
+.editor-wrapper :deep([data-resize-handle]) {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 2px solid #fff;
+  background: var(--el-color-primary);
+  box-shadow: 0 0 0 1px rgba(64, 158, 255, 0.28), 0 2px 8px rgba(64, 158, 255, 0.25);
+  z-index: 3;
+}
+
+.editor-wrapper :deep([data-resize-handle='top-left']) {
+  top: -6px;
+  left: -6px;
+  cursor: nwse-resize;
+}
+
+.editor-wrapper :deep([data-resize-handle='top-right']) {
+  top: -6px;
+  right: -6px;
+  cursor: nesw-resize;
+}
+
+.editor-wrapper :deep([data-resize-handle='bottom-left']) {
+  bottom: -6px;
+  left: -6px;
+  cursor: nesw-resize;
+}
+
+.editor-wrapper :deep([data-resize-handle='bottom-right']) {
+  right: -6px;
+  bottom: -6px;
+  cursor: nwse-resize;
 }
 
 .editor-wrapper--dragover {
@@ -1181,6 +1581,24 @@ onMounted(async () => {
   justify-content: flex-end;
   gap: 12px;
   z-index: 100;
+}
+
+:global(.next-node-selector) {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+:global(.next-node-selector__tip) {
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+}
+
+:global(.next-node-selector__option) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--el-text-color-primary);
 }
 
 /* Relation Dialog */

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="80" viewBox="0 0 360 80">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0B2E8F"/>
+      <stop offset="1" stop-color="#00D5E6"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="360" height="80" fill="none"/>
+  <g transform="translate(10,10)">
+    <path d="M30 2h26c7 0 12 5 12 12v26c0 7-5 12-12 12H30c-7 0-12-5-12-12V14c0-7 5-12 12-12z" fill="url(#g)"/>
+    <path d="M26 18c6-6 16-6 22 0l6 6-6 6c-6 6-16 6-22 0l-6-6 6-6z" fill="#fff" opacity="0.95"/>
+    <circle cx="37" cy="24" r="4.5" fill="url(#g)"/>
+    <path d="M54 44H26c-6 0-10 4-10 10v4h48v-4c0-6-4-10-10-10z" fill="#fff" opacity="0.95"/>
+    <text x="86" y="40" font-family="Segoe UI, Arial, sans-serif" font-size="40" font-weight="700" fill="#0B2E8F">Omni</text>
+    <text x="186" y="40" font-family="Segoe UI, Arial, sans-serif" font-size="40" font-weight="700" fill="#00BFD0">Doc</text>
+  </g>
+</svg>

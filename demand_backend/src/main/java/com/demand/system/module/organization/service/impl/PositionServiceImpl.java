@@ -11,7 +11,6 @@ import com.demand.system.module.organization.mapper.PositionMapper;
 import com.demand.system.module.organization.service.PositionService;
 import com.demand.system.module.user.entity.User;
 import com.demand.system.module.user.mapper.UserMapper;
-import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,11 +19,15 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 public class PositionServiceImpl implements PositionService {
 
     private final PositionMapper positionMapper;
     private final UserMapper userMapper;
+
+    public PositionServiceImpl(PositionMapper positionMapper, UserMapper userMapper) {
+        this.positionMapper = positionMapper;
+        this.userMapper = userMapper;
+    }
 
     @Override
     public List<PositionVO> list() {

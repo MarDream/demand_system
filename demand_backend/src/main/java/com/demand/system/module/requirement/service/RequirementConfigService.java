@@ -23,7 +23,6 @@ import com.demand.system.module.workflow.mapper.WorkflowTransitionMapper;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
@@ -37,7 +36,6 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 public class RequirementConfigService {
 
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {
@@ -52,6 +50,18 @@ public class RequirementConfigService {
     private final WorkflowTransitionMapper workflowTransitionMapper;
     private final WorkflowNodePermissionMapper workflowNodePermissionMapper;
     private final ObjectMapper objectMapper;
+
+    public RequirementConfigService(RequirementTypeMapper typeMapper, PriorityMapper priorityMapper, RequirementMapper requirementMapper, WorkflowVersionMapper workflowVersionMapper, WorkflowStateMapper workflowStateMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowTransitionMapper workflowTransitionMapper, WorkflowNodePermissionMapper workflowNodePermissionMapper, ObjectMapper objectMapper) {
+        this.typeMapper = typeMapper;
+        this.priorityMapper = priorityMapper;
+        this.requirementMapper = requirementMapper;
+        this.workflowVersionMapper = workflowVersionMapper;
+        this.workflowStateMapper = workflowStateMapper;
+        this.workflowVersionResolver = workflowVersionResolver;
+        this.workflowTransitionMapper = workflowTransitionMapper;
+        this.workflowNodePermissionMapper = workflowNodePermissionMapper;
+        this.objectMapper = objectMapper;
+    }
 
     public Result<List<RequirementTypeConfig>> listTypes() {
         List<RequirementTypeConfig> types = typeMapper.selectList(

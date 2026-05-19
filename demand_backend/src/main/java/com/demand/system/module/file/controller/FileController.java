@@ -7,7 +7,6 @@ import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.file.dto.FileUploadDTO;
 import com.demand.system.module.file.entity.FileRecord;
 import com.demand.system.module.file.service.FileService;
-import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -21,10 +20,13 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/files")
-@RequiredArgsConstructor
 public class FileController {
 
     private final FileService fileService;
+
+    public FileController(FileService fileService) {
+        this.fileService = fileService;
+    }
 
     @PostMapping("/upload")
     public Result<FileUploadDTO> upload(@RequestParam("file") MultipartFile file) {
@@ -37,6 +39,15 @@ public class FileController {
 
     @GetMapping("/{id}")
     public ResponseEntity<byte[]> download(@PathVariable Long id) {
+        return buildFileResponse(id, "attachment");
+    }
+
+    @GetMapping("/{id}/preview")
+    public ResponseEntity<byte[]> preview(@PathVariable Long id) {
+        return buildFileResponse(id, "inline");
+    }
+
+    private ResponseEntity<byte[]> buildFileResponse(Long id, String dispositionType) {
         Map<String, Object> result = fileService.download(id);
         FileRecord fileRecord = (FileRecord) result.get("fileRecord");
         MediaType mediaType = MediaType.APPLICATION_OCTET_STREAM;
@@ -49,7 +60,7 @@ public class FileController {
             String encodedName = URLEncoder.encode(fileRecord.getOriginalName(), StandardCharsets.UTF_8).replace("+", "%20");
 
             return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encodedName)
+                    .header(HttpHeaders.CONTENT_DISPOSITION, dispositionType + "; filename*=UTF-8''" + encodedName)
                     .contentType(mediaType)
                     .body(bytes);
         } catch (Exception e) {

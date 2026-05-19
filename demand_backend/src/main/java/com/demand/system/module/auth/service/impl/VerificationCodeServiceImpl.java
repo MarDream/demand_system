@@ -6,27 +6,27 @@ import com.demand.system.module.auth.entity.VerificationCode;
 import com.demand.system.module.auth.mapper.VerificationCodeMapper;
 import com.demand.system.module.auth.service.EmailService;
 import com.demand.system.module.auth.service.VerificationCodeService;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.Random;
 
-/**
- * 验证码服务实现类
- */
-@Slf4j
 @Service
-@RequiredArgsConstructor
 public class VerificationCodeServiceImpl implements VerificationCodeService {
+    private static final Logger log = LoggerFactory.getLogger(VerificationCodeServiceImpl.class);
+    private static final int CODE_LENGTH = 6;
+    private static final int CODE_EXPIRATION_MINUTES = 10;
 
     private final VerificationCodeMapper verificationCodeMapper;
     private final EmailService emailService;
 
-    private static final int CODE_LENGTH = 6;
-    private static final int CODE_EXPIRATION_MINUTES = 10;
+    public VerificationCodeServiceImpl(VerificationCodeMapper verificationCodeMapper, EmailService emailService) {
+        this.verificationCodeMapper = verificationCodeMapper;
+        this.emailService = emailService;
+    }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -91,9 +91,6 @@ public class VerificationCodeServiceImpl implements VerificationCodeService {
                  email, code, type, updated);
     }
 
-    /**
-     * 生成随机验证码
-     */
     private String generateRandomCode() {
         Random random = new Random();
         StringBuilder code = new StringBuilder();

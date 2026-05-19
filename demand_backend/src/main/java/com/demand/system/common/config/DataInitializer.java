@@ -5,20 +5,24 @@ import com.demand.system.module.auth.entity.SysUser;
 import com.demand.system.module.auth.mapper.SysUserMapper;
 import com.demand.system.module.user.entity.UserOrganization;
 import com.demand.system.module.user.mapper.UserOrganizationMapper;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
-@Slf4j
 @Component
-@RequiredArgsConstructor
 public class DataInitializer implements CommandLineRunner {
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(DataInitializer.class);
 
     private final SysUserMapper sysUserMapper;
     private final UserOrganizationMapper userOrganizationMapper;
     private final PasswordEncoder passwordEncoder;
+
+    public DataInitializer(SysUserMapper sysUserMapper, UserOrganizationMapper userOrganizationMapper, PasswordEncoder passwordEncoder) {
+        this.sysUserMapper = sysUserMapper;
+        this.userOrganizationMapper = userOrganizationMapper;
+        this.passwordEncoder = passwordEncoder;
+    }
 
     @Override
     public void run(String... args) {

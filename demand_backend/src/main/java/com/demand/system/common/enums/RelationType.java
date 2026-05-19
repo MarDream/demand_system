@@ -1,8 +1,5 @@
 package com.demand.system.common.enums;
 
-import lombok.Getter;
-
-@Getter
 public enum RelationType {
 
     PARENT_CHILD("父子"),
@@ -16,5 +13,9 @@ public enum RelationType {
 
     RelationType(String label) {
         this.label = label;
+    }
+
+    public String getLabel() {
+        return label;
     }
 }

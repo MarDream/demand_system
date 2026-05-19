@@ -2,21 +2,29 @@
   <PageContainer title="需求管理">
     <!-- Filter -->
     <FilterCard>
+      <div class="view-switch">
+        <el-radio-group v-model="viewMode" size="small" @change="handleViewModeChange">
+          <el-radio-button label="all">全部需求</el-radio-button>
+          <el-radio-button label="drafts">我的草稿</el-radio-button>
+        </el-radio-group>
+      </div>
       <el-form :model="filterForm" inline>
         <div class="filter-main">
-          <el-form-item label="需求类型">
+          <el-form-item v-if="!isDraftView" label="需求类型">
             <el-select v-model="filterForm.type" placeholder="全部" clearable style="width: 140px">
               <el-option v-for="t in configTypes" :key="t.code" :label="t.name" :value="t.code" />
             </el-select>
           </el-form-item>
-          <el-form-item label="优先级">
+          <el-form-item v-if="!isDraftView" label="优先级">
             <el-select v-model="filterForm.priority" placeholder="全部" clearable style="width: 100px">
               <el-option v-for="p in configPriorities" :key="p.code" :label="p.name" :value="p.code" />
             </el-select>
           </el-form-item>
-          <el-form-item label="状态">
+          <el-form-item v-if="!isDraftView" label="状态">
             <el-select v-model="filterForm.status" placeholder="全部" clearable style="width: 120px">
               <el-option label="新建" value="新建" />
+              <el-option label="待分析" value="待分析" />
+              <el-option label="待确认" value="待确认" />
               <el-option label="待评审" value="待评审" />
               <el-option label="评审中" value="评审中" />
               <el-option label="已通过" value="已通过" />
@@ -24,9 +32,10 @@
               <el-option label="测试中" value="测试中" />
               <el-option label="已上线" value="已上线" />
               <el-option label="已验收" value="已验收" />
+              <el-option label="已取消" value="已取消" />
             </el-select>
           </el-form-item>
-          <el-form-item label="负责人">
+          <el-form-item v-if="!isDraftView" label="负责人">
             <el-select v-model="filterForm.assigneeId" placeholder="请选择" clearable style="width: 140px">
               <el-option v-for="user in filterUserList" :key="user.id" :label="user.realName || user.username" :value="user.id" />
             </el-select>
@@ -36,7 +45,7 @@
           </el-form-item>
         </div>
         <el-collapse-transition>
-          <div v-show="filterExpanded" class="filter-extra">
+          <div v-show="filterExpanded && !isDraftView" class="filter-extra">
             <el-form-item label="时间维度">
               <el-select v-model="timeDimension" placeholder="选择时间维度" style="width: 140px">
                 <el-option label="创建时间" value="createdAt" />
@@ -93,6 +102,7 @@
           :data="tableData"
           border
           stripe
+          :row-class-name="requirementRowClassName"
           @selection-change="handleSelectionChange"
         >
           <el-table-column type="selection" width="50" />
@@ -116,7 +126,10 @@
             >
               <template #default="{ row }">
                 <template v-if="col.key === 'title'">
-                  <el-link type="primary" @click="handleViewDetail(row.id)">{{ row.title }}</el-link>
+                  <el-link type="primary" @click="handleOpen(row)">{{ row.title }}</el-link>
+                </template>
+                <template v-else-if="col.key === 'requirementNo'">
+                  {{ row.requirementNo || '-' }}
                 </template>
                 <template v-else-if="col.key === 'type'">
                   <el-tag>{{ typeLabel(row.type) }}</el-tag>
@@ -132,7 +145,7 @@
                 </template>
                 <template v-else-if="col.key === 'operations'">
                   <el-tooltip content="查看详情" placement="top">
-                    <el-button link type="primary" :icon="View" @click="handleViewDetail(row.id)" />
+                    <el-button link type="primary" :icon="View" @click="handleOpen(row)" />
                   </el-tooltip>
                   <el-tooltip content="编辑" placement="top">
                     <el-button link type="primary" :icon="Edit" @click="handleEdit(row)" />
@@ -188,14 +201,14 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Setting, View, Edit, Delete, ArrowDown } from '@element-plus/icons-vue'
 import { exportToExcel } from '@/utils/excel'
 import { requirementApi, userApi } from '@/api'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
 import { getColumnConfig, saveColumnConfig } from '@/api/modules/requirement'
-import type { Requirement, RequirementQuery } from '@/types/requirement'
+import type { Requirement, RequirementMyListQuery, RequirementQuery } from '@/types/requirement'
 import type { User } from '@/types/user'
 import { normalizeText, formatDate } from '@/utils/format'
 import PageContainer from '@/components/common/PageContainer.vue'
@@ -203,9 +216,12 @@ import FilterCard from '@/components/common/FilterCard.vue'
 import TableCard from '@/components/common/TableCard.vue'
 import Toolbar from '@/components/common/Toolbar.vue'
 
+const route = useRoute()
 const router = useRouter()
 
 const filterExpanded = ref(true)
+const viewMode = ref<'all' | 'drafts'>(route.query.view === 'drafts' ? 'drafts' : 'all')
+const isDraftView = computed(() => viewMode.value === 'drafts')
 
 const DEFAULT_PROJECT_ID = 1
 
@@ -221,6 +237,7 @@ interface ColumnDef {
 // 所有可用列定义
 const allColumns: ColumnDef[] = [
   { key: 'title', label: '需求标题', minWidth: 220, fixed: false },
+  { key: 'requirementNo', label: '需求编号', width: 190 },
   { key: 'type', label: '类型', width: 100 },
   { key: 'priority', label: '优先级', width: 90 },
   { key: 'status', label: '状态', width: 100 },
@@ -237,7 +254,7 @@ const allColumns: ColumnDef[] = [
 ]
 
 // 默认显示的列
-const defaultColumnKeys = ['title', 'type', 'priority', 'status', 'creatorName', 'assigneeName', 'createdAt', 'operations']
+const defaultColumnKeys = ['title', 'requirementNo', 'type', 'priority', 'status', 'creatorName', 'assigneeName', 'createdAt', 'operations']
 
 const selectedColumnKeys = ref<string[]>([...defaultColumnKeys])
 const showColumnConfig = ref(false)
@@ -270,7 +287,7 @@ async function loadColumnConfig() {
   try {
     const res = await getColumnConfig('requirement_list')
     if (res && Array.isArray(res)) {
-      selectedColumnKeys.value = [...res, 'operations']
+      selectedColumnKeys.value = [...normalizeColumnKeys(res), 'operations']
     }
   } catch {
     // 使用默认配置
@@ -319,6 +336,19 @@ function priorityLabel(code: string) {
   return priorityMap.value[code] || code || '-'
 }
 
+function normalizeColumnKeys(keys: string[]) {
+  const normalized = keys.filter(key => key !== 'operations')
+  if (!normalized.includes('requirementNo')) {
+    const typeIndex = normalized.indexOf('type')
+    if (typeIndex >= 0) {
+      normalized.splice(typeIndex, 0, 'requirementNo')
+    } else {
+      normalized.unshift('requirementNo')
+    }
+  }
+  return normalized
+}
+
 // Filter user list
 const filterUserList = ref<User[]>([])
 
@@ -361,6 +391,19 @@ const pagination = reactive({
 async function fetchData() {
   loading.value = true
   try {
+    if (isDraftView.value) {
+      const params: RequirementMyListQuery = {
+        projectId: DEFAULT_PROJECT_ID,
+        keyword: filterForm.keyword || undefined,
+        pageNum: pagination.pageNum,
+        pageSize: pagination.pageSize,
+      }
+      const data = await requirementApi.getMyRequirementDrafts(params)
+      tableData.value = data.list
+      pagination.total = data.total
+      return
+    }
+
     const params: RequirementQuery = {
       projectId: DEFAULT_PROJECT_ID,
       pageNum: pagination.pageNum,
@@ -372,7 +415,6 @@ async function fetchData() {
     if (filterForm.assigneeId) params.assigneeId = filterForm.assigneeId
     if (filterForm.keyword) params.keyword = filterForm.keyword
 
-    // 时间维度筛选
     if (timeRange.value) {
       const [start, end] = timeRange.value
       if (timeDimension.value === 'createdAt') {
@@ -390,8 +432,7 @@ async function fetchData() {
       }
     }
 
-    const res = await requirementApi.getRequirementList(params)
-    const data = res
+    const data = await requirementApi.getRequirementList(params)
     tableData.value = data.list
     pagination.total = data.total
   } catch {
@@ -419,12 +460,28 @@ function handleReset() {
   fetchData()
 }
 
+function handleViewModeChange(value: 'all' | 'drafts') {
+  viewMode.value = value
+  pagination.pageNum = 1
+  selectedIds.value = []
+  router.replace({ query: value === 'drafts' ? { view: 'drafts' } : {} })
+  fetchData()
+}
+
 function handleCreate() {
   router.push({ name: 'RequirementCreate' })
 }
 
 function handleEdit(row: Requirement) {
   router.push({ name: 'RequirementCreate', query: { id: row.id } })
+}
+
+function handleOpen(row: Requirement) {
+  if (row.isDraft) {
+    handleEdit(row)
+    return
+  }
+  handleViewDetail(row.id)
 }
 
 function handleViewDetail(id: number) {
@@ -443,6 +500,10 @@ async function handleDelete(id: number) {
 
 function handleSelectionChange(selection: Requirement[]) {
   selectedIds.value = selection.map((item) => item.id)
+}
+
+function requirementRowClassName({ row }: { row: Requirement }) {
+  return row.childCount && row.childCount > 0 ? '' : 'requirement-row--no-children'
 }
 
 async function handleBatchDelete() {
@@ -471,6 +532,7 @@ async function handleExport() {
   try {
     const exportData = tableData.value.map(row => ({
       '需求标题': row.title || '',
+      '需求编号': row.requirementNo || '',
       '类型': typeLabel(row.type),
       '优先级': priorityLabel(row.priority),
       '状态': row.status || '',
@@ -487,7 +549,7 @@ async function handleExport() {
     }))
 
     const columnWidths = [
-      { wch: 30 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
+      { wch: 30 }, { wch: 22 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
       { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
       { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 40 },
     ]
@@ -507,8 +569,9 @@ function priorityTagType(priority: string): string {
 
 function statusTagType(status: string): string {
   const map: Record<string, string> = {
-    '新建': 'info', '待评审': 'info', '评审中': 'warning', '已通过': 'success',
-    '开发中': 'primary', '测试中': 'info', '已上线': 'success', '已验收': 'success',
+    '新建': 'info', '待分析': 'warning', '待确认': 'warning', '待评审': 'warning',
+    '评审中': 'warning', '已通过': 'success', '开发中': 'primary', '测试中': 'info',
+    '已上线': 'success', '已验收': 'success', '已取消': 'info',
   }
   return map[status] || 'info'
 }
@@ -530,10 +593,23 @@ onMounted(() => {
   color: $text-color-placeholder;
 }
 
+:deep(.requirement-row--no-children .el-table__expand-icon) {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+:deep(.requirement-row--no-children .el-table__expand-column .cell) {
+  cursor: default;
+}
+
 .column-config {
   .column-item {
     margin-bottom: 8px;
   }
+}
+
+.view-switch {
+  margin-bottom: 12px;
 }
 
 .filter-toggle {

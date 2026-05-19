@@ -1,8 +1,5 @@
 package com.demand.system.common.enums;
 
-import lombok.Getter;
-
-@Getter
 public enum RequirementType {
 
     FEATURE("功能"),
@@ -15,5 +12,9 @@ public enum RequirementType {
 
     RequirementType(String label) {
         this.label = label;
+    }
+
+    public String getLabel() {
+        return label;
     }
 }

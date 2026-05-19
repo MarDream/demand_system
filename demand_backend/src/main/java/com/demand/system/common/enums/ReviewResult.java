@@ -1,8 +1,5 @@
 package com.demand.system.common.enums;
 
-import lombok.Getter;
-
-@Getter
 public enum ReviewResult {
 
     PASSED("通过"),
@@ -13,5 +10,9 @@ public enum ReviewResult {
 
     ReviewResult(String label) {
         this.label = label;
+    }
+
+    public String getLabel() {
+        return label;
     }
 }

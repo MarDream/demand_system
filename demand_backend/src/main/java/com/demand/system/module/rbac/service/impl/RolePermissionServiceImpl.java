@@ -20,7 +20,6 @@ import com.demand.system.module.rbac.mapper.UserRoleMapper;
 import com.demand.system.module.rbac.service.RolePermissionService;
 import com.demand.system.module.rbac.support.RbacConstants;
 import com.demand.system.module.rbac.support.RbacPermissionResolver;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,7 +33,6 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 public class RolePermissionServiceImpl implements RolePermissionService {
 
     private final RoleMapper roleMapper;
@@ -42,6 +40,14 @@ public class RolePermissionServiceImpl implements RolePermissionService {
     private final SysRolePermissionMapper sysRolePermissionMapper;
     private final UserRoleMapper userRoleMapper;
     private final RbacPermissionResolver rbacPermissionResolver;
+
+    public RolePermissionServiceImpl(RoleMapper roleMapper, SysPermissionMapper sysPermissionMapper, SysRolePermissionMapper sysRolePermissionMapper, UserRoleMapper userRoleMapper, RbacPermissionResolver rbacPermissionResolver) {
+        this.roleMapper = roleMapper;
+        this.sysPermissionMapper = sysPermissionMapper;
+        this.sysRolePermissionMapper = sysRolePermissionMapper;
+        this.userRoleMapper = userRoleMapper;
+        this.rbacPermissionResolver = rbacPermissionResolver;
+    }
 
     @Override
     public Result<List<RoleVO>> listRoles() {

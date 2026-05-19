@@ -10,7 +10,6 @@ import com.demand.system.module.rbac.service.RolePermissionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -18,10 +17,13 @@ import java.util.List;
 @Tag(name = "角色授权管理", description = "RBAC角色授权接口")
 @RestController
 @RequestMapping("/api/v1/rbac/roles")
-@RequiredArgsConstructor
 public class RolePermissionController {
 
     private final RolePermissionService rolePermissionService;
+
+    public RolePermissionController(RolePermissionService rolePermissionService) {
+        this.rolePermissionService = rolePermissionService;
+    }
 
     @Operation(summary = "查询角色列表")
     @GetMapping

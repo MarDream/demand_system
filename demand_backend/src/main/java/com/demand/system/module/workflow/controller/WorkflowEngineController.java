@@ -8,18 +8,20 @@ import com.demand.system.module.workflow.service.WorkflowEngineService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/workflow-engine")
-@RequiredArgsConstructor
 @Tag(name = "工作流引擎", description = "需求流转引擎")
 public class WorkflowEngineController {
 
     private final WorkflowEngineService engineService;
+
+    public WorkflowEngineController(WorkflowEngineService engineService) {
+        this.engineService = engineService;
+    }
 
     @PostMapping("/init")
     @Operation(summary = "初始化工作流实例")

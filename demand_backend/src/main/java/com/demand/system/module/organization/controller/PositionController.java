@@ -6,18 +6,20 @@ import com.demand.system.module.organization.service.PositionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/positions")
-@RequiredArgsConstructor
 @Tag(name = "岗位管理")
 public class PositionController {
 
     private final PositionService positionService;
+
+    public PositionController(PositionService positionService) {
+        this.positionService = positionService;
+    }
 
     @GetMapping
     @Operation(summary = "获取岗位列表")

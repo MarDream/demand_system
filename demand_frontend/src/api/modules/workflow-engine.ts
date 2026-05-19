@@ -3,6 +3,7 @@ import request from '@/api/request'
 export interface FlowTransitionRequest {
   requirementId: number
   toNodeId: string
+  projectId?: number | null
   action?: string
   comment?: string
 }
@@ -11,6 +12,9 @@ export interface AvailableTransition {
   toNodeId: string
   toNodeName: string
   label?: string | null
+  bindStatusCode?: string | null
+  bindStatusName?: string | null
+  projectRequired?: boolean | null
 }
 
 export interface WorkflowAvailableActions {

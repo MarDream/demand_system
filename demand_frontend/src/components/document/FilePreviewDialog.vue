@@ -1,6 +1,7 @@
 <template>
   <AppDialog
     v-model="visible"
+    class="file-preview-dialog"
     :title="fileName || '文件预览'"
     :show-footer="false"
     width="95%"
@@ -8,75 +9,97 @@
     @close="handleClose"
   >
     <template #header-actions>
-      <el-button
-        v-if="previewType === 'office' && onlyOfficeAvailable && !onlyOfficeMode"
-        size="small"
-        @click="switchToEditMode"
-      >
-        <el-icon><EditPen /></el-icon>
-        <span>切换到编辑模式</span>
-      </el-button>
-      <el-button type="primary" size="small" :loading="downloading" @click="handleDownload">
+      <el-button size="small" :loading="downloading" @click="handleDownload" title="下载文件">
         <el-icon><Download /></el-icon>
-        <span>下载文件</span>
       </el-button>
-      <el-button size="small" @click="toggleFullscreen">
+      <el-button size="small" @click="toggleFullscreen" title="全屏">
         <el-icon><FullScreen /></el-icon>
       </el-button>
-    </template>
-    <div class="preview-toolbar">
-      <div class="zoom-controls">
-        <el-button size="small" :disabled="zoomLevel <= 25" @click="zoomOut">
-          <el-icon><ZoomOut /></el-icon>
-        </el-button>
-        <span class="zoom-label">{{ zoomLevel }}%</span>
-        <el-button size="small" :disabled="zoomLevel >= 300" @click="zoomIn">
+      <el-dropdown trigger="click" @command="handleZoom" placement="bottom-end">
+        <el-button size="small" title="缩放">
           <el-icon><ZoomIn /></el-icon>
         </el-button>
-        <el-button size="small" @click="zoomReset">重置</el-button>
-      </div>
-    </div>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item :command="{ action: 'in' }" :disabled="zoom >= 200">
+              <el-icon><ZoomIn /></el-icon> 放大
+            </el-dropdown-item>
+            <el-dropdown-item :command="{ action: 'out' }" :disabled="zoom <= 50">
+              <el-icon><ZoomOut /></el-icon> 缩小
+            </el-dropdown-item>
+            <el-dropdown-item divided :command="{ action: 'reset' }">
+              <el-icon><RefreshLeft /></el-icon> 重置为100%
+            </el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
+      <span v-if="previewType !== 'office'" class="zoom-level">{{ zoom }}%</span>
+    </template>
     <div ref="previewContainerRef" class="preview-container" :class="{ 'preview-container--fullscreen': isFullscreen }">
-      <div v-if="onlyOfficeMode" class="preview-onlyoffice-wrap" :style="{ transform: onlyOfficeZoomTransform, transformOrigin: 'top left' }">
-        <div v-if="!onlyOfficeReady" class="preview-loading preview-overlay">
-          <el-icon class="preview-spin" :size="32"><Loading /></el-icon>
-          <span>{{ onlyOfficeAvailable ? '正在加载文档编辑器...' : '文档编辑服务不可用，请下载后查看' }}</span>
-        </div>
-        <div
-          id="onlyoffice-editor-placeholder"
-          class="editor-container"
-          :class="{ 'editor-container--hidden': !onlyOfficeReady }"
-        ></div>
-      </div>
-      <div v-else-if="loading" class="preview-loading">
-        <el-icon class="preview-spin" :size="32"><Loading /></el-icon>
-        <span>加载中...</span>
+      <div v-if="previewType === 'office'" class="preview-office-wrap">
+        <iframe
+          v-if="kkFileViewUrl"
+          :src="kkFileViewUrl"
+          class="preview-iframe"
+          frameborder="0"
+          allowfullscreen
+          @load="handleEmbeddedPreviewLoaded"
+        ></iframe>
       </div>
       <div v-else-if="previewType === 'image'" class="preview-image-wrap">
-        <img :src="fileUrl" :alt="fileName" class="preview-image" :style="{ transform: `scale(${zoomLevel / 100})` }" />
+        <img
+          v-if="fileUrl"
+          :src="fileUrl"
+          :alt="fileName"
+          class="preview-image"
+          :style="{ transform: `scale(${zoom / 100})` }"
+          @load="handleVisualPreviewLoaded"
+          @error="handleVisualPreviewError"
+        />
       </div>
-      <div v-else-if="previewType === 'text'" class="preview-text-wrap" :style="{ fontSize: `${zoomLevel / 100 * 13}px` }">
+      <div v-else-if="previewType === 'text'" class="preview-text-wrap" :style="{ fontSize: `${zoom}%` }">
         <pre class="preview-text">{{ textContent }}</pre>
       </div>
       <div v-else class="preview-unsupported">
         <el-icon :size="48"><Document /></el-icon>
-        <p>{{ unsupportedMessage }}</p>
+        <p>该文件类型暂不支持在线预览</p>
+      </div>
+      <div v-if="previewLoading" class="preview-loading-mask">
+        <div class="preview-loading-card">
+          <div class="preview-loader">
+            <span class="preview-loader__sheet preview-loader__sheet--back"></span>
+            <span class="preview-loader__sheet preview-loader__sheet--mid"></span>
+            <span class="preview-loader__sheet preview-loader__sheet--front">
+              <span class="preview-loader__eyes">
+                <i></i>
+                <i></i>
+              </span>
+              <span class="preview-loader__smile"></span>
+            </span>
+          </div>
+          <div class="preview-loading__title">正在准备文档预览</div>
+          <div class="preview-loading__desc">{{ loadingMessage }}</div>
+          <div class="preview-loading__dots" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+        </div>
       </div>
     </div>
   </AppDialog>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, onBeforeUnmount, nextTick } from 'vue'
+import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Download, Loading, Document, EditPen, ZoomIn, ZoomOut, FullScreen } from '@element-plus/icons-vue'
+import { Download, Document, FullScreen, ZoomIn, ZoomOut, RefreshLeft } from '@element-plus/icons-vue'
 import AppDialog from '@/components/common/AppDialog.vue'
 import { downloadDocumentBlob, getDocumentPreviewUrl } from '@/api/modules/knowledge'
-import { getEditorConfig, getOnlyOfficeStatus } from '@/api/modules/onlyoffice'
+import { KKFILEVIEW_IMAGE_PREVIEW_SET, KKFILEVIEW_SUPPORTED_EXTENSION_SET, KKFILEVIEW_TEXT_PREVIEW_SET, normalizeFileExtension } from '@/constants/knowledgeDocument'
 
-const IMAGE_TYPES = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg']
-const TEXT_TYPES = ['txt', 'md', 'csv', 'json', 'xml', 'log', 'yml', 'yaml']
-const OFFICE_TYPES = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']
+const KK_FILEVIEW_BASE = (import.meta.env.VITE_KK_FILEVIEW_BASE || 'http://localhost:8012').replace(/\/$/, '')
+const PREVIEW_LOADING_MIN_DURATION = 500
 
 const props = defineProps<{
   modelValue: boolean
@@ -90,6 +113,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   'saved': []
+  'downloaded': []
 }>()
 
 const visible = computed({
@@ -97,79 +121,58 @@ const visible = computed({
   set: value => emit('update:modelValue', value),
 })
 
-const loading = ref(false)
 const downloading = ref(false)
 const fileUrl = ref('')
 const textContent = ref('')
-const onlyOfficeMode = ref(false)
-const onlyOfficeReady = ref(false)
-const onlyOfficeAvailable = ref(true)
-const onlyOfficeCurrentMode = ref<'view' | 'edit'>('view')
-let editorInstance: any = null
-let cachedApiJsUrl: string | null = null
-let isRefreshingOnlyOffice = false
-let onlyOfficeObserver: MutationObserver | null = null
-let onlyOfficeReadyTimer: number | null = null
-
-async function resolveApiJsUrl(forceReload = false): Promise<string> {
-  if (cachedApiJsUrl && !forceReload) return cachedApiJsUrl
-  const status = await getOnlyOfficeStatus()
-  if (!status.available || !status.apiJsUrl) {
-    throw new Error(status.message || '文档编辑服务不可用')
-  }
-  cachedApiJsUrl = status.apiJsUrl
-  if (!forceReload) return cachedApiJsUrl
-  const sep = cachedApiJsUrl.includes('?') ? '&' : '?'
-  return `${cachedApiJsUrl}${sep}_dc=${Date.now()}`
-}
-
-const zoomLevel = ref(100)
+const kkFileViewUrl = ref('')
 const isFullscreen = ref(false)
 const previewContainerRef = ref<HTMLElement>()
+const zoom = ref(100)
+const previewLoading = ref(false)
+const loadingMessage = ref('正在为你整理预览内容...')
 
-declare global {
-  interface Window {
-    DocsAPI?: any
-  }
-}
+let previewLoadingStartedAt = 0
+let previewLoadingTimer: ReturnType<typeof setTimeout> | null = null
 
 const previewType = computed(() => {
-  const ext = (props.fileType || '').toLowerCase()
-  if (IMAGE_TYPES.includes(ext)) return 'image'
-  if (TEXT_TYPES.includes(ext)) return 'text'
-  if (OFFICE_TYPES.includes(ext)) return 'office'
+  const ext = normalizeFileExtension(props.fileType)
+  if (KKFILEVIEW_IMAGE_PREVIEW_SET.has(ext)) return 'image'
+  if (KKFILEVIEW_TEXT_PREVIEW_SET.has(ext)) return 'text'
+  if (KKFILEVIEW_SUPPORTED_EXTENSION_SET.has(ext)) return 'office'
   return 'unsupported'
-})
-
-const unsupportedMessage = computed(() => {
-  if (previewType.value === 'office' && !onlyOfficeAvailable.value) {
-    return '文档编辑服务不可用，当前文档暂不支持在线预览'
-  }
-  return '该文件类型暂不支持在线预览'
 })
 
 watch(() => props.modelValue, async (open) => {
   if (!open) {
-    destroyOnlyOffice()
     if (isFullscreen.value) {
       try { document.exitFullscreen() } catch { /* ignore */ }
     }
+    zoom.value = 100
+    resetPreviewState()
     return
   }
-  textContent.value = ''
-  fileUrl.value = ''
-  loading.value = false
-  onlyOfficeAvailable.value = true
-  onlyOfficeMode.value = false
-  onlyOfficeReady.value = false
-  zoomLevel.value = 100
+  resetPreviewState()
+  zoom.value = 100
+
+  if (previewType.value === 'unsupported') {
+    return
+  }
+
+  beginPreviewLoading(getLoadingMessage(previewType.value))
 
   if (previewType.value === 'office') {
-    await openWithOnlyOffice('view')
+    try {
+      const res = await getDocumentPreviewUrl(props.knowledgeBaseId, props.documentId) as any
+      const presignedUrl = res.data ?? res
+      kkFileViewUrl.value = `${KK_FILEVIEW_BASE}/onlinePreview?url=${encodeURIComponent(btoa(presignedUrl))}`
+    } catch {
+      kkFileViewUrl.value = ''
+      endPreviewLoading()
+      ElMessage.error('获取预览地址失败')
+    }
     return
   }
 
-  loading.value = true
   try {
     const res = await getDocumentPreviewUrl(props.knowledgeBaseId, props.documentId) as any
     const url = res.data ?? res
@@ -177,215 +180,90 @@ watch(() => props.modelValue, async (open) => {
     if (previewType.value === 'text') {
       const resp = await fetch(url)
       textContent.value = await resp.text()
+      endPreviewLoading()
     } else {
       fileUrl.value = url
     }
   } catch {
     fileUrl.value = ''
     textContent.value = '加载失败'
-  } finally {
-    loading.value = false
+    endPreviewLoading()
   }
 })
 
-async function openWithOnlyOffice(mode: 'view' | 'edit') {
-  destroyOnlyOffice(true)
-  onlyOfficeCurrentMode.value = mode
-  onlyOfficeAvailable.value = true
-  onlyOfficeMode.value = true
-  onlyOfficeReady.value = false
-  loading.value = true
-
-  try {
-    const config = await getEditorConfig(props.knowledgeBaseId, props.documentId, mode)
-    loadOnlyOfficeScript(buildEditorConfig(config, mode))
-  } catch {
-    onlyOfficeAvailable.value = false
-    onlyOfficeMode.value = false
-    loading.value = false
+function getLoadingMessage(type: string) {
+  if (type === 'office') {
+    return '文档较大时会先完成渲染，再进入预览。'
   }
+  if (type === 'image') {
+    return '图片正在展开，马上就好。'
+  }
+  return '正在整理文本内容，请稍候。'
 }
 
-function buildEditorConfig(config: any, mode: 'view' | 'edit') {
-  return {
-    ...config,
-    events: {
-      ...(config?.events || {}),
-      onAppReady: () => {
-        markOnlyOfficeReady()
-      },
-      onDocumentReady: () => {
-        markOnlyOfficeReady()
-      },
-      onOutdatedVersion: () => {
-        refreshOnlyOffice(mode)
-      },
-      onRequestRefreshFile: () => {
-        refreshOnlyOffice(mode)
-      },
-      onRequestClose: () => {
-        visible.value = false
-      }
-    }
+function beginPreviewLoading(message: string) {
+  if (previewLoadingTimer) {
+    clearTimeout(previewLoadingTimer)
+    previewLoadingTimer = null
   }
+  loadingMessage.value = message
+  previewLoadingStartedAt = Date.now()
+  previewLoading.value = true
 }
 
-function markOnlyOfficeReady() {
-  onlyOfficeReady.value = true
-  loading.value = false
-  clearOnlyOfficeReadyFallback()
-}
-
-function clearOnlyOfficeReadyFallback() {
-  if (onlyOfficeObserver) {
-    onlyOfficeObserver.disconnect()
-    onlyOfficeObserver = null
-  }
-  if (onlyOfficeReadyTimer !== null) {
-    window.clearTimeout(onlyOfficeReadyTimer)
-    onlyOfficeReadyTimer = null
-  }
-}
-
-function setupOnlyOfficeReadyFallback() {
-  clearOnlyOfficeReadyFallback()
-  const container = document.getElementById('onlyoffice-editor-placeholder')
-  if (!container) return
-
-  const armReadyTimer = () => {
-    if (onlyOfficeReady.value) return
-    if (onlyOfficeReadyTimer !== null) {
-      window.clearTimeout(onlyOfficeReadyTimer)
-    }
-    onlyOfficeReadyTimer = window.setTimeout(() => {
-      if (container.querySelector('iframe')) {
-        markOnlyOfficeReady()
-      }
-    }, 1500)
-  }
-
-  const attachIframeListener = (iframe: HTMLIFrameElement) => {
-    iframe.addEventListener('load', () => {
-      window.setTimeout(() => {
-        markOnlyOfficeReady()
-      }, 200)
-    }, { once: true })
-    armReadyTimer()
-  }
-
-  const existingIframe = container.querySelector('iframe')
-  if (existingIframe instanceof HTMLIFrameElement) {
-    attachIframeListener(existingIframe)
+function endPreviewLoading() {
+  if (!previewLoading.value) return
+  const remaining = PREVIEW_LOADING_MIN_DURATION - (Date.now() - previewLoadingStartedAt)
+  if (remaining <= 0) {
+    previewLoading.value = false
     return
   }
-
-  onlyOfficeObserver = new MutationObserver(() => {
-    const iframe = container.querySelector('iframe')
-    if (!(iframe instanceof HTMLIFrameElement)) return
-    attachIframeListener(iframe)
-    onlyOfficeObserver?.disconnect()
-    onlyOfficeObserver = null
-  })
-
-  onlyOfficeObserver.observe(container, {
-    childList: true,
-    subtree: true,
-  })
+  if (previewLoadingTimer) {
+    clearTimeout(previewLoadingTimer)
+  }
+  previewLoadingTimer = setTimeout(() => {
+    previewLoading.value = false
+    previewLoadingTimer = null
+  }, remaining)
 }
 
-async function refreshOnlyOffice(mode: 'view' | 'edit') {
-  if (isRefreshingOnlyOffice) return
-  isRefreshingOnlyOffice = true
-  cachedApiJsUrl = null
-  onlyOfficeReady.value = false
-  loading.value = true
-  try {
-    destroyOnlyOffice(true)
-    const config = await getEditorConfig(props.knowledgeBaseId, props.documentId, mode)
-    await loadOnlyOfficeScript(buildEditorConfig(config, mode), true)
-  } catch {
-    handleOnlyOfficeError()
-  } finally {
-    isRefreshingOnlyOffice = false
+function resetPreviewState() {
+  if (previewLoadingTimer) {
+    clearTimeout(previewLoadingTimer)
+    previewLoadingTimer = null
   }
+  previewLoading.value = false
+  loadingMessage.value = '正在为你整理预览内容...'
+  textContent.value = ''
+  fileUrl.value = ''
+  kkFileViewUrl.value = ''
 }
 
-async function loadOnlyOfficeScript(config: any, forceReload = false) {
-  let apiJsUrl: string
-  try {
-    apiJsUrl = await resolveApiJsUrl(forceReload)
-  } catch {
-    handleOnlyOfficeError()
-    return
-  }
-
-  if (forceReload) {
-    document
-      .querySelectorAll('script[src*="/web-apps/apps/api/documents/api.js"]')
-      .forEach(node => node.parentNode?.removeChild(node))
-    try {
-      delete window.DocsAPI
-    } catch {
-      window.DocsAPI = undefined
-    }
-  }
-
-  if (window.DocsAPI && !forceReload) {
-    initEditor(config)
-    return
-  }
-
-  const script = document.createElement('script')
-  script.src = apiJsUrl
-  script.onload = () => {
-    if (window.DocsAPI) {
-      initEditor(config)
-    } else {
-      handleOnlyOfficeError()
-    }
-  }
-  script.onerror = () => {
-    handleOnlyOfficeError()
-  }
-  document.head.appendChild(script)
+function handleEmbeddedPreviewLoaded() {
+  endPreviewLoading()
 }
 
-async function initEditor(config: any) {
-  await nextTick()
-  const container = document.getElementById('onlyoffice-editor-placeholder')
-  if (container && window.DocsAPI) {
-    editorInstance = new window.DocsAPI.DocEditor('onlyoffice-editor-placeholder', config)
-    setupOnlyOfficeReadyFallback()
-  } else {
-    handleOnlyOfficeError()
+function handleVisualPreviewLoaded() {
+  endPreviewLoading()
+}
+
+function handleVisualPreviewError() {
+  endPreviewLoading()
+  ElMessage.error('图片预览加载失败')
+}
+
+function handleZoom(cmd: { action: string }) {
+  switch (cmd.action) {
+    case 'in':
+      zoom.value = Math.min(200, zoom.value + 25)
+      break
+    case 'out':
+      zoom.value = Math.max(50, zoom.value - 25)
+      break
+    case 'reset':
+      zoom.value = 100
+      break
   }
-}
-
-function handleOnlyOfficeError() {
-  clearOnlyOfficeReadyFallback()
-  onlyOfficeAvailable.value = false
-  onlyOfficeMode.value = false
-  loading.value = false
-}
-
-const onlyOfficeZoomTransform = computed(() => {
-  if (!onlyOfficeMode.value || zoomLevel.value === 100) return undefined
-  const container = document.querySelector('.preview-onlyoffice-wrap') as HTMLElement
-  if (!container) return undefined
-  const width = container.clientWidth
-  return `scale(${zoomLevel.value / 100})`
-})
-
-function zoomIn() {
-  zoomLevel.value = Math.min(300, zoomLevel.value + 25)
-}
-
-function zoomOut() {
-  zoomLevel.value = Math.max(25, zoomLevel.value - 25)
-}
-
-function zoomReset() {
-  zoomLevel.value = 100
 }
 
 function toggleFullscreen() {
@@ -406,30 +284,6 @@ function onFullscreenChange() {
   isFullscreen.value = !!document.fullscreenElement
 }
 
-async function switchToEditMode() {
-  await openWithOnlyOffice('edit')
-}
-
-function destroyOnlyOffice(preserveMode = false) {
-  clearOnlyOfficeReadyFallback()
-  if (editorInstance) {
-    try {
-      editorInstance.destroyEditor()
-    } catch (e) {
-      // ignore
-    }
-    editorInstance = null
-  }
-  if (!preserveMode) {
-    onlyOfficeMode.value = false
-  }
-  onlyOfficeReady.value = false
-  const container = document.getElementById('onlyoffice-editor-placeholder')
-  if (container) {
-    container.innerHTML = ''
-  }
-}
-
 async function handleDownload() {
   if (downloading.value) return
   downloading.value = true
@@ -443,6 +297,7 @@ async function handleDownload() {
     anchor.click()
     anchor.remove()
     window.URL.revokeObjectURL(url)
+    emit('downloaded')
   } catch {
     ElMessage.error('下载文件失败')
   } finally {
@@ -451,14 +306,14 @@ async function handleDownload() {
 }
 
 function handleClose() {
-  destroyOnlyOffice()
-  fileUrl.value = ''
-  textContent.value = ''
+  resetPreviewState()
   emit('saved')
 }
 
 onBeforeUnmount(() => {
-  destroyOnlyOffice()
+  if (previewLoadingTimer) {
+    clearTimeout(previewLoadingTimer)
+  }
   document.removeEventListener('fullscreenchange', onFullscreenChange)
 })
 
@@ -466,59 +321,236 @@ document.addEventListener('fullscreenchange', onFullscreenChange)
 </script>
 
 <style scoped>
-.preview-toolbar {
-  display: flex;
-  align-items: center;
-  margin-bottom: 8px;
+:global(.file-preview-dialog .el-dialog__header) {
+  position: relative;
+  padding-right: 120px;
 }
-.zoom-controls {
+
+:global(.file-preview-dialog .app-dialog__header) {
+  position: relative;
+  padding-right: 0;
+  width: 100%;
+}
+
+:global(.file-preview-dialog .app-dialog__header-actions) {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
 }
-.zoom-label {
-  min-width: 48px;
-  text-align: center;
-  font-size: 13px;
-  color: #606266;
+
+:global(.file-preview-dialog .el-dialog__headerbtn) {
+  top: 12px;
+  right: 12px;
 }
+
+.zoom-level {
+  font-size: 12px;
+  color: #909399;
+  margin-left: 4px;
+  min-width: 40px;
+  display: inline-block;
+}
+
 .preview-container {
+  position: relative;
   min-height: 60vh;
   max-height: 75vh;
-  overflow: hidden;
+  overflow: auto;
+  background:
+    radial-gradient(circle at top left, rgba(125, 211, 252, 0.2), transparent 28%),
+    linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
 }
 .preview-container--fullscreen {
   max-height: none;
   height: 100vh;
 }
-.preview-loading {
+
+.preview-loading-mask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(248, 251, 255, 0.92);
+  backdrop-filter: blur(10px);
+  z-index: 3;
+}
+
+.preview-loading-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  min-height: 60vh;
   gap: 12px;
-  color: #909399;
+  width: min(320px, calc(100% - 32px));
+  padding: 28px 24px;
+  border-radius: 24px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 18px 40px rgba(59, 130, 246, 0.12);
+  text-align: center;
 }
-.preview-spin {
-  animation: spin 1s linear infinite;
+
+.preview-loader {
+  position: relative;
+  width: 96px;
+  height: 88px;
+  animation: preview-loader-float 2.4s ease-in-out infinite;
 }
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+
+.preview-loader__sheet {
+  position: absolute;
+  inset: auto 0 0 0;
+  margin: auto;
+  width: 72px;
+  height: 86px;
+  border-radius: 18px 18px 16px 16px;
+  background: linear-gradient(180deg, #ffffff 0%, #f6f9ff 100%);
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  box-shadow: 0 12px 20px rgba(59, 130, 246, 0.12);
+}
+
+.preview-loader__sheet::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  right: 14px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(96, 165, 250, 0.2);
+  box-shadow:
+    0 14px 0 rgba(148, 163, 184, 0.16),
+    0 28px 0 rgba(148, 163, 184, 0.16);
+}
+
+.preview-loader__sheet--back {
+  transform: translate(-10px, 4px) rotate(-8deg);
+  opacity: 0.55;
+}
+
+.preview-loader__sheet--mid {
+  transform: translate(10px, 2px) rotate(8deg);
+  opacity: 0.75;
+}
+
+.preview-loader__sheet--front {
+  z-index: 2;
+  background: linear-gradient(180deg, #ffffff 0%, #eef6ff 100%);
+}
+
+.preview-loader__eyes {
+  position: absolute;
+  top: 32px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+}
+
+.preview-loader__eyes i {
+  width: 6px;
+  height: 10px;
+  border-radius: 999px;
+  background: #5b6b88;
+  animation: preview-loader-blink 3s ease-in-out infinite;
+}
+
+.preview-loader__smile {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  width: 18px;
+  height: 9px;
+  border-bottom: 3px solid #5b6b88;
+  border-radius: 0 0 999px 999px;
+  transform: translateX(-50%);
+}
+
+.preview-loading__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.preview-loading__desc {
+  font-size: 13px;
+  line-height: 1.7;
+  color: #64748b;
+}
+
+.preview-loading__dots {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.preview-loading__dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #60a5fa 0%, #3b82f6 100%);
+  animation: preview-dot-bounce 1.1s ease-in-out infinite;
+}
+
+.preview-loading__dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.preview-loading__dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes preview-loader-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes preview-loader-blink {
+  0%, 42%, 48%, 100% {
+    transform: scaleY(1);
+  }
+  45% {
+    transform: scaleY(0.2);
+  }
+}
+
+@keyframes preview-dot-bounce {
+  0%, 100% {
+    transform: translateY(0);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translateY(-5px);
+    opacity: 1;
+  }
+}
+
+.preview-office-wrap {
+  width: 100%;
+  height: 75vh;
+}
+.preview-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
 }
 .preview-image-wrap {
   display: flex;
   justify-content: center;
-  align-items: center;
+  align-items: flex-start;
   min-height: 60vh;
   max-height: 75vh;
   overflow: auto;
 }
 .preview-image {
-  max-width: 100%;
-  max-height: 72vh;
-  object-fit: contain;
+  max-width: none;
+  max-height: none;
+  object-fit: none;
+  transform-origin: top left;
+  transition: transform 0.2s ease;
 }
 .preview-text-wrap {
   max-height: 75vh;
@@ -526,11 +558,11 @@ document.addEventListener('fullscreenchange', onFullscreenChange)
   background: #1e1e1e;
   border-radius: 6px;
   padding: 16px;
+  font-size: 13px;
 }
 .preview-text {
   color: #d4d4d4;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 13px;
   line-height: 1.6;
   margin: 0;
   white-space: pre-wrap;
@@ -544,40 +576,5 @@ document.addEventListener('fullscreenchange', onFullscreenChange)
   min-height: 60vh;
   gap: 12px;
   color: #909399;
-}
-.preview-onlyoffice-wrap {
-  position: relative;
-  height: 75vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.editor-container {
-  flex: 1;
-  min-height: 600px;
-  overflow: hidden;
-}
-.editor-container :deep(div[id^="onlyoffice-editor-placeholder"]) {
-  overflow: hidden;
-}
-.editor-container :deep(iframe) {
-  overflow: hidden;
-}
-.editor-container :deep(.EmbeddedViewer) {
-  overflow: hidden;
-}
-.editor-container :deep([class*="left-panel"]),
-.editor-container :deep([class*="formpreview"]),
-.editor-container :deep(a[href*="onlyoffice"]) {
-  display: none !important;
-}
-.editor-container--hidden {
-  visibility: hidden;
-}
-.preview-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  background: rgba(255, 255, 255, 0.92);
 }
 </style>

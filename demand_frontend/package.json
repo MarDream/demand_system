@@ -12,6 +12,7 @@
     "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^3.0.0",
     "@isle-editor/core": "^0.0.11",
     "@isle-editor/vue3": "^0.0.11",
     "@logicflow/core": "^2.2.1",

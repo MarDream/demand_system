@@ -37,11 +37,12 @@ const cardMeta: Record<string, { description: string; color: string; buttonType:
   '/settings/roles': { description: '维护团队角色、授权范围和高风险操作权限', color: '#3B82F6', buttonType: 'primary' },
   '/settings/requirements': { description: '管理系统需求类型和优先级配置', color: '#909399', buttonType: '' },
   '/system/workflow-config': { description: '在系统设置中维护工作流与审批配置', color: '#8E44AD', buttonType: 'primary' },
+  '/settings/workflow-approvals': { description: '集中查看工作流提交记录、审核结果与审批意见', color: '#D97706', buttonType: 'warning' },
   '/settings/menus': { description: '维护菜单、按钮以及角色授权能力', color: '#F56C6C', buttonType: 'danger' },
   '/settings/rag': { description: '上传文档并进行智能检索与问答', color: '#16A085', buttonType: 'success' },
   '/settings/knowledge': { description: '创建和管理知识库，配置文档索引', color: '#2C3E50', buttonType: '' },
   '/settings/llm': { description: '配置文档知识库可用的大模型参数和密钥', color: '#9B59B6', buttonType: 'primary' },
-  '/settings/onlyoffice': { description: '在线编辑 Office 文档，支持协同编辑', color: '#E6A23C', buttonType: 'warning' },
+  '/settings/omnidoc': { description: '文件在线预览服务，支持 Office、PDF 等格式', color: '#E6A23C', buttonType: 'warning' },
 }
 
 // 权限校验映射：path -> 权限判断函数
@@ -51,11 +52,12 @@ const pathPermissions: Record<string, () => boolean> = {
   '/settings/roles': () => hasPermission('menu:settings:role') || hasPermission('menu:system-config'),
   '/settings/requirements': () => hasPermission('menu:settings:requirement') || hasPermission('menu:system-config'),
   '/system/workflow-config': () => hasAnyRole(['admin', 'workflow:config']) || hasPermission('menu:settings:workflow'),
+  '/settings/workflow-approvals': () => hasPermission('menu:settings:workflow') || hasAnyRole(['admin']),
   '/settings/menus': () => hasPermission('menu:menu-management') || hasAnyPermission(['button:menu:create', 'button:menu:update', 'button:menu:delete']),
   '/settings/rag': () => hasPermission('menu:rag'),
   '/settings/knowledge': () => hasPermission('menu:rag'),
   '/settings/llm': () => hasPermission('menu:settings:llm') || hasPermission('menu:system-config'),
-  '/settings/onlyoffice': () => hasPermission('menu:rag'),
+  '/settings/omnidoc': () => hasPermission('menu:rag'),
 }
 
 const iconMap: Record<string, Component> = {}
@@ -64,7 +66,7 @@ for (const [name, comp] of Object.entries(ElementPlusIcons)) {
 }
 
 const menuItems = ref<MenuItem[]>([])
-const fallbackPaths = ['/settings/llm']
+const fallbackPaths = ['/settings/workflow-approvals', '/settings/llm']
 
 onMounted(async () => {
   try {
@@ -120,10 +122,18 @@ const visibleCards = computed<CardItem[]>(() => {
     if (!meta) continue
     cards.push({
       path,
-      title: path === '/settings/llm' ? '模型配置' : path,
+      title: path === '/settings/llm'
+        ? '模型配置'
+        : path === '/settings/workflow-approvals'
+          ? '工作流审核'
+          : path,
       description: meta.description,
-      icon: path === '/settings/llm' ? 'ri-robot-2-line' : 'Setting',
-      isRemix: path === '/settings/llm',
+      icon: path === '/settings/llm'
+        ? 'ri-robot-2-line'
+        : path === '/settings/workflow-approvals'
+          ? 'ri-task-line'
+          : 'Setting',
+      isRemix: path === '/settings/llm' || path === '/settings/workflow-approvals',
       color: meta.color,
       buttonType: meta.buttonType,
       visible: () => true,

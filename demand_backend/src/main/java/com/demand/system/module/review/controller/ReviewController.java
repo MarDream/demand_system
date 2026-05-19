@@ -6,7 +6,6 @@ import com.demand.system.module.review.dto.ReviewCreateDTO;
 import com.demand.system.module.review.dto.ReviewUpdateDTO;
 import com.demand.system.module.review.service.ReviewService;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -14,10 +13,13 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/requirements")
-@RequiredArgsConstructor
 public class ReviewController {
 
     private final ReviewService reviewService;
+
+    public ReviewController(ReviewService reviewService) {
+        this.reviewService = reviewService;
+    }
 
     @GetMapping("/{id}/reviews")
     public Result<List<Map<String, Object>>> listByRequirement(@PathVariable Long id) {

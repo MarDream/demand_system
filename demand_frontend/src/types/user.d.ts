@@ -48,6 +48,7 @@ export interface OrgNode {
   sortOrder: number
   path: string | null
   level: number
+  memberCount?: number
   createdAt: string
   updatedAt: string
   children?: OrgNode[]

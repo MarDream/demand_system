@@ -6,17 +6,20 @@ import com.demand.system.module.notification.entity.Notification;
 import com.demand.system.module.notification.mapper.NotificationMapper;
 import com.demand.system.module.notification.sender.NotificationSender;
 import com.demand.system.module.notification.service.NotificationService;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 
 @Service
-@RequiredArgsConstructor
 public class NotificationServiceImpl implements NotificationService {
 
     private final NotificationMapper notificationMapper;
     private final NotificationSender notificationSender;
+
+    public NotificationServiceImpl(NotificationMapper notificationMapper, NotificationSender notificationSender) {
+        this.notificationMapper = notificationMapper;
+        this.notificationSender = notificationSender;
+    }
 
     @Override
     public List<Notification> listByUser(Long userId, int pageNum, int pageSize) {

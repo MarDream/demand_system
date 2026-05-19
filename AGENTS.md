@@ -50,6 +50,14 @@ docker ps
 
 关键端口：后端 `8081`，MySQL `3306`，Redis `6379`，RabbitMQ `5672/15672`，MinIO `9000/9001`，Elasticsearch `9200`，Milvus `19530`。
 
+## 启动与中间件处理
+
+- 启动前先检查项目所需端口是否被占用；若目标端口被占用，直接结束占用该端口的进程，再启动目标服务。
+- 处理端口冲突时优先释放默认端口占用，不要通过擅自修改项目默认端口绕过，除非用户明确要求。
+- 遇到 MySQL、Redis、RabbitMQ、MinIO、Elasticsearch、Milvus 等中间件连接异常时，先检查配置、账密、服务状态、容器状态、网络连通性和日志。
+- 未经用户明确允许，不得移除、卸载、重装、重建、清空数据目录或替换任何开发环境中间件实例。
+- 处理开发环境问题时，以 `scripts/docker-compose.yml`、`demand_backend/src/main/resources/application-dev.yml`、`demand_frontend/.env.development` 等现有配置为准，记住各中间件的账密和部署方式，不得随机猜测、批量尝试或擅自改写。
+
 ## 配置与敏感信息
 
 - 后端开发配置：`demand_backend/src/main/resources/application-dev.yml`。
