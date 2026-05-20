@@ -6,8 +6,11 @@ export interface WorkflowNodeDTO {
   nodeName: string
   positionX: number
   positionY: number
-  assigneeType?: 'SPECIFIED_USER' | 'SPECIFIED_ROLE' | 'SPECIFIED_POSITION' | 'INITIATOR' | 'SUPERIOR'
+  assigneeType?: 'SPECIFIED_USER' | 'SPECIFIED_ROLE' | 'SPECIFIED_ROLE_GROUP' | 'SPECIFIED_ORG'
   assigneeRoleId?: number
+  assigneeRoleGroupId?: number
+  assigneeOrgId?: number
+  orgScopeType?: 'current' | 'include_children'
   assigneeUserIds?: number[]
   timeoutHours?: number
   timeoutAction?: string

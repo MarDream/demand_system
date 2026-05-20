@@ -4,8 +4,8 @@
     <FilterCard>
       <div class="view-switch">
         <el-radio-group v-model="viewMode" size="small" @change="handleViewModeChange">
-          <el-radio-button label="all">全部需求</el-radio-button>
-          <el-radio-button label="drafts">我的草稿</el-radio-button>
+          <el-radio-button value="all">全部需求</el-radio-button>
+          <el-radio-button value="drafts">我的草稿</el-radio-button>
         </el-radio-group>
       </div>
       <el-form :model="filterForm" inline>

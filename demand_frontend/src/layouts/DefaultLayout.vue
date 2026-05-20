@@ -12,7 +12,7 @@
       <el-menu
         ref="menuRef"
         :default-active="activeMenu"
-        :default-openeds="defaultOpeneds"
+        :default-openeds="openedMenus"
         :collapse="!sidebarOpened"
         background-color="#304156"
         text-color="#BFCBD9"
@@ -110,7 +110,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, onMounted, type Component } from 'vue'
+import { computed, ref, watch, onMounted, shallowRef, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/modules/app'
 import { useUserStore } from '@/stores/modules/user'
@@ -133,7 +133,7 @@ const { unreadCount } = useNotification()
 const { hasPermission, hasAnyRole } = usePermission()
 
 const recentNotifications = ref<any[]>([])
-const menuList = ref<MenuItem[]>([])
+const menuList = shallowRef<MenuItem[]>([])
 
 const iconMap: Record<string, Component> = {}
 for (const [name, comp] of Object.entries(ElementPlusIcons)) {
@@ -146,6 +146,7 @@ async function fetchMenus() {
     const data = res.data ?? res
     menuList.value = Array.isArray(data) ? data : []
     appStore.setMenuList(menuList.value)
+    rebuildSidebarMenus()
   } catch {
     menuList.value = []
   }
@@ -174,30 +175,33 @@ const menuTitleOverrides: Record<string, string> = {
   '/settings/workflow-approvals': '工作流管理',
 }
 
-const visibleMenus = computed<SidebarItem[]>(() => {
-  function build(items: MenuItem[]): SidebarItem[] {
-    return items
-      .filter(m => (m.menuType === 'MENU' || m.menuType === 'DIRECTORY') && m.enabled === 1 && m.visible === 1)
-      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
-      .map(m => {
-        const children = build(m.children || [])
-        const iconName = m.icon || 'Document'
-        const remix = isRemixIcon(iconName)
-        const isDirectory = m.menuType === 'DIRECTORY'
-        const defaultChildPath = children[0]?.path ?? ''
-        const ownPath = m.path ?? ''
-        return {
-          index: m.path || `menu-${m.id}`,
-          path: isDirectory ? (defaultChildPath || ownPath) : (ownPath || defaultChildPath),
-          title: menuTitleOverrides[ownPath] || m.name,
-          icon: remix ? iconName : (iconMap[iconName] || iconMap['Document']),
-          isRemix: remix,
-          children,
-        }
-      })
-      .filter(item => item.path || item.children.length)
-  }
-  const builtMenus = build(menuList.value)
+function buildSidebarItems(items: MenuItem[]): SidebarItem[] {
+  return items
+    .filter(m => (m.menuType === 'MENU' || m.menuType === 'DIRECTORY') && m.enabled === 1 && m.visible === 1)
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+    .map(m => {
+      const children = buildSidebarItems(m.children || [])
+      const iconName = m.icon || 'Document'
+      const remix = isRemixIcon(iconName)
+      const isDirectory = m.menuType === 'DIRECTORY'
+      const defaultChildPath = children[0]?.path ?? ''
+      const ownPath = m.path ?? ''
+      return {
+        index: m.path || `menu-${m.id}`,
+        path: isDirectory ? (defaultChildPath || ownPath) : (ownPath || defaultChildPath),
+        title: menuTitleOverrides[ownPath] || m.name,
+        icon: remix ? iconName : (iconMap[iconName] || iconMap['Document']),
+        isRemix: remix,
+        children,
+      }
+    })
+    .filter(item => item.path || item.children.length)
+}
+
+const visibleMenus = shallowRef<SidebarItem[]>([])
+
+function rebuildSidebarMenus() {
+  const builtMenus = buildSidebarItems(menuList.value)
   const settingsMenu = builtMenus.find(item => item.path === '/settings' || item.title === '系统配置')
   const canAccessLlm = hasPermission('menu:settings:llm') || hasPermission('menu:system-config')
   const canAccessWorkflowApprovals = hasAnyRole(['admin']) || hasPermission('menu:settings:workflow')
@@ -233,8 +237,9 @@ const visibleMenus = computed<SidebarItem[]>(() => {
     })
   }
 
-  return builtMenus
-})
+  visibleMenus.value = builtMenus
+  initOpenedMenus()
+}
 
 onMounted(fetchMenus)
 
@@ -266,9 +271,12 @@ watch(unreadCount, () => {
 const sidebarOpened = computed(() => appStore.sidebarOpened)
 const sidebarWidth = computed(() => appStore.sidebarWidth)
 const activeMenu = computed(() => resolveActiveMenuPath(route))
-const defaultOpeneds = computed(() => {
-  const opened: string[] = []
+
+const openedMenus = ref<string[]>([])
+
+function computeOpenedMenus(): string[] {
   const current = activeMenu.value
+  const opened: string[] = []
   for (const item of visibleMenus.value) {
     if (!item.children.length) continue
     if (item.children.some(child => child.path === current || (child.path && current.startsWith(child.path + '/')))) {
@@ -276,7 +284,20 @@ const defaultOpeneds = computed(() => {
     }
   }
   return opened
-})
+}
+
+function updateOpenedMenus() {
+  const newOpened = computeOpenedMenus()
+  if (JSON.stringify(newOpened) !== JSON.stringify(openedMenus.value)) {
+    openedMenus.value = newOpened
+  }
+}
+
+watch(() => route.path, updateOpenedMenus)
+
+function initOpenedMenus() {
+  openedMenus.value = computeOpenedMenus()
+}
 
 const menuRef = ref<any>()
 

@@ -162,9 +162,8 @@
                   <el-select v-model="nodeForm.assigneeType" placeholder="请选择处理人类型">
                     <el-option label="指定用户" value="SPECIFIED_USER" />
                     <el-option label="指定角色" value="SPECIFIED_ROLE" />
-                    <el-option label="指定岗位" value="SPECIFIED_POSITION" />
-                    <el-option label="发起人" value="INITIATOR" />
-                    <el-option label="上级领导" value="SUPERIOR" />
+                    <el-option label="指定角色组" value="SPECIFIED_ROLE_GROUP" />
+                    <el-option label="指定组织" value="SPECIFIED_ORG" />
                   </el-select>
                 </el-form-item>
 
@@ -174,10 +173,35 @@
                   </el-select>
                 </el-form-item>
 
+                <el-form-item v-if="nodeForm.assigneeType === 'SPECIFIED_ROLE_GROUP'" label="指定角色组">
+                  <el-select v-model="nodeForm.assigneeRoleGroupId" placeholder="请选择角色组">
+                    <el-option v-for="group in roleGroupList" :key="group.id" :label="group.name" :value="group.id" />
+                  </el-select>
+                </el-form-item>
+
                 <el-form-item v-if="nodeForm.assigneeType === 'SPECIFIED_USER'" label="指定用户">
                   <el-select v-model="nodeForm.assigneeUserIds" multiple placeholder="请选择用户">
                     <el-option v-for="user in allUserList" :key="user.id" :label="user.realName || user.username" :value="user.id" />
                   </el-select>
+                </el-form-item>
+
+                <el-form-item v-if="nodeForm.assigneeType === 'SPECIFIED_ORG'" label="指定组织">
+                  <el-tree-select
+                    v-model="nodeForm.assigneeOrgId"
+                    :data="orgTreeData"
+                    :props="{ label: 'name', value: 'id', children: 'children' }"
+                    placeholder="请选择组织节点"
+                    check-strictly
+                    filterable
+                    clearable
+                  />
+                </el-form-item>
+
+                <el-form-item v-if="nodeForm.assigneeType === 'SPECIFIED_ORG'" label="组织层级范围">
+                  <el-radio-group v-model="nodeForm.orgScopeType">
+                    <el-radio value="current">仅当前层级</el-radio>
+                    <el-radio value="include_children">当前层级及子层级</el-radio>
+                  </el-radio-group>
                 </el-form-item>
 
                 <el-form-item v-if="nodeForm.nodeType === 'approval'" label="超时时间（小时）">
@@ -295,7 +319,9 @@ const saving = ref(false)
 const submitting = ref(false)
 const versionHistory = ref<WorkflowVersionDTO[]>([])
 const roleList = ref<Array<{ id: number; name: string; code: string }>>([])
+const roleGroupList = ref<Array<{ id: number; name: string }>>([])
 const allUserList = ref<Array<{ id: number; realName: string; username: string }>>([])
+const orgTreeData = ref<any[]>([])
 
 const drawerVisible = ref(false)
 const drawerTitle = ref('')
@@ -324,6 +350,9 @@ const nodeForm = reactive<Partial<WorkflowNodeDTO> & {
   nodeStatusCode?: string
   allowCancel?: boolean
   projectRequired?: boolean
+  assigneeRoleGroupId?: number
+  assigneeOrgId?: number
+  orgScopeType?: 'current' | 'include_children'
 }>({
   nodeId: '',
   nodeType: 'approval',
@@ -332,6 +361,9 @@ const nodeForm = reactive<Partial<WorkflowNodeDTO> & {
   positionY: 0,
   assigneeType: undefined,
   assigneeRoleId: undefined,
+  assigneeRoleGroupId: undefined,
+  assigneeOrgId: undefined,
+  orgScopeType: 'include_children',
   assigneeUserIds: [],
   timeoutHours: undefined,
   timeoutAction: undefined,
@@ -1435,6 +1467,9 @@ const handleNodeClick = (data: any) => {
     positionY: data.y,
     assigneeType: data.properties?.assigneeType,
     assigneeRoleId: data.properties?.assigneeRoleId,
+    assigneeRoleGroupId: data.properties?.assigneeRoleGroupId,
+    assigneeOrgId: data.properties?.assigneeOrgId,
+    orgScopeType: data.properties?.orgScopeType ?? 'include_children',
     assigneeUserIds: data.properties?.assigneeUserIds || [],
     timeoutHours: data.properties?.timeoutHours,
     timeoutAction: data.properties?.timeoutAction,
@@ -1477,6 +1512,9 @@ const handleSaveNodeConfig = () => {
       nodeName: nodeForm.nodeName,
       assigneeType: nodeForm.assigneeType,
       assigneeRoleId: nodeForm.assigneeRoleId,
+      assigneeRoleGroupId: nodeForm.assigneeRoleGroupId,
+      assigneeOrgId: nodeForm.assigneeOrgId,
+      orgScopeType: nodeForm.orgScopeType,
       assigneeUserIds: nodeForm.assigneeUserIds,
       timeoutHours: nodeForm.timeoutHours,
       timeoutAction: nodeForm.timeoutAction,
@@ -1809,12 +1847,16 @@ onMounted(() => {
 
 async function loadRoleAndUserList() {
   try {
-    const [rolesRes, usersRes]: any[] = await Promise.all([
+    const [rolesRes, roleGroupsRes, usersRes, orgTreeRes]: any[] = await Promise.all([
       roleApi.getRoleList(),
-      userApi.getUserList({ pageNum: 1, pageSize: 999 })
+      roleApi.getRoleGroups(),
+      userApi.getUserList({ pageNum: 1, pageSize: 999 }),
+      userApi.getOrgTree()
     ])
     roleList.value = (rolesRes?.data ?? rolesRes ?? [])
+    roleGroupList.value = (roleGroupsRes?.data ?? roleGroupsRes ?? [])
     allUserList.value = (usersRes?.list ?? [])
+    orgTreeData.value = (orgTreeRes?.data ?? orgTreeRes ?? [])
   } catch {
     // ignore
   }

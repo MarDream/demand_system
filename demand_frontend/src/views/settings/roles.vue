@@ -64,7 +64,6 @@
                 :data-role-group-id="group.source?.id || ''"
                 @click="selectRole(role)"
               >
-                <el-icon class="drag-handle drag-handle--role"><Rank /></el-icon>
                 <el-icon><User /></el-icon>
                 <span class="role-item__name">{{ role.name }}</span>
               </button>
@@ -681,19 +680,28 @@ function initSortable() {
   initRoleSortable()
 }
 
-function initRoleSortable() {
+function initRoleSortable(reinitAll = true) {
+  if (reinitAll) {
+    // Destroy existing instances first to handle new groups and roles
+    sortableRoleInstances.forEach(instance => instance.destroy())
+    sortableRoleInstances.clear()
+  }
+
   const bodyElements = roleGroupsRef.value?.querySelectorAll('.role-group__body')
   if (!bodyElements) return
   bodyElements.forEach((body) => {
     const key = body.getAttribute('data-body-key') || ''
-    if (sortableRoleInstances.has(key)) return
+    // Skip already initialized instances unless reinitAll is true
+    if (!reinitAll && sortableRoleInstances.has(key)) return
     const instance = new Sortable(body as HTMLElement, {
       group: {
         name: 'roles',
         put: true,
       },
-      handle: '.drag-handle--role',
+      handle: '.role-item',
       animation: 150,
+      delay: 400,
+      delayOnTouchOnly: false,
       ghostClass: 'sortable-ghost',
       chosenClass: 'sortable-chosen',
       onEnd: async (evt) => {
@@ -1162,9 +1170,15 @@ function isRoleGroupExpanded(key: string) {
 }
 
 function toggleRoleGroup(key: string) {
-  expandedRoleGroupKeys.value = isRoleGroupExpanded(key)
+  const wasExpanded = isRoleGroupExpanded(key)
+  expandedRoleGroupKeys.value = wasExpanded
     ? expandedRoleGroupKeys.value.filter(item => item !== key)
     : [...expandedRoleGroupKeys.value, key]
+  // Re-initialize sortable when group is expanded to handle newly visible body
+  if (!wasExpanded) {
+    // Group was collapsed, now expanding - need to init sortable for this group only
+    setTimeout(() => initRoleSortable(false), 50)
+  }
 }
 
 function syncExpandedRoleGroups() {
@@ -1594,8 +1608,10 @@ function permissionName(code: string) {
   border-radius: $border-radius-base;
   background: transparent;
   text-align: left;
-  cursor: pointer;
+  cursor: grab;
   color: $text-color;
+  user-select: none;
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
 }
 
 .role-item .el-icon {
@@ -1613,9 +1629,19 @@ function permissionName(code: string) {
   background: #f5f7fa;
 }
 
+.role-item:active {
+  cursor: grabbing;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
 .role-item.is-active {
   background: #ecf5ff;
   border-color: #b3d8ff;
+}
+
+.role-item.is-dragging {
+  opacity: 0.5;
+  cursor: grabbing;
 }
 
 .role-item__name {
@@ -2062,11 +2088,6 @@ function permissionName(code: string) {
   margin-right: $spacing-xs;
 }
 
-.drag-handle--role {
-  font-size: 12px;
-  margin-right: $spacing-sm;
-}
-
 .sortable-ghost {
   opacity: 0.4;
   background: #ecf5ff;
@@ -2075,5 +2096,10 @@ function permissionName(code: string) {
 .sortable-chosen {
   border-color: $primary-color;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  cursor: grabbing !important;
+}
+
+.sortable-chosen.role-item {
+  cursor: grabbing !important;
 }
 </style>
