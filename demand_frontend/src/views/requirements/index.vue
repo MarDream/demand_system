@@ -210,7 +210,7 @@ import { requirementConfigApi } from '@/api/modules/requirementConfig'
 import { getColumnConfig, saveColumnConfig } from '@/api/modules/requirement'
 import type { Requirement, RequirementMyListQuery, RequirementQuery } from '@/types/requirement'
 import type { User } from '@/types/user'
-import { normalizeText, formatDate } from '@/utils/format'
+import { normalizeText, formatDate, stripPriorityPrefix } from '@/utils/format'
 import PageContainer from '@/components/common/PageContainer.vue'
 import FilterCard from '@/components/common/FilterCard.vue'
 import TableCard from '@/components/common/TableCard.vue'
@@ -320,7 +320,7 @@ async function loadConfig() {
     const typeList = Array.isArray(typesRes) ? typesRes : (typesRes as any).data || []
     const priorityList = Array.isArray(prioritiesRes) ? prioritiesRes : (prioritiesRes as any).data || []
     configTypes.value = typeList.map((t: any) => ({ ...t, name: normalizeText(t.name) }))
-    configPriorities.value = priorityList.map((p: any) => ({ ...p, name: normalizeText(p.name) }))
+    configPriorities.value = priorityList.map((p: any) => ({ ...p, name: stripPriorityPrefix(normalizeText(p.name)) }))
     typeMap.value = Object.fromEntries(configTypes.value.map((t: any) => [t.code, t.name]))
     priorityMap.value = Object.fromEntries(configPriorities.value.map((p: any) => [p.code, p.name]))
   } catch {
@@ -333,7 +333,7 @@ function typeLabel(code: string) {
 }
 
 function priorityLabel(code: string) {
-  return priorityMap.value[code] || code || '-'
+  return stripPriorityPrefix(priorityMap.value[code] || code || '-')
 }
 
 function normalizeColumnKeys(keys: string[]) {

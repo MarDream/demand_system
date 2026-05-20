@@ -18,6 +18,8 @@ public class RoleCreateDTO {
     @Size(max = 500, message = "角色描述不能超过500个字符")
     private String description;
 
+    private Long roleGroupId;
+
     public String getCode() {
         return code;
     }
@@ -40,5 +42,13 @@ public class RoleCreateDTO {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public Long getRoleGroupId() {
+        return roleGroupId;
+    }
+
+    public void setRoleGroupId(Long roleGroupId) {
+        this.roleGroupId = roleGroupId;
     }
 }

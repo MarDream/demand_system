@@ -20,7 +20,9 @@ public interface KnowledgeDocumentService {
                                          String fileName,
                                          String status,
                                          String createdAtStart,
-                                         String createdAtEnd);
+                                         String createdAtEnd,
+                                         String projectName,
+                                         Long requirementId);
 
     void delete(Long knowledgeBaseId, Long documentId);
 
@@ -50,4 +52,6 @@ public interface KnowledgeDocumentService {
     String getPreviewUrl(Long knowledgeBaseId, Long documentId);
 
     void downloadDocument(Long knowledgeBaseId, Long documentId, HttpServletResponse response);
+
+    void batchDownloadDocuments(Long knowledgeBaseId, List<Long> documentIds, HttpServletResponse response);
 }

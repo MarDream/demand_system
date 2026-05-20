@@ -14,8 +14,6 @@ public class UserQueryDTO {
 
     private Long orgId;
 
-    private Long positionId;
-
     private Integer pageNum = 1;
 
     private Integer pageSize = 10;
@@ -66,14 +64,6 @@ public class UserQueryDTO {
 
     public void setOrgId(Long orgId) {
         this.orgId = orgId;
-    }
-
-    public Long getPositionId() {
-        return positionId;
-    }
-
-    public void setPositionId(Long positionId) {
-        this.positionId = positionId;
     }
 
     public Integer getPageNum() {

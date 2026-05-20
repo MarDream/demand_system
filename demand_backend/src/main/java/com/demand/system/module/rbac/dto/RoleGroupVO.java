@@ -1,20 +1,12 @@
-package com.demand.system.module.organization.dto;
+package com.demand.system.module.rbac.dto;
 
-import jakarta.validation.constraints.NotBlank;
+import com.demand.system.module.rbac.entity.RoleGroup;
 
-public class PositionUpdateDTO {
+public class RoleGroupVO {
 
     private Long id;
-
-    @NotBlank(message = "岗位名称不能为空")
     private String name;
-
-    private String code;
-
-    private String level;
-
     private String description;
-
     private Integer sortOrder;
 
     public Long getId() {
@@ -33,22 +25,6 @@ public class PositionUpdateDTO {
         this.name = name;
     }
 
-    public String getCode() {
-        return code;
-    }
-
-    public void setCode(String code) {
-        this.code = code;
-    }
-
-    public String getLevel() {
-        return level;
-    }
-
-    public void setLevel(String level) {
-        this.level = level;
-    }
-
     public String getDescription() {
         return description;
     }
@@ -63,5 +39,14 @@ public class PositionUpdateDTO {
 
     public void setSortOrder(Integer sortOrder) {
         this.sortOrder = sortOrder;
+    }
+
+    public static RoleGroupVO from(RoleGroup roleGroup) {
+        RoleGroupVO vo = new RoleGroupVO();
+        vo.setId(roleGroup.getId());
+        vo.setName(roleGroup.getName());
+        vo.setDescription(roleGroup.getDescription());
+        vo.setSortOrder(roleGroup.getSortOrder());
+        return vo;
     }
 }

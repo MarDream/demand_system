@@ -37,6 +37,30 @@
       </div>
 
       <div v-if="store.searchResults?.results?.length" class="search-results">
+        <div class="results-toolbar">
+          <div class="results-toolbar__left">
+            <el-checkbox
+              v-model="selectAll"
+              :indeterminate="isIndeterminate"
+              @change="handleSelectAll"
+            >
+              全选
+            </el-checkbox>
+            <span class="selected-count">已选择 {{ selectedDocIds.size }} 项</span>
+          </div>
+          <div class="results-toolbar__right">
+            <el-button
+              v-if="selectedDocIds.size > 0"
+              type="primary"
+              size="small"
+              @click="handleBatchDownload"
+              :loading="downloading"
+            >
+              {{ selectedDocIds.size >= 2 ? '打包下载' : '下载' }} ({{ selectedDocIds.size }})
+            </el-button>
+          </div>
+        </div>
+
         <p class="result-count">找到 {{ store.searchResults.total }} 条相关结果</p>
 
         <el-alert
@@ -54,6 +78,12 @@
         </el-card>
 
         <el-card v-for="(item, index) in store.searchResults.results" :key="item.chunkId" class="result-card" shadow="hover">
+          <div class="result-checkbox">
+            <el-checkbox
+              :model-value="selectedDocIds.has(item.documentId)"
+              @change="(val: boolean) => handleSelectChange(item.documentId, val)"
+            />
+          </div>
           <div class="result-rank">{{ index + 1 }}</div>
           <div class="result-body">
             <div class="result-meta">
@@ -101,12 +131,14 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { Search, Document } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import PageContainer from '@/components/common/PageContainer.vue'
 import HighlightText from '@/components/common/HighlightText.vue'
 import { useKnowledgeStore } from '@/stores/knowledge'
 import type { SearchMode } from '@/api/modules/knowledge'
+import { downloadDocumentBlob, batchDownloadDocumentsZip } from '@/api/modules/knowledge'
 
 const store = useKnowledgeStore()
 const query = ref('')
@@ -114,15 +146,97 @@ const mode = ref<SearchMode>('hybrid')
 const selectedKbId = ref<number | ''>('')
 const topK = ref(20)
 const searched = ref(false)
+const selectedDocIds = ref<Set<number>>(new Set())
+const downloading = ref(false)
+
+const allDocIds = computed(() => {
+  if (!store.searchResults?.results) return []
+  return [...new Set(store.searchResults.results.map((item) => item.documentId))]
+})
+
+const selectAll = computed({
+  get: () => allDocIds.value.length > 0 && selectedDocIds.value.size === allDocIds.value.length,
+  set: (val: boolean) => {
+    if (val) {
+      selectedDocIds.value = new Set(allDocIds.value)
+    } else {
+      selectedDocIds.value.clear()
+    }
+  },
+})
+
+const isIndeterminate = computed(() => {
+  return selectedDocIds.value.size > 0 && selectedDocIds.value.size < allDocIds.value.length
+})
 
 onMounted(() => {
   store.fetchAllBases()
 })
 
 function handleSearch() {
+  selectedDocIds.value.clear()
   if (!query.value.trim()) return
   searched.value = true
   store.search(query.value, mode.value, selectedKbId.value === '' ? undefined : selectedKbId.value)
+}
+
+function handleSelectAll(val: boolean) {
+  if (val) {
+    selectedDocIds.value = new Set(allDocIds.value)
+  } else {
+    selectedDocIds.value.clear()
+  }
+}
+
+function handleSelectChange(docId: number, selected: boolean) {
+  if (selected) {
+    selectedDocIds.value.add(docId)
+  } else {
+    selectedDocIds.value.delete(docId)
+  }
+}
+
+async function handleBatchDownload() {
+  if (selectedDocIds.value.size === 0) {
+    ElMessage.warning('请先选择要下载的文档')
+    return
+  }
+
+  const docIds = [...selectedDocIds.value]
+  downloading.value = true
+
+  try {
+    let blob: Blob
+    if (docIds.length === 1) {
+      const docId = docIds[0]
+      const kbId = store.searchResults?.results.find((r) => r.documentId === docId)?.knowledgeBaseId
+      if (!kbId) throw new Error('未找到文档所属知识库')
+      blob = await downloadDocumentBlob(Number(kbId), docId)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      const item = store.searchResults?.results.find((r) => r.documentId === docId)
+      a.download = item?.fileName || 'document'
+      a.click()
+      URL.revokeObjectURL(url)
+    } else {
+      const kbId = store.searchResults?.results[0]?.knowledgeBaseId
+      if (!kbId) throw new Error('未找到文档所属知识库')
+      blob = await batchDownloadDocumentsZip(Number(kbId), docIds)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'download.zip'
+      a.click()
+      URL.revokeObjectURL(url)
+    }
+    ElMessage.success('下载成功')
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : '下载失败'
+    ElMessage.error(msg)
+  } finally {
+    downloading.value = false
+  }
 }
 
 function scoreType(score: number) {
@@ -157,6 +271,28 @@ function scoreType(score: number) {
   font-size: 13px;
   margin-bottom: 16px;
 }
+.results-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #f5f7fa;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+.results-toolbar__left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.selected-count {
+  font-size: 13px;
+  color: #606266;
+}
+.results-toolbar__right {
+  display: flex;
+  gap: 8px;
+}
 .process-summary {
   margin-bottom: 16px;
 }
@@ -174,6 +310,11 @@ function scoreType(score: number) {
 .result-card :deep(.el-card__body) {
   display: flex;
   gap: 16px;
+}
+.result-checkbox {
+  display: flex;
+  align-items: flex-start;
+  padding-top: 2px;
 }
 .result-rank {
   font-size: 24px;

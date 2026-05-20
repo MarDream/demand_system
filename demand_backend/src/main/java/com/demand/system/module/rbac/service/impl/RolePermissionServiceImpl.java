@@ -5,14 +5,21 @@ import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.Result;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.rbac.dto.RoleCreateDTO;
+import com.demand.system.module.rbac.dto.RoleGroupCreateDTO;
+import com.demand.system.module.rbac.dto.RoleGroupSortItem;
+import com.demand.system.module.rbac.dto.RoleGroupUpdateDTO;
+import com.demand.system.module.rbac.dto.RoleGroupVO;
 import com.demand.system.module.rbac.dto.RolePermissionSaveDTO;
 import com.demand.system.module.rbac.dto.RolePermissionVO;
+import com.demand.system.module.rbac.dto.RoleSortItem;
 import com.demand.system.module.rbac.dto.RoleUpdateDTO;
 import com.demand.system.module.rbac.dto.RoleVO;
 import com.demand.system.module.rbac.entity.Role;
+import com.demand.system.module.rbac.entity.RoleGroup;
 import com.demand.system.module.rbac.entity.SysPermission;
 import com.demand.system.module.rbac.entity.SysRolePermission;
 import com.demand.system.module.rbac.entity.UserRole;
+import com.demand.system.module.rbac.mapper.RoleGroupMapper;
 import com.demand.system.module.rbac.mapper.RoleMapper;
 import com.demand.system.module.rbac.mapper.SysPermissionMapper;
 import com.demand.system.module.rbac.mapper.SysRolePermissionMapper;
@@ -36,13 +43,15 @@ import java.util.stream.Collectors;
 public class RolePermissionServiceImpl implements RolePermissionService {
 
     private final RoleMapper roleMapper;
+    private final RoleGroupMapper roleGroupMapper;
     private final SysPermissionMapper sysPermissionMapper;
     private final SysRolePermissionMapper sysRolePermissionMapper;
     private final UserRoleMapper userRoleMapper;
     private final RbacPermissionResolver rbacPermissionResolver;
 
-    public RolePermissionServiceImpl(RoleMapper roleMapper, SysPermissionMapper sysPermissionMapper, SysRolePermissionMapper sysRolePermissionMapper, UserRoleMapper userRoleMapper, RbacPermissionResolver rbacPermissionResolver) {
+    public RolePermissionServiceImpl(RoleMapper roleMapper, RoleGroupMapper roleGroupMapper, SysPermissionMapper sysPermissionMapper, SysRolePermissionMapper sysRolePermissionMapper, UserRoleMapper userRoleMapper, RbacPermissionResolver rbacPermissionResolver) {
         this.roleMapper = roleMapper;
+        this.roleGroupMapper = roleGroupMapper;
         this.sysPermissionMapper = sysPermissionMapper;
         this.sysRolePermissionMapper = sysRolePermissionMapper;
         this.userRoleMapper = userRoleMapper;
@@ -301,5 +310,94 @@ public class RolePermissionServiceImpl implements RolePermissionService {
             throw new BusinessException("未获取到当前用户");
         }
         return userId;
+    }
+
+    @Override
+    public Result<List<RoleGroupVO>> listRoleGroups() {
+        List<RoleGroup> groups = roleGroupMapper.selectList(
+                new LambdaQueryWrapper<RoleGroup>().orderByAsc(RoleGroup::getSortOrder));
+        return Result.success(groups.stream().map(RoleGroupVO::from).toList());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Result<RoleGroupVO> createRoleGroup(RoleGroupCreateDTO request) {
+        RoleGroup group = new RoleGroup();
+        group.setName(request.getName().trim());
+        group.setDescription(trimToNull(request.getDescription()));
+        group.setSortOrder(0);
+        LocalDateTime now = LocalDateTime.now();
+        group.setCreatedAt(now);
+        group.setUpdatedAt(now);
+        group.setDeletedAt(0);
+        roleGroupMapper.insert(group);
+        return Result.success(RoleGroupVO.from(group));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Result<RoleGroupVO> updateRoleGroup(RoleGroupUpdateDTO request) {
+        RoleGroup group = roleGroupMapper.selectById(request.getId());
+        if (group == null) {
+            throw new BusinessException("角色组不存在");
+        }
+        group.setName(request.getName().trim());
+        group.setDescription(trimToNull(request.getDescription()));
+        group.setUpdatedAt(LocalDateTime.now());
+        roleGroupMapper.updateById(group);
+        return Result.success(RoleGroupVO.from(group));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Result<Void> deleteRoleGroup(Long roleGroupId) {
+        RoleGroup group = roleGroupMapper.selectById(roleGroupId);
+        if (group == null) {
+            throw new BusinessException("角色组不存在");
+        }
+        long roleCount = roleMapper.selectCount(new LambdaQueryWrapper<Role>()
+                .eq(Role::getRoleGroupId, roleGroupId));
+        if (roleCount > 0) {
+            throw new BusinessException("该角色组下还有角色，不能删除");
+        }
+        roleGroupMapper.deleteById(roleGroupId);
+        return Result.success();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Result<Void> batchSortRoleGroups(List<RoleGroupSortItem> items) {
+        if (items == null || items.isEmpty()) {
+            return Result.success();
+        }
+        LocalDateTime now = LocalDateTime.now();
+        for (RoleGroupSortItem item : items) {
+            RoleGroup group = roleGroupMapper.selectById(item.getId());
+            if (group != null) {
+                group.setSortOrder(item.getSortOrder());
+                group.setUpdatedAt(now);
+                roleGroupMapper.updateById(group);
+            }
+        }
+        return Result.success();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Result<Void> batchSortRoles(List<RoleSortItem> items) {
+        if (items == null || items.isEmpty()) {
+            return Result.success();
+        }
+        LocalDateTime now = LocalDateTime.now();
+        for (RoleSortItem item : items) {
+            Role role = roleMapper.selectById(item.getId());
+            if (role != null) {
+                role.setRoleGroupId(item.getRoleGroupId());
+                role.setSortOrder(item.getSortOrder());
+                role.setUpdatedAt(now);
+                roleMapper.updateById(role);
+            }
+        }
+        return Result.success();
     }
 }

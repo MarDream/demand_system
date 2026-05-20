@@ -46,13 +46,13 @@ export const routes: RouteRecordRaw[] = [
         path: 'requirements/:id',
         name: 'RequirementDetail',
         component: () => import('@/views/requirements/detail.vue'),
-        meta: { title: '需求详情', hidden: true },
+        meta: { title: '需求详情', hidden: true, activeMenu: '/requirements' },
       },
       {
         path: 'requirements/create',
         name: 'RequirementCreate',
         component: () => import('@/views/requirements/create.vue'),
-        meta: { title: '新建/编辑需求', hidden: true },
+        meta: { title: '新建/编辑需求', hidden: true, activeMenu: '/requirements' },
       },
       {
         path: 'iterations',
@@ -94,13 +94,13 @@ export const routes: RouteRecordRaw[] = [
         path: 'settings/knowledge/:id',
         name: 'KnowledgeDetail',
         component: () => import('@/views/knowledge/detail.vue'),
-        meta: { title: '知识库详情', hidden: true, requiredPermissions: ['menu:rag'] },
+        meta: { title: '知识库详情', hidden: true, activeMenu: '/settings/knowledge', requiredPermissions: ['menu:rag'] },
       },
       {
         path: 'settings/knowledge/search',
         name: 'KnowledgeSearch',
         component: () => import('@/views/knowledge/search.vue'),
-        meta: { title: '全局语义检索', hidden: true, requiredPermissions: ['menu:rag'] },
+        meta: { title: '全局语义检索', hidden: true, activeMenu: '/settings/knowledge', requiredPermissions: ['menu:rag'] },
       },
       {
         path: 'settings',
@@ -129,8 +129,8 @@ export const routes: RouteRecordRaw[] = [
       {
         path: 'settings/workflow-approvals',
         name: 'WorkflowApprovals',
-        component: () => import('@/views/todo/index.vue'),
-        meta: { title: '工作流审核', hidden: true, requiredPermissions: ['menu:settings:workflow'] },
+        component: () => import('@/views/system/workflow-config/index.vue'),
+        meta: { title: '工作流管理', hidden: true, requiredPermissions: ['menu:settings:workflow'] },
       },
       {
         path: 'system/workflow-config',
@@ -142,7 +142,7 @@ export const routes: RouteRecordRaw[] = [
         path: 'system/workflow-config/editor',
         name: 'WorkflowConfigEditor',
         component: () => import('@/views/system/workflow-config/editor.vue'),
-        meta: { title: '工作流编辑器', hidden: true },
+        meta: { title: '工作流编辑器', hidden: true, activeMenu: '/system/workflow-config' },
       },
       {
         path: 'settings/requirements',

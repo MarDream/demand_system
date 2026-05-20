@@ -26,15 +26,11 @@ public class UserVO {
 
     private Long orgId;
 
-    private Long positionId;
-
     private String regionName;
 
     private String regionPath;
 
     private String departmentName;
-
-    private String positionName;
 
     private String systemRole;
 
@@ -130,14 +126,6 @@ public class UserVO {
         this.orgId = orgId;
     }
 
-    public Long getPositionId() {
-        return positionId;
-    }
-
-    public void setPositionId(Long positionId) {
-        this.positionId = positionId;
-    }
-
     public String getRegionName() {
         return regionName;
     }
@@ -160,14 +148,6 @@ public class UserVO {
 
     public void setDepartmentName(String departmentName) {
         this.departmentName = departmentName;
-    }
-
-    public String getPositionName() {
-        return positionName;
-    }
-
-    public void setPositionName(String positionName) {
-        this.positionName = positionName;
     }
 
     public String getSystemRole() {

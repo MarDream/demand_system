@@ -61,6 +61,8 @@ public class RequirementVO {
 
     private LocalDateTime developmentCompletedAt;
 
+    private List<Long> ccUserIds;
+
     private List<RequirementAttachmentDTO> attachments;
 
     private Integer orderNum;
@@ -299,6 +301,14 @@ public class RequirementVO {
 
     public void setDevelopmentCompletedAt(LocalDateTime developmentCompletedAt) {
         this.developmentCompletedAt = developmentCompletedAt;
+    }
+
+    public List<Long> getCcUserIds() {
+        return ccUserIds;
+    }
+
+    public void setCcUserIds(List<Long> ccUserIds) {
+        this.ccUserIds = ccUserIds;
     }
 
     public List<RequirementAttachmentDTO> getAttachments() {

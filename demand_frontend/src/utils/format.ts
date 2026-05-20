@@ -16,6 +16,13 @@ export function formatPriority(priority: string, map?: Record<string, string>): 
   return formatLabel(priority, map)
 }
 
+export function stripPriorityPrefix(text: string): string {
+  const normalized = normalizeText(text)
+  if (!normalized) return normalized
+  const stripped = normalized.replace(/^P\d+\s*[-－_:：]?\s*/i, '').trim()
+  return stripped || normalized
+}
+
 export function formatStatus(status: string, map?: Record<string, string>): string {
   return formatLabel(status, map)
 }

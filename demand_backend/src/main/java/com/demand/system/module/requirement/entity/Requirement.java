@@ -72,6 +72,9 @@ public class Requirement {
     private LocalDateTime developmentCompletedAt;
 
     @TableField(typeHandler = JacksonTypeHandler.class)
+    private List<Long> ccUserIds;
+
+    @TableField(typeHandler = JacksonTypeHandler.class)
     private List<RequirementAttachmentDTO> attachments;
 
     private Integer orderNum;
@@ -144,6 +147,8 @@ public class Requirement {
     public void setConfirmAt(LocalDateTime confirmAt) { this.confirmAt = confirmAt; }
     public LocalDateTime getDevelopmentCompletedAt() { return developmentCompletedAt; }
     public void setDevelopmentCompletedAt(LocalDateTime developmentCompletedAt) { this.developmentCompletedAt = developmentCompletedAt; }
+    public List<Long> getCcUserIds() { return ccUserIds; }
+    public void setCcUserIds(List<Long> ccUserIds) { this.ccUserIds = ccUserIds; }
     public List<RequirementAttachmentDTO> getAttachments() { return attachments; }
     public void setAttachments(List<RequirementAttachmentDTO> attachments) { this.attachments = attachments; }
     public Integer getOrderNum() { return orderNum; }

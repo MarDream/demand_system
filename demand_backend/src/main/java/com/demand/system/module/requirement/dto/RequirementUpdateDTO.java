@@ -21,6 +21,8 @@ public class RequirementUpdateDTO {
 
     private Long assigneeId;
 
+    private List<Long> ccUserIds;
+
     private Long iterationId;
 
     private Long moduleId;
@@ -85,6 +87,14 @@ public class RequirementUpdateDTO {
 
     public void setAssigneeId(Long assigneeId) {
         this.assigneeId = assigneeId;
+    }
+
+    public List<Long> getCcUserIds() {
+        return ccUserIds;
+    }
+
+    public void setCcUserIds(List<Long> ccUserIds) {
+        this.ccUserIds = ccUserIds;
     }
 
     public Long getIterationId() {

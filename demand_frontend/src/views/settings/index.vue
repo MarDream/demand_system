@@ -30,6 +30,10 @@ import { getCurrentMenus, type MenuItem } from '@/api/modules/menu'
 
 const { hasPermission, hasAnyRole, hasAnyPermission } = usePermission()
 
+const pathTitleOverrides: Record<string, string> = {
+  '/settings/workflow-approvals': '工作流管理',
+}
+
 // path -> 卡片额外配置（描述、颜色等不从菜单获取的部分）
 const cardMeta: Record<string, { description: string; color: string; buttonType: string }> = {
   '/settings/projects': { description: '创建、编辑和管理项目，配置项目成员', color: '#409EFF', buttonType: 'primary' },
@@ -37,7 +41,7 @@ const cardMeta: Record<string, { description: string; color: string; buttonType:
   '/settings/roles': { description: '维护团队角色、授权范围和高风险操作权限', color: '#3B82F6', buttonType: 'primary' },
   '/settings/requirements': { description: '管理系统需求类型和优先级配置', color: '#909399', buttonType: '' },
   '/system/workflow-config': { description: '在系统设置中维护工作流与审批配置', color: '#8E44AD', buttonType: 'primary' },
-  '/settings/workflow-approvals': { description: '集中查看工作流提交记录、审核结果与审批意见', color: '#D97706', buttonType: 'warning' },
+  '/settings/workflow-approvals': { description: '集中管理工作流版本、审核记录、启停状态与删除操作', color: '#D97706', buttonType: 'warning' },
   '/settings/menus': { description: '维护菜单、按钮以及角色授权能力', color: '#F56C6C', buttonType: 'danger' },
   '/settings/rag': { description: '上传文档并进行智能检索与问答', color: '#16A085', buttonType: 'success' },
   '/settings/knowledge': { description: '创建和管理知识库，配置文档索引', color: '#2C3E50', buttonType: '' },
@@ -102,7 +106,7 @@ const visibleCards = computed<CardItem[]>(() => {
       const remix = isRemixIcon(iconName)
       return {
         path,
-        title: m.name,
+        title: pathTitleOverrides[path] || m.name,
         description: meta.description,
         icon: remix ? iconName : (iconMap[iconName] || iconMap['Setting']),
         isRemix: remix,
@@ -125,7 +129,7 @@ const visibleCards = computed<CardItem[]>(() => {
       title: path === '/settings/llm'
         ? '模型配置'
         : path === '/settings/workflow-approvals'
-          ? '工作流审核'
+          ? '工作流管理'
           : path,
       description: meta.description,
       icon: path === '/settings/llm'

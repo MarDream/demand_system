@@ -17,6 +17,9 @@ export const useAppStore = defineStore('app', () => {
   const MAX_SIDEBAR_WIDTH = 420
 
   const sidebarWidth = ref(DEFAULT_SIDEBAR_WIDTH)
+  const menuTitleOverrides: Record<string, string> = {
+    '/settings/workflow-approvals': '工作流管理',
+  }
 
   // Restore from localStorage
   const saved = localStorage.getItem('sidebar-opened')
@@ -48,7 +51,7 @@ export const useAppStore = defineStore('app', () => {
   function getMenuNameByPath(path: string): string | null {
     function find(items: MenuItem[]): string | null {
       for (const item of items) {
-        if (item.path === path) return item.name
+        if (item.path === path) return menuTitleOverrides[item.path] || item.name
         if (item.children?.length) {
           const found = find(item.children)
           if (found) return found
@@ -66,7 +69,7 @@ export const useAppStore = defineStore('app', () => {
       for (const item of items) {
         if (item.menuType === 'BUTTON') continue
         const current: BreadcrumbItem = {
-          name: item.name,
+          name: item.path ? (menuTitleOverrides[item.path] || item.name) : item.name,
           path: item.path || null,
         }
         const newParents = [...parents, current]

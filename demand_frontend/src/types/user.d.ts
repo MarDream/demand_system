@@ -11,7 +11,7 @@ export interface User {
   orgId?: number | null
   regionId?: number | null
   departmentId?: number | null
-  positionId?: number | null
+  systemRole?: string | null
   createdAt: string
   updatedAt: string
 }

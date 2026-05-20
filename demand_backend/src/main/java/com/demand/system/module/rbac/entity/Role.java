@@ -20,6 +20,10 @@ public class Role {
 
     private String description;
 
+    private Long roleGroupId;
+
+    private Integer sortOrder;
+
     private Integer isSystem;
 
     private LocalDateTime createdAt;
@@ -59,6 +63,22 @@ public class Role {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public Long getRoleGroupId() {
+        return roleGroupId;
+    }
+
+    public void setRoleGroupId(Long roleGroupId) {
+        this.roleGroupId = roleGroupId;
+    }
+
+    public Integer getSortOrder() {
+        return sortOrder;
+    }
+
+    public void setSortOrder(Integer sortOrder) {
+        this.sortOrder = sortOrder;
     }
 
     public Integer getIsSystem() {

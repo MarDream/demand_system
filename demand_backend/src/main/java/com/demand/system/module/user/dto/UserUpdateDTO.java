@@ -20,8 +20,6 @@ public class UserUpdateDTO {
 
     private Long orgId;
 
-    private Long positionId;
-
     public Long getId() {
         return id;
     }
@@ -92,13 +90,5 @@ public class UserUpdateDTO {
 
     public void setOrgId(Long orgId) {
         this.orgId = orgId;
-    }
-
-    public Long getPositionId() {
-        return positionId;
-    }
-
-    public void setPositionId(Long positionId) {
-        this.positionId = positionId;
     }
 }

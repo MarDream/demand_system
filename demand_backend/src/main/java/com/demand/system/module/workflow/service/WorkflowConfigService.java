@@ -2,6 +2,7 @@ package com.demand.system.module.workflow.service;
 
 import com.demand.system.module.workflow.dto.WorkflowApprovalDTO;
 import com.demand.system.module.workflow.dto.WorkflowConfigDTO;
+import com.demand.system.module.workflow.dto.WorkflowVersionActivationDTO;
 import com.demand.system.module.workflow.dto.WorkflowVersionMetaUpdateDTO;
 import com.demand.system.module.workflow.dto.WorkflowVersionDTO;
 
@@ -38,6 +39,16 @@ public interface WorkflowConfigService {
      * 更新版本元数据
      */
     WorkflowVersionDTO updateVersionMeta(Long versionId, WorkflowVersionMetaUpdateDTO updateDTO);
+
+    /**
+     * 更新版本启停状态
+     */
+    WorkflowVersionDTO updateVersionActivation(Long versionId, WorkflowVersionActivationDTO activationDTO);
+
+    /**
+     * 删除工作流版本
+     */
+    void deleteVersion(Long versionId);
 
     /**
      * 获取待审核列表（仅超级管理员）

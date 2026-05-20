@@ -49,6 +49,10 @@ export interface WorkflowVersionMetaUpdateDTO {
   name: string
 }
 
+export interface WorkflowVersionActivationDTO {
+  active: boolean
+}
+
 export interface WorkflowApprovalDTO {
   id: number
   workflowVersionId: number

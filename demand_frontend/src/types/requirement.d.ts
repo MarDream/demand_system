@@ -27,6 +27,7 @@ export interface Requirement {
   confirmAt: string | null
   developmentCompletedAt: string | null
   attachments?: RequirementAttachment[]
+  ccUserIds?: number[]
   orderNum: number
   version: number
   createdAt: string
@@ -57,6 +58,7 @@ export interface RequirementCreate {
   type: string
   priority: string
   assigneeId?: number
+  ccUserIds?: number[]
   moduleId?: number
   startDate?: string
   dueDate?: string
@@ -77,6 +79,7 @@ export interface RequirementDraftCreate {
   description: string
   priority: string
   assigneeId?: number
+  ccUserIds?: number[]
   moduleId?: number
   startDate?: string
   dueDate?: string

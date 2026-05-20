@@ -34,6 +34,7 @@ import { computed, useSlots } from 'vue'
 import { useRoute } from 'vue-router'
 import Breadcrumb from '@/components/layout/Breadcrumb.vue'
 import { useAppStore } from '@/stores/modules/app'
+import { resolveActiveMenuPath } from '@/utils/menuNavigation'
 
 const route = useRoute()
 const appStore = useAppStore()
@@ -54,7 +55,7 @@ const slots = useSlots()
 
 const displayTitle = computed(() => {
   if (!props.title) return ''
-  return appStore.getMenuNameByPath(route.path) || props.title
+  return appStore.getMenuNameByPath(resolveActiveMenuPath(route)) || props.title
 })
 
 const showHeader = computed(() => {

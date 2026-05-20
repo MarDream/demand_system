@@ -17,7 +17,6 @@
         >
           <el-icon :size="24" class="upload-zone__icon"><Upload /></el-icon>
           <span class="upload-zone__text">点击选择文件或拖拽至此处</span>
-          <span class="upload-zone__hint">支持 kkFileView 可预览的 {{ supportedExtensionCount }} 种扩展名类型</span>
         </div>
         <input ref="fileInputRef" type="file" multiple style="display: none" @change="onFileInputChange" />
         <input ref="folderInputRef" type="file" webkitdirectory multiple style="display: none" @change="onFolderInputChange" />
@@ -54,7 +53,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Upload, Delete } from '@element-plus/icons-vue'
 import { getKnowledgeBases, uploadDocument, type KnowledgeBase } from '@/api/modules/knowledge'
-import { KKFILEVIEW_SUPPORTED_EXTENSION_COUNT, KKFILEVIEW_SUPPORTED_EXTENSION_SET, normalizeFileExtension } from '@/constants/knowledgeDocument'
+import { KKFILEVIEW_SUPPORTED_EXTENSION_SET, normalizeFileExtension } from '@/constants/knowledgeDocument'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
@@ -84,8 +83,6 @@ const fileInputRef = ref<HTMLInputElement>()
 const folderInputRef = ref<HTMLInputElement>()
 
 const effectiveKnowledgeBaseId = computed(() => props.knowledgeBaseId || selectedKbId.value)
-const supportedExtensionCount = KKFILEVIEW_SUPPORTED_EXTENSION_COUNT
-
 watch(() => props.knowledgeBaseId, value => {
   selectedKbId.value = value || null
 })

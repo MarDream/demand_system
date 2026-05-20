@@ -21,6 +21,7 @@ export interface KnowledgeDocument {
   id: number
   knowledgeBaseId: number
   projectId?: number | null
+  projectName?: string | null
   fileName: string
   fileType: string
   fileSize: number
@@ -43,6 +44,8 @@ export interface KnowledgeDocumentQueryParams {
   status?: string
   createdAtStart?: string
   createdAtEnd?: string
+  projectName?: string
+  requirementId?: number
 }
 
 export interface SearchResultItem {
@@ -130,6 +133,13 @@ export function getDocumentPreviewUrl(knowledgeBaseId: number, documentId: numbe
 
 export async function downloadDocumentBlob(knowledgeBaseId: number, documentId: number): Promise<Blob> {
   const res = await request.get<Blob>(`/v1/knowledge/bases/${knowledgeBaseId}/documents/${documentId}/download`, {
+    responseType: 'blob',
+  })
+  return res as unknown as Blob
+}
+
+export async function batchDownloadDocumentsZip(knowledgeBaseId: number, documentIds: number[]): Promise<Blob> {
+  const res = await request.post<Blob>(`/v1/knowledge/bases/${knowledgeBaseId}/documents/batch-download`, { documentIds }, {
     responseType: 'blob',
   })
   return res as unknown as Blob

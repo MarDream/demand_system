@@ -4,6 +4,7 @@ import com.demand.system.common.result.Result;
 import com.demand.system.module.workflow.dto.ApprovalRequestDTO;
 import com.demand.system.module.workflow.dto.WorkflowApprovalDTO;
 import com.demand.system.module.workflow.dto.WorkflowConfigDTO;
+import com.demand.system.module.workflow.dto.WorkflowVersionActivationDTO;
 import com.demand.system.module.workflow.dto.WorkflowVersionMetaUpdateDTO;
 import com.demand.system.module.workflow.dto.WorkflowVersionDTO;
 import com.demand.system.module.workflow.service.WorkflowConfigService;
@@ -78,6 +79,26 @@ public class WorkflowVisualConfigController {
     public Result<WorkflowVersionDTO> updateVersionMeta(@PathVariable Long versionId,
                                                         @Valid @RequestBody WorkflowVersionMetaUpdateDTO updateDTO) {
         return Result.success(workflowConfigService.updateVersionMeta(versionId, updateDTO));
+    }
+
+    /**
+     * 更新版本启停状态
+     */
+    @PutMapping("/workflows/versions/{versionId}/activation")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
+    public Result<WorkflowVersionDTO> updateVersionActivation(@PathVariable Long versionId,
+                                                              @Valid @RequestBody WorkflowVersionActivationDTO activationDTO) {
+        return Result.success(workflowConfigService.updateVersionActivation(versionId, activationDTO));
+    }
+
+    /**
+     * 删除工作流版本
+     */
+    @DeleteMapping("/workflows/versions/{versionId}")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
+    public Result<Void> deleteVersion(@PathVariable Long versionId) {
+        workflowConfigService.deleteVersion(versionId);
+        return Result.success();
     }
 
     /**

@@ -36,8 +36,6 @@ public class User {
 
     private Long orgId;
 
-    private Long positionId;
-
     private String jobNumber;
 
     private String status;
@@ -129,14 +127,6 @@ public class User {
 
     public void setOrgId(Long orgId) {
         this.orgId = orgId;
-    }
-
-    public Long getPositionId() {
-        return positionId;
-    }
-
-    public void setPositionId(Long positionId) {
-        this.positionId = positionId;
     }
 
     public String getJobNumber() {

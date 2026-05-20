@@ -26,6 +26,14 @@ export function sendInitialPassword(id: number) {
   return request.post<string>(`/v1/users/${id}/send-init-password`)
 }
 
+export function getUserRoles(id: number) {
+  return request.get<ApiResponse<number[]>>(`/v1/users/${id}/roles`)
+}
+
+export function assignRoles(id: number, roleIds: number[]) {
+  return request.put<ApiResponse>(`/v1/users/${id}/roles`, roleIds)
+}
+
 export function getPositionList() {
   return request.get<ApiResponse<Position[]>>('/v1/positions')
 }

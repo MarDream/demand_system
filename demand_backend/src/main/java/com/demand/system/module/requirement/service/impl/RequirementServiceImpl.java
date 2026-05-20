@@ -211,6 +211,7 @@ public class RequirementServiceImpl implements RequirementService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void create(RequirementCreateDTO dto, Long creatorId) {
+        requireProjectSelection(dto.getProjectId());
         Requirement requirement = new Requirement();
         BeanUtils.copyProperties(dto, requirement);
         requirement.setProjectId(normalizeProjectId(dto.getProjectId()));
@@ -279,6 +280,10 @@ public class RequirementServiceImpl implements RequirementService {
                     strVal(existing.getAssigneeId()), strVal(dto.getAssigneeId()));
             updateWrapper.set("assignee_id", dto.getAssigneeId());
         }
+        if (dto.getCcUserIds() != null && !Objects.equals(existing.getCcUserIds(), dto.getCcUserIds())) {
+            recordHistory(dto.getId(), operatorId, "ccUserIds", null, "更新抄送人");
+            updateWrapper.set("cc_user_ids", dto.getCcUserIds());
+        }
         if (dto.getStartDate() != null && !Objects.equals(existing.getStartDate(), dto.getStartDate())) {
             recordHistory(dto.getId(), operatorId, "startDate",
                     strDate(existing.getStartDate()), strDate(dto.getStartDate()));
@@ -339,6 +344,7 @@ public class RequirementServiceImpl implements RequirementService {
         if (!StringUtils.hasText(dto.getPriority())) {
             throw new BusinessException(400, "请选择优先级");
         }
+        requireProjectSelection(dto.getProjectId());
 
         Requirement requirement = new Requirement();
         BeanUtils.copyProperties(dto, requirement);
@@ -398,6 +404,7 @@ public class RequirementServiceImpl implements RequirementService {
         update.setId(dto.getId());
         update.setVersion(dto.getVersion());
         if (dto.getProjectId() != null) {
+            requireProjectSelection(dto.getProjectId());
             Long nextProjectId = normalizeProjectId(dto.getProjectId());
             if (!Objects.equals(normalizeProjectId(existing.getProjectId()), nextProjectId)) {
                 ensureProjectCanBeBound(nextProjectId);
@@ -409,6 +416,7 @@ public class RequirementServiceImpl implements RequirementService {
         if (dto.getDescription() != null) update.setDescription(dto.getDescription());
         if (dto.getPriority() != null) update.setPriority(dto.getPriority());
         if (dto.getAssigneeId() != null) update.setAssigneeId(dto.getAssigneeId());
+        if (dto.getCcUserIds() != null) update.setCcUserIds(dto.getCcUserIds());
         if (dto.getModuleId() != null) update.setModuleId(dto.getModuleId());
         if (dto.getStartDate() != null) update.setStartDate(dto.getStartDate());
         if (dto.getDueDate() != null) update.setDueDate(dto.getDueDate());
@@ -493,6 +501,7 @@ public class RequirementServiceImpl implements RequirementService {
         if (requirement == null) {
             throw new BusinessException("需求不存在");
         }
+        requireProjectSelection(requirement.getProjectId());
         if (!Boolean.TRUE.equals(requirement.getIsDraft())) {
             throw new BusinessException(400, "当前需求不是草稿，无需提交");
         }
@@ -845,6 +854,12 @@ public class RequirementServiceImpl implements RequirementService {
             return numberValue.intValue() != 0;
         }
         return Boolean.parseBoolean(String.valueOf(value));
+    }
+
+    private void requireProjectSelection(Long projectId) {
+        if (projectId == null || projectId <= 0) {
+            throw new BusinessException(400, "请选择所属项目");
+        }
     }
 
     private Long normalizeProjectId(Long projectId) {

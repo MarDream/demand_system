@@ -181,8 +181,7 @@ public class AuthServiceImpl implements AuthService {
 
         if (org != null) {
             builder.regionId(org.getRegionId())
-                    .departmentId(org.getDepartmentId())
-                    .positionId(org.getPositionId());
+                    .departmentId(org.getDepartmentId());
         }
 
         return builder.build();

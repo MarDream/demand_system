@@ -337,8 +337,8 @@ public class WorkflowGovernanceIT extends BaseIntegrationTest {
         );
 
         jdbcTemplate.update("""
-                        INSERT INTO user_organizations (user_id, region_id, department_id, position_id, system_role, manager_id, effective_date)
-                        VALUES (?, 1, 1, 1, ?, NULL, ?)
+                        INSERT INTO user_organizations (user_id, region_id, department_id, system_role, manager_id, effective_date)
+                        VALUES (?, 1, 1, ?, NULL, ?)
                         """,
                 userId,
                 systemRole,

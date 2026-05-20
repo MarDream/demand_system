@@ -121,6 +121,7 @@ import { Fold, Expand, Bell } from '@element-plus/icons-vue'
 import { isRemixIcon } from '@/components/common/RemixIconData'
 import Breadcrumb from '@/components/layout/Breadcrumb.vue'
 import { formatDate } from '@/utils/format'
+import { resolveActiveMenuPath } from '@/utils/menuNavigation'
 import { getNotificationList, markAsRead } from '@/api/modules/notification'
 import { getCurrentMenus, type MenuItem } from '@/api/modules/menu'
 
@@ -169,6 +170,10 @@ const settingsMenuOrder: Record<string, number> = {
   '/settings/llm': 10,
 }
 
+const menuTitleOverrides: Record<string, string> = {
+  '/settings/workflow-approvals': '工作流管理',
+}
+
 const visibleMenus = computed<SidebarItem[]>(() => {
   function build(items: MenuItem[]): SidebarItem[] {
     return items
@@ -184,7 +189,7 @@ const visibleMenus = computed<SidebarItem[]>(() => {
         return {
           index: m.path || `menu-${m.id}`,
           path: isDirectory ? (defaultChildPath || ownPath) : (ownPath || defaultChildPath),
-          title: m.name,
+          title: menuTitleOverrides[ownPath] || m.name,
           icon: remix ? iconName : (iconMap[iconName] || iconMap['Document']),
           isRemix: remix,
           children,
@@ -212,7 +217,7 @@ const visibleMenus = computed<SidebarItem[]>(() => {
     settingsMenu.children.push({
       index: '/settings/workflow-approvals',
       path: '/settings/workflow-approvals',
-      title: '工作流审核',
+      title: '工作流管理',
       icon: 'ri-task-line',
       isRemix: true,
       children: [],
@@ -260,10 +265,10 @@ watch(unreadCount, () => {
 
 const sidebarOpened = computed(() => appStore.sidebarOpened)
 const sidebarWidth = computed(() => appStore.sidebarWidth)
-const activeMenu = computed(() => route.path)
+const activeMenu = computed(() => resolveActiveMenuPath(route))
 const defaultOpeneds = computed(() => {
   const opened: string[] = []
-  const current = route.path
+  const current = activeMenu.value
   for (const item of visibleMenus.value) {
     if (!item.children.length) continue
     if (item.children.some(child => child.path === current || (child.path && current.startsWith(child.path + '/')))) {

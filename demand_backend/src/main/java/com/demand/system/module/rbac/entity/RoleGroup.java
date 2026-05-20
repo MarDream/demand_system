@@ -1,39 +1,27 @@
-package com.demand.system.module.organization.entity;
+package com.demand.system.module.rbac.entity;
 
-import com.baomidou.mybatisplus.annotation.*;
-import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableLogic;
+import com.baomidou.mybatisplus.annotation.TableName;
 
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Objects;
 
-@TableName(value = "positions", autoResultMap = true)
-public class Position {
+@TableName("role_groups")
+public class RoleGroup {
 
     @TableId(type = IdType.AUTO)
     private Long id;
 
     private String name;
 
-    private String code;
-
-    private String level;
-
     private String description;
-
-    private Long regionId;
-
-    private Long departmentId;
-
-    @TableField(typeHandler = JacksonTypeHandler.class)
-    private List<Long> menuPermissions;
 
     private Integer sortOrder;
 
-    @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 
-    @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
 
     @TableLogic
@@ -55,52 +43,12 @@ public class Position {
         this.name = name;
     }
 
-    public String getCode() {
-        return code;
-    }
-
-    public void setCode(String code) {
-        this.code = code;
-    }
-
-    public String getLevel() {
-        return level;
-    }
-
-    public void setLevel(String level) {
-        this.level = level;
-    }
-
     public String getDescription() {
         return description;
     }
 
     public void setDescription(String description) {
         this.description = description;
-    }
-
-    public Long getRegionId() {
-        return regionId;
-    }
-
-    public void setRegionId(Long regionId) {
-        this.regionId = regionId;
-    }
-
-    public Long getDepartmentId() {
-        return departmentId;
-    }
-
-    public void setDepartmentId(Long departmentId) {
-        this.departmentId = departmentId;
-    }
-
-    public List<Long> getMenuPermissions() {
-        return menuPermissions;
-    }
-
-    public void setMenuPermissions(List<Long> menuPermissions) {
-        this.menuPermissions = menuPermissions;
     }
 
     public Integer getSortOrder() {
@@ -139,8 +87,8 @@ public class Position {
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        Position position = (Position) o;
-        return Objects.equals(id, position.id);
+        RoleGroup roleGroup = (RoleGroup) o;
+        return Objects.equals(id, roleGroup.id);
     }
 
     @Override

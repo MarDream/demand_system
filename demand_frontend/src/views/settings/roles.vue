@@ -1,13 +1,6 @@
 <template>
   <PageContainer :breadcrumb="false">
     <div class="role-console">
-      <div class="role-topbar">
-        <div>
-          <div class="page-crumb">通讯录 / 角色管理</div>
-          <h2>角色管理</h2>
-        </div>
-      </div>
-
       <div class="role-page" :style="{ gridTemplateColumns: roleSidebarCollapsed ? '0px 0px minmax(0, 1fr)' : `${roleSidebarWidth}px 4px minmax(0, 1fr)` }" v-loading="loading">
       <aside class="role-sidebar" :class="{ 'is-collapsed': roleSidebarCollapsed }">
         <el-input v-model="keyword" placeholder="搜索角色" clearable>
@@ -17,7 +10,7 @@
         </el-input>
 
         <div class="sidebar-actions">
-          <el-button @click="showTodo('新增角色组')">新增角色组</el-button>
+          <AppButton permission="button:role:create" @click="openCreateRoleGroup">新增角色组</AppButton>
           <AppButton permission="button:role:create" @click="openCreate">新增角色</AppButton>
           <input ref="importInputRef" type="file" accept=".xlsx,.xls" style="display: none" @change="handleImportFileChange" />
           <el-dropdown @command="handleBatchCommand">
@@ -42,41 +35,44 @@
         />
 
         <el-button link type="primary" class="collapse-link" @click="toggleAllRoleGroups">
-          {{ roleGroupsExpanded ? '全部收起' : '全部展开' }}
+          {{ allRoleGroupsExpanded ? '全部收起' : '全部展开' }}
         </el-button>
 
-        <div class="role-group">
-          <button class="role-group__title" type="button" @click="roleGroupsExpanded = !roleGroupsExpanded">
-            <el-icon><component :is="roleGroupsExpanded ? ArrowDown : ArrowRight" /></el-icon>
-            <el-icon><UserFilled /></el-icon>
-            <span>默认</span>
-          </button>
-          <div v-show="roleGroupsExpanded" class="role-group__body">
-            <button
-              v-for="role in filteredSystemRoles"
-              :key="role.id"
-              class="role-item"
-              :class="{ 'is-active': selectedRole?.id === role.id }"
-              type="button"
-              @click="selectRole(role)"
-            >
-              <el-icon><User /></el-icon>
-              <span class="role-item__name">{{ role.name }}</span>
-            </button>
-            <button
-              v-for="role in filteredCustomRoles"
-              :key="role.id"
-              class="role-item"
-              :class="{ 'is-active': selectedRole?.id === role.id }"
-              type="button"
-              @click="selectRole(role)"
-            >
-              <el-icon><User /></el-icon>
-              <span class="role-item__name">{{ role.name }}</span>
-            </button>
-            <el-empty v-if="filteredRoles.length === 0" description="暂无匹配角色" :image-size="72" />
+        <div v-if="roleGroupSections.length > 0" class="role-groups" ref="roleGroupsRef">
+          <div v-for="group in roleGroupSections" :key="group.key" class="role-group" :data-group-key="group.key">
+            <div class="role-group__header" :data-group-id="group.source?.id">
+              <el-icon class="drag-handle drag-handle--group"><Rank /></el-icon>
+              <button class="role-group__title" type="button" @click="toggleRoleGroup(group.key)">
+                <el-icon><component :is="isRoleGroupExpanded(group.key) ? ArrowDown : ArrowRight" /></el-icon>
+                <el-icon><component :is="group.icon" /></el-icon>
+                <span>{{ group.name }}</span>
+                <span class="role-group__count">{{ group.roles.length }}</span>
+              </button>
+              <div v-if="!group.isDefault" class="role-group__tools">
+                <el-button link type="primary" @click.stop="openEditRoleGroup(group.source)">编辑</el-button>
+                <el-button link type="danger" @click.stop="handleDeleteRoleGroup(group.source)">删除</el-button>
+              </div>
+            </div>
+            <div v-show="isRoleGroupExpanded(group.key)" class="role-group__body" :data-body-key="group.key">
+              <button
+                v-for="role in group.roles"
+                :key="role.id"
+                class="role-item"
+                :class="{ 'is-active': selectedRole?.id === role.id }"
+                type="button"
+                :data-role-id="role.id"
+                :data-role-group-id="group.source?.id || ''"
+                @click="selectRole(role)"
+              >
+                <el-icon class="drag-handle drag-handle--role"><Rank /></el-icon>
+                <el-icon><User /></el-icon>
+                <span class="role-item__name">{{ role.name }}</span>
+              </button>
+              <div v-if="group.roles.length === 0" class="role-group__empty">当前分组下还没有角色</div>
+            </div>
           </div>
         </div>
+        <el-empty v-else description="暂无匹配角色" :image-size="72" />
       </aside>
 
       <div class="sidebar-resizer" @mousedown="startResize" @dblclick="toggleRoleSidebar" />
@@ -98,6 +94,7 @@
                 <span>{{ selectedRole.name }}</span>
                 <el-tag v-if="isSystemRole(selectedRole)" size="small" type="info">系统角色</el-tag>
                 <el-tag v-else size="small" type="success">自定义角色</el-tag>
+                <el-tag size="small" effect="plain">{{ roleGroupNameById(selectedRole.roleGroupId) }}</el-tag>
               </div>
               <div class="detail-code">{{ selectedRole.code }}</div>
             </div>
@@ -323,6 +320,16 @@
         <el-form-item label="角色名称" prop="name">
           <el-input v-model="form.name" placeholder="请输入角色名称" @input="handleRoleNameInput" />
         </el-form-item>
+        <el-form-item label="所属分组">
+          <el-select v-model="form.roleGroupId" clearable placeholder="默认分组">
+            <el-option
+              v-for="group in roleGroups"
+              :key="group.id"
+              :label="group.name"
+              :value="group.id"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="角色编码" prop="code">
           <el-input
             v-model="form.code"
@@ -340,26 +347,59 @@
         <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="roleGroupDialogVisible"
+      :title="editingRoleGroup ? '编辑角色组' : '新增角色组'"
+      width="460px"
+      @close="resetRoleGroupForm"
+    >
+      <el-form ref="roleGroupFormRef" :model="roleGroupForm" :rules="roleGroupRules" label-width="90px">
+        <el-form-item label="角色组名称" prop="name">
+          <el-input v-model="roleGroupForm.name" placeholder="请输入角色组名称" />
+        </el-form-item>
+        <el-form-item label="角色组说明" prop="description">
+          <el-input
+            v-model="roleGroupForm.description"
+            type="textarea"
+            :rows="4"
+            placeholder="用于区分角色分类和职责范围"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="roleGroupDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="roleGroupSubmitting" @click="handleSubmitRoleGroup">保存</el-button>
+      </template>
+    </el-dialog>
   </PageContainer>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, type Component } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, type Component } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { ArrowDown, ArrowRight, Search, Suitcase, Tickets, UserFilled, User, Tools } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowRight, Search, Suitcase, Tickets, UserFilled, User, Tools, Plus, FolderOpened, Rank } from '@element-plus/icons-vue'
+import Sortable from 'sortablejs'
 import * as XLSX from 'xlsx'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import { useUserStore } from '@/stores/modules/user'
 import { exportToExcel } from '@/utils/excel'
 import {
+  createRoleGroup,
   createRole,
+  deleteRoleGroup,
   deleteRole,
   getGrantablePermissions,
+  getRoleGroups,
   getRoleList,
   getRolePermissions,
   saveRolePermissions,
+  updateRoleGroup,
   updateRole,
+  batchSortRoleGroups,
+  batchSortRoles,
+  type RoleGroupItem,
   type RolePayload,
 } from '@/api/modules/role'
 import { getAllMenus, type MenuItem, type RoleItem } from '@/api/modules/menu'
@@ -387,7 +427,17 @@ interface RoleImportRow {
   description?: string | null
 }
 
+interface RoleGroupSection {
+  key: string
+  name: string
+  roles: RoleItem[]
+  isDefault: boolean
+  icon: Component
+  source: RoleGroupItem | null
+}
+
 const SUPER_ADMIN_CODES = new Set(['super_admin', 'SUPER_ADMIN'])
+const DEFAULT_ROLE_GROUP_KEY = 'role-group-default'
 
 const permissionLoading = ref(false)
 const permissionSaving = ref(false)
@@ -395,12 +445,13 @@ const loading = ref(false)
 const submitting = ref(false)
 const batchImporting = ref(false)
 const roles = ref<RoleItem[]>([])
+const roleGroups = ref<RoleGroupItem[]>([])
 const selectedRole = ref<RoleItem | null>(null)
 const selectedPermissions = ref<string[]>([])
 const grantablePermissions = ref<string[]>([])
 const menuTree = ref<MenuItem[]>([])
 const expandedMenuKeys = ref<string[]>([])
-const roleGroupsExpanded = ref(true)
+const expandedRoleGroupKeys = ref<string[]>([])
 const roleSidebarWidth = ref(360)
 const roleSidebarCollapsed = ref(false)
 const ROLE_SIDEBAR_DEFAULT = 360
@@ -410,11 +461,24 @@ const dialogVisible = ref(false)
 const editingRole = ref<RoleItem | null>(null)
 const formRef = ref<FormInstance>()
 const importInputRef = ref<HTMLInputElement>()
+const roleGroupDialogVisible = ref(false)
+const editingRoleGroup = ref<RoleGroupItem | null>(null)
+const roleGroupFormRef = ref<FormInstance>()
+const roleGroupSubmitting = ref(false)
 const userStore = useUserStore()
 const codeManuallyEdited = ref(false)
+const roleGroupsRef = ref<HTMLElement | null>(null)
+let sortableGroupInstance: Sortable | null = null
+let sortableRoleInstances: Map<string, Sortable> = new Map()
 
 const form = reactive<RolePayload>({
   code: '',
+  name: '',
+  description: '',
+  roleGroupId: null,
+})
+
+const roleGroupForm = reactive({
   name: '',
   description: '',
 })
@@ -431,6 +495,17 @@ const rules: FormRules = {
   ],
   description: [
     { max: 500, message: '角色说明不能超过500个字符', trigger: 'blur' },
+  ],
+}
+
+const roleGroupRules: FormRules = {
+  name: [
+    { required: true, message: '请输入角色组名称', trigger: 'blur' },
+    { max: 100, message: '角色组名称不能超过100个字符', trigger: 'blur' },
+    { validator: validateRoleGroupNameUnique, trigger: 'blur' },
+  ],
+  description: [
+    { max: 500, message: '角色组说明不能超过500个字符', trigger: 'blur' },
   ],
 }
 
@@ -452,8 +527,60 @@ const filteredRoles = computed(() => {
   })
 })
 
-const filteredSystemRoles = computed(() => filteredRoles.value.filter(isSystemRole))
-const filteredCustomRoles = computed(() => filteredRoles.value.filter(role => !isSystemRole(role)))
+const roleGroupSections = computed<RoleGroupSection[]>(() => {
+  const groupMap = new Map(roleGroups.value.map(group => [group.id, group]))
+  const sections: RoleGroupSection[] = []
+  const groupedRoles = new Map<string, RoleItem[]>()
+
+  roleGroups.value.forEach(group => {
+    groupedRoles.set(`role-group-${group.id}`, [])
+  })
+
+  filteredRoles.value.forEach((role) => {
+    const group = role.roleGroupId ? groupMap.get(role.roleGroupId) : null
+    const key = group ? `role-group-${group.id}` : DEFAULT_ROLE_GROUP_KEY
+    if (!groupedRoles.has(key)) {
+      groupedRoles.set(key, [])
+    }
+    groupedRoles.get(key)!.push(role)
+  })
+
+  roleGroups.value.forEach((group) => {
+    const key = `role-group-${group.id}`
+    const groupRoles = groupedRoles.get(key) || []
+    if (keyword.value.trim() && groupRoles.length === 0 && !group.name.toLowerCase().includes(keyword.value.trim().toLowerCase())) {
+      return
+    }
+    sections.push({
+      key,
+      name: group.name,
+      roles: groupRoles,
+      isDefault: false,
+      icon: FolderOpened,
+      source: group,
+    })
+  })
+
+  const defaultRoles = groupedRoles.get(DEFAULT_ROLE_GROUP_KEY) || []
+  if (defaultRoles.length > 0 || (!keyword.value.trim() && sections.length === 0)) {
+    sections.unshift({
+      key: DEFAULT_ROLE_GROUP_KEY,
+      name: '默认',
+      roles: defaultRoles,
+      isDefault: true,
+      icon: UserFilled,
+      source: null,
+    })
+  }
+
+  return sections
+})
+
+const allRoleGroupsExpanded = computed(() => {
+  return roleGroupSections.value.length > 0
+    && roleGroupSections.value.every(group => expandedRoleGroupKeys.value.includes(group.key))
+})
+
 const isCurrentSuperAdmin = computed(() => userStore.isSuperAdmin)
 const canGrantSelectedRole = computed(() => {
   return !!selectedRole.value && !isSuperAdminRole(selectedRole.value) && (isCurrentSuperAdmin.value || !isSystemRole(selectedRole.value))
@@ -505,7 +632,96 @@ const filteredOrphanPermissions = computed(() => {
   return orphanPermissions.value.filter(item => isPermissionMatched(item, value))
 })
 
-onMounted(fetchRoles)
+onMounted(async () => {
+  await fetchRoles()
+  initSortable()
+})
+
+onUnmounted(() => {
+  if (sortableGroupInstance) {
+    sortableGroupInstance.destroy()
+    sortableGroupInstance = null
+  }
+  sortableRoleInstances.forEach(instance => instance.destroy())
+  sortableRoleInstances.clear()
+})
+
+function initSortable() {
+  if (!roleGroupsRef.value) return
+
+  // Initialize role groups drag
+  sortableGroupInstance = new Sortable(roleGroupsRef.value, {
+    group: 'roleGroups',
+    handle: '.drag-handle--group',
+    animation: 150,
+    ghostClass: 'sortable-ghost',
+    chosenClass: 'sortable-chosen',
+    onEnd: async (evt) => {
+      const items: Array<{ id: number; sortOrder: number }> = []
+      const groupElements = roleGroupsRef.value?.querySelectorAll('.role-group')
+      if (!groupElements) return
+      groupElements.forEach((el, index) => {
+        const groupId = el.getAttribute('data-group-id')
+        if (groupId) {
+          items.push({ id: Number(groupId), sortOrder: index })
+        }
+      })
+      if (items.length > 0) {
+        try {
+          await batchSortRoleGroups(items)
+          ElMessage.success('角色组排序已保存')
+        } catch {
+          ElMessage.error('排序保存失败')
+        }
+      }
+    },
+  })
+
+  // Initialize roles drag within each group
+  initRoleSortable()
+}
+
+function initRoleSortable() {
+  const bodyElements = roleGroupsRef.value?.querySelectorAll('.role-group__body')
+  if (!bodyElements) return
+  bodyElements.forEach((body) => {
+    const key = body.getAttribute('data-body-key') || ''
+    if (sortableRoleInstances.has(key)) return
+    const instance = new Sortable(body as HTMLElement, {
+      group: {
+        name: 'roles',
+        put: true,
+      },
+      handle: '.drag-handle--role',
+      animation: 150,
+      ghostClass: 'sortable-ghost',
+      chosenClass: 'sortable-chosen',
+      onEnd: async (evt) => {
+        const items: Array<{ id: number; roleGroupId: number | null; sortOrder: number }> = []
+        const roleElements = evt.to.querySelectorAll('.role-item')
+        const targetGroupId = evt.to.getAttribute('data-body-key')
+        const targetGroupSourceId = targetGroupId?.replace('role-group-', '') || null
+        roleElements.forEach((el, index) => {
+          const roleId = el.getAttribute('data-role-id')
+          if (roleId) {
+            const roleGroupId = targetGroupId === DEFAULT_ROLE_GROUP_KEY ? null : Number(targetGroupSourceId)
+            items.push({ id: Number(roleId), roleGroupId, sortOrder: index })
+          }
+        })
+        if (items.length > 0) {
+          try {
+            await batchSortRoles(items)
+            ElMessage.success('角色排序已保存')
+            await fetchRoles()
+          } catch {
+            ElMessage.error('排序保存失败')
+          }
+        }
+      },
+    })
+    sortableRoleInstances.set(key, instance)
+  })
+}
 
 function isSystemRole(role: RoleItem) {
   return role.isSystem === 1
@@ -514,15 +730,20 @@ function isSystemRole(role: RoleItem) {
 async function fetchRoles() {
   loading.value = true
   try {
-    roles.value = await getRoleList() as any
-    try {
-      menuTree.value = await getAllMenus() as any
-    } catch {
-      menuTree.value = []
-    }
+    const [roleList, groupList, menuListResult] = await Promise.all([
+      getRoleList(),
+      getRoleGroups(),
+      getAllMenus().catch(() => []),
+    ]) as any[]
+    roles.value = roleList || []
+    roleGroups.value = groupList || []
+    menuTree.value = menuListResult || []
+    syncExpandedRoleGroups()
     if (selectedRole.value) {
       selectedRole.value = roles.value.find(item => item.id === selectedRole.value?.id) || null
     }
+    // Re-initialize role sortable after data fetch
+    setTimeout(() => initRoleSortable(), 100)
   } finally {
     loading.value = false
   }
@@ -563,6 +784,7 @@ function openEdit(role: RoleItem) {
   form.name = role.name
   form.code = role.code
   form.description = role.description || ''
+  form.roleGroupId = role.roleGroupId ?? null
   dialogVisible.value = true
 }
 
@@ -578,6 +800,7 @@ async function handleSubmit() {
       code: form.code.trim().toUpperCase(),
       name: form.name.trim(),
       description: form.description?.trim() || null,
+      roleGroupId: form.roleGroupId || null,
     }
     const saved = editingRole.value
       ? await updateRole(editingRole.value.id, payload) as any
@@ -630,6 +853,7 @@ function triggerImport() {
 
 function handleExportRoles() {
   const exportRows = filteredRoles.value.map(role => ({
+    角色组: roleGroupNameById(role.roleGroupId),
     角色名称: role.name,
     角色编码: role.code,
     角色类型: isSystemRole(role) ? '系统角色' : '自定义角色',
@@ -922,12 +1146,100 @@ function resetForm() {
   form.code = ''
   form.name = ''
   form.description = ''
+  form.roleGroupId = null
   codeManuallyEdited.value = false
   formRef.value?.resetFields()
 }
 
 function toggleAllRoleGroups() {
-  roleGroupsExpanded.value = !roleGroupsExpanded.value
+  expandedRoleGroupKeys.value = allRoleGroupsExpanded.value
+    ? []
+    : roleGroupSections.value.map(group => group.key)
+}
+
+function isRoleGroupExpanded(key: string) {
+  return expandedRoleGroupKeys.value.includes(key)
+}
+
+function toggleRoleGroup(key: string) {
+  expandedRoleGroupKeys.value = isRoleGroupExpanded(key)
+    ? expandedRoleGroupKeys.value.filter(item => item !== key)
+    : [...expandedRoleGroupKeys.value, key]
+}
+
+function syncExpandedRoleGroups() {
+  const keys = roleGroupSections.value.map(group => group.key)
+  if (keys.length === 0) {
+    expandedRoleGroupKeys.value = []
+    return
+  }
+  const previous = new Set(expandedRoleGroupKeys.value)
+  expandedRoleGroupKeys.value = keys.filter(key => previous.size === 0 || previous.has(key))
+}
+
+function roleGroupNameById(roleGroupId?: number | null) {
+  if (!roleGroupId) return '默认'
+  return roleGroups.value.find(group => group.id === roleGroupId)?.name || '默认'
+}
+
+function openCreateRoleGroup() {
+  editingRoleGroup.value = null
+  resetRoleGroupForm()
+  roleGroupDialogVisible.value = true
+}
+
+function openEditRoleGroup(group?: RoleGroupItem | null) {
+  if (!group) return
+  editingRoleGroup.value = group
+  roleGroupForm.name = group.name
+  roleGroupForm.description = group.description || ''
+  roleGroupDialogVisible.value = true
+}
+
+async function handleSubmitRoleGroup() {
+  if (!roleGroupFormRef.value) return
+  await roleGroupFormRef.value.validate()
+  roleGroupSubmitting.value = true
+  try {
+    const payload = {
+      name: roleGroupForm.name.trim(),
+      description: roleGroupForm.description?.trim() || null,
+    }
+    if (editingRoleGroup.value) {
+      await updateRoleGroup(editingRoleGroup.value.id, payload)
+    } else {
+      await createRoleGroup(payload)
+    }
+    ElMessage.success('角色组保存成功')
+    roleGroupDialogVisible.value = false
+    await fetchRoles()
+  } finally {
+    roleGroupSubmitting.value = false
+  }
+}
+
+async function handleDeleteRoleGroup(group?: RoleGroupItem | null) {
+  if (!group) return
+  await ElMessageBox.confirm(`确认删除角色组“${group.name}”吗？组内角色会自动回到默认分组。`, '删除角色组', { type: 'warning' })
+  await deleteRoleGroup(group.id)
+  ElMessage.success('角色组删除成功')
+  await fetchRoles()
+}
+
+function resetRoleGroupForm() {
+  roleGroupForm.name = ''
+  roleGroupForm.description = ''
+  roleGroupFormRef.value?.resetFields()
+}
+
+function validateRoleGroupNameUnique(_rule: unknown, value: string, callback: (error?: Error) => void) {
+  const name = value.trim()
+  const conflict = roleGroups.value.some(group => group.name.trim() === name && group.id !== editingRoleGroup.value?.id)
+  if (conflict) {
+    callback(new Error('角色组名称已存在'))
+  } else {
+    callback()
+  }
 }
 
 function startResize(e: MouseEvent) {
@@ -1092,17 +1404,6 @@ function permissionName(code: string) {
   overflow: hidden;
 }
 
-.role-topbar {
-  height: 66px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: $spacing-md;
-  padding: 0 $spacing-lg;
-  border-bottom: 1px solid $border-color;
-  background: #fff;
-}
-
 .role-heading {
   min-width: 0;
   display: flex;
@@ -1222,8 +1523,21 @@ function permissionName(code: string) {
   gap: $spacing-sm;
 }
 
+.role-groups {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+}
+
+.role-group__header {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+}
+
 .role-group__title {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: $spacing-xs;
@@ -1235,6 +1549,13 @@ function permissionName(code: string) {
   font-weight: 600;
   text-align: left;
   cursor: pointer;
+}
+
+.role-group__tools {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 2px;
 }
 
 .role-group__body {
@@ -1252,6 +1573,15 @@ function permissionName(code: string) {
   color: $text-color-placeholder;
   text-align: center;
   font-size: $font-size-xs;
+}
+
+.role-group__empty {
+  padding: 12px;
+  border-radius: $border-radius-base;
+  background: #f8fafc;
+  color: $text-color-placeholder;
+  font-size: $font-size-sm;
+  text-align: center;
 }
 
 .role-item {
@@ -1637,13 +1967,6 @@ function permissionName(code: string) {
 }
 
 @media (max-width: 1100px) {
-  .role-topbar {
-    height: auto;
-    align-items: flex-start;
-    flex-direction: column;
-    padding: $spacing-md;
-  }
-
   .role-heading {
     align-items: flex-start;
     flex-direction: column;
@@ -1717,5 +2040,40 @@ function permissionName(code: string) {
     grid-template-columns: 1fr;
     margin-left: 0 !important;
   }
+}
+
+.drag-handle {
+  flex-shrink: 0;
+  cursor: grab;
+  color: $text-color-placeholder;
+  transition: color 0.2s;
+
+  &:hover {
+    color: $primary-color;
+  }
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+.drag-handle--group {
+  font-size: 14px;
+  margin-right: $spacing-xs;
+}
+
+.drag-handle--role {
+  font-size: 12px;
+  margin-right: $spacing-sm;
+}
+
+.sortable-ghost {
+  opacity: 0.4;
+  background: #ecf5ff;
+}
+
+.sortable-chosen {
+  border-color: $primary-color;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 </style>

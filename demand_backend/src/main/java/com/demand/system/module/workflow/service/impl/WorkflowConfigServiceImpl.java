@@ -8,16 +8,21 @@ import com.demand.system.module.workflow.dto.WorkflowApprovalDTO;
 import com.demand.system.module.workflow.dto.WorkflowConfigDTO;
 import com.demand.system.module.workflow.dto.WorkflowEdgeDTO;
 import com.demand.system.module.workflow.dto.WorkflowNodeDTO;
+import com.demand.system.module.workflow.dto.WorkflowVersionActivationDTO;
 import com.demand.system.module.workflow.dto.WorkflowVersionMetaUpdateDTO;
 import com.demand.system.module.workflow.dto.WorkflowVersionDTO;
 import com.demand.system.module.workflow.engine.WorkflowVersionResolver;
 import com.demand.system.module.workflow.entity.WorkflowApproval;
 import com.demand.system.module.workflow.entity.WorkflowEdge;
+import com.demand.system.module.workflow.entity.WorkflowInstance;
 import com.demand.system.module.workflow.entity.WorkflowNode;
+import com.demand.system.module.workflow.entity.WorkflowNodePermission;
 import com.demand.system.module.workflow.entity.WorkflowVersion;
 import com.demand.system.module.workflow.mapper.WorkflowApprovalMapper;
 import com.demand.system.module.workflow.mapper.WorkflowEdgeMapper;
+import com.demand.system.module.workflow.mapper.WorkflowInstanceMapper;
 import com.demand.system.module.workflow.mapper.WorkflowNodeMapper;
+import com.demand.system.module.workflow.mapper.WorkflowNodePermissionMapper;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.demand.system.module.workflow.service.WorkflowConfigService;
 import com.demand.system.module.project.mapper.ProjectMapper;
@@ -44,16 +49,21 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
     private final WorkflowNodeMapper workflowNodeMapper;
     private final WorkflowEdgeMapper workflowEdgeMapper;
     private final WorkflowApprovalMapper workflowApprovalMapper;
+    private final WorkflowInstanceMapper workflowInstanceMapper;
+    private final WorkflowNodePermissionMapper workflowNodePermissionMapper;
     private final ProjectMapper projectMapper;
     private final SysUserMapper sysUserMapper;
 
     public WorkflowConfigServiceImpl(WorkflowVersionMapper workflowVersionMapper, WorkflowNodeMapper workflowNodeMapper,
                                    WorkflowEdgeMapper workflowEdgeMapper, WorkflowApprovalMapper workflowApprovalMapper,
+                                   WorkflowInstanceMapper workflowInstanceMapper, WorkflowNodePermissionMapper workflowNodePermissionMapper,
                                    ProjectMapper projectMapper, SysUserMapper sysUserMapper) {
         this.workflowVersionMapper = workflowVersionMapper;
         this.workflowNodeMapper = workflowNodeMapper;
         this.workflowEdgeMapper = workflowEdgeMapper;
         this.workflowApprovalMapper = workflowApprovalMapper;
+        this.workflowInstanceMapper = workflowInstanceMapper;
+        this.workflowNodePermissionMapper = workflowNodePermissionMapper;
         this.projectMapper = projectMapper;
         this.sysUserMapper = sysUserMapper;
     }
@@ -223,6 +233,59 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
+    public WorkflowVersionDTO updateVersionActivation(Long versionId, WorkflowVersionActivationDTO activationDTO) {
+        WorkflowVersion version = workflowVersionMapper.selectById(versionId);
+        if (version == null) {
+            throw new BusinessException("版本不存在");
+        }
+
+        boolean active = Boolean.TRUE.equals(activationDTO.getActive());
+        if (active) {
+            WorkflowApproval latestApproval = getLatestApproval(versionId);
+            if (latestApproval == null || !"approved".equalsIgnoreCase(latestApproval.getStatus())) {
+                throw new BusinessException("仅已审核通过的工作流版本支持启用");
+            }
+            workflowVersionMapper.update(null, new LambdaUpdateWrapper<WorkflowVersion>()
+                    .eq(WorkflowVersion::getProjectId, version.getProjectId())
+                    .set(WorkflowVersion::getIsActive, 0));
+            version.setIsActive(1);
+        } else {
+            if (version.getIsActive() == null || version.getIsActive() != 1) {
+                throw new BusinessException("该工作流当前未启用");
+            }
+            version.setIsActive(0);
+        }
+        workflowVersionMapper.updateById(version);
+        return toVersionDTO(version);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteVersion(Long versionId) {
+        WorkflowVersion version = workflowVersionMapper.selectById(versionId);
+        if (version == null) {
+            throw new BusinessException("版本不存在");
+        }
+        if (version.getIsActive() != null && version.getIsActive() == 1) {
+            throw new BusinessException("启用中的工作流不能删除，请先停用");
+        }
+
+        Long instanceCount = workflowInstanceMapper.selectCount(new LambdaQueryWrapper<WorkflowInstance>()
+                .eq(WorkflowInstance::getWorkflowVersionId, versionId));
+        if (instanceCount != null && instanceCount > 0) {
+            throw new BusinessException("该工作流已被历史流程实例引用，暂不支持删除");
+        }
+
+        workflowApprovalMapper.delete(new LambdaQueryWrapper<WorkflowApproval>()
+                .eq(WorkflowApproval::getWorkflowVersionId, versionId));
+        workflowNodePermissionMapper.delete(new LambdaQueryWrapper<WorkflowNodePermission>()
+                .eq(WorkflowNodePermission::getWorkflowVersionId, versionId));
+        deleteVersionConfig(versionId);
+        workflowVersionMapper.deleteById(versionId);
+    }
+
+    @Override
     public List<WorkflowApprovalDTO> getPendingApprovals() {
         LambdaQueryWrapper<WorkflowApproval> query = new LambdaQueryWrapper<>();
         query.eq(WorkflowApproval::getStatus, "pending")
@@ -387,6 +450,13 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         approvalQuery.eq(WorkflowApproval::getWorkflowVersionId, versionId)
                 .eq(WorkflowApproval::getStatus, "pending");
         return workflowApprovalMapper.selectCount(approvalQuery) > 0;
+    }
+
+    private WorkflowApproval getLatestApproval(Long versionId) {
+        return workflowApprovalMapper.selectOne(new LambdaQueryWrapper<WorkflowApproval>()
+                .eq(WorkflowApproval::getWorkflowVersionId, versionId)
+                .orderByDesc(WorkflowApproval::getSubmittedAt)
+                .last("LIMIT 1"));
     }
 
     private WorkflowVersion createDraftVersion(Long projectId, Long currentUserId) {

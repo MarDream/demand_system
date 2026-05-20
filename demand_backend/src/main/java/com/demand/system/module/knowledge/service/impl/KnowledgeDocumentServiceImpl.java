@@ -44,9 +44,11 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.crypto.SecretKey;
+import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
@@ -55,6 +57,8 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 @Service
 public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
@@ -74,6 +78,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     private final RabbitTemplate rabbitTemplate;
     private final KnowledgeDocumentShareMapper shareMapper;
     private final KnowledgeDocumentShareLogMapper shareLogMapper;
+    private final com.demand.system.module.project.mapper.ProjectMapper projectMapper;
 
     @Value("${jwt.secret}")
     private String jwtSecret;
@@ -89,7 +94,8 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                                         MilvusVectorStore milvusVectorStore,
                                         RabbitTemplate rabbitTemplate,
                                         KnowledgeDocumentShareMapper shareMapper,
-                                        KnowledgeDocumentShareLogMapper shareLogMapper) {
+                                        KnowledgeDocumentShareLogMapper shareLogMapper,
+                                        com.demand.system.module.project.mapper.ProjectMapper projectMapper) {
         this.documentMapper = documentMapper;
         this.chunkMapper = chunkMapper;
         this.knowledgeBaseMapper = knowledgeBaseMapper;
@@ -102,6 +108,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         this.rabbitTemplate = rabbitTemplate;
         this.shareMapper = shareMapper;
         this.shareLogMapper = shareLogMapper;
+        this.projectMapper = projectMapper;
     }
 
     @Override
@@ -191,7 +198,9 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                                                 String fileName,
                                                 String status,
                                                 String createdAtStart,
-                                                String createdAtEnd) {
+                                                String createdAtEnd,
+                                                String projectName,
+                                                Long requirementId) {
         LambdaQueryWrapper<KnowledgeDocument> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(KnowledgeDocument::getKnowledgeBaseId, knowledgeBaseId);
         if (fileName != null && !fileName.isBlank()) {
@@ -199,6 +208,20 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
         if (status != null && !status.isBlank()) {
             wrapper.eq(KnowledgeDocument::getStatus, status.trim());
+        }
+        if (requirementId != null) {
+            wrapper.eq(KnowledgeDocument::getRequirementId, requirementId);
+        }
+        if (projectName != null && !projectName.isBlank()) {
+            List<Long> matchedProjectIds = projectMapper.selectList(
+                    new LambdaQueryWrapper<com.demand.system.module.project.entity.Project>()
+                            .like(com.demand.system.module.project.entity.Project::getName, projectName.trim())
+                            .select(com.demand.system.module.project.entity.Project::getId)
+            ).stream().map(com.demand.system.module.project.entity.Project::getId).collect(Collectors.toList());
+            if (matchedProjectIds.isEmpty()) {
+                return new PageResult<>(List.of(), 0L, pageNum, pageSize);
+            }
+            wrapper.in(KnowledgeDocument::getProjectId, matchedProjectIds);
         }
         LocalDateTime start = parseDateTime(createdAtStart, false);
         LocalDateTime end = parseDateTime(createdAtEnd, true);
@@ -1083,12 +1106,77 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
     }
 
+    @Override
+    public void batchDownloadDocuments(Long knowledgeBaseId, List<Long> documentIds, jakarta.servlet.http.HttpServletResponse response) {
+        if (documentIds == null || documentIds.isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择要下载的文档");
+        }
+
+        List<KnowledgeDocument> documents = documentMapper.selectList(
+                new LambdaQueryWrapper<KnowledgeDocument>()
+                        .eq(KnowledgeDocument::getKnowledgeBaseId, knowledgeBaseId)
+                        .in(KnowledgeDocument::getId, documentIds)
+        );
+
+        if (documents.isEmpty()) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "未找到可下载的文档");
+        }
+
+        try (OutputStream os = response.getOutputStream();
+             ZipOutputStream zipOut = new ZipOutputStream(new BufferedOutputStream(os))) {
+
+            response.setContentType("application/zip");
+            response.setHeader("Content-Disposition", "attachment; filename*=UTF-8''download.zip");
+
+            for (KnowledgeDocument doc : documents) {
+                if (doc.getMinioKey() == null || doc.getMinioKey().isBlank()) {
+                    log.warn("文档无存储路径，跳过: documentId={}", doc.getId());
+                    continue;
+                }
+
+                try (InputStream is = new BufferedInputStream(minioStorageService.download(doc.getMinioKey()))) {
+                    String entryName = sanitizeFileName(doc.getFileName());
+                    zipOut.putNextEntry(new ZipEntry(entryName));
+                    is.transferTo(zipOut);
+                    zipOut.closeEntry();
+                } catch (Exception e) {
+                    log.warn("文档下载失败，跳过: documentId={}, error={}", doc.getId(), e.getMessage());
+                }
+            }
+
+            zipOut.finish();
+            os.flush();
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "批量下载失败: " + e.getMessage());
+        }
+    }
+
+    private String sanitizeFileName(String fileName) {
+        if (fileName == null || fileName.isBlank()) {
+            return "unknown";
+        }
+        return fileName.replaceAll("[\\\\/:*?\"<>|]", "_");
+    }
+
+    private static class BufferedOutputStream extends java.io.BufferedOutputStream {
+        public BufferedOutputStream(OutputStream out) {
+            super(out);
+        }
+    }
+
     private KnowledgeDocumentVO toVO(KnowledgeDocument doc) {
         String uploaderName = null;
         if (doc.getUploaderId() != null) {
             SysUser user = sysUserMapper.selectById(doc.getUploaderId());
             if (user != null) {
                 uploaderName = user.getRealName();
+            }
+        }
+        String projectName = null;
+        if (doc.getProjectId() != null) {
+            com.demand.system.module.project.entity.Project project = projectMapper.selectById(doc.getProjectId());
+            if (project != null) {
+                projectName = project.getName();
             }
         }
         return KnowledgeDocumentVO.builder()
@@ -1106,6 +1194,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 .sourceId(doc.getSourceId())
                 .uploaderId(doc.getUploaderId())
                 .uploaderName(uploaderName)
+                .projectName(projectName)
                 .downloadCount(doc.getDownloadCount() == null ? 0 : doc.getDownloadCount())
                 .createdAt(doc.getCreatedAt())
                 .build();

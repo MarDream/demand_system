@@ -14,8 +14,6 @@ import com.demand.system.module.user.entity.User;
 import com.demand.system.module.user.mapper.UserMapper;
 import com.demand.system.module.user.service.UserService;
 import com.demand.system.module.organization.dto.SysOrgVO;
-import com.demand.system.module.organization.entity.Position;
-import com.demand.system.module.organization.mapper.PositionMapper;
 import com.demand.system.module.organization.service.SysOrgService;
 import com.demand.system.module.rbac.entity.Role;
 import com.demand.system.module.rbac.entity.UserRole;
@@ -33,16 +31,14 @@ import java.util.stream.Collectors;
 public class UserServiceImpl implements UserService {
 
     private final UserMapper userMapper;
-    private final PositionMapper positionMapper;
     private final SysOrgService sysOrgService;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
     private final UserRoleMapper userRoleMapper;
     private final RoleMapper roleMapper;
 
-    public UserServiceImpl(UserMapper userMapper, PositionMapper positionMapper, SysOrgService sysOrgService, PasswordEncoder passwordEncoder, EmailService emailService, UserRoleMapper userRoleMapper, RoleMapper roleMapper) {
+    public UserServiceImpl(UserMapper userMapper, SysOrgService sysOrgService, PasswordEncoder passwordEncoder, EmailService emailService, UserRoleMapper userRoleMapper, RoleMapper roleMapper) {
         this.userMapper = userMapper;
-        this.positionMapper = positionMapper;
         this.sysOrgService = sysOrgService;
         this.passwordEncoder = passwordEncoder;
         this.emailService = emailService;
@@ -58,7 +54,6 @@ public class UserServiceImpl implements UserService {
         wrapper.like(query.getUsername() != null, User::getUsername, query.getUsername())
                 .like(query.getRealName() != null, User::getRealName, query.getRealName())
                 .eq(query.getStatus() != null, User::getStatus, query.getStatus())
-                .eq(query.getPositionId() != null, User::getPositionId, query.getPositionId())
                 .orderByDesc(User::getCreatedAt);
 
         if (query.getOrgId() != null) {
@@ -155,9 +150,6 @@ public class UserServiceImpl implements UserService {
         if (dto.getOrgId() != null) {
             user.setOrgId(dto.getOrgId());
             deriveOrgFields(user, dto.getOrgId());
-        }
-        if (dto.getPositionId() != null) {
-            user.setPositionId(dto.getPositionId());
         }
         userMapper.updateById(user);
     }
@@ -257,7 +249,6 @@ public class UserServiceImpl implements UserService {
         vo.setRegionId(user.getRegionId());
         vo.setDepartmentId(user.getDepartmentId());
         vo.setOrgId(user.getOrgId());
-        vo.setPositionId(user.getPositionId());
         vo.setCreatedAt(user.getCreatedAt());
         vo.setUpdatedAt(user.getUpdatedAt());
 
@@ -288,14 +279,6 @@ public class UserServiceImpl implements UserService {
             SysOrgVO dept = sysOrgService.getDetail(user.getDepartmentId());
             if (dept != null) {
                 vo.setDepartmentName(dept.getName());
-            }
-        }
-
-        // Fill position info
-        if (user.getPositionId() != null) {
-            Position position = positionMapper.selectById(user.getPositionId());
-            if (position != null) {
-                vo.setPositionName(position.getName());
             }
         }
 

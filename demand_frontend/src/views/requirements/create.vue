@@ -1,15 +1,6 @@
 <template>
   <PageContainer :breadcrumb="false">
     <div class="create-page">
-    <div class="page-header">
-      <el-breadcrumb separator="/">
-        <el-breadcrumb-item :to="{ name: 'Requirements' }">需求管理</el-breadcrumb-item>
-        <el-breadcrumb-item v-if="parentId" :to="{ name: 'RequirementDetail', params: { id: parentId } }">父需求</el-breadcrumb-item>
-        <el-breadcrumb-item>{{ pageTitle }}</el-breadcrumb-item>
-      </el-breadcrumb>
-      <h2 class="page-title">{{ pageTitle }}</h2>
-    </div>
-
     <el-row :gutter="20" class="form-container">
       <el-col :xs="24" :lg="16" class="left-panel">
         <el-card class="form-card">
@@ -166,9 +157,8 @@
             <el-form-item label="所属项目" prop="projectId">
               <el-select
                 v-model="formData.projectId"
-                placeholder="可暂不选择，后续节点可补绑"
+                placeholder="请选择所属项目"
                 clearable
-                :value-on-clear="0"
                 style="width: 100%"
               >
                 <el-option
@@ -181,23 +171,22 @@
               </el-select>
             </el-form-item>
 
-            <el-form-item label="负责人">
+            <el-form-item label="提出人" prop="assigneeId">
               <el-select
                 v-model="formData.assigneeId"
-                placeholder="请选择"
-                clearable
+                placeholder="请选择提出人"
                 filterable
                 style="width: 100%"
               >
                 <el-option
-                  v-for="user in users"
+                  v-for="user in proposerUsers"
                   :key="user.id"
-                  :label="user.realName || user.username"
+                  :label="userDisplayName(user)"
                   :value="user.id"
                 >
                   <div class="user-option">
-                    <el-avatar :size="24" :src="user.avatar">{{ (user.realName || user.username)[0] }}</el-avatar>
-                    <span>{{ user.realName || user.username }}</span>
+                    <el-avatar :size="24" :src="user.avatar">{{ userDisplayName(user)[0] }}</el-avatar>
+                    <span>{{ userDisplayName(user) }}</span>
                   </div>
                 </el-option>
               </el-select>
@@ -206,21 +195,21 @@
             <el-form-item label="抄送人">
               <el-select
                 v-model="formData.ccUserIds"
-                placeholder="请选择"
+                placeholder="默认留空，可按需选择"
                 clearable
                 multiple
                 filterable
                 style="width: 100%"
               >
                 <el-option
-                  v-for="user in users"
+                  v-for="user in ccUsers"
                   :key="user.id"
-                  :label="user.realName || user.username"
+                  :label="userDisplayName(user)"
                   :value="user.id"
                 >
                   <div class="user-option">
-                    <el-avatar :size="24" :src="user.avatar">{{ (user.realName || user.username)[0] }}</el-avatar>
-                    <span>{{ user.realName || user.username }}</span>
+                    <el-avatar :size="24" :src="user.avatar">{{ userDisplayName(user)[0] }}</el-avatar>
+                    <span>{{ userDisplayName(user) }}</span>
                   </div>
                 </el-option>
               </el-select>
@@ -257,7 +246,7 @@
               />
             </el-form-item>
 
-            <el-form-item v-if="shouldShowField('dueDate')" label="截止日期">
+            <el-form-item v-if="shouldShowField('dueDate')" label="期望上线时间">
               <el-date-picker
                 v-model="formData.dueDate"
                 type="date"
@@ -275,6 +264,10 @@
                 :step="0.5"
                 style="width: 100%"
               />
+            </el-form-item>
+
+            <el-form-item v-if="isEditMode" label="创建时间">
+              <el-input :model-value="formatDate(currentRequirement?.createdAt)" readonly />
             </el-form-item>
           </el-form>
         </el-card>
@@ -435,10 +428,11 @@ import { requirementConfigApi } from '@/api/modules/requirementConfig'
 import { downloadRequirementAttachment, uploadRequirementAttachment } from '@/api/modules/file'
 import type { RelationItem } from '@/api/modules/relation'
 import { buildRichTextImagePreviewUrl, hydrateRichTextImageHtml, serializeRichTextImageHtml } from '@/utils/richTextFileImage'
-import { normalizeText } from '@/utils/format'
+import { formatDate, normalizeText, stripPriorityPrefix } from '@/utils/format'
 import PageContainer from '@/components/common/PageContainer.vue'
 import { useUserStore } from '@/stores'
 import type { NextNodeOption, Requirement, RequirementAttachment } from '@/types/requirement'
+import type { OrgNode, User } from '@/types/user'
 
 const route = useRoute()
 const router = useRouter()
@@ -458,7 +452,8 @@ const currentRequirement = ref<Requirement | null>(null)
 
 // Data
 const projects = ref<any[]>([])
-const users = ref<any[]>([])
+const users = ref<User[]>([])
+const orgTree = ref<OrgNode[]>([])
 const iterations = ref<any[]>([])
 const allRequirements = ref<any[]>([])
 
@@ -492,13 +487,7 @@ const parentId = computed(() => {
 
 const isEditMode = computed(() => editId.value > 0)
 const isDraftMode = computed(() => !isEditMode.value || currentRequirement.value?.isDraft === true)
-const pageTitle = computed(() => {
-  if (!isEditMode.value) return '新建需求'
-  return currentRequirement.value?.isDraft ? '编辑草稿' : '编辑需求'
-})
-
-const DEFAULT_PROJECT_ID = 0
-const CREATE_VISIBLE_FIELD_FALLBACK = ['startDate', 'dueDate', 'estimatedHours']
+const CREATE_VISIBLE_FIELD_FALLBACK = ['dueDate']
 const FIELD_NAME_ALIASES: Record<string, string> = {
   startDate: 'startDate',
   开始时间: 'startDate',
@@ -506,12 +495,13 @@ const FIELD_NAME_ALIASES: Record<string, string> = {
   dueDate: 'dueDate',
   截止时间: 'dueDate',
   截止日期: 'dueDate',
+  期望上线时间: 'dueDate',
   estimatedHours: 'estimatedHours',
   估算工时: 'estimatedHours',
 }
 
 const formData = reactive({
-  projectId: DEFAULT_PROJECT_ID,
+  projectId: undefined as number | undefined,
   title: '',
   description: '',
   type: '' as string | undefined,
@@ -526,17 +516,21 @@ const formData = reactive({
 })
 
 const formRules = computed<FormRules>(() => ({
+  projectId: [{ required: true, message: '请选择所属项目', trigger: 'change' }],
   title: [{ required: true, message: '请输入需求标题', trigger: 'blur' }],
   type: isEditMode.value ? [{ required: true, message: '请选择需求类型', trigger: 'change' }] : [],
   priority: [{ required: true, message: '请选择优先级', trigger: 'change' }],
+  assigneeId: [{ required: true, message: '请选择提出人', trigger: 'change' }],
 }))
 
 const selectedType = computed(() => configTypes.value.find((item) => item.code === formData.type))
 const selectedTypeLabel = computed(() => selectedType.value?.name || '')
 const selectedTypeColor = computed(() => selectedType.value?.color || '')
-const showTimeCard = computed(() =>
-  shouldShowField('startDate') || shouldShowField('dueDate') || shouldShowField('estimatedHours'),
-)
+const showTimeCard = computed(() => isEditMode.value || shouldShowField('dueDate'))
+const currentUserId = computed(() => userStore.userInfo?.id)
+const currentUser = computed(() => (
+  users.value.find((item) => item.id === currentUserId.value) || null
+))
 
 const editorExtensions = [
   RichTextKit.configure({
@@ -623,6 +617,16 @@ watch(
   { immediate: true },
 )
 
+watch(
+  currentUserId,
+  (value) => {
+    if (!isEditMode.value && value && !formData.assigneeId) {
+      formData.assigneeId = value
+    }
+  },
+  { immediate: true },
+)
+
 // Filtered requirements for relation dialog
 const filteredRequirements = computed(() => {
   const candidates = allRequirements.value.filter((requirement) => {
@@ -637,13 +641,105 @@ const filteredRequirements = computed(() => {
   )
 })
 
+const orgNodeMap = computed(() => {
+  const map = new Map<number, OrgNode>()
+  const walk = (nodes: OrgNode[]) => {
+    nodes.forEach((node) => {
+      map.set(node.id, node)
+      if (node.children?.length) {
+        walk(node.children)
+      }
+    })
+  }
+  walk(orgTree.value)
+  return map
+})
+
+function userDisplayName(user: User) {
+  return user.realName || user.username
+}
+
+function resolveUserOrgId(user?: User | null) {
+  if (!user) return null
+  return user.orgId || user.departmentId || user.regionId || null
+}
+
+function resolveOrgNode(orgId?: number | null) {
+  return orgId ? orgNodeMap.value.get(orgId) || null : null
+}
+
+function isSameLevelOrg(candidateOrgId?: number | null, referenceOrgId?: number | null) {
+  const candidate = resolveOrgNode(candidateOrgId)
+  const reference = resolveOrgNode(referenceOrgId)
+  if (!candidate || !reference) return false
+  return candidate.level === reference.level && candidate.parentId === reference.parentId
+}
+
+function isDescendantOrg(candidateOrgId?: number | null, referenceOrgId?: number | null) {
+  const candidate = resolveOrgNode(candidateOrgId)
+  const reference = resolveOrgNode(referenceOrgId)
+  if (!candidate || !reference || !candidate.path || !reference.path) return false
+  return candidate.id !== reference.id && candidate.path.startsWith(reference.path)
+}
+
+function mergeSelectedUsers(baseUsers: User[], selectedIds: Array<number | undefined>) {
+  const map = new Map(baseUsers.map((item) => [item.id, item]))
+  selectedIds
+    .filter((id): id is number => typeof id === 'number')
+    .forEach((id) => {
+      const selected = users.value.find((item) => item.id === id)
+      if (selected) {
+        map.set(selected.id, selected)
+      }
+    })
+  return Array.from(map.values())
+}
+
+const proposerUsers = computed(() => {
+  const activeUsers = users.value.filter((item) => item.status === 'active')
+  const referenceUser = currentUser.value
+  const referenceOrgId = resolveUserOrgId(referenceUser)
+
+  const filtered = activeUsers.filter((candidate) => {
+    if (candidate.id === currentUserId.value) return true
+    if (!referenceUser) return false
+
+    const candidateOrgId = resolveUserOrgId(candidate)
+    if (!candidateOrgId || !referenceOrgId) return false
+
+    return candidateOrgId === referenceOrgId
+      || isSameLevelOrg(candidateOrgId, referenceOrgId)
+      || isDescendantOrg(candidateOrgId, referenceOrgId)
+  })
+
+  return mergeSelectedUsers(filtered, [formData.assigneeId])
+})
+
+const ccUsers = computed(() => {
+  const activeUsers = users.value.filter((item) => item.status === 'active')
+  const referenceUser = currentUser.value
+  if (!referenceUser) {
+    return mergeSelectedUsers(activeUsers, formData.ccUserIds)
+  }
+
+  const filtered = activeUsers.filter((candidate) => {
+    if (candidate.id === currentUserId.value) return true
+
+    const sameDepartment = !!referenceUser.departmentId && candidate.departmentId === referenceUser.departmentId
+    const sameOrg = !!referenceUser.orgId && candidate.orgId === referenceUser.orgId
+    return sameDepartment || sameOrg
+  })
+
+  return mergeSelectedUsers(filtered, formData.ccUserIds)
+})
+
 // Load data
 async function loadProjects() {
   try {
     const res = await projectApi.getProjectList({ pageNum: 1, pageSize: 100 }) as any
     projects.value = res?.list || []
-    if (formData.projectId > 0 && !projects.value.some((project: any) => project.id === formData.projectId)) {
-      formData.projectId = DEFAULT_PROJECT_ID
+    if (formData.projectId && formData.projectId > 0 && !projects.value.some((project: any) => project.id === formData.projectId)) {
+      formData.projectId = undefined
     }
   } catch {
     projects.value = []
@@ -651,10 +747,23 @@ async function loadProjects() {
   }
 }
 
+async function loadOrgTree() {
+  try {
+    const res = await userApi.getOrgTree() as any
+    orgTree.value = Array.isArray(res) ? res : []
+  } catch {
+    orgTree.value = []
+    console.error('Failed to load org tree')
+  }
+}
+
 async function loadUsers() {
   try {
-    const res = await userApi.getUserList({ pageNum: 1, pageSize: 100 }) as any
+    const res = await userApi.getUserList({ pageNum: 1, pageSize: 1000 }) as any
     users.value = res?.list || []
+    if (!isEditMode.value && !formData.assigneeId && currentUserId.value) {
+      formData.assigneeId = currentUserId.value
+    }
   } catch {
     users.value = []
     console.error('Failed to load users')
@@ -719,17 +828,17 @@ async function loadRelations(requirementId: number) {
 
 function applyRequirementToForm(data: Requirement) {
   currentRequirement.value = data
-  formData.projectId = data.projectId && data.projectId > 0 ? data.projectId : DEFAULT_PROJECT_ID
+  formData.projectId = data.projectId && data.projectId > 0 ? data.projectId : undefined
   formData.title = data.title
   formData.description = hydrateRichTextImageHtml(data.description)
   formData.type = data.type
   formData.priority = data.priority
-  formData.assigneeId = data.assigneeId || undefined
+  formData.assigneeId = data.assigneeId || data.creatorId || currentUserId.value || undefined
   formData.iterationId = data.iterationId || undefined
   formData.startDate = data.startDate || undefined
   formData.dueDate = data.dueDate || undefined
   formData.estimatedHours = data.estimatedHours || undefined
-  formData.ccUserIds = (data as any).ccUserIds || []
+  formData.ccUserIds = Array.isArray(data.ccUserIds) ? data.ccUserIds : []
   formData.attachments = Array.isArray(data.attachments) ? data.attachments : []
 }
 
@@ -750,6 +859,8 @@ async function loadEditData(targetId = editId.value) {
 
 function shouldShowField(field: string) {
   if (isEditMode.value) return true
+  if (field === 'startDate' || field === 'estimatedHours') return false
+  if (field === 'dueDate') return true
   if (createFormVisibleFields.value.length === 0) return false
   return createFormVisibleFields.value.some((item) => normalizeFieldName(item) === field)
 }
@@ -1009,12 +1120,13 @@ async function validateForms() {
 
 function buildRequirementPayload() {
   const payload: any = {
-    projectId: formData.projectId || 0,
+    projectId: formData.projectId,
     title: formData.title,
     description: serializeRichTextImageHtml(formData.description),
     type: formData.type,
     priority: formData.priority,
     assigneeId: formData.assigneeId,
+    ccUserIds: formData.ccUserIds,
     attachments: formData.attachments,
     parentId: parentId.value,
   }
@@ -1036,11 +1148,12 @@ function buildRequirementPayload() {
 
 function buildDraftPayload() {
   const payload: any = {
-    projectId: formData.projectId || 0,
+    projectId: formData.projectId,
     title: formData.title,
     description: serializeRichTextImageHtml(formData.description),
     priority: formData.priority,
     assigneeId: formData.assigneeId,
+    ccUserIds: formData.ccUserIds,
     attachments: formData.attachments,
     parentId: parentId.value ?? currentRequirement.value?.parentId,
   }
@@ -1163,7 +1276,7 @@ async function handleSubmit() {
     const nextNodeId = await chooseNextNode(nextNodes)
     if (!nextNodeId) return
     const selectedNode = nextNodes.find((item) => item.nodeId === nextNodeId)
-    if (selectedNode?.projectRequired && !(formData.projectId > 0)) {
+    if (selectedNode?.projectRequired && !(formData.projectId && formData.projectId > 0)) {
       ElMessage.warning('所选下一环节要求绑定项目，请先在基础信息中选择所属项目')
       return
     }
@@ -1171,7 +1284,7 @@ async function handleSubmit() {
     const submitted = await requirementApi.submitRequirementDraft(draft.id, {
       version: draft.version,
       nextNodeId,
-      projectId: formData.projectId || 0,
+      projectId: formData.projectId,
     })
     ElMessage.success('提交流转成功')
     router.push({ name: 'RequirementDetail', params: { id: submitted.id || draft.id } })
@@ -1199,7 +1312,7 @@ async function loadConfig() {
     const typeList = Array.isArray(typesRes) ? typesRes : (typesRes as any).data || []
     const priorityList = Array.isArray(prioritiesRes) ? prioritiesRes : (prioritiesRes as any).data || []
     configTypes.value = typeList.map((t: any) => ({ ...t, name: normalizeText(t.name) }))
-    configPriorities.value = priorityList.map((p: any) => ({ ...p, name: normalizeText(p.name) }))
+    configPriorities.value = priorityList.map((p: any) => ({ ...p, name: stripPriorityPrefix(normalizeText(p.name)) }))
     if (!isEditMode.value && configTypes.value.length > 0) {
       formData.type = configTypes.value[0].code
     }
@@ -1218,11 +1331,15 @@ async function loadCreateFormConfig(projectId = formData.projectId) {
   try {
     const res = await requirementConfigApi.getCreateFormConfig(projectId) as any
     const visibleFields = Array.isArray(res?.visibleFields)
-      ? res.visibleFields.map((item: string) => normalizeFieldName(item)).filter(Boolean)
+      ? res.visibleFields
+        .map((item: string) => normalizeFieldName(item))
+        .filter((item: string) => item === 'dueDate')
       : []
     createFormVisibleFields.value = visibleFields.length > 0 ? visibleFields : CREATE_VISIBLE_FIELD_FALLBACK
     createFormRequiredFields.value = Array.isArray(res?.requiredFields)
-      ? res.requiredFields.map((item: string) => normalizeFieldName(item)).filter(Boolean)
+      ? res.requiredFields
+        .map((item: string) => normalizeFieldName(item))
+        .filter((item: string) => item === 'dueDate')
       : []
 
     if (res?.defaultTypeCode) {
@@ -1239,6 +1356,7 @@ onMounted(async () => {
   await Promise.all([
     loadProjects(),
     loadUsers(),
+    loadOrgTree(),
     loadConfig(),
   ])
 })
@@ -1252,16 +1370,6 @@ onMounted(async () => {
   flex-direction: column;
   max-width: 1280px;
   margin: 0 auto;
-}
-
-.page-header {
-  margin-bottom: 20px;
-}
-
-.page-title {
-  margin: 12px 0 0;
-  font-size: 20px;
-  font-weight: 600;
 }
 
 .card-titlebar {

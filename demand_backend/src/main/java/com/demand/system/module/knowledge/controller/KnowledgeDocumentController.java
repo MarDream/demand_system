@@ -41,7 +41,9 @@ public class KnowledgeDocumentController {
             @RequestParam(required = false) String fileName,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String createdAtStart,
-            @RequestParam(required = false) String createdAtEnd) {
+            @RequestParam(required = false) String createdAtEnd,
+            @RequestParam(required = false) String projectName,
+            @RequestParam(required = false) Long requirementId) {
         PageResult<KnowledgeDocumentVO> result = documentService.list(
                 knowledgeBaseId,
                 pageNum,
@@ -49,7 +51,9 @@ public class KnowledgeDocumentController {
                 fileName,
                 status,
                 createdAtStart,
-                createdAtEnd
+                createdAtEnd,
+                projectName,
+                requirementId
         );
         return Result.success(result);
     }
@@ -118,6 +122,15 @@ public class KnowledgeDocumentController {
             @PathVariable Long documentId,
             HttpServletResponse response) {
         documentService.downloadDocument(knowledgeBaseId, documentId, response);
+    }
+
+    @PostMapping("/batch-download")
+    public void batchDownload(
+            @PathVariable Long knowledgeBaseId,
+            @RequestBody Map<String, List<Long>> body,
+            HttpServletResponse response) {
+        List<Long> documentIds = body.get("documentIds");
+        documentService.batchDownloadDocuments(knowledgeBaseId, documentIds, response);
     }
 
     private String resolvePublicBaseUrl(HttpServletRequest request) {

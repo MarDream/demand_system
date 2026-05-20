@@ -15,25 +15,18 @@
       <el-button size="small" @click="toggleFullscreen" title="全屏">
         <el-icon><FullScreen /></el-icon>
       </el-button>
-      <el-dropdown trigger="click" @command="handleZoom" placement="bottom-end">
-        <el-button size="small" title="缩放">
+      <div v-if="previewType !== 'office'" class="zoom-toolbar">
+        <el-button size="small" :disabled="zoom <= 50" title="缩小" @click="zoomOut">
+          <el-icon><ZoomOut /></el-icon>
+        </el-button>
+        <span class="zoom-level">{{ zoom }}%</span>
+        <el-button size="small" :disabled="zoom >= 200" title="放大" @click="zoomIn">
           <el-icon><ZoomIn /></el-icon>
         </el-button>
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item :command="{ action: 'in' }" :disabled="zoom >= 200">
-              <el-icon><ZoomIn /></el-icon> 放大
-            </el-dropdown-item>
-            <el-dropdown-item :command="{ action: 'out' }" :disabled="zoom <= 50">
-              <el-icon><ZoomOut /></el-icon> 缩小
-            </el-dropdown-item>
-            <el-dropdown-item divided :command="{ action: 'reset' }">
-              <el-icon><RefreshLeft /></el-icon> 重置为100%
-            </el-dropdown-item>
-          </el-dropdown-menu>
-        </template>
-      </el-dropdown>
-      <span v-if="previewType !== 'office'" class="zoom-level">{{ zoom }}%</span>
+        <el-button size="small" title="重置为100%" @click="resetZoom">
+          <el-icon><RefreshLeft /></el-icon>
+        </el-button>
+      </div>
     </template>
     <div ref="previewContainerRef" class="preview-container" :class="{ 'preview-container--fullscreen': isFullscreen }">
       <div v-if="previewType === 'office'" class="preview-office-wrap">
@@ -97,9 +90,11 @@ import { Download, Document, FullScreen, ZoomIn, ZoomOut, RefreshLeft } from '@e
 import AppDialog from '@/components/common/AppDialog.vue'
 import { downloadDocumentBlob, getDocumentPreviewUrl } from '@/api/modules/knowledge'
 import { KKFILEVIEW_IMAGE_PREVIEW_SET, KKFILEVIEW_SUPPORTED_EXTENSION_SET, KKFILEVIEW_TEXT_PREVIEW_SET, normalizeFileExtension } from '@/constants/knowledgeDocument'
+import { useUserStore } from '@/stores/modules/user'
 
 const KK_FILEVIEW_BASE = (import.meta.env.VITE_KK_FILEVIEW_BASE || 'http://localhost:8012').replace(/\/$/, '')
 const PREVIEW_LOADING_MIN_DURATION = 500
+const DEFAULT_WATERMARK_ANGLE = '45'
 
 const props = defineProps<{
   modelValue: boolean
@@ -115,6 +110,8 @@ const emit = defineEmits<{
   'saved': []
   'downloaded': []
 }>()
+
+const userStore = useUserStore()
 
 const visible = computed({
   get: () => props.modelValue,
@@ -164,7 +161,7 @@ watch(() => props.modelValue, async (open) => {
     try {
       const res = await getDocumentPreviewUrl(props.knowledgeBaseId, props.documentId) as any
       const presignedUrl = res.data ?? res
-      kkFileViewUrl.value = `${KK_FILEVIEW_BASE}/onlinePreview?url=${encodeURIComponent(btoa(presignedUrl))}`
+      kkFileViewUrl.value = buildKkFileViewUrl(presignedUrl)
     } catch {
       kkFileViewUrl.value = ''
       endPreviewLoading()
@@ -199,6 +196,18 @@ function getLoadingMessage(type: string) {
     return '图片正在展开，马上就好。'
   }
   return '正在整理文本内容，请稍候。'
+}
+
+function buildKkFileViewUrl(presignedUrl: string) {
+  const params = new URLSearchParams({
+    url: btoa(presignedUrl),
+    watermarkAngle: DEFAULT_WATERMARK_ANGLE,
+  })
+  const watermarkName = (userStore.userInfo?.realName || userStore.userInfo?.username || '').trim()
+  if (watermarkName) {
+    params.set('watermarkTxt', watermarkName)
+  }
+  return `${KK_FILEVIEW_BASE}/onlinePreview?${params.toString()}`
 }
 
 function beginPreviewLoading(message: string) {
@@ -252,18 +261,16 @@ function handleVisualPreviewError() {
   ElMessage.error('图片预览加载失败')
 }
 
-function handleZoom(cmd: { action: string }) {
-  switch (cmd.action) {
-    case 'in':
-      zoom.value = Math.min(200, zoom.value + 25)
-      break
-    case 'out':
-      zoom.value = Math.max(50, zoom.value - 25)
-      break
-    case 'reset':
-      zoom.value = 100
-      break
-  }
+function zoomIn() {
+  zoom.value = Math.min(200, zoom.value + 25)
+}
+
+function zoomOut() {
+  zoom.value = Math.max(50, zoom.value - 25)
+}
+
+function resetZoom() {
+  zoom.value = 100
 }
 
 function toggleFullscreen() {
@@ -335,7 +342,7 @@ document.addEventListener('fullscreenchange', onFullscreenChange)
 :global(.file-preview-dialog .app-dialog__header-actions) {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
@@ -344,12 +351,23 @@ document.addEventListener('fullscreenchange', onFullscreenChange)
   right: 12px;
 }
 
+.zoom-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(248, 250, 252, 0.96);
+  border: 1px solid #e2e8f0;
+}
+
 .zoom-level {
   font-size: 12px;
-  color: #909399;
-  margin-left: 4px;
-  min-width: 40px;
+  color: #475569;
+  min-width: 48px;
   display: inline-block;
+  text-align: center;
+  font-weight: 600;
 }
 
 .preview-container {

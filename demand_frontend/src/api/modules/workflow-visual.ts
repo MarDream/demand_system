@@ -2,6 +2,7 @@ import request from '@/api/request'
 import type {
   WorkflowConfigDTO,
   WorkflowVersionDTO,
+  WorkflowVersionActivationDTO,
   WorkflowVersionMetaUpdateDTO,
   WorkflowApprovalDTO,
   ApprovalRequestDTO
@@ -49,6 +50,20 @@ export function getVersionConfig(versionId: number) {
  */
 export function updateWorkflowVersionMeta(versionId: number, data: WorkflowVersionMetaUpdateDTO) {
   return request.put<WorkflowVersionDTO>(`/v1/workflows/versions/${versionId}/meta`, data) as unknown as Promise<WorkflowVersionDTO>
+}
+
+/**
+ * 更新工作流版本启停状态
+ */
+export function updateWorkflowVersionActivation(versionId: number, data: WorkflowVersionActivationDTO) {
+  return request.put<WorkflowVersionDTO>(`/v1/workflows/versions/${versionId}/activation`, data) as unknown as Promise<WorkflowVersionDTO>
+}
+
+/**
+ * 删除工作流版本
+ */
+export function deleteWorkflowVersion(versionId: number) {
+  return request.delete<void>(`/v1/workflows/versions/${versionId}`) as unknown as Promise<void>
 }
 
 /**

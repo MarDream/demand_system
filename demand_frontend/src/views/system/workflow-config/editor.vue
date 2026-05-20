@@ -86,30 +86,32 @@
 
           <div class="toolbar-section">
             <div class="toolbar-title">操作</div>
-            <el-button @click="handleZoomIn" style="width: 100%">
-              <el-icon><ZoomIn /></el-icon>
-              放大
-            </el-button>
-            <el-button @click="handleZoomOut" style="width: 100%; margin-top: 8px">
-              <el-icon><ZoomOut /></el-icon>
-              缩小
-            </el-button>
-            <el-button @click="handleResetZoom" style="width: 100%; margin-top: 8px">
-              <el-icon><Refresh /></el-icon>
-              重置
-            </el-button>
-            <el-button
-              @click="handleFormatLayout"
-              :disabled="isViewMode"
-              style="width: 100%; margin-top: 8px"
-            >
-              <el-icon><Grid /></el-icon>
-              格式化排版
-            </el-button>
-            <el-button @click="handleClearCanvas" type="danger" style="width: 100%; margin-top: 8px">
-              <el-icon><Delete /></el-icon>
-              清空画布
-            </el-button>
+            <div class="toolbar-actions">
+              <el-button class="toolbar-action-btn" @click="handleZoomIn">
+                <el-icon><ZoomIn /></el-icon>
+                放大
+              </el-button>
+              <el-button class="toolbar-action-btn" @click="handleZoomOut">
+                <el-icon><ZoomOut /></el-icon>
+                缩小
+              </el-button>
+              <el-button class="toolbar-action-btn" @click="handleResetZoom">
+                <el-icon><Refresh /></el-icon>
+                重置
+              </el-button>
+              <el-button
+                class="toolbar-action-btn"
+                @click="handleFormatLayout"
+                :disabled="isViewMode"
+              >
+                <el-icon><Grid /></el-icon>
+                格式化排版
+              </el-button>
+              <el-button class="toolbar-action-btn" @click="handleClearCanvas" type="danger">
+                <el-icon><Delete /></el-icon>
+                清空画布
+              </el-button>
+            </div>
           </div>
         </div>
 
@@ -149,7 +151,9 @@
 
               <el-form-item v-if="nodeForm.nodeType !== 'end'" label="节点规则">
                 <el-checkbox v-model="nodeForm.allowCancel">允许取消</el-checkbox>
-                <el-checkbox v-model="nodeForm.projectRequired" style="margin-left: 16px">项目必选</el-checkbox>
+                <el-checkbox v-if="showProjectRequiredCheckbox" v-model="nodeForm.projectRequired" style="margin-left: 16px">
+                  项目必选
+                </el-checkbox>
               </el-form-item>
 
               <!-- 审批节点和抄送节点的配置 -->
@@ -269,6 +273,7 @@ import {
 import { nodeStatusApi, type NodeStatus } from '@/api/modules/workflow-engine'
 import * as roleApi from '@/api/modules/role'
 import * as userApi from '@/api/modules/user'
+import { resolveActiveMenuPath } from '@/utils/menuNavigation'
 import type {
   WorkflowVersionDTO,
   WorkflowVersionMetaUpdateDTO,
@@ -387,6 +392,7 @@ const resolveWorkflowProjectId = (rawValue: unknown) => {
 const getNodeSize = (type?: string) => NODE_LAYOUT_SIZE[type || 'approval'] || NODE_LAYOUT_SIZE.approval
 
 const currentProjectId = computed(() => resolveWorkflowProjectId(route.query.projectId || route.params.projectId))
+const returnMenuPath = computed(() => resolveActiveMenuPath(route))
 const workflowScopeLabel = computed(() => currentProjectId.value === GLOBAL_WORKFLOW_PROJECT_ID ? '全局标准流程' : `项目 ${currentProjectId.value}`)
 const workflowEditorTitle = computed(() => {
   const scopeText = currentProjectId.value === GLOBAL_WORKFLOW_PROJECT_ID ? '全局工作流' : '工作流'
@@ -394,6 +400,7 @@ const workflowEditorTitle = computed(() => {
   if (isEditMode.value) return `编辑${scopeText}`
   return `新建${scopeText}`
 })
+const showProjectRequiredCheckbox = computed(() => !hasProjectRequiredInPredecessors(nodeForm.nodeId))
 const trimmedVersionName = computed(() => versionForm.name.trim())
 const duplicatedVersionRecord = computed(() => {
   if (!versionForm.version) return undefined
@@ -526,6 +533,66 @@ const getLayoutGraphData = () => {
         sourceNodeId: edge.sourceNodeId,
         targetNodeId: edge.targetNodeId
       }))
+  }
+}
+
+const getWorkflowGraphData = () => {
+  if (!lf) return null
+
+  return lf.getGraphData() as {
+    nodes?: Array<{
+      id?: string
+      properties?: Record<string, any>
+    }>
+    edges?: Array<{
+      sourceNodeId?: string
+      targetNodeId?: string
+    }>
+  }
+}
+
+const hasNodeProjectRequired = (node?: { properties?: Record<string, any> }) => {
+  return Boolean(node?.properties?.projectRequired ?? node?.properties?.properties?.projectRequired)
+}
+
+const hasProjectRequiredInPredecessors = (nodeId?: string) => {
+  if (!nodeId) return false
+
+  const graphData = getWorkflowGraphData()
+  if (!graphData) return false
+
+  const nodeMap = new Map((graphData.nodes || []).filter(node => !!node.id).map(node => [node.id as string, node]))
+  const parentMap = new Map<string, string[]>()
+
+  ;(graphData.edges || []).forEach((edge) => {
+    if (!edge.sourceNodeId || !edge.targetNodeId) return
+    const parents = parentMap.get(edge.targetNodeId) || []
+    parents.push(edge.sourceNodeId)
+    parentMap.set(edge.targetNodeId, parents)
+  })
+
+  const visited = new Set<string>()
+  const stack = [...(parentMap.get(nodeId) || [])]
+
+  while (stack.length > 0) {
+    const currentId = stack.pop()
+    if (!currentId || visited.has(currentId)) continue
+    visited.add(currentId)
+
+    const currentNode = nodeMap.get(currentId)
+    if (hasNodeProjectRequired(currentNode)) {
+      return true
+    }
+
+    stack.push(...(parentMap.get(currentId) || []))
+  }
+
+  return false
+}
+
+const normalizeCurrentNodeProjectRequired = () => {
+  if (hasProjectRequiredInPredecessors(nodeForm.nodeId)) {
+    nodeForm.projectRequired = false
   }
 }
 
@@ -1376,6 +1443,7 @@ const handleNodeClick = (data: any) => {
     projectRequired: data.properties?.projectRequired ?? data.properties?.properties?.projectRequired ?? false,
     properties: data.properties || {}
   })
+  normalizeCurrentNodeProjectRequired()
 }
 
 // 处理边点击
@@ -1393,6 +1461,8 @@ const handleEdgeClick = (data: any) => {
 // 保存节点配置
 const handleSaveNodeConfig = () => {
   if (!lf || !selectedNode.value) return
+
+  normalizeCurrentNodeProjectRequired()
 
   const nodeData = {
     id: nodeForm.nodeId,
@@ -1412,7 +1482,7 @@ const handleSaveNodeConfig = () => {
       timeoutAction: nodeForm.timeoutAction,
       nodeStatusCode: nodeForm.nodeStatusCode,
       allowCancel: nodeForm.allowCancel,
-      projectRequired: nodeForm.projectRequired
+      projectRequired: showProjectRequiredCheckbox.value ? nodeForm.projectRequired : false
     }
   }
 
@@ -1636,7 +1706,7 @@ const handleSubmit = async () => {
     await submitForApproval(currentProjectId.value)
 
     ElMessage.success('提交审核成功')
-    router.push('/system/workflow-config')
+    router.push(returnMenuPath.value)
   } catch (error) {
   } finally {
     submitting.value = false
@@ -1652,7 +1722,7 @@ const handleDrawerClose = () => {
 
 // 返回
 const goBack = () => {
-  router.push('/system/workflow-config')
+  router.push(returnMenuPath.value)
 }
 
 const loadVersionHistory = async () => {
@@ -1942,6 +2012,26 @@ onBeforeUnmount(() => {
 
       .toolbar-section {
         margin-top: 24px;
+      }
+
+      .toolbar-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .toolbar-action-btn {
+        width: 100%;
+        margin-left: 0;
+        justify-content: center;
+
+        :deep(span) {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          width: 100%;
+        }
       }
 
       .help-section {

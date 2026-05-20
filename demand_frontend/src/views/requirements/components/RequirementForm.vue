@@ -107,7 +107,7 @@ import {
   type Priority,
   type RequirementType,
 } from '@/api/modules/requirementConfig'
-import { normalizeText } from '@/utils/format'
+import { normalizeText, stripPriorityPrefix } from '@/utils/format'
 
 type RequirementFormModel = Partial<RequirementCreate & RequirementUpdate>
 
@@ -169,7 +169,7 @@ async function loadConfigOptions() {
     }))
     priorityOptions.value = priorityList.map((priority: Priority) => ({
       ...priority,
-      name: normalizeText(priority.name),
+      name: stripPriorityPrefix(normalizeText(priority.name)),
     }))
   } catch (error) {
     console.error('加载需求配置失败', error)

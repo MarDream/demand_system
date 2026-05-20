@@ -18,6 +18,7 @@ public class KnowledgeDocumentVO {
     private Long sourceId;
     private Long uploaderId;
     private String uploaderName;
+    private String projectName;
     private Integer downloadCount;
     private LocalDateTime createdAt;
 
@@ -133,6 +134,14 @@ public class KnowledgeDocumentVO {
         this.uploaderName = uploaderName;
     }
 
+    public String getProjectName() {
+        return projectName;
+    }
+
+    public void setProjectName(String projectName) {
+        this.projectName = projectName;
+    }
+
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
@@ -168,6 +177,7 @@ public class KnowledgeDocumentVO {
         private Long sourceId;
         private Long uploaderId;
         private String uploaderName;
+        private String projectName;
         private Integer downloadCount;
         private LocalDateTime createdAt;
 
@@ -241,6 +251,11 @@ public class KnowledgeDocumentVO {
             return this;
         }
 
+        public Builder projectName(String projectName) {
+            this.projectName = projectName;
+            return this;
+        }
+
         public Builder downloadCount(Integer downloadCount) {
             this.downloadCount = downloadCount;
             return this;
@@ -267,6 +282,7 @@ public class KnowledgeDocumentVO {
             vo.setSourceId(sourceId);
             vo.setUploaderId(uploaderId);
             vo.setUploaderName(uploaderName);
+            vo.setProjectName(projectName);
             vo.setDownloadCount(downloadCount);
             vo.setCreatedAt(createdAt);
             return vo;

@@ -8,6 +8,7 @@ public class RoleVO {
     private String code;
     private String name;
     private String description;
+    private Long roleGroupId;
     private Integer isSystem;
 
     public Long getId() {
@@ -42,6 +43,14 @@ public class RoleVO {
         this.description = description;
     }
 
+    public Long getRoleGroupId() {
+        return roleGroupId;
+    }
+
+    public void setRoleGroupId(Long roleGroupId) {
+        this.roleGroupId = roleGroupId;
+    }
+
     public Integer getIsSystem() {
         return isSystem;
     }
@@ -56,6 +65,7 @@ public class RoleVO {
         vo.setCode(role.getCode());
         vo.setName(role.getName());
         vo.setDescription(role.getDescription());
+        vo.setRoleGroupId(role.getRoleGroupId());
         vo.setIsSystem(role.getIsSystem());
         return vo;
     }

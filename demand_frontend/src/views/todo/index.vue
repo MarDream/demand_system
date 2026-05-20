@@ -274,6 +274,7 @@ import { computed, ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { formatDate as formatDateTime } from '@/utils/format'
+import { resolveActiveMenuPath } from '@/utils/menuNavigation'
 import { usePermission } from '@/composables/usePermission'
 import {
   getPendingApprovals,
@@ -447,7 +448,8 @@ function handleViewVersion(row: WorkflowApprovalDTO) {
     path: '/system/workflow-config/editor',
     query: {
       versionId: row.workflowVersionId,
-      mode: 'view'
+      mode: 'view',
+      sourceMenu: resolveActiveMenuPath(route),
     }
   })
 }

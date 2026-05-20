@@ -152,8 +152,8 @@
                 {{ row.status === 'active' ? '正常' : '停用' }}
               </template>
             </el-table-column>
-            <el-table-column label="职位" min-width="140">
-              <template #default="{ row }">{{ positionName(row.positionId) }}</template>
+            <el-table-column label="角色" min-width="140">
+              <template #default="{ row }">{{ row.systemRole || '-' }}</template>
             </el-table-column>
             <el-table-column label="工号" width="120">
               <template #default="{ row }">{{ row.jobNumber || '-' }}</template>
@@ -356,8 +356,8 @@
             <el-table-column label="部门" min-width="150">
               <template #default="{ row }">{{ orgName(row.departmentId) }}</template>
             </el-table-column>
-            <el-table-column label="职位" min-width="130">
-              <template #default="{ row }">{{ positionName(row.positionId) }}</template>
+            <el-table-column label="角色" min-width="130">
+              <template #default="{ row }">{{ row.systemRole || '-' }}</template>
             </el-table-column>
             <el-table-column label="入职时间" width="160">
               <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
@@ -450,13 +450,13 @@
             <span class="org-chain-text">{{ createOrgChainText }}</span>
           </el-form-item>
         </template>
-        <el-form-item label="岗位" prop="positionId">
-          <el-select v-model="form.positionId" placeholder="请选择岗位" clearable style="width: 100%">
+        <el-form-item label="角色" prop="roleId">
+          <el-select v-model="form.roleId" placeholder="请选择角色" clearable style="width: 100%">
             <el-option
-              v-for="position in positionList"
-              :key="position.id"
-              :label="position.name"
-              :value="position.id"
+              v-for="role in roleList"
+              :key="role.id"
+              :label="role.name"
+              :value="role.id"
             />
           </el-select>
         </el-form-item>
@@ -567,10 +567,12 @@ import {
 } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import * as userApi from '@/api/modules/user'
-import type { OrgNode, Position, User as UserInfo } from '@/types/user'
+import type { OrgNode, User as UserInfo } from '@/types/user'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import { formatDate as formatDateTime } from '@/utils/format'
+import { getRoleList } from '@/api/modules/role'
+import type { RoleItem } from '@/api/modules/menu'
 import { useUserStore } from '@/stores/modules/user'
 
 interface FlatOrgNode {
@@ -602,7 +604,7 @@ interface UserForm {
   orgId: number | null
   regionId: number | null
   departmentId: number | null
-  positionId: number | null
+  roleId: number | null
   status: string
 }
 
@@ -636,7 +638,7 @@ const departmentSubmitting = ref(false)
 const orgTree = ref<OrgNode[]>([])
 const regionTree = ref<OrgNode[]>([])
 const departmentTree = ref<OrgNode[]>([])
-const positionList = ref<Position[]>([])
+const roleList = ref<RoleItem[]>([])
 
 const queryParams = reactive({
   username: '',
@@ -655,7 +657,7 @@ const form = reactive<UserForm>({
   orgId: null,
   regionId: null,
   departmentId: null,
-  positionId: null,
+  roleId: null,
   status: 'active',
 })
 
@@ -824,7 +826,7 @@ const flatOrgNodes = computed<FlatOrgNode[]>(() => {
         id: item.id,
         name: item.name,
         level,
-        count: countUsersByOrg(item.id),
+        count: resolveOrgMemberCount(item),
         icon: orgIcon(item.orgType),
         hasChildren: (item.children?.length ?? 0) > 0,
         parentKey,
@@ -922,14 +924,14 @@ function hasOrgTypeMulti(node: OrgNode, types: string[]): boolean {
 
 async function loadOrgData() {
   try {
-    const [orgRes, positionsRes] = await Promise.all([
+    const [orgRes, rolesRes] = await Promise.all([
       userApi.getOrgTree(),
-      userApi.getPositionList(),
+      getRoleList(),
     ])
     orgTree.value = normalizeArray<OrgNode>(orgRes)
     regionTree.value = filterOrgTreeMulti(orgTree.value, ['region', 'company', 'bureau'])
     departmentTree.value = filterOrgTreeMulti(orgTree.value, ['company', 'bureau', 'department'])
-    positionList.value = normalizeArray<Position>(positionsRes)
+    roleList.value = normalizeArray<RoleItem>(rolesRes)
 
     if (!activeOrgKey.value && orgTree.value.length > 0) {
       activeOrgKey.value = `org-${orgTree.value[0].id}`
@@ -1063,7 +1065,10 @@ async function handleEdit(row: UserInfo) {
     form.orgId = userDetail.orgId || null
     form.regionId = userDetail.regionId || null
     form.departmentId = userDetail.departmentId || null
-    form.positionId = userDetail.positionId || null
+    // 加载用户角色
+    const roleIds: any = await userApi.getUserRoles(row.id)
+    form.roleId = roleIds?.[0] || null
+    
   } catch {
     ElMessage.error('加载成员信息失败')
     return
@@ -1134,9 +1139,13 @@ async function handleSubmit() {
         orgId: form.orgId,
         regionId: form.regionId,
         departmentId: form.departmentId,
-        positionId: form.positionId,
+        
       })
       ElMessage.success('更新成功')
+      // 分配角色
+      if (form.roleId) {
+        await userApi.assignRoles(editId.value, [form.roleId])
+      }
     } else {
       await userApi.createUser({
         username: form.username,
@@ -1146,7 +1155,7 @@ async function handleSubmit() {
         orgId: form.orgId,
         regionId: form.regionId,
         departmentId: form.departmentId,
-        positionId: form.positionId,
+        
       })
       ElMessage.success('创建成功，系统已按默认规则生成初始密码并尝试发送邮件')
     }
@@ -1179,7 +1188,7 @@ function resetForm() {
   form.orgId = null
   form.regionId = null
   form.departmentId = null
-  form.positionId = null
+  form.roleId = null
   form.status = 'active'
   formRef.value?.resetFields()
 }
@@ -1318,16 +1327,19 @@ function countUsersByOrg(id: number) {
   return userList.value.filter(user => user.orgId === id || user.departmentId === id || user.regionId === id).length
 }
 
+function resolveOrgMemberCount(node: Pick<OrgNode, 'id' | 'memberCount'>) {
+  if (typeof node.memberCount === 'number') {
+    return node.memberCount
+  }
+  return countUsersByOrg(node.id)
+}
+
 function orgName(id?: number | null) {
   if (!id) return '-'
   const found = flatOrgNodes.value.find(node => node.id === id)
   return found?.name || '-'
 }
 
-function positionName(id?: number | null) {
-  if (!id) return '-'
-  return positionList.value.find(item => item.id === id)?.name || '-'
-}
 
 function avatarText(row: UserInfo) {
   return (row.realName || row.username || '?').slice(0, 1)
@@ -1389,7 +1401,7 @@ function toDepartmentRow(node: OrgNode, level: number): DepartmentRow {
     parentId: node.parentId,
     name: node.name,
     level,
-    count: countUsersByOrg(node.id),
+    count: resolveOrgMemberCount(node),
     children: node.children?.map(child => toDepartmentRow(child, level + 1)),
   }
 }

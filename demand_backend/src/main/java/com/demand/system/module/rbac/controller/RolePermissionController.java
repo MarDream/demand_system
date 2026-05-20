@@ -2,8 +2,13 @@ package com.demand.system.module.rbac.controller;
 
 import com.demand.system.common.result.Result;
 import com.demand.system.module.rbac.dto.RoleCreateDTO;
+import com.demand.system.module.rbac.dto.RoleGroupCreateDTO;
+import com.demand.system.module.rbac.dto.RoleGroupSortItem;
+import com.demand.system.module.rbac.dto.RoleGroupUpdateDTO;
+import com.demand.system.module.rbac.dto.RoleGroupVO;
 import com.demand.system.module.rbac.dto.RolePermissionSaveDTO;
 import com.demand.system.module.rbac.dto.RolePermissionVO;
+import com.demand.system.module.rbac.dto.RoleSortItem;
 import com.demand.system.module.rbac.dto.RoleUpdateDTO;
 import com.demand.system.module.rbac.dto.RoleVO;
 import com.demand.system.module.rbac.service.RolePermissionService;
@@ -29,6 +34,31 @@ public class RolePermissionController {
     @GetMapping
     public Result<List<RoleVO>> listRoles() {
         return rolePermissionService.listRoles();
+    }
+
+    @Operation(summary = "查询角色组列表")
+    @GetMapping("/groups")
+    public Result<List<RoleGroupVO>> listRoleGroups() {
+        return rolePermissionService.listRoleGroups();
+    }
+
+    @Operation(summary = "创建角色组")
+    @PostMapping("/groups")
+    public Result<RoleGroupVO> createRoleGroup(@Valid @RequestBody RoleGroupCreateDTO request) {
+        return rolePermissionService.createRoleGroup(request);
+    }
+
+    @Operation(summary = "更新角色组")
+    @PutMapping("/groups/{groupId}")
+    public Result<RoleGroupVO> updateRoleGroup(@PathVariable Long groupId, @Valid @RequestBody RoleGroupUpdateDTO request) {
+        request.setId(groupId);
+        return rolePermissionService.updateRoleGroup(request);
+    }
+
+    @Operation(summary = "删除角色组")
+    @DeleteMapping("/groups/{groupId}")
+    public Result<Void> deleteRoleGroup(@PathVariable Long groupId) {
+        return rolePermissionService.deleteRoleGroup(groupId);
     }
 
     @Operation(summary = "创建角色")
@@ -68,6 +98,18 @@ public class RolePermissionController {
     @GetMapping("/grantable-permissions")
     public Result<List<String>> getCurrentGrantablePermissionCodes() {
         return rolePermissionService.getCurrentGrantablePermissionCodes();
+    }
+
+    @Operation(summary = "批量排序角色组")
+    @PutMapping("/groups/batch-sort")
+    public Result<Void> batchSortRoleGroups(@RequestBody List<RoleGroupSortItem> items) {
+        return rolePermissionService.batchSortRoleGroups(items);
+    }
+
+    @Operation(summary = "批量排序角色")
+    @PutMapping("/batch-sort")
+    public Result<Void> batchSortRoles(@RequestBody List<RoleSortItem> items) {
+        return rolePermissionService.batchSortRoles(items);
     }
 
 }

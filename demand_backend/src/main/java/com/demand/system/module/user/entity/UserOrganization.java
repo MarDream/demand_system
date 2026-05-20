@@ -20,8 +20,6 @@ public class UserOrganization {
 
     private Long departmentId;
 
-    private Long positionId;
-
     private String systemRole;
 
     private Long managerId;
@@ -66,14 +64,6 @@ public class UserOrganization {
 
     public void setDepartmentId(Long departmentId) {
         this.departmentId = departmentId;
-    }
-
-    public Long getPositionId() {
-        return positionId;
-    }
-
-    public void setPositionId(Long positionId) {
-        this.positionId = positionId;
     }
 
     public String getSystemRole() {

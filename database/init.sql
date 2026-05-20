@@ -7,24 +7,6 @@ SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- -----------------------------------------------------
--- 1. 职位表 positions
--- -----------------------------------------------------
-DROP TABLE IF EXISTS `positions`;
-CREATE TABLE `positions` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `name` VARCHAR(100) NOT NULL COMMENT '职位名称',
-  `code` VARCHAR(50) DEFAULT NULL COMMENT '职位编码',
-  `level` INT DEFAULT NULL COMMENT '职级',
-  `description` TEXT COMMENT '职位描述',
-  `sort_order` INT DEFAULT 0 COMMENT '排序',
-  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
-  PRIMARY KEY (`id`),
-  INDEX `idx_deleted_at` (`deleted_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='职位表';
-
--- -----------------------------------------------------
 -- 4. 用户表 users
 -- -----------------------------------------------------
 DROP TABLE IF EXISTS `users`;
@@ -38,7 +20,6 @@ CREATE TABLE `users` (
   `avatar` VARCHAR(255) DEFAULT NULL COMMENT '头像URL',
   `region_id` INT UNSIGNED DEFAULT NULL COMMENT '所属区域ID',
   `department_id` INT UNSIGNED DEFAULT NULL COMMENT '所属部门ID',
-  `position_id` INT UNSIGNED DEFAULT NULL COMMENT '岗位ID',
   `job_number` VARCHAR(20) DEFAULT NULL COMMENT '工号(A001~Z999, AA001...)',
   `status` ENUM('active', 'inactive') DEFAULT 'active' COMMENT '状态',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -49,8 +30,7 @@ CREATE TABLE `users` (
   INDEX `idx_status` (`status`),
   INDEX `idx_deleted_at` (`deleted_at`),
   INDEX `idx_region_id` (`region_id`),
-  INDEX `idx_department_id` (`department_id`),
-  INDEX `idx_position_id` (`position_id`)
+  INDEX `idx_department_id` (`department_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
 
 -- -----------------------------------------------------
@@ -62,7 +42,6 @@ CREATE TABLE `user_organizations` (
   `user_id` INT UNSIGNED NOT NULL COMMENT '用户ID',
   `region_id` INT UNSIGNED DEFAULT NULL COMMENT '区域ID',
   `department_id` INT UNSIGNED DEFAULT NULL COMMENT '部门ID',
-  `position_id` INT UNSIGNED DEFAULT NULL COMMENT '职位ID',
   `system_role` VARCHAR(50) NOT NULL COMMENT '系统角色(admin/manager/user)',
   `manager_id` INT UNSIGNED DEFAULT NULL COMMENT '上级ID',
   `effective_date` DATE NOT NULL COMMENT '生效日期',
@@ -70,7 +49,6 @@ CREATE TABLE `user_organizations` (
   INDEX `idx_user_id` (`user_id`),
   INDEX `idx_region_id` (`region_id`),
   INDEX `idx_department_id` (`department_id`),
-  INDEX `idx_position_id` (`position_id`),
   INDEX `idx_manager_id` (`manager_id`),
   INDEX `idx_system_role` (`system_role`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户组织关系表';
@@ -273,6 +251,7 @@ CREATE TABLE `requirements` (
   `analysis_completed_at` DATETIME DEFAULT NULL COMMENT '分析完成时间',
   `confirm_at` DATETIME DEFAULT NULL COMMENT '确认时间',
   `development_completed_at` DATETIME DEFAULT NULL COMMENT '开发完成时间',
+  `cc_user_ids` JSON DEFAULT NULL COMMENT '抄送人ID列表',
   `attachments` JSON DEFAULT NULL COMMENT '附件列表',
   `order_num` INT DEFAULT 0 COMMENT '排序号',
   `version` INT DEFAULT 0 COMMENT '乐观锁版本号',
@@ -445,8 +424,8 @@ INSERT INTO `users` (`id`, `username`, `password`, `real_name`, `email`, `phone`
 (1, 'admin', '$2b$12$.SPoAlnnJvD.VajrVmgCdeBTWE/DQ75Ym/P9dGL.3IzT4ewED9QVG', '系统管理员', 'admin@demand.com', NULL, NULL, 'active', NOW(), NOW(), 0);
 
 -- 用户组织关系
-INSERT INTO `user_organizations` (`user_id`, `region_id`, `department_id`, `position_id`, `system_role`, `manager_id`, `effective_date`) VALUES
-(1, 1, 1, 1, 'admin', NULL, '2026-01-01');
+INSERT INTO `user_organizations` (`user_id`, `region_id`, `department_id`, `system_role`, `manager_id`, `effective_date`) VALUES
+(1, 1, 1, 'admin', NULL, '2026-01-01');
 
 -- 角色数据和用户角色分配移至建表语句之后
 
@@ -466,7 +445,24 @@ INSERT INTO `priorities` (`code`, `name`, `color`, `level`, `sort_order`, `is_de
 ('P3', 'P3-低', '#909399', 3, 4, 0);
 
 -- -----------------------------------------------------
--- 21. 角色表 roles
+-- 21. 角色组表 role_groups
+-- -----------------------------------------------------
+DROP TABLE IF EXISTS `role_groups`;
+CREATE TABLE `role_groups` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name` VARCHAR(100) NOT NULL COMMENT '角色组名称',
+  `description` TEXT COMMENT '角色组描述',
+  `sort_order` INT DEFAULT 0 COMMENT '排序',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `uk_role_group_name` (`name`),
+  INDEX `idx_role_group_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='角色组表';
+
+-- -----------------------------------------------------
+-- 22. 角色表 roles
 -- -----------------------------------------------------
 DROP TABLE IF EXISTS `roles`;
 CREATE TABLE `roles` (
@@ -474,17 +470,20 @@ CREATE TABLE `roles` (
   `code` VARCHAR(50) NOT NULL COMMENT '角色编码',
   `name` VARCHAR(100) NOT NULL COMMENT '角色名称',
   `description` TEXT COMMENT '角色描述',
+  `role_group_id` INT UNSIGNED DEFAULT NULL COMMENT '角色组ID',
+  `sort_order` INT DEFAULT 0 COMMENT '排序',
   `is_system` TINYINT DEFAULT 0 COMMENT '是否系统角色 0=否 1=是',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
   PRIMARY KEY (`id`),
   UNIQUE INDEX `uk_code` (`code`),
+  INDEX `idx_role_group_id` (`role_group_id`),
   INDEX `idx_deleted_at` (`deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='角色表';
 
 -- -----------------------------------------------------
--- 22. 用户角色关系表 user_roles
+-- 23. 用户角色关系表 user_roles
 -- -----------------------------------------------------
 DROP TABLE IF EXISTS `user_roles`;
 CREATE TABLE `user_roles` (
@@ -925,6 +924,7 @@ ALTER TABLE requirements ADD COLUMN IF NOT EXISTS requirement_no VARCHAR(64) DEF
 ALTER TABLE requirements ADD COLUMN IF NOT EXISTS analysis_completed_at DATETIME DEFAULT NULL COMMENT '分析完成时间' AFTER due_date;
 ALTER TABLE requirements ADD COLUMN IF NOT EXISTS confirm_at DATETIME DEFAULT NULL COMMENT '需求确认时间' AFTER analysis_completed_at;
 ALTER TABLE requirements ADD COLUMN IF NOT EXISTS development_completed_at DATETIME DEFAULT NULL COMMENT '开发完成时间' AFTER confirm_at;
+ALTER TABLE requirements ADD COLUMN IF NOT EXISTS cc_user_ids JSON DEFAULT NULL COMMENT '抄送人ID列表' AFTER development_completed_at;
 SET @requirements_no_index_exists := (
   SELECT COUNT(1)
   FROM information_schema.statistics
@@ -1008,15 +1008,15 @@ INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`) VALUES
 INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
 (16, 0, '模型配置', 'MENU', '/settings/llm', 'LlmConfig', 'views/settings/llm.vue', 'MagicStick', 10, 'menu:settings:llm', 1, 1, 0);
 
--- 工作流审批菜单权限
+-- 工作流管理菜单权限
 INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `status`) VALUES
-(35, 'menu:settings:workflow:approval', '工作流审批菜单', 'MENU', '工作流审批菜单入口', 1);
+(35, 'menu:settings:workflow:approval', '工作流管理菜单', 'MENU', '工作流管理菜单入口', 1);
 
--- 工作流审批菜单（系统配置子菜单）
+-- 工作流管理菜单（系统配置子菜单）
 INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
-(33, 7, '工作流审批', 'MENU', '/settings/workflow-approvals', 'WorkflowApprovals', 'views/todo/index.vue', 'Stamp', 7, 'menu:settings:workflow:approval', 1, 1, 0);
+(33, 7, '工作流管理', 'MENU', '/settings/workflow-approvals', 'WorkflowApprovals', 'views/system/workflow-config/index.vue', 'Stamp', 7, 'menu:settings:workflow:approval', 1, 1, 0);
 
--- SUPER_ADMIN 授权工作流审批权限
+-- SUPER_ADMIN 授权工作流管理权限
 INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_by`) VALUES
 (1, 35, 1);
 
@@ -1134,13 +1134,6 @@ ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS `requirement_id` BIGINT
 ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS `source_type` VARCHAR(50) DEFAULT NULL COMMENT '来源类型(requirement/knowledge_base)' AFTER requirement_id;
 ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS `source_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '来源业务ID' AFTER source_type;
 ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS `download_count` INT UNSIGNED DEFAULT 0 COMMENT '下载次数' AFTER uploader_id;
-
--- -----------------------------------------------------
--- 岗位表字段补全
--- -----------------------------------------------------
-ALTER TABLE positions ADD COLUMN IF NOT EXISTS `region_id` INT UNSIGNED DEFAULT NULL COMMENT '归属区域ID' AFTER description;
-ALTER TABLE positions ADD COLUMN IF NOT EXISTS `department_id` INT UNSIGNED DEFAULT NULL COMMENT '归属部门ID' AFTER region_id;
-ALTER TABLE positions ADD COLUMN IF NOT EXISTS `menu_permissions` JSON DEFAULT NULL COMMENT '菜单权限ID列表' AFTER department_id;
 
 -- -----------------------------------------------------
 -- 需求表增加工作流相关字段
@@ -1288,10 +1281,9 @@ CREATE TABLE IF NOT EXISTS `sys_org` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一组织架构表';
 
 -- 关联表添加 org_id
-ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `job_number` VARCHAR(20) DEFAULT NULL COMMENT '工号(A001~Z999, AA001...)' AFTER `position_id`;
+ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `job_number` VARCHAR(20) DEFAULT NULL COMMENT '工号(A001~Z999, AA001...)' AFTER `department_id`;
 ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `org_id` INT UNSIGNED DEFAULT NULL COMMENT '所属组织ID';
 ALTER TABLE `user_organizations` ADD COLUMN IF NOT EXISTS `org_id` INT UNSIGNED DEFAULT NULL COMMENT '组织ID';
-ALTER TABLE `positions` ADD COLUMN IF NOT EXISTS `org_id` INT UNSIGNED DEFAULT NULL COMMENT '归属组织ID';
 ALTER TABLE `requirements` ADD COLUMN IF NOT EXISTS `org_id` INT UNSIGNED DEFAULT NULL COMMENT '归属组织ID';
 
 -- 初始化统一组织数据（直接插入，不再依赖旧 regions/departments 表）

@@ -73,6 +73,7 @@ export interface RoleItem {
   code: string
   name: string
   description: string
+  roleGroupId?: number | null
   isSystem: number
 }
 

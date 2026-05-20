@@ -2,20 +2,7 @@
   <PageContainer variant="card" :breadcrumb="false">
     <div v-loading="loading" class="detail-page">
       <template v-if="detail">
-        <!-- Header -->
-        <div class="detail-header">
-          <div class="header-left">
-            <el-breadcrumb separator="/">
-              <el-breadcrumb-item :to="{ name: 'Requirements' }">需求管理</el-breadcrumb-item>
-              <el-breadcrumb-item>需求详情</el-breadcrumb-item>
-            </el-breadcrumb>
-            <h2 class="detail-title">
-              {{ detail.title }}
-              <el-tag :type="statusTagType(detail.status)" size="small" style="margin-left: 12px">
-                {{ detail.status }}
-              </el-tag>
-            </h2>
-          </div>
+        <div class="detail-actions">
           <div class="header-actions">
             <el-button @click="handleEdit">编辑</el-button>
             <el-button type="success" @click="handleSplit">拆分子需求</el-button>
@@ -92,11 +79,11 @@
             <el-descriptions-item label="状态">
               <el-tag :type="statusTagType(detail.status)">{{ detail.status }}</el-tag>
             </el-descriptions-item>
-            <el-descriptions-item label="负责人">{{ detail.assigneeName || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="提出人">{{ detail.assigneeName || '-' }}</el-descriptions-item>
             <el-descriptions-item label="创建人">{{ detail.creatorName || '-' }}</el-descriptions-item>
             <el-descriptions-item label="创建时间">{{ formatDate(detail.createdAt) }}</el-descriptions-item>
             <el-descriptions-item label="所属迭代">{{ detail.iterationId || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="截止日期">{{ detail.dueDate || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="期望上线时间">{{ detail.dueDate || '-' }}</el-descriptions-item>
             <el-descriptions-item label="估算工时">{{ detail.estimatedHours ? detail.estimatedHours + ' 小时' : '-' }}</el-descriptions-item>
             <el-descriptions-item label="实际工时">{{ detail.actualHours ? detail.actualHours + ' 小时' : '-' }}</el-descriptions-item>
             <el-descriptions-item label="附件" :span="2">
@@ -259,7 +246,7 @@ import { workflowEngineApi, type AvailableTransition, type WorkflowAvailableActi
 import { executeTransition, getAvailableTransitions, getWorkflowStates } from '@/api/modules/workflow'
 import type { Requirement, RequirementAttachment, RequirementComment, RequirementHistory, RequirementUpdate } from '@/types/requirement'
 import type { WorkflowState, WorkflowTransition } from '@/types/workflow'
-import { normalizeText, formatDate } from '@/utils/format'
+import { normalizeText, formatDate, stripPriorityPrefix } from '@/utils/format'
 import { hydrateRichTextImageHtml } from '@/utils/richTextFileImage'
 import PageContainer from '@/components/common/PageContainer.vue'
 
@@ -348,7 +335,7 @@ async function loadConfig() {
     const typeList = Array.isArray(typesRes) ? typesRes : (typesRes as any)?.data || []
     const priorityList = Array.isArray(prioritiesRes) ? prioritiesRes : (prioritiesRes as any)?.data || []
     typeMap.value = Object.fromEntries(typeList.map((t: any) => [t.code, normalizeText(t.name)]))
-    priorityMap.value = Object.fromEntries(priorityList.map((p: any) => [p.code, normalizeText(p.name)]))
+    priorityMap.value = Object.fromEntries(priorityList.map((p: any) => [p.code, stripPriorityPrefix(normalizeText(p.name))]))
   } catch {
     typeMap.value = {}
     priorityMap.value = {}
@@ -487,7 +474,7 @@ function typeLabel(code: string) {
 }
 
 function priorityLabel(code: string) {
-  return priorityMap.value[code] || code || '-'
+  return stripPriorityPrefix(priorityMap.value[code] || code || '-')
 }
 
 function projectLabel(projectId: number) {
@@ -697,31 +684,17 @@ onMounted(() => {
   min-height: 200px;
 }
 
-.detail-header {
+.detail-actions {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  justify-content: flex-end;
   margin-bottom: 24px;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.header-left {
-  flex: 1;
-}
-
-.detail-title {
-  margin: 12px 0 0;
-  font-size: 20px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
 }
 
 .header-actions {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .detail-tabs {

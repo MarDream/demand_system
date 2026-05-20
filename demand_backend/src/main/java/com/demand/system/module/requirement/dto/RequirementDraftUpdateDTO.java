@@ -20,6 +20,8 @@ public class RequirementDraftUpdateDTO {
 
     private Long assigneeId;
 
+    private List<Long> ccUserIds;
+
     private Long moduleId;
 
     private LocalDate startDate;
@@ -88,6 +90,14 @@ public class RequirementDraftUpdateDTO {
         this.assigneeId = assigneeId;
     }
 
+    public List<Long> getCcUserIds() {
+        return ccUserIds;
+    }
+
+    public void setCcUserIds(List<Long> ccUserIds) {
+        this.ccUserIds = ccUserIds;
+    }
+
     public Long getModuleId() {
         return moduleId;
     }
@@ -136,4 +146,3 @@ public class RequirementDraftUpdateDTO {
         this.version = version;
     }
 }
-

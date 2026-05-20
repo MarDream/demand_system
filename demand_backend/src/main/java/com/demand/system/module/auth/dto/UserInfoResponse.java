@@ -17,14 +17,13 @@ public class UserInfoResponse {
     private Boolean isSuperAdmin;
     private Long regionId;
     private Long departmentId;
-    private Long positionId;
 
     public UserInfoResponse() {
     }
 
     public UserInfoResponse(Long id, String username, String realName, String email, String avatar,
                            List<String> roles, List<String> permissions, Boolean isSuperAdmin,
-                           Long regionId, Long departmentId, Long positionId) {
+                           Long regionId, Long departmentId) {
         this.id = id;
         this.username = username;
         this.realName = realName;
@@ -35,7 +34,6 @@ public class UserInfoResponse {
         this.isSuperAdmin = isSuperAdmin;
         this.regionId = regionId;
         this.departmentId = departmentId;
-        this.positionId = positionId;
     }
 
     public Long getId() {
@@ -118,14 +116,6 @@ public class UserInfoResponse {
         this.departmentId = departmentId;
     }
 
-    public Long getPositionId() {
-        return positionId;
-    }
-
-    public void setPositionId(Long positionId) {
-        this.positionId = positionId;
-    }
-
     public static UserInfoResponseBuilder builder() {
         return new UserInfoResponseBuilder();
     }
@@ -141,7 +131,6 @@ public class UserInfoResponse {
         private Boolean isSuperAdmin;
         private Long regionId;
         private Long departmentId;
-        private Long positionId;
 
         public UserInfoResponseBuilder id(Long id) {
             this.id = id;
@@ -193,14 +182,9 @@ public class UserInfoResponse {
             return this;
         }
 
-        public UserInfoResponseBuilder positionId(Long positionId) {
-            this.positionId = positionId;
-            return this;
-        }
-
         public UserInfoResponse build() {
             return new UserInfoResponse(id, username, realName, email, avatar, roles,
-                    permissions, isSuperAdmin, regionId, departmentId, positionId);
+                    permissions, isSuperAdmin, regionId, departmentId);
         }
     }
 }
