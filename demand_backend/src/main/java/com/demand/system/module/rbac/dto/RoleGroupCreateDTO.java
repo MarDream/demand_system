@@ -2,6 +2,7 @@ package com.demand.system.module.rbac.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import java.util.List;
 
 public class RoleGroupCreateDTO {
 
@@ -11,6 +12,8 @@ public class RoleGroupCreateDTO {
 
     @Size(max = 500, message = "角色组描述不能超过500个字符")
     private String description;
+
+    private List<Long> roleIds;
 
     public String getName() {
         return name;
@@ -26,5 +29,13 @@ public class RoleGroupCreateDTO {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public List<Long> getRoleIds() {
+        return roleIds;
+    }
+
+    public void setRoleIds(List<Long> roleIds) {
+        this.roleIds = roleIds;
     }
 }

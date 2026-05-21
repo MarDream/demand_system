@@ -26,3 +26,24 @@ export function setRefreshToken(token: string): void {
 export function removeRefreshToken(): void {
   Cookies.remove(REFRESH_TOKEN_KEY)
 }
+
+export function clearAuth(): void {
+  removeToken()
+  removeRefreshToken()
+}
+
+export function buildLoginPath(redirect?: string): string {
+  const baseUrl = import.meta.env.BASE_URL || '/'
+  const normalizedBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl
+  const loginPath = `${normalizedBase}/login` || '/login'
+  if (!redirect) return loginPath
+  const separator = loginPath.includes('?') ? '&' : '?'
+  return `${loginPath}${separator}redirect=${encodeURIComponent(redirect)}`
+}
+
+export function redirectToLogin(redirect?: string): void {
+  const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`
+  const targetPath = buildLoginPath(redirect || currentPath)
+  if (currentPath.startsWith(buildLoginPath())) return
+  window.location.replace(targetPath)
+}

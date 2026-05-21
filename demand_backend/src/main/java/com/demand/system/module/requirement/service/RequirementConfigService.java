@@ -12,11 +12,13 @@ import com.demand.system.module.requirement.entity.RequirementTypeConfig;
 import com.demand.system.module.requirement.mapper.PriorityMapper;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
 import com.demand.system.module.requirement.mapper.RequirementTypeMapper;
+import com.demand.system.module.workflow.entity.WorkflowNode;
 import com.demand.system.module.workflow.entity.WorkflowNodePermission;
 import com.demand.system.module.workflow.entity.WorkflowState;
 import com.demand.system.module.workflow.entity.WorkflowTransition;
 import com.demand.system.module.workflow.engine.WorkflowVersionResolver;
 import com.demand.system.module.workflow.entity.WorkflowVersion;
+import com.demand.system.module.workflow.mapper.WorkflowNodeMapper;
 import com.demand.system.module.workflow.mapper.WorkflowNodePermissionMapper;
 import com.demand.system.module.workflow.mapper.WorkflowStateMapper;
 import com.demand.system.module.workflow.mapper.WorkflowTransitionMapper;
@@ -49,9 +51,10 @@ public class RequirementConfigService {
     private final WorkflowVersionResolver workflowVersionResolver;
     private final WorkflowTransitionMapper workflowTransitionMapper;
     private final WorkflowNodePermissionMapper workflowNodePermissionMapper;
+    private final WorkflowNodeMapper workflowNodeMapper;
     private final ObjectMapper objectMapper;
 
-    public RequirementConfigService(RequirementTypeMapper typeMapper, PriorityMapper priorityMapper, RequirementMapper requirementMapper, WorkflowVersionMapper workflowVersionMapper, WorkflowStateMapper workflowStateMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowTransitionMapper workflowTransitionMapper, WorkflowNodePermissionMapper workflowNodePermissionMapper, ObjectMapper objectMapper) {
+    public RequirementConfigService(RequirementTypeMapper typeMapper, PriorityMapper priorityMapper, RequirementMapper requirementMapper, WorkflowVersionMapper workflowVersionMapper, WorkflowStateMapper workflowStateMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowTransitionMapper workflowTransitionMapper, WorkflowNodePermissionMapper workflowNodePermissionMapper, WorkflowNodeMapper workflowNodeMapper, ObjectMapper objectMapper) {
         this.typeMapper = typeMapper;
         this.priorityMapper = priorityMapper;
         this.requirementMapper = requirementMapper;
@@ -60,6 +63,7 @@ public class RequirementConfigService {
         this.workflowVersionResolver = workflowVersionResolver;
         this.workflowTransitionMapper = workflowTransitionMapper;
         this.workflowNodePermissionMapper = workflowNodePermissionMapper;
+        this.workflowNodeMapper = workflowNodeMapper;
         this.objectMapper = objectMapper;
     }
 
@@ -118,7 +122,7 @@ public class RequirementConfigService {
         if (visibleFields.isEmpty()) {
             visibleFields = parseStringList(permission.getEditableFields());
         }
-        config.setVisibleFields(normalizeFields(visibleFields));
+        config.setVisibleFields(appendCcFieldIfNeeded(normalizeFields(visibleFields), activeVersion.getId()));
         config.setRequiredFields(normalizeFields(parseStringList(permission.getRequiredFields())));
         return Result.success(config);
     }
@@ -408,5 +412,25 @@ public class RequirementConfigService {
                 .collect(Collectors.toCollection(LinkedHashSet::new))
                 .stream()
                 .toList();
+    }
+
+    private List<String> appendCcFieldIfNeeded(List<String> visibleFields, Long workflowVersionId) {
+        if (!hasCcNodeConfigured(workflowVersionId)) {
+            return visibleFields;
+        }
+
+        LinkedHashSet<String> fields = new LinkedHashSet<>(visibleFields);
+        fields.add("ccUserIds");
+        return fields.stream().toList();
+    }
+
+    private boolean hasCcNodeConfigured(Long workflowVersionId) {
+        if (workflowVersionId == null) {
+            return false;
+        }
+        Long count = workflowNodeMapper.selectCount(new LambdaQueryWrapper<WorkflowNode>()
+                .eq(WorkflowNode::getWorkflowVersionId, workflowVersionId)
+                .eq(WorkflowNode::getNodeType, "cc"));
+        return count != null && count > 0;
     }
 }

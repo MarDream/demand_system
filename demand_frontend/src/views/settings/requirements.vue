@@ -154,7 +154,7 @@
     </el-tabs>
 
     <!-- 类型对话框 -->
-    <el-dialog v-model="typeDialogVisible" :title="editingType ? '编辑需求类型' : '新增需求类型'" width="500px">
+    <el-dialog v-model="typeDialogVisible" :title="editingType ? '编辑需求类型' : '新增需求类型'" width="500px" class="settings-form-dialog">
       <el-form ref="typeFormRef" :model="typeForm" :rules="typeRules" label-width="100px">
         <el-form-item label="名称" prop="name">
           <el-input v-model="typeForm.name" placeholder="请输入类型名称" />
@@ -179,7 +179,7 @@
     </el-dialog>
 
     <!-- 优先级对话框 -->
-    <el-dialog v-model="priorityDialogVisible" :title="editingPriority ? '编辑优先级' : '新增优先级'" width="500px">
+    <el-dialog v-model="priorityDialogVisible" :title="editingPriority ? '编辑优先级' : '新增优先级'" width="500px" class="settings-form-dialog">
       <el-form ref="priorityFormRef" :model="priorityForm" :rules="priorityRules" label-width="100px">
         <el-form-item label="名称" prop="name">
           <el-input v-model="priorityForm.name" placeholder="如: P0-紧急" />
@@ -208,7 +208,7 @@
     </el-dialog>
 
     <!-- 节点状态对话框 -->
-    <el-dialog v-model="nodeStatusDialogVisible" :title="editingNodeStatus ? '编辑节点状态' : '新增节点状态'" width="500px">
+    <el-dialog v-model="nodeStatusDialogVisible" :title="editingNodeStatus ? '编辑节点状态' : '新增节点状态'" width="500px" class="settings-form-dialog">
       <el-form ref="nodeStatusFormRef" :model="nodeStatusForm" :rules="nodeStatusRules" label-width="100px">
         <el-form-item label="名称" prop="name">
           <el-input v-model="nodeStatusForm.name" placeholder="如: 待评审" />

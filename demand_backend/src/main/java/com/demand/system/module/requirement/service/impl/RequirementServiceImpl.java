@@ -41,6 +41,7 @@ import com.demand.system.module.workflow.entity.WorkflowEdge;
 import com.demand.system.module.workflow.entity.WorkflowInstance;
 import com.demand.system.module.workflow.entity.WorkflowNode;
 import com.demand.system.module.workflow.entity.WorkflowVersion;
+import com.demand.system.module.workflow.engine.WorkflowVersionResolver;
 import com.demand.system.module.workflow.entity.NodeStatus;
 import com.demand.system.module.workflow.mapper.WorkflowEdgeMapper;
 import com.demand.system.module.workflow.mapper.WorkflowInstanceMapper;
@@ -86,6 +87,7 @@ public class RequirementServiceImpl implements RequirementService {
     private final WorkflowService workflowService;
     private final WorkflowEngineService workflowEngineService;
     private final WorkflowVersionMapper workflowVersionMapper;
+    private final WorkflowVersionResolver workflowVersionResolver;
     private final WorkflowNodeMapper workflowNodeMapper;
     private final WorkflowEdgeMapper workflowEdgeMapper;
     private final WorkflowInstanceMapper workflowInstanceMapper;
@@ -95,7 +97,7 @@ public class RequirementServiceImpl implements RequirementService {
     private final NodeStatusMapper nodeStatusMapper;
     private final ProjectMapper projectMapper;
 
-    public RequirementServiceImpl(RequirementMapper requirementMapper, RequirementHistoryMapper historyMapper, RequirementCommentMapper requirementCommentMapper, CustomFieldValueMapper customFieldValueMapper, UserMapper userMapper, SysOrgService sysOrgService, NotificationService notificationService, WorkflowService workflowService, WorkflowEngineService workflowEngineService, WorkflowVersionMapper workflowVersionMapper, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, WorkflowInstanceMapper workflowInstanceMapper, WorkflowTransitionRecordMapper workflowTransitionRecordMapper, RequirementConfigService requirementConfigService, KnowledgeDocumentService knowledgeDocumentService, NodeStatusMapper nodeStatusMapper, ProjectMapper projectMapper) {
+    public RequirementServiceImpl(RequirementMapper requirementMapper, RequirementHistoryMapper historyMapper, RequirementCommentMapper requirementCommentMapper, CustomFieldValueMapper customFieldValueMapper, UserMapper userMapper, SysOrgService sysOrgService, NotificationService notificationService, WorkflowService workflowService, WorkflowEngineService workflowEngineService, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, WorkflowInstanceMapper workflowInstanceMapper, WorkflowTransitionRecordMapper workflowTransitionRecordMapper, RequirementConfigService requirementConfigService, KnowledgeDocumentService knowledgeDocumentService, NodeStatusMapper nodeStatusMapper, ProjectMapper projectMapper) {
         this.requirementMapper = requirementMapper;
         this.historyMapper = historyMapper;
         this.requirementCommentMapper = requirementCommentMapper;
@@ -106,6 +108,7 @@ public class RequirementServiceImpl implements RequirementService {
         this.workflowService = workflowService;
         this.workflowEngineService = workflowEngineService;
         this.workflowVersionMapper = workflowVersionMapper;
+        this.workflowVersionResolver = workflowVersionResolver;
         this.workflowNodeMapper = workflowNodeMapper;
         this.workflowEdgeMapper = workflowEdgeMapper;
         this.workflowInstanceMapper = workflowInstanceMapper;
@@ -790,12 +793,7 @@ public class RequirementServiceImpl implements RequirementService {
     }
 
     private WorkflowVersion findActiveWorkflowVersion(Long projectId) {
-        Long runtimeProjectId = normalizeProjectId(projectId);
-        return workflowVersionMapper.selectOne(new LambdaQueryWrapper<WorkflowVersion>()
-                .eq(WorkflowVersion::getProjectId, runtimeProjectId)
-                .eq(WorkflowVersion::getIsActive, 1)
-                .orderByDesc(WorkflowVersion::getVersion)
-                .last("LIMIT 1"));
+        return workflowVersionResolver.findActiveVersion(normalizeProjectId(projectId)).orElse(null);
     }
 
     private String resolveNodeStatusCode(WorkflowNode node) {

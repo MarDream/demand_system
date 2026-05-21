@@ -92,6 +92,7 @@
       v-model="dialogVisible"
       :title="isEdit ? '编辑项目' : '新建项目'"
       width="600px"
+      class="settings-form-dialog"
       @close="resetForm"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
@@ -99,18 +100,36 @@
           <el-input v-model="form.name" placeholder="请输入项目名称" />
         </el-form-item>
         <el-form-item label="归属公司" prop="companyId">
-          <el-tree-select
+          <el-select
             v-model="form.companyId"
-            :data="regionTree"
-            :props="{ label: 'name', value: 'id' }"
             placeholder="请选择归属公司"
             clearable
-            check-strictly
             style="width: 100%"
-          />
+            @change="handleCompanyChange"
+          >
+            <el-option
+              v-for="item in companyOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="归属团队" prop="team">
-          <el-input v-model="form.team" placeholder="请输入归属团队" />
+          <el-select
+            v-model="form.team"
+            :placeholder="teamPlaceholder"
+            :disabled="teamFieldLocked"
+            filterable
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in teamOptions"
+              :key="`${form.companyId}-${item.value}`"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="负责人" prop="leaderId">
           <el-select v-model="form.leaderId" placeholder="请选择负责人" clearable filterable style="width: 100%">
@@ -164,12 +183,33 @@ const pageNum = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
 
-const regionTree = ref<OrgNode[]>([])
+const orgTree = ref<OrgNode[]>([])
+const companyOptions = ref<Array<{ label: string; value: number }>>([])
 const userList = ref<any[]>([])
 const userMap = computed(() => {
   const map = new Map<number, any>()
   userList.value.forEach(u => map.set(u.id, u))
   return map
+})
+const selectedCompanyNode = computed(() => findOrgNodeById(orgTree.value, form.companyId))
+const actualTeamOptions = computed(() => {
+  const companyNode = selectedCompanyNode.value
+  if (!companyNode) return [] as Array<{ label: string; value: string }>
+  return collectDescendantTeams(companyNode).map(item => ({
+    label: item.name,
+    value: item.name,
+  }))
+})
+const teamOptions = computed(() => {
+  if (actualTeamOptions.value.length > 0) return actualTeamOptions.value
+  if (!selectedCompanyNode.value?.name) return [] as Array<{ label: string; value: string }>
+  return [{ label: selectedCompanyNode.value.name, value: selectedCompanyNode.value.name }]
+})
+const teamFieldLocked = computed(() => !form.companyId || actualTeamOptions.value.length === 0)
+const teamPlaceholder = computed(() => {
+  if (!form.companyId) return '请先选择归属公司'
+  if (actualTeamOptions.value.length === 0) return '当前公司下暂无团队，默认使用公司名称'
+  return '请选择归属团队'
 })
 
 const queryParams = reactive({
@@ -214,24 +254,110 @@ function getLeaderName(leaderId?: number | null) {
   return user ? (user.realName || user.username || '-') : '-'
 }
 
-// 从统一组织树中过滤指定类型的节点
-function filterOrgTree(nodes: OrgNode[], targetType: string): OrgNode[] {
-  return nodes
-    .filter(n => n.orgType === targetType)
-    .map(n => ({ ...n, children: n.children ? filterOrgTree(n.children, targetType) : undefined }))
+function findOrgNodeById(nodes: OrgNode[], targetId: number | null): OrgNode | null {
+  if (!targetId) return null
+  for (const node of nodes) {
+    if (node.id === targetId) return node
+    if (node.children?.length) {
+      const matched = findOrgNodeById(node.children, targetId)
+      if (matched) return matched
+    }
+  }
+  return null
+}
+
+function normalizeArray<T>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[]
+  const data = (value as any)?.data
+  if (Array.isArray(data)) return data as T[]
+  if (Array.isArray(data?.data)) return data.data as T[]
+  return []
+}
+
+function extractOrgNodesByType(nodes: OrgNode[], targetType: OrgNode['orgType']): OrgNode[] {
+  const result: OrgNode[] = []
+  const walk = (items: OrgNode[]) => {
+    items.forEach(item => {
+      if (item.orgType === targetType) {
+        result.push({ ...item, children: undefined })
+      }
+      if (item.children?.length) {
+        walk(item.children)
+      }
+    })
+  }
+  walk(nodes)
+  return result
+}
+
+function toCompanyOptions(nodes: OrgNode[]) {
+  return extractOrgNodesByType(nodes, 'company').map(item => ({
+    label: item.name,
+    value: item.id,
+  }))
+}
+
+function collectDescendantTeams(companyNode: OrgNode): OrgNode[] {
+  const teams: OrgNode[] = []
+  const seen = new Set<string>()
+  const walk = (node: OrgNode) => {
+    if (node.orgType === 'group') {
+      const teamName = node.name?.trim()
+      if (teamName && !seen.has(teamName)) {
+        seen.add(teamName)
+        teams.push(node)
+      }
+    }
+    node.children?.forEach(child => walk(child))
+  }
+  walk(companyNode)
+  return teams
+}
+
+function resolveTeamValue(companyId: number | null, currentTeam = '', preserveCurrent = false): string {
+  const companyNode = findOrgNodeById(orgTree.value, companyId)
+  if (!companyNode) return ''
+
+  const teams = collectDescendantTeams(companyNode).map(item => item.name)
+  if (teams.length === 0) {
+    return companyNode.name || ''
+  }
+
+  if (preserveCurrent && currentTeam && teams.includes(currentTeam)) {
+    return currentTeam
+  }
+
+  return teams[0] || ''
+}
+
+function syncTeamWithCompany(preserveCurrent = false) {
+  form.team = resolveTeamValue(form.companyId, form.team, preserveCurrent)
+}
+
+function handleCompanyChange() {
+  syncTeamWithCompany()
 }
 
 async function loadOrgData() {
   try {
-    const [orgRes, users] = await Promise.all([
-      getOrgTree(),
-      userApi.getUserList({ pageNum: 1, pageSize: 9999 }),
-    ])
-    const orgTree = orgRes?.data?.data || []
-    regionTree.value = filterOrgTree(orgTree, 'company')
+    const orgRes = await getOrgTree()
+    orgTree.value = normalizeArray<OrgNode>(orgRes)
+    companyOptions.value = toCompanyOptions(orgTree.value)
+    if (form.companyId) {
+      syncTeamWithCompany(true)
+    }
+  } catch (error) {
+    orgTree.value = []
+    companyOptions.value = []
+    console.error('加载公司数据失败:', error)
+  }
+
+  try {
+    const users = await userApi.getUserList({ pageNum: 1, pageSize: 9999 })
     userList.value = ((users as any)?.list ?? [])
   } catch (error) {
-    console.error('加载数据失败:', error)
+    userList.value = []
+    console.error('加载负责人数据失败:', error)
   }
 }
 
@@ -341,6 +467,7 @@ function handleEdit(row: any) {
   form.description = row.description || ''
   form.companyId = row.companyId || null
   form.team = row.team || ''
+  syncTeamWithCompany(true)
   form.leaderId = row.leaderId || null
   form.dateRange = (row.startDate && row.endDate) ? [row.startDate, row.endDate] : null
   dialogVisible.value = true
@@ -366,11 +493,12 @@ async function handleSubmit() {
   await formRef.value.validate()
   submitting.value = true
   try {
+    const resolvedTeam = resolveTeamValue(form.companyId, form.team, true)
     const payload: any = {
       name: form.name,
       description: form.description,
       companyId: form.companyId,
-      team: form.team || null,
+      team: resolvedTeam || null,
       leaderId: form.leaderId,
       startDate: form.dateRange?.[0] || null,
       endDate: form.dateRange?.[1] || null,

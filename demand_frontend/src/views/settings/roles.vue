@@ -34,44 +34,40 @@
           title="拖拽下方节点即可排序"
         />
 
-        <el-button link type="primary" class="collapse-link" @click="toggleAllRoleGroups">
-          {{ allRoleGroupsExpanded ? '全部收起' : '全部展开' }}
-        </el-button>
-
-        <div v-if="roleGroupSections.length > 0" class="role-groups" ref="roleGroupsRef">
-          <div v-for="group in roleGroupSections" :key="group.key" class="role-group" :data-group-key="group.key">
-            <div class="role-group__header" :data-group-id="group.source?.id">
-              <el-icon class="drag-handle drag-handle--group"><Rank /></el-icon>
-              <button class="role-group__title" type="button" @click="toggleRoleGroup(group.key)">
-                <el-icon><component :is="isRoleGroupExpanded(group.key) ? ArrowDown : ArrowRight" /></el-icon>
-                <el-icon><component :is="group.icon" /></el-icon>
-                <span>{{ group.name }}</span>
-                <span class="role-group__count">{{ group.roles.length }}</span>
-              </button>
-              <div v-if="!group.isDefault" class="role-group__tools">
-                <el-button link type="primary" @click.stop="openEditRoleGroup(group.source)">编辑</el-button>
-                <el-button link type="danger" @click.stop="handleDeleteRoleGroup(group.source)">删除</el-button>
-              </div>
-            </div>
-            <div v-show="isRoleGroupExpanded(group.key)" class="role-group__body" :data-body-key="group.key">
-              <button
-                v-for="role in group.roles"
-                :key="role.id"
-                class="role-item"
-                :class="{ 'is-active': selectedRole?.id === role.id }"
-                type="button"
-                :data-role-id="role.id"
-                :data-role-group-id="group.source?.id || ''"
-                @click="selectRole(role)"
-              >
-                <el-icon><User /></el-icon>
-                <span class="role-item__name">{{ role.name }}</span>
-              </button>
-              <div v-if="group.roles.length === 0" class="role-group__empty">当前分组下还没有角色</div>
-            </div>
-          </div>
-        </div>
-        <el-empty v-else description="暂无匹配角色" :image-size="72" />
+        <el-tree
+          ref="roleTreeRef"
+          :data="roleTreeData"
+          :props="{ label: 'name', children: 'children' }"
+          node-key="id"
+          default-expand-all
+          :expand-on-click-node="false"
+          highlight-current
+          draggable
+          :allow-drop="handleAllowDrop"
+          :allow-drag="handleAllowDrag"
+          @node-click="handleTreeNodeClick"
+          @node-drag-end="handleDragEnd"
+        >
+          <template #default="{ node, data }">
+            <span class="tree-node-content">
+              <span class="tree-node-label">
+                <el-icon><component :is="data.icon" /></el-icon>
+                <span>{{ node.label }}</span>
+                <span v-if="data.type === 'group' && data.children?.length" class="tree-node-count">
+                  {{ data.children.length }}
+                </span>
+              </span>
+              <span v-if="data.type === 'group' && data.id !== DEFAULT_ROLE_GROUP_KEY" class="tree-node-actions">
+                <el-button link type="primary" size="small" @click.stop="openEditRoleGroup(data.data)">编辑</el-button>
+                <el-button link type="danger" size="small" @click.stop="handleDeleteRoleGroup(data.data)">删除</el-button>
+              </span>
+              <span v-else-if="data.type === 'role'" class="tree-node-actions">
+                <el-button link type="primary" size="small" @click.stop="openEdit(data.data)">编辑</el-button>
+                <el-button link type="danger" size="small" @click.stop="handleDelete(data.data)" :disabled="isSystemRole(data.data)">删除</el-button>
+              </span>
+            </span>
+          </template>
+        </el-tree>
       </aside>
 
       <div class="sidebar-resizer" @mousedown="startResize" @dblclick="toggleRoleSidebar" />
@@ -314,8 +310,8 @@
       </div>
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="editingRole ? '编辑角色' : '新增角色'" width="520px" @close="resetForm">
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
+    <el-dialog v-model="dialogVisible" :title="editingRole ? '编辑角色' : '新增角色'" width="520px" class="settings-form-dialog" @close="resetForm">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="110px">
         <el-form-item label="角色名称" prop="name">
           <el-input v-model="form.name" placeholder="请输入角色名称" @input="handleRoleNameInput" />
         </el-form-item>
@@ -350,10 +346,11 @@
     <el-dialog
       v-model="roleGroupDialogVisible"
       :title="editingRoleGroup ? '编辑角色组' : '新增角色组'"
-      width="460px"
+      width="520px"
+      class="settings-form-dialog"
       @close="resetRoleGroupForm"
     >
-      <el-form ref="roleGroupFormRef" :model="roleGroupForm" :rules="roleGroupRules" label-width="90px">
+      <el-form ref="roleGroupFormRef" :model="roleGroupForm" :rules="roleGroupRules" label-width="110px">
         <el-form-item label="角色组名称" prop="name">
           <el-input v-model="roleGroupForm.name" placeholder="请输入角色组名称" />
         </el-form-item>
@@ -361,9 +358,28 @@
           <el-input
             v-model="roleGroupForm.description"
             type="textarea"
-            :rows="4"
+            :rows="3"
             placeholder="用于区分角色分类和职责范围"
           />
+        </el-form-item>
+        <el-form-item v-if="!editingRoleGroup" label="关联角色">
+          <el-select
+            v-model="roleGroupForm.roleIds"
+            multiple
+            clearable
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="选择未纳入其他角色组的角色"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="role in unassignedRoles"
+              :key="role.id"
+              :label="role.name"
+              :value="role.id"
+            />
+          </el-select>
+          <div class="form-tip">仅显示未纳入其他角色组的角色，创建后可通过拖拽调整</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -375,7 +391,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, type Component } from 'vue'
+import { computed, markRaw, onMounted, onUnmounted, reactive, ref, type Component } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { ArrowDown, ArrowRight, Search, Suitcase, Tickets, UserFilled, User, Tools, Plus, FolderOpened, Rank } from '@element-plus/icons-vue'
 import Sortable from 'sortablejs'
@@ -435,6 +451,22 @@ interface RoleGroupSection {
   source: RoleGroupItem | null
 }
 
+const RAW_USER_ICON = markRaw(User)
+const RAW_SUITCASE_ICON = markRaw(Suitcase)
+const RAW_TICKETS_ICON = markRaw(Tickets)
+const RAW_TOOLS_ICON = markRaw(Tools)
+const RAW_FOLDER_OPENED_ICON = markRaw(FolderOpened)
+const RAW_USER_FILLED_ICON = markRaw(UserFilled)
+
+interface RoleTreeNode {
+  id: string
+  name: string
+  type: 'group' | 'role'
+  icon: Component
+  data: RoleGroupItem | RoleItem | null
+  children?: RoleTreeNode[]
+}
+
 const SUPER_ADMIN_CODES = new Set(['super_admin', 'SUPER_ADMIN'])
 const DEFAULT_ROLE_GROUP_KEY = 'role-group-default'
 
@@ -451,6 +483,7 @@ const grantablePermissions = ref<string[]>([])
 const menuTree = ref<MenuItem[]>([])
 const expandedMenuKeys = ref<string[]>([])
 const expandedRoleGroupKeys = ref<string[]>([])
+const roleTreeRef = ref<any>(null)
 const roleSidebarWidth = ref(360)
 const roleSidebarCollapsed = ref(false)
 const ROLE_SIDEBAR_DEFAULT = 360
@@ -480,6 +513,7 @@ const form = reactive<RolePayload>({
 const roleGroupForm = reactive({
   name: '',
   description: '',
+  roleIds: [] as number[],
 })
 
 const rules: FormRules = {
@@ -509,11 +543,11 @@ const roleGroupRules: FormRules = {
 }
 
 const previewNodes: Array<{ label: string; color: string; icon: Component; note?: string }> = [
-  { label: '发起人', color: '#0084ff', icon: User },
-  { label: '项目经理', color: '#1f6feb', icon: Suitcase },
-  { label: '技术负责人', color: '#20b26b', icon: Tickets },
-  { label: '测试负责人', color: '#8b5cf6', icon: Tools, note: '已离职' },
-  { label: '运维负责人', color: '#0ea5e9', icon: Tools },
+  { label: '发起人', color: '#0084ff', icon: RAW_USER_ICON },
+  { label: '项目经理', color: '#1f6feb', icon: RAW_SUITCASE_ICON },
+  { label: '技术负责人', color: '#20b26b', icon: RAW_TICKETS_ICON },
+  { label: '测试负责人', color: '#8b5cf6', icon: RAW_TOOLS_ICON, note: '已离职' },
+  { label: '运维负责人', color: '#0ea5e9', icon: RAW_TOOLS_ICON },
 ]
 
 const filteredRoles = computed(() => {
@@ -524,6 +558,70 @@ const filteredRoles = computed(() => {
       || role.code.toLowerCase().includes(value)
       || (role.description || '').toLowerCase().includes(value)
   })
+})
+
+const unassignedRoles = computed(() => {
+  return roles.value.filter(role => !role.roleGroupId)
+})
+
+const roleTreeData = computed<RoleTreeNode[]>(() => {
+  const keywordLower = keyword.value.trim().toLowerCase()
+  const nodes: RoleTreeNode[] = []
+
+  // Add role groups with their roles as children
+  roleGroups.value.forEach(group => {
+    const groupRoles = roles.value.filter(role => role.roleGroupId === group.id)
+    const filteredRoles = keywordLower
+      ? groupRoles.filter(role =>
+          role.name.toLowerCase().includes(keywordLower) ||
+          role.code.toLowerCase().includes(keywordLower)
+        )
+      : groupRoles
+
+    const groupNode: RoleTreeNode = {
+      id: `group-${group.id}`,
+      name: group.name,
+      type: 'group',
+      icon: RAW_FOLDER_OPENED_ICON,
+      data: group,
+      children: filteredRoles.map(role => ({
+        id: `role-${role.id}`,
+        name: role.name,
+        type: 'role',
+        icon: RAW_USER_ICON,
+        data: role,
+      })),
+    }
+    nodes.push(groupNode)
+  })
+
+  // Add unassigned roles under "默认" group
+  const unassigned = roles.value.filter(role => !role.roleGroupId)
+  const filteredUnassigned = keywordLower
+    ? unassigned.filter(role =>
+        role.name.toLowerCase().includes(keywordLower) ||
+        role.code.toLowerCase().includes(keywordLower)
+      )
+    : unassigned
+
+  if (filteredUnassigned.length > 0 || !keywordLower) {
+    nodes.unshift({
+      id: DEFAULT_ROLE_GROUP_KEY,
+      name: '默认',
+      type: 'group',
+      icon: RAW_USER_FILLED_ICON,
+      data: null,
+      children: filteredUnassigned.map(role => ({
+        id: `role-${role.id}`,
+        name: role.name,
+        type: 'role',
+        icon: RAW_USER_ICON,
+        data: role,
+      })),
+    })
+  }
+
+  return nodes
 })
 
 const roleGroupSections = computed<RoleGroupSection[]>(() => {
@@ -555,7 +653,7 @@ const roleGroupSections = computed<RoleGroupSection[]>(() => {
       name: group.name,
       roles: groupRoles,
       isDefault: false,
-      icon: FolderOpened,
+      icon: RAW_FOLDER_OPENED_ICON,
       source: group,
     })
   })
@@ -567,7 +665,7 @@ const roleGroupSections = computed<RoleGroupSection[]>(() => {
       name: '默认',
       roles: defaultRoles,
       isDefault: true,
-      icon: UserFilled,
+      icon: RAW_USER_FILLED_ICON,
       source: null,
     })
   }
@@ -761,6 +859,75 @@ async function selectRole(role: RoleItem) {
   selectedRole.value = role
   permissionKeyword.value = ''
   await fetchRolePermissions(role.id)
+}
+
+function handleTreeNodeClick(data: RoleTreeNode) {
+  if (data.type === 'role') {
+    selectRole(data.data as RoleItem)
+  }
+}
+
+function handleAllowDrag(draggingNode: any) {
+  return draggingNode.data.type === 'role'
+}
+
+function handleAllowDrop(draggingNode: any, dropNode: any, type: string) {
+  if (dropNode.data.type === 'group' && type === 'inner') {
+    return true
+  }
+  if (draggingNode.data.type === 'role' && dropNode.data.type === 'role' && type === 'after') {
+    return true
+  }
+  if (draggingNode.data.type === 'role' && dropNode.data.type === 'role' && type === 'before') {
+    return true
+  }
+  return false
+}
+
+async function handleDragEnd(draggingNode: any, dropNode: any, dropType: string, ev: DragEvent) {
+  if (!dropNode || draggingNode.data.id === dropNode.data.id) {
+    return
+  }
+  const draggingData = draggingNode.data as RoleTreeNode
+  if (draggingData.type !== 'role') {
+    return
+  }
+  const role = draggingData.data as RoleItem
+  let newRoleGroupId: number | null = null
+
+  if (dropType === 'inner') {
+    const dropData = dropNode.data as RoleTreeNode
+    if (dropData.type === 'group' && dropData.id !== DEFAULT_ROLE_GROUP_KEY) {
+      const group = dropData.data as RoleGroupItem
+      newRoleGroupId = group?.id ?? null
+    }
+  } else if (dropType === 'after' || dropType === 'before') {
+    const dropData = dropNode.data as RoleTreeNode
+    if (dropData.type === 'group') {
+      newRoleGroupId = null
+    } else if (dropData.type === 'role') {
+      const targetRole = dropData.data as RoleItem
+      newRoleGroupId = targetRole.roleGroupId ?? null
+    }
+  }
+
+  if (role.roleGroupId === newRoleGroupId) {
+    return
+  }
+
+  try {
+    await updateRole(role.id, {
+      code: role.code,
+      name: role.name,
+      description: role.description,
+      roleGroupId: newRoleGroupId,
+    })
+    ElMessage.success('角色分组已调整')
+    await fetchRoles()
+  } catch {
+    ElMessage.error('调整分组失败')
+    await fetchRoles()
+  }
 }
 
 async function fetchRolePermissions(roleId: number) {
@@ -1218,9 +1385,10 @@ async function handleSubmitRoleGroup() {
     const payload = {
       name: roleGroupForm.name.trim(),
       description: roleGroupForm.description?.trim() || null,
+      roleIds: editingRoleGroup.value ? undefined : roleGroupForm.roleIds,
     }
     if (editingRoleGroup.value) {
-      await updateRoleGroup(editingRoleGroup.value.id, payload)
+      await updateRoleGroup(editingRoleGroup.value.id, { name: payload.name, description: payload.description })
     } else {
       await createRoleGroup(payload)
     }
@@ -1243,6 +1411,7 @@ async function handleDeleteRoleGroup(group?: RoleGroupItem | null) {
 function resetRoleGroupForm() {
   roleGroupForm.name = ''
   roleGroupForm.description = ''
+  roleGroupForm.roleIds = []
   roleGroupFormRef.value?.resetFields()
 }
 
@@ -2066,6 +2235,54 @@ function permissionName(code: string) {
     grid-template-columns: 1fr;
     margin-left: 0 !important;
   }
+}
+
+.tree-node-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding-right: 8px;
+}
+
+.tree-node-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tree-node-count {
+  margin-left: 4px;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: #edf2f7;
+  color: #909399;
+  font-size: 11px;
+  text-align: center;
+}
+
+.tree-node-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+:deep(.el-tree-node__content:hover) .tree-node-actions,
+:deep(.el-tree-node__content:hover) .tree-node-actions {
+  opacity: 1;
+}
+
+:deep(.el-tree-node__content) {
+  height: 36px;
+}
+
+:deep(.el-tree-node__label) {
+  flex: 1;
+  display: flex;
+  align-items: center;
 }
 
 .drag-handle {

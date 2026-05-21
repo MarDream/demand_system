@@ -209,7 +209,7 @@
           <div class="department-actions">
             <el-button type="primary" @click="openCreateDepartment">
               <el-icon><Plus /></el-icon>
-              添加部门
+              添加{{ allowedNewTypes.length === 1 ? ORG_TYPE_LABELS[allowedNewTypes[0]] : '子组织' }}
             </el-button>
             <el-button @click="showTodo('批量创建部门')">批量创建部门</el-button>
             <el-button :disabled="selectedDepartments.length !== 1" @click="openEditDepartment">
@@ -398,9 +398,10 @@
       v-model="dialogVisible"
       :title="isEdit ? '编辑成员' : '添加成员'"
       width="600px"
+      class="settings-form-dialog"
       @close="resetForm"
     >
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="110px">
         <el-form-item label="用户名" prop="username">
           <el-input v-model="form.username" placeholder="请输入用户名" :disabled="isEdit" />
         </el-form-item>
@@ -991,7 +992,7 @@ function handleCreate() {
 
 const ALLOWED_CHILD_TYPES: Record<string, string[]> = {
   region: ['region', 'company', 'bureau'],
-  company: ['company', 'department'],
+  company: ['company', 'department', 'group'],
   bureau: ['department'],
   department: ['group'],
   group: [],

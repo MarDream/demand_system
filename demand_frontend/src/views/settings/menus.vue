@@ -79,7 +79,7 @@
       </TableCard>
     </PageContainer>
 
-    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑菜单' : '新增菜单'" width="640px">
+    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑菜单' : '新增菜单'" width="640px" class="settings-form-dialog">
       <el-form :model="form" label-width="100px">
         <el-form-item label="上级菜单">
           <el-tree-select

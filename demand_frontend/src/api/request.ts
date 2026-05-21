@@ -2,7 +2,14 @@ import axios from 'axios'
 import type { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios'
 import { ElMessage } from 'element-plus'
 import type { ApiResponse } from '@/types/api'
-import { getToken, setToken, removeToken, getRefreshToken, setRefreshToken, removeRefreshToken } from '@/utils/auth'
+import {
+  getToken,
+  setToken,
+  getRefreshToken,
+  setRefreshToken,
+  clearAuth,
+  redirectToLogin,
+} from '@/utils/auth'
 
 const service: AxiosInstance = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL,
@@ -20,6 +27,15 @@ function subscribeTokenRefresh(callback: (token: string) => void) {
 function onTokenRefreshed(token: string) {
   refreshSubscribers.forEach(callback => callback(token))
   refreshSubscribers = []
+}
+
+function handleAuthExpired(redirect?: string) {
+  clearAuth()
+  redirectToLogin(redirect)
+}
+
+function isAuthErrorCode(code?: number) {
+  return code === 401 || code === 403
 }
 
 service.interceptors.request.use(
@@ -43,10 +59,8 @@ service.interceptors.response.use(
     const res = response.data
     if (res.code !== 200) {
       ElMessage.error(res.message || '请求失败')
-      if (res.code === 401) {
-        removeToken()
-        removeRefreshToken()
-        window.location.href = '/login'
+      if (isAuthErrorCode(res.code)) {
+        handleAuthExpired(window.location.pathname + window.location.search + window.location.hash)
       }
       return Promise.reject(new Error(res.message || '请求失败'))
     }
@@ -54,14 +68,13 @@ service.interceptors.response.use(
   },
   async (error) => {
     const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean }
+    const currentPath = window.location.pathname + window.location.search + window.location.hash
 
     // 401未授权，尝试刷新Token
     if (error.response?.status === 401 && !originalRequest._retry) {
       // 跳过刷新Token的请求，防止死循环
       if (originalRequest.url?.includes('/v1/auth/refresh')) {
-        removeToken()
-        removeRefreshToken()
-        window.location.href = '/login'
+        handleAuthExpired(currentPath)
         return Promise.reject(error)
       }
 
@@ -82,9 +95,7 @@ service.interceptors.response.use(
       try {
         const refreshTokenValue = getRefreshToken()
         if (!refreshTokenValue) {
-          removeToken()
-          removeRefreshToken()
-          window.location.href = '/login'
+          handleAuthExpired(currentPath)
           return Promise.reject(error)
         }
 
@@ -114,11 +125,15 @@ service.interceptors.response.use(
         return service(originalRequest)
       } catch (refreshError) {
         isRefreshing = false
-        removeToken()
-        removeRefreshToken()
-        window.location.href = '/login'
+        handleAuthExpired(currentPath)
         return Promise.reject(refreshError)
       }
+    }
+
+    if (error.response?.status === 403) {
+      ElMessage.error(error.response?.data?.message || '登录状态已失效，请重新登录')
+      handleAuthExpired(currentPath)
+      return Promise.reject(error)
     }
 
     ElMessage.error(error.message || '网络异常')

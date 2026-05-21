@@ -59,13 +59,14 @@
 
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/modules/user'
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
 
 const formRef = ref<FormInstance>()
@@ -93,7 +94,8 @@ async function handleLogin() {
   try {
     await userStore.login(loginForm.username, loginForm.password)
     ElMessage.success('登录成功')
-    router.push('/dashboard')
+    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/dashboard'
+    router.push(redirect)
   } catch (err: any) {
     ElMessage.error(err?.message || '登录失败，请检查用户名和密码')
   } finally {

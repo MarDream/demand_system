@@ -37,7 +37,7 @@ export function getRoleGroups() {
   return request.get<RoleGroupItem[]>('/v1/rbac/roles/groups')
 }
 
-export function createRoleGroup(data: { name: string; description?: string | null }) {
+export function createRoleGroup(data: { name: string; description?: string | null; roleIds?: number[] }) {
   return request.post<RoleGroupItem>('/v1/rbac/roles/groups', data)
 }
 

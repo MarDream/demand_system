@@ -1,7 +1,7 @@
 import type { Router } from 'vue-router'
 import NProgress from 'nprogress'
 import 'nprogress/nprogress.css'
-import { getToken } from '@/utils/auth'
+import { getToken, buildLoginPath } from '@/utils/auth'
 import { useUserStore } from '@/stores/modules/user'
 import { usePermission } from '@/composables/usePermission'
 
@@ -30,7 +30,7 @@ export function setupGuards(router: Router) {
     const token = getToken()
     const userStore = useUserStore()
 
-    if (to.path === '/login') {
+    if (to.path === buildLoginPath() || to.path === '/login') {
       if (token) {
         next('/')
       } else {
@@ -40,7 +40,7 @@ export function setupGuards(router: Router) {
     }
 
     if (!token) {
-      next('/login')
+      next({ path: '/login', query: { redirect: to.fullPath } })
       return
     }
 
@@ -49,7 +49,7 @@ export function setupGuards(router: Router) {
         await userStore.getUserInfo()
       } catch {
         await userStore.logout()
-        next('/login')
+        next({ path: '/login', query: { redirect: to.fullPath } })
         return
       }
     }

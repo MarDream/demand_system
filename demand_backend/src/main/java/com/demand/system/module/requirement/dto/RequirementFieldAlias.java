@@ -20,6 +20,8 @@ public final class RequirementFieldAlias {
         FIELD_MAP.put("优先级", "priority");
         FIELD_MAP.put("assigneeId", "assigneeId");
         FIELD_MAP.put("负责人", "assigneeId");
+        FIELD_MAP.put("ccUserIds", "ccUserIds");
+        FIELD_MAP.put("抄送人", "ccUserIds");
         FIELD_MAP.put("moduleId", "moduleId");
         FIELD_MAP.put("模块", "moduleId");
         FIELD_MAP.put("iterationId", "iterationId");

@@ -192,7 +192,7 @@
               </el-select>
             </el-form-item>
 
-            <el-form-item label="抄送人">
+            <el-form-item v-if="showCcField" label="抄送人">
               <el-select
                 v-model="formData.ccUserIds"
                 placeholder="默认留空，可按需选择"
@@ -498,6 +498,8 @@ const FIELD_NAME_ALIASES: Record<string, string> = {
   期望上线时间: 'dueDate',
   estimatedHours: 'estimatedHours',
   估算工时: 'estimatedHours',
+  ccUserIds: 'ccUserIds',
+  抄送人: 'ccUserIds',
 }
 
 const formData = reactive({
@@ -527,9 +529,31 @@ const selectedType = computed(() => configTypes.value.find((item) => item.code =
 const selectedTypeLabel = computed(() => selectedType.value?.name || '')
 const selectedTypeColor = computed(() => selectedType.value?.color || '')
 const showTimeCard = computed(() => isEditMode.value || shouldShowField('dueDate'))
+const showCcField = computed(() => {
+  if (isEditMode.value && currentRequirement.value?.isDraft !== true) {
+    return true
+  }
+  return createFormVisibleFields.value.some((item) => normalizeFieldName(item) === 'ccUserIds')
+})
 const currentUserId = computed(() => userStore.userInfo?.id)
 const currentUser = computed(() => (
-  users.value.find((item) => item.id === currentUserId.value) || null
+  users.value.find((item) => item.id === currentUserId.value)
+  || (userStore.userInfo
+    ? {
+        id: userStore.userInfo.id,
+        username: userStore.userInfo.username,
+        realName: userStore.userInfo.realName,
+        email: userStore.userInfo.email || null,
+        phone: null,
+        avatar: userStore.userInfo.avatar || null,
+        status: 'active',
+        orgId: null,
+        regionId: userStore.userInfo.regionId || null,
+        departmentId: userStore.userInfo.departmentId || null,
+        createdAt: '',
+        updatedAt: '',
+      } as User
+    : null)
 ))
 
 const editorExtensions = [
@@ -622,6 +646,17 @@ watch(
   (value) => {
     if (!isEditMode.value && value && !formData.assigneeId) {
       formData.assigneeId = value
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  showCcField,
+  (visible) => {
+    const shouldReset = !visible && (!isEditMode.value || currentRequirement.value?.isDraft === true)
+    if (shouldReset && formData.ccUserIds.length > 0) {
+      formData.ccUserIds = []
     }
   },
   { immediate: true },
@@ -1083,6 +1118,10 @@ function removeRelation(row: any) {
 }
 
 async function syncRelations(requirementId: number) {
+  if (!isEditMode.value && relatedRequirements.value.length === 0) {
+    return
+  }
+
   const existingRelations = await relationApi.getRelationList(requirementId)
   const existingKeyMap = new Map(existingRelations.map((relation) => [
     `${relation.targetId}__${relation.relationType}`,
@@ -1112,13 +1151,21 @@ async function syncRelations(requirementId: number) {
   await loadRelations(requirementId)
 }
 
+function ensureDefaultAssignee() {
+  if (!formData.assigneeId && currentUserId.value) {
+    formData.assigneeId = currentUserId.value
+  }
+}
+
 async function validateForms() {
+  ensureDefaultAssignee()
   const basicValid = await formRef.value?.validate().catch(() => false)
   const infoValid = await infoFormRef.value?.validate().catch(() => false)
   return !!basicValid && !!infoValid
 }
 
 function buildRequirementPayload() {
+  const ccUserIds = showCcField.value ? formData.ccUserIds : []
   const payload: any = {
     projectId: formData.projectId,
     title: formData.title,
@@ -1126,14 +1173,14 @@ function buildRequirementPayload() {
     type: formData.type,
     priority: formData.priority,
     assigneeId: formData.assigneeId,
-    ccUserIds: formData.ccUserIds,
+    ccUserIds,
     attachments: formData.attachments,
     parentId: parentId.value,
   }
 
   if (isEditMode.value) {
     payload.iterationId = formData.iterationId
-    payload.ccUserIds = formData.ccUserIds
+    payload.ccUserIds = ccUserIds
     payload.startDate = normalizeDateValue(formData.startDate)
     payload.dueDate = normalizeDateValue(formData.dueDate)
     payload.estimatedHours = normalizeNumberValue(formData.estimatedHours)
@@ -1147,13 +1194,14 @@ function buildRequirementPayload() {
 }
 
 function buildDraftPayload() {
+  const ccUserIds = showCcField.value ? formData.ccUserIds : []
   const payload: any = {
     projectId: formData.projectId,
     title: formData.title,
     description: serializeRichTextImageHtml(formData.description),
     priority: formData.priority,
     assigneeId: formData.assigneeId,
-    ccUserIds: formData.ccUserIds,
+    ccUserIds,
     attachments: formData.attachments,
     parentId: parentId.value ?? currentRequirement.value?.parentId,
   }
@@ -1238,10 +1286,13 @@ async function chooseNextNode(options: NextNodeOption[]) {
 async function handleSaveDraft() {
   if (!(await validateForms())) return
 
+  const hadExistingRequirement = isEditMode.value
   submitting.value = true
   try {
     const draft = await persistDraft(false)
-    await syncRelations(draft.id)
+    if (hadExistingRequirement || relatedRequirements.value.length > 0) {
+      await syncRelations(draft.id)
+    }
     ElMessage.success('草稿已保存')
   } catch (error) {
     ElMessage.error(resolveErrorMessage(error, '保存草稿失败'))
@@ -1254,6 +1305,7 @@ async function handleSaveDraft() {
 async function handleSubmit() {
   if (!(await validateForms())) return
 
+  const hadExistingRequirement = isEditMode.value
   submitting.value = true
   try {
     if (!isDraftMode.value) {
@@ -1271,7 +1323,9 @@ async function handleSubmit() {
     }
 
     const draft = await persistDraft(false)
-    await syncRelations(draft.id)
+    if (hadExistingRequirement || relatedRequirements.value.length > 0) {
+      await syncRelations(draft.id)
+    }
     const nextNodes = await requirementApi.getRequirementNextNodes(draft.id)
     const nextNodeId = await chooseNextNode(nextNodes)
     if (!nextNodeId) return
@@ -1322,7 +1376,7 @@ async function loadConfig() {
 }
 
 async function loadCreateFormConfig(projectId = formData.projectId) {
-  if (!projectId || isEditMode.value) {
+  if (!projectId) {
     createFormVisibleFields.value = CREATE_VISIBLE_FIELD_FALLBACK
     createFormRequiredFields.value = []
     return
@@ -1333,13 +1387,13 @@ async function loadCreateFormConfig(projectId = formData.projectId) {
     const visibleFields = Array.isArray(res?.visibleFields)
       ? res.visibleFields
         .map((item: string) => normalizeFieldName(item))
-        .filter((item: string) => item === 'dueDate')
+        .filter((item: string) => item === 'dueDate' || item === 'ccUserIds')
       : []
     createFormVisibleFields.value = visibleFields.length > 0 ? visibleFields : CREATE_VISIBLE_FIELD_FALLBACK
     createFormRequiredFields.value = Array.isArray(res?.requiredFields)
       ? res.requiredFields
         .map((item: string) => normalizeFieldName(item))
-        .filter((item: string) => item === 'dueDate')
+        .filter((item: string) => item === 'dueDate' || item === 'ccUserIds')
       : []
 
     if (res?.defaultTypeCode) {

@@ -76,6 +76,7 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         role.setCode(code);
         role.setName(request.getName().trim());
         role.setDescription(trimToNull(request.getDescription()));
+        role.setRoleGroupId(request.getRoleGroupId());
         role.setIsSystem(0);
         LocalDateTime now = LocalDateTime.now();
         role.setCreatedAt(now);
@@ -100,6 +101,7 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         role.setCode(code);
         role.setName(request.getName().trim());
         role.setDescription(trimToNull(request.getDescription()));
+        role.setRoleGroupId(request.getRoleGroupId());
         role.setUpdatedAt(LocalDateTime.now());
         roleMapper.updateById(role);
         return Result.success(RoleVO.from(role));
@@ -331,6 +333,19 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         group.setUpdatedAt(now);
         group.setDeletedAt(0);
         roleGroupMapper.insert(group);
+
+        // Assign roles to the new group
+        if (request.getRoleIds() != null && !request.getRoleIds().isEmpty()) {
+            for (Long roleId : request.getRoleIds()) {
+                Role role = roleMapper.selectById(roleId);
+                if (role != null) {
+                    role.setRoleGroupId(group.getId());
+                    role.setUpdatedAt(now);
+                    roleMapper.updateById(role);
+                }
+            }
+        }
+
         return Result.success(RoleGroupVO.from(group));
     }
 
@@ -355,10 +370,16 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         if (group == null) {
             throw new BusinessException("角色组不存在");
         }
-        long roleCount = roleMapper.selectCount(new LambdaQueryWrapper<Role>()
+        // Move roles in this group to default group (set roleGroupId to null)
+        List<Role> rolesInGroup = roleMapper.selectList(new LambdaQueryWrapper<Role>()
                 .eq(Role::getRoleGroupId, roleGroupId));
-        if (roleCount > 0) {
-            throw new BusinessException("该角色组下还有角色，不能删除");
+        if (!rolesInGroup.isEmpty()) {
+            LocalDateTime now = LocalDateTime.now();
+            for (Role role : rolesInGroup) {
+                role.setRoleGroupId(null);
+                role.setUpdatedAt(now);
+                roleMapper.updateById(role);
+            }
         }
         roleGroupMapper.deleteById(roleGroupId);
         return Result.success();

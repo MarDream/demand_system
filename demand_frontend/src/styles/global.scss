@@ -151,3 +151,60 @@ html, body {
     }
   }
 }
+
+// ===== Settings Form Dialogs =====
+
+.el-dialog.settings-form-dialog {
+  border-radius: 14px;
+  overflow: hidden;
+
+  .el-dialog__body {
+    padding: 24px 28px 20px;
+  }
+
+  .el-dialog__footer {
+    padding: 4px 28px 24px;
+  }
+
+  .el-form-item {
+    margin-bottom: 22px;
+  }
+
+  .el-form-item__label {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-height: 32px;
+    padding-right: 16px;
+    color: #4b5563;
+    white-space: nowrap;
+    word-break: keep-all;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .el-form-item__content {
+    min-width: 0;
+  }
+
+  .form-tip {
+    margin-top: 8px;
+    line-height: 1.6;
+    color: #6b7280;
+  }
+}
+
+@media (max-width: 768px) {
+  .el-dialog.settings-form-dialog {
+    width: calc(100vw - 24px) !important;
+    margin-top: 6vh !important;
+
+    .el-dialog__body {
+      padding: 20px 18px 16px;
+    }
+
+    .el-dialog__footer {
+      padding: 0 18px 18px;
+    }
+  }
+}

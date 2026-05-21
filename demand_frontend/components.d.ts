@@ -68,6 +68,7 @@ declare module 'vue' {
     ElTimeline: typeof import('element-plus/es')['ElTimeline']
     ElTimelineItem: typeof import('element-plus/es')['ElTimelineItem']
     ElTooltip: typeof import('element-plus/es')['ElTooltip']
+    ElTree: typeof import('element-plus/es')['ElTree']
     ElTreeSelect: typeof import('element-plus/es')['ElTreeSelect']
     EmptyState: typeof import('./src/components/common/EmptyState.vue')['default']
     FilePreviewDialog: typeof import('./src/components/document/FilePreviewDialog.vue')['default']
