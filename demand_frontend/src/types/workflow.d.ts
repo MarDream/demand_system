@@ -21,7 +21,7 @@ export interface WorkflowTransition {
 export interface WorkflowVersion {
   id: number
   projectId: number
-  version: number
+  version: string
   name: string
   definition: Record<string, unknown> | string | null
   isActive: boolean

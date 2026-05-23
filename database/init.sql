@@ -163,10 +163,13 @@ DROP TABLE IF EXISTS `workflow_versions`;
 CREATE TABLE `workflow_versions` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `project_id` INT UNSIGNED NOT NULL COMMENT '项目ID',
-  `version` INT NOT NULL COMMENT '版本号',
+  `version` VARCHAR(20) NOT NULL COMMENT '版本号',
   `name` VARCHAR(100) NOT NULL COMMENT '版本名称',
   `definition` JSON NOT NULL COMMENT '工作流定义JSON',
+  `runtime_hash` VARCHAR(64) DEFAULT NULL COMMENT '启用时图结构哈希',
   `is_active` TINYINT DEFAULT 0 COMMENT '是否当前启用 0=否 1=是',
+  `activation_status` VARCHAR(20) NOT NULL DEFAULT 'draft' COMMENT 'draft/pending/approved/active/inactive',
+  `activated_at` DATETIME DEFAULT NULL COMMENT '最近一次启用时间',
   `creator_id` INT UNSIGNED NOT NULL COMMENT '创建人ID',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -357,6 +360,29 @@ CREATE TABLE `requirement_comments` (
   INDEX `idx_user_id` (`user_id`),
   INDEX `idx_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='需求评论表';
+
+-- -----------------------------------------------------
+-- 19.1 需求审批评价表 requirement_approval_evaluations
+-- -----------------------------------------------------
+DROP TABLE IF EXISTS `requirement_approval_evaluations`;
+CREATE TABLE `requirement_approval_evaluations` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `requirement_id` BIGINT UNSIGNED NOT NULL COMMENT '需求ID',
+  `instance_id` BIGINT UNSIGNED NOT NULL COMMENT '工作流实例ID',
+  `transition_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联流转记录ID',
+  `node_id` VARCHAR(100) NOT NULL COMMENT '审批节点ID',
+  `node_name` VARCHAR(100) NOT NULL COMMENT '审批节点名称',
+  `node_status_code` VARCHAR(50) DEFAULT NULL COMMENT '节点状态码快照',
+  `evaluator_id` INT UNSIGNED NOT NULL COMMENT '评价人ID',
+  `rating` TINYINT NOT NULL COMMENT '评价星级1-5',
+  `content` VARCHAR(1000) DEFAULT NULL COMMENT '评价意见',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `idx_requirement_id` (`requirement_id`),
+  INDEX `idx_instance_id` (`instance_id`),
+  INDEX `idx_evaluator_id` (`evaluator_id`),
+  INDEX `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='需求审批环节评价';
 
 -- -----------------------------------------------------
 -- 20. 评审表 reviews
@@ -1088,6 +1114,7 @@ CREATE TABLE IF NOT EXISTS `workflow_instances` (
   `current_node_id` VARCHAR(100) NOT NULL COMMENT '当前节点ID',
   `previous_node_id` VARCHAR(100) DEFAULT NULL COMMENT '上一节点ID（用于回退）',
   `status` VARCHAR(50) DEFAULT 'running' COMMENT 'running/completed/cancelled',
+  `lock_version` INT NOT NULL DEFAULT 0 COMMENT '流转乐观锁',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -1141,7 +1168,8 @@ ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS `download_count` INT UN
 ALTER TABLE requirements ADD COLUMN IF NOT EXISTS `workflow_instance_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '工作流实例ID' AFTER iteration_id;
 ALTER TABLE requirements ADD COLUMN IF NOT EXISTS `node_status` VARCHAR(50) DEFAULT 'DRAFT' COMMENT '当前节点状态' AFTER workflow_instance_id;
 ALTER TABLE requirements ADD COLUMN IF NOT EXISTS `is_draft` TINYINT DEFAULT 1 COMMENT '是否草稿 0=否 1=是' AFTER node_status;
-ALTER TABLE requirements ADD COLUMN IF NOT EXISTS `creator_role_codes` JSON DEFAULT NULL COMMENT '创建人角色码快照（SecurityUtils.getCurrentUserRoles），用于草稿可见性(同部门同角色)' AFTER is_draft;
+ALTER TABLE requirements ADD COLUMN IF NOT EXISTS `last_saved_at` DATETIME DEFAULT NULL COMMENT '最后保存草稿时间（用于区分"自动草稿"和"手动保存草稿"）' AFTER is_draft;
+ALTER TABLE requirements ADD COLUMN IF NOT EXISTS `creator_role_codes` JSON DEFAULT NULL COMMENT '创建人角色码快照（SecurityUtils.getCurrentUserRoles），用于草稿可见性(同部门同角色)' AFTER last_saved_at;
 
 -- -----------------------------------------------------
 -- 部门管理者角色配置（部门维度配置角色码集合）
@@ -1301,3 +1329,82 @@ WITH RECURSIVE org_tree AS (
   FROM `sys_org` c JOIN org_tree p ON c.parent_id = p.id
 )
 UPDATE `sys_org` o JOIN org_tree t ON o.id = t.id SET o.path = t.path, o.level = t.level;
+
+-- -----------------------------------------------------
+-- 工作流统一引擎改造字段（兼容 MySQL 8：无 ADD COLUMN IF NOT EXISTS）
+-- -----------------------------------------------------
+DROP PROCEDURE IF EXISTS `apply_workflow_engine_schema_upgrades`;
+DELIMITER $$
+CREATE PROCEDURE `apply_workflow_engine_schema_upgrades`()
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'workflow_versions' AND COLUMN_NAME = 'runtime_hash'
+  ) THEN
+    ALTER TABLE `workflow_versions`
+      ADD COLUMN `runtime_hash` VARCHAR(64) DEFAULT NULL COMMENT '启用时图结构哈希' AFTER `definition`;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'workflow_versions' AND COLUMN_NAME = 'activation_status'
+  ) THEN
+    ALTER TABLE `workflow_versions`
+      ADD COLUMN `activation_status` VARCHAR(20) NOT NULL DEFAULT 'draft' COMMENT 'draft/pending/approved/active/inactive' AFTER `is_active`;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'workflow_versions' AND COLUMN_NAME = 'activated_at'
+  ) THEN
+    ALTER TABLE `workflow_versions`
+      ADD COLUMN `activated_at` DATETIME DEFAULT NULL COMMENT '最近一次启用时间' AFTER `activation_status`;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'workflow_instances' AND COLUMN_NAME = 'lock_version'
+  ) THEN
+    ALTER TABLE `workflow_instances`
+      ADD COLUMN `lock_version` INT NOT NULL DEFAULT 0 COMMENT '流转乐观锁' AFTER `status`;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'requirements' AND COLUMN_NAME = 'legacy_workflow'
+  ) THEN
+    ALTER TABLE `requirements`
+      ADD COLUMN `legacy_workflow` TINYINT NOT NULL DEFAULT 0 COMMENT '历史无实例需求标记' AFTER `creator_role_codes`;
+  END IF;
+END$$
+DELIMITER ;
+CALL `apply_workflow_engine_schema_upgrades`();
+DROP PROCEDURE IF EXISTS `apply_workflow_engine_schema_upgrades`;
+
+DROP PROCEDURE IF EXISTS `apply_requirement_approval_evaluation_schema`;
+DELIMITER $$
+CREATE PROCEDURE `apply_requirement_approval_evaluation_schema`()
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.TABLES
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'requirement_approval_evaluations'
+  ) THEN
+    CREATE TABLE `requirement_approval_evaluations` (
+      `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      `requirement_id` BIGINT UNSIGNED NOT NULL COMMENT '需求ID',
+      `instance_id` BIGINT UNSIGNED NOT NULL COMMENT '工作流实例ID',
+      `transition_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联流转记录ID',
+      `node_id` VARCHAR(100) NOT NULL COMMENT '审批节点ID',
+      `node_name` VARCHAR(100) NOT NULL COMMENT '审批节点名称',
+      `node_status_code` VARCHAR(50) DEFAULT NULL COMMENT '节点状态码快照',
+      `evaluator_id` INT UNSIGNED NOT NULL COMMENT '评价人ID',
+      `rating` TINYINT NOT NULL COMMENT '评价星级1-5',
+      `content` VARCHAR(1000) DEFAULT NULL COMMENT '评价意见',
+      `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (`id`),
+      INDEX `idx_requirement_id` (`requirement_id`),
+      INDEX `idx_instance_id` (`instance_id`),
+      INDEX `idx_evaluator_id` (`evaluator_id`),
+      INDEX `idx_created_at` (`created_at`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='需求审批环节评价';
+  END IF;
+END$$
+DELIMITER ;
+CALL `apply_requirement_approval_evaluation_schema`();
+DROP PROCEDURE IF EXISTS `apply_requirement_approval_evaluation_schema`;

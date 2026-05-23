@@ -5,8 +5,10 @@ import com.demand.system.module.workflow.entity.WorkflowState;
 import com.demand.system.module.workflow.entity.WorkflowVersion;
 import com.demand.system.module.workflow.mapper.WorkflowStateMapper;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
+import com.demand.system.module.workflow.support.WorkflowVersionUtils;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -24,19 +26,23 @@ public class WorkflowVersionResolver {
     }
 
     public Optional<WorkflowVersion> findActiveVersion(Long projectId) {
-        WorkflowVersion direct = workflowVersionMapper.selectOne(new LambdaQueryWrapper<WorkflowVersion>()
+        List<WorkflowVersion> directVersions = workflowVersionMapper.selectList(new LambdaQueryWrapper<WorkflowVersion>()
                 .eq(WorkflowVersion::getProjectId, projectId)
-                .eq(WorkflowVersion::getIsActive, 1)
-                .orderByDesc(WorkflowVersion::getVersion)
-                .last("LIMIT 1"));
+                .eq(WorkflowVersion::getIsActive, 1));
+        WorkflowVersion direct = directVersions.stream()
+                .sorted(WorkflowVersionUtils.byVersionDesc())
+                .findFirst()
+                .orElse(null);
         if (direct != null || projectId == null || Objects.equals(projectId, GLOBAL_PROJECT_ID)) {
             return Optional.ofNullable(direct);
         }
-        WorkflowVersion global = workflowVersionMapper.selectOne(new LambdaQueryWrapper<WorkflowVersion>()
+        List<WorkflowVersion> globalVersions = workflowVersionMapper.selectList(new LambdaQueryWrapper<WorkflowVersion>()
                 .eq(WorkflowVersion::getProjectId, GLOBAL_PROJECT_ID)
-                .eq(WorkflowVersion::getIsActive, 1)
-                .orderByDesc(WorkflowVersion::getVersion)
-                .last("LIMIT 1"));
+                .eq(WorkflowVersion::getIsActive, 1));
+        WorkflowVersion global = globalVersions.stream()
+                .sorted(WorkflowVersionUtils.byVersionDesc())
+                .findFirst()
+                .orElse(null);
         return Optional.ofNullable(global);
     }
 

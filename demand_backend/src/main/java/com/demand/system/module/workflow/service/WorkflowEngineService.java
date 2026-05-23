@@ -9,6 +9,7 @@ import com.demand.system.module.requirement.entity.Requirement;
 import com.demand.system.module.requirement.entity.RequirementHistory;
 import com.demand.system.module.requirement.mapper.RequirementHistoryMapper;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
+import com.demand.system.module.requirement.service.RequirementApprovalEvaluationService;
 import com.demand.system.module.project.entity.Project;
 import com.demand.system.module.project.mapper.ProjectMapper;
 import com.demand.system.module.user.entity.User;
@@ -19,20 +20,27 @@ import com.demand.system.module.workflow.dto.AvailableTransitionDTO;
 import com.demand.system.module.workflow.dto.FlowTransitionRequest;
 import com.demand.system.module.workflow.dto.TransitionVO;
 import com.demand.system.module.workflow.dto.WorkflowAvailableActionsDTO;
+import com.demand.system.module.workflow.engine.WorkflowGraphContext;
+import com.demand.system.module.workflow.engine.WorkflowGraphNavigator;
+import com.demand.system.module.workflow.engine.WorkflowRuntimeLoader;
 import com.demand.system.module.workflow.entity.*;
 import com.demand.system.module.workflow.mapper.WorkflowEdgeMapper;
 import com.demand.system.module.workflow.mapper.WorkflowInstanceMapper;
 import com.demand.system.module.workflow.mapper.WorkflowInstanceTransitionMapper;
 import com.demand.system.module.workflow.mapper.WorkflowNodeMapper;
 import com.demand.system.module.workflow.mapper.NodeStatusMapper;
+import com.demand.system.module.workflow.support.WorkflowNodeUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
@@ -49,12 +57,18 @@ public class WorkflowEngineService {
     private final UserMapper userMapper;
     private final RoleMapper roleMapper;
     private final NodeStatusMapper nodeStatusMapper;
+    private final WorkflowGraphNavigator graphNavigator;
+    private final WorkflowRuntimeLoader runtimeLoader;
+    private final WorkflowNotificationService notificationService;
+    private final RequirementApprovalEvaluationService approvalEvaluationService;
 
     public WorkflowEngineService(WorkflowInstanceMapper instanceMapper, WorkflowInstanceTransitionMapper transitionMapper,
                                WorkflowNodeMapper nodeMapper, WorkflowEdgeMapper edgeMapper,
                                RequirementMapper requirementMapper, RequirementHistoryMapper requirementHistoryMapper,
                                ProjectMapper projectMapper, UserMapper userMapper, RoleMapper roleMapper,
-                               NodeStatusMapper nodeStatusMapper) {
+                               NodeStatusMapper nodeStatusMapper, WorkflowGraphNavigator graphNavigator,
+                               WorkflowRuntimeLoader runtimeLoader, WorkflowNotificationService notificationService,
+                               RequirementApprovalEvaluationService approvalEvaluationService) {
         this.instanceMapper = instanceMapper;
         this.transitionMapper = transitionMapper;
         this.nodeMapper = nodeMapper;
@@ -65,44 +79,79 @@ public class WorkflowEngineService {
         this.userMapper = userMapper;
         this.roleMapper = roleMapper;
         this.nodeStatusMapper = nodeStatusMapper;
+        this.graphNavigator = graphNavigator;
+        this.runtimeLoader = runtimeLoader;
+        this.notificationService = notificationService;
+        this.approvalEvaluationService = approvalEvaluationService;
     }
 
     @Transactional
-    public void initWorkflow(Long requirementId, Long workflowVersionId) {
-        WorkflowNode startNode = nodeMapper.selectOne(
-            new LambdaQueryWrapper<WorkflowNode>()
-                .eq(WorkflowNode::getWorkflowVersionId, workflowVersionId)
-                .eq(WorkflowNode::getNodeType, "start")
-        );
-        if (startNode == null) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "工作流缺少开始节点");
+    public void submitFromDraft(Long requirementId, Long workflowVersionId, String targetNodeId,
+                                Long projectId, String comment, Long operatorId) {
+        Requirement requirement = requirementMapper.selectById(requirementId);
+        if (requirement == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "需求不存在");
         }
+        if (requirement.getWorkflowInstanceId() != null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "需求已提交，无需重复提交");
+        }
+
+        WorkflowGraphContext context = runtimeLoader.loadContext(workflowVersionId);
+        WorkflowNode startNode = context.nodesById().values().stream()
+                .filter(node -> "start".equalsIgnoreCase(node.getNodeType()))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "工作流缺少开始节点"));
+
+        WorkflowNode targetNode = context.getNode(targetNodeId);
+        if (targetNode == null || !WorkflowNodeUtils.isWaitNode(targetNode.getNodeType())
+                || "start".equalsIgnoreCase(targetNode.getNodeType())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "目标节点非法");
+        }
+
+        List<String> path = graphNavigator.resolvePathToWaitNode(context, startNode.getNodeId(), targetNodeId, requirement);
+        if (path.isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "无法从开始节点到达目标节点");
+        }
+
+        bindProjectIfNecessary(requirement, projectId, operatorId);
+        requirement = requirementMapper.selectById(requirementId);
 
         WorkflowInstance instance = new WorkflowInstance();
         instance.setRequirementId(requirementId);
         instance.setWorkflowVersionId(workflowVersionId);
-        instance.setCurrentNodeId(startNode.getNodeId());
-        instance.setStatus("running");
+        instance.setCurrentNodeId(targetNodeId);
+        instance.setPreviousNodeId(startNode.getNodeId());
+        instance.setStatus("end".equalsIgnoreCase(targetNode.getNodeType()) ? "completed" : "running");
+        instance.setLockVersion(0);
         instanceMapper.insert(instance);
 
         WorkflowInstanceTransition transition = new WorkflowInstanceTransition();
         transition.setInstanceId(instance.getId());
         transition.setRequirementId(requirementId);
-        transition.setToNodeId(startNode.getNodeId());
-        transition.setToNodeName(startNode.getNodeName());
-        transition.setOperatorId(SecurityUtils.getCurrentUserId());
+        transition.setFromNodeId(startNode.getNodeId());
+        transition.setFromNodeName(startNode.getNodeName());
+        transition.setToNodeId(targetNodeId);
+        transition.setToNodeName(targetNode.getNodeName());
+        transition.setOperatorId(operatorId);
         transition.setAction("submit");
+        transition.setComment(comment);
         transition.setStartedAt(LocalDateTime.now());
         transitionMapper.insert(transition);
 
-        String startNodeStatusCode = resolveNodeStatusCode(startNode);
+        String nodeStatusCode = resolveNodeStatusCode(targetNode);
         requirementMapper.update(null, new LambdaUpdateWrapper<Requirement>()
-            .eq(Requirement::getId, requirementId)
-            .set(Requirement::getWorkflowInstanceId, instance.getId())
-            .set(Requirement::getStatus, resolveNodeStatusName(startNodeStatusCode))
-            .set(Requirement::getNodeStatus, startNodeStatusCode)
-            .set(Requirement::getIsDraft, false)
-        );
+                .eq(Requirement::getId, requirementId)
+                .set(Requirement::getWorkflowInstanceId, instance.getId())
+                .set(Requirement::getStatus, resolveNodeStatusName(nodeStatusCode))
+                .set(Requirement::getNodeStatus, nodeStatusCode)
+                .set(Requirement::getIsDraft, false));
+
+        notificationService.notifyNodeEntered(requirement, targetNode, operatorId);
+    }
+
+    @Transactional
+    public void initWorkflow(Long requirementId, Long workflowVersionId) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "请使用 submitFromDraft 提交流程");
     }
 
     @Transactional
@@ -123,13 +172,21 @@ public class WorkflowEngineService {
         if ("completed".equals(instance.getStatus()) || "cancelled".equals(instance.getStatus())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "工作流已结束，无法流转");
         }
+        if (request.getLockVersion() != null && !Objects.equals(request.getLockVersion(), instance.getLockVersion())) {
+            throw conflictException(instance.getId());
+        }
 
-        WorkflowNode currentNode = getNode(instance.getWorkflowVersionId(), instance.getCurrentNodeId());
-        WorkflowNode targetNode = getNode(instance.getWorkflowVersionId(), request.getToNodeId());
+        WorkflowGraphContext context = runtimeLoader.loadContext(instance.getWorkflowVersionId());
+        WorkflowNode currentNode = context.getNode(instance.getCurrentNodeId());
+        WorkflowNode targetNode = context.getNode(request.getToNodeId());
         bindProjectIfNecessary(requirement, request.getProjectId(), operatorId);
         requirement = requirementMapper.selectById(request.getRequirementId());
 
-        validateTransition(instance, currentNode, targetNode, request.getAction(), operatorId);
+        validateTransition(context, instance, currentNode, targetNode, request.getAction(), operatorId);
+        boolean approvalEvaluationRequired = isApprovalEvaluationRequired(currentNode);
+        if (approvalEvaluationRequired) {
+            validateApprovalEvaluation(request.getRating(), request.getComment());
+        }
 
         closeCurrentTransition(instance.getId());
 
@@ -146,19 +203,30 @@ public class WorkflowEngineService {
         newTransition.setStartedAt(LocalDateTime.now());
         transitionMapper.insert(newTransition);
 
+        if (approvalEvaluationRequired && currentNode != null) {
+            approvalEvaluationService.saveOnApprovalTransition(
+                    instance, currentNode, newTransition.getId(), operatorId, request.getRating(), request.getComment());
+        }
+
         String newStatus = "running";
         if ("cancel".equals(request.getAction())) {
             newStatus = "cancelled";
-        } else if (targetNode != null && "end".equals(targetNode.getNodeType())) {
+        } else if (targetNode != null && "end".equalsIgnoreCase(targetNode.getNodeType())) {
             newStatus = "completed";
         }
 
-        instanceMapper.update(null, new LambdaUpdateWrapper<WorkflowInstance>()
+        Integer currentLockVersion = instance.getLockVersion() == null ? 0 : instance.getLockVersion();
+        int updated = instanceMapper.update(null, new LambdaUpdateWrapper<WorkflowInstance>()
             .eq(WorkflowInstance::getId, instance.getId())
+            .eq(WorkflowInstance::getLockVersion, currentLockVersion)
             .set(WorkflowInstance::getPreviousNodeId, instance.getCurrentNodeId())
             .set(WorkflowInstance::getCurrentNodeId, request.getToNodeId())
             .set(WorkflowInstance::getStatus, newStatus)
+            .set(WorkflowInstance::getLockVersion, currentLockVersion + 1)
         );
+        if (updated <= 0) {
+            throw conflictException(instance.getId());
+        }
 
         String nodeStatusCode = resolveNodeStatusCode(targetNode);
         requirementMapper.update(null, new LambdaUpdateWrapper<Requirement>()
@@ -166,6 +234,8 @@ public class WorkflowEngineService {
             .set(Requirement::getStatus, resolveNodeStatusName(nodeStatusCode))
             .set(Requirement::getNodeStatus, nodeStatusCode)
         );
+
+        notificationService.notifyNodeEntered(requirement, targetNode, operatorId);
     }
 
     @Transactional
@@ -200,10 +270,13 @@ public class WorkflowEngineService {
         rollbackTransition.setStartedAt(LocalDateTime.now());
         transitionMapper.insert(rollbackTransition);
 
+        Integer currentLockVersion = instance.getLockVersion() == null ? 0 : instance.getLockVersion();
         instanceMapper.update(null, new LambdaUpdateWrapper<WorkflowInstance>()
             .eq(WorkflowInstance::getId, instance.getId())
+            .eq(WorkflowInstance::getLockVersion, currentLockVersion)
             .set(WorkflowInstance::getCurrentNodeId, instance.getPreviousNodeId())
             .set(WorkflowInstance::getPreviousNodeId, instance.getCurrentNodeId())
+            .set(WorkflowInstance::getLockVersion, currentLockVersion + 1)
         );
 
         String nodeStatusCode = resolveNodeStatusCode(previousNode);
@@ -288,10 +361,19 @@ public class WorkflowEngineService {
             return actions;
         }
 
-        WorkflowNode currentNode = getNode(instance.getWorkflowVersionId(), instance.getCurrentNodeId());
+        WorkflowGraphContext context = runtimeLoader.loadContext(instance.getWorkflowVersionId());
+        WorkflowNode currentNode = context.getNode(instance.getCurrentNodeId());
         if (currentNode == null) {
             return actions;
         }
+
+        String currentNodeStatusCode = resolveNodeStatusCode(currentNode);
+        actions.setCurrentNodeId(currentNode.getNodeId());
+        actions.setCurrentNodeName(currentNode.getNodeName());
+        actions.setCurrentNodeType(currentNode.getNodeType());
+        actions.setCurrentNodeStatusCode(currentNodeStatusCode);
+        actions.setCurrentNodeStatusName(resolveNodeStatusName(currentNodeStatusCode));
+        actions.setLockVersion(instance.getLockVersion());
 
         Long operatorId = SecurityUtils.getCurrentUserId();
         boolean canOperate = hasOperatePermission(currentNode, operatorId);
@@ -299,32 +381,36 @@ public class WorkflowEngineService {
 
         List<AvailableTransitionDTO> transitions = Collections.emptyList();
         if (canOperate) {
-            transitions = edgeMapper.selectList(
-                    new LambdaQueryWrapper<WorkflowEdge>()
-                            .eq(WorkflowEdge::getWorkflowVersionId, instance.getWorkflowVersionId())
-                            .eq(WorkflowEdge::getSourceNodeId, instance.getCurrentNodeId())
-            ).stream().map(edge -> {
-                WorkflowNode targetNode = getNode(instance.getWorkflowVersionId(), edge.getTargetNodeId());
-                if (targetNode == null) {
-                    return null;
-                }
+            transitions = graphNavigator.resolveAvailableTargets(context, instance.getCurrentNodeId(), requirement)
+                    .stream().map(targetNode -> {
                 AvailableTransitionDTO dto = new AvailableTransitionDTO();
                 dto.setToNodeId(targetNode.getNodeId());
                 dto.setToNodeName(targetNode.getNodeName());
-                dto.setLabel(edge.getLabel());
+                dto.setLabel(targetNode.getNodeName());
                 String nodeStatusCode = resolveNodeStatusCode(targetNode);
                 dto.setBindStatusCode(nodeStatusCode);
                 dto.setBindStatusName(resolveNodeStatusName(nodeStatusCode));
-                dto.setProjectRequired(isProjectRequired(targetNode));
+                dto.setProjectRequired(WorkflowNodeUtils.isProjectRequired(targetNode));
                 return dto;
-            }).filter(java.util.Objects::nonNull).collect(Collectors.toList());
+            }).collect(Collectors.toList());
         }
 
         actions.setTransitions(transitions);
         actions.setCanTransition(canOperate && !transitions.isEmpty());
         actions.setCanRollback(canOperate && instance.getPreviousNodeId() != null && !"end".equals(currentNode.getNodeType()));
         actions.setCanCancel(canCancel);
+        actions.setEvaluationRequired(canOperate && isApprovalEvaluationRequired(currentNode));
         return actions;
+    }
+
+    private boolean isApprovalEvaluationRequired(WorkflowNode currentNode) {
+        return currentNode != null && "approval".equalsIgnoreCase(currentNode.getNodeType());
+    }
+
+    private void validateApprovalEvaluation(Integer rating, String comment) {
+        if (rating == null || rating < 1 || rating > 5) {
+            throw new BusinessException(400, "审批环节需选择 1-5 星评价");
+        }
     }
 
     public List<TransitionVO> getTransitionHistory(Long requirementId) {
@@ -362,28 +448,30 @@ public class WorkflowEngineService {
         }).collect(Collectors.toList());
     }
 
-    private void validateTransition(WorkflowInstance instance, WorkflowNode currentNode,
+    private void validateTransition(WorkflowGraphContext context, WorkflowInstance instance, WorkflowNode currentNode,
                                      WorkflowNode targetNode, String action, Long operatorId) {
         if ("cancel".equals(action)) {
             return;
         }
 
-        boolean edgeExists = edgeMapper.selectCount(
-            new LambdaQueryWrapper<WorkflowEdge>()
-                .eq(WorkflowEdge::getWorkflowVersionId, instance.getWorkflowVersionId())
-                .eq(WorkflowEdge::getSourceNodeId, instance.getCurrentNodeId())
-                .eq(WorkflowEdge::getTargetNodeId, targetNode.getNodeId())
-        ) > 0;
+        if (currentNode == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "当前流程节点不存在");
+        }
+        if (targetNode == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "目标流程节点不存在");
+        }
 
-        if (!edgeExists && !"rollback".equals(action)) {
+        boolean allowed = graphNavigator.resolveAvailableTargets(context, instance.getCurrentNodeId(),
+                requirementMapper.selectById(instance.getRequirementId()))
+                .stream()
+                .anyMatch(node -> Objects.equals(node.getNodeId(), targetNode.getNodeId()));
+        if (!allowed && !"rollback".equals(action)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "不允许从当前节点流转到目标节点");
         }
 
-        if (currentNode.getAssigneeType() != null) {
-            validatePermission(currentNode, operatorId);
-        }
+        validatePermission(currentNode, operatorId);
 
-        if (isProjectRequired(targetNode)) {
+        if (WorkflowNodeUtils.isProjectRequired(targetNode)) {
             Requirement requirement = requirementMapper.selectById(instance.getRequirementId());
             if (requirement == null || requirement.getProjectId() == null || requirement.getProjectId() <= 0) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "目标节点要求必须绑定项目后才能提交流转");
@@ -392,7 +480,23 @@ public class WorkflowEngineService {
     }
 
     private void validatePermission(WorkflowNode node, Long operatorId) {
+        if (hasAdminBypassPermission()) {
+            return;
+        }
+        if (node == null) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
+        }
+        if ("approval".equalsIgnoreCase(node.getNodeType()) && !WorkflowNodeUtils.hasValidAssignee(node)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "当前节点未配置处理人，请联系管理员修复流程");
+        }
+
         String assigneeType = node.getAssigneeType();
+        if (!StringUtils.hasText(assigneeType)) {
+            if ("approval".equalsIgnoreCase(node.getNodeType())) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
+            }
+            return;
+        }
         if ("SPECIFIED_USER".equals(assigneeType)) {
             if (node.getAssigneeUserIds() == null || !node.getAssigneeUserIds().contains(operatorId)) {
                 throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
@@ -410,7 +514,6 @@ public class WorkflowEngineService {
                 throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
             }
         }
-        // 争抢式：绑定角色时所有有该角色的人可见可操作，谁先流转归谁
     }
 
     private boolean hasOperatePermission(WorkflowNode node, Long operatorId) {
@@ -423,6 +526,30 @@ public class WorkflowEngineService {
             }
             throw ex;
         }
+    }
+
+    private BusinessException conflictException(Long instanceId) {
+        WorkflowInstanceTransition latest = transitionMapper.selectOne(
+                new LambdaQueryWrapper<WorkflowInstanceTransition>()
+                        .eq(WorkflowInstanceTransition::getInstanceId, instanceId)
+                        .isNotNull(WorkflowInstanceTransition::getCompletedAt)
+                        .orderByDesc(WorkflowInstanceTransition::getCompletedAt)
+                        .last("LIMIT 1"));
+        Map<String, Object> data = new HashMap<>();
+        if (latest != null) {
+            Map<String, Object> latestTransition = new HashMap<>();
+            latestTransition.put("operatorId", latest.getOperatorId());
+            latestTransition.put("completedAt", latest.getCompletedAt());
+            latestTransition.put("toNodeName", latest.getToNodeName());
+            if (latest.getOperatorId() != null) {
+                User user = userMapper.selectById(latest.getOperatorId());
+                if (user != null) {
+                    latestTransition.put("operatorName", user.getRealName());
+                }
+            }
+            data.put("latestTransition", latestTransition);
+        }
+        return new BusinessException(409, "该需求已被他人处理，请刷新后重试", data);
     }
 
     private void bindProjectIfNecessary(Requirement requirement, Long requestedProjectId, Long operatorId) {
@@ -450,7 +577,7 @@ public class WorkflowEngineService {
         if (currentNode == null || "end".equals(currentNode.getNodeType())) {
             return false;
         }
-        if (!isCancelAllowed(currentNode)) {
+        if (!WorkflowNodeUtils.readBooleanProperty(currentNode, "allowCancel", true)) {
             return false;
         }
         if (isCreatorOrAdmin(requirement, operatorId)) {
@@ -463,52 +590,11 @@ public class WorkflowEngineService {
         if (requirement != null && requirement.getCreatorId() != null && requirement.getCreatorId().equals(operatorId)) {
             return true;
         }
-        return SecurityUtils.getCurrentUserRoles().contains("admin");
+        return hasAdminBypassPermission();
     }
 
-    private boolean isCancelAllowed(WorkflowNode node) {
-        return readNodeBooleanProperty(node, "allowCancel", true);
-    }
-
-    private boolean isProjectRequired(WorkflowNode node) {
-        return readNodeBooleanProperty(node, "projectRequired", false);
-    }
-
-    private boolean readNodeBooleanProperty(WorkflowNode node, String key, boolean defaultValue) {
-        if (node == null || node.getProperties() == null) {
-            return defaultValue;
-        }
-
-        Object directValue = node.getProperties().get(key);
-        if (directValue != null) {
-            return parseBooleanValue(directValue, defaultValue);
-        }
-
-        Object nestedProperties = node.getProperties().get("properties");
-        if (nestedProperties instanceof java.util.Map<?, ?> nestedMap) {
-            Object nestedValue = nestedMap.get(key);
-            if (nestedValue != null) {
-                return parseBooleanValue(nestedValue, defaultValue);
-            }
-        }
-        return defaultValue;
-    }
-
-    private boolean parseBooleanValue(Object value, boolean defaultValue) {
-        if (value == null) {
-            return defaultValue;
-        }
-        if (value instanceof Boolean booleanValue) {
-            return booleanValue;
-        }
-        if (value instanceof Number numberValue) {
-            return numberValue.intValue() != 0;
-        }
-        String text = String.valueOf(value).trim();
-        if (text.isEmpty()) {
-            return defaultValue;
-        }
-        return Boolean.parseBoolean(text);
+    private boolean hasAdminBypassPermission() {
+        return SecurityUtils.hasAnyRole("admin", "super_admin", "SUPER_ADMIN");
     }
 
     private void ensureProjectCanBeBound(Long projectId) {
@@ -592,22 +678,7 @@ public class WorkflowEngineService {
     }
 
     private String resolveNodeStatusCode(WorkflowNode node) {
-        if (node == null) return "DRAFT";
-        if (node.getProperties() != null) {
-            Object nodeStatusCode = node.getProperties().get("nodeStatusCode");
-            if (nodeStatusCode != null) {
-                return nodeStatusCode.toString();
-            }
-
-            Object nestedProperties = node.getProperties().get("properties");
-            if (nestedProperties instanceof java.util.Map<?, ?> nestedMap) {
-                Object nestedNodeStatusCode = nestedMap.get("nodeStatusCode");
-                if (nestedNodeStatusCode != null) {
-                    return nestedNodeStatusCode.toString();
-                }
-            }
-        }
-        return "DRAFT";
+        return WorkflowNodeUtils.resolveNodeStatusCode(node, true);
     }
 
     private String resolveNodeStatusName(String nodeStatusCode) {

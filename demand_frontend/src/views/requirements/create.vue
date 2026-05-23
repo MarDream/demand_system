@@ -110,7 +110,7 @@
                   </template>
                 </el-table-column>
               </el-table>
-              <el-empty v-else-if="isEditMode" description="暂无关联需求" :image-size="40" />
+              <el-empty v-else-if="currentRequirement?.isDraft === true" description="暂无关联需求" :image-size="40" />
 
               <!-- 附件上传区 -->
               <input ref="fileInputRef" type="file" multiple style="display: none" @change="handleFileSelect" />

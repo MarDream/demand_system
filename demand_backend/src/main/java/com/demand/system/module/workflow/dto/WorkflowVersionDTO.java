@@ -8,11 +8,17 @@ public class WorkflowVersionDTO {
 
     private Long projectId;
 
-    private Integer version;
+    private String version;
 
     private String name;
 
     private Integer isActive;
+
+    private String activationStatus;
+
+    private String runtimeHash;
+
+    private LocalDateTime activatedAt;
 
     private Long creatorId;
 
@@ -46,11 +52,11 @@ public class WorkflowVersionDTO {
         this.projectId = projectId;
     }
 
-    public Integer getVersion() {
+    public String getVersion() {
         return version;
     }
 
-    public void setVersion(Integer version) {
+    public void setVersion(String version) {
         this.version = version;
     }
 
@@ -68,6 +74,30 @@ public class WorkflowVersionDTO {
 
     public void setIsActive(Integer isActive) {
         this.isActive = isActive;
+    }
+
+    public String getActivationStatus() {
+        return activationStatus;
+    }
+
+    public void setActivationStatus(String activationStatus) {
+        this.activationStatus = activationStatus;
+    }
+
+    public String getRuntimeHash() {
+        return runtimeHash;
+    }
+
+    public void setRuntimeHash(String runtimeHash) {
+        this.runtimeHash = runtimeHash;
+    }
+
+    public LocalDateTime getActivatedAt() {
+        return activatedAt;
+    }
+
+    public void setActivatedAt(LocalDateTime activatedAt) {
+        this.activatedAt = activatedAt;
     }
 
     public Long getCreatorId() {

@@ -264,12 +264,10 @@
     <el-dialog v-model="versionDialogVisible" title="编辑版本信息" width="460px">
       <el-form label-position="top">
         <el-form-item label="版本号">
-          <el-input-number
+          <el-input
             v-model="versionDialogForm.version"
-            :min="1"
-            :step="1"
-            step-strictly
-            controls-position="right"
+            placeholder="例如 1.0.0"
+            maxlength="20"
             style="width: 100%"
           />
         </el-form-item>
@@ -446,6 +444,7 @@ import { Plus, Refresh } from '@element-plus/icons-vue'
 import PageContainer from '@/components/common/PageContainer.vue'
 import { formatDate as formatDateTime } from '@/utils/format'
 import { resolveActiveMenuPath } from '@/utils/menuNavigation'
+import { isWorkflowVersion, sameWorkflowVersion } from '@/utils/workflowVersion'
 import { usePermission } from '@/composables/usePermission'
 import {
   GLOBAL_WORKFLOW_PROJECT_ID,
@@ -457,10 +456,12 @@ import {
   rejectWorkflow,
   updateWorkflowVersionActivation,
   updateWorkflowVersionMeta,
+  validateWorkflowVersion,
 } from '@/api/modules/workflow-visual'
 import type {
   WorkflowApprovalDTO,
   WorkflowConfigDTO,
+  WorkflowValidationIssue,
   WorkflowVersionDTO,
   WorkflowVersionMetaUpdateDTO,
 } from '@/types/workflow-visual'
@@ -494,7 +495,7 @@ const detailTask = ref<WorkflowApprovalDTO | null>(null)
 const detailVersionConfig = ref<WorkflowConfigDTO | null>(null)
 
 const versionDialogForm = reactive<WorkflowVersionMetaUpdateDTO>({
-  version: 1,
+  version: '',
   name: '',
 })
 
@@ -527,16 +528,21 @@ const projectOptions = computed(() => {
     .sort((left, right) => left.label.localeCompare(right.label, 'zh-CN'))
 })
 const duplicatedVersion = computed(() => {
-  if (!editingVersion.value?.id || !versionDialogForm.version) return undefined
-  return versions.value.find((item) => item.version === versionDialogForm.version && item.id !== editingVersion.value?.id)
+  const normalizedVersion = versionDialogForm.version.trim()
+  if (!editingVersion.value?.id || !normalizedVersion) return undefined
+  return versions.value.find((item) => sameWorkflowVersion(item.version, normalizedVersion) && item.id !== editingVersion.value?.id)
 })
 const versionDialogHint = computed(() => {
   const trimmedName = versionDialogForm.name.trim()
-  if (!versionDialogForm.version || versionDialogForm.version < 1) {
-    return { type: 'warning', message: '版本号需大于 0' }
+  const trimmedVersion = versionDialogForm.version.trim()
+  if (!trimmedVersion) {
+    return { type: 'warning', message: '版本号不能为空' }
+  }
+  if (!isWorkflowVersion(trimmedVersion)) {
+    return { type: 'warning', message: '版本号格式需为正整数或 1.0.0' }
   }
   if (duplicatedVersion.value) {
-    return { type: 'error', message: `版本号 V${versionDialogForm.version} 已存在` }
+    return { type: 'error', message: `版本号 V${trimmedVersion} 已存在` }
   }
   if (!trimmedName) {
     return { type: 'warning', message: '版本名称不能为空' }
@@ -757,13 +763,18 @@ const openVersionMetaDialog = (row: WorkflowVersionDTO) => {
 const handleSaveVersionMeta = async () => {
   if (!editingVersion.value) return
 
+  const trimmedVersion = versionDialogForm.version.trim()
   const trimmedName = versionDialogForm.name.trim()
-  if (!versionDialogForm.version || versionDialogForm.version < 1) {
-    ElMessage.warning('版本号需大于 0')
+  if (!trimmedVersion) {
+    ElMessage.warning('版本号不能为空')
+    return
+  }
+  if (!isWorkflowVersion(trimmedVersion)) {
+    ElMessage.warning('版本号格式需为正整数或 1.0.0')
     return
   }
   if (duplicatedVersion.value) {
-    ElMessage.warning(`版本号 V${versionDialogForm.version} 已存在，请重新输入`)
+    ElMessage.warning(`版本号 V${trimmedVersion} 已存在，请重新输入`)
     return
   }
   if (!trimmedName) {
@@ -774,7 +785,7 @@ const handleSaveVersionMeta = async () => {
   versionSaving.value = true
   try {
     await updateWorkflowVersionMeta(editingVersion.value.id, {
-      version: versionDialogForm.version,
+      version: trimmedVersion,
       name: trimmedName,
     })
     ElMessage.success('版本信息已更新')
@@ -785,13 +796,44 @@ const handleSaveVersionMeta = async () => {
   }
 }
 
+function formatValidationIssues(issues: WorkflowValidationIssue[]) {
+  const errors = issues.filter((item) => item.severity === 'error')
+  if (errors.length === 0) {
+    return ''
+  }
+  return errors.map((item) => item.message).join('\n')
+}
+
 async function handleToggleActivation(row: WorkflowVersionDTO) {
   const targetActive = row.isActive !== 1
   const actionLabel = targetActive ? '启用' : '停用'
+
+  if (targetActive) {
+    if (versionApprovalStatus(row) !== 'APPROVED') {
+      ElMessage.warning('请先完成审核并通过后再启用')
+      return
+    }
+    const issues = (await validateWorkflowVersion(row.id)) || []
+    const errorText = formatValidationIssues(issues)
+    if (errorText) {
+      await ElMessageBox.alert(errorText, '启用前校验未通过', { type: 'error' })
+      return
+    }
+  }
+
   await ElMessageBox.confirm(`确认${actionLabel}工作流“${row.name}”吗？`, `${actionLabel}工作流`, { type: 'warning' })
-  await updateWorkflowVersionActivation(row.id, { active: targetActive })
-  ElMessage.success(`工作流已${actionLabel}`)
-  await loadVersions()
+  try {
+    await updateWorkflowVersionActivation(row.id, { active: targetActive })
+    ElMessage.success(`工作流已${actionLabel}`)
+    await loadVersions()
+  } catch (error: unknown) {
+    const issues = (error as { data?: WorkflowValidationIssue[] })?.data
+    if (Array.isArray(issues) && issues.length > 0) {
+      await ElMessageBox.alert(formatValidationIssues(issues), '启用失败', { type: 'error' })
+      return
+    }
+    throw error
+  }
 }
 
 async function handleDeleteVersion(row: WorkflowVersionDTO) {
@@ -859,7 +901,7 @@ async function confirmProcess() {
   try {
     if (processAction.value === 'approve') {
       await approveWorkflow(currentTask.value.id, { comment: processComment.value })
-      ElMessage.success('审核通过')
+      ElMessage.success('审核通过，请在版本列表中手动启用后生效')
     } else {
       await rejectWorkflow(currentTask.value.id, { comment: processComment.value })
       ElMessage.success('已拒绝')

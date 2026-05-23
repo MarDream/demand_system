@@ -5,7 +5,9 @@ import type {
   WorkflowVersionActivationDTO,
   WorkflowVersionMetaUpdateDTO,
   WorkflowApprovalDTO,
-  ApprovalRequestDTO
+  ApprovalRequestDTO,
+  WorkflowValidationIssue,
+  WorkflowMigrationReport,
 } from '@/types/workflow-visual'
 
 export const GLOBAL_WORKFLOW_PROJECT_ID = 0
@@ -92,4 +94,16 @@ export function approveWorkflow(id: number, data: ApprovalRequestDTO) {
  */
 export function rejectWorkflow(id: number, data: ApprovalRequestDTO) {
   return request.post<void>(`/v1/workflow-approvals/${id}/reject`, data) as unknown as Promise<void>
+}
+
+export function validateWorkflowVersion(versionId: number) {
+  return request.post<WorkflowValidationIssue[]>(`/v1/workflows/versions/${versionId}/validate`) as unknown as Promise<WorkflowValidationIssue[]>
+}
+
+export function markLegacyWorkflowRequirements() {
+  return request.post<WorkflowMigrationReport>('/v1/admin/workflow-migration/mark-legacy') as unknown as Promise<WorkflowMigrationReport>
+}
+
+export function backfillWorkflowInstances() {
+  return request.post<WorkflowMigrationReport>('/v1/admin/workflow-migration/backfill-instances') as unknown as Promise<WorkflowMigrationReport>
 }

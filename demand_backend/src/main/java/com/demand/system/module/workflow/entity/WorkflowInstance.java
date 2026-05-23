@@ -22,6 +22,8 @@ public class WorkflowInstance {
 
     private String status;
 
+    private Integer lockVersion;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
@@ -72,6 +74,14 @@ public class WorkflowInstance {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public Integer getLockVersion() {
+        return lockVersion;
+    }
+
+    public void setLockVersion(Integer lockVersion) {
+        this.lockVersion = lockVersion;
     }
 
     public LocalDateTime getCreatedAt() {

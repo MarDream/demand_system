@@ -25,6 +25,11 @@ import com.demand.system.module.workflow.mapper.WorkflowNodeMapper;
 import com.demand.system.module.workflow.mapper.WorkflowNodePermissionMapper;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.demand.system.module.workflow.service.WorkflowConfigService;
+import com.demand.system.module.workflow.dto.WorkflowValidationIssue;
+import com.demand.system.module.workflow.engine.WorkflowGraphCompiler;
+import com.demand.system.module.workflow.engine.WorkflowGraphValidator;
+import com.demand.system.module.workflow.service.WorkflowActivationService;
+import com.demand.system.module.workflow.support.WorkflowVersionUtils;
 import com.demand.system.module.project.mapper.ProjectMapper;
 import com.demand.system.module.project.entity.Project;
 import com.demand.system.module.auth.mapper.SysUserMapper;
@@ -53,11 +58,16 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
     private final WorkflowNodePermissionMapper workflowNodePermissionMapper;
     private final ProjectMapper projectMapper;
     private final SysUserMapper sysUserMapper;
+    private final WorkflowGraphValidator workflowGraphValidator;
+    private final WorkflowGraphCompiler workflowGraphCompiler;
+    private final WorkflowActivationService workflowActivationService;
 
     public WorkflowConfigServiceImpl(WorkflowVersionMapper workflowVersionMapper, WorkflowNodeMapper workflowNodeMapper,
                                    WorkflowEdgeMapper workflowEdgeMapper, WorkflowApprovalMapper workflowApprovalMapper,
                                    WorkflowInstanceMapper workflowInstanceMapper, WorkflowNodePermissionMapper workflowNodePermissionMapper,
-                                   ProjectMapper projectMapper, SysUserMapper sysUserMapper) {
+                                   ProjectMapper projectMapper, SysUserMapper sysUserMapper,
+                                   WorkflowGraphValidator workflowGraphValidator, WorkflowGraphCompiler workflowGraphCompiler,
+                                   WorkflowActivationService workflowActivationService) {
         this.workflowVersionMapper = workflowVersionMapper;
         this.workflowNodeMapper = workflowNodeMapper;
         this.workflowEdgeMapper = workflowEdgeMapper;
@@ -66,6 +76,9 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         this.workflowNodePermissionMapper = workflowNodePermissionMapper;
         this.projectMapper = projectMapper;
         this.sysUserMapper = sysUserMapper;
+        this.workflowGraphValidator = workflowGraphValidator;
+        this.workflowGraphCompiler = workflowGraphCompiler;
+        this.workflowActivationService = workflowActivationService;
     }
 
     @Override
@@ -74,11 +87,12 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         // 获取当前激活的版本
         LambdaQueryWrapper<WorkflowVersion> versionQuery = new LambdaQueryWrapper<>();
         versionQuery.eq(WorkflowVersion::getProjectId, normalizedProjectId)
-                .eq(WorkflowVersion::getIsActive, 1)
-                .orderByDesc(WorkflowVersion::getVersion)
-                .last("LIMIT 1");
+                .eq(WorkflowVersion::getIsActive, 1);
 
-        WorkflowVersion activeVersion = workflowVersionMapper.selectOne(versionQuery);
+        WorkflowVersion activeVersion = workflowVersionMapper.selectList(versionQuery).stream()
+                .sorted(WorkflowVersionUtils.byVersionDesc())
+                .findFirst()
+                .orElse(null);
 
         if (activeVersion == null) {
             // 如果没有激活版本，返回空配置
@@ -130,6 +144,17 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             }
         }
 
+        List<WorkflowNode> savedNodes = workflowNodeMapper.selectList(new LambdaQueryWrapper<WorkflowNode>()
+                .eq(WorkflowNode::getWorkflowVersionId, draftVersion.getId()));
+        List<WorkflowEdge> savedEdges = workflowEdgeMapper.selectList(new LambdaQueryWrapper<WorkflowEdge>()
+                .eq(WorkflowEdge::getWorkflowVersionId, draftVersion.getId()));
+        workflowGraphValidator.validateOrThrow(savedNodes, savedEdges);
+        WorkflowGraphCompiler.CompiledWorkflow compiled = workflowGraphCompiler.compile(draftVersion.getId(), savedNodes, savedEdges);
+        draftVersion.setDefinition(compiled.definitionJson());
+        draftVersion.setRuntimeHash(compiled.runtimeHash());
+        draftVersion.setActivationStatus("draft");
+        workflowVersionMapper.updateById(draftVersion);
+
         log.info("保存工作流配置成功，projectId={}, versionId={}", normalizedProjectId, draftVersion.getId());
         return toVersionDTO(draftVersion);
     }
@@ -153,6 +178,15 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             throw new BusinessException("该版本已提交审核，请勿重复提交");
         }
 
+        List<WorkflowNode> nodes = workflowNodeMapper.selectList(new LambdaQueryWrapper<WorkflowNode>()
+                .eq(WorkflowNode::getWorkflowVersionId, draftVersion.getId()));
+        List<WorkflowEdge> edges = workflowEdgeMapper.selectList(new LambdaQueryWrapper<WorkflowEdge>()
+                .eq(WorkflowEdge::getWorkflowVersionId, draftVersion.getId()));
+        workflowGraphValidator.validateOrThrow(nodes, edges);
+
+        draftVersion.setActivationStatus("pending");
+        workflowVersionMapper.updateById(draftVersion);
+
         // 创建审核记录
         WorkflowApproval approval = new WorkflowApproval();
         approval.setWorkflowVersionId(draftVersion.getId());
@@ -168,10 +202,11 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
     public List<WorkflowVersionDTO> getVersionHistory(Long projectId) {
         Long normalizedProjectId = normalizeProjectId(projectId);
         LambdaQueryWrapper<WorkflowVersion> query = new LambdaQueryWrapper<>();
-        query.eq(WorkflowVersion::getProjectId, normalizedProjectId)
-                .orderByDesc(WorkflowVersion::getVersion);
+        query.eq(WorkflowVersion::getProjectId, normalizedProjectId);
 
-        List<WorkflowVersion> versions = workflowVersionMapper.selectList(query);
+        List<WorkflowVersion> versions = workflowVersionMapper.selectList(query).stream()
+                .sorted(WorkflowVersionUtils.byVersionDesc())
+                .collect(Collectors.toList());
 
         return versions.stream()
                 .map(this::toVersionDTO)
@@ -211,17 +246,16 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             throw new BusinessException("版本名称不能为空");
         }
 
-        Integer targetVersion = updateDTO.getVersion();
-        if (targetVersion == null || targetVersion < 1) {
-            throw new BusinessException("版本号必须大于0");
+        String targetVersion = normalizeVersion(updateDTO.getVersion());
+        if (!WorkflowVersionUtils.isValid(targetVersion)) {
+            throw new BusinessException("版本号格式需为正整数或 1.0.0");
         }
 
-        LambdaQueryWrapper<WorkflowVersion> duplicateQuery = new LambdaQueryWrapper<>();
-        duplicateQuery.eq(WorkflowVersion::getProjectId, version.getProjectId())
-                .eq(WorkflowVersion::getVersion, targetVersion)
-                .ne(WorkflowVersion::getId, versionId);
-        Long duplicateCount = workflowVersionMapper.selectCount(duplicateQuery);
-        if (duplicateCount != null && duplicateCount > 0) {
+        boolean duplicateVersion = workflowVersionMapper.selectList(new LambdaQueryWrapper<WorkflowVersion>()
+                        .eq(WorkflowVersion::getProjectId, version.getProjectId()))
+                .stream()
+                .anyMatch(item -> !item.getId().equals(versionId) && WorkflowVersionUtils.sameVersion(item.getVersion(), targetVersion));
+        if (duplicateVersion) {
             throw new BusinessException("版本号 V" + targetVersion + " 已存在，请重新输入");
         }
 
@@ -242,22 +276,14 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
 
         boolean active = Boolean.TRUE.equals(activationDTO.getActive());
         if (active) {
-            WorkflowApproval latestApproval = getLatestApproval(versionId);
-            if (latestApproval == null || !"approved".equalsIgnoreCase(latestApproval.getStatus())) {
-                throw new BusinessException("仅已审核通过的工作流版本支持启用");
-            }
-            workflowVersionMapper.update(null, new LambdaUpdateWrapper<WorkflowVersion>()
-                    .eq(WorkflowVersion::getProjectId, version.getProjectId())
-                    .set(WorkflowVersion::getIsActive, 0));
-            version.setIsActive(1);
-        } else {
-            if (version.getIsActive() == null || version.getIsActive() != 1) {
-                throw new BusinessException("该工作流当前未启用");
-            }
-            version.setIsActive(0);
+            return workflowActivationService.activate(versionId);
         }
-        workflowVersionMapper.updateById(version);
-        return toVersionDTO(version);
+        return workflowActivationService.deactivate(versionId);
+    }
+
+    @Override
+    public List<WorkflowValidationIssue> validateVersion(Long versionId) {
+        return workflowActivationService.validateVersion(versionId);
     }
 
     @Override
@@ -331,20 +357,11 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         approval.setApprovedAt(LocalDateTime.now());
         workflowApprovalMapper.updateById(approval);
 
-        // 激活该版本
         WorkflowVersion version = workflowVersionMapper.selectById(approval.getWorkflowVersionId());
         if (version != null) {
-            // 将该项目的其他版本设为非激活
-            LambdaUpdateWrapper<WorkflowVersion> updateWrapper = new LambdaUpdateWrapper<>();
-            updateWrapper.eq(WorkflowVersion::getProjectId, version.getProjectId())
-                    .set(WorkflowVersion::getIsActive, 0);
-            workflowVersionMapper.update(null, updateWrapper);
-
-            // 激活当前版本
-            version.setIsActive(1);
+            version.setActivationStatus("approved");
             workflowVersionMapper.updateById(version);
-
-            log.info("审核通过并激活工作流版本，versionId={}, projectId={}", version.getId(), version.getProjectId());
+            log.info("审核通过工作流版本，versionId={}, projectId={}，请手动启用后生效", version.getId(), version.getProjectId());
         }
     }
 
@@ -376,6 +393,12 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         approval.setComment(normalizedComment);
         approval.setApprovedAt(LocalDateTime.now());
         workflowApprovalMapper.updateById(approval);
+
+        WorkflowVersion version = workflowVersionMapper.selectById(approval.getWorkflowVersionId());
+        if (version != null) {
+            version.setActivationStatus("draft");
+            workflowVersionMapper.updateById(version);
+        }
 
         log.info("审核拒绝工作流版本，approvalId={}, versionId={}", approvalId, approval.getWorkflowVersionId());
     }
@@ -426,23 +449,14 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         workflowEdgeMapper.delete(edgeQuery);
     }
 
-    private Integer getMaxVersion(Long projectId) {
-        LambdaQueryWrapper<WorkflowVersion> query = new LambdaQueryWrapper<>();
-        query.eq(WorkflowVersion::getProjectId, projectId)
-                .orderByDesc(WorkflowVersion::getVersion)
-                .last("LIMIT 1");
-
-        WorkflowVersion maxVersion = workflowVersionMapper.selectOne(query);
-        return maxVersion != null ? maxVersion.getVersion() : 0;
-    }
-
     private WorkflowVersion findLatestInactiveVersion(Long projectId) {
         LambdaQueryWrapper<WorkflowVersion> versionQuery = new LambdaQueryWrapper<>();
         versionQuery.eq(WorkflowVersion::getProjectId, projectId)
-                .eq(WorkflowVersion::getIsActive, 0)
-                .orderByDesc(WorkflowVersion::getVersion)
-                .last("LIMIT 1");
-        return workflowVersionMapper.selectOne(versionQuery);
+                .eq(WorkflowVersion::getIsActive, 0);
+        return workflowVersionMapper.selectList(versionQuery).stream()
+                .sorted(WorkflowVersionUtils.byVersionDesc())
+                .findFirst()
+                .orElse(null);
     }
 
     private boolean hasPendingApproval(Long versionId) {
@@ -460,17 +474,29 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
     }
 
     private WorkflowVersion createDraftVersion(Long projectId, Long currentUserId) {
-        Integer maxVersion = getMaxVersion(projectId);
+        String latestVersion = workflowVersionMapper.selectList(new LambdaQueryWrapper<WorkflowVersion>()
+                        .eq(WorkflowVersion::getProjectId, projectId))
+                .stream()
+                .sorted(WorkflowVersionUtils.byVersionDesc())
+                .map(WorkflowVersion::getVersion)
+                .findFirst()
+                .orElse(null);
+        String nextVersion = WorkflowVersionUtils.suggestNext(latestVersion);
         WorkflowVersion draftVersion = new WorkflowVersion();
         draftVersion.setProjectId(projectId);
-        draftVersion.setVersion(maxVersion + 1);
-        draftVersion.setName("草稿版本 v" + (maxVersion + 1));
-        draftVersion.setDefinition("{}");
+        draftVersion.setVersion(nextVersion);
+        draftVersion.setName("草稿版本 v" + nextVersion);
+        draftVersion.setDefinition("{\"nodes\":[],\"edges\":[]}");
         draftVersion.setIsActive(0);
+        draftVersion.setActivationStatus("draft");
         draftVersion.setCreatorId(currentUserId);
         draftVersion.setCreatedAt(LocalDateTime.now());
         workflowVersionMapper.insert(draftVersion);
         return draftVersion;
+    }
+
+    private String normalizeVersion(String version) {
+        return WorkflowVersionUtils.normalize(version);
     }
 
     private String normalizeComment(String comment) {

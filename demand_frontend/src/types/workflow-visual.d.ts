@@ -31,12 +31,21 @@ export interface WorkflowConfigDTO {
   edges: WorkflowEdgeDTO[]
 }
 
+export interface WorkflowValidationIssue {
+  path: string
+  message: string
+  severity: 'error' | 'warning' | string
+}
+
 export interface WorkflowVersionDTO {
   id: number
   projectId: number
-  version: number
+  version: string
   name: string
   isActive: number
+  activationStatus?: string
+  runtimeHash?: string
+  activatedAt?: string
   creatorId: number
   creatorName: string
   createdAt: string
@@ -48,7 +57,7 @@ export interface WorkflowVersionDTO {
 }
 
 export interface WorkflowVersionMetaUpdateDTO {
-  version: number
+  version: string
   name: string
 }
 
@@ -61,7 +70,7 @@ export interface WorkflowApprovalDTO {
   workflowVersionId: number
   projectId: number
   projectName: string
-  version: number
+  version: string
   versionName: string
   status: 'PENDING' | 'APPROVED' | 'REJECTED'
   submitterId: number
@@ -76,6 +85,13 @@ export interface WorkflowApprovalDTO {
 
 export interface ApprovalRequestDTO {
   comment?: string
+}
+
+export interface WorkflowMigrationReport {
+  markedLegacyCount: number
+  backfilledInstanceCount: number
+  skippedCount: number
+  failedRequirementIds: number[]
 }
 
 // LogicFlow 节点数据结构

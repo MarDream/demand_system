@@ -34,7 +34,7 @@ public class RequirementFlowIT extends BaseIntegrationTest {
                 }
                 """.formatted(title);
 
-        mockMvc.perform(post("/api/v1/requirements")
+        mockMvc.perform(post("/api/v1/requirements/drafts")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(createBody))

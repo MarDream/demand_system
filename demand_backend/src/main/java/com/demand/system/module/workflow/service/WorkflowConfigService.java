@@ -69,4 +69,6 @@ public interface WorkflowConfigService {
      * 审核拒绝
      */
     void rejectWorkflow(Long approvalId, String comment);
+
+    List<com.demand.system.module.workflow.dto.WorkflowValidationIssue> validateVersion(Long versionId);
 }

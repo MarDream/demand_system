@@ -21,11 +21,15 @@ import com.demand.system.module.workflow.entity.WorkflowNodePermission;
 import com.demand.system.module.workflow.entity.WorkflowState;
 import com.demand.system.module.workflow.entity.WorkflowTransition;
 import com.demand.system.module.workflow.entity.WorkflowVersion;
+import com.demand.system.module.workflow.entity.WorkflowNode;
+import com.demand.system.module.workflow.mapper.WorkflowNodeMapper;
 import com.demand.system.module.workflow.mapper.WorkflowNodePermissionMapper;
 import com.demand.system.module.workflow.mapper.WorkflowStateMapper;
 import com.demand.system.module.workflow.mapper.WorkflowTransitionMapper;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
+import com.demand.system.module.workflow.service.WorkflowActivationService;
 import com.demand.system.module.workflow.service.WorkflowService;
+import com.demand.system.module.workflow.support.WorkflowVersionUtils;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
@@ -63,7 +67,9 @@ public class WorkflowServiceImpl implements WorkflowService {
     private final WorkflowStateMapper stateMapper;
     private final WorkflowTransitionMapper transitionMapper;
     private final WorkflowVersionMapper versionMapper;
+    private final WorkflowNodeMapper workflowNodeMapper;
     private final WorkflowNodePermissionMapper nodePermissionMapper;
+    private final WorkflowActivationService workflowActivationService;
     private final StateMachine stateMachine;
     private final PermissionEngine permissionEngine;
     private final WorkflowVersionResolver workflowVersionResolver;
@@ -74,7 +80,9 @@ public class WorkflowServiceImpl implements WorkflowService {
     private final ObjectMapper objectMapper;
 
     public WorkflowServiceImpl(WorkflowStateMapper stateMapper, WorkflowTransitionMapper transitionMapper,
-                            WorkflowVersionMapper versionMapper, WorkflowNodePermissionMapper nodePermissionMapper,
+                            WorkflowVersionMapper versionMapper, WorkflowNodeMapper workflowNodeMapper,
+                            WorkflowNodePermissionMapper nodePermissionMapper,
+                            WorkflowActivationService workflowActivationService,
                             StateMachine stateMachine, PermissionEngine permissionEngine,
                             WorkflowVersionResolver workflowVersionResolver, WorkflowDefinitionEngine workflowDefinitionEngine,
                             RequirementMapper requirementMapper, RequirementHistoryMapper requirementHistoryMapper,
@@ -82,7 +90,9 @@ public class WorkflowServiceImpl implements WorkflowService {
         this.stateMapper = stateMapper;
         this.transitionMapper = transitionMapper;
         this.versionMapper = versionMapper;
+        this.workflowNodeMapper = workflowNodeMapper;
         this.nodePermissionMapper = nodePermissionMapper;
+        this.workflowActivationService = workflowActivationService;
         this.stateMachine = stateMachine;
         this.permissionEngine = permissionEngine;
         this.workflowVersionResolver = workflowVersionResolver;
@@ -212,8 +222,10 @@ public class WorkflowServiceImpl implements WorkflowService {
     @Override
     public List<WorkflowVersion> getVersions(Long projectId) {
         return versionMapper.selectList(new LambdaQueryWrapper<WorkflowVersion>()
-                .eq(WorkflowVersion::getProjectId, projectId)
-                .orderByDesc(WorkflowVersion::getVersion));
+                        .eq(WorkflowVersion::getProjectId, projectId))
+                .stream()
+                .sorted(WorkflowVersionUtils.byVersionDesc())
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -221,17 +233,29 @@ public class WorkflowServiceImpl implements WorkflowService {
     public void createVersion(WorkflowVersion version) {
         validateDefinitionOrThrow(version.getDefinition());
 
-        WorkflowVersion latest = versionMapper.selectOne(new LambdaQueryWrapper<WorkflowVersion>()
-                .eq(WorkflowVersion::getProjectId, version.getProjectId())
-                .orderByDesc(WorkflowVersion::getVersion)
-                .last("LIMIT 1"));
+        WorkflowVersion latest = versionMapper.selectList(new LambdaQueryWrapper<WorkflowVersion>()
+                        .eq(WorkflowVersion::getProjectId, version.getProjectId()))
+                .stream()
+                .sorted(WorkflowVersionUtils.byVersionDesc())
+                .findFirst()
+                .orElse(null);
 
-        int nextVersion = 1;
-        if (latest != null && latest.getVersion() != null) {
-            nextVersion = latest.getVersion() + 1;
+        String requestedVersion = WorkflowVersionUtils.normalize(version.getVersion());
+        if (requestedVersion != null) {
+            if (!WorkflowVersionUtils.isValid(requestedVersion)) {
+                throw new BusinessException("版本号格式需为正整数或 1.0.0");
+            }
+            boolean duplicateVersion = versionMapper.selectList(new LambdaQueryWrapper<WorkflowVersion>()
+                            .eq(WorkflowVersion::getProjectId, version.getProjectId()))
+                    .stream()
+                    .anyMatch(item -> WorkflowVersionUtils.sameVersion(item.getVersion(), requestedVersion));
+            if (duplicateVersion) {
+                throw new BusinessException("版本号 V" + requestedVersion + " 已存在，请重新输入");
+            }
+            version.setVersion(requestedVersion);
+        } else {
+            version.setVersion(WorkflowVersionUtils.suggestNext(latest != null ? latest.getVersion() : null));
         }
-
-        version.setVersion(nextVersion);
         version.setIsActive(0);
         version.setCreatorId(resolveCurrentUserId());
         if (version.getCreatedAt() == null) {
@@ -269,6 +293,13 @@ public class WorkflowServiceImpl implements WorkflowService {
         WorkflowVersion version = versionMapper.selectById(id);
         if (version == null || !Objects.equals(version.getProjectId(), projectId)) {
             throw new BusinessException("工作流版本不存在");
+        }
+
+        long visualNodeCount = workflowNodeMapper.selectCount(new LambdaQueryWrapper<WorkflowNode>()
+                .eq(WorkflowNode::getWorkflowVersionId, id));
+        if (visualNodeCount > 0) {
+            workflowActivationService.activate(id);
+            return;
         }
 
         validateDefinitionOrThrow(version.getDefinition());

@@ -8,6 +8,8 @@ import com.demand.system.module.workflow.dto.NodeConfigDTO;
 import com.demand.system.module.workflow.dto.WorkflowDefinitionDTO;
 import com.demand.system.module.workflow.engine.WorkflowVersionResolver;
 import com.demand.system.module.workflow.entity.WorkflowVersion;
+import com.demand.system.module.workflow.entity.WorkflowNode;
+import com.demand.system.module.workflow.mapper.WorkflowNodeMapper;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -47,20 +49,22 @@ public class WorkflowDefinitionEngine {
 
     private final WorkflowVersionMapper workflowVersionMapper;
     private final WorkflowVersionResolver workflowVersionResolver;
+    private final WorkflowNodeMapper workflowNodeMapper;
     private final ObjectMapper objectMapper;
 
     public WorkflowDefinitionEngine(WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver,
-                                  ObjectMapper objectMapper) {
+                                  WorkflowNodeMapper workflowNodeMapper, ObjectMapper objectMapper) {
         this.workflowVersionMapper = workflowVersionMapper;
         this.workflowVersionResolver = workflowVersionResolver;
+        this.workflowNodeMapper = workflowNodeMapper;
         this.objectMapper = objectMapper;
     }
 
     public boolean hasActiveDefinition(Long projectId) {
         return workflowVersionResolver.findActiveVersion(projectId)
-                .map(WorkflowVersion::getDefinition)
-                .filter(StringUtils::hasText)
-                .isPresent();
+                .map(version -> workflowNodeMapper.selectCount(new LambdaQueryWrapper<WorkflowNode>()
+                        .eq(WorkflowNode::getWorkflowVersionId, version.getId())) > 0)
+                .orElse(false);
     }
 
     public List<String> validateDefinition(String definition) {

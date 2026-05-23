@@ -19,12 +19,10 @@
                   <div class="version-input-group">
                     <div class="version-number-input">
                       <span class="version-prefix">V</span>
-                      <el-input-number
+                      <el-input
                         v-model="versionForm.version"
-                        :min="1"
-                        :step="1"
-                        step-strictly
-                        controls-position="right"
+                        placeholder="1.0.0"
+                        maxlength="20"
                       />
                     </div>
                     <div v-if="versionMetaHint" class="version-meta-hint" :class="versionMetaHint.type">
@@ -298,6 +296,12 @@ import { nodeStatusApi, type NodeStatus } from '@/api/modules/workflow-engine'
 import * as roleApi from '@/api/modules/role'
 import * as userApi from '@/api/modules/user'
 import { resolveActiveMenuPath } from '@/utils/menuNavigation'
+import {
+  compareWorkflowVersion,
+  isWorkflowVersion,
+  sameWorkflowVersion,
+  suggestNextWorkflowVersion,
+} from '@/utils/workflowVersion'
 import type {
   WorkflowVersionDTO,
   WorkflowVersionMetaUpdateDTO,
@@ -328,10 +332,10 @@ const drawerTitle = ref('')
 const selectedNode = ref<any>(null)
 const selectedEdge = ref<any>(null)
 const versionForm = reactive<{
-  version: number | undefined
+  version: string
   name: string
 }>({
-  version: undefined,
+  version: '',
   name: ''
 })
 const nodeStatusOptions = ref<NodeStatus[]>([])
@@ -435,23 +439,28 @@ const workflowEditorTitle = computed(() => {
 const showProjectRequiredCheckbox = computed(() => !hasProjectRequiredInPredecessors(nodeForm.nodeId))
 const trimmedVersionName = computed(() => versionForm.name.trim())
 const duplicatedVersionRecord = computed(() => {
-  if (!versionForm.version) return undefined
+  const trimmedVersion = versionForm.version.trim()
+  if (!trimmedVersion) return undefined
   return versionHistory.value.find((item) => {
-    if (item.version !== versionForm.version) return false
+    if (!sameWorkflowVersion(item.version, trimmedVersion)) return false
     if (currentVersion.value?.id && item.id === currentVersion.value.id) return false
     return true
   })
 })
 const versionMetaHint = computed(() => {
   if (isViewMode.value) return null
-  if (!versionForm.version && !trimmedVersionName.value) {
+  const trimmedVersion = versionForm.version.trim()
+  if (!trimmedVersion && !trimmedVersionName.value) {
     return { type: 'info', message: '支持直接编辑版本号和版本名称' }
   }
-  if (!versionForm.version || versionForm.version < 1) {
-    return { type: 'warning', message: '版本号需大于 0' }
+  if (!trimmedVersion) {
+    return { type: 'warning', message: '版本号不能为空' }
+  }
+  if (!isWorkflowVersion(trimmedVersion)) {
+    return { type: 'warning', message: '版本号格式需为正整数或 1.0.0' }
   }
   if (duplicatedVersionRecord.value) {
-    return { type: 'error', message: `版本号 V${versionForm.version} 已存在` }
+    return { type: 'error', message: `版本号 V${trimmedVersion} 已存在` }
   }
   if (!trimmedVersionName.value) {
     return { type: 'warning', message: '版本名称不能为空' }
@@ -468,21 +477,26 @@ const applyCurrentVersion = (version: WorkflowVersionDTO) => {
 }
 
 const syncVersionForm = (version?: WorkflowVersionDTO) => {
-  versionForm.version = version?.version
+  versionForm.version = version?.version || ''
   versionForm.name = version?.name || ''
 }
 
 const getDesiredVersionMeta = (): WorkflowVersionMetaUpdateDTO | null => {
-  const version = versionForm.version
+  const version = versionForm.version.trim()
   const name = versionForm.name.trim()
-  const hasAnyInput = version !== undefined || name.length > 0 || !!currentVersion.value
+  const hasAnyInput = version.length > 0 || name.length > 0 || !!currentVersion.value
 
   if (!hasAnyInput) {
     return null
   }
 
-  if (!version || version < 1) {
-    ElMessage.warning('请输入大于 0 的版本号')
+  if (!version) {
+    ElMessage.warning('请输入版本号')
+    return null
+  }
+
+  if (!isWorkflowVersion(version)) {
+    ElMessage.warning('版本号格式需为正整数或 1.0.0')
     return null
   }
 
@@ -520,10 +534,11 @@ const syncEditorVersionRoute = async (versionId: number, projectId: number) => {
 
 const applySuggestedVersionMeta = () => {
   if (currentVersion.value || isViewMode.value) return
-  if (versionForm.version !== undefined || trimmedVersionName.value) return
+  if (versionForm.version.trim() || trimmedVersionName.value) return
 
-  const maxVersion = versionHistory.value.reduce((max, item) => Math.max(max, item.version || 0), 0)
-  const nextVersion = maxVersion + 1
+  const latestVersion = [...versionHistory.value]
+    .sort((left, right) => compareWorkflowVersion(right.version, left.version))[0]?.version
+  const nextVersion = suggestNextWorkflowVersion(latestVersion)
   versionForm.version = nextVersion
   versionForm.name = `草稿版本 v${nextVersion}`
 }
@@ -1667,7 +1682,7 @@ const handleSave = async () => {
     const graphData = lf.getGraphData() as any
     const projectId = currentProjectId.value
     const desiredVersionMeta = getDesiredVersionMeta()
-    if ((currentVersion.value || versionForm.version !== undefined || versionForm.name.trim()) && !desiredVersionMeta) {
+    if ((currentVersion.value || versionForm.version.trim() || versionForm.name.trim()) && !desiredVersionMeta) {
       return false
     }
 
@@ -1940,7 +1955,7 @@ onBeforeUnmount(() => {
             font-weight: 600;
           }
 
-          :deep(.el-input-number) {
+          :deep(.el-input) {
             width: 140px;
           }
         }

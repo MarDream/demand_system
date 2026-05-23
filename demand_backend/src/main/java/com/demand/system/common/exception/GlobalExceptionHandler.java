@@ -18,8 +18,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BusinessException.class)
     @ResponseStatus(HttpStatus.OK)
-    public Result<Void> handleBusinessException(BusinessException e) {
+    public Result<Object> handleBusinessException(BusinessException e) {
         log.warn("Business exception: errorCode={}, message={}", e.getErrorCode(), e.getMessage());
+        if (e.getData() != null) {
+            return new Result<>(e.getErrorCode(), e.getMessage(), e.getData());
+        }
         return Result.fail(e.getErrorCode(), e.getMessage());
     }
 

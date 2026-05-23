@@ -161,6 +161,22 @@ export interface RequirementCommentCreate {
   content: string
 }
 
+export interface RequirementApprovalEvaluation {
+  id: number
+  requirementId: number
+  instanceId: number
+  transitionId?: number | null
+  nodeId: string
+  nodeName: string
+  nodeStatusCode?: string | null
+  nodeStatusName?: string | null
+  evaluatorId: number
+  evaluatorName?: string | null
+  rating: number
+  content?: string | null
+  createdAt: string
+}
+
 export interface CustomField {
   id: number
   projectId: number

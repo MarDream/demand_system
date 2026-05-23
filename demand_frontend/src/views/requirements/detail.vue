@@ -4,6 +4,15 @@
       <template v-if="detail">
         <div class="detail-actions">
           <div class="header-actions">
+            <div v-if="showCurrentNodeStatus" class="current-node-status">
+              <span class="current-node-status__label">当前节点</span>
+              <span class="current-node-status__value">{{ currentNodeDisplayName }}</span>
+              <span class="current-node-status__divider">/</span>
+              <span class="current-node-status__label">节点状态</span>
+              <el-tag size="small" effect="plain" :type="statusTagType(currentNodeStatusName)">
+                {{ currentNodeStatusName }}
+              </el-tag>
+            </div>
             <el-button @click="handleEdit">编辑</el-button>
             <el-button type="success" @click="handleSplit">拆分子需求</el-button>
             <el-popconfirm title="确定删除该需求吗？" @confirm="handleDelete">
@@ -229,6 +238,66 @@
           </div>
         </el-tab-pane>
         </el-tabs>
+
+        <div class="approval-evaluations-section">
+          <div class="section-header">
+            <h3>审批评价</h3>
+            <span class="section-hint">多环节评价按时间轴从早到晚展示，后续流程均可查看</span>
+          </div>
+          <el-empty v-if="sortedApprovalEvaluations.length === 0" description="暂无审批评价" :image-size="60" />
+          <el-timeline v-else class="approval-evaluation-timeline">
+            <el-timeline-item
+              v-for="item in sortedApprovalEvaluations"
+              :key="item.id"
+              :timestamp="formatDate(item.createdAt)"
+              placement="top"
+            >
+              <el-card shadow="never" class="approval-evaluation-card">
+                <div class="approval-evaluation-header">
+                  <el-avatar :size="32">{{ item.evaluatorName?.charAt(0) || '审' }}</el-avatar>
+                  <div class="approval-evaluation-meta">
+                    <div class="approval-evaluation-title">
+                      <strong>{{ item.evaluatorName || '审批人' }}</strong>
+                      <el-tag size="small" effect="plain" type="warning">{{ item.nodeName }}</el-tag>
+                      <el-tag v-if="item.nodeStatusName" size="small" effect="plain">{{ item.nodeStatusName }}</el-tag>
+                    </div>
+                    <el-rate :model-value="item.rating" disabled show-score score-template="{value} 星" />
+                  </div>
+                </div>
+                <p v-if="item.content" class="approval-evaluation-content">{{ item.content }}</p>
+                <p v-else class="approval-evaluation-content approval-evaluation-content--empty">未填写意见</p>
+              </el-card>
+            </el-timeline-item>
+          </el-timeline>
+        </div>
+
+        <el-dialog
+          v-model="approvalDialogVisible"
+          title="审批评价"
+          width="480px"
+          :close-on-click-modal="false"
+          @closed="resetApprovalDialog"
+        >
+          <p class="approval-dialog-tip">离开当前审批节点前，请完成 1-5 星评价（意见选填）</p>
+          <div class="approval-dialog-rate">
+            <span class="approval-dialog-label">评价星级</span>
+            <el-rate v-model="approvalRating" :max="5" />
+          </div>
+          <el-input
+            v-model="approvalComment"
+            type="textarea"
+            :rows="4"
+            placeholder="填写审批意见（选填）"
+            maxlength="1000"
+            show-word-limit
+          />
+          <template #footer>
+            <el-button @click="approvalDialogVisible = false">取消</el-button>
+            <el-button type="primary" :loading="transitionLoading" @click="confirmApprovalTransition">
+              提交并流转
+            </el-button>
+          </template>
+        </el-dialog>
       </template>
     </div>
   </PageContainer>
@@ -243,9 +312,14 @@ import { downloadRequirementAttachment } from '@/api/modules/file'
 import type { RelationItem } from '@/api/modules/relation'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
 import { workflowEngineApi, type AvailableTransition, type WorkflowAvailableActions } from '@/api/modules/workflow-engine'
-import { executeTransition, getAvailableTransitions, getWorkflowStates } from '@/api/modules/workflow'
-import type { Requirement, RequirementAttachment, RequirementComment, RequirementHistory, RequirementUpdate } from '@/types/requirement'
-import type { WorkflowState, WorkflowTransition } from '@/types/workflow'
+import type {
+  Requirement,
+  RequirementApprovalEvaluation,
+  RequirementAttachment,
+  RequirementComment,
+  RequirementHistory,
+  RequirementUpdate,
+} from '@/types/requirement'
 import { normalizeText, formatDate, stripPriorityPrefix } from '@/utils/format'
 import { hydrateRichTextImageHtml } from '@/utils/richTextFileImage'
 import PageContainer from '@/components/common/PageContainer.vue'
@@ -259,6 +333,10 @@ const detail = ref<Requirement | null>(null)
 const history = ref<RequirementHistory[]>([])
 const relatedRequirements = ref<any[]>([])
 const comments = ref<RequirementComment[]>([])
+const approvalEvaluations = ref<RequirementApprovalEvaluation[]>([])
+const approvalDialogVisible = ref(false)
+const approvalRating = ref(0)
+const approvalComment = ref('')
 const children = ref<any[]>([])
 const activeTab = ref('basic')
 const commentText = ref('')
@@ -266,8 +344,6 @@ const projectName = ref<string>('')
 const projectOptions = ref<Array<{ id: number; name: string; status?: string | null; endDate?: string | null }>>([])
 const typeMap = ref<Record<string, string>>({})
 const priorityMap = ref<Record<string, string>>({})
-const workflowStates = ref<WorkflowState[]>([])
-const availableTransitions = ref<WorkflowTransition[]>([])
 const workflowRuntime = ref<WorkflowAvailableActions>({
   canTransition: false,
   canRollback: false,
@@ -279,10 +355,29 @@ const selectedTransitionTargetId = ref<string | number | null>(null)
 const bindingProjectId = ref<number | null>(null)
 const transitionLoading = ref(false)
 const richDescription = computed(() => hydrateRichTextImageHtml(detail.value?.description || ''))
+const currentNodeStatusName = computed(() => {
+  return workflowRuntime.value.currentNodeStatusName || detail.value?.status || ''
+})
+const currentNodeDisplayName = computed(() => {
+  return workflowRuntime.value.currentNodeName || '当前节点'
+})
+const showCurrentNodeStatus = computed(() => {
+  return usingUnifiedEngine.value
+    && Boolean(detail.value?.workflowInstanceId)
+    && workflowRuntime.value.currentNodeType !== 'start'
+    && Boolean(currentNodeStatusName.value)
+})
+
+const sortedApprovalEvaluations = computed(() => {
+  return [...approvalEvaluations.value].sort((a, b) => {
+    const timeA = new Date(a.createdAt).getTime()
+    const timeB = new Date(b.createdAt).getTime()
+    if (timeA !== timeB) return timeA - timeB
+    return a.id - b.id
+  })
+})
 
 function resetWorkflowMeta() {
-  workflowStates.value = []
-  availableTransitions.value = []
   workflowRuntime.value = {
     canTransition: false,
     canRollback: false,
@@ -358,26 +453,11 @@ async function loadWorkflowMeta() {
     }
   }
 
-  if (!detail.value?.projectId) return
-
-  try {
-    const [statesRes, transitionsRes] = await Promise.all([
-      getWorkflowStates(detail.value.projectId),
-      getAvailableTransitions(id),
-    ])
-
-    workflowStates.value = Array.isArray(statesRes) ? statesRes : []
-    availableTransitions.value = Array.isArray(transitionsRes) ? transitionsRes : []
-
-    const exists = availableTransitions.value.some(
-      (transition) => transition.toStateId === selectedTransitionTargetId.value,
-    )
-    if (!exists) {
-      selectedTransitionTargetId.value = availableTransitions.value[0]?.toStateId ?? null
-    }
-  } catch {
-    resetWorkflowMeta()
+  if (detail.value?.isDraft) {
+    return
   }
+
+  resetWorkflowMeta()
 }
 
 // Fetch history
@@ -454,6 +534,44 @@ async function fetchComments() {
   }
 }
 
+async function fetchApprovalEvaluations() {
+  try {
+    const res = await requirementApi.getApprovalEvaluations(id)
+    approvalEvaluations.value = Array.isArray(res) ? res : []
+  } catch {
+    approvalEvaluations.value = []
+  }
+}
+
+function resetApprovalDialog() {
+  approvalRating.value = 0
+  approvalComment.value = ''
+}
+
+async function executeTransition(extra?: { rating?: number; comment?: string }) {
+  transitionLoading.value = true
+  try {
+    await workflowEngineApi.transition({
+      requirementId: id,
+      toNodeId: String(selectedTransitionTargetId.value),
+      projectId: requiresProjectBinding.value ? bindingProjectId.value : undefined,
+      action: 'submit',
+      comment: extra?.comment,
+      rating: extra?.rating,
+      lockVersion: workflowRuntime.value.lockVersion ?? undefined,
+    })
+    ElMessage.success('状态流转成功')
+    selectedTransitionTargetId.value = null
+    approvalDialogVisible.value = false
+    resetApprovalDialog()
+    await Promise.all([fetchDetail(), fetchHistory(), fetchApprovalEvaluations()])
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '状态流转失败'))
+  } finally {
+    transitionLoading.value = false
+  }
+}
+
 // Tag type helpers
 function priorityTagType(priority: string): string {
   const map: Record<string, string> = { P0: 'danger', P1: 'warning', P2: 'info', P3: 'success' }
@@ -517,15 +635,9 @@ async function handleAttachmentDownload(attachment: RequirementAttachment) {
   }
 }
 
-function workflowStateName(stateId: number) {
-  return workflowStates.value.find((state) => state.id === stateId)?.name || `状态${stateId}`
-}
+type TransitionOption = AvailableTransition
 
-type TransitionOption = WorkflowTransition | AvailableTransition
-
-const transitionOptions = computed<TransitionOption[]>(() => (
-  usingUnifiedEngine.value ? workflowRuntime.value.transitions : availableTransitions.value
-))
+const transitionOptions = computed<TransitionOption[]>(() => workflowRuntime.value.transitions)
 
 const selectedUnifiedTransition = computed<AvailableTransition | null>(() => {
   if (!usingUnifiedEngine.value) return null
@@ -543,21 +655,18 @@ const requiresProjectBinding = computed(() => (
 const bindableProjects = computed(() => projectOptions.value)
 
 function transitionOptionKey(transition: TransitionOption) {
-  return 'toNodeId' in transition ? transition.toNodeId : (transition.id || transition.toStateId)
+  return transition.toNodeId
 }
 
 function transitionOptionValue(transition: TransitionOption) {
-  return 'toNodeId' in transition ? transition.toNodeId : transition.toStateId
+  return transition.toNodeId
 }
 
 function transitionOptionLabel(transition: TransitionOption) {
-  if ('toNodeId' in transition) {
-    const baseLabel = transition.label || transition.toNodeName
-    const statusLabel = transition.bindStatusName ? ` (${transition.bindStatusName})` : ''
-    const projectLabel = transition.projectRequired ? ' [需绑定项目]' : ''
-    return `${baseLabel}${statusLabel}${projectLabel}`
-  }
-  return transition.label || workflowStateName(transition.toStateId)
+  const baseLabel = transition.label || transition.toNodeName
+  const statusLabel = transition.bindStatusName ? ` (${transition.bindStatusName})` : ''
+  const projectLabel = transition.projectRequired ? ' [需绑定项目]' : ''
+  return `${baseLabel}${statusLabel}${projectLabel}`
 }
 
 // Handlers
@@ -585,26 +694,24 @@ async function handleStatusTransition() {
     return
   }
 
-  transitionLoading.value = true
-  try {
-    if (usingUnifiedEngine.value) {
-      await workflowEngineApi.transition({
-        requirementId: id,
-        toNodeId: String(selectedTransitionTargetId.value),
-        projectId: requiresProjectBinding.value ? bindingProjectId.value : undefined,
-        action: 'submit',
-      })
-    } else {
-      await executeTransition(id, { targetStateId: Number(selectedTransitionTargetId.value) })
-    }
-    ElMessage.success('状态流转成功')
-    selectedTransitionTargetId.value = null
-    await Promise.all([fetchDetail(), fetchHistory()])
-  } catch (error) {
-    ElMessage.error(resolveErrorMessage(error, '状态流转失败'))
-  } finally {
-    transitionLoading.value = false
+  if (workflowRuntime.value.evaluationRequired) {
+    resetApprovalDialog()
+    approvalDialogVisible.value = true
+    return
   }
+
+  await executeTransition()
+}
+
+async function confirmApprovalTransition() {
+  if (!approvalRating.value || approvalRating.value < 1) {
+    ElMessage.warning('请选择 1-5 星评价')
+    return
+  }
+  await executeTransition({
+    rating: approvalRating.value,
+    comment: approvalComment.value.trim() || undefined,
+  })
 }
 
 async function handleRollback() {
@@ -637,7 +744,7 @@ async function confirmAndExecute(
     transitionLoading.value = true
     await action(value)
     ElMessage.success(successMsg)
-    await Promise.all([fetchDetail(), fetchHistory()])
+    await Promise.all([fetchDetail(), fetchHistory(), fetchApprovalEvaluations()])
   } catch (error: any) {
     if (error === 'cancel' || error?.action === 'cancel') return
     ElMessage.error(resolveErrorMessage(error, errorMsg))
@@ -671,6 +778,7 @@ async function initializePage() {
     fetchChildren(),
     fetchRelations(),
     fetchComments(),
+    fetchApprovalEvaluations(),
   ])
 }
 
@@ -695,6 +803,31 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.current-node-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid #d9ecff;
+  border-radius: 6px;
+  background: #f4faff;
+}
+
+.current-node-status__label {
+  color: #606266;
+  font-size: 13px;
+}
+
+.current-node-status__value {
+  color: #303133;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.current-node-status__divider {
+  color: #c0c4cc;
 }
 
 .detail-tabs {
@@ -786,5 +919,78 @@ onMounted(() => {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
+}
+
+.section-hint {
+  color: #909399;
+  font-size: 12px;
+}
+
+.approval-evaluations-section {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid #ebeef5;
+}
+
+.approval-evaluation-timeline {
+  margin-top: 8px;
+  padding-left: 4px;
+}
+
+.approval-evaluation-card {
+  border: 1px solid #ebeef5;
+  background: #fafafa;
+}
+
+.approval-evaluation-card :deep(.el-card__body) {
+  padding: 14px 16px;
+}
+
+.approval-evaluation-header {
+  display: flex;
+  gap: 12px;
+}
+
+.approval-evaluation-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.approval-evaluation-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.approval-evaluation-content {
+  margin: 12px 0 0 44px;
+  color: #303133;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.approval-evaluation-content--empty {
+  color: #c0c4cc;
+  font-style: italic;
+}
+
+.approval-dialog-tip {
+  margin: 0 0 16px;
+  color: #606266;
+  font-size: 13px;
+}
+
+.approval-dialog-rate {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.approval-dialog-label {
+  color: #606266;
+  font-size: 14px;
 }
 </style>

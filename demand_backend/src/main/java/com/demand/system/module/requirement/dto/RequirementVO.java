@@ -47,6 +47,8 @@ public class RequirementVO {
 
     private Boolean isDraft;
 
+    private LocalDateTime lastSavedAt;
+
     private LocalDate startDate;
 
     private BigDecimal estimatedHours;
@@ -245,6 +247,14 @@ public class RequirementVO {
 
     public void setIsDraft(Boolean isDraft) {
         this.isDraft = isDraft;
+    }
+
+    public LocalDateTime getLastSavedAt() {
+        return lastSavedAt;
+    }
+
+    public void setLastSavedAt(LocalDateTime lastSavedAt) {
+        this.lastSavedAt = lastSavedAt;
     }
 
     public LocalDate getStartDate() {

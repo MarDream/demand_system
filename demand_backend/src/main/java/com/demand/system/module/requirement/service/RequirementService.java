@@ -2,6 +2,7 @@ package com.demand.system.module.requirement.service;
 
 import com.demand.system.common.result.PageResult;
 import com.demand.system.module.requirement.dto.RequirementCreateDTO;
+import com.demand.system.module.requirement.dto.RequirementApprovalEvaluationVO;
 import com.demand.system.module.requirement.dto.RequirementCommentCreateDTO;
 import com.demand.system.module.requirement.dto.RequirementCommentVO;
 import com.demand.system.module.requirement.dto.RequirementDraftCreateDTO;
@@ -45,6 +46,8 @@ public interface RequirementService {
     List<RequirementCommentVO> getComments(Long requirementId);
 
     void addComment(Long requirementId, RequirementCommentCreateDTO dto, Long userId);
+
+    List<RequirementApprovalEvaluationVO> getApprovalEvaluations(Long requirementId);
 
     List<Map<String, Object>> getHistory(Long requirementId);
 

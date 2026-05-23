@@ -92,6 +92,10 @@ public class WorkflowConfigController {
         return Result.success();
     }
 
+    /**
+     * @deprecated 可视化工作流请使用 PUT /api/v1/workflows/versions/{versionId}/activation；含 workflow_nodes 时本接口会走统一启用管道。
+     */
+    @Deprecated
     @PostMapping("/workflow/versions/{id}/activate")
     public Result<Void> activateVersion(@PathVariable("id") Long id,
                                         @RequestParam Long projectId) {

@@ -4,6 +4,7 @@ import com.demand.system.common.result.PageResult;
 import com.demand.system.common.result.Result;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.requirement.dto.RequirementCreateDTO;
+import com.demand.system.module.requirement.dto.RequirementApprovalEvaluationVO;
 import com.demand.system.module.requirement.dto.RequirementCommentCreateDTO;
 import com.demand.system.module.requirement.dto.RequirementCommentVO;
 import com.demand.system.module.requirement.dto.RequirementDraftCreateDTO;
@@ -157,6 +158,11 @@ public class RequirementController {
     @GetMapping("/{id}/comments")
     public Result<List<RequirementCommentVO>> getComments(@PathVariable Long id) {
         return Result.success(requirementService.getComments(id));
+    }
+
+    @GetMapping("/{id}/approval-evaluations")
+    public Result<List<RequirementApprovalEvaluationVO>> getApprovalEvaluations(@PathVariable Long id) {
+        return Result.success(requirementService.getApprovalEvaluations(id));
     }
 
     @PostMapping("/{id}/comments")

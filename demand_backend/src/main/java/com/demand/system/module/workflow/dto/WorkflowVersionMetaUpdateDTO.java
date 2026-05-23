@@ -1,25 +1,25 @@
 package com.demand.system.module.workflow.dto;
 
-import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public class WorkflowVersionMetaUpdateDTO {
 
-    @NotNull(message = "版本号不能为空")
-    @Min(value = 1, message = "版本号必须大于0")
-    private Integer version;
+    @NotBlank(message = "版本号不能为空")
+    @Pattern(regexp = "^[1-9]\\d*(?:\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*))?$", message = "版本号格式需为正整数或 1.0.0")
+    @Size(max = 20, message = "版本号不能超过20个字符")
+    private String version;
 
     @NotBlank(message = "版本名称不能为空")
     @Size(max = 50, message = "版本名称不能超过50个字符")
     private String name;
 
-    public Integer getVersion() {
+    public String getVersion() {
         return version;
     }
 
-    public void setVersion(Integer version) {
+    public void setVersion(String version) {
         this.version = version;
     }
 

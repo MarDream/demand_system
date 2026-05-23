@@ -20,7 +20,7 @@ public class WorkflowApprovalDTO {
 
     private String projectName;
 
-    private Integer version;
+    private String version;
 
     private String versionName;
 
@@ -96,11 +96,11 @@ public class WorkflowApprovalDTO {
         this.projectName = projectName;
     }
 
-    public Integer getVersion() {
+    public String getVersion() {
         return version;
     }
 
-    public void setVersion(Integer version) {
+    public void setVersion(String version) {
         this.version = version;
     }
 

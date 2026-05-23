@@ -5,22 +5,23 @@
       <div class="view-switch">
         <el-radio-group v-model="viewMode" size="small" @change="handleViewModeChange">
           <el-radio-button value="all">全部需求</el-radio-button>
+          <el-radio-button value="pending">我的待办</el-radio-button>
           <el-radio-button value="drafts">我的草稿</el-radio-button>
         </el-radio-group>
       </div>
       <el-form :model="filterForm" inline>
         <div class="filter-main">
-          <el-form-item v-if="!isDraftView" label="需求类型">
+          <el-form-item v-if="!isDraftView && !isPendingView" label="需求类型">
             <el-select v-model="filterForm.type" placeholder="全部" clearable style="width: 140px">
               <el-option v-for="t in configTypes" :key="t.code" :label="t.name" :value="t.code" />
             </el-select>
           </el-form-item>
-          <el-form-item v-if="!isDraftView" label="优先级">
+          <el-form-item v-if="!isDraftView && !isPendingView" label="优先级">
             <el-select v-model="filterForm.priority" placeholder="全部" clearable style="width: 100px">
               <el-option v-for="p in configPriorities" :key="p.code" :label="p.name" :value="p.code" />
             </el-select>
           </el-form-item>
-          <el-form-item v-if="!isDraftView" label="状态">
+          <el-form-item v-if="!isDraftView && !isPendingView" label="状态">
             <el-select v-model="filterForm.status" placeholder="全部" clearable style="width: 120px">
               <el-option label="新建" value="新建" />
               <el-option label="待分析" value="待分析" />
@@ -35,7 +36,7 @@
               <el-option label="已取消" value="已取消" />
             </el-select>
           </el-form-item>
-          <el-form-item v-if="!isDraftView" label="负责人">
+          <el-form-item v-if="!isDraftView && !isPendingView" label="负责人">
             <el-select v-model="filterForm.assigneeId" placeholder="请选择" clearable style="width: 140px">
               <el-option v-for="user in filterUserList" :key="user.id" :label="user.realName || user.username" :value="user.id" />
             </el-select>
@@ -45,7 +46,7 @@
           </el-form-item>
         </div>
         <el-collapse-transition>
-          <div v-show="filterExpanded && !isDraftView" class="filter-extra">
+          <div v-show="filterExpanded && !isDraftView && !isPendingView" class="filter-extra">
             <el-form-item label="时间维度">
               <el-select v-model="timeDimension" placeholder="选择时间维度" style="width: 140px">
                 <el-option label="创建时间" value="createdAt" />
@@ -206,6 +207,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Setting, View, Edit, Delete, ArrowDown } from '@element-plus/icons-vue'
 import { exportToExcel } from '@/utils/excel'
 import { requirementApi, userApi } from '@/api'
+import { getMyRequirementPending } from '@/api/modules/requirement'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
 import { getColumnConfig, saveColumnConfig } from '@/api/modules/requirement'
 import type { Requirement, RequirementMyListQuery, RequirementQuery } from '@/types/requirement'
@@ -220,8 +222,9 @@ const route = useRoute()
 const router = useRouter()
 
 const filterExpanded = ref(true)
-const viewMode = ref<'all' | 'drafts'>(route.query.view === 'drafts' ? 'drafts' : 'all')
+const viewMode = ref<'all' | 'drafts' | 'pending'>(route.query.view === 'drafts' ? 'drafts' : route.query.view === 'pending' ? 'pending' : 'all')
 const isDraftView = computed(() => viewMode.value === 'drafts')
+const isPendingView = computed(() => viewMode.value === 'pending')
 
 const DEFAULT_PROJECT_ID = 1
 
@@ -393,12 +396,23 @@ async function fetchData() {
   try {
     if (isDraftView.value) {
       const params: RequirementMyListQuery = {
-        projectId: DEFAULT_PROJECT_ID,
         keyword: filterForm.keyword || undefined,
         pageNum: pagination.pageNum,
         pageSize: pagination.pageSize,
       }
       const data = await requirementApi.getMyRequirementDrafts(params)
+      tableData.value = data.list
+      pagination.total = data.total
+      return
+    }
+
+    if (isPendingView.value) {
+      const params: RequirementMyListQuery = {
+        keyword: filterForm.keyword || undefined,
+        pageNum: pagination.pageNum,
+        pageSize: pagination.pageSize,
+      }
+      const data = await getMyRequirementPending(params)
       tableData.value = data.list
       pagination.total = data.total
       return
@@ -460,11 +474,14 @@ function handleReset() {
   fetchData()
 }
 
-function handleViewModeChange(value: 'all' | 'drafts') {
+function handleViewModeChange(value: 'all' | 'drafts' | 'pending') {
   viewMode.value = value
   pagination.pageNum = 1
   selectedIds.value = []
-  router.replace({ query: value === 'drafts' ? { view: 'drafts' } : {} })
+  const query: Record<string, string> = {}
+  if (value === 'drafts') query.view = 'drafts'
+  else if (value === 'pending') query.view = 'pending'
+  router.replace({ query })
   fetchData()
 }
 

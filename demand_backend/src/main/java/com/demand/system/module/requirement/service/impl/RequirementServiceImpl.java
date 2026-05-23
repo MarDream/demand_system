@@ -5,9 +5,11 @@ import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.support.SFunction;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.demand.system.common.exception.BusinessException;
+import com.demand.system.common.result.ErrorCode;
 import com.demand.system.common.result.PageResult;
 import com.demand.system.common.result.Result;
 import com.demand.system.module.requirement.dto.RequirementCreateDTO;
+import com.demand.system.module.requirement.dto.RequirementApprovalEvaluationVO;
 import com.demand.system.module.requirement.dto.RequirementCommentCreateDTO;
 import com.demand.system.module.requirement.dto.RequirementCommentVO;
 import com.demand.system.module.requirement.dto.RequirementDraftCreateDTO;
@@ -26,6 +28,7 @@ import com.demand.system.module.requirement.mapper.CustomFieldValueMapper;
 import com.demand.system.module.requirement.mapper.RequirementCommentMapper;
 import com.demand.system.module.requirement.mapper.RequirementHistoryMapper;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
+import com.demand.system.module.requirement.service.RequirementApprovalEvaluationService;
 import com.demand.system.module.requirement.service.RequirementConfigService;
 import com.demand.system.module.requirement.service.RequirementService;
 import com.demand.system.module.user.entity.User;
@@ -41,7 +44,14 @@ import com.demand.system.module.workflow.entity.WorkflowEdge;
 import com.demand.system.module.workflow.entity.WorkflowInstance;
 import com.demand.system.module.workflow.entity.WorkflowNode;
 import com.demand.system.module.workflow.entity.WorkflowVersion;
+import com.demand.system.module.workflow.engine.WorkflowDefinitionEngine;
+import com.demand.system.module.workflow.engine.WorkflowGraphContext;
+import com.demand.system.module.workflow.engine.WorkflowGraphNavigator;
+import com.demand.system.module.workflow.engine.WorkflowRuntimeLoader;
 import com.demand.system.module.workflow.engine.WorkflowVersionResolver;
+import com.demand.system.module.workflow.entity.WorkflowInstanceTransition;
+import com.demand.system.module.workflow.mapper.WorkflowInstanceTransitionMapper;
+import com.demand.system.module.workflow.support.WorkflowNodeUtils;
 import com.demand.system.module.workflow.entity.NodeStatus;
 import com.demand.system.module.workflow.mapper.WorkflowEdgeMapper;
 import com.demand.system.module.workflow.mapper.WorkflowInstanceMapper;
@@ -51,6 +61,8 @@ import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.demand.system.module.workflow.service.WorkflowEngineService;
 import com.demand.system.module.workflow.service.WorkflowService;
 import com.demand.system.module.workflow.mapper.WorkflowTransitionRecordMapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
@@ -88,16 +100,22 @@ public class RequirementServiceImpl implements RequirementService {
     private final WorkflowEngineService workflowEngineService;
     private final WorkflowVersionMapper workflowVersionMapper;
     private final WorkflowVersionResolver workflowVersionResolver;
+    private final WorkflowGraphNavigator workflowGraphNavigator;
+    private final WorkflowRuntimeLoader workflowRuntimeLoader;
     private final WorkflowNodeMapper workflowNodeMapper;
     private final WorkflowEdgeMapper workflowEdgeMapper;
     private final WorkflowInstanceMapper workflowInstanceMapper;
+    private final WorkflowInstanceTransitionMapper workflowInstanceTransitionMapper;
     private final WorkflowTransitionRecordMapper workflowTransitionRecordMapper;
+    private final WorkflowDefinitionEngine workflowDefinitionEngine;
+    private final RequirementApprovalEvaluationService approvalEvaluationService;
     private final RequirementConfigService requirementConfigService;
     private final KnowledgeDocumentService knowledgeDocumentService;
     private final NodeStatusMapper nodeStatusMapper;
     private final ProjectMapper projectMapper;
+    private final ObjectMapper objectMapper;
 
-    public RequirementServiceImpl(RequirementMapper requirementMapper, RequirementHistoryMapper historyMapper, RequirementCommentMapper requirementCommentMapper, CustomFieldValueMapper customFieldValueMapper, UserMapper userMapper, SysOrgService sysOrgService, NotificationService notificationService, WorkflowService workflowService, WorkflowEngineService workflowEngineService, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, WorkflowInstanceMapper workflowInstanceMapper, WorkflowTransitionRecordMapper workflowTransitionRecordMapper, RequirementConfigService requirementConfigService, KnowledgeDocumentService knowledgeDocumentService, NodeStatusMapper nodeStatusMapper, ProjectMapper projectMapper) {
+    public RequirementServiceImpl(RequirementMapper requirementMapper, RequirementHistoryMapper historyMapper, RequirementCommentMapper requirementCommentMapper, CustomFieldValueMapper customFieldValueMapper, UserMapper userMapper, SysOrgService sysOrgService, NotificationService notificationService, WorkflowService workflowService, WorkflowEngineService workflowEngineService, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowGraphNavigator workflowGraphNavigator, WorkflowRuntimeLoader workflowRuntimeLoader, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, WorkflowInstanceMapper workflowInstanceMapper, WorkflowInstanceTransitionMapper workflowInstanceTransitionMapper, WorkflowTransitionRecordMapper workflowTransitionRecordMapper, WorkflowDefinitionEngine workflowDefinitionEngine, RequirementApprovalEvaluationService approvalEvaluationService, RequirementConfigService requirementConfigService, KnowledgeDocumentService knowledgeDocumentService, NodeStatusMapper nodeStatusMapper, ProjectMapper projectMapper, ObjectMapper objectMapper) {
         this.requirementMapper = requirementMapper;
         this.historyMapper = historyMapper;
         this.requirementCommentMapper = requirementCommentMapper;
@@ -109,14 +127,20 @@ public class RequirementServiceImpl implements RequirementService {
         this.workflowEngineService = workflowEngineService;
         this.workflowVersionMapper = workflowVersionMapper;
         this.workflowVersionResolver = workflowVersionResolver;
+        this.workflowGraphNavigator = workflowGraphNavigator;
+        this.workflowRuntimeLoader = workflowRuntimeLoader;
         this.workflowNodeMapper = workflowNodeMapper;
         this.workflowEdgeMapper = workflowEdgeMapper;
         this.workflowInstanceMapper = workflowInstanceMapper;
+        this.workflowInstanceTransitionMapper = workflowInstanceTransitionMapper;
         this.workflowTransitionRecordMapper = workflowTransitionRecordMapper;
+        this.workflowDefinitionEngine = workflowDefinitionEngine;
+        this.approvalEvaluationService = approvalEvaluationService;
         this.requirementConfigService = requirementConfigService;
         this.knowledgeDocumentService = knowledgeDocumentService;
         this.nodeStatusMapper = nodeStatusMapper;
         this.projectMapper = projectMapper;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -214,10 +238,14 @@ public class RequirementServiceImpl implements RequirementService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void create(RequirementCreateDTO dto, Long creatorId) {
+        Long projectId = normalizeProjectId(dto.getProjectId());
+        if (workflowDefinitionEngine.hasActiveDefinition(projectId)) {
+            throw new BusinessException(410, "请使用草稿创建并提交流程：POST /api/v1/requirements/drafts");
+        }
         requireProjectSelection(dto.getProjectId());
         Requirement requirement = new Requirement();
         BeanUtils.copyProperties(dto, requirement);
-        requirement.setProjectId(normalizeProjectId(dto.getProjectId()));
+        requirement.setProjectId(projectId);
         ensureProjectCanBeBound(requirement.getProjectId());
         RequirementTypeConfig defaultType = requirementConfigService.getDefaultType();
         if (defaultType == null || !StringUtils.hasText(defaultType.getCode())) {
@@ -226,7 +254,8 @@ public class RequirementServiceImpl implements RequirementService {
         requirement.setType(defaultType.getCode());
         requirement.setIterationId(null);
         requirement.setCreatorId(creatorId);
-        requirement.setStatus(workflowService.resolveInitialStateName(dto.getProjectId(), requirement));
+        requirement.setStatus(workflowService.resolveInitialStateName(projectId, requirement));
+        requirement.setLegacyWorkflow(true);
         if (requirement.getOrderNum() == null) {
             requirement.setOrderNum(0);
         }
@@ -234,8 +263,6 @@ public class RequirementServiceImpl implements RequirementService {
 
         insertRequirementWithGeneratedNo(requirement);
 
-        // PRD: 父需求优先级默认传递至子需求
-        // 如果有父需求，子需求继承父需求的优先级
         if (dto.getParentId() != null) {
             Requirement parent = requirementMapper.selectById(dto.getParentId());
             if (parent != null && dto.getPriority() == null && parent.getPriority() != null) {
@@ -285,7 +312,7 @@ public class RequirementServiceImpl implements RequirementService {
         }
         if (dto.getCcUserIds() != null && !Objects.equals(existing.getCcUserIds(), dto.getCcUserIds())) {
             recordHistory(dto.getId(), operatorId, "ccUserIds", null, "更新抄送人");
-            updateWrapper.set("cc_user_ids", dto.getCcUserIds());
+            updateWrapper.set("cc_user_ids", writeJson(dto.getCcUserIds()));
         }
         if (dto.getStartDate() != null && !Objects.equals(existing.getStartDate(), dto.getStartDate())) {
             recordHistory(dto.getId(), operatorId, "startDate",
@@ -319,7 +346,7 @@ public class RequirementServiceImpl implements RequirementService {
         }
         if (dto.getAttachments() != null && !Objects.equals(existing.getAttachments(), dto.getAttachments())) {
             recordHistory(dto.getId(), operatorId, "attachments", null, "更新附件");
-            updateWrapper.set("attachments", dto.getAttachments());
+            updateWrapper.set("attachments", writeJson(dto.getAttachments()));
         }
         if (dto.getStatus() != null && !Objects.equals(existing.getStatus(), dto.getStatus())) {
             throw new BusinessException("状态流转请使用工作流操作");
@@ -364,6 +391,7 @@ public class RequirementServiceImpl implements RequirementService {
         requirement.setWorkflowInstanceId(null);
         requirement.setNodeStatus("DRAFT");
         requirement.setIsDraft(true);
+        requirement.setLastSavedAt(LocalDateTime.now());
         requirement.setCreatorRoleCodes(SecurityUtils.getCurrentUserRoles());
 
         User creator = userMapper.selectById(creatorId);
@@ -403,37 +431,43 @@ public class RequirementServiceImpl implements RequirementService {
             throw new BusinessException(400, "缺少版本号");
         }
 
-        Requirement update = new Requirement();
-        update.setId(dto.getId());
-        update.setVersion(dto.getVersion());
+        UpdateWrapper<Requirement> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("id", dto.getId())
+                .eq("creator_id", userId)
+                .eq("is_draft", 1)
+                .eq("version", dto.getVersion());
+
+        Long attachmentProjectId = existing.getProjectId();
         if (dto.getProjectId() != null) {
             requireProjectSelection(dto.getProjectId());
             Long nextProjectId = normalizeProjectId(dto.getProjectId());
             if (!Objects.equals(normalizeProjectId(existing.getProjectId()), nextProjectId)) {
                 ensureProjectCanBeBound(nextProjectId);
             }
-            update.setProjectId(nextProjectId);
+            updateWrapper.set("project_id", nextProjectId);
+            attachmentProjectId = nextProjectId;
         }
-        if (dto.getParentId() != null) update.setParentId(dto.getParentId());
-        if (dto.getTitle() != null) update.setTitle(dto.getTitle());
-        if (dto.getDescription() != null) update.setDescription(dto.getDescription());
-        if (dto.getPriority() != null) update.setPriority(dto.getPriority());
-        if (dto.getAssigneeId() != null) update.setAssigneeId(dto.getAssigneeId());
-        if (dto.getCcUserIds() != null) update.setCcUserIds(dto.getCcUserIds());
-        if (dto.getModuleId() != null) update.setModuleId(dto.getModuleId());
-        if (dto.getStartDate() != null) update.setStartDate(dto.getStartDate());
-        if (dto.getDueDate() != null) update.setDueDate(dto.getDueDate());
-        if (dto.getEstimatedHours() != null) update.setEstimatedHours(dto.getEstimatedHours());
-        if (dto.getAttachments() != null) update.setAttachments(dto.getAttachments());
+        if (dto.getParentId() != null) updateWrapper.set("parent_id", dto.getParentId());
+        if (dto.getTitle() != null) updateWrapper.set("title", dto.getTitle());
+        if (dto.getDescription() != null) updateWrapper.set("description", dto.getDescription());
+        if (dto.getPriority() != null) updateWrapper.set("priority", dto.getPriority());
+        if (dto.getAssigneeId() != null) updateWrapper.set("assignee_id", dto.getAssigneeId());
+        if (dto.getCcUserIds() != null) updateWrapper.set("cc_user_ids", writeJson(dto.getCcUserIds()));
+        if (dto.getModuleId() != null) updateWrapper.set("module_id", dto.getModuleId());
+        if (dto.getStartDate() != null) updateWrapper.set("start_date", dto.getStartDate());
+        if (dto.getDueDate() != null) updateWrapper.set("due_date", dto.getDueDate());
+        if (dto.getEstimatedHours() != null) updateWrapper.set("estimated_hours", dto.getEstimatedHours());
+        if (dto.getAttachments() != null) updateWrapper.set("attachments", writeJson(dto.getAttachments()));
+        updateWrapper.set("last_saved_at", LocalDateTime.now());
+        updateWrapper.set("version", dto.getVersion() + 1);
 
-        int updated = requirementMapper.updateById(update);
+        int updated = requirementMapper.update(null, updateWrapper);
         if (updated <= 0) {
-            throw new BusinessException(409, "草稿已被他人更新，请刷新后重试");
+            throw new BusinessException(ErrorCode.CONFLICT, "草稿已被他人更新，请刷新后重试");
         }
 
         recordHistory(dto.getId(), userId, "update", null, "更新草稿");
         if (dto.getAttachments() != null) {
-            Long attachmentProjectId = dto.getProjectId() != null ? dto.getProjectId() : existing.getProjectId();
             knowledgeDocumentService.syncRequirementAttachments(attachmentProjectId, existing.getId(), dto.getAttachments(), userId);
         }
     }
@@ -452,46 +486,27 @@ public class RequirementServiceImpl implements RequirementService {
         }
 
         WorkflowVersion active = findActiveWorkflowVersion(requirement.getProjectId());
-        if (active == null) {
+        if (active == null || active.getIsActive() == null || active.getIsActive() != 1) {
             throw new BusinessException(400, "当前项目未启用工作流");
         }
-        WorkflowNode startNode = workflowNodeMapper.selectOne(
-                new LambdaQueryWrapper<WorkflowNode>()
-                        .eq(WorkflowNode::getWorkflowVersionId, active.getId())
-                        .eq(WorkflowNode::getNodeType, "start")
-                        .last("LIMIT 1")
-        );
+        WorkflowGraphContext context = workflowRuntimeLoader.loadContext(active.getId());
+        WorkflowNode startNode = context.nodesById().values().stream()
+                .filter(node -> "start".equalsIgnoreCase(node.getNodeType()))
+                .findFirst()
+                .orElse(null);
         if (startNode == null) {
             throw new BusinessException(400, "工作流缺少开始节点");
         }
 
-        List<WorkflowEdge> edges = workflowEdgeMapper.selectList(
-                new LambdaQueryWrapper<WorkflowEdge>()
-                        .eq(WorkflowEdge::getWorkflowVersionId, active.getId())
-                        .eq(WorkflowEdge::getSourceNodeId, startNode.getNodeId())
-        );
-        if (edges == null || edges.isEmpty()) {
-            return List.of();
-        }
-
         List<NextNodeOptionDTO> options = new ArrayList<>();
-        for (WorkflowEdge edge : edges) {
-            WorkflowNode node = workflowNodeMapper.selectOne(
-                    new LambdaQueryWrapper<WorkflowNode>()
-                            .eq(WorkflowNode::getWorkflowVersionId, active.getId())
-                            .eq(WorkflowNode::getNodeId, edge.getTargetNodeId())
-                            .last("LIMIT 1")
-            );
-            if (node == null) {
-                continue;
-            }
+        for (WorkflowNode node : workflowGraphNavigator.resolveNextWaitNodes(context, startNode.getNodeId(), requirement)) {
             NextNodeOptionDTO opt = new NextNodeOptionDTO();
             opt.setNodeId(node.getNodeId());
             opt.setNodeName(node.getNodeName());
-            String nodeStatusCode = resolveNodeStatusCode(node);
+            String nodeStatusCode = WorkflowNodeUtils.resolveNodeStatusCode(node, true);
             opt.setBindStatusCode(nodeStatusCode);
             opt.setBindStatusName(resolveNodeStatusName(nodeStatusCode));
-            opt.setProjectRequired(isProjectRequired(node));
+            opt.setProjectRequired(WorkflowNodeUtils.isProjectRequired(node));
             options.add(opt);
         }
         return options;
@@ -516,61 +531,49 @@ public class RequirementServiceImpl implements RequirementService {
         }
 
         WorkflowVersion active = findActiveWorkflowVersion(requirement.getProjectId());
-        if (active == null) {
+        if (active == null || active.getIsActive() == null || active.getIsActive() != 1) {
             throw new BusinessException(400, "当前项目未启用工作流");
         }
 
-        WorkflowNode startNode = workflowNodeMapper.selectOne(
-                new LambdaQueryWrapper<WorkflowNode>()
-                        .eq(WorkflowNode::getWorkflowVersionId, active.getId())
-                        .eq(WorkflowNode::getNodeType, "start")
-                        .last("LIMIT 1")
-        );
-        if (startNode == null) {
-            throw new BusinessException(400, "工作流缺少开始节点");
-        }
+        WorkflowGraphContext context = workflowRuntimeLoader.loadContext(active.getId());
+        WorkflowNode startNode = context.nodesById().values().stream()
+                .filter(node -> "start".equalsIgnoreCase(node.getNodeType()))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(400, "工作流缺少开始节点"));
 
-        List<WorkflowEdge> edges = workflowEdgeMapper.selectList(
-                new LambdaQueryWrapper<WorkflowEdge>()
-                        .eq(WorkflowEdge::getWorkflowVersionId, active.getId())
-                        .eq(WorkflowEdge::getSourceNodeId, startNode.getNodeId())
-        );
-        if (edges == null || edges.isEmpty()) {
-            throw new BusinessException(400, "工作流配置异常：开始节点没有后续节点");
+        List<WorkflowNode> candidates = workflowGraphNavigator.resolveNextWaitNodes(context, startNode.getNodeId(), requirement);
+        if (candidates.isEmpty()) {
+            throw new BusinessException(400, "工作流配置异常：开始节点没有可提交的下一环节");
         }
 
         String targetNodeId;
-        if (edges.size() == 1) {
-            targetNodeId = edges.get(0).getTargetNodeId();
+        if (candidates.size() == 1) {
+            targetNodeId = candidates.get(0).getNodeId();
         } else {
             if (!StringUtils.hasText(dto.getNextNodeId())) {
                 throw new BusinessException(400, "请选择下一环节");
             }
-            boolean ok = edges.stream().anyMatch(e -> dto.getNextNodeId().trim().equals(e.getTargetNodeId()));
+            boolean ok = candidates.stream().anyMatch(node -> dto.getNextNodeId().trim().equals(node.getNodeId()));
             if (!ok) {
                 throw new BusinessException(400, "下一环节非法");
             }
             targetNodeId = dto.getNextNodeId().trim();
         }
 
-        Requirement optimistic = new Requirement();
-        optimistic.setId(requirementId);
-        optimistic.setVersion(dto.getVersion());
-        optimistic.setIsDraft(false);
-        int updated = requirementMapper.updateById(optimistic);
+        UpdateWrapper<Requirement> submitWrapper = new UpdateWrapper<>();
+        submitWrapper.eq("id", requirementId)
+                .eq("creator_id", userId)
+                .eq("is_draft", 1)
+                .eq("version", dto.getVersion())
+                .set("is_draft", 0)
+                .set("version", dto.getVersion() + 1);
+        int updated = requirementMapper.update(null, submitWrapper);
         if (updated <= 0) {
-            throw new BusinessException(409, "需求已被他人处理，请刷新后重试");
+            throw new BusinessException(ErrorCode.CONFLICT, "需求已被他人处理，请刷新后重试");
         }
 
-        workflowEngineService.initWorkflow(requirementId, active.getId());
-
-        com.demand.system.module.workflow.dto.FlowTransitionRequest request = new com.demand.system.module.workflow.dto.FlowTransitionRequest();
-        request.setRequirementId(requirementId);
-        request.setToNodeId(targetNodeId);
-        request.setProjectId(normalizeProjectId(dto.getProjectId()));
-        request.setAction("submit");
-        request.setComment(dto.getComment());
-        workflowEngineService.transition(request);
+        workflowEngineService.submitFromDraft(requirementId, active.getId(), targetNodeId,
+                normalizeProjectId(dto.getProjectId()), dto.getComment(), userId);
 
         Requirement latest = requirementMapper.selectById(requirementId);
         RequirementVO vo = new RequirementVO();
@@ -584,12 +587,10 @@ public class RequirementServiceImpl implements RequirementService {
     @Override
     public PageResult<RequirementVO> listMyDrafts(RequirementMyListQueryDTO query, Long userId) {
         User user = userMapper.selectById(userId);
-        Long departmentId = user != null ? user.getDepartmentId() : null;
         List<String> roleCodes = SecurityUtils.getCurrentUserRoles();
-        List<Long> orgIds = resolveOrgScopeIds(user);
-
         Page<Requirement> page = new Page<>(query.getPageNum(), query.getPageSize());
-        var result = requirementMapper.selectMyDrafts(page, userId, departmentId, roleCodes, orgIds, query.getProjectId(), query.getKeyword());
+        var result = requirementMapper.selectMyDrafts(page, userId, user != null ? user.getDepartmentId() : null,
+                roleCodes, query.getProjectId(), query.getKeyword());
         List<RequirementVO> list = new ArrayList<>();
         for (Requirement r : result.getRecords()) {
             RequirementVO vo = new RequirementVO();
@@ -635,11 +636,18 @@ public class RequirementServiceImpl implements RequirementService {
             throw new BusinessException("只有创建者或管理员可以删除需求");
         }
 
-        Long transitionCount = workflowTransitionRecordMapper.selectCount(
+        Long instanceTransitionCount = workflowInstanceTransitionMapper.selectCount(
+                new LambdaQueryWrapper<WorkflowInstanceTransition>()
+                        .eq(WorkflowInstanceTransition::getRequirementId, id)
+        );
+        if (instanceTransitionCount != null && instanceTransitionCount > 0) {
+            throw new BusinessException("已流转的需求不能删除");
+        }
+        Long legacyTransitionCount = workflowTransitionRecordMapper.selectCount(
                 new LambdaQueryWrapper<com.demand.system.module.workflow.entity.WorkflowTransitionRecord>()
                         .eq(com.demand.system.module.workflow.entity.WorkflowTransitionRecord::getRequirementId, id)
         );
-        if (transitionCount != null && transitionCount > 0) {
+        if (legacyTransitionCount != null && legacyTransitionCount > 0) {
             throw new BusinessException("已流转的需求不能删除");
         }
 
@@ -706,6 +714,12 @@ public class RequirementServiceImpl implements RequirementService {
     }
 
     @Override
+    public List<RequirementApprovalEvaluationVO> getApprovalEvaluations(Long requirementId) {
+        ensureRequirementExists(requirementId);
+        return approvalEvaluationService.listByRequirementId(requirementId);
+    }
+
+    @Override
     public List<Map<String, Object>> getHistory(Long requirementId) {
         return historyMapper.selectHistoryByRequirement(requirementId);
     }
@@ -760,6 +774,14 @@ public class RequirementServiceImpl implements RequirementService {
 
     private String strDecimal(BigDecimal decimal) {
         return decimal != null ? decimal.toString() : null;
+    }
+
+    private String writeJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JsonProcessingException e) {
+            throw new BusinessException(400, "JSON字段序列化失败");
+        }
     }
 
     private void insertRequirementWithGeneratedNo(Requirement requirement) {

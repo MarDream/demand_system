@@ -16,6 +16,11 @@ public class FlowTransitionRequest {
 
     private String comment;
 
+    /** 审批环节评价星级 1-5 */
+    private Integer rating;
+
+    private Integer lockVersion;
+
     public Long getRequirementId() {
         return requirementId;
     }
@@ -54,5 +59,21 @@ public class FlowTransitionRequest {
 
     public void setComment(String comment) {
         this.comment = comment;
+    }
+
+    public Integer getRating() {
+        return rating;
+    }
+
+    public void setRating(Integer rating) {
+        this.rating = rating;
+    }
+
+    public Integer getLockVersion() {
+        return lockVersion;
+    }
+
+    public void setLockVersion(Integer lockVersion) {
+        this.lockVersion = lockVersion;
     }
 }

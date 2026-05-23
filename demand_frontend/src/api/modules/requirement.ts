@@ -3,6 +3,7 @@ import type { ApiResponse, PageResult } from '@/types/api'
 import type {
   NextNodeOption,
   Requirement,
+  RequirementApprovalEvaluation,
   RequirementComment,
   RequirementCommentCreate,
   RequirementCreate,
@@ -39,6 +40,10 @@ export function getMyRequirementDrafts(params: RequirementMyListQuery) {
   return request.get<ApiResponse<PageResult<Requirement>>>('/v1/requirements/my-drafts', { params }) as unknown as Promise<PageResult<Requirement>>
 }
 
+export function getMyRequirementPending(params: RequirementMyListQuery) {
+  return request.get<ApiResponse<PageResult<Requirement>>>('/v1/requirements/my-pending', { params }) as unknown as Promise<PageResult<Requirement>>
+}
+
 export function getRequirementNextNodes(id: number) {
   return request.get<ApiResponse<NextNodeOption[]>>(`/v1/requirements/${id}/next-nodes`) as unknown as Promise<NextNodeOption[]>
 }
@@ -65,6 +70,12 @@ export function getRequirementHistory(id: number) {
 
 export function getRequirementComments(id: number) {
   return request.get<ApiResponse<RequirementComment[]>>(`/v1/requirements/${id}/comments`) as unknown as Promise<RequirementComment[]>
+}
+
+export function getApprovalEvaluations(id: number) {
+  return request.get<ApiResponse<RequirementApprovalEvaluation[]>>(
+    `/v1/requirements/${id}/approval-evaluations`,
+  ) as unknown as Promise<RequirementApprovalEvaluation[]>
 }
 
 export function createRequirementComment(id: number, data: RequirementCommentCreate) {

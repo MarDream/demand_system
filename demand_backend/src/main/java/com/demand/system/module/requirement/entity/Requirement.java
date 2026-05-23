@@ -54,8 +54,12 @@ public class Requirement {
 
     private Boolean isDraft;
 
+    private LocalDateTime lastSavedAt;
+
     @TableField(typeHandler = JacksonTypeHandler.class)
     private List<String> creatorRoleCodes;
+
+    private Boolean legacyWorkflow;
 
     private LocalDate startDate;
 
@@ -79,7 +83,6 @@ public class Requirement {
 
     private Integer orderNum;
 
-    @Version
     private Integer version;
 
     @TableField(fill = FieldFill.INSERT)
@@ -131,8 +134,12 @@ public class Requirement {
     public void setNodeStatus(String nodeStatus) { this.nodeStatus = nodeStatus; }
     public Boolean getIsDraft() { return isDraft; }
     public void setIsDraft(Boolean isDraft) { this.isDraft = isDraft; }
+    public LocalDateTime getLastSavedAt() { return lastSavedAt; }
+    public void setLastSavedAt(LocalDateTime lastSavedAt) { this.lastSavedAt = lastSavedAt; }
     public List<String> getCreatorRoleCodes() { return creatorRoleCodes; }
     public void setCreatorRoleCodes(List<String> creatorRoleCodes) { this.creatorRoleCodes = creatorRoleCodes; }
+    public Boolean getLegacyWorkflow() { return legacyWorkflow; }
+    public void setLegacyWorkflow(Boolean legacyWorkflow) { this.legacyWorkflow = legacyWorkflow; }
     public LocalDate getStartDate() { return startDate; }
     public void setStartDate(LocalDate startDate) { this.startDate = startDate; }
     public BigDecimal getEstimatedHours() { return estimatedHours; }

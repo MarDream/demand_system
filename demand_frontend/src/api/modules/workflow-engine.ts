@@ -6,6 +6,8 @@ export interface FlowTransitionRequest {
   projectId?: number | null
   action?: string
   comment?: string
+  rating?: number | null
+  lockVersion?: number | null
 }
 
 export interface AvailableTransition {
@@ -21,7 +23,14 @@ export interface WorkflowAvailableActions {
   canTransition: boolean
   canRollback: boolean
   canCancel: boolean
+  currentNodeId?: string | null
+  currentNodeName?: string | null
+  currentNodeType?: string | null
+  currentNodeStatusCode?: string | null
+  currentNodeStatusName?: string | null
   transitions: AvailableTransition[]
+  lockVersion?: number | null
+  evaluationRequired?: boolean | null
 }
 
 export interface TransitionVO {

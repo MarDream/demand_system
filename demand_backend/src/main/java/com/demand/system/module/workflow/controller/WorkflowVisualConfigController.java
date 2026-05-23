@@ -140,4 +140,10 @@ public class WorkflowVisualConfigController {
         workflowConfigService.rejectWorkflow(id, requestDTO.getComment());
         return Result.success();
     }
+
+    @PostMapping("/workflows/versions/{versionId}/validate")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
+    public Result<List<com.demand.system.module.workflow.dto.WorkflowValidationIssue>> validateVersion(@PathVariable Long versionId) {
+        return Result.success(workflowConfigService.validateVersion(versionId));
+    }
 }
