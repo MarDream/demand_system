@@ -8,6 +8,7 @@ import com.demand.system.module.organization.dto.*;
 import com.demand.system.module.organization.entity.SysOrg;
 import com.demand.system.module.organization.mapper.SysOrgMapper;
 import com.demand.system.module.organization.service.SysOrgService;
+import com.demand.system.module.user.entity.User;
 import com.demand.system.module.user.entity.UserOrganization;
 import com.demand.system.module.user.mapper.UserMapper;
 import com.demand.system.module.user.mapper.UserOrganizationMapper;
@@ -224,20 +225,20 @@ public class SysOrgServiceImpl implements SysOrgService {
     private int countMembersRecursively(Long orgId) {
         // 获取当前组织及其所有子组织的ID列表
         List<Long> orgIds = getDescendantIds(orgId);
-        
+
         // 统计这些组织中的所有成员（去重）
-        // 使用 IN 查询，统计 orgId、regionId 或 departmentId 在列表中的用户
-        long memberCount = userOrganizationMapper.selectCount(
-                new LambdaQueryWrapper<UserOrganization>()
+        // 查询 User 表中 orgId、regionId 或 departmentId 在列表中的用户
+        long memberCount = userMapper.selectCount(
+                new LambdaQueryWrapper<User>()
                         .and(wrapper -> wrapper
-                                .in(UserOrganization::getOrgId, orgIds)
+                                .in(User::getOrgId, orgIds)
                                 .or()
-                                .in(UserOrganization::getRegionId, orgIds)
+                                .in(User::getRegionId, orgIds)
                                 .or()
-                                .in(UserOrganization::getDepartmentId, orgIds)
+                                .in(User::getDepartmentId, orgIds)
                         )
         );
-        
+
         return (int) memberCount;
     }
 
