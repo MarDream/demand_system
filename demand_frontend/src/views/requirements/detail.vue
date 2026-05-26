@@ -13,17 +13,19 @@
                 {{ currentNodeStatusName }}
               </el-tag>
             </div>
-            <el-button @click="handleEdit">编辑</el-button>
-            <el-button type="success" @click="handleSplit">拆分子需求</el-button>
-            <el-popconfirm title="确定删除该需求吗？" @confirm="handleDelete">
-              <template #reference>
-                <el-button type="danger">删除</el-button>
-              </template>
-            </el-popconfirm>
+            <AppButton permission="button:requirement:update" @click="handleEdit">编辑</AppButton>
+            <AppButton type="success" permission="button:requirement:split" @click="handleSplit">拆分子需求</AppButton>
+            <AppButton type="danger" permission="button:requirement:delete">
+              <el-popconfirm title="确定删除该需求吗？" @confirm="handleDelete">
+                <template #reference>
+                  <el-button type="danger">删除</el-button>
+                </template>
+              </el-popconfirm>
+            </AppButton>
             <el-select
               v-model="selectedTransitionTargetId"
               :disabled="transitionLoading || transitionOptions.length === 0"
-              :placeholder="transitionOptions.length > 0 ? '选择目标状态' : '当前无可执行流转'"
+              :placeholder="transitionOptions.length > 0 ? '选择目标节点' : '当前无可执行操作'"
               style="width: 140px; margin-right: 8px"
             >
               <el-option
@@ -48,29 +50,32 @@
                 :value="project.id"
               />
             </el-select>
-            <el-button
+            <AppButton
               type="primary"
               :loading="transitionLoading"
               :disabled="transitionOptions.length === 0 || (requiresProjectBinding && !bindingProjectId)"
+              permission="button:requirement:submit"
               @click="handleStatusTransition"
             >
-              执行流转
-            </el-button>
-            <el-button
+              提交审核
+            </AppButton>
+            <AppButton
               v-if="usingUnifiedEngine && workflowRuntime.canRollback"
               :loading="transitionLoading"
+              permission="button:requirement:rollback"
               @click="handleRollback"
             >
-              回退
-            </el-button>
-            <el-button
+              驳回
+            </AppButton>
+            <AppButton
               v-if="usingUnifiedEngine && workflowRuntime.canCancel"
               type="warning"
               :loading="transitionLoading"
+              permission="button:requirement:cancel"
               @click="handleCancel"
             >
               取消
-            </el-button>
+            </AppButton>
           </div>
         </div>
 
@@ -116,7 +121,7 @@
           <div class="children-section">
             <div class="section-header">
               <h3>子需求（{{ children.length }} 个）</h3>
-              <el-button type="primary" size="small" @click="handleSplit">+ 拆分子需求</el-button>
+              <AppButton type="primary" size="small" permission="button:requirement:split" @click="handleSplit">+ 拆分子需求</AppButton>
             </div>
             <el-table v-if="children.length > 0" :data="children" border size="small">
               <el-table-column label="ID" width="60" align="center">
@@ -220,9 +225,9 @@
               show-word-limit
             />
             <div class="comment-actions">
-              <el-button type="primary" :disabled="!commentText.trim()" @click="handleComment">
+              <AppButton type="primary" permission="button:requirement:comment" :disabled="!commentText.trim()" @click="handleComment">
                 提交评论
-              </el-button>
+              </AppButton>
             </div>
           </div>
           <el-empty v-if="comments.length === 0" description="暂无评论" />
@@ -241,60 +246,104 @@
 
         <div class="approval-evaluations-section">
           <div class="section-header">
-            <h3>审批评价</h3>
-            <span class="section-hint">多环节评价按时间轴从早到晚展示，后续流程均可查看</span>
+            <h3>审核记录</h3>
+            <span class="section-hint">按时间倒序展示提交、通过、驳回与取消意见</span>
           </div>
-          <el-empty v-if="sortedApprovalEvaluations.length === 0" description="暂无审批评价" :image-size="60" />
+          <el-empty v-if="sortedApprovalEvaluations.length === 0" description="暂无审核记录" :image-size="60" />
           <el-timeline v-else class="approval-evaluation-timeline">
             <el-timeline-item
               v-for="item in sortedApprovalEvaluations"
               :key="item.id"
               :timestamp="formatDate(item.createdAt)"
               placement="top"
+              :type="approvalTimelineItemType(item.result)"
             >
               <el-card shadow="never" class="approval-evaluation-card">
                 <div class="approval-evaluation-header">
                   <el-avatar :size="32">{{ item.evaluatorName?.charAt(0) || '审' }}</el-avatar>
                   <div class="approval-evaluation-meta">
                     <div class="approval-evaluation-title">
-                      <strong>{{ item.evaluatorName || '审批人' }}</strong>
-                      <el-tag size="small" effect="plain" type="warning">{{ item.nodeName }}</el-tag>
+                      <strong>{{ item.evaluatorName || '处理人' }}</strong>
+                      <el-tag size="small" effect="dark" :type="approvalResultTagType(item.result)">
+                        {{ item.resultLabel || item.actionLabel || '审核' }}
+                      </el-tag>
+                      <el-tag size="small" effect="plain" type="info">{{ item.nodeName }}</el-tag>
                       <el-tag v-if="item.nodeStatusName" size="small" effect="plain">{{ item.nodeStatusName }}</el-tag>
                     </div>
-                    <el-rate :model-value="item.rating" disabled show-score score-template="{value} 星" />
+                    <div v-if="item.rating" class="approval-evaluation-rating">
+                      <span class="approval-evaluation-rating__label">评分</span>
+                      <el-rate :model-value="item.rating" disabled />
+                    </div>
                   </div>
                 </div>
                 <p v-if="item.content" class="approval-evaluation-content">{{ item.content }}</p>
-                <p v-else class="approval-evaluation-content approval-evaluation-content--empty">未填写意见</p>
+                <p v-else class="approval-evaluation-content approval-evaluation-content--empty">未填写审核意见</p>
+                <div v-if="item.canSupplement" class="approval-evaluation-actions">
+                  <el-button link type="primary" @click="openSupplementDialog(item)">补充意见</el-button>
+                </div>
+                <div v-if="item.supplements?.length" class="approval-supplement-list">
+                  <div v-for="supplement in item.supplements" :key="supplement.id" class="approval-supplement-item">
+                    <div class="approval-supplement-item__header">
+                      <span class="approval-supplement-item__tag">补充</span>
+                      <strong>{{ supplement.evaluatorName || '处理人' }}</strong>
+                      <span class="approval-supplement-item__time">{{ formatDate(supplement.createdAt) }}</span>
+                    </div>
+                    <p class="approval-supplement-item__content">{{ supplement.content || '未填写补充意见' }}</p>
+                  </div>
+                </div>
               </el-card>
             </el-timeline-item>
           </el-timeline>
         </div>
 
         <el-dialog
+          v-model="supplementDialogVisible"
+          title="补充意见"
+          width="480px"
+          :close-on-click-modal="false"
+          @closed="resetSupplementDialog"
+        >
+          <p class="approval-dialog-tip">补充内容会追加在原审核记录下方，不会覆盖原始意见。</p>
+          <el-input
+            v-model="supplementContent"
+            type="textarea"
+            :rows="4"
+            placeholder="请输入补充意见"
+            maxlength="1000"
+            show-word-limit
+          />
+          <template #footer>
+            <el-button @click="supplementDialogVisible = false">取消</el-button>
+            <el-button type="primary" :loading="supplementSubmitting" @click="submitSupplement">
+              提交补充
+            </el-button>
+          </template>
+        </el-dialog>
+
+        <el-dialog
           v-model="approvalDialogVisible"
-          title="审批评价"
+          title="审核操作"
           width="480px"
           :close-on-click-modal="false"
           @closed="resetApprovalDialog"
         >
-          <p class="approval-dialog-tip">离开当前审批节点前，请完成 1-5 星评价（意见选填）</p>
+          <p class="approval-dialog-tip">提交到下一节点前，请补充审核信息。</p>
           <div class="approval-dialog-rate">
-            <span class="approval-dialog-label">评价星级</span>
+            <span class="approval-dialog-label">评分</span>
             <el-rate v-model="approvalRating" :max="5" />
           </div>
           <el-input
             v-model="approvalComment"
             type="textarea"
             :rows="4"
-            placeholder="填写审批意见（选填）"
+            placeholder="请输入审核意见（选填）"
             maxlength="1000"
             show-word-limit
           />
           <template #footer>
             <el-button @click="approvalDialogVisible = false">取消</el-button>
             <el-button type="primary" :loading="transitionLoading" @click="confirmApprovalTransition">
-              提交并流转
+              确认提交
             </el-button>
           </template>
         </el-dialog>
@@ -321,6 +370,7 @@ import type {
   RequirementUpdate,
 } from '@/types/requirement'
 import { normalizeText, formatDate, stripPriorityPrefix } from '@/utils/format'
+import AppButton from '@/components/common/AppButton.vue'
 import { hydrateRichTextImageHtml } from '@/utils/richTextFileImage'
 import PageContainer from '@/components/common/PageContainer.vue'
 
@@ -337,6 +387,10 @@ const approvalEvaluations = ref<RequirementApprovalEvaluation[]>([])
 const approvalDialogVisible = ref(false)
 const approvalRating = ref(0)
 const approvalComment = ref('')
+const supplementDialogVisible = ref(false)
+const supplementSubmitting = ref(false)
+const supplementContent = ref('')
+const supplementTarget = ref<RequirementApprovalEvaluation | null>(null)
 const children = ref<any[]>([])
 const activeTab = ref('basic')
 const commentText = ref('')
@@ -372,8 +426,8 @@ const sortedApprovalEvaluations = computed(() => {
   return [...approvalEvaluations.value].sort((a, b) => {
     const timeA = new Date(a.createdAt).getTime()
     const timeB = new Date(b.createdAt).getTime()
-    if (timeA !== timeB) return timeA - timeB
-    return a.id - b.id
+    if (timeA !== timeB) return timeB - timeA
+    return b.id - a.id
   })
 })
 
@@ -471,7 +525,7 @@ async function fetchHistory() {
             requirementId: item.requirementId,
             operatorId: item.operatorId,
             operatorName: item.operatorName,
-            fieldName: item.action === 'rollback' ? '流程回退' : item.action === 'cancel' ? '流程取消' : '流程流转',
+            fieldName: item.action === 'rollback' ? '流程驳回' : item.action === 'cancel' ? '流程取消' : '流程流转',
             oldValue: item.fromNodeName || item.fromNodeId || '开始',
             newValue: item.toNodeName || item.toNodeId || (item.durationDisplay ? `已处理（${item.durationDisplay}）` : '完成'),
             createdAt: item.createdAt,
@@ -548,6 +602,11 @@ function resetApprovalDialog() {
   approvalComment.value = ''
 }
 
+function resetSupplementDialog() {
+  supplementTarget.value = null
+  supplementContent.value = ''
+}
+
 async function executeTransition(extra?: { rating?: number; comment?: string }) {
   transitionLoading.value = true
   try {
@@ -560,7 +619,7 @@ async function executeTransition(extra?: { rating?: number; comment?: string }) 
       rating: extra?.rating,
       lockVersion: workflowRuntime.value.lockVersion ?? undefined,
     })
-    ElMessage.success('状态流转成功')
+    ElMessage.success('提交审核成功')
     selectedTransitionTargetId.value = null
     approvalDialogVisible.value = false
     resetApprovalDialog()
@@ -585,6 +644,27 @@ function statusTagType(status: string): string {
     '已上线': 'success', '已验收': 'success', '已取消': 'info',
   }
   return map[status] || 'info'
+}
+
+function approvalResultTagType(result?: string | null): string {
+  const map: Record<string, string> = {
+    SUBMIT: 'primary',
+    PASS: 'success',
+    REJECT: 'danger',
+    CANCEL: 'warning',
+  }
+  return result ? (map[result] || 'info') : 'info'
+}
+
+function approvalTimelineItemType(result?: string | null): 'primary' | 'success' | 'warning' | 'danger' | 'info' {
+  const type = approvalResultTagType(result)
+  return ['primary', 'success', 'warning', 'danger', 'info'].includes(type) ? type as any : 'info'
+}
+
+function openSupplementDialog(item: RequirementApprovalEvaluation) {
+  supplementTarget.value = item
+  supplementContent.value = ''
+  supplementDialogVisible.value = true
 }
 
 function typeLabel(code: string) {
@@ -690,7 +770,7 @@ async function handleDelete() {
 
 async function handleStatusTransition() {
   if (!selectedTransitionTargetId.value) {
-    ElMessage.warning('请选择目标状态')
+    ElMessage.warning('请选择目标节点')
     return
   }
 
@@ -714,11 +794,37 @@ async function confirmApprovalTransition() {
   })
 }
 
+async function submitSupplement() {
+  const content = supplementContent.value.trim()
+  if (!supplementTarget.value?.id) {
+    ElMessage.warning('未找到原审核记录')
+    return
+  }
+  if (!content) {
+    ElMessage.warning('请输入补充意见')
+    return
+  }
+
+  supplementSubmitting.value = true
+  try {
+    await requirementApi.createApprovalEvaluationSupplement(id, supplementTarget.value.id, { content })
+    ElMessage.success('补充意见已提交')
+    supplementDialogVisible.value = false
+    resetSupplementDialog()
+    await fetchApprovalEvaluations()
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '提交补充意见失败'))
+  } finally {
+    supplementSubmitting.value = false
+  }
+}
+
 async function handleRollback() {
   await confirmAndExecute(
-    '请输入回退说明（可选）', '回退需求', '确认回退', '请输入回退说明',
+    '请输入驳回原因', '驳回需求', '确认驳回', '请输入驳回原因',
     (v) => workflowEngineApi.rollback(id, v || undefined),
-    '回退成功', '回退失败'
+    '驳回成功', '驳回失败',
+    (input) => !!input?.trim() || '请输入驳回原因'
   )
 }
 
@@ -964,8 +1070,69 @@ onMounted(() => {
   margin-bottom: 8px;
 }
 
+.approval-evaluation-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.approval-evaluation-rating__label {
+  color: #909399;
+  font-size: 12px;
+}
+
 .approval-evaluation-content {
   margin: 12px 0 0 44px;
+  color: #303133;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.approval-evaluation-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.approval-supplement-list {
+  margin: 12px 0 0 44px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.approval-supplement-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #eef6ff;
+  border: 1px solid #d6e8ff;
+}
+
+.approval-supplement-item__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.approval-supplement-item__tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #409eff;
+  color: #fff;
+  font-size: 12px;
+}
+
+.approval-supplement-item__time {
+  color: #909399;
+  font-size: 12px;
+}
+
+.approval-supplement-item__content {
+  margin: 0;
   color: #303133;
   line-height: 1.6;
   white-space: pre-wrap;

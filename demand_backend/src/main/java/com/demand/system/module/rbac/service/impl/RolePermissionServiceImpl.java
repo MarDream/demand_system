@@ -60,7 +60,7 @@ public class RolePermissionServiceImpl implements RolePermissionService {
 
     @Override
     public Result<List<RoleVO>> listRoles() {
-        List<Role> roles = roleMapper.selectList(new LambdaQueryWrapper<Role>().orderByAsc(Role::getId));
+        List<Role> roles = roleMapper.selectList(new LambdaQueryWrapper<Role>().orderByAsc(Role::getSortOrder).orderByAsc(Role::getId));
         return Result.success(roles.stream().map(RoleVO::from).toList());
     }
 

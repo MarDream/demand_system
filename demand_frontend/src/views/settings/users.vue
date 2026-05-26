@@ -141,10 +141,8 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="账号类型" width="140">
-              <template #default>
-                <el-tag size="small" type="success">个人账号</el-tag>
-              </template>
+            <el-table-column label="所属组织" min-width="140">
+              <template #default="{ row }">{{ orgName(row.orgId) || '-' }}</template>
             </el-table-column>
             <el-table-column label="账号状态" width="140">
               <template #default="{ row }">
@@ -165,26 +163,24 @@
             <el-table-column label="操作" width="112" fixed="right">
               <template #default="{ row }">
                 <div class="table-action-icons">
-                  <el-tooltip content="编辑成员" placement="top">
-                    <el-button link type="primary" size="small" @click="handleEdit(row)">
-                      <el-icon><Edit /></el-icon>
-                    </el-button>
-                  </el-tooltip>
+                  <AppButton link type="primary" size="small" permission="button:user:update" @click="handleEdit(row)">
+                    <el-icon><Edit /></el-icon>
+                  </AppButton>
                 <el-dropdown @command="(command: string) => handleUserCommand(command, row)">
                       <el-button link type="primary" size="small" title="更多操作">
                         <el-icon><MoreFilled /></el-icon>
                       </el-button>
                   <template #dropdown>
                     <el-dropdown-menu>
-                      <el-dropdown-item command="reset">
+                      <el-dropdown-item command="reset" v-permission="'button:user:update'">
                         <el-icon><Key /></el-icon>
                         重置密码
                       </el-dropdown-item>
-                      <el-dropdown-item command="toggle">
+                      <el-dropdown-item command="toggle" v-permission="'button:user:update'">
                         <el-icon><SwitchButton /></el-icon>
                         {{ row.status === 'active' ? '停用' : '启用' }}
                       </el-dropdown-item>
-                      <el-dropdown-item command="delete" divided>
+                      <el-dropdown-item command="delete" divided v-permission="'button:user:delete'">
                         <el-icon><Delete /></el-icon>
                         删除
                       </el-dropdown-item>
@@ -370,11 +366,9 @@
             </el-table-column>
             <el-table-column label="操作" width="86" fixed="right">
               <template #default="{ row }">
-                <el-tooltip content="编辑成员" placement="top">
-                  <el-button link type="primary" size="small" @click="handleEdit(row)">
-                    <el-icon><Edit /></el-icon>
-                  </el-button>
-                </el-tooltip>
+                <AppButton link type="primary" size="small" permission="button:user:update" @click="handleEdit(row)">
+                  <el-icon><Edit /></el-icon>
+                </AppButton>
               </template>
             </el-table-column>
           </el-table>
@@ -462,6 +456,9 @@
           </el-select>
         </el-form-item>
 
+        <el-form-item v-if="isEdit" label="工号">
+          <el-input :model-value="editJobNumber" disabled placeholder="系统自动生成" />
+        </el-form-item>
         <el-form-item v-if="isEdit" label="状态" prop="status">
           <el-radio-group v-model="form.status">
             <el-radio value="active">启用</el-radio>
@@ -632,6 +629,7 @@ const dialogVisible = ref(false)
 const departmentDrawerVisible = ref(false)
 const isEdit = ref(false)
 const editId = ref<number | null>(null)
+const editJobNumber = ref<string | null>(null)
 const formRef = ref<FormInstance>()
 const departmentFormRef = ref<FormInstance>()
 const departmentSubmitting = ref(false)
@@ -1056,6 +1054,7 @@ function openEditOrgDrawer() {
 async function handleEdit(row: UserInfo) {
   isEdit.value = true
   editId.value = row.id
+  editJobNumber.value = row.jobNumber || null
   try {
     const userDetail: any = await userApi.getUserById(row.id)
     form.username = userDetail.username
@@ -1066,10 +1065,11 @@ async function handleEdit(row: UserInfo) {
     form.orgId = userDetail.orgId || null
     form.regionId = userDetail.regionId || null
     form.departmentId = userDetail.departmentId || null
+    editJobNumber.value = userDetail.jobNumber || null
     // 加载用户角色
     const roleIds: any = await userApi.getUserRoles(row.id)
     form.roleId = roleIds?.[0] || null
-    
+
   } catch {
     ElMessage.error('加载成员信息失败')
     return
@@ -1191,6 +1191,7 @@ function resetForm() {
   form.departmentId = null
   form.roleId = null
   form.status = 'active'
+  editJobNumber.value = null
   formRef.value?.resetFields()
 }
 
@@ -1325,7 +1326,35 @@ function toggleSidebar() {
 }
 
 function countUsersByOrg(id: number) {
-  return userList.value.filter(user => user.orgId === id || user.departmentId === id || user.regionId === id).length
+  // 收集该组织及所有子组织的 ID
+  const orgIds = collectOrgIds(orgTree.value, id)
+  // 统计属于这些组织的用户（orgId、departmentId、regionId 任一匹配）
+  return userList.value.filter(user =>
+    orgIds.includes(user.orgId ?? 0) ||
+    orgIds.includes(user.departmentId ?? 0) ||
+    orgIds.includes(user.regionId ?? 0)
+  ).length
+}
+
+/**
+ * 递归收集组织及其所有子组织的 ID
+ */
+function collectOrgIds(nodes: OrgNode[], targetId: number): number[] {
+  const ids: number[] = []
+  for (const node of nodes) {
+    if (node.id === targetId) {
+      ids.push(node.id)
+      // 递归收集所有子组织
+      if (node.children?.length) {
+        for (const child of node.children) {
+          ids.push(...collectOrgIds([child], child.id))
+        }
+      }
+    } else if (node.children?.length) {
+      ids.push(...collectOrgIds(node.children, targetId))
+    }
+  }
+  return ids
 }
 
 function resolveOrgMemberCount(node: Pick<OrgNode, 'id' | 'memberCount'>) {

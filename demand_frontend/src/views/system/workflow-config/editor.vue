@@ -43,14 +43,14 @@
             </div>
           </div>
           <div class="header-right">
-            <el-button v-if="!isViewMode" @click="handleSave" :loading="saving">
+            <AppButton v-if="!isViewMode" permission="button:workflow:update" @click="handleSave" :loading="saving">
               <el-icon><DocumentCopy /></el-icon>
               保存草稿
-            </el-button>
-            <el-button v-if="!isViewMode" type="primary" @click="handleSubmit" :loading="submitting">
+            </AppButton>
+            <AppButton v-if="!isViewMode" type="primary" permission="button:workflow:update" @click="handleSubmit" :loading="submitting">
               <el-icon><Check /></el-icon>
               提交审核
-            </el-button>
+            </AppButton>
           </div>
         </div>
       </template>
@@ -162,6 +162,8 @@
                     <el-option label="指定角色" value="SPECIFIED_ROLE" />
                     <el-option label="指定角色组" value="SPECIFIED_ROLE_GROUP" />
                     <el-option label="指定组织" value="SPECIFIED_ORG" />
+                    <el-option label="提交人" value="CREATOR" />
+                    <el-option label="上一节点处理人" value="PREV_APPROVER" />
                   </el-select>
                 </el-form-item>
 
@@ -270,6 +272,7 @@
 import { computed, ref, onMounted, onBeforeUnmount, reactive } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import AppButton from '@/components/common/AppButton.vue'
 import {
   ArrowLeft,
   DocumentCopy,

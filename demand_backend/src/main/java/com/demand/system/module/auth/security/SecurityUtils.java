@@ -82,4 +82,8 @@ public final class SecurityUtils {
         Set<String> expected = Set.of(permissions);
         return currentPermissions.stream().anyMatch(expected::contains);
     }
+
+    public static boolean isSuperAdmin() {
+        return hasAnyRole("super_admin", "SUPER_ADMIN");
+    }
 }

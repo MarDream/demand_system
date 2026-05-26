@@ -6,7 +6,7 @@
   >
     <template #headerActions>
       <el-button @click="store.fetchAllBases()" :loading="store.loading">刷新</el-button>
-      <el-button type="primary" @click="openCreateDialog">新建知识库</el-button>
+      <AppButton type="primary" permission="button:knowledge:create" @click="openCreateDialog">新建知识库</AppButton>
     </template>
 
     <div class="kb-page">
@@ -46,8 +46,8 @@
                     <el-icon class="more-btn"><MoreFilled /></el-icon>
                     <template #dropdown>
                       <el-dropdown-menu>
-                        <el-dropdown-item command="edit" :disabled="deletingId === kb.id">编辑</el-dropdown-item>
-                        <el-dropdown-item command="delete" :disabled="deletingId === kb.id" divided>
+                        <el-dropdown-item command="edit" :disabled="deletingId === kb.id" v-permission="'button:knowledge:update'">编辑</el-dropdown-item>
+                        <el-dropdown-item command="delete" :disabled="deletingId === kb.id" divided v-permission="'button:knowledge:delete'">
                           <span class="text-danger">删除</span>
                         </el-dropdown-item>
                       </el-dropdown-menu>
@@ -71,9 +71,9 @@
               </div>
               <div class="kb-actions" @click.stop>
                 <el-button size="small" @click="goToDetail(kb.id)">进入知识库</el-button>
-                <el-button size="small" type="primary" :disabled="deletingId === kb.id" @click="openEditDialog(kb)">
+                <AppButton size="small" type="primary" permission="button:knowledge:update" :disabled="deletingId === kb.id" @click="openEditDialog(kb)">
                   编辑
-                </el-button>
+                </AppButton>
               </div>
             </el-card>
           </el-col>
@@ -116,6 +116,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { MoreFilled } from '@element-plus/icons-vue'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppDialog from '@/components/common/AppDialog.vue'
+import AppButton from '@/components/common/AppButton.vue'
 import { useKnowledgeStore } from '@/stores/knowledge'
 import type { KnowledgeBase } from '@/api/modules/knowledge'
 

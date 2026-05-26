@@ -27,6 +27,10 @@ public class RequirementApprovalEvaluation {
 
     private String nodeStatusCode;
 
+    private Long parentId;
+
+    private Boolean isSupplement;
+
     private Long evaluatorId;
 
     private Integer rating;
@@ -90,6 +94,22 @@ public class RequirementApprovalEvaluation {
 
     public void setNodeStatusCode(String nodeStatusCode) {
         this.nodeStatusCode = nodeStatusCode;
+    }
+
+    public Long getParentId() {
+        return parentId;
+    }
+
+    public void setParentId(Long parentId) {
+        this.parentId = parentId;
+    }
+
+    public Boolean getIsSupplement() {
+        return isSupplement;
+    }
+
+    public void setIsSupplement(Boolean isSupplement) {
+        this.isSupplement = isSupplement;
     }
 
     public Long getEvaluatorId() {

@@ -25,15 +25,15 @@
             <el-button @click="handleDownloadTemplate">
               <el-icon><Download /></el-icon> 模板
             </el-button>
-            <el-button @click="triggerImport">
+            <AppButton permission="button:project:import" @click="triggerImport">
               <el-icon><Plus /></el-icon> 导入
-            </el-button>
-            <el-button @click="handleExport">
+            </AppButton>
+            <AppButton permission="button:project:export" @click="handleExport">
               <el-icon><Download /></el-icon> 导出
-            </el-button>
-            <el-button type="primary" @click="handleCreate">
+            </AppButton>
+            <AppButton type="primary" permission="button:project:create" @click="handleCreate">
               <el-icon><Plus /></el-icon> 新建项目
-            </el-button>
+            </AppButton>
           </template>
         </Toolbar>
       </template>
@@ -63,12 +63,12 @@
         </el-table-column>
         <el-table-column label="操作" width="100" fixed="right">
           <template #default="{ row }">
-            <el-tooltip content="编辑">
-              <el-button type="primary" link size="small" @click="handleEdit(row)"><el-icon><EditPen /></el-icon></el-button>
-            </el-tooltip>
-            <el-tooltip content="删除">
-              <el-button type="danger" link size="small" @click="handleDelete(row)"><el-icon><Delete /></el-icon></el-button>
-            </el-tooltip>
+            <AppButton type="primary" link size="small" permission="button:project:update" @click="handleEdit(row)">
+              <el-icon><EditPen /></el-icon>
+            </AppButton>
+            <AppButton type="danger" link size="small" permission="button:project:delete" @click="handleDelete(row)">
+              <el-icon><Delete /></el-icon>
+            </AppButton>
           </template>
         </el-table-column>
         </el-table>
@@ -174,6 +174,7 @@ import type { ProjectImportFailure, ProjectImportResult } from '@/types/project'
 import PageContainer from '@/components/common/PageContainer.vue'
 import TableCard from '@/components/common/TableCard.vue'
 import Toolbar from '@/components/common/Toolbar.vue'
+import AppButton from '@/components/common/AppButton.vue'
 import { formatDate } from '@/utils/format'
 
 const loading = ref(false)

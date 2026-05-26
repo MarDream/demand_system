@@ -9,6 +9,7 @@ public class RoleVO {
     private String name;
     private String description;
     private Long roleGroupId;
+    private Integer sortOrder;
     private Integer isSystem;
 
     public Long getId() {
@@ -51,6 +52,14 @@ public class RoleVO {
         this.roleGroupId = roleGroupId;
     }
 
+    public Integer getSortOrder() {
+        return sortOrder;
+    }
+
+    public void setSortOrder(Integer sortOrder) {
+        this.sortOrder = sortOrder;
+    }
+
     public Integer getIsSystem() {
         return isSystem;
     }
@@ -66,6 +75,7 @@ public class RoleVO {
         vo.setName(role.getName());
         vo.setDescription(role.getDescription());
         vo.setRoleGroupId(role.getRoleGroupId());
+        vo.setSortOrder(role.getSortOrder());
         vo.setIsSystem(role.getIsSystem());
         return vo;
     }

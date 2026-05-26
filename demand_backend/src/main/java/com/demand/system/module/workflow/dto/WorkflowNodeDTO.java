@@ -19,6 +19,10 @@ public class WorkflowNodeDTO {
 
     private Integer assigneeRoleId;
 
+    private Long assigneeRoleGroupId;
+
+    private Long assigneeOrgId;
+
     private List<Long> assigneeUserIds;
 
     private Integer timeoutHours;
@@ -81,6 +85,22 @@ public class WorkflowNodeDTO {
 
     public void setAssigneeRoleId(Integer assigneeRoleId) {
         this.assigneeRoleId = assigneeRoleId;
+    }
+
+    public Long getAssigneeRoleGroupId() {
+        return assigneeRoleGroupId;
+    }
+
+    public void setAssigneeRoleGroupId(Long assigneeRoleGroupId) {
+        this.assigneeRoleGroupId = assigneeRoleGroupId;
+    }
+
+    public Long getAssigneeOrgId() {
+        return assigneeOrgId;
+    }
+
+    public void setAssigneeOrgId(Long assigneeOrgId) {
+        this.assigneeOrgId = assigneeOrgId;
     }
 
     public List<Long> getAssigneeUserIds() {

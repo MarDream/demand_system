@@ -373,13 +373,16 @@ CREATE TABLE `requirement_approval_evaluations` (
   `node_id` VARCHAR(100) NOT NULL COMMENT '审批节点ID',
   `node_name` VARCHAR(100) NOT NULL COMMENT '审批节点名称',
   `node_status_code` VARCHAR(50) DEFAULT NULL COMMENT '节点状态码快照',
+  `parent_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '父审核记录ID(用于补充意见)',
+  `is_supplement` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否补充意见 0=否 1=是',
   `evaluator_id` INT UNSIGNED NOT NULL COMMENT '评价人ID',
-  `rating` TINYINT NOT NULL COMMENT '评价星级1-5',
+  `rating` TINYINT DEFAULT NULL COMMENT '评价星级1-5',
   `content` VARCHAR(1000) DEFAULT NULL COMMENT '评价意见',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   INDEX `idx_requirement_id` (`requirement_id`),
   INDEX `idx_instance_id` (`instance_id`),
+  INDEX `idx_parent_id` (`parent_id`),
   INDEX `idx_evaluator_id` (`evaluator_id`),
   INDEX `idx_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='需求审批环节评价';
@@ -683,8 +686,10 @@ CREATE TABLE `workflow_nodes` (
   `node_name` VARCHAR(100) NOT NULL COMMENT '节点名称',
   `position_x` INT DEFAULT 0 COMMENT 'X坐标',
   `position_y` INT DEFAULT 0 COMMENT 'Y坐标',
-  `assignee_type` VARCHAR(50) DEFAULT NULL COMMENT '处理人类型(role/user/dynamic)',
+  `assignee_type` VARCHAR(50) DEFAULT NULL COMMENT '处理人类型(SPECIFIED_USER/SPECIFIED_ROLE/SPECIFIED_ROLE_GROUP/SPECIFIED_ORG)',
   `assignee_role_id` INT UNSIGNED DEFAULT NULL COMMENT '角色ID',
+  `assignee_role_group_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '角色组ID',
+  `assignee_org_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '组织ID',
   `assignee_user_ids` JSON DEFAULT NULL COMMENT '指定用户ID列表',
   `timeout_hours` INT DEFAULT NULL COMMENT '超时小时数',
   `timeout_action` VARCHAR(50) DEFAULT NULL COMMENT '超时后操作(auto_pass/auto_reject/escalate)',
@@ -1047,6 +1052,136 @@ INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_
 (1, 35, 1);
 
 -- =====================================================
+-- 全量权限补全：需求/项目/迭代/评审/知识库/待办/通知/统计
+-- =====================================================
+
+-- 需求管理权限
+INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `status`) VALUES
+(40, 'button:requirement:create', '新建需求', 'BUTTON', '需求管理-新建', 1),
+(41, 'button:requirement:update', '编辑需求', 'BUTTON', '需求管理-编辑', 1),
+(42, 'button:requirement:delete', '删除需求', 'BUTTON', '需求管理-删除', 1),
+(43, 'button:requirement:export', '导出需求', 'BUTTON', '需求管理-导出Excel', 1),
+(44, 'button:requirement:submit', '提交需求', 'BUTTON', '需求管理-提交/流转', 1),
+(45, 'button:requirement:split', '拆分需求', 'BUTTON', '需求管理-拆分子需求', 1),
+(46, 'button:requirement:comment', '评论需求', 'BUTTON', '需求管理-评论', 1),
+(47, 'button:requirement:rollback', '回退需求', 'BUTTON', '需求管理-回退', 1),
+(48, 'button:requirement:cancel', '撤销需求', 'BUTTON', '需求管理-撤销', 1);
+
+-- 项目管理权限
+INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `status`) VALUES
+(50, 'button:project:create', '新建项目', 'BUTTON', '项目管理-新建', 1),
+(51, 'button:project:update', '编辑项目', 'BUTTON', '项目管理-编辑', 1),
+(52, 'button:project:delete', '删除项目', 'BUTTON', '项目管理-删除', 1),
+(53, 'button:project:import', '导入项目', 'BUTTON', '项目管理-导入', 1),
+(54, 'button:project:export', '导出项目', 'BUTTON', '项目管理-导出', 1);
+
+-- 迭代管理权限
+INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `status`) VALUES
+(55, 'button:iteration:create', '新建迭代', 'BUTTON', '迭代管理-新建', 1),
+(56, 'button:iteration:update', '编辑迭代', 'BUTTON', '迭代管理-编辑', 1),
+(57, 'button:iteration:delete', '删除迭代', 'BUTTON', '迭代管理-删除', 1);
+
+-- 评审管理权限
+INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `status`) VALUES
+(58, 'button:review:create', '发起评审', 'BUTTON', '评审管理-发起', 1),
+(59, 'button:review:update', '编辑评审', 'BUTTON', '评审管理-编辑', 1),
+(60, 'button:review:submit', '提交评审', 'BUTTON', '评审管理-提交', 1);
+
+-- 知识库权限
+INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `status`) VALUES
+(61, 'button:knowledge:create', '新建知识库', 'BUTTON', '知识库-新建', 1),
+(62, 'button:knowledge:update', '编辑知识库', 'BUTTON', '知识库-编辑', 1),
+(63, 'button:knowledge:delete', '删除知识库', 'BUTTON', '知识库-删除', 1),
+(64, 'button:knowledge:upload', '上传文档', 'BUTTON', '知识库-上传文档', 1),
+(65, 'button:knowledge:download', '下载文档', 'BUTTON', '知识库-下载文档', 1),
+(66, 'button:knowledge:share', '分享文档', 'BUTTON', '知识库-分享', 1);
+
+-- 需求配置权限
+INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `status`) VALUES
+(67, 'button:requirement-config:create', '新增配置项', 'BUTTON', '需求配置-新增', 1),
+(68, 'button:requirement-config:update', '编辑配置项', 'BUTTON', '需求配置-编辑', 1),
+(69, 'button:requirement-config:delete', '删除配置项', 'BUTTON', '需求配置-删除', 1);
+
+-- 工作流配置详细权限
+INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `status`) VALUES
+(70, 'button:workflow:create', '新建工作流', 'BUTTON', '工作流配置-新建', 1),
+(71, 'button:workflow:update', '编辑工作流', 'BUTTON', '工作流配置-编辑', 1),
+(72, 'button:workflow:delete', '删除工作流', 'BUTTON', '工作流配置-删除', 1),
+(73, 'button:workflow:activate', '启用/停用工作流', 'BUTTON', '工作流配置-启用停用', 1),
+(74, 'button:workflow:approve', '审批工作流', 'BUTTON', '工作流配置-审批', 1);
+
+-- LLM模型配置详细权限
+INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `status`) VALUES
+(75, 'button:llm-provider:create', '新建模型提供商', 'BUTTON', 'LLM配置-新建提供商', 1),
+(76, 'button:llm-provider:update', '编辑模型提供商', 'BUTTON', 'LLM配置-编辑提供商', 1),
+(77, 'button:llm-provider:delete', '删除模型提供商', 'BUTTON', 'LLM配置-删除提供商', 1),
+(78, 'button:llm-provider:test', '测试模型提供商', 'BUTTON', 'LLM配置-测试提供商', 1);
+
+-- 需求管理下的按钮菜单
+INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
+(40, 2, '新建需求', 'BUTTON', NULL, NULL, NULL, NULL, 1, 'button:requirement:create', 1, 1, 0),
+(41, 2, '编辑需求', 'BUTTON', NULL, NULL, NULL, NULL, 2, 'button:requirement:update', 1, 1, 0),
+(42, 2, '删除需求', 'BUTTON', NULL, NULL, NULL, NULL, 3, 'button:requirement:delete', 1, 1, 0),
+(43, 2, '导出需求', 'BUTTON', NULL, NULL, NULL, NULL, 4, 'button:requirement:export', 1, 1, 0),
+(44, 2, '提交需求', 'BUTTON', NULL, NULL, NULL, NULL, 5, 'button:requirement:submit', 1, 1, 0);
+
+-- 项目管理下的按钮菜单
+INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
+(50, 10, '新建项目', 'BUTTON', NULL, NULL, NULL, NULL, 1, 'button:project:create', 1, 1, 0),
+(51, 10, '编辑项目', 'BUTTON', NULL, NULL, NULL, NULL, 2, 'button:project:update', 1, 1, 0),
+(52, 10, '删除项目', 'BUTTON', NULL, NULL, NULL, NULL, 3, 'button:project:delete', 1, 1, 0);
+
+-- 迭代管理下的按钮菜单
+INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
+(55, 3, '新建迭代', 'BUTTON', NULL, NULL, NULL, NULL, 1, 'button:iteration:create', 1, 1, 0),
+(56, 3, '编辑迭代', 'BUTTON', NULL, NULL, NULL, NULL, 2, 'button:iteration:update', 1, 1, 0),
+(57, 3, '删除迭代', 'BUTTON', NULL, NULL, NULL, NULL, 3, 'button:iteration:delete', 1, 1, 0);
+
+-- 评审管理下的按钮菜单
+INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
+(58, 4, '发起评审', 'BUTTON', NULL, NULL, NULL, NULL, 1, 'button:review:create', 1, 1, 0),
+(59, 4, '编辑评审', 'BUTTON', NULL, NULL, NULL, NULL, 2, 'button:review:update', 1, 1, 0);
+
+-- 知识库下的按钮菜单
+INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
+(61, 8, '新建知识库', 'BUTTON', NULL, NULL, NULL, NULL, 1, 'button:knowledge:create', 1, 1, 0),
+(62, 8, '编辑知识库', 'BUTTON', NULL, NULL, NULL, NULL, 2, 'button:knowledge:update', 1, 1, 0),
+(63, 8, '删除知识库', 'BUTTON', NULL, NULL, NULL, NULL, 3, 'button:knowledge:delete', 1, 1, 0),
+(64, 8, '上传文档', 'BUTTON', NULL, NULL, NULL, NULL, 4, 'button:knowledge:upload', 1, 1, 0);
+
+-- 需求配置下的按钮菜单
+INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
+(67, 13, '新增配置项', 'BUTTON', NULL, NULL, NULL, NULL, 1, 'button:requirement-config:create', 1, 1, 0),
+(68, 13, '编辑配置项', 'BUTTON', NULL, NULL, NULL, NULL, 2, 'button:requirement-config:update', 1, 1, 0),
+(69, 13, '删除配置项', 'BUTTON', NULL, NULL, NULL, NULL, 3, 'button:requirement-config:delete', 1, 1, 0);
+
+-- 工作流配置下的按钮菜单
+INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
+(70, 14, '新建工作流', 'BUTTON', NULL, NULL, NULL, NULL, 1, 'button:workflow:create', 1, 1, 0),
+(71, 14, '编辑工作流', 'BUTTON', NULL, NULL, NULL, NULL, 2, 'button:workflow:update', 1, 1, 0),
+(72, 14, '删除工作流', 'BUTTON', NULL, NULL, NULL, NULL, 3, 'button:workflow:delete', 1, 1, 0),
+(73, 14, '启用停用', 'BUTTON', NULL, NULL, NULL, NULL, 4, 'button:workflow:activate', 1, 1, 0),
+(74, 14, '审批', 'BUTTON', NULL, NULL, NULL, NULL, 5, 'button:workflow:approve', 1, 1, 0);
+
+-- LLM配置下的按钮菜单
+INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
+(75, 16, '新建提供商', 'BUTTON', NULL, NULL, NULL, NULL, 1, 'button:llm-provider:create', 1, 1, 0),
+(76, 16, '编辑提供商', 'BUTTON', NULL, NULL, NULL, NULL, 2, 'button:llm-provider:update', 1, 1, 0),
+(77, 16, '删除提供商', 'BUTTON', NULL, NULL, NULL, NULL, 3, 'button:llm-provider:delete', 1, 1, 0);
+
+-- SUPER_ADMIN 授权全部新增权限
+INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_by`) VALUES
+(1, 40, 1), (1, 41, 1), (1, 42, 1), (1, 43, 1), (1, 44, 1),
+(1, 45, 1), (1, 46, 1), (1, 47, 1), (1, 48, 1),
+(1, 50, 1), (1, 51, 1), (1, 52, 1), (1, 53, 1), (1, 54, 1),
+(1, 55, 1), (1, 56, 1), (1, 57, 1),
+(1, 58, 1), (1, 59, 1), (1, 60, 1),
+(1, 61, 1), (1, 62, 1), (1, 63, 1), (1, 64, 1), (1, 65, 1), (1, 66, 1),
+(1, 67, 1), (1, 68, 1), (1, 69, 1),
+(1, 70, 1), (1, 71, 1), (1, 72, 1), (1, 73, 1), (1, 74, 1),
+(1, 75, 1), (1, 76, 1), (1, 77, 1), (1, 78, 1);
+
+-- =====================================================
 -- Sprint 1 增量变更：工作流实例 + 流转记录 + 项目/岗位字段补全
 -- =====================================================
 
@@ -1393,17 +1528,43 @@ BEGIN
       `node_id` VARCHAR(100) NOT NULL COMMENT '审批节点ID',
       `node_name` VARCHAR(100) NOT NULL COMMENT '审批节点名称',
       `node_status_code` VARCHAR(50) DEFAULT NULL COMMENT '节点状态码快照',
+      `parent_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '父审核记录ID(用于补充意见)',
+      `is_supplement` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否补充意见 0=否 1=是',
       `evaluator_id` INT UNSIGNED NOT NULL COMMENT '评价人ID',
-      `rating` TINYINT NOT NULL COMMENT '评价星级1-5',
+      `rating` TINYINT DEFAULT NULL COMMENT '评价星级1-5',
       `content` VARCHAR(1000) DEFAULT NULL COMMENT '评价意见',
       `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (`id`),
       INDEX `idx_requirement_id` (`requirement_id`),
       INDEX `idx_instance_id` (`instance_id`),
+      INDEX `idx_parent_id` (`parent_id`),
       INDEX `idx_evaluator_id` (`evaluator_id`),
       INDEX `idx_created_at` (`created_at`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='需求审批环节评价';
   END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'requirement_approval_evaluations' AND COLUMN_NAME = 'parent_id'
+  ) THEN
+    ALTER TABLE `requirement_approval_evaluations`
+      ADD COLUMN `parent_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '父审核记录ID(用于补充意见)' AFTER `node_status_code`;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'requirement_approval_evaluations' AND COLUMN_NAME = 'is_supplement'
+  ) THEN
+    ALTER TABLE `requirement_approval_evaluations`
+      ADD COLUMN `is_supplement` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否补充意见 0=否 1=是' AFTER `parent_id`;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'requirement_approval_evaluations' AND INDEX_NAME = 'idx_parent_id'
+  ) THEN
+    ALTER TABLE `requirement_approval_evaluations`
+      ADD INDEX `idx_parent_id` (`parent_id`);
+  END IF;
+  ALTER TABLE `requirement_approval_evaluations`
+    MODIFY COLUMN `rating` TINYINT DEFAULT NULL COMMENT '评价星级1-5';
 END$$
 DELIMITER ;
 CALL `apply_requirement_approval_evaluation_schema`();

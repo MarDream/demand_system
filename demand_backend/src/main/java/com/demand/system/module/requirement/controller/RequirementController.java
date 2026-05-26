@@ -5,6 +5,7 @@ import com.demand.system.common.result.Result;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.requirement.dto.RequirementCreateDTO;
 import com.demand.system.module.requirement.dto.RequirementApprovalEvaluationVO;
+import com.demand.system.module.requirement.dto.RequirementApprovalSupplementCreateDTO;
 import com.demand.system.module.requirement.dto.RequirementCommentCreateDTO;
 import com.demand.system.module.requirement.dto.RequirementCommentVO;
 import com.demand.system.module.requirement.dto.RequirementDraftCreateDTO;
@@ -16,6 +17,7 @@ import com.demand.system.module.requirement.dto.NextNodeOptionDTO;
 import com.demand.system.module.requirement.dto.RequirementUpdateDTO;
 import com.demand.system.module.requirement.dto.RequirementVO;
 import com.demand.system.module.requirement.service.RequirementService;
+import com.demand.system.module.requirement.service.RequirementApprovalEvaluationService;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -28,19 +30,17 @@ import java.util.Map;
 public class RequirementController {
 
     private final RequirementService requirementService;
+    private final RequirementApprovalEvaluationService approvalEvaluationService;
 
-    public RequirementController(RequirementService requirementService) {
+    public RequirementController(RequirementService requirementService,
+                                 RequirementApprovalEvaluationService approvalEvaluationService) {
         this.requirementService = requirementService;
+        this.approvalEvaluationService = approvalEvaluationService;
     }
 
     @GetMapping
     public Result<PageResult<RequirementVO>> list(RequirementQueryDTO query) {
         return Result.success(requirementService.list(query));
-    }
-
-    @GetMapping("/{id}")
-    public Result<RequirementVO> getDetail(@PathVariable Long id) {
-        return Result.success(requirementService.getDetail(id));
     }
 
     @PostMapping
@@ -94,6 +94,17 @@ public class RequirementController {
             return Result.fail(401, "未登录或登录已过期");
         }
         return Result.success(requirementService.listMyPending(query, userId));
+    }
+
+    @GetMapping("/my-done")
+    @PreAuthorize("isAuthenticated()")
+    public Result<List<RequirementVO>> listMyDone(@RequestParam(required = false) String keyword) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) {
+            return Result.fail(401, "未登录或登录已过期");
+        }
+        List<RequirementVO> list = requirementService.listMyDone(keyword, userId);
+        return Result.success(list);
     }
 
     @GetMapping("/{id}/next-nodes")
@@ -165,6 +176,19 @@ public class RequirementController {
         return Result.success(requirementService.getApprovalEvaluations(id));
     }
 
+    @PostMapping("/{id}/approval-evaluations/{evaluationId}/supplements")
+    @PreAuthorize("isAuthenticated()")
+    public Result<Void> addApprovalSupplement(@PathVariable Long id,
+                                              @PathVariable Long evaluationId,
+                                              @Valid @RequestBody RequirementApprovalSupplementCreateDTO dto) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) {
+            return Result.fail(401, "未登录或登录已过期");
+        }
+        approvalEvaluationService.addSupplement(id, evaluationId, userId, dto.getContent());
+        return Result.success();
+    }
+
     @PostMapping("/{id}/comments")
     @PreAuthorize("isAuthenticated()")
     public Result<Void> addComment(@PathVariable Long id, @Valid @RequestBody RequirementCommentCreateDTO dto) {
@@ -179,5 +203,10 @@ public class RequirementController {
     @GetMapping("/{id}/children")
     public Result<List<Map<String, Object>>> getChildren(@PathVariable Long id) {
         return Result.success(requirementService.getChildren(id));
+    }
+
+    @GetMapping("/{id}")
+    public Result<RequirementVO> getDetail(@PathVariable Long id) {
+        return Result.success(requirementService.getDetail(id));
     }
 }

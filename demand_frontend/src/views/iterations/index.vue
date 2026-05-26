@@ -5,7 +5,7 @@
         <Toolbar>
           <template #left />
           <template #right>
-            <el-button type="primary" @click="openDialog()">新建迭代</el-button>
+            <AppButton type="primary" permission="button:iteration:create" @click="openDialog()">新建迭代</AppButton>
           </template>
         </Toolbar>
       </template>
@@ -42,16 +42,14 @@
         </el-table-column>
         <el-table-column label="操作" width="140">
           <template #default="{ row }">
-            <el-tooltip content="编辑">
-              <el-button link type="primary" @click="openDialog(row)"><el-icon><EditPen /></el-icon></el-button>
-            </el-tooltip>
-            <el-popconfirm title="确定删除该迭代吗？" @confirm="handleDelete(row)">
-              <template #reference>
-                <el-tooltip content="删除">
+            <AppButton link type="primary" permission="button:iteration:update" @click="openDialog(row)"><el-icon><EditPen /></el-icon></AppButton>
+            <AppButton link type="danger" permission="button:iteration:delete">
+              <el-popconfirm title="确定删除该迭代吗？" @confirm="handleDelete(row)">
+                <template #reference>
                   <el-button link type="danger"><el-icon><Delete /></el-icon></el-button>
-                </el-tooltip>
-              </template>
-            </el-popconfirm>
+                </template>
+              </el-popconfirm>
+            </AppButton>
             <el-tooltip content="查看燃尽图">
               <el-button link type="info" @click="viewBurndown(row)"><el-icon><TrendCharts /></el-icon></el-button>
             </el-tooltip>
@@ -150,6 +148,7 @@ import type { Iteration, IterationFormData, IterationRequirementOption } from '@
 import PageContainer from '@/components/common/PageContainer.vue'
 import TableCard from '@/components/common/TableCard.vue'
 import Toolbar from '@/components/common/Toolbar.vue'
+import AppButton from '@/components/common/AppButton.vue'
 
 const route = useRoute()
 const projectId = computed(() => {

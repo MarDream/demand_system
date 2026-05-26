@@ -27,7 +27,7 @@ public class WorkflowNotificationService {
         if (requirement == null || node == null) {
             return;
         }
-        Set<Long> recipientIds = resolveRecipientIds(node, operatorId);
+        Set<Long> recipientIds = resolveRecipientIds(requirement, node, operatorId);
         if (recipientIds.isEmpty()) {
             return;
         }
@@ -39,7 +39,7 @@ public class WorkflowNotificationService {
         }
     }
 
-    private Set<Long> resolveRecipientIds(WorkflowNode node, Long operatorId) {
+    private Set<Long> resolveRecipientIds(Requirement requirement, WorkflowNode node, Long operatorId) {
         Set<Long> recipientIds = new LinkedHashSet<>();
         String assigneeType = node.getAssigneeType();
         if ("SPECIFIED_USER".equals(assigneeType) && node.getAssigneeUserIds() != null) {
@@ -52,6 +52,8 @@ public class WorkflowNotificationService {
                     recipientIds.add(userRole.getUserId());
                 }
             }
+        } else if ("CREATOR".equals(assigneeType) && requirement.getCreatorId() != null) {
+            recipientIds.add(requirement.getCreatorId());
         }
         recipientIds.remove(operatorId);
         return recipientIds;

@@ -12,11 +12,19 @@ public class RequirementApprovalEvaluationVO {
     private String nodeName;
     private String nodeStatusCode;
     private String nodeStatusName;
+    private Long parentId;
+    private Boolean isSupplement;
+    private Boolean canSupplement;
     private Long evaluatorId;
     private String evaluatorName;
+    private String action;
+    private String actionLabel;
+    private String result;
+    private String resultLabel;
     private Integer rating;
     private String content;
     private LocalDateTime createdAt;
+    private java.util.List<RequirementApprovalEvaluationVO> supplements;
 
     public Long getId() {
         return id;
@@ -82,6 +90,30 @@ public class RequirementApprovalEvaluationVO {
         this.nodeStatusName = nodeStatusName;
     }
 
+    public Long getParentId() {
+        return parentId;
+    }
+
+    public void setParentId(Long parentId) {
+        this.parentId = parentId;
+    }
+
+    public Boolean getIsSupplement() {
+        return isSupplement;
+    }
+
+    public void setIsSupplement(Boolean isSupplement) {
+        this.isSupplement = isSupplement;
+    }
+
+    public Boolean getCanSupplement() {
+        return canSupplement;
+    }
+
+    public void setCanSupplement(Boolean canSupplement) {
+        this.canSupplement = canSupplement;
+    }
+
     public Long getEvaluatorId() {
         return evaluatorId;
     }
@@ -96,6 +128,38 @@ public class RequirementApprovalEvaluationVO {
 
     public void setEvaluatorName(String evaluatorName) {
         this.evaluatorName = evaluatorName;
+    }
+
+    public String getAction() {
+        return action;
+    }
+
+    public void setAction(String action) {
+        this.action = action;
+    }
+
+    public String getActionLabel() {
+        return actionLabel;
+    }
+
+    public void setActionLabel(String actionLabel) {
+        this.actionLabel = actionLabel;
+    }
+
+    public String getResult() {
+        return result;
+    }
+
+    public void setResult(String result) {
+        this.result = result;
+    }
+
+    public String getResultLabel() {
+        return resultLabel;
+    }
+
+    public void setResultLabel(String resultLabel) {
+        this.resultLabel = resultLabel;
     }
 
     public Integer getRating() {
@@ -120,5 +184,13 @@ public class RequirementApprovalEvaluationVO {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public java.util.List<RequirementApprovalEvaluationVO> getSupplements() {
+        return supplements;
+    }
+
+    public void setSupplements(java.util.List<RequirementApprovalEvaluationVO> supplements) {
+        this.supplements = supplements;
     }
 }

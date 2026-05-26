@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.ErrorCode;
 import com.demand.system.module.auth.security.SecurityUtils;
+import com.demand.system.module.organization.entity.SysOrg;
+import com.demand.system.module.organization.mapper.SysOrgMapper;
 import com.demand.system.module.requirement.entity.Requirement;
 import com.demand.system.module.requirement.entity.RequirementHistory;
 import com.demand.system.module.requirement.mapper.RequirementHistoryMapper;
@@ -13,9 +15,13 @@ import com.demand.system.module.requirement.service.RequirementApprovalEvaluatio
 import com.demand.system.module.project.entity.Project;
 import com.demand.system.module.project.mapper.ProjectMapper;
 import com.demand.system.module.user.entity.User;
+import com.demand.system.module.user.entity.UserOrganization;
 import com.demand.system.module.user.mapper.UserMapper;
+import com.demand.system.module.user.mapper.UserOrganizationMapper;
 import com.demand.system.module.rbac.entity.Role;
+import com.demand.system.module.rbac.entity.RoleGroup;
 import com.demand.system.module.rbac.mapper.RoleMapper;
+import com.demand.system.module.rbac.mapper.RoleGroupMapper;
 import com.demand.system.module.workflow.dto.AvailableTransitionDTO;
 import com.demand.system.module.workflow.dto.FlowTransitionRequest;
 import com.demand.system.module.workflow.dto.TransitionVO;
@@ -39,9 +45,11 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -56,6 +64,9 @@ public class WorkflowEngineService {
     private final ProjectMapper projectMapper;
     private final UserMapper userMapper;
     private final RoleMapper roleMapper;
+    private final RoleGroupMapper roleGroupMapper;
+    private final UserOrganizationMapper userOrganizationMapper;
+    private final SysOrgMapper sysOrgMapper;
     private final NodeStatusMapper nodeStatusMapper;
     private final WorkflowGraphNavigator graphNavigator;
     private final WorkflowRuntimeLoader runtimeLoader;
@@ -66,6 +77,8 @@ public class WorkflowEngineService {
                                WorkflowNodeMapper nodeMapper, WorkflowEdgeMapper edgeMapper,
                                RequirementMapper requirementMapper, RequirementHistoryMapper requirementHistoryMapper,
                                ProjectMapper projectMapper, UserMapper userMapper, RoleMapper roleMapper,
+                               RoleGroupMapper roleGroupMapper, UserOrganizationMapper userOrganizationMapper,
+                               SysOrgMapper sysOrgMapper,
                                NodeStatusMapper nodeStatusMapper, WorkflowGraphNavigator graphNavigator,
                                WorkflowRuntimeLoader runtimeLoader, WorkflowNotificationService notificationService,
                                RequirementApprovalEvaluationService approvalEvaluationService) {
@@ -78,6 +91,9 @@ public class WorkflowEngineService {
         this.projectMapper = projectMapper;
         this.userMapper = userMapper;
         this.roleMapper = roleMapper;
+        this.roleGroupMapper = roleGroupMapper;
+        this.userOrganizationMapper = userOrganizationMapper;
+        this.sysOrgMapper = sysOrgMapper;
         this.nodeStatusMapper = nodeStatusMapper;
         this.graphNavigator = graphNavigator;
         this.runtimeLoader = runtimeLoader;
@@ -137,6 +153,7 @@ public class WorkflowEngineService {
         transition.setComment(comment);
         transition.setStartedAt(LocalDateTime.now());
         transitionMapper.insert(transition);
+        approvalEvaluationService.saveOnTransition(instance, targetNode, transition.getId(), operatorId, comment);
 
         String nodeStatusCode = resolveNodeStatusCode(targetNode);
         requirementMapper.update(null, new LambdaUpdateWrapper<Requirement>()
@@ -206,6 +223,9 @@ public class WorkflowEngineService {
         if (approvalEvaluationRequired && currentNode != null) {
             approvalEvaluationService.saveOnApprovalTransition(
                     instance, currentNode, newTransition.getId(), operatorId, request.getRating(), request.getComment());
+        } else {
+            approvalEvaluationService.saveOnTransition(
+                    instance, currentNode != null ? currentNode : targetNode, newTransition.getId(), operatorId, request.getComment());
         }
 
         String newStatus = "running";
@@ -248,9 +268,12 @@ public class WorkflowEngineService {
         }
 
         WorkflowNode currentNode = getNode(instance.getWorkflowVersionId(), instance.getCurrentNodeId());
-        validatePermission(currentNode, operatorId);
+        validatePermission(instance, requirementMapper.selectById(requirementId), currentNode, operatorId);
         if ("end".equals(currentNode.getNodeType())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "结束节点不可回退");
+        }
+        if (!StringUtils.hasText(comment)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "驳回原因不能为空");
         }
 
         WorkflowNode previousNode = getNode(instance.getWorkflowVersionId(), instance.getPreviousNodeId());
@@ -269,6 +292,7 @@ public class WorkflowEngineService {
         rollbackTransition.setComment(comment);
         rollbackTransition.setStartedAt(LocalDateTime.now());
         transitionMapper.insert(rollbackTransition);
+        approvalEvaluationService.saveOnTransition(instance, currentNode, rollbackTransition.getId(), operatorId, comment);
 
         Integer currentLockVersion = instance.getLockVersion() == null ? 0 : instance.getLockVersion();
         instanceMapper.update(null, new LambdaUpdateWrapper<WorkflowInstance>()
@@ -300,7 +324,7 @@ public class WorkflowEngineService {
         if ("end".equals(currentNode.getNodeType())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "结束节点不可取消");
         }
-        if (!canCancelRequirement(requirement, currentNode, operatorId)) {
+        if (!canCancelRequirement(requirement, instance, currentNode, operatorId)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限取消当前需求");
         }
         if (comment == null || comment.trim().isEmpty()) {
@@ -321,6 +345,7 @@ public class WorkflowEngineService {
         cancelTransition.setComment(comment);
         cancelTransition.setStartedAt(LocalDateTime.now());
         transitionMapper.insert(cancelTransition);
+        approvalEvaluationService.saveOnTransition(instance, currentNode, cancelTransition.getId(), operatorId, comment);
 
         instanceMapper.update(null, new LambdaUpdateWrapper<WorkflowInstance>()
             .eq(WorkflowInstance::getId, instance.getId())
@@ -376,8 +401,8 @@ public class WorkflowEngineService {
         actions.setLockVersion(instance.getLockVersion());
 
         Long operatorId = SecurityUtils.getCurrentUserId();
-        boolean canOperate = hasOperatePermission(currentNode, operatorId);
-        boolean canCancel = canCancelRequirement(requirement, currentNode, operatorId);
+        boolean canOperate = hasOperatePermission(instance, requirement, currentNode, operatorId);
+        boolean canCancel = canCancelRequirement(requirement, instance, currentNode, operatorId);
 
         List<AvailableTransitionDTO> transitions = Collections.emptyList();
         if (canOperate) {
@@ -469,7 +494,7 @@ public class WorkflowEngineService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "不允许从当前节点流转到目标节点");
         }
 
-        validatePermission(currentNode, operatorId);
+        validatePermission(instance, requirementMapper.selectById(instance.getRequirementId()), currentNode, operatorId);
 
         if (WorkflowNodeUtils.isProjectRequired(targetNode)) {
             Requirement requirement = requirementMapper.selectById(instance.getRequirementId());
@@ -479,7 +504,7 @@ public class WorkflowEngineService {
         }
     }
 
-    private void validatePermission(WorkflowNode node, Long operatorId) {
+    private void validatePermission(WorkflowInstance instance, Requirement requirement, WorkflowNode node, Long operatorId) {
         if (hasAdminBypassPermission()) {
             return;
         }
@@ -497,28 +522,166 @@ public class WorkflowEngineService {
             }
             return;
         }
-        if ("SPECIFIED_USER".equals(assigneeType)) {
-            if (node.getAssigneeUserIds() == null || !node.getAssigneeUserIds().contains(operatorId)) {
-                throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
-            }
-        } else if ("SPECIFIED_ROLE".equals(assigneeType)) {
-            Integer roleId = node.getAssigneeRoleId();
-            if (roleId == null) {
-                throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
-            }
-            Role role = roleMapper.selectById(roleId.longValue());
-            if (role == null || role.getCode() == null || role.getCode().isBlank()) {
-                throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
-            }
-            if (!SecurityUtils.getCurrentUserRoles().contains(role.getCode().trim())) {
-                throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
-            }
+
+        // 动态权限验证：根据处理人类型检查对应权限
+        switch (assigneeType) {
+            case "SPECIFIED_USER":
+                validateSpecifiedUserPermission(node, operatorId);
+                break;
+            case "SPECIFIED_ROLE":
+                validateSpecifiedRolePermission(node);
+                break;
+            case "SPECIFIED_ROLE_GROUP":
+                validateSpecifiedRoleGroupPermission(node);
+                break;
+            case "SPECIFIED_ORG":
+                validateSpecifiedOrgPermission(node, operatorId);
+                break;
+            case "PREV_APPROVER":
+                validatePreviousApproverPermission(instance, node, operatorId);
+                break;
+            case "CREATOR":
+                validateCreatorPermission(requirement, operatorId);
+                break;
+            default:
+                // 未来扩展：尝试从 properties 动态验证
+                validateDynamicPermission(node, assigneeType, operatorId);
         }
     }
 
-    private boolean hasOperatePermission(WorkflowNode node, Long operatorId) {
+    private void validateSpecifiedUserPermission(WorkflowNode node, Long operatorId) {
+        if (node.getAssigneeUserIds() == null || !node.getAssigneeUserIds().contains(operatorId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
+        }
+    }
+
+    private void validateSpecifiedRolePermission(WorkflowNode node) {
+        Integer roleId = node.getAssigneeRoleId();
+        if (roleId == null) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
+        }
+        Role role = roleMapper.selectById(roleId.longValue());
+        if (role == null || role.getCode() == null || role.getCode().isBlank()) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
+        }
+        if (!SecurityUtils.getCurrentUserRoles().contains(role.getCode().trim())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
+        }
+    }
+
+    private void validateSpecifiedRoleGroupPermission(WorkflowNode node) {
+        Long roleGroupId = node.getAssigneeRoleGroupId();
+        if (roleGroupId == null) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
+        }
+        // 查询角色组下的所有角色
+        List<Role> roles = roleMapper.selectList(
+            new LambdaQueryWrapper<Role>()
+                .eq(Role::getRoleGroupId, roleGroupId)
+                .eq(Role::getDeletedAt, 0)
+        );
+        if (roles.isEmpty()) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
+        }
+        // 检查用户是否拥有角色组中的任一角色
+        List<String> userRoles = SecurityUtils.getCurrentUserRoles();
+        boolean hasPermission = roles.stream()
+            .anyMatch(role -> role.getCode() != null && userRoles.contains(role.getCode().trim()));
+        if (!hasPermission) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
+        }
+    }
+
+    private void validateSpecifiedOrgPermission(WorkflowNode node, Long operatorId) {
+        Long orgId = node.getAssigneeOrgId();
+        if (orgId == null) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
+        }
+        Set<Long> operatorOrgIds = resolveOperatorOrgIds(operatorId);
+        if (operatorOrgIds.isEmpty()) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
+        }
+
+        String orgScopeType = String.valueOf(WorkflowNodeUtils.readProperty(node, "orgScopeType"));
+        boolean includeChildren = !"current".equalsIgnoreCase(orgScopeType);
+        boolean matched = includeChildren
+                ? operatorOrgIds.stream().anyMatch(candidateOrgId -> isDescendantOrSelf(orgId, candidateOrgId))
+                : operatorOrgIds.contains(orgId);
+        if (!matched) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
+        }
+    }
+
+    private void validatePreviousApproverPermission(WorkflowInstance instance, WorkflowNode node, Long operatorId) {
+        if (instance == null) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
+        }
+        WorkflowInstanceTransition transition = transitionMapper.selectOne(
+                new LambdaQueryWrapper<WorkflowInstanceTransition>()
+                        .eq(WorkflowInstanceTransition::getInstanceId, instance.getId())
+                        .eq(WorkflowInstanceTransition::getToNodeId, node.getNodeId())
+                        .orderByDesc(WorkflowInstanceTransition::getId)
+                        .last("LIMIT 1"));
+        if (transition == null || !Objects.equals(transition.getOperatorId(), operatorId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
+        }
+    }
+
+    private void validateCreatorPermission(Requirement requirement, Long operatorId) {
+        if (requirement == null || !Objects.equals(requirement.getCreatorId(), operatorId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
+        }
+    }
+
+    /**
+     * 动态权限验证，支持未来扩展的处理人类型
+     */
+    private void validateDynamicPermission(WorkflowNode node, String assigneeType, Long operatorId) {
+        // 默认拒绝未知的处理人类型
+        throw new BusinessException(ErrorCode.FORBIDDEN, "未知的处理人类型: " + assigneeType);
+    }
+
+    private Set<Long> resolveOperatorOrgIds(Long operatorId) {
+        LinkedHashSet<Long> orgIds = new LinkedHashSet<>();
+        User user = userMapper.selectById(operatorId);
+        if (user != null) {
+            appendOrgId(orgIds, user.getOrgId());
+            appendOrgId(orgIds, user.getDepartmentId());
+            appendOrgId(orgIds, user.getRegionId());
+        }
+        List<UserOrganization> organizations = userOrganizationMapper.selectList(
+                new LambdaQueryWrapper<UserOrganization>()
+                        .eq(UserOrganization::getUserId, operatorId));
+        for (UserOrganization organization : organizations) {
+            appendOrgId(orgIds, organization.getOrgId());
+            appendOrgId(orgIds, organization.getDepartmentId());
+            appendOrgId(orgIds, organization.getRegionId());
+        }
+        return orgIds;
+    }
+
+    private void appendOrgId(Set<Long> orgIds, Long orgId) {
+        if (orgId != null && orgId > 0) {
+            orgIds.add(orgId);
+        }
+    }
+
+    private boolean isDescendantOrSelf(Long ancestorOrgId, Long currentOrgId) {
+        if (ancestorOrgId == null || currentOrgId == null) {
+            return false;
+        }
+        if (Objects.equals(ancestorOrgId, currentOrgId)) {
+            return true;
+        }
+        SysOrg currentOrg = sysOrgMapper.selectById(currentOrgId);
+        return currentOrg != null
+                && StringUtils.hasText(currentOrg.getPath())
+                && currentOrg.getPath().contains("/" + ancestorOrgId + "/");
+    }
+
+    private boolean hasOperatePermission(WorkflowInstance instance, Requirement requirement, WorkflowNode node, Long operatorId) {
         try {
-            validatePermission(node, operatorId);
+            validatePermission(instance, requirement, node, operatorId);
             return true;
         } catch (BusinessException ex) {
             if (ex.getErrorCode() == ErrorCode.FORBIDDEN) {
@@ -573,7 +736,7 @@ public class WorkflowEngineService {
         recordProjectBindingHistory(requirement.getId(), operatorId, normalizedRequestedProjectId);
     }
 
-    private boolean canCancelRequirement(Requirement requirement, WorkflowNode currentNode, Long operatorId) {
+    private boolean canCancelRequirement(Requirement requirement, WorkflowInstance instance, WorkflowNode currentNode, Long operatorId) {
         if (currentNode == null || "end".equals(currentNode.getNodeType())) {
             return false;
         }
@@ -583,7 +746,7 @@ public class WorkflowEngineService {
         if (isCreatorOrAdmin(requirement, operatorId)) {
             return true;
         }
-        return hasOperatePermission(currentNode, operatorId);
+        return hasOperatePermission(instance, requirement, currentNode, operatorId);
     }
 
     private boolean isCreatorOrAdmin(Requirement requirement, Long operatorId) {

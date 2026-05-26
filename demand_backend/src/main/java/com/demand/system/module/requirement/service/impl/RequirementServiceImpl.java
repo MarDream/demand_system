@@ -32,7 +32,9 @@ import com.demand.system.module.requirement.service.RequirementApprovalEvaluatio
 import com.demand.system.module.requirement.service.RequirementConfigService;
 import com.demand.system.module.requirement.service.RequirementService;
 import com.demand.system.module.user.entity.User;
+import com.demand.system.module.user.entity.UserOrganization;
 import com.demand.system.module.user.mapper.UserMapper;
+import com.demand.system.module.user.mapper.UserOrganizationMapper;
 import com.demand.system.module.organization.dto.SysOrgVO;
 import com.demand.system.module.organization.service.SysOrgService;
 import com.demand.system.module.auth.security.SecurityUtils;
@@ -60,6 +62,7 @@ import com.demand.system.module.workflow.mapper.WorkflowNodeMapper;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.demand.system.module.workflow.service.WorkflowEngineService;
 import com.demand.system.module.workflow.service.WorkflowService;
+import com.demand.system.module.workflow.dto.WorkflowAvailableActionsDTO;
 import com.demand.system.module.workflow.mapper.WorkflowTransitionRecordMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -74,6 +77,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -94,6 +98,7 @@ public class RequirementServiceImpl implements RequirementService {
     private final RequirementCommentMapper requirementCommentMapper;
     private final CustomFieldValueMapper customFieldValueMapper;
     private final UserMapper userMapper;
+    private final UserOrganizationMapper userOrganizationMapper;
     private final SysOrgService sysOrgService;
     private final NotificationService notificationService;
     private final WorkflowService workflowService;
@@ -115,12 +120,13 @@ public class RequirementServiceImpl implements RequirementService {
     private final ProjectMapper projectMapper;
     private final ObjectMapper objectMapper;
 
-    public RequirementServiceImpl(RequirementMapper requirementMapper, RequirementHistoryMapper historyMapper, RequirementCommentMapper requirementCommentMapper, CustomFieldValueMapper customFieldValueMapper, UserMapper userMapper, SysOrgService sysOrgService, NotificationService notificationService, WorkflowService workflowService, WorkflowEngineService workflowEngineService, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowGraphNavigator workflowGraphNavigator, WorkflowRuntimeLoader workflowRuntimeLoader, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, WorkflowInstanceMapper workflowInstanceMapper, WorkflowInstanceTransitionMapper workflowInstanceTransitionMapper, WorkflowTransitionRecordMapper workflowTransitionRecordMapper, WorkflowDefinitionEngine workflowDefinitionEngine, RequirementApprovalEvaluationService approvalEvaluationService, RequirementConfigService requirementConfigService, KnowledgeDocumentService knowledgeDocumentService, NodeStatusMapper nodeStatusMapper, ProjectMapper projectMapper, ObjectMapper objectMapper) {
+    public RequirementServiceImpl(RequirementMapper requirementMapper, RequirementHistoryMapper historyMapper, RequirementCommentMapper requirementCommentMapper, CustomFieldValueMapper customFieldValueMapper, UserMapper userMapper, UserOrganizationMapper userOrganizationMapper, SysOrgService sysOrgService, NotificationService notificationService, WorkflowService workflowService, WorkflowEngineService workflowEngineService, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowGraphNavigator workflowGraphNavigator, WorkflowRuntimeLoader workflowRuntimeLoader, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, WorkflowInstanceMapper workflowInstanceMapper, WorkflowInstanceTransitionMapper workflowInstanceTransitionMapper, WorkflowTransitionRecordMapper workflowTransitionRecordMapper, WorkflowDefinitionEngine workflowDefinitionEngine, RequirementApprovalEvaluationService approvalEvaluationService, RequirementConfigService requirementConfigService, KnowledgeDocumentService knowledgeDocumentService, NodeStatusMapper nodeStatusMapper, ProjectMapper projectMapper, ObjectMapper objectMapper) {
         this.requirementMapper = requirementMapper;
         this.historyMapper = historyMapper;
         this.requirementCommentMapper = requirementCommentMapper;
         this.customFieldValueMapper = customFieldValueMapper;
         this.userMapper = userMapper;
+        this.userOrganizationMapper = userOrganizationMapper;
         this.sysOrgService = sysOrgService;
         this.notificationService = notificationService;
         this.workflowService = workflowService;
@@ -232,6 +238,10 @@ public class RequirementServiceImpl implements RequirementService {
         RequirementVO vo = new RequirementVO();
         BeanUtils.copyProperties(r, vo);
         fillUserNames(vo, r);
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (userId != null) {
+            fillPermissionFields(vo, r, userId);
+        }
         return vo;
     }
 
@@ -329,7 +339,7 @@ public class RequirementServiceImpl implements RequirementService {
                     strVal(existing.getModuleId()), strVal(dto.getModuleId()));
             updateWrapper.set("module_id", dto.getModuleId());
         }
-        if (dto.getDueDate() != null && !Objects.equals(existing.getDueDate(), dto.getDueDate())) {
+        if (Boolean.TRUE.equals(existing.getIsDraft()) && dto.getDueDate() != null && !Objects.equals(existing.getDueDate(), dto.getDueDate())) {
             recordHistory(dto.getId(), operatorId, "dueDate",
                     strDate(existing.getDueDate()), strDate(dto.getDueDate()));
             updateWrapper.set("due_date", dto.getDueDate());
@@ -586,16 +596,14 @@ public class RequirementServiceImpl implements RequirementService {
 
     @Override
     public PageResult<RequirementVO> listMyDrafts(RequirementMyListQueryDTO query, Long userId) {
-        User user = userMapper.selectById(userId);
-        List<String> roleCodes = SecurityUtils.getCurrentUserRoles();
         Page<Requirement> page = new Page<>(query.getPageNum(), query.getPageSize());
-        var result = requirementMapper.selectMyDrafts(page, userId, user != null ? user.getDepartmentId() : null,
-                roleCodes, query.getProjectId(), query.getKeyword());
+        var result = requirementMapper.selectMyDrafts(page, userId, null, null, query.getProjectId(), query.getKeyword());
         List<RequirementVO> list = new ArrayList<>();
         for (Requirement r : result.getRecords()) {
             RequirementVO vo = new RequirementVO();
             BeanUtils.copyProperties(r, vo);
             fillUserNames(vo, r);
+            fillPermissionFields(vo, r, userId);
             list.add(vo);
         }
         return new PageResult<>(list, result.getTotal(), query.getPageNum(), query.getPageSize());
@@ -603,20 +611,37 @@ public class RequirementServiceImpl implements RequirementService {
 
     @Override
     public PageResult<RequirementVO> listMyPending(RequirementMyListQueryDTO query, Long userId) {
-        User user = userMapper.selectById(userId);
         List<String> roleCodes = SecurityUtils.getCurrentUserRoles();
-        List<Long> orgIds = resolveOrgScopeIds(user);
+        List<Long> directOrgIds = resolveDirectOrgIds(userId);
+        List<Long> scopedOrgIds = resolveScopedOrgIds(directOrgIds);
 
         Page<Requirement> page = new Page<>(query.getPageNum(), query.getPageSize());
-        var result = requirementMapper.selectMyPending(page, userId, roleCodes, orgIds, query.getProjectId(), query.getKeyword());
+        var result = requirementMapper.selectMyPending(page, userId, roleCodes, directOrgIds, scopedOrgIds,
+                query.getProjectId(), query.getKeyword());
         List<RequirementVO> list = new ArrayList<>();
         for (Requirement r : result.getRecords()) {
             RequirementVO vo = new RequirementVO();
             BeanUtils.copyProperties(r, vo);
             fillUserNames(vo, r);
+            fillPermissionFields(vo, r, userId);
             list.add(vo);
         }
         return new PageResult<>(list, result.getTotal(), query.getPageNum(), query.getPageSize());
+    }
+
+    @Override
+    public List<RequirementVO> listMyDone(String keyword, Long userId) {
+        boolean isSuperAdmin = SecurityUtils.getCurrentUserRoles().contains("admin");
+        List<Requirement> requirements = requirementMapper.selectMyDone(userId, isSuperAdmin, keyword);
+        List<RequirementVO> list = new ArrayList<>();
+        for (Requirement r : requirements) {
+            RequirementVO vo = new RequirementVO();
+            BeanUtils.copyProperties(r, vo);
+            fillUserNames(vo, r);
+            fillPermissionFields(vo, r, userId);
+            list.add(vo);
+        }
+        return list;
     }
 
     @Override
@@ -910,15 +935,65 @@ public class RequirementServiceImpl implements RequirementService {
         return project.getEndDate() != null && project.getEndDate().isBefore(LocalDate.now());
     }
 
-    private List<Long> resolveOrgScopeIds(User user) {
-        if (user == null) {
+    private List<Long> resolveDirectOrgIds(Long userId) {
+        if (userId == null) {
             return List.of();
         }
-        Long root = user.getOrgId() != null ? user.getOrgId() : (user.getDepartmentId() != null ? user.getDepartmentId() : user.getRegionId());
-        if (root == null) {
+        LinkedHashSet<Long> orgIds = new LinkedHashSet<>();
+        User user = userMapper.selectById(userId);
+        if (user != null) {
+            appendOrgId(orgIds, user.getOrgId());
+            appendOrgId(orgIds, user.getDepartmentId());
+            appendOrgId(orgIds, user.getRegionId());
+        }
+
+        List<UserOrganization> organizations = userOrganizationMapper.selectList(
+                new LambdaQueryWrapper<UserOrganization>()
+                        .eq(UserOrganization::getUserId, userId));
+        for (UserOrganization organization : organizations) {
+            appendOrgId(orgIds, organization.getOrgId());
+            appendOrgId(orgIds, organization.getDepartmentId());
+            appendOrgId(orgIds, organization.getRegionId());
+        }
+        return new ArrayList<>(orgIds);
+    }
+
+    private List<Long> resolveScopedOrgIds(List<Long> directOrgIds) {
+        if (directOrgIds == null || directOrgIds.isEmpty()) {
             return List.of();
         }
-        return sysOrgService.getDescendantIds(root);
+        LinkedHashSet<Long> orgIds = new LinkedHashSet<>(directOrgIds);
+        for (Long orgId : directOrgIds) {
+            if (orgId == null) {
+                continue;
+            }
+            SysOrgVO org;
+            try {
+                org = sysOrgService.getDetail(orgId);
+            } catch (BusinessException ex) {
+                continue;
+            }
+            if (org == null || !StringUtils.hasText(org.getPath())) {
+                continue;
+            }
+            for (String pathPart : org.getPath().split("/")) {
+                if (!StringUtils.hasText(pathPart)) {
+                    continue;
+                }
+                try {
+                    orgIds.add(Long.parseLong(pathPart));
+                } catch (NumberFormatException ignored) {
+                    // ignore invalid path fragment
+                }
+            }
+        }
+        return new ArrayList<>(orgIds);
+    }
+
+    private void appendOrgId(Set<Long> orgIds, Long orgId) {
+        if (orgId != null && orgId > 0) {
+            orgIds.add(orgId);
+        }
     }
 
     private SFunction<Requirement, ?> getColumnFunction(String sortField) {
@@ -1026,6 +1101,65 @@ public class RequirementServiceImpl implements RequirementService {
                 vo.setDepartmentName(dept.getName());
             }
         }
+    }
+
+    /**
+     * 填充权限字段：canEdit, canView, canApprove, isParticipant, operationType
+     * 草稿状态：提交人可编辑，管理员可查看
+     * 流转中状态：有审批权限可审批，否则可查看
+     * 结束状态：参与人可查看
+     */
+    private void fillPermissionFields(RequirementVO vo, Requirement r, Long userId) {
+        boolean isCreator = Objects.equals(r.getCreatorId(), userId);
+        boolean isSuperAdmin = SecurityUtils.getCurrentUserRoles().contains("admin");
+        boolean participant = isParticipant(r.getId(), userId);
+        vo.setIsParticipant(participant);
+
+        // 草稿状态
+        if (Boolean.TRUE.equals(r.getIsDraft())) {
+            vo.setCanEdit(isCreator);
+            vo.setCanView(isSuperAdmin || isCreator);
+            vo.setCanApprove(false);
+            vo.setOperationType(isCreator ? "edit" : "view");
+            return;
+        }
+
+        // 判断是否有审批权限
+        boolean canApprove = false;
+        if (r.getWorkflowInstanceId() != null) {
+            try {
+                WorkflowAvailableActionsDTO actions = workflowEngineService.getAvailableActions(r.getId());
+                canApprove = Boolean.TRUE.equals(actions.getCanTransition());
+            } catch (Exception e) {
+                // 工作流异常时默认无审批权限
+                canApprove = false;
+            }
+        }
+
+        // 流转中状态：有审批权限且未参与过可审批，否则可查看
+        if (canApprove) {
+            vo.setCanEdit(false);
+            vo.setCanView(true);
+            vo.setCanApprove(true);
+            vo.setOperationType("approve");
+        } else {
+            vo.setCanEdit(false);
+            vo.setCanView(true);
+            vo.setCanApprove(false);
+            vo.setOperationType("view");
+        }
+    }
+
+    /**
+     * 判断用户是否参与过需求的审批（在workflow_instance_transitions中有记录）
+     */
+    private boolean isParticipant(Long requirementId, Long userId) {
+        Long count = workflowInstanceTransitionMapper.selectCount(
+            new LambdaQueryWrapper<WorkflowInstanceTransition>()
+                .eq(WorkflowInstanceTransition::getRequirementId, requirementId)
+                .eq(WorkflowInstanceTransition::getOperatorId, userId)
+        );
+        return count != null && count > 0;
     }
 
     private void sendStatusChangeNotifications(Requirement requirement, String newStatus, Long operatorId) {

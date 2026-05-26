@@ -55,6 +55,7 @@
               size="small"
               @click="handleBatchDownload"
               :loading="downloading"
+              v-permission="'button:knowledge:download'"
             >
               {{ selectedDocIds.size >= 2 ? '打包下载' : '下载' }} ({{ selectedDocIds.size }})
             </el-button>

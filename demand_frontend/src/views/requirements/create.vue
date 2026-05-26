@@ -225,6 +225,10 @@
                 />
               </el-select>
             </el-form-item>
+
+            <el-form-item v-if="showCurrentStatusField" label="当前状态">
+              <el-input :model-value="currentRequirement?.status || '-'" readonly />
+            </el-form-item>
           </el-form>
         </el-card>
 
@@ -247,7 +251,9 @@
             </el-form-item>
 
             <el-form-item v-if="shouldShowField('dueDate')" label="期望上线时间">
+              <el-input v-if="isDueDateReadOnly" :model-value="formData.dueDate || '-'" readonly />
               <el-date-picker
+                v-else
                 v-model="formData.dueDate"
                 type="date"
                 placeholder="请选择"
@@ -280,11 +286,11 @@
       <template v-if="isDraftMode">
         <el-button :loading="submitting" @click="handleSaveDraft">保存草稿</el-button>
         <el-button type="primary" :loading="submitting" @click="handleSubmit">
-          提交流转
+          提交审核
         </el-button>
       </template>
       <el-button v-else type="primary" :loading="submitting" @click="handleSubmit">
-        保存
+        {{ submitButtonText }}
       </el-button>
     </div>
 
@@ -529,6 +535,10 @@ const selectedType = computed(() => configTypes.value.find((item) => item.code =
 const selectedTypeLabel = computed(() => selectedType.value?.name || '')
 const selectedTypeColor = computed(() => selectedType.value?.color || '')
 const showTimeCard = computed(() => isEditMode.value || shouldShowField('dueDate'))
+const showCurrentStatusField = computed(() => isEditMode.value && currentRequirement.value?.isDraft !== true)
+const isApprovalMode = computed(() => showCurrentStatusField.value && currentRequirement.value?.canApprove === true)
+const isDueDateReadOnly = computed(() => showCurrentStatusField.value)
+const submitButtonText = computed(() => isApprovalMode.value ? '提交审核' : '保存')
 const showCcField = computed(() => {
   if (isEditMode.value && currentRequirement.value?.isDraft !== true) {
     return true
@@ -1182,7 +1192,9 @@ function buildRequirementPayload() {
     payload.iterationId = formData.iterationId
     payload.ccUserIds = ccUserIds
     payload.startDate = normalizeDateValue(formData.startDate)
-    payload.dueDate = normalizeDateValue(formData.dueDate)
+    if (!isDueDateReadOnly.value) {
+      payload.dueDate = normalizeDateValue(formData.dueDate)
+    }
     payload.estimatedHours = normalizeNumberValue(formData.estimatedHours)
     return payload
   }
@@ -1340,10 +1352,10 @@ async function handleSubmit() {
       nextNodeId,
       projectId: formData.projectId,
     })
-    ElMessage.success('提交流转成功')
+    ElMessage.success('提交审核成功')
     router.push({ name: 'RequirementDetail', params: { id: submitted.id || draft.id } })
   } catch (error) {
-    ElMessage.error(resolveErrorMessage(error, isDraftMode.value ? '提交流转失败' : '更新失败'))
+    ElMessage.error(resolveErrorMessage(error, isDraftMode.value ? '提交审核失败' : '更新失败'))
   } finally {
     submitting.value = false
   }

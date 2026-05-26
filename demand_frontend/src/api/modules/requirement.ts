@@ -4,6 +4,7 @@ import type {
   NextNodeOption,
   Requirement,
   RequirementApprovalEvaluation,
+  RequirementApprovalSupplementCreate,
   RequirementComment,
   RequirementCommentCreate,
   RequirementCreate,
@@ -44,6 +45,14 @@ export function getMyRequirementPending(params: RequirementMyListQuery) {
   return request.get<ApiResponse<PageResult<Requirement>>>('/v1/requirements/my-pending', { params }) as unknown as Promise<PageResult<Requirement>>
 }
 
+/**
+ * 获取我的已办需求列表
+ */
+export function getMyRequirementDone(params?: { keyword?: string }) {
+  return request.get<ApiResponse<Requirement[]>>('/v1/requirements/my-done', { params })
+    .then(res => res.data || []) as unknown as Promise<Requirement[]>
+}
+
 export function getRequirementNextNodes(id: number) {
   return request.get<ApiResponse<NextNodeOption[]>>(`/v1/requirements/${id}/next-nodes`) as unknown as Promise<NextNodeOption[]>
 }
@@ -76,6 +85,17 @@ export function getApprovalEvaluations(id: number) {
   return request.get<ApiResponse<RequirementApprovalEvaluation[]>>(
     `/v1/requirements/${id}/approval-evaluations`,
   ) as unknown as Promise<RequirementApprovalEvaluation[]>
+}
+
+export function createApprovalEvaluationSupplement(
+  requirementId: number,
+  evaluationId: number,
+  data: RequirementApprovalSupplementCreate,
+) {
+  return request.post<ApiResponse>(
+    `/v1/requirements/${requirementId}/approval-evaluations/${evaluationId}/supplements`,
+    data,
+  ) as unknown as Promise<void>
 }
 
 export function createRequirementComment(id: number, data: RequirementCommentCreate) {

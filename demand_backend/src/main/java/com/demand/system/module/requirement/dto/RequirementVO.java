@@ -89,6 +89,17 @@ public class RequirementVO {
 
     private Integer childCount;
 
+    // 权限相关字段
+    private Boolean canEdit;
+
+    private Boolean canView;
+
+    private Boolean canApprove;
+
+    private Boolean isParticipant;
+
+    private String operationType;
+
     public Long getId() {
         return id;
     }
@@ -415,5 +426,45 @@ public class RequirementVO {
 
     public void setChildCount(Integer childCount) {
         this.childCount = childCount;
+    }
+
+    public Boolean getCanEdit() {
+        return canEdit;
+    }
+
+    public void setCanEdit(Boolean canEdit) {
+        this.canEdit = canEdit;
+    }
+
+    public Boolean getCanView() {
+        return canView;
+    }
+
+    public void setCanView(Boolean canView) {
+        this.canView = canView;
+    }
+
+    public Boolean getCanApprove() {
+        return canApprove;
+    }
+
+    public void setCanApprove(Boolean canApprove) {
+        this.canApprove = canApprove;
+    }
+
+    public Boolean getIsParticipant() {
+        return isParticipant;
+    }
+
+    public void setIsParticipant(Boolean isParticipant) {
+        this.isParticipant = isParticipant;
+    }
+
+    public String getOperationType() {
+        return operationType;
+    }
+
+    public void setOperationType(String operationType) {
+        this.operationType = operationType;
     }
 }

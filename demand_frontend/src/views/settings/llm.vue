@@ -10,10 +10,10 @@
         <div class="tab-header-left">
           <el-button :icon="Setting" circle @click="showColumnConfig = true" title="列设置" />
         </div>
-        <el-button type="primary" @click="openCreateProvider">
+        <AppButton type="primary" permission="button:llm-provider:create" @click="openCreateProvider">
           <el-icon><Plus /></el-icon>
           新增接入组
-        </el-button>
+        </AppButton>
       </div>
 
       <el-table :data="providers" border style="width: 100%" v-loading="loading" row-key="id">
@@ -68,10 +68,10 @@
                       <el-icon class="action-icon" @click="handleTestModel(model)"><Connection /></el-icon>
                     </el-tooltip>
                     <el-tooltip content="编辑" placement="top">
-                      <el-icon class="action-icon primary" @click="openEditModel(model)"><EditPen /></el-icon>
+                      <span v-permission="'button:llm-provider:update'" class="action-icon primary" @click="openEditModel(model)"><EditPen /></span>
                     </el-tooltip>
                     <el-tooltip content="删除" placement="top">
-                      <el-icon class="action-icon danger" @click="handleDeleteModel(model)"><Delete /></el-icon>
+                      <span v-permission="'button:llm-provider:delete'" class="action-icon danger" @click="handleDeleteModel(model)"><Delete /></span>
                     </el-tooltip>
                   </template>
                 </el-table-column>
@@ -129,10 +129,10 @@
                 <el-icon class="action-icon" @click="handleViewApiKey(row)"><View /></el-icon>
               </el-tooltip>
               <el-tooltip content="编辑" placement="top">
-                <el-icon class="action-icon primary" @click="openEditProvider(row)"><EditPen /></el-icon>
+                <span v-permission="'button:llm-provider:update'" class="action-icon primary" @click="openEditProvider(row)"><EditPen /></span>
               </el-tooltip>
               <el-tooltip content="删除" placement="top">
-                <el-icon class="action-icon danger" @click="handleDeleteProvider(row)"><Delete /></el-icon>
+                <span v-permission="'button:llm-provider:delete'" class="action-icon danger" @click="handleDeleteProvider(row)"><Delete /></span>
               </el-tooltip>
             </template>
           </el-table-column>
@@ -307,6 +307,7 @@ import {
   type LlmModelForm,
   type SniffedModel,
 } from '@/api/modules/llmProvider'
+import AppButton from '@/components/common/AppButton.vue'
 
 // ==================== State ====================
 

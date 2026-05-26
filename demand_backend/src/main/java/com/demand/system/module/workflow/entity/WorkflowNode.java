@@ -30,6 +30,10 @@ public class WorkflowNode {
 
     private Integer assigneeRoleId;
 
+    private Long assigneeRoleGroupId;
+
+    private Long assigneeOrgId;
+
     @com.baomidou.mybatisplus.annotation.TableField(typeHandler = JacksonTypeHandler.class)
     private List<Long> assigneeUserIds;
 
@@ -114,6 +118,22 @@ public class WorkflowNode {
 
     public void setAssigneeRoleId(Integer assigneeRoleId) {
         this.assigneeRoleId = assigneeRoleId;
+    }
+
+    public Long getAssigneeRoleGroupId() {
+        return assigneeRoleGroupId;
+    }
+
+    public void setAssigneeRoleGroupId(Long assigneeRoleGroupId) {
+        this.assigneeRoleGroupId = assigneeRoleGroupId;
+    }
+
+    public Long getAssigneeOrgId() {
+        return assigneeOrgId;
+    }
+
+    public void setAssigneeOrgId(Long assigneeOrgId) {
+        this.assigneeOrgId = assigneeOrgId;
     }
 
     public List<Long> getAssigneeUserIds() {

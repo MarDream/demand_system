@@ -38,6 +38,12 @@ export interface Requirement {
   maintFollowName?: string
   departmentName?: string
   childCount?: number
+  // 权限相关字段
+  canEdit?: boolean        // 可编辑
+  canView?: boolean        // 可查看
+  canApprove?: boolean     // 可审批
+  isParticipant?: boolean  // 是否参与人
+  operationType?: 'edit' | 'approve' | 'view'  // 操作类型
 }
 
 export interface RequirementAttachment {
@@ -161,6 +167,10 @@ export interface RequirementCommentCreate {
   content: string
 }
 
+export interface RequirementApprovalSupplementCreate {
+  content: string
+}
+
 export interface RequirementApprovalEvaluation {
   id: number
   requirementId: number
@@ -170,11 +180,19 @@ export interface RequirementApprovalEvaluation {
   nodeName: string
   nodeStatusCode?: string | null
   nodeStatusName?: string | null
+  parentId?: number | null
+  isSupplement?: boolean | null
+  canSupplement?: boolean | null
   evaluatorId: number
   evaluatorName?: string | null
-  rating: number
+  action?: string | null
+  actionLabel?: string | null
+  result?: 'SUBMIT' | 'PASS' | 'REJECT' | 'CANCEL' | 'SUPPLEMENT' | string | null
+  resultLabel?: string | null
+  rating?: number | null
   content?: string | null
   createdAt: string
+  supplements?: RequirementApprovalEvaluation[]
 }
 
 export interface CustomField {

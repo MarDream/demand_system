@@ -58,12 +58,12 @@
                 </span>
               </span>
               <span v-if="data.type === 'group' && data.id !== DEFAULT_ROLE_GROUP_KEY" class="tree-node-actions">
-                <el-button link type="primary" size="small" @click.stop="openEditRoleGroup(data.data)">编辑</el-button>
-                <el-button link type="danger" size="small" @click.stop="handleDeleteRoleGroup(data.data)">删除</el-button>
+                <el-button link type="primary" size="small" @click.stop="openEditRoleGroup(data.data)" v-permission="'button:role:update'">编辑</el-button>
+                <el-button link type="danger" size="small" @click.stop="handleDeleteRoleGroup(data.data)" v-permission="'button:role:delete'">删除</el-button>
               </span>
               <span v-else-if="data.type === 'role'" class="tree-node-actions">
-                <el-button link type="primary" size="small" @click.stop="openEdit(data.data)">编辑</el-button>
-                <el-button link type="danger" size="small" @click.stop="handleDelete(data.data)" :disabled="isSystemRole(data.data)">删除</el-button>
+                <el-button link type="primary" size="small" @click.stop="openEdit(data.data)" v-permission="'button:role:update'">编辑</el-button>
+                <el-button link type="danger" size="small" @click.stop="handleDelete(data.data)" :disabled="isSystemRole(data.data)" v-permission="'button:role:delete'">删除</el-button>
               </span>
             </span>
           </template>
@@ -911,21 +911,44 @@ async function handleDragEnd(draggingNode: any, dropNode: any, dropType: string,
     }
   }
 
-  if (role.roleGroupId === newRoleGroupId) {
-    return
-  }
+  const sameGroup = role.roleGroupId === newRoleGroupId
 
   try {
-    await updateRole(role.id, {
-      code: role.code,
-      name: role.name,
-      description: role.description,
-      roleGroupId: newRoleGroupId,
-    })
-    ElMessage.success('角色分组已调整')
+    if (!sameGroup) {
+      await updateRole(role.id, {
+        code: role.code,
+        name: role.name,
+        description: role.description,
+        roleGroupId: newRoleGroupId,
+      })
+    }
+
+    const tree = roleTreeRef.value
+    if (tree) {
+      const allSortItems: { id: number; roleGroupId: number | null; sortOrder: number }[] = []
+      tree.store.root.childNodes.forEach((groupNode: any) => {
+        const groupId = groupNode.data.id === DEFAULT_ROLE_GROUP_KEY
+          ? null
+          : (groupNode.data.data as RoleGroupItem)?.id ?? null
+        groupNode.childNodes.forEach((roleNode: any, index: number) => {
+          if (roleNode.data.type === 'role') {
+            allSortItems.push({
+              id: (roleNode.data.data as RoleItem).id,
+              roleGroupId: groupId,
+              sortOrder: index + 1,
+            })
+          }
+        })
+      })
+      if (allSortItems.length > 0) {
+        await batchSortRoles(allSortItems)
+      }
+    }
+
+    ElMessage.success(sameGroup ? '排序已更新' : '角色分组已调整')
     await fetchRoles()
   } catch {
-    ElMessage.error('调整分组失败')
+    ElMessage.error(sameGroup ? '排序更新失败' : '调整分组失败')
     await fetchRoles()
   }
 }

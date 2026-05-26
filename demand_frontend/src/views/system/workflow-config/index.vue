@@ -7,10 +7,10 @@
             <h2>{{ pageTitle }}</h2>
             <p>{{ pageDescription }}</p>
           </div>
-          <el-button type="primary" @click="createNewWorkflow">
+          <AppButton type="primary" permission="button:workflow:create" @click="createNewWorkflow">
             <el-icon><Plus /></el-icon>
             新建工作流
-          </el-button>
+          </AppButton>
         </div>
 
         <div class="overview-metrics">
@@ -114,12 +114,13 @@
               <el-table-column label="操作" min-width="360" fixed="right">
                 <template #default="{ row }">
                   <el-button link type="primary" @click="viewWorkflow(row)">查看</el-button>
-                  <el-button link type="primary" @click="editWorkflow(row)">编辑</el-button>
+                  <el-button link type="primary" @click="editWorkflow(row)" v-permission="'button:workflow:update'">编辑</el-button>
                   <el-button link type="info" @click="focusApprovalHistory(row)">审核记录</el-button>
                   <el-button
                     link
                     :type="row.isActive === 1 ? 'warning' : 'success'"
                     @click="handleToggleActivation(row)"
+                    v-permission="'button:workflow:activate'"
                   >
                     {{ row.isActive === 1 ? '停用' : '启用' }}
                   </el-button>
@@ -128,6 +129,7 @@
                     type="warning"
                     :disabled="versionApprovalStatus(row) === 'PENDING'"
                     @click="openVersionMetaDialog(row)"
+                    v-permission="'button:workflow:update'"
                   >
                     版本信息
                   </el-button>
@@ -136,6 +138,7 @@
                     type="danger"
                     :disabled="row.isActive === 1"
                     @click="handleDeleteVersion(row)"
+                    v-permission="'button:workflow:delete'"
                   >
                     删除
                   </el-button>
@@ -239,6 +242,7 @@
                     type="primary"
                     size="small"
                     @click="handleApprove(row)"
+                    v-permission="'button:workflow:approve'"
                   >
                     通过
                   </el-button>
@@ -247,6 +251,7 @@
                     type="danger"
                     size="small"
                     @click="handleReject(row)"
+                    v-permission="'button:workflow:approve'"
                   >
                     拒绝
                   </el-button>
@@ -420,6 +425,7 @@
             v-if="detailTask.status === 'PENDING' && canProcessApproval"
             type="primary"
             @click="handleApprove(detailTask)"
+            v-permission="'button:workflow:approve'"
           >
             审核通过
           </el-button>
@@ -427,6 +433,7 @@
             v-if="detailTask.status === 'PENDING' && canProcessApproval"
             type="danger"
             @click="handleReject(detailTask)"
+            v-permission="'button:workflow:approve'"
           >
             审核拒绝
           </el-button>
@@ -442,6 +449,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import PageContainer from '@/components/common/PageContainer.vue'
+import AppButton from '@/components/common/AppButton.vue'
 import { formatDate as formatDateTime } from '@/utils/format'
 import { resolveActiveMenuPath } from '@/utils/menuNavigation'
 import { isWorkflowVersion, sameWorkflowVersion } from '@/utils/workflowVersion'

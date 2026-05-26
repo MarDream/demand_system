@@ -26,6 +26,8 @@ public class Role {
 
     private Integer isSystem;
 
+    private Integer isAdmin;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
@@ -87,6 +89,14 @@ public class Role {
 
     public void setIsSystem(Integer isSystem) {
         this.isSystem = isSystem;
+    }
+
+    public Integer getIsAdmin() {
+        return isAdmin;
+    }
+
+    public void setIsAdmin(Integer isAdmin) {
+        this.isAdmin = isAdmin;
     }
 
     public LocalDateTime getCreatedAt() {

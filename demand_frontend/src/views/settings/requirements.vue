@@ -9,10 +9,10 @@
       <el-tab-pane label="需求类型" name="types">
         <div class="tab-content">
           <div class="tab-header">
-            <el-button type="primary" @click="openTypeDialog()">
+            <AppButton type="primary" permission="button:requirement-config:create" @click="openTypeDialog()">
               <el-icon><Plus /></el-icon>
               新增类型
-            </el-button>
+            </AppButton>
           </div>
 
           <el-table ref="typeTableRef" :data="types" border style="width: 100%" row-key="id">
@@ -42,12 +42,8 @@
             </el-table-column>
             <el-table-column label="操作" width="100" fixed="right">
               <template #default="{ row }">
-                <el-tooltip content="编辑">
-                  <el-button link type="primary" @click="openTypeDialog(row)"><el-icon><EditPen /></el-icon></el-button>
-                </el-tooltip>
-                <el-tooltip content="删除">
-                  <el-button link type="danger" @click="deleteType(row.id!)"><el-icon><Delete /></el-icon></el-button>
-                </el-tooltip>
+                <AppButton link type="primary" permission="button:requirement-config:update" @click="openTypeDialog(row)"><el-icon><EditPen /></el-icon></AppButton>
+                <AppButton link type="danger" permission="button:requirement-config:delete" @click="deleteType(row.id!)"><el-icon><Delete /></el-icon></AppButton>
               </template>
             </el-table-column>
           </el-table>
@@ -57,10 +53,10 @@
       <el-tab-pane label="优先级" name="priorities">
         <div class="tab-content">
           <div class="tab-header">
-            <el-button type="primary" @click="openPriorityDialog()">
+            <AppButton type="primary" permission="button:requirement-config:create" @click="openPriorityDialog()">
               <el-icon><Plus /></el-icon>
               新增优先级
-            </el-button>
+            </AppButton>
           </div>
 
           <el-table ref="priorityTableRef" :data="priorities" border style="width: 100%" row-key="id">
@@ -91,12 +87,8 @@
             </el-table-column>
             <el-table-column label="操作" width="100" fixed="right">
               <template #default="{ row }">
-                <el-tooltip content="编辑">
-                  <el-button link type="primary" @click="openPriorityDialog(row)"><el-icon><EditPen /></el-icon></el-button>
-                </el-tooltip>
-                <el-tooltip content="删除">
-                  <el-button link type="danger" @click="deletePriority(row.id!)"><el-icon><Delete /></el-icon></el-button>
-                </el-tooltip>
+                <AppButton link type="primary" permission="button:requirement-config:update" @click="openPriorityDialog(row)"><el-icon><EditPen /></el-icon></AppButton>
+                <AppButton link type="danger" permission="button:requirement-config:delete" @click="deletePriority(row.id!)"><el-icon><Delete /></el-icon></AppButton>
               </template>
             </el-table-column>
           </el-table>
@@ -106,10 +98,10 @@
       <el-tab-pane label="节点状态" name="nodeStatuses">
         <div class="tab-content">
           <div class="tab-header">
-            <el-button type="primary" @click="openNodeStatusDialog()">
+            <AppButton type="primary" permission="button:requirement-config:create" @click="openNodeStatusDialog()">
               <el-icon><Plus /></el-icon>
               新增节点状态
-            </el-button>
+            </AppButton>
           </div>
 
           <el-table ref="nodeStatusTableRef" :data="nodeStatuses" border style="width: 100%" row-key="id">
@@ -140,12 +132,8 @@
             <el-table-column prop="sortOrder" label="排序" width="80" align="center" />
             <el-table-column label="操作" width="100" fixed="right">
               <template #default="{ row }">
-                <el-tooltip content="编辑">
-                  <el-button link type="primary" @click="openNodeStatusDialog(row)"><el-icon><EditPen /></el-icon></el-button>
-                </el-tooltip>
-                <el-tooltip content="删除">
-                  <el-button link type="danger" @click="deleteNodeStatus(row.id)"><el-icon><Delete /></el-icon></el-button>
-                </el-tooltip>
+                <AppButton link type="primary" permission="button:requirement-config:update" @click="openNodeStatusDialog(row)"><el-icon><EditPen /></el-icon></AppButton>
+                <AppButton link type="danger" permission="button:requirement-config:delete" @click="deleteNodeStatus(row.id)"><el-icon><Delete /></el-icon></AppButton>
               </template>
             </el-table-column>
           </el-table>
@@ -245,6 +233,7 @@ import { requirementConfigApi, type RequirementType, type Priority, type SortIte
 import { nodeStatusApi, type NodeStatus, type SortItem as NodeStatusSortItem } from '@/api/modules/workflow-engine'
 import { normalizeText } from '@/utils/format'
 import Sortable, { type SortableEvent } from 'sortablejs'
+import AppButton from '@/components/common/AppButton.vue'
 
 const activeTab = ref('types')
 const types = ref<RequirementType[]>([])

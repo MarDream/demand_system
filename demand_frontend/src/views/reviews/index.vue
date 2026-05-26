@@ -54,9 +54,7 @@
             <el-tooltip content="查看详情">
               <el-button link type="primary" @click="viewDetail(row)"><el-icon><View /></el-icon></el-button>
             </el-tooltip>
-            <el-tooltip content="编辑">
-              <el-button link type="primary" @click="editReview(row)"><el-icon><EditPen /></el-icon></el-button>
-            </el-tooltip>
+            <AppButton link type="primary" permission="button:review:update" @click="editReview(row)"><el-icon><EditPen /></el-icon></AppButton>
           </template>
         </el-table-column>
       </el-table>
@@ -115,7 +113,7 @@
 
       <template #footer v-if="detailMode === 'edit'">
         <el-button @click="detailVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitReview">提交</el-button>
+        <AppButton type="primary" permission="button:review:submit" @click="submitReview">提交</AppButton>
       </template>
     </el-dialog>
   </div>
@@ -126,6 +124,7 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { View, EditPen } from '@element-plus/icons-vue'
 import { updateReview } from '@/api/modules/review'
+import AppButton from '@/components/common/AppButton.vue'
 
 interface ReviewRecord {
   id: number

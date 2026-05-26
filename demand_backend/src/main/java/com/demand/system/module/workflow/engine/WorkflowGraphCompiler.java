@@ -77,11 +77,34 @@ public class WorkflowGraphCompiler {
             WorkflowNodePermission permission = new WorkflowNodePermission();
             permission.setWorkflowVersionId(workflowVersionId);
             permission.setNodeId(node.getNodeId());
-            if ("SPECIFIED_ROLE".equals(node.getAssigneeType()) && node.getAssigneeRoleId() != null) {
-                permission.setAllowedRoles("[\"ROLE_" + node.getAssigneeRoleId() + "\"]");
+            String assigneeType = node.getAssigneeType();
+            if (!StringUtils.hasText(assigneeType)) {
+                permissions.add(permission);
+                continue;
             }
-            if ("SPECIFIED_USER".equals(node.getAssigneeType()) && node.getAssigneeUserIds() != null) {
-                permission.setAllowedUsers(writeJson(node.getAssigneeUserIds()));
+            switch (assigneeType) {
+                case "SPECIFIED_ROLE":
+                    if (node.getAssigneeRoleId() != null) {
+                        permission.setAllowedRoles("[\"ROLE_" + node.getAssigneeRoleId() + "\"]");
+                    }
+                    break;
+                case "SPECIFIED_ROLE_GROUP":
+                    // 角色组权限将在运行时动态解析
+                    if (node.getAssigneeRoleGroupId() != null) {
+                        permission.setAllowedRoles("[\"ROLE_GROUP_" + node.getAssigneeRoleGroupId() + "\"]");
+                    }
+                    break;
+                case "SPECIFIED_ORG":
+                    // 组织权限将在运行时动态解析
+                    if (node.getAssigneeOrgId() != null) {
+                        permission.setAllowedUsers("[\"ORG_" + node.getAssigneeOrgId() + "\"]");
+                    }
+                    break;
+                case "SPECIFIED_USER":
+                    if (node.getAssigneeUserIds() != null) {
+                        permission.setAllowedUsers(writeJson(node.getAssigneeUserIds()));
+                    }
+                    break;
             }
             permissions.add(permission);
         }

@@ -92,12 +92,57 @@ public final class WorkflowNodeUtils {
         if (!StringUtils.hasText(assigneeType)) {
             return false;
         }
-        if ("SPECIFIED_USER".equals(assigneeType)) {
-            return node.getAssigneeUserIds() != null && !node.getAssigneeUserIds().isEmpty();
+        // 动态验证：根据处理人类型检查对应的配置字段
+        switch (assigneeType) {
+            case "SPECIFIED_USER":
+                return node.getAssigneeUserIds() != null && !node.getAssigneeUserIds().isEmpty();
+            case "SPECIFIED_ROLE":
+                return node.getAssigneeRoleId() != null;
+            case "SPECIFIED_ROLE_GROUP":
+                return node.getAssigneeRoleGroupId() != null;
+            case "SPECIFIED_ORG":
+                return node.getAssigneeOrgId() != null;
+            case "PREV_APPROVER":
+            case "CREATOR":
+                return true;
+            default:
+                // 未来扩展：如果新增类型但未配置对应字段，通过 properties 扩展字段检查
+                return hasValidAssigneeFromProperties(node, assigneeType);
         }
-        if ("SPECIFIED_ROLE".equals(assigneeType)) {
-            return node.getAssigneeRoleId() != null;
+    }
+
+    /**
+     * 从 properties 中动态检查处理人配置，支持未来扩展
+     */
+    private static boolean hasValidAssigneeFromProperties(WorkflowNode node, String assigneeType) {
+        if (node.getProperties() == null) {
+            return false;
         }
-        return false;
+        // 根据类型名称推断可能的字段名，如 SPECIFIED_DEPARTMENT -> assigneeDepartmentId
+        String expectedKey = "assignee" + assigneeType.replace("SPECIFIED_", "").toLowerCase() + "Id";
+        Object value = node.getProperties().get(expectedKey);
+        if (value == null) {
+            // 尝试驼峰命名
+            String camelKey = convertToCamelCase(expectedKey);
+            value = node.getProperties().get(camelKey);
+        }
+        return value != null;
+    }
+
+    private static String convertToCamelCase(String snakeCase) {
+        if (snakeCase == null || snakeCase.isEmpty()) {
+            return snakeCase;
+        }
+        StringBuilder result = new StringBuilder();
+        boolean nextUpper = false;
+        for (char c : snakeCase.toCharArray()) {
+            if (c == '_') {
+                nextUpper = true;
+            } else {
+                result.append(nextUpper ? Character.toUpperCase(c) : c);
+                nextUpper = false;
+            }
+        }
+        return result.toString();
     }
 }

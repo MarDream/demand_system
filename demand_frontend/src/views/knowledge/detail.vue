@@ -3,6 +3,13 @@
     <div class="kb-detail-layout">
       <!-- 主内容区 -->
       <main class="kb-main">
+        <div class="detail-toolbar" style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+          <AppButton type="primary" permission="button:knowledge:upload" @click="showUploadDialog = true">
+            <el-icon><Upload /></el-icon>
+            上传文档
+          </AppButton>
+        </div>
+
         <!-- 筛选栏 -->
         <div class="filter-bar">
           <div class="filter-row">
@@ -86,13 +93,13 @@
               <span class="batch-count">已选 {{ selectedRows.length }} 项</span>
             </div>
             <div class="batch-actions">
-              <el-button size="small" type="primary" :loading="batchDownloading" @click="handleBatchDownload">
+              <el-button size="small" type="primary" :loading="batchDownloading" @click="handleBatchDownload" v-permission="'button:knowledge:download'">
                 {{ selectedRows.length >= 2 ? '打包下载' : '下载' }} ({{ selectedRows.length }})
               </el-button>
               <el-button size="small" type="warning" :loading="batchRetrying" @click="handleBatchRetry">
                 批量重传
               </el-button>
-              <el-button size="small" type="danger" :loading="batchDeleting" @click="handleBatchDelete">
+              <el-button size="small" type="danger" :loading="batchDeleting" @click="handleBatchDelete" v-permission="'button:knowledge:delete'">
                 批量删除
               </el-button>
             </div>
@@ -166,7 +173,7 @@
                       </el-button>
                     </el-tooltip>
                     <el-tooltip content="下载">
-                      <el-button link type="primary" size="small" @click="handleDownload(row)">
+                      <el-button link type="primary" size="small" @click="handleDownload(row)" v-permission="'button:knowledge:download'">
                         <el-icon><Download /></el-icon>
                       </el-button>
                     </el-tooltip>
@@ -175,7 +182,7 @@
                   <!-- 管理类 -->
                   <div class="action-group__item">
                     <el-tooltip content="分享">
-                      <el-button link type="primary" size="small" @click="handleShare(row)">
+                      <el-button link type="primary" size="small" @click="handleShare(row)" v-permission="'button:knowledge:share'">
                         <el-icon><Share /></el-icon>
                       </el-button>
                     </el-tooltip>
@@ -194,7 +201,7 @@
                       </el-button>
                     </el-tooltip>
                     <el-tooltip content="删除">
-                      <el-button link type="danger" size="small" @click="handleDelete(row)">
+                      <el-button link type="danger" size="small" @click="handleDelete(row)" v-permission="'button:knowledge:delete'">
                         <el-icon><Delete /></el-icon>
                       </el-button>
                     </el-tooltip>
@@ -327,9 +334,10 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import QRCode from 'qrcode'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Loading, View, Download, Share, RefreshRight, Delete, Document, Search } from '@element-plus/icons-vue'
+import { Loading, View, Download, Share, RefreshRight, Delete, Document, Search, Upload } from '@element-plus/icons-vue'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppDialog from '@/components/common/AppDialog.vue'
+import AppButton from '@/components/common/AppButton.vue'
 import DocumentUploadDialog from '@/components/document/DocumentUploadDialog.vue'
 import FilePreviewDialog from '@/components/document/FilePreviewDialog.vue'
 import { useKnowledgeStore } from '@/stores/knowledge'

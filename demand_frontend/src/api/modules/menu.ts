@@ -74,6 +74,7 @@ export interface RoleItem {
   name: string
   description: string
   roleGroupId?: number | null
+  sortOrder?: number | null
   isSystem: number
 }
 

@@ -151,6 +151,10 @@ public class UserServiceImpl implements UserService {
             user.setOrgId(dto.getOrgId());
             deriveOrgFields(user, dto.getOrgId());
         }
+        // 工号缺失时自动生成
+        if (user.getJobNumber() == null || user.getJobNumber().isBlank()) {
+            user.setJobNumber(generateJobNumber());
+        }
         userMapper.updateById(user);
     }
 
@@ -251,6 +255,22 @@ public class UserServiceImpl implements UserService {
         vo.setOrgId(user.getOrgId());
         vo.setCreatedAt(user.getCreatedAt());
         vo.setUpdatedAt(user.getUpdatedAt());
+
+        List<Long> roleIds = userRoleMapper.selectList(new LambdaQueryWrapper<UserRole>()
+                        .eq(UserRole::getUserId, user.getId()))
+                .stream()
+                .map(UserRole::getRoleId)
+                .filter(Objects::nonNull)
+                .toList();
+        if (!roleIds.isEmpty()) {
+            List<Role> userRoles = roleMapper.selectBatchIds(roleIds);
+            String roleNames = userRoles.stream()
+                    .map(Role::getName)
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .collect(Collectors.joining(", "));
+            vo.setSystemRole(roleNames.isEmpty() ? null : roleNames);
+        }
 
         // Prefer orgId for display, fallback to regionId/departmentId
         Long displayOrgId = user.getOrgId() != null ? user.getOrgId() : user.getDepartmentId();
