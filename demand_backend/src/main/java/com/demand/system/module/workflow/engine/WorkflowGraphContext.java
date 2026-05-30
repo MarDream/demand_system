@@ -13,10 +13,14 @@ public class WorkflowGraphContext {
 
     private final Map<String, WorkflowNode> nodesById;
     private final Map<String, List<WorkflowEdge>> outgoing;
+    private final Map<String, List<WorkflowEdge>> incoming;
 
-    public WorkflowGraphContext(Map<String, WorkflowNode> nodesById, Map<String, List<WorkflowEdge>> outgoing) {
+    public WorkflowGraphContext(Map<String, WorkflowNode> nodesById,
+                                Map<String, List<WorkflowEdge>> outgoing,
+                                Map<String, List<WorkflowEdge>> incoming) {
         this.nodesById = nodesById;
         this.outgoing = outgoing;
+        this.incoming = incoming;
     }
 
     public static WorkflowGraphContext from(List<WorkflowNode> nodes, List<WorkflowEdge> edges) {
@@ -30,8 +34,10 @@ public class WorkflowGraphContext {
         }
 
         Map<String, List<WorkflowEdge>> outgoing = new LinkedHashMap<>();
+        Map<String, List<WorkflowEdge>> incoming = new LinkedHashMap<>();
         for (String nodeId : nodesById.keySet()) {
             outgoing.put(nodeId, new ArrayList<>());
+            incoming.put(nodeId, new ArrayList<>());
         }
         if (edges != null) {
             for (WorkflowEdge edge : edges) {
@@ -39,9 +45,12 @@ public class WorkflowGraphContext {
                     continue;
                 }
                 outgoing.computeIfAbsent(edge.getSourceNodeId(), key -> new ArrayList<>()).add(edge);
+                if (edge.getTargetNodeId() != null) {
+                    incoming.computeIfAbsent(edge.getTargetNodeId(), key -> new ArrayList<>()).add(edge);
+                }
             }
         }
-        return new WorkflowGraphContext(nodesById, outgoing);
+        return new WorkflowGraphContext(nodesById, outgoing, incoming);
     }
 
     public WorkflowNode getNode(String nodeId) {
@@ -50,6 +59,10 @@ public class WorkflowGraphContext {
 
     public List<WorkflowEdge> outgoing(String nodeId) {
         return outgoing.getOrDefault(nodeId, Collections.emptyList());
+    }
+
+    public List<WorkflowEdge> incoming(String nodeId) {
+        return incoming.getOrDefault(nodeId, Collections.emptyList());
     }
 
     public Map<String, WorkflowNode> nodesById() {

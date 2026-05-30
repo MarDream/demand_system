@@ -430,6 +430,7 @@ addLocale('zh', {
 })
 
 import { requirementApi, projectApi, relationApi, userApi, iterationApi } from '@/api'
+import { getRequirementTemplateByType } from '@/api/modules/requirement'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
 import { downloadRequirementAttachment, uploadRequirementAttachment } from '@/api/modules/file'
 import type { RelationItem } from '@/api/modules/relation'
@@ -437,7 +438,7 @@ import { buildRichTextImagePreviewUrl, hydrateRichTextImageHtml, serializeRichTe
 import { formatDate, normalizeText, stripPriorityPrefix } from '@/utils/format'
 import PageContainer from '@/components/common/PageContainer.vue'
 import { useUserStore } from '@/stores'
-import type { NextNodeOption, Requirement, RequirementAttachment } from '@/types/requirement'
+import type { NextNodeOption, Requirement, RequirementAttachment, TemplateSection } from '@/types/requirement'
 import type { OrgNode, User } from '@/types/user'
 
 const route = useRoute()
@@ -479,6 +480,55 @@ const relatedRequirements = ref<EditableRelationItem[]>([])
 // Requirement config types and priorities
 const configTypes = ref<any[]>([])
 const configPriorities = ref<any[]>([])
+const templateApplying = ref(false)
+
+function isDescriptionEmpty(html: string) {
+  const text = html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim()
+  return !text
+}
+
+function buildTemplateDescription(sections: TemplateSection[]) {
+  return sections.map((section) => {
+    if (section.fieldType === 'richtext') {
+      if (section.defaultContent) return section.defaultContent
+      return `<h3>${section.sectionName}</h3><p>${section.placeholder || '请填写...'}</p>`
+    }
+    if (section.fieldType === 'textarea' || section.fieldType === 'text') {
+      return `<h3>${section.sectionName}</h3><p>${section.placeholder || '请填写...'}</p>`
+    }
+    return ''
+  }).filter(Boolean).join('')
+}
+
+async function applyRequirementTemplate(typeCode?: string, force = false) {
+  if (!typeCode || isEditMode.value || templateApplying.value) return
+  templateApplying.value = true
+  try {
+    const template = await getRequirementTemplateByType(typeCode)
+    const sections = template.templateContent?.sections || []
+    if (sections.length === 0) return
+
+    const nextDescription = buildTemplateDescription(sections)
+    if (!nextDescription) return
+
+    if (!force && !isDescriptionEmpty(formData.description)) {
+      try {
+        await ElMessageBox.confirm('应用模板将覆盖当前描述内容，是否继续？', '应用需求模板', {
+          confirmButtonText: '应用',
+          cancelButtonText: '取消',
+          type: 'warning',
+        })
+      } catch {
+        return
+      }
+    }
+    formData.description = nextDescription
+  } catch {
+    // 无模板或加载失败时使用默认空白描述
+  } finally {
+    templateApplying.value = false
+  }
+}
 
 const editId = computed(() => {
   const q = route.query.id
@@ -1381,6 +1431,7 @@ async function loadConfig() {
     configPriorities.value = priorityList.map((p: any) => ({ ...p, name: stripPriorityPrefix(normalizeText(p.name)) }))
     if (!isEditMode.value && configTypes.value.length > 0) {
       formData.type = configTypes.value[0].code
+      await applyRequirementTemplate(formData.type, true)
     }
   } catch {
     console.error('Failed to load requirement config')
@@ -1410,6 +1461,7 @@ async function loadCreateFormConfig(projectId = formData.projectId) {
 
     if (res?.defaultTypeCode) {
       formData.type = res.defaultTypeCode
+      await applyRequirementTemplate(formData.type, true)
     }
   } catch {
     const roleFallback = userStore.roles.some((role) => ['admin', '产品经理', 'PM'].includes(role))
@@ -1425,6 +1477,10 @@ onMounted(async () => {
     loadOrgTree(),
     loadConfig(),
   ])
+})
+
+watch(() => formData.type, (typeCode) => {
+  void applyRequirementTemplate(typeCode)
 })
 </script>
 

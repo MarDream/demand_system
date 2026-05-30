@@ -9,6 +9,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.sql.Date;
+import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -99,6 +101,7 @@ public class WorkflowVisualActivationIT extends BaseIntegrationTest {
                                 "requirementId", requirementId,
                                 "toNodeId", "node-end",
                                 "action", "approve",
+                                "rating", 5,
                                 "lockVersion", 0
                         ))))
                 .andExpect(status().isOk())
@@ -111,10 +114,72 @@ public class WorkflowVisualActivationIT extends BaseIntegrationTest {
                                 "requirementId", requirementId,
                                 "toNodeId", "node-end",
                                 "action", "approve",
+                                "rating", 5,
                                 "lockVersion", 0
                         ))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(409));
+    }
+
+    @Test
+    void myPending_shouldMatchLegacyRoleNameAndApproveWorkflow() throws Exception {
+        String adminToken = loginAndGetAccessToken("admin", DEFAULT_PASSWORD);
+        String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
+        String roleName = "运营需求分析员";
+        String roleCode = "OPS_ANALYST_" + suffix;
+        String analystUsername = "ops-analyst-" + suffix.toLowerCase();
+
+        Long roleId = createRole(roleCode, roleName);
+        Long analystUserId = createLegacyRoleUser(analystUsername, "运营分析员", roleName);
+        String analystToken = loginAndGetAccessToken(analystUsername, DEFAULT_PASSWORD);
+
+        Long projectId = createProject("角色待办项目-" + UUID.randomUUID(), 1L);
+        Long versionId = saveAndPublishRoleBasedVisualWorkflow(projectId, adminToken, roleId);
+        Long approvalId = getPendingApprovalId(versionId);
+        approveWorkflow(approvalId, adminToken);
+        activateVisualWorkflow(versionId, adminToken);
+
+        Long firstRequirementId = submitDraftToFirstNode(projectId, adminToken, "角色待办-1-" + UUID.randomUUID());
+        Long secondRequirementId = submitDraftToFirstNode(projectId, adminToken, "角色待办-2-" + UUID.randomUUID());
+
+        mockMvc.perform(get("/api/v1/requirements/my-pending")
+                        .header("Authorization", "Bearer " + analystToken)
+                        .queryParam("pageNum", "1")
+                        .queryParam("pageSize", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.total").value(2))
+                .andExpect(jsonPath("$.data.list.length()").value(2))
+                .andExpect(jsonPath("$.data.list[0].status").value("待分析"));
+
+        mockMvc.perform(post("/api/v1/workflow-engine/transition")
+                        .header("Authorization", "Bearer " + analystToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "requirementId", firstRequirementId,
+                                "toNodeId", "node-end",
+                                "action", "approve",
+                                "rating", 5,
+                                "comment", "分析完成",
+                                "lockVersion", 0
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        mockMvc.perform(get("/api/v1/requirements/{id}", firstRequirementId)
+                        .header("Authorization", "Bearer " + analystToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.status").value("已验收"));
+
+        mockMvc.perform(get("/api/v1/requirements/my-pending")
+                        .header("Authorization", "Bearer " + analystToken)
+                        .queryParam("pageNum", "1")
+                        .queryParam("pageSize", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.list[0].id").value(secondRequirementId));
     }
 
     @Test
@@ -215,6 +280,13 @@ public class WorkflowVisualActivationIT extends BaseIntegrationTest {
         return JsonPath.read(result.getResponse().getContentAsString(), "$.data");
     }
 
+    private Long submitDraftToFirstNode(Long projectId, String token, String title) throws Exception {
+        Long requirementId = createDraftRequirement(projectId, token, title);
+        String nextNodeId = getFirstNextNodeId(requirementId, token);
+        submitDraft(requirementId, token, nextNodeId);
+        return requirementId;
+    }
+
     private String getFirstNextNodeId(Long requirementId, String token) throws Exception {
         MvcResult result = mockMvc.perform(get("/api/v1/requirements/{id}/next-nodes", requirementId)
                         .header("Authorization", "Bearer " + token))
@@ -253,6 +325,42 @@ public class WorkflowVisualActivationIT extends BaseIntegrationTest {
         return config;
     }
 
+    private Long saveAndPublishRoleBasedVisualWorkflow(Long projectId, String token, Long roleId) throws Exception {
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("nodes", List.of(
+                visualNode("node-start", "start", "开始", 100, 100, null, null, null),
+                visualRoleNode("node-approve", "approval", "待分析", 300, 100, roleId.intValue(),
+                        Map.of("nodeStatusCode", "PENDING_ANALYSIS")),
+                visualNode("node-end", "end", "已验收", 500, 100, null, null, Map.of("nodeStatusCode", "ACCEPTED"))
+        ));
+        config.put("edges", List.of(
+                visualEdge("edge-1", "node-start", "node-approve", "提交"),
+                visualEdge("edge-2", "node-approve", "node-end", "完成")
+        ));
+
+        mockMvc.perform(post("/api/v1/workflows/{projectId}/config", projectId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(config)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        MvcResult versionResult = mockMvc.perform(get("/api/v1/workflows/{projectId}/versions", projectId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andReturn();
+
+        Long versionId = JsonPath.read(versionResult.getResponse().getContentAsString(), "$.data[0].id");
+
+        mockMvc.perform(post("/api/v1/workflows/{projectId}/publish", projectId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        return versionId;
+    }
+
     private Map<String, Object> visualNode(String nodeId,
                                            String nodeType,
                                            String nodeName,
@@ -271,6 +379,27 @@ public class WorkflowVisualActivationIT extends BaseIntegrationTest {
             node.put("assigneeType", assigneeType);
             node.put("assigneeUserIds", assigneeUserIds);
         }
+        if (properties != null) {
+            node.put("properties", properties);
+        }
+        return node;
+    }
+
+    private Map<String, Object> visualRoleNode(String nodeId,
+                                               String nodeType,
+                                               String nodeName,
+                                               int x,
+                                               int y,
+                                               Integer assigneeRoleId,
+                                               Map<String, Object> properties) {
+        Map<String, Object> node = new LinkedHashMap<>();
+        node.put("nodeId", nodeId);
+        node.put("nodeType", nodeType);
+        node.put("nodeName", nodeName);
+        node.put("positionX", x);
+        node.put("positionY", y);
+        node.put("assigneeType", "SPECIFIED_ROLE");
+        node.put("assigneeRoleId", assigneeRoleId);
         if (properties != null) {
             node.put("properties", properties);
         }
@@ -301,6 +430,37 @@ public class WorkflowVisualActivationIT extends BaseIntegrationTest {
 
     private Long getAdminUserId() {
         return jdbcTemplate.queryForObject("SELECT id FROM users WHERE username = 'admin'", Long.class);
+    }
+
+    private Long createRole(String code, String name) {
+        jdbcTemplate.update("""
+                        INSERT INTO roles (code, name, description, is_system, deleted_at, created_at, updated_at)
+                        VALUES (?, ?, ?, 0, 0, NOW(), NOW())
+                        """,
+                code, name, "集成测试角色");
+        return jdbcTemplate.queryForObject("SELECT id FROM roles WHERE code = ?", Long.class, code);
+    }
+
+    private Long createLegacyRoleUser(String username, String realName, String systemRole) {
+        jdbcTemplate.update("""
+                        INSERT INTO users (username, password, real_name, email, phone, avatar, status, created_at, updated_at, deleted_at)
+                        VALUES (?, ?, ?, ?, NULL, NULL, 'active', NOW(), NOW(), 0)
+                        """,
+                username,
+                "$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iKTVKIUi",
+                realName,
+                username + "@test.local"
+        );
+
+        Long userId = jdbcTemplate.queryForObject("SELECT id FROM users WHERE username = ?", Long.class, username);
+        jdbcTemplate.update("""
+                        INSERT INTO user_organizations (user_id, region_id, department_id, system_role, manager_id, effective_date)
+                        VALUES (?, 1, 1, ?, NULL, ?)
+                        """,
+                userId,
+                systemRole,
+                Date.valueOf(LocalDate.of(2026, 1, 1)));
+        return userId;
     }
 
     private Long createProject(String projectName, Long creatorId) {

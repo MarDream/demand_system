@@ -27,6 +27,24 @@ public class WorkflowAvailableActionsDTO {
     /** 当前处于审批节点且需要提交评价后方可流转 */
     private Boolean evaluationRequired;
 
+    /** 当前节点启用会签 */
+    private Boolean countersignEnabled;
+
+    /** 当前用户有待处理的会签任务 */
+    private Boolean canCountersign;
+
+    /** 会签尚未满足流转条件 */
+    private Boolean countersignPending;
+
+    /** 当前处于并行分支执行中 */
+    private Boolean parallelActive;
+
+    /** 当前激活的并行分支 ID */
+    private Long activeParallelBranchId;
+
+    /** 并行分支列表 */
+    private java.util.List<ParallelBranchVO> parallelBranches;
+
     public Boolean getCanTransition() {
         return canTransition;
     }
@@ -113,5 +131,53 @@ public class WorkflowAvailableActionsDTO {
 
     public void setEvaluationRequired(Boolean evaluationRequired) {
         this.evaluationRequired = evaluationRequired;
+    }
+
+    public Boolean getCountersignEnabled() {
+        return countersignEnabled;
+    }
+
+    public void setCountersignEnabled(Boolean countersignEnabled) {
+        this.countersignEnabled = countersignEnabled;
+    }
+
+    public Boolean getCanCountersign() {
+        return canCountersign;
+    }
+
+    public void setCanCountersign(Boolean canCountersign) {
+        this.canCountersign = canCountersign;
+    }
+
+    public Boolean getCountersignPending() {
+        return countersignPending;
+    }
+
+    public void setCountersignPending(Boolean countersignPending) {
+        this.countersignPending = countersignPending;
+    }
+
+    public Boolean getParallelActive() {
+        return parallelActive;
+    }
+
+    public void setParallelActive(Boolean parallelActive) {
+        this.parallelActive = parallelActive;
+    }
+
+    public Long getActiveParallelBranchId() {
+        return activeParallelBranchId;
+    }
+
+    public void setActiveParallelBranchId(Long activeParallelBranchId) {
+        this.activeParallelBranchId = activeParallelBranchId;
+    }
+
+    public java.util.List<ParallelBranchVO> getParallelBranches() {
+        return parallelBranches;
+    }
+
+    public void setParallelBranches(java.util.List<ParallelBranchVO> parallelBranches) {
+        this.parallelBranches = parallelBranches;
     }
 }

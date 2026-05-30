@@ -87,7 +87,10 @@
           <el-dropdown trigger="click">
             <span class="user-info">
               <el-avatar :size="28">{{ userStore.userInfo?.realName?.charAt(0) || 'U' }}</el-avatar>
-              <span class="user-name">{{ userStore.userInfo?.realName || '用户' }}</span>
+              <span class="user-meta">
+                <span class="user-name">{{ userStore.userInfo?.realName || '用户' }}</span>
+                <span v-if="roleDisplayText" class="user-role">{{ roleDisplayText }}</span>
+              </span>
             </span>
             <template #dropdown>
               <el-dropdown-menu>
@@ -134,6 +137,14 @@ const { hasPermission, hasAnyRole } = usePermission()
 
 const recentNotifications = ref<any[]>([])
 const menuList = shallowRef<MenuItem[]>([])
+const roleDisplayText = computed(() => {
+  const roleNames = userStore.userInfo?.roleNames?.filter(Boolean) || []
+  if (roleNames.length > 0) {
+    return roleNames.join(' / ')
+  }
+  const roles = userStore.userInfo?.roles?.filter(Boolean) || []
+  return roles.length > 0 ? roles.join(' / ') : ''
+})
 
 const iconMap: Record<string, Component> = {}
 for (const [name, comp] of Object.entries(ElementPlusIcons)) {
@@ -472,8 +483,24 @@ async function handleLogout() {
   cursor: pointer;
 }
 
+.user-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .user-name {
   font-size: $font-size-sm;
+  line-height: 1.2;
+}
+
+.user-role {
+  font-size: 12px;
+  line-height: 1.2;
+  color: #909399;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .app-main {

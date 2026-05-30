@@ -7,6 +7,7 @@ export interface AuthUserInfo {
   email: string
   avatar: string
   roles: string[]
+  roleNames?: string[]
   permissions: string[]
   isSuperAdmin: boolean
   regionId?: number

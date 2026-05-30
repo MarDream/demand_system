@@ -51,6 +51,29 @@
               />
             </el-select>
             <AppButton
+              v-if="usingUnifiedEngine && workflowRuntime.countersignEnabled"
+              type="warning"
+              permission="button:requirement:submit"
+              @click="openCountersignDialog(workflowRuntime.currentNodeId || '')"
+            >
+              会签审批
+            </AppButton>
+            <el-select
+              v-if="workflowRuntime.parallelActive && parallelBranches.length > 0"
+              :model-value="workflowRuntime.activeParallelBranchId"
+              placeholder="切换并行分支"
+              style="width: 160px; margin-right: 8px"
+              @change="handleSwitchParallelBranch"
+            >
+              <el-option
+                v-for="branch in parallelBranches"
+                :key="branch.id"
+                :label="`${branch.branchName} (${parallelBranchStatusLabel(branch.status)})`"
+                :value="branch.id"
+                :disabled="branch.status === 'completed' || branch.status === 'skipped'"
+              />
+            </el-select>
+            <AppButton
               type="primary"
               :loading="transitionLoading"
               :disabled="transitionOptions.length === 0 || (requiresProjectBinding && !bindingProjectId)"
@@ -118,12 +141,12 @@
           </el-descriptions>
 
           <!-- 子需求列表 -->
-          <div class="children-section">
+          <div v-if="children.length > 0" class="children-section">
             <div class="section-header">
               <h3>子需求（{{ children.length }} 个）</h3>
               <AppButton type="primary" size="small" permission="button:requirement:split" @click="handleSplit">+ 拆分子需求</AppButton>
             </div>
-            <el-table v-if="children.length > 0" :data="children" border size="small">
+            <el-table :data="children" border size="small">
               <el-table-column label="ID" width="60" align="center">
                 <template #default="{ row }">{{ row.id }}</template>
               </el-table-column>
@@ -151,97 +174,9 @@
                 </template>
               </el-table-column>
             </el-table>
-            <el-empty v-else description="暂无子需求，点击上方按钮进行拆分" :image-size="60" />
           </div>
         </el-tab-pane>
 
-        <!-- 变更历史 -->
-        <el-tab-pane label="变更历史" name="history">
-          <el-timeline v-if="history.length > 0">
-            <el-timeline-item
-              v-for="item in history"
-              :key="item.id"
-              :timestamp="formatDate(item.createdAt)"
-              placement="top"
-            >
-              <el-card>
-                <p><strong>{{ item.operatorName || '系统' }}</strong></p>
-                <p>
-                  <span>{{ item.fieldName }}: </span>
-                  <span class="old-value">{{ item.oldValue || '空' }}</span>
-                  <span> -> </span>
-                  <span class="new-value">{{ item.newValue || '空' }}</span>
-                </p>
-              </el-card>
-            </el-timeline-item>
-          </el-timeline>
-          <el-empty v-else description="暂无变更历史" />
-        </el-tab-pane>
-
-        <!-- 关联需求 -->
-        <el-tab-pane label="关联需求" name="relations">
-          <el-table :data="relatedRequirements" border>
-            <el-table-column label="需求ID" width="80" align="center">
-              <template #default="{ row }">{{ row.id }}</template>
-            </el-table-column>
-            <el-table-column label="需求标题" min-width="200">
-              <template #default="{ row }">
-                <el-link type="primary" @click="router.push({ name: 'RequirementDetail', params: { id: row.id } })">
-                  {{ row.title }}
-                </el-link>
-              </template>
-            </el-table-column>
-            <el-table-column label="类型" width="100" align="center">
-              <template #default="{ row }">{{ typeLabel(row.type) }}</template>
-            </el-table-column>
-            <el-table-column label="优先级" width="90" align="center">
-              <template #default="{ row }">
-                <el-tag :type="priorityTagType(row.priority)" size="small">{{ priorityLabel(row.priority) }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="状态" width="100" align="center">
-              <template #default="{ row }">
-                <el-tag :type="statusTagType(row.status)" size="small">{{ row.status }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="关联类型" width="120" align="center">
-              <template #default="{ row }">
-                <el-tag>{{ row.relationType || '关联' }}</el-tag>
-              </template>
-            </el-table-column>
-          </el-table>
-          <el-empty v-if="relatedRequirements.length === 0" description="暂无关联需求" />
-        </el-tab-pane>
-
-        <!-- 评论 -->
-        <el-tab-pane label="评论" name="comments">
-          <div class="comment-section">
-            <el-input
-              v-model="commentText"
-              type="textarea"
-              :rows="4"
-              placeholder="输入评论内容..."
-              maxlength="500"
-              show-word-limit
-            />
-            <div class="comment-actions">
-              <AppButton type="primary" permission="button:requirement:comment" :disabled="!commentText.trim()" @click="handleComment">
-                提交评论
-              </AppButton>
-            </div>
-          </div>
-          <el-empty v-if="comments.length === 0" description="暂无评论" />
-          <div v-for="comment in comments" :key="comment.id" class="comment-item">
-            <el-avatar :size="32">{{ comment.userName?.charAt(0) || 'U' }}</el-avatar>
-            <div class="comment-content">
-              <div class="comment-header">
-                <strong>{{ comment.userName || '用户' }}</strong>
-                <span class="comment-time">{{ formatDate(comment.createdAt) }}</span>
-              </div>
-              <p>{{ comment.content }}</p>
-            </div>
-          </div>
-        </el-tab-pane>
         </el-tabs>
 
         <div class="approval-evaluations-section">
@@ -296,6 +231,33 @@
           </el-timeline>
         </div>
 
+        <!-- 评论区 -->
+        <div class="comment-section-block">
+          <div class="section-header">
+            <h3>评论</h3>
+          </div>
+          <div class="comment-editor-wrapper">
+            <IsleEditorToolbar v-if="commentEditorInstance" :editor="commentEditorInstance" />
+            <IsleEditor v-model="commentRichText" :extensions="commentEditorExtensions" locale="zh" @create="onCommentEditorCreate" />
+          </div>
+          <div class="comment-editor-actions">
+            <AppButton type="primary" permission="button:requirement:comment" :loading="commentSubmitting" @click="submitCommentRich">
+              提交评论
+            </AppButton>
+          </div>
+          <el-empty v-if="comments.length === 0" description="暂无评论" :image-size="40" />
+          <div v-for="comment in comments" :key="comment.id" class="comment-item">
+            <el-avatar :size="32">{{ comment.userName?.charAt(0) || 'U' }}</el-avatar>
+            <div class="comment-content">
+              <div class="comment-header">
+                <strong>{{ comment.userName || '用户' }}</strong>
+                <span class="comment-time">{{ formatDate(comment.createdAt) }}</span>
+              </div>
+              <div class="rich-content comment-body" v-html="hydrateRichTextImageHtml(comment.content || '')"></div>
+            </div>
+          </div>
+        </div>
+
         <el-dialog
           v-model="supplementDialogVisible"
           title="补充意见"
@@ -347,6 +309,57 @@
             </el-button>
           </template>
         </el-dialog>
+
+        <!-- 会签审批对话框 -->
+        <el-dialog
+          v-model="countersignDialogVisible"
+          title="会签审批"
+          width="500px"
+          :close-on-click-modal="false"
+        >
+          <div v-if="currentCountersignRecords.length > 0" class="countersign-records">
+            <div class="countersign-records-title">会签记录</div>
+            <el-table :data="currentCountersignRecords" size="small" border>
+              <el-table-column prop="approverName" label="会签人" />
+              <el-table-column prop="status" label="状态" width="80">
+                <template #default="{ row }">
+                  <el-tag :type="row.status === 'approved' ? 'success' : row.status === 'rejected' ? 'danger' : 'info'" size="small">
+                    {{ row.status === 'approved' ? '已通过' : row.status === 'rejected' ? '已驳回' : '待审批' }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="rating" label="评分" width="60">
+                <template #default="{ row }">
+                  {{ row.rating ? row.rating + '星' : '-' }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="comment" label="意见" min-width="120" show-overflow-tooltip />
+            </el-table>
+          </div>
+          <div v-if="canCountersign" class="countersign-submit">
+            <p class="countersign-tip">请对本次会签进行审批操作</p>
+            <div class="countersign-rate">
+              <span class="countersign-label">评分</span>
+              <el-rate v-model="countersignRating" :max="5" allow-half />
+            </div>
+            <el-input
+              v-model="countersignComment"
+              type="textarea"
+              :rows="3"
+              placeholder="请输入审批意见（选填）"
+              maxlength="500"
+              show-word-limit
+            />
+          </div>
+          <div v-else-if="!countersignDialogLoading" class="countersign-empty">
+            <el-empty description="您不是当前节点的会签人，无需操作" />
+          </div>
+          <template #footer>
+            <el-button @click="countersignDialogVisible = false">关闭</el-button>
+            <el-button v-if="canCountersign" type="success" @click="handleCountersignApprove">通过</el-button>
+            <el-button v-if="canCountersign" type="danger" @click="handleCountersignReject">驳回</el-button>
+          </template>
+        </el-dialog>
       </template>
     </div>
   </PageContainer>
@@ -357,10 +370,11 @@ import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { requirementApi, projectApi, relationApi } from '@/api'
-import { downloadRequirementAttachment } from '@/api/modules/file'
+import { downloadRequirementAttachment, uploadRequirementAttachment } from '@/api/modules/file'
 import type { RelationItem } from '@/api/modules/relation'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
 import { workflowEngineApi, type AvailableTransition, type WorkflowAvailableActions } from '@/api/modules/workflow-engine'
+import { getCountersignRecords, canCurrentUserCountersign, submitCountersignApproval, switchParallelBranch, type CountersignRecord, type ParallelBranch } from '@/api/modules/workflow'
 import type {
   Requirement,
   RequirementApprovalEvaluation,
@@ -371,8 +385,98 @@ import type {
 } from '@/types/requirement'
 import { normalizeText, formatDate, stripPriorityPrefix } from '@/utils/format'
 import AppButton from '@/components/common/AppButton.vue'
-import { hydrateRichTextImageHtml } from '@/utils/richTextFileImage'
+import { hydrateRichTextImageHtml, buildRichTextImagePreviewUrl } from '@/utils/richTextFileImage'
+import { IsleEditor, IsleEditorToolbar, RichTextKit } from '@isle-editor/vue3'
+import { addLocale } from '@isle-editor/core'
+import Image from '@tiptap/extension-image'
+import '@isle-editor/vue3/dist/style.css'
 import PageContainer from '@/components/common/PageContainer.vue'
+
+addLocale('zh', {
+  isleEditor: '岛屿编辑器',
+  fontFamily: '字体',
+  fontSize: '字号',
+  textStyle: '文字样式',
+  background: '背景颜色',
+  color: '文字颜色',
+  lineHeight: '行高',
+  letterSpacing: '字间距',
+  bold: '加粗',
+  italic: '斜体',
+  underline: '下划线',
+  strike: '删除线',
+  code: '行内代码',
+  link: '链接',
+  linkPlaceholder: '请输入链接',
+  openInNewTab: '在新标签页中打开',
+  unlink: '取消链接',
+  subscript: '下标',
+  superscript: '上标',
+  heading: '标题',
+  heading1: '一级标题',
+  heading2: '二级标题',
+  heading3: '三级标题',
+  heading4: '四级标题',
+  heading5: '五级标题',
+  heading6: '六级标题',
+  paragraph: '段落',
+  blockquote: '引用',
+  bulletList: '无序列表',
+  orderedList: '有序列表',
+  taskList: '任务列表',
+  codeBlock: '代码块',
+  divider: '分割线',
+  indent: '增加缩进',
+  outdent: '减少缩进',
+  hardBreak: '换行',
+  undo: '撤销',
+  redo: '重做',
+  textAlign: '文字对齐',
+  alignLeft: '左对齐',
+  alignCenter: '居中对齐',
+  alignRight: '右对齐',
+  alignJustify: '两端对齐',
+  table: '表格',
+  edit: '编辑',
+  textClear: '清除',
+  copy: '复制',
+  paste: '粘贴',
+  cancel: '取消',
+  open: '打开',
+  empty: '空',
+  fonts: {
+    Default: '默认字体',
+    MicrosoftYaHei: '微软雅黑',
+    SimSun: '宋体',
+    SimHei: '黑体',
+    KaiTi: '楷体',
+    FangSong: '仿宋',
+    PingFangSC: '苹方',
+    HiraginoSansGB: '冬青黑体',
+    SourceHanSansSC: '思源黑体',
+    STXihei: '华文细黑',
+    STZhongsong: '华文中宋',
+    Arial: 'Arial',
+    TimesNewRoman: 'Times New Roman',
+    CourierNew: 'Courier New',
+    Georgia: 'Georgia',
+  },
+  sizes: {
+    tiny: '超小',
+    small: '小',
+    normal: '中',
+    large: '大',
+    huge: '超大',
+  },
+  colors: {
+    defaultColor: '默认颜色',
+    baseColor: '基础颜色',
+    standardColor: '标准颜色',
+    recentUse: '最近使用',
+    palette: '调色板',
+  },
+  placeholder: '写点什么 ...',
+})
 
 const route = useRoute()
 const router = useRouter()
@@ -393,7 +497,6 @@ const supplementContent = ref('')
 const supplementTarget = ref<RequirementApprovalEvaluation | null>(null)
 const children = ref<any[]>([])
 const activeTab = ref('basic')
-const commentText = ref('')
 const projectName = ref<string>('')
 const projectOptions = ref<Array<{ id: number; name: string; status?: string | null; endDate?: string | null }>>([])
 const typeMap = ref<Record<string, string>>({})
@@ -408,6 +511,15 @@ const usingUnifiedEngine = ref(false)
 const selectedTransitionTargetId = ref<string | number | null>(null)
 const bindingProjectId = ref<number | null>(null)
 const transitionLoading = ref(false)
+// 会签相关
+const countersignDialogVisible = ref(false)
+const countersignDialogLoading = ref(false)
+const countersignRating = ref(0)
+const countersignComment = ref('')
+const currentCountersignRecords = ref<CountersignRecord[]>([])
+const canCountersign = ref(false)
+const currentCountersignNodeId = ref<string>('')
+const parallelBranches = ref<ParallelBranch[]>([])
 const richDescription = computed(() => hydrateRichTextImageHtml(detail.value?.description || ''))
 const currentNodeStatusName = computed(() => {
   return workflowRuntime.value.currentNodeStatusName || detail.value?.status || ''
@@ -430,6 +542,60 @@ const sortedApprovalEvaluations = computed(() => {
     return b.id - a.id
   })
 })
+
+// Comment rich text editor
+const commentRichText = ref('')
+const commentSubmitting = ref(false)
+const commentEditorInstance = ref<any>(null)
+const commentEditorExtensions = [
+  RichTextKit.configure({
+    placeholder: { placeholder: '输入评论内容...' },
+  }),
+  Image.configure({
+    inline: false,
+    allowBase64: true,
+    HTMLAttributes: { class: 'comment-editor-image' },
+  }),
+]
+
+function onCommentEditorCreate({ editor }: { editor: any }) {
+  commentEditorInstance.value = editor
+  const editorEl = editor.view.dom as HTMLElement
+  editorEl.addEventListener('paste', handleCommentImagePaste as unknown as EventListener)
+}
+
+const commentImageUploading = ref(false)
+
+async function handleCommentImagePaste(event: ClipboardEvent) {
+  const files = event.clipboardData?.files
+  if (!files || files.length === 0) return
+
+  for (const file of Array.from(files)) {
+    if (!file.type.startsWith('image/')) continue
+    event.preventDefault()
+
+    let processedFile = file
+    if (!file.name || file.name === 'image' || !file.name.includes('.')) {
+      const ext = file.type.split('/')[1] || 'png'
+      processedFile = new File([file], `clipboard_${Date.now()}.${ext}`, { type: file.type })
+    }
+
+    try {
+      commentImageUploading.value = true
+      ElMessage.info(`上传图片中: ${processedFile.name}`)
+      const attachment = await uploadRequirementAttachment(processedFile)
+      const src = attachment.fileId ? buildRichTextImagePreviewUrl(attachment.fileId) : attachment.url
+      if (src && commentEditorInstance.value) {
+        commentEditorInstance.value.chain().focus().setImage({ src, alt: processedFile.name }).run()
+        ElMessage.success(`图片 ${processedFile.name} 已插入`)
+      }
+    } catch {
+      ElMessage.error(`图片 ${processedFile.name} 插入失败`)
+    } finally {
+      commentImageUploading.value = false
+    }
+  }
+}
 
 function resetWorkflowMeta() {
   workflowRuntime.value = {
@@ -494,12 +660,14 @@ async function loadConfig() {
 async function loadWorkflowMeta() {
   resetWorkflowMeta()
   bindingProjectId.value = detail.value?.projectId && detail.value.projectId > 0 ? detail.value.projectId : null
+  parallelBranches.value = []
 
   if (detail.value?.workflowInstanceId) {
     try {
       const actions = await workflowEngineApi.getAvailableActions(id)
       workflowRuntime.value = actions
       usingUnifiedEngine.value = true
+      parallelBranches.value = actions.parallelBranches || []
       selectedTransitionTargetId.value = actions.transitions[0]?.toNodeId ?? null
       return
     } catch {
@@ -774,6 +942,14 @@ async function handleStatusTransition() {
     return
   }
 
+  if (workflowRuntime.value.countersignPending) {
+    ElMessage.warning('会签尚未完成，请先完成会签审批')
+    if (workflowRuntime.value.currentNodeId) {
+      await openCountersignDialog(workflowRuntime.value.currentNodeId)
+    }
+    return
+  }
+
   if (workflowRuntime.value.evaluationRequired) {
     resetApprovalDialog()
     approvalDialogVisible.value = true
@@ -781,6 +957,76 @@ async function handleStatusTransition() {
   }
 
   await executeTransition()
+}
+
+// 会签审批方法
+async function openCountersignDialog(nodeId: string) {
+  currentCountersignNodeId.value = nodeId
+  countersignDialogVisible.value = true
+  countersignDialogLoading.value = true
+  try {
+    const [recordsRes, canRes] = await Promise.all([
+      getCountersignRecords(id, nodeId),
+      canCurrentUserCountersign(id, nodeId),
+    ])
+    currentCountersignRecords.value = recordsRes || []
+    canCountersign.value = canRes || false
+  } catch (error) {
+    console.error('获取会签信息失败', error)
+    ElMessage.error('获取会签信息失败')
+  } finally {
+    countersignDialogLoading.value = false
+  }
+}
+
+async function handleCountersignApprove() {
+  await submitCountersign('approved')
+}
+
+async function handleCountersignReject() {
+  await submitCountersign('rejected')
+}
+
+async function submitCountersign(status: 'approved' | 'rejected') {
+  try {
+    await submitCountersignApproval({
+      requirementId: id,
+      nodeId: currentCountersignNodeId.value,
+      status,
+      rating: countersignRating.value || undefined,
+      comment: countersignComment.value.trim() || undefined,
+    })
+    ElMessage.success(status === 'approved' ? '会签通过' : '会签已驳回')
+    countersignDialogVisible.value = false
+    countersignRating.value = 0
+    countersignComment.value = ''
+    await Promise.all([fetchDetail(), fetchHistory(), fetchApprovalEvaluations()])
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '提交会签审批失败'))
+  }
+}
+
+function parallelBranchStatusLabel(status: string): string {
+  const map: Record<string, string> = {
+    pending: '待处理',
+    running: '进行中',
+    completed: '已完成',
+    skipped: '已跳过',
+  }
+  return map[status] || status
+}
+
+async function handleSwitchParallelBranch(branchId: number) {
+  if (branchId === workflowRuntime.value.activeParallelBranchId) {
+    return
+  }
+  try {
+    await switchParallelBranch(id, branchId)
+    ElMessage.success('已切换并行分支')
+    await fetchDetail()
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '切换并行分支失败'))
+  }
 }
 
 async function confirmApprovalTransition() {
@@ -859,21 +1105,24 @@ async function confirmAndExecute(
   }
 }
 
-function handleComment() {
-  void submitComment()
-}
+async function submitCommentRich() {
+  const html = commentEditorInstance.value?.getHTML?.() || ''
+  const content = html.trim()
+  if (!content || content === '<p></p>') {
+    ElMessage.warning('请输入评论内容')
+    return
+  }
 
-async function submitComment() {
-  const content = commentText.value.trim()
-  if (!content) return
-
+  commentSubmitting.value = true
   try {
     await requirementApi.createRequirementComment(id, { content })
     ElMessage.success('评论已提交')
-    commentText.value = ''
-    await Promise.all([fetchComments(), fetchHistory()])
+    commentEditorInstance.value?.commands?.clearContent?.()
+    await fetchComments()
   } catch (error) {
     ElMessage.error(resolveErrorMessage(error, '评论提交失败'))
+  } finally {
+    commentSubmitting.value = false
   }
 }
 
@@ -990,6 +1239,41 @@ onMounted(() => {
 .comment-time {
   color: #909399;
   font-size: 12px;
+}
+
+.comment-section-block {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid #ebeef5;
+}
+
+.comment-editor-wrapper {
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 12px;
+  min-height: 160px;
+}
+
+.comment-editor-wrapper :deep(.comment-editor-image) {
+  display: block;
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+.comment-editor-actions {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.comment-body :deep(img) {
+  max-width: 100%;
+  height: auto;
+}
+
+.comment-body :deep(p) {
+  margin: 0 0 4px 0;
 }
 
 .children-section {
@@ -1159,5 +1443,44 @@ onMounted(() => {
 .approval-dialog-label {
   color: #606266;
   font-size: 14px;
+}
+
+/* 会签审批样式 */
+.countersign-records {
+  margin-bottom: 20px;
+}
+
+.countersign-records-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #303133;
+  margin-bottom: 12px;
+}
+
+.countersign-submit {
+  padding-top: 16px;
+  border-top: 1px solid #ebeef5;
+}
+
+.countersign-tip {
+  color: #606266;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.countersign-rate {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.countersign-label {
+  color: #606266;
+  font-size: 14px;
+}
+
+.countersign-empty {
+  padding: 20px 0;
 }
 </style>

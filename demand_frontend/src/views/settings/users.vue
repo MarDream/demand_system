@@ -172,15 +172,15 @@
                       </el-button>
                   <template #dropdown>
                     <el-dropdown-menu>
-                      <el-dropdown-item command="reset" v-permission="'button:user:update'">
+                      <el-dropdown-item v-if="hasPermission('button:user:update')" command="reset">
                         <el-icon><Key /></el-icon>
                         重置密码
                       </el-dropdown-item>
-                      <el-dropdown-item command="toggle" v-permission="'button:user:update'">
+                      <el-dropdown-item v-if="hasPermission('button:user:update')" command="toggle">
                         <el-icon><SwitchButton /></el-icon>
                         {{ row.status === 'active' ? '停用' : '启用' }}
                       </el-dropdown-item>
-                      <el-dropdown-item command="delete" divided v-permission="'button:user:delete'">
+                      <el-dropdown-item v-if="hasPermission('button:user:delete')" command="delete" divided>
                         <el-icon><Delete /></el-icon>
                         删除
                       </el-dropdown-item>
@@ -572,6 +572,7 @@ import { formatDate as formatDateTime } from '@/utils/format'
 import { getRoleList } from '@/api/modules/role'
 import type { RoleItem } from '@/api/modules/menu'
 import { useUserStore } from '@/stores/modules/user'
+import { usePermission } from '@/composables/usePermission'
 
 interface FlatOrgNode {
   key: string
@@ -609,6 +610,7 @@ interface UserForm {
 const loading = ref(false)
 const submitting = ref(false)
 const userStore = useUserStore()
+const { hasPermission } = usePermission()
 const isSuperAdmin = computed(() => userStore.isSuperAdmin)
 const userList = ref<UserInfo[]>([])
 const selectedUsers = ref<UserInfo[]>([])

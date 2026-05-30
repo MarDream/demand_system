@@ -46,8 +46,8 @@
                     <el-icon class="more-btn"><MoreFilled /></el-icon>
                     <template #dropdown>
                       <el-dropdown-menu>
-                        <el-dropdown-item command="edit" :disabled="deletingId === kb.id" v-permission="'button:knowledge:update'">编辑</el-dropdown-item>
-                        <el-dropdown-item command="delete" :disabled="deletingId === kb.id" divided v-permission="'button:knowledge:delete'">
+                        <el-dropdown-item v-if="hasPermission('button:knowledge:update')" command="edit" :disabled="deletingId === kb.id">编辑</el-dropdown-item>
+                        <el-dropdown-item v-if="hasPermission('button:knowledge:delete')" command="delete" :disabled="deletingId === kb.id" divided>
                           <span class="text-danger">删除</span>
                         </el-dropdown-item>
                       </el-dropdown-menu>
@@ -118,10 +118,12 @@ import PageContainer from '@/components/common/PageContainer.vue'
 import AppDialog from '@/components/common/AppDialog.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import { useKnowledgeStore } from '@/stores/knowledge'
+import { usePermission } from '@/composables/usePermission'
 import type { KnowledgeBase } from '@/api/modules/knowledge'
 
 const router = useRouter()
 const store = useKnowledgeStore()
+const { hasPermission } = usePermission()
 const showCreateDialog = ref(false)
 const editingKb = ref<KnowledgeBase | null>(null)
 const submitting = ref(false)

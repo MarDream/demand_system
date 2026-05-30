@@ -167,6 +167,7 @@ public class AuthServiceImpl implements AuthService {
         );
 
         List<String> roles = rbacPermissionResolver.resolveRoles(userId);
+        List<String> roleNames = rbacPermissionResolver.resolveRoleDisplayNames(userId);
         List<String> permissions = rbacPermissionResolver.resolvePermissions(userId, roles);
 
         UserInfoResponse.UserInfoResponseBuilder builder = UserInfoResponse.builder()
@@ -176,6 +177,7 @@ public class AuthServiceImpl implements AuthService {
                 .email(user.getEmail())
                 .avatar(user.getAvatar())
                 .roles(roles)
+                .roleNames(roleNames)
                 .permissions(permissions)
                 .isSuperAdmin(rbacPermissionResolver.isSuperAdmin(roles));
 

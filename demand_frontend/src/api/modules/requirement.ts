@@ -14,6 +14,8 @@ import type {
   RequirementMyListQuery,
   RequirementQuery,
   RequirementSubmit,
+  RequirementTemplate,
+  RequirementTemplateSave,
   RequirementUpdate,
 } from '@/types/requirement'
 
@@ -113,4 +115,29 @@ export function getColumnConfig(pageKey: string) {
 
 export function saveColumnConfig(pageKey: string, columns: string[]) {
   return request.put<ApiResponse>(`/v1/column-config/${pageKey}`, { columns }) as unknown as Promise<void>
+}
+
+// 需求模板 API
+export function getRequirementTemplateByType(typeCode: string) {
+  return request.get<ApiResponse<RequirementTemplate>>('/v1/requirement/templates/by-type', {
+    params: { typeCode }
+  }) as unknown as Promise<RequirementTemplate>
+}
+
+export function getAllRequirementTemplates() {
+  return request.get<ApiResponse<RequirementTemplate[]>>('/v1/requirement/templates/list') as unknown as Promise<RequirementTemplate[]>
+}
+
+export function saveRequirementTemplate(data: RequirementTemplateSave) {
+  return request.post<ApiResponse>('/v1/requirement/templates/save', data) as unknown as Promise<void>
+}
+
+export function deleteRequirementTemplate(id: number) {
+  return request.delete<ApiResponse>(`/v1/requirement/templates/${id}`) as unknown as Promise<void>
+}
+
+export function toggleRequirementTemplateStatus(id: number, isActive: number) {
+  return request.put<ApiResponse>(`/v1/requirement/templates/${id}/status`, null, {
+    params: { isActive }
+  }) as unknown as Promise<void>
 }

@@ -63,7 +63,7 @@ export const routes: RouteRecordRaw[] = [
       {
         path: 'todo',
         name: 'TodoTasks',
-        component: () => import('@/views/todo/index.vue'),
+        redirect: '/requirements?view=pending',
         meta: { title: '待办任务', icon: 'List' },
       },
       {
@@ -149,6 +149,12 @@ export const routes: RouteRecordRaw[] = [
         name: 'RequirementConfig',
         component: () => import('@/views/settings/requirements.vue'),
         meta: { title: '需求配置', hidden: true, requiredPermissions: ['menu:settings:requirement'] },
+      },
+      {
+        path: 'settings/requirement-templates',
+        name: 'RequirementTemplates',
+        component: () => import('@/views/settings/requirement-templates/index.vue'),
+        meta: { title: '需求模板', hidden: true, requiredPermissions: ['menu:settings:requirement'] },
       },
       {
         path: 'settings/menus',

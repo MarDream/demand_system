@@ -13,6 +13,7 @@ public class UserInfoResponse {
     private String email;
     private String avatar;
     private List<String> roles;
+    private List<String> roleNames;
     private List<String> permissions;
     private Boolean isSuperAdmin;
     private Long regionId;
@@ -22,7 +23,7 @@ public class UserInfoResponse {
     }
 
     public UserInfoResponse(Long id, String username, String realName, String email, String avatar,
-                           List<String> roles, List<String> permissions, Boolean isSuperAdmin,
+                           List<String> roles, List<String> roleNames, List<String> permissions, Boolean isSuperAdmin,
                            Long regionId, Long departmentId) {
         this.id = id;
         this.username = username;
@@ -30,6 +31,7 @@ public class UserInfoResponse {
         this.email = email;
         this.avatar = avatar;
         this.roles = roles;
+        this.roleNames = roleNames;
         this.permissions = permissions;
         this.isSuperAdmin = isSuperAdmin;
         this.regionId = regionId;
@@ -84,6 +86,14 @@ public class UserInfoResponse {
         this.roles = roles;
     }
 
+    public List<String> getRoleNames() {
+        return roleNames;
+    }
+
+    public void setRoleNames(List<String> roleNames) {
+        this.roleNames = roleNames;
+    }
+
     public List<String> getPermissions() {
         return permissions;
     }
@@ -127,6 +137,7 @@ public class UserInfoResponse {
         private String email;
         private String avatar;
         private List<String> roles;
+        private List<String> roleNames;
         private List<String> permissions;
         private Boolean isSuperAdmin;
         private Long regionId;
@@ -162,6 +173,11 @@ public class UserInfoResponse {
             return this;
         }
 
+        public UserInfoResponseBuilder roleNames(List<String> roleNames) {
+            this.roleNames = roleNames;
+            return this;
+        }
+
         public UserInfoResponseBuilder permissions(List<String> permissions) {
             this.permissions = permissions;
             return this;
@@ -183,7 +199,7 @@ public class UserInfoResponse {
         }
 
         public UserInfoResponse build() {
-            return new UserInfoResponse(id, username, realName, email, avatar, roles,
+            return new UserInfoResponse(id, username, realName, email, avatar, roles, roleNames,
                     permissions, isSuperAdmin, regionId, departmentId);
         }
     }

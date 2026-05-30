@@ -64,7 +64,7 @@
               v-for="node in nodeTypes"
               :key="node.type"
               class="palette-node"
-              :class="node.type"
+              :class="[node.type, { 'is-readonly': isViewMode }]"
               @mousedown.prevent="handleNodeDragStart(node)"
             >
               <div class="node-icon">{{ node.icon }}</div>
@@ -105,7 +105,7 @@
                 <el-icon><Grid /></el-icon>
                 格式化排版
               </el-button>
-              <el-button class="toolbar-action-btn" @click="handleClearCanvas" type="danger">
+              <el-button class="toolbar-action-btn" @click="handleClearCanvas" type="danger" :disabled="isViewMode">
                 <el-icon><Delete /></el-icon>
                 清空画布
               </el-button>
@@ -127,7 +127,7 @@
           :before-close="handleDrawerClose"
         >
           <div v-if="selectedNode" class="node-config-panel">
-            <el-form :model="nodeForm" label-width="100px" label-position="top">
+            <el-form :model="nodeForm" label-width="100px" label-position="top" :disabled="isViewMode">
               <el-form-item label="节点名称">
                 <el-input v-model="nodeForm.nodeName" placeholder="请输入节点名称" />
               </el-form-item>
@@ -220,6 +220,29 @@
                     <el-option label="转交上级" value="ESCALATE" />
                   </el-select>
                 </el-form-item>
+
+                <!-- 会签配置 -->
+                <CountersignConfig
+                  v-if="nodeForm.nodeType === 'approval'"
+                  :enabled="nodeForm.countersignEnabled ?? false"
+                  :strategy="nodeForm.countersignStrategy ?? 'ALL'"
+                  :mode="nodeForm.countersignMode ?? 'FIXED'"
+                  :approvers="nodeForm.countersignApprovers ?? []"
+                  :users="allUserList"
+                  @update:enabled="nodeForm.countersignEnabled = $event"
+                  @update:strategy="nodeForm.countersignStrategy = $event"
+                  @update:mode="nodeForm.countersignMode = $event"
+                  @update:approvers="nodeForm.countersignApprovers = $event"
+                />
+              </template>
+
+              <template v-if="nodeForm.nodeType === 'parallel'">
+                <ParallelConfig
+                  :parallel-type="nodeForm.parallelType"
+                  :branches="nodeForm.parallelBranches"
+                  @update:parallel-type="nodeForm.parallelType = $event as 'AND' | 'OR'"
+                  @update:branches="nodeForm.parallelBranches = $event"
+                />
               </template>
 
               <!-- 条件节点配置 -->
@@ -234,7 +257,7 @@
                 </el-form-item>
               </template>
 
-              <el-form-item>
+              <el-form-item v-if="!isViewMode">
                 <el-button type="primary" @click="handleSaveNodeConfig">保存配置</el-button>
                 <el-button @click="handleDeleteNode" type="danger">删除节点</el-button>
               </el-form-item>
@@ -242,21 +265,28 @@
           </div>
 
           <div v-else-if="selectedEdge" class="edge-config-panel">
-            <el-form :model="edgeForm" label-width="100px" label-position="top">
+            <el-form :model="edgeForm" label-width="100px" label-position="top" :disabled="isViewMode">
               <el-form-item label="连线标签">
                 <el-input v-model="edgeForm.label" placeholder="请输入连线标签（可选）" />
               </el-form-item>
 
-              <el-form-item label="条件表达式">
+              <el-form-item label="条件">
+                <ConditionConfig
+                  :model-value="edgeConditionModel"
+                  @update:model-value="onEdgeConditionModelUpdate"
+                  @update:expr="edgeForm.conditionExpr = $event"
+                />
+              </el-form-item>
+              <el-form-item label="条件表达式（高级）">
                 <el-input
                   v-model="edgeForm.conditionExpr"
                   type="textarea"
-                  :rows="3"
-                  placeholder="例如：priority == 'HIGH'"
+                  :rows="2"
+                  placeholder="例如：priority == 'P0'"
                 />
               </el-form-item>
 
-              <el-form-item>
+              <el-form-item v-if="!isViewMode">
                 <el-button type="primary" @click="handleSaveEdgeConfig">保存配置</el-button>
                 <el-button @click="handleDeleteEdge" type="danger">删除连线</el-button>
               </el-form-item>
@@ -273,6 +303,9 @@ import { computed, ref, onMounted, onBeforeUnmount, reactive } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppButton from '@/components/common/AppButton.vue'
+import CountersignConfig from './components/CountersignConfig.vue'
+import ParallelConfig from './components/ParallelConfig.vue'
+import ConditionConfig from './components/ConditionConfig.vue'
 import {
   ArrowLeft,
   DocumentCopy,
@@ -349,6 +382,7 @@ const nodeTypes = [
   { type: 'approval', label: '审批', icon: '✓' },
   { type: 'cc', label: '抄送', icon: '📧' },
   { type: 'condition', label: '条件', icon: '◆' },
+  { type: 'parallel', label: '并行', icon: '⑂' },
   { type: 'end', label: '结束', icon: '■' }
 ]
 
@@ -360,6 +394,12 @@ const nodeForm = reactive<Partial<WorkflowNodeDTO> & {
   assigneeRoleGroupId?: number
   assigneeOrgId?: number
   orgScopeType?: 'current' | 'include_children'
+  countersignEnabled?: boolean
+  countersignStrategy?: 'ALL' | 'ANY' | 'MAJORITY'
+  countersignMode?: 'FIXED' | 'DYNAMIC'
+  countersignApprovers?: number[]
+  parallelType?: 'AND' | 'OR'
+  parallelBranches?: Array<{ branchId: string; branchName: string; condition: { field?: string; operator?: string; value?: string } }>
 }>({
   nodeId: '',
   nodeType: 'approval',
@@ -377,7 +417,13 @@ const nodeForm = reactive<Partial<WorkflowNodeDTO> & {
   nodeStatusCode: undefined,
   allowCancel: true,
   projectRequired: false,
-  properties: {}
+  properties: {},
+  countersignEnabled: false,
+  countersignStrategy: 'ALL',
+  countersignMode: 'FIXED',
+  countersignApprovers: [],
+  parallelType: 'AND',
+  parallelBranches: []
 })
 
 // 边表单
@@ -386,11 +432,21 @@ const edgeForm = reactive({
   conditionExpr: ''
 })
 
+const edgeConditionModel = ref<{ logic: string; rules: Array<{ field: string; operator: string; value: string }> }>({
+  logic: 'AND',
+  rules: [{ field: 'type', operator: 'eq', value: '' }],
+})
+
+function onEdgeConditionModelUpdate(val: { logic: string; rules: Array<{ field: string; operator: string; value: string }> }) {
+  edgeConditionModel.value = val
+}
+
 const NODE_LAYOUT_SIZE: Record<string, { width: number; height: number }> = {
   start: { width: 80, height: 80 },
   approval: { width: 120, height: 60 },
   cc: { width: 120, height: 60 },
   condition: { width: 80, height: 80 },
+  parallel: { width: 80, height: 80 },
   end: { width: 80, height: 80 }
 }
 
@@ -439,6 +495,8 @@ const workflowEditorTitle = computed(() => {
   if (isEditMode.value) return `编辑${scopeText}`
   return `新建${scopeText}`
 })
+const nodeDrawerTitle = computed(() => isViewMode.value ? '节点详情' : '节点配置')
+const edgeDrawerTitle = computed(() => isViewMode.value ? '连线详情' : '连线配置')
 const showProjectRequiredCheckbox = computed(() => !hasProjectRequiredInPredecessors(nodeForm.nodeId))
 const trimmedVersionName = computed(() => versionForm.name.trim())
 const duplicatedVersionRecord = computed(() => {
@@ -1473,7 +1531,7 @@ const handleNodeDragStart = (node: any) => {
 const handleNodeClick = (data: any) => {
   selectedNode.value = data
   selectedEdge.value = null
-  drawerTitle.value = '节点配置'
+  drawerTitle.value = nodeDrawerTitle.value
   drawerVisible.value = true
 
   // 填充表单
@@ -1494,6 +1552,13 @@ const handleNodeClick = (data: any) => {
     nodeStatusCode: data.properties?.nodeStatusCode ?? data.properties?.properties?.nodeStatusCode,
     allowCancel: data.properties?.allowCancel ?? data.properties?.properties?.allowCancel ?? true,
     projectRequired: data.properties?.projectRequired ?? data.properties?.properties?.projectRequired ?? false,
+    // 会签配置
+    countersignEnabled: data.properties?.countersignEnabled ?? false,
+    countersignStrategy: data.properties?.countersignStrategy ?? 'ALL',
+    countersignMode: data.properties?.countersignMode ?? 'FIXED',
+    countersignApprovers: data.properties?.countersignApprovers || [],
+    parallelType: data.properties?.parallelType ?? 'AND',
+    parallelBranches: data.properties?.branches || [],
     properties: data.properties || {}
   })
   normalizeCurrentNodeProjectRequired()
@@ -1503,7 +1568,7 @@ const handleNodeClick = (data: any) => {
 const handleEdgeClick = (data: any) => {
   selectedEdge.value = data
   selectedNode.value = null
-  drawerTitle.value = '连线配置'
+  drawerTitle.value = edgeDrawerTitle.value
   drawerVisible.value = true
 
   // 填充表单
@@ -1538,7 +1603,14 @@ const handleSaveNodeConfig = () => {
       timeoutAction: nodeForm.timeoutAction,
       nodeStatusCode: nodeForm.nodeStatusCode,
       allowCancel: nodeForm.allowCancel,
-      projectRequired: showProjectRequiredCheckbox.value ? nodeForm.projectRequired : false
+      projectRequired: showProjectRequiredCheckbox.value ? nodeForm.projectRequired : false,
+      // 会签配置
+      countersignEnabled: nodeForm.countersignEnabled,
+      countersignStrategy: nodeForm.countersignStrategy,
+      countersignMode: nodeForm.countersignMode,
+      countersignApprovers: nodeForm.countersignApprovers,
+      parallelType: nodeForm.parallelType,
+      branches: nodeForm.parallelBranches,
     }
   }
 
@@ -1660,6 +1732,10 @@ const handleFormatLayout = () => {
 
 // 清空画布
 const handleClearCanvas = async () => {
+  if (isViewMode.value) {
+    ElMessage.warning('查看模式下不能编辑')
+    return
+  }
   if (!lf) return
 
   try {
@@ -2033,6 +2109,16 @@ onBeforeUnmount(() => {
           &:hover {
             border-color: #409eff;
             background: #ecf5ff;
+          }
+
+          &.is-readonly {
+            cursor: not-allowed;
+            opacity: 0.65;
+          }
+
+          &.is-readonly:hover {
+            border-color: #dcdfe6;
+            background: transparent;
           }
 
           .node-icon {

@@ -38,6 +38,14 @@ export const nodeStyleConfig = {
     width: 80,
     height: 80
   },
+  parallel: {
+    fill: '#9b59b6',
+    stroke: '#9b59b6',
+    strokeWidth: 2,
+    fillOpacity: 0.1,
+    width: 80,
+    height: 80
+  },
   end: {
     fill: '#909399',
     stroke: '#909399',
@@ -73,6 +81,13 @@ export function registerCustomNodes(lf: LogicFlow) {
   // 条件节点 - 菱形
   lf.register({
     type: 'condition',
+    view: DiamondNode,
+    model: DiamondNodeModel
+  })
+
+  // 并行网关 - 菱形
+  lf.register({
+    type: 'parallel',
     view: DiamondNode,
     model: DiamondNodeModel
   })

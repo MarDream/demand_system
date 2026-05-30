@@ -31,6 +31,12 @@ export interface WorkflowAvailableActions {
   transitions: AvailableTransition[]
   lockVersion?: number | null
   evaluationRequired?: boolean | null
+  countersignEnabled?: boolean | null
+  canCountersign?: boolean | null
+  countersignPending?: boolean | null
+  parallelActive?: boolean | null
+  activeParallelBranchId?: number | null
+  parallelBranches?: import('@/api/modules/workflow').ParallelBranch[] | null
 }
 
 export interface TransitionVO {

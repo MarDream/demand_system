@@ -7,4 +7,8 @@ public interface WorkflowRuntimeMigrationService {
     WorkflowMigrationReportDTO markLegacyRequirements();
 
     WorkflowMigrationReportDTO backfillInstances();
+
+    int alignRunningInstancesToActiveVersion();
+
+    boolean alignRequirementInstanceIfNeeded(Long requirementId);
 }

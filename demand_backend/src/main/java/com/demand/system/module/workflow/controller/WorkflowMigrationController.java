@@ -29,4 +29,12 @@ public class WorkflowMigrationController {
     public Result<WorkflowMigrationReportDTO> backfillInstances() {
         return Result.success(workflowRuntimeMigrationService.backfillInstances());
     }
+
+    @PostMapping("/migrate-running-instances")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN')")
+    public Result<WorkflowMigrationReportDTO> migrateRunningInstances() {
+        WorkflowMigrationReportDTO report = new WorkflowMigrationReportDTO();
+        report.setMigratedRunningInstanceCount(workflowRuntimeMigrationService.alignRunningInstancesToActiveVersion());
+        return Result.success(report);
+    }
 }

@@ -42,6 +42,10 @@ import com.demand.system.module.notification.service.NotificationService;
 import com.demand.system.module.project.entity.Project;
 import com.demand.system.module.project.mapper.ProjectMapper;
 import com.demand.system.module.knowledge.service.KnowledgeDocumentService;
+import com.demand.system.module.rbac.entity.Role;
+import com.demand.system.module.rbac.entity.RoleGroup;
+import com.demand.system.module.rbac.mapper.RoleGroupMapper;
+import com.demand.system.module.rbac.mapper.RoleMapper;
 import com.demand.system.module.workflow.entity.WorkflowEdge;
 import com.demand.system.module.workflow.entity.WorkflowInstance;
 import com.demand.system.module.workflow.entity.WorkflowNode;
@@ -62,12 +66,14 @@ import com.demand.system.module.workflow.mapper.WorkflowNodeMapper;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.demand.system.module.workflow.service.WorkflowEngineService;
 import com.demand.system.module.workflow.service.WorkflowService;
+import com.demand.system.module.workflow.service.WorkflowRuntimeMigrationService;
 import com.demand.system.module.workflow.dto.WorkflowAvailableActionsDTO;
 import com.demand.system.module.workflow.mapper.WorkflowTransitionRecordMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.beans.BeanUtils;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -86,6 +92,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class RequirementServiceImpl implements RequirementService {
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(RequirementServiceImpl.class);
 
     private static final String REQUIREMENT_NO_PREFIX = "BR";
     private static final int REQUIREMENT_NO_MIN_SEQUENCE_WIDTH = 3;
@@ -107,6 +115,7 @@ public class RequirementServiceImpl implements RequirementService {
     private final WorkflowVersionResolver workflowVersionResolver;
     private final WorkflowGraphNavigator workflowGraphNavigator;
     private final WorkflowRuntimeLoader workflowRuntimeLoader;
+    private final WorkflowRuntimeMigrationService workflowRuntimeMigrationService;
     private final WorkflowNodeMapper workflowNodeMapper;
     private final WorkflowEdgeMapper workflowEdgeMapper;
     private final WorkflowInstanceMapper workflowInstanceMapper;
@@ -118,9 +127,11 @@ public class RequirementServiceImpl implements RequirementService {
     private final KnowledgeDocumentService knowledgeDocumentService;
     private final NodeStatusMapper nodeStatusMapper;
     private final ProjectMapper projectMapper;
+    private final RoleMapper roleMapper;
+    private final RoleGroupMapper roleGroupMapper;
     private final ObjectMapper objectMapper;
 
-    public RequirementServiceImpl(RequirementMapper requirementMapper, RequirementHistoryMapper historyMapper, RequirementCommentMapper requirementCommentMapper, CustomFieldValueMapper customFieldValueMapper, UserMapper userMapper, UserOrganizationMapper userOrganizationMapper, SysOrgService sysOrgService, NotificationService notificationService, WorkflowService workflowService, WorkflowEngineService workflowEngineService, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowGraphNavigator workflowGraphNavigator, WorkflowRuntimeLoader workflowRuntimeLoader, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, WorkflowInstanceMapper workflowInstanceMapper, WorkflowInstanceTransitionMapper workflowInstanceTransitionMapper, WorkflowTransitionRecordMapper workflowTransitionRecordMapper, WorkflowDefinitionEngine workflowDefinitionEngine, RequirementApprovalEvaluationService approvalEvaluationService, RequirementConfigService requirementConfigService, KnowledgeDocumentService knowledgeDocumentService, NodeStatusMapper nodeStatusMapper, ProjectMapper projectMapper, ObjectMapper objectMapper) {
+    public RequirementServiceImpl(RequirementMapper requirementMapper, RequirementHistoryMapper historyMapper, RequirementCommentMapper requirementCommentMapper, CustomFieldValueMapper customFieldValueMapper, UserMapper userMapper, UserOrganizationMapper userOrganizationMapper, SysOrgService sysOrgService, NotificationService notificationService, WorkflowService workflowService, WorkflowEngineService workflowEngineService, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowGraphNavigator workflowGraphNavigator, WorkflowRuntimeLoader workflowRuntimeLoader, WorkflowRuntimeMigrationService workflowRuntimeMigrationService, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, WorkflowInstanceMapper workflowInstanceMapper, WorkflowInstanceTransitionMapper workflowInstanceTransitionMapper, WorkflowTransitionRecordMapper workflowTransitionRecordMapper, WorkflowDefinitionEngine workflowDefinitionEngine, RequirementApprovalEvaluationService approvalEvaluationService, RequirementConfigService requirementConfigService, KnowledgeDocumentService knowledgeDocumentService, NodeStatusMapper nodeStatusMapper, ProjectMapper projectMapper, RoleMapper roleMapper, RoleGroupMapper roleGroupMapper, ObjectMapper objectMapper) {
         this.requirementMapper = requirementMapper;
         this.historyMapper = historyMapper;
         this.requirementCommentMapper = requirementCommentMapper;
@@ -135,6 +146,7 @@ public class RequirementServiceImpl implements RequirementService {
         this.workflowVersionResolver = workflowVersionResolver;
         this.workflowGraphNavigator = workflowGraphNavigator;
         this.workflowRuntimeLoader = workflowRuntimeLoader;
+        this.workflowRuntimeMigrationService = workflowRuntimeMigrationService;
         this.workflowNodeMapper = workflowNodeMapper;
         this.workflowEdgeMapper = workflowEdgeMapper;
         this.workflowInstanceMapper = workflowInstanceMapper;
@@ -146,6 +158,8 @@ public class RequirementServiceImpl implements RequirementService {
         this.knowledgeDocumentService = knowledgeDocumentService;
         this.nodeStatusMapper = nodeStatusMapper;
         this.projectMapper = projectMapper;
+        this.roleMapper = roleMapper;
+        this.roleGroupMapper = roleGroupMapper;
         this.objectMapper = objectMapper;
     }
 
@@ -611,6 +625,7 @@ public class RequirementServiceImpl implements RequirementService {
 
     @Override
     public PageResult<RequirementVO> listMyPending(RequirementMyListQueryDTO query, Long userId) {
+        workflowRuntimeMigrationService.alignRunningInstancesToActiveVersion();
         List<String> roleCodes = SecurityUtils.getCurrentUserRoles();
         List<Long> directOrgIds = resolveDirectOrgIds(userId);
         List<Long> scopedOrgIds = resolveScopedOrgIds(directOrgIds);
@@ -1074,25 +1089,25 @@ public class RequirementServiceImpl implements RequirementService {
         if (r.getCreatorId() != null) {
             User creator = userMapper.selectById(r.getCreatorId());
             if (creator != null) {
-                vo.setCreatorName(creator.getRealName());
+                vo.setCreatorName(resolveUserDisplayName(creator));
             }
         }
         if (r.getAssigneeId() != null) {
             User assignee = userMapper.selectById(r.getAssigneeId());
             if (assignee != null) {
-                vo.setAssigneeName(assignee.getRealName());
+                vo.setAssigneeName(resolveUserDisplayName(assignee));
             }
         }
         if (r.getOpsFollowId() != null) {
             User opsFollow = userMapper.selectById(r.getOpsFollowId());
             if (opsFollow != null) {
-                vo.setOpsFollowName(opsFollow.getRealName());
+                vo.setOpsFollowName(resolveUserDisplayName(opsFollow));
             }
         }
         if (r.getMaintFollowId() != null) {
             User maintFollow = userMapper.selectById(r.getMaintFollowId());
             if (maintFollow != null) {
-                vo.setMaintFollowName(maintFollow.getRealName());
+                vo.setMaintFollowName(resolveUserDisplayName(maintFollow));
             }
         }
         if (r.getDepartmentId() != null) {
@@ -1101,6 +1116,128 @@ public class RequirementServiceImpl implements RequirementService {
                 vo.setDepartmentName(dept.getName());
             }
         }
+        vo.setCurrentHandlerName(resolveCurrentHandlerName(r, vo));
+    }
+
+    private String resolveCurrentHandlerName(Requirement requirement, RequirementVO vo) {
+        if (requirement == null || requirement.getWorkflowInstanceId() == null) {
+            return null;
+        }
+
+        WorkflowInstance instance = workflowInstanceMapper.selectById(requirement.getWorkflowInstanceId());
+        if (instance == null && requirement.getId() != null) {
+            instance = workflowInstanceMapper.selectOne(
+                    new LambdaQueryWrapper<WorkflowInstance>()
+                            .eq(WorkflowInstance::getRequirementId, requirement.getId())
+                            .last("LIMIT 1"));
+        }
+        if (instance == null || !StringUtils.hasText(instance.getCurrentNodeId())) {
+            return null;
+        }
+
+        WorkflowNode currentNode = null;
+        // 直接从数据库查询节点，避免 context 加载异常被静默吞掉
+        currentNode = workflowNodeMapper.selectOne(
+                new LambdaQueryWrapper<WorkflowNode>()
+                        .eq(WorkflowNode::getWorkflowVersionId, instance.getWorkflowVersionId())
+                        .eq(WorkflowNode::getNodeId, instance.getCurrentNodeId())
+                        .last("LIMIT 1"));
+
+        if (currentNode == null) {
+            log.warn("未找到工作流节点: workflowVersionId={}, nodeId={}", instance.getWorkflowVersionId(), instance.getCurrentNodeId());
+            return null;
+        }
+        if (!StringUtils.hasText(currentNode.getAssigneeType())) {
+            log.warn("节点未配置处理人类型: nodeId={}, nodeName={}", currentNode.getNodeId(), currentNode.getNodeName());
+            return null;
+        }
+
+        String result = switch (currentNode.getAssigneeType()) {
+            case "SPECIFIED_USER" -> resolveSpecifiedUsersDisplay(currentNode.getAssigneeUserIds());
+            case "SPECIFIED_ROLE" -> resolveRoleDisplay(currentNode.getAssigneeRoleId());
+            case "SPECIFIED_ROLE_GROUP" -> resolveRoleGroupDisplay(currentNode.getAssigneeRoleGroupId());
+            case "SPECIFIED_ORG" -> resolveOrgDisplay(currentNode.getAssigneeOrgId(), currentNode.getProperties());
+            case "CREATOR" -> vo.getCreatorName();
+            case "PREV_APPROVER" -> resolvePreviousApproverDisplay(instance.getId(), currentNode.getNodeId());
+            default -> null;
+        };
+
+        log.debug("resolveCurrentHandlerName: reqId={}, assigneeType={}, result={}", requirement.getId(), currentNode.getAssigneeType(), result);
+        return result;
+    }
+
+    private String resolveSpecifiedUsersDisplay(List<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return null;
+        }
+        return userIds.stream()
+                .map(userMapper::selectById)
+                .filter(Objects::nonNull)
+                .map(this::resolveUserDisplayName)
+                .filter(StringUtils::hasText)
+                .distinct()
+                .collect(Collectors.joining("、"));
+    }
+
+    private String resolveRoleDisplay(Integer roleId) {
+        if (roleId == null) {
+            return null;
+        }
+        Role role = roleMapper.selectById(Long.valueOf(roleId));
+        if (role == null) {
+            return null;
+        }
+        return StringUtils.hasText(role.getName()) ? role.getName() : role.getCode();
+    }
+
+    private String resolveRoleGroupDisplay(Long roleGroupId) {
+        if (roleGroupId == null) {
+            return null;
+        }
+        RoleGroup roleGroup = roleGroupMapper.selectById(roleGroupId);
+        return roleGroup != null ? roleGroup.getName() : null;
+    }
+
+    private String resolveOrgDisplay(Long orgId, Map<String, Object> properties) {
+        if (orgId == null) {
+            return null;
+        }
+        SysOrgVO org = sysOrgService.getDetail(orgId);
+        if (org == null || !StringUtils.hasText(org.getName())) {
+            return null;
+        }
+        Object orgScopeType = properties != null ? properties.get("orgScopeType") : null;
+        if (orgScopeType != null && !"current".equalsIgnoreCase(String.valueOf(orgScopeType))) {
+            return org.getName() + "（含子级）";
+        }
+        return org.getName();
+    }
+
+    private String resolvePreviousApproverDisplay(Long instanceId, String currentNodeId) {
+        if (instanceId == null || !StringUtils.hasText(currentNodeId)) {
+            return null;
+        }
+        WorkflowInstanceTransition transition = workflowInstanceTransitionMapper.selectOne(
+                new LambdaQueryWrapper<WorkflowInstanceTransition>()
+                        .eq(WorkflowInstanceTransition::getInstanceId, instanceId)
+                        .eq(WorkflowInstanceTransition::getToNodeId, currentNodeId)
+                        .orderByDesc(WorkflowInstanceTransition::getId)
+                        .last("LIMIT 1"));
+        if (transition == null || transition.getOperatorId() == null) {
+            return null;
+        }
+        User approver = userMapper.selectById(transition.getOperatorId());
+        return approver != null ? resolveUserDisplayName(approver) : null;
+    }
+
+    private String resolveUserDisplayName(User user) {
+        if (user == null) {
+            return null;
+        }
+        if (StringUtils.hasText(user.getRealName())) {
+            return user.getRealName();
+        }
+        return user.getUsername();
     }
 
     /**

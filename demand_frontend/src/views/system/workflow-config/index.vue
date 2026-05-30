@@ -188,7 +188,7 @@
               </div>
             </div>
 
-            <el-table v-loading="approvalLoading" :data="filteredApprovals" border class="approval-table">
+            <el-table v-loading="approvalLoading" :data="pagedApprovals" border class="approval-table">
               <el-table-column label="任务名称" min-width="240">
                 <template #default="{ row }">
                   <div class="task-name-cell">
@@ -233,34 +233,40 @@
                   <span v-else>-</span>
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="250" fixed="right">
+              <el-table-column label="操作" width="180" fixed="right">
                 <template #default="{ row }">
-                  <el-button link type="primary" size="small" @click="openDetail(row)">详情</el-button>
-                  <el-button link type="primary" size="small" @click="handleViewVersion(row)">查看配置</el-button>
-                  <el-button
-                    v-if="row.status === 'PENDING' && canProcessApproval"
-                    type="primary"
-                    size="small"
-                    @click="handleApprove(row)"
-                    v-permission="'button:workflow:approve'"
-                  >
-                    通过
-                  </el-button>
-                  <el-button
-                    v-if="row.status === 'PENDING' && canProcessApproval"
-                    type="danger"
-                    size="small"
-                    @click="handleReject(row)"
-                    v-permission="'button:workflow:approve'"
-                  >
-                    拒绝
-                  </el-button>
-                  <span v-else class="completed-text">
-                    {{ row.status === 'APPROVED' ? '已通过' : row.status === 'REJECTED' ? '已拒绝' : '-' }}
-                  </span>
+                  <el-tooltip content="详情" placement="top">
+                    <el-button link type="primary" :icon="Document" @click="openDetail(row)" />
+                  </el-tooltip>
+                  <el-tooltip content="查看配置" placement="top">
+                    <el-button link type="primary" :icon="Setting" @click="handleViewVersion(row)" />
+                  </el-tooltip>
+                  <template v-if="row.status === 'PENDING' && canProcessApproval">
+                    <el-tooltip content="通过" placement="top">
+                      <el-button link type="success" :icon="CircleCheck" @click="handleApprove(row)" v-permission="'button:workflow:approve'" />
+                    </el-tooltip>
+                    <el-tooltip content="拒绝" placement="top">
+                      <el-button link type="danger" :icon="CircleClose" @click="handleReject(row)" v-permission="'button:workflow:approve'" />
+                    </el-tooltip>
+                  </template>
+                  <el-tooltip v-else-if="row.status === 'APPROVED'" content="已通过" placement="top">
+                    <el-button link type="success" :icon="CircleCheck" disabled />
+                  </el-tooltip>
+                  <el-tooltip v-else-if="row.status === 'REJECTED'" content="已拒绝" placement="top">
+                    <el-button link type="danger" :icon="CircleClose" disabled />
+                  </el-tooltip>
                 </template>
               </el-table-column>
             </el-table>
+            <div class="pagination-container">
+              <el-pagination
+                v-model:current-page="approvalPagination.page"
+                v-model:page-size="approvalPagination.size"
+                :total="filteredApprovals.length"
+                :page-sizes="[10, 20, 50]"
+                layout="total, sizes, prev, pager, next"
+              />
+            </div>
           </el-tab-pane>
         </el-tabs>
       </el-card>
@@ -447,7 +453,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh } from '@element-plus/icons-vue'
+import { Plus, Refresh, Setting, CircleCheck, CircleClose, Document } from '@element-plus/icons-vue'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import { formatDate as formatDateTime } from '@/utils/format'
@@ -488,6 +494,7 @@ const versionApprovalStatusFilter = ref('')
 const versionKeyword = ref('')
 const approvalStatusFilter = ref('')
 const approvalKeyword = ref('')
+const approvalPagination = reactive({ page: 1, size: 10 })
 const projectFilter = ref<number | undefined>()
 const versionDialogVisible = ref(false)
 const versionSaving = ref(false)
@@ -598,6 +605,10 @@ const filteredApprovals = computed(() => {
     return searchText.includes(keyword)
   })
 })
+const pagedApprovals = computed(() => {
+  const start = (approvalPagination.page - 1) * approvalPagination.size
+  return filteredApprovals.value.slice(start, start + approvalPagination.size)
+})
 
 watch(
   () => [route.query.tab, route.query.status, route.query.keyword, route.query.projectId],
@@ -620,6 +631,12 @@ watch(
   () => [activationFilter.value, versionApprovalStatusFilter.value, versionKeyword.value],
   () => {
     pagination.page = 1
+  },
+)
+watch(
+  () => [approvalStatusFilter.value, approvalKeyword.value, projectFilter.value],
+  () => {
+    approvalPagination.page = 1
   },
 )
 

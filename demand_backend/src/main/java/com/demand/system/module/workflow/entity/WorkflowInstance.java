@@ -24,6 +24,10 @@ public class WorkflowInstance {
 
     private Integer lockVersion;
 
+    private String parallelNodeId;
+
+    private Long activeParallelBranchId;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
@@ -82,6 +86,22 @@ public class WorkflowInstance {
 
     public void setLockVersion(Integer lockVersion) {
         this.lockVersion = lockVersion;
+    }
+
+    public String getParallelNodeId() {
+        return parallelNodeId;
+    }
+
+    public void setParallelNodeId(String parallelNodeId) {
+        this.parallelNodeId = parallelNodeId;
+    }
+
+    public Long getActiveParallelBranchId() {
+        return activeParallelBranchId;
+    }
+
+    public void setActiveParallelBranchId(Long activeParallelBranchId) {
+        this.activeParallelBranchId = activeParallelBranchId;
     }
 
     public LocalDateTime getCreatedAt() {

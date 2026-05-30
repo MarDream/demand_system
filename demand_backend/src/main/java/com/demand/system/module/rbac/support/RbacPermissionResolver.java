@@ -66,6 +66,15 @@ public class RbacPermissionResolver {
         return List.copyOf(permissions);
     }
 
+    public List<String> resolveRoleDisplayNames(Long userId) {
+        LinkedHashSet<String> roleNames = new LinkedHashSet<>(resolveLegacyRoles(userId));
+        roleNames.addAll(resolveRoleNamesFromUserRoles(userId));
+        if (roleNames.isEmpty()) {
+            roleNames.add("USER");
+        }
+        return List.copyOf(roleNames);
+    }
+
     public boolean isSuperAdmin(Collection<String> roles) {
         if (roles == null) {
             return false;
@@ -91,6 +100,24 @@ public class RbacPermissionResolver {
     }
 
     private List<String> resolveRoleCodesFromUserRoles(Long userId) {
+        List<Role> roles = loadRolesByUserId(userId);
+        return roles.stream()
+                .map(Role::getCode)
+                .filter(StringUtils::hasText)
+                .distinct()
+                .toList();
+    }
+
+    private List<String> resolveRoleNamesFromUserRoles(Long userId) {
+        List<Role> roles = loadRolesByUserId(userId);
+        return roles.stream()
+                .map(role -> StringUtils.hasText(role.getName()) ? role.getName() : role.getCode())
+                .filter(StringUtils::hasText)
+                .distinct()
+                .toList();
+    }
+
+    private List<Role> loadRolesByUserId(Long userId) {
         List<UserRole> userRoles = userRoleMapper.selectList(
                 new LambdaQueryWrapper<UserRole>().eq(UserRole::getUserId, userId)
         );
@@ -104,12 +131,7 @@ public class RbacPermissionResolver {
         if (roleIds.isEmpty()) {
             return List.of();
         }
-        List<Role> roles = roleMapper.selectBatchIds(roleIds);
-        return roles.stream()
-                .map(Role::getCode)
-                .filter(StringUtils::hasText)
-                .distinct()
-                .toList();
+        return roleMapper.selectBatchIds(roleIds);
     }
 
     private List<String> resolvePermissionsFromRoles(Set<String> roleCodes) {

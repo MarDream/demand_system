@@ -106,15 +106,22 @@
 
       <template #table>
         <el-table
+          ref="tableRef"
           v-loading="loading"
           :data="tableData"
+          row-key="id"
+          :expand-row-keys="expandedRowKeys"
           border
           stripe
-          :row-class-name="requirementRowClassName"
           @selection-change="handleSelectionChange"
         >
           <el-table-column type="selection" width="50" />
-          <el-table-column type="expand" width="40">
+          <el-table-column
+            type="expand"
+            width="1"
+            class-name="requirement-expand-column"
+            label-class-name="requirement-expand-column"
+          >
             <template #default="{ row }">
               <div class="expand-row">
                 <p class="expand-row__text" v-if="row.childCount && row.childCount > 0">
@@ -134,7 +141,20 @@
             >
               <template #default="{ row }">
                 <template v-if="col.key === 'title'">
-                  <el-link type="primary" @click="handleOpen(row)">{{ row.title }}</el-link>
+                  <div class="requirement-title">
+                    <el-link type="primary" @click="handleOpen(row)">{{ row.title }}</el-link>
+                    <button
+                      v-if="hasChildRequirements(row)"
+                      type="button"
+                      class="requirement-title__toggle"
+                      :aria-label="isRowExpanded(row) ? '折叠子需求' : '展开子需求'"
+                      @click.stop="toggleExpandedRow(row)"
+                    >
+                      <el-icon class="requirement-title__toggle-icon" :class="{ 'is-expanded': isRowExpanded(row) }">
+                        <ArrowRight />
+                      </el-icon>
+                    </button>
+                  </div>
                 </template>
                 <template v-else-if="col.key === 'requirementNo'">
                   {{ row.requirementNo || '-' }}
@@ -147,6 +167,9 @@
                 </template>
                 <template v-else-if="col.key === 'status'">
                   <el-tag :type="statusTagType(row.status)">{{ row.status }}</el-tag>
+                </template>
+                <template v-else-if="col.key === 'assigneeName'">
+                  {{ row.currentHandlerName || row.assigneeName || '-' }}
                 </template>
                 <template v-else-if="col.key.endsWith('At') || col.key === 'createdAt'">
                   {{ formatDate(row[col.key]) }}
@@ -217,10 +240,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Setting, View, Edit, Delete, ArrowDown } from '@element-plus/icons-vue'
+import type { TableInstance } from 'element-plus'
+import { Setting, View, Edit, Delete, ArrowDown, ArrowRight } from '@element-plus/icons-vue'
 import { exportToExcel } from '@/utils/excel'
 import { requirementApi, userApi } from '@/api'
 import { getMyRequirementPending, getMyRequirementDone } from '@/api/modules/requirement'
@@ -399,6 +423,8 @@ const defaultTime = [new Date(2000, 0, 1, 0, 0, 0), new Date(2000, 0, 1, 23, 59,
 const loading = ref(false)
 const tableData = ref<Requirement[]>([])
 const selectedIds = ref<number[]>([])
+const tableRef = ref<TableInstance>()
+const expandedRowKeys = ref<number[]>([])
 
 // Pagination
 const pagination = reactive({
@@ -565,8 +591,28 @@ function handleSelectionChange(selection: Requirement[]) {
   selectedIds.value = selection.map((item) => item.id)
 }
 
-function requirementRowClassName({ row }: { row: Requirement }) {
-  return row.childCount && row.childCount > 0 ? '' : 'requirement-row--no-children'
+function hasChildRequirements(row: Requirement) {
+  return Number(row.childCount || 0) > 0
+}
+
+function isRowExpanded(row: Requirement) {
+  return expandedRowKeys.value.includes(row.id)
+}
+
+function toggleExpandedRow(row: Requirement) {
+  if (!hasChildRequirements(row)) return
+
+  const nextExpanded = !isRowExpanded(row)
+  const expandedKeySet = new Set(expandedRowKeys.value)
+
+  if (nextExpanded) {
+    expandedKeySet.add(row.id)
+  } else {
+    expandedKeySet.delete(row.id)
+  }
+
+  expandedRowKeys.value = Array.from(expandedKeySet)
+  tableRef.value?.toggleRowExpansion?.(row, nextExpanded)
 }
 
 async function handleBatchDelete() {
@@ -600,7 +646,7 @@ async function handleExport() {
       '优先级': priorityLabel(row.priority),
       '状态': row.status || '',
       '创建人': row.creatorName || '-',
-      '负责人': row.assigneeName || '-',
+      '负责人': row.currentHandlerName || row.assigneeName || '-',
       '运营跟进人': row.opsFollowName || '-',
       '运维跟进人': row.maintFollowName || '-',
       '归属部门': row.departmentName || '-',
@@ -646,6 +692,15 @@ onMounted(() => {
   loadColumnConfig()
   refreshViewCounts()
 })
+
+watch(tableData, (rows) => {
+  const validRowIds = new Set(
+    rows
+      .filter(hasChildRequirements)
+      .map(row => row.id),
+  )
+  expandedRowKeys.value = expandedRowKeys.value.filter(id => validRowIds.has(id))
+})
 </script>
 
 <style scoped lang="scss">
@@ -657,13 +712,48 @@ onMounted(() => {
   color: $text-color-placeholder;
 }
 
-:deep(.requirement-row--no-children .el-table__expand-icon) {
-  visibility: hidden;
-  pointer-events: none;
+.requirement-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
-:deep(.requirement-row--no-children .el-table__expand-column .cell) {
-  cursor: default;
+.requirement-title__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: $text-color-secondary;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--el-color-primary);
+    background: var(--el-color-primary-light-9);
+  }
+}
+
+.requirement-title__toggle-icon {
+  font-size: 14px;
+  transition: transform 0.2s ease, color 0.2s ease;
+
+  &.is-expanded {
+    transform: rotate(90deg);
+  }
+}
+
+:deep(.requirement-expand-column) {
+  width: 1px !important;
+  min-width: 1px !important;
+  padding: 0 !important;
+}
+
+:deep(.requirement-expand-column .cell) {
+  display: none;
 }
 
 .column-config {

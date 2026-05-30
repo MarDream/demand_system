@@ -2,7 +2,7 @@
 
 export interface WorkflowNodeDTO {
   nodeId: string
-  nodeType: 'start' | 'approval' | 'cc' | 'condition' | 'end'
+  nodeType: 'start' | 'approval' | 'cc' | 'condition' | 'parallel' | 'end'
   nodeName: string
   positionX: number
   positionY: number

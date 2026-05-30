@@ -22,6 +22,7 @@ import com.demand.system.module.rbac.entity.Role;
 import com.demand.system.module.rbac.entity.RoleGroup;
 import com.demand.system.module.rbac.mapper.RoleMapper;
 import com.demand.system.module.rbac.mapper.RoleGroupMapper;
+import com.demand.system.module.workflow.dto.ParallelBranchVO;
 import com.demand.system.module.workflow.dto.AvailableTransitionDTO;
 import com.demand.system.module.workflow.dto.FlowTransitionRequest;
 import com.demand.system.module.workflow.dto.TransitionVO;
@@ -36,6 +37,7 @@ import com.demand.system.module.workflow.mapper.WorkflowInstanceTransitionMapper
 import com.demand.system.module.workflow.mapper.WorkflowNodeMapper;
 import com.demand.system.module.workflow.mapper.NodeStatusMapper;
 import com.demand.system.module.workflow.support.WorkflowNodeUtils;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -70,8 +72,11 @@ public class WorkflowEngineService {
     private final NodeStatusMapper nodeStatusMapper;
     private final WorkflowGraphNavigator graphNavigator;
     private final WorkflowRuntimeLoader runtimeLoader;
+    private final WorkflowRuntimeMigrationService workflowRuntimeMigrationService;
     private final WorkflowNotificationService notificationService;
     private final RequirementApprovalEvaluationService approvalEvaluationService;
+    private final WorkflowCountersignService countersignService;
+    private final WorkflowParallelBranchService parallelBranchService;
 
     public WorkflowEngineService(WorkflowInstanceMapper instanceMapper, WorkflowInstanceTransitionMapper transitionMapper,
                                WorkflowNodeMapper nodeMapper, WorkflowEdgeMapper edgeMapper,
@@ -80,8 +85,11 @@ public class WorkflowEngineService {
                                RoleGroupMapper roleGroupMapper, UserOrganizationMapper userOrganizationMapper,
                                SysOrgMapper sysOrgMapper,
                                NodeStatusMapper nodeStatusMapper, WorkflowGraphNavigator graphNavigator,
-                               WorkflowRuntimeLoader runtimeLoader, WorkflowNotificationService notificationService,
-                               RequirementApprovalEvaluationService approvalEvaluationService) {
+                               WorkflowRuntimeLoader runtimeLoader, WorkflowRuntimeMigrationService workflowRuntimeMigrationService,
+                               WorkflowNotificationService notificationService,
+                               RequirementApprovalEvaluationService approvalEvaluationService,
+                               @Lazy WorkflowCountersignService countersignService,
+                               WorkflowParallelBranchService parallelBranchService) {
         this.instanceMapper = instanceMapper;
         this.transitionMapper = transitionMapper;
         this.nodeMapper = nodeMapper;
@@ -97,8 +105,11 @@ public class WorkflowEngineService {
         this.nodeStatusMapper = nodeStatusMapper;
         this.graphNavigator = graphNavigator;
         this.runtimeLoader = runtimeLoader;
+        this.workflowRuntimeMigrationService = workflowRuntimeMigrationService;
         this.notificationService = notificationService;
         this.approvalEvaluationService = approvalEvaluationService;
+        this.countersignService = countersignService;
+        this.parallelBranchService = parallelBranchService;
     }
 
     @Transactional
@@ -164,6 +175,7 @@ public class WorkflowEngineService {
                 .set(Requirement::getIsDraft, false));
 
         notificationService.notifyNodeEntered(requirement, targetNode, operatorId);
+        initCountersignIfNeeded(instance.getId(), targetNode, requirement);
     }
 
     @Transactional
@@ -173,6 +185,7 @@ public class WorkflowEngineService {
 
     @Transactional
     public void transition(FlowTransitionRequest request) {
+        workflowRuntimeMigrationService.alignRequirementInstanceIfNeeded(request.getRequirementId());
         Long operatorId = SecurityUtils.getCurrentUserId();
         Requirement requirement = requirementMapper.selectById(request.getRequirementId());
         if (requirement == null) {
@@ -200,6 +213,10 @@ public class WorkflowEngineService {
         requirement = requirementMapper.selectById(request.getRequirementId());
 
         validateTransition(context, instance, currentNode, targetNode, request.getAction(), operatorId);
+        if (isCountersignEnabled(currentNode)
+                && !countersignService.canProceedAfterCountersign(instance.getId(), instance.getCurrentNodeId(), currentNode)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "会签尚未完成，无法流转");
+        }
         boolean approvalEvaluationRequired = isApprovalEvaluationRequired(currentNode);
         if (approvalEvaluationRequired) {
             validateApprovalEvaluation(request.getRating(), request.getComment());
@@ -256,10 +273,68 @@ public class WorkflowEngineService {
         );
 
         notificationService.notifyNodeEntered(requirement, targetNode, operatorId);
+
+        instance = instanceMapper.selectById(instance.getId());
+        parallelBranchService.initParallelBranchesIfNeeded(instance, context, request.getToNodeId(), requirement);
+        parallelBranchService.afterTransition(instance, context, instance.getPreviousNodeId(), request.getToNodeId(), requirement);
+        initCountersignIfNeeded(instance.getId(), targetNode, requirement);
+    }
+
+    /**
+     * 初始化会签记录
+     */
+    private void initCountersignIfNeeded(Long instanceId, WorkflowNode targetNode, Requirement requirement) {
+        if (targetNode == null || !"approval".equalsIgnoreCase(targetNode.getNodeType())) {
+            return;
+        }
+
+        Map<String, Object> properties = targetNode.getProperties();
+        if (properties == null) {
+            return;
+        }
+
+        Boolean countersignEnabled = (Boolean) properties.get("countersignEnabled");
+        if (countersignEnabled == null || !countersignEnabled) {
+            return;
+        }
+
+        // 获取会签人列表
+        List<Long> approverIds = resolveCountersignApprovers(targetNode, requirement);
+        if (approverIds == null || approverIds.isEmpty()) {
+            return;
+        }
+
+        countersignService.initCountersignRecords(instanceId, targetNode.getNodeId(), approverIds);
+    }
+
+    /**
+     * 解析会签人列表
+     */
+    private List<Long> resolveCountersignApprovers(WorkflowNode node, Requirement requirement) {
+        Map<String, Object> properties = node.getProperties();
+        if (properties == null) {
+            return Collections.emptyList();
+        }
+
+        String countersignMode = (String) properties.get("countersignMode");
+        if ("FIXED".equals(countersignMode)) {
+            @SuppressWarnings("unchecked")
+            List<Long> fixedApprovers = (List<Long>) properties.get("countersignApprovers");
+            return fixedApprovers != null ? fixedApprovers : Collections.emptyList();
+        }
+
+        // DYNAMIC 模式下，从 assigneeUserIds 获取
+        List<Long> assigneeUserIds = node.getAssigneeUserIds();
+        if (assigneeUserIds != null && !assigneeUserIds.isEmpty()) {
+            return assigneeUserIds;
+        }
+
+        return Collections.emptyList();
     }
 
     @Transactional
     public void rollback(Long requirementId, String comment) {
+        workflowRuntimeMigrationService.alignRequirementInstanceIfNeeded(requirementId);
         Long operatorId = SecurityUtils.getCurrentUserId();
         WorkflowInstance instance = getRunningInstance(requirementId);
 
@@ -313,6 +388,7 @@ public class WorkflowEngineService {
 
     @Transactional
     public void cancel(Long requirementId, String comment) {
+        workflowRuntimeMigrationService.alignRequirementInstanceIfNeeded(requirementId);
         Long operatorId = SecurityUtils.getCurrentUserId();
         Requirement requirement = requirementMapper.selectById(requirementId);
         if (requirement == null) {
@@ -367,6 +443,7 @@ public class WorkflowEngineService {
     }
 
     public WorkflowAvailableActionsDTO getAvailableActions(Long requirementId) {
+        workflowRuntimeMigrationService.alignRequirementInstanceIfNeeded(requirementId);
         WorkflowAvailableActionsDTO actions = new WorkflowAvailableActionsDTO();
         actions.setCanTransition(false);
         actions.setCanRollback(false);
@@ -425,11 +502,79 @@ public class WorkflowEngineService {
         actions.setCanRollback(canOperate && instance.getPreviousNodeId() != null && !"end".equals(currentNode.getNodeType()));
         actions.setCanCancel(canCancel);
         actions.setEvaluationRequired(canOperate && isApprovalEvaluationRequired(currentNode));
+        boolean countersignEnabled = isCountersignEnabled(currentNode);
+        actions.setCountersignEnabled(countersignEnabled);
+        if (countersignEnabled) {
+            actions.setCanCountersign(countersignService.canCurrentUserCountersign(requirementId, currentNode.getNodeId()));
+            boolean countersignComplete = countersignService.canProceedAfterCountersign(
+                    instance.getId(), currentNode.getNodeId(), currentNode);
+            actions.setCountersignPending(!countersignComplete);
+            if (!countersignComplete) {
+                actions.setCanTransition(false);
+            }
+        }
+        boolean parallelActive = StringUtils.hasText(instance.getParallelNodeId())
+                || parallelBranchService.hasPendingParallel(instance.getId());
+        actions.setParallelActive(parallelActive);
+        actions.setActiveParallelBranchId(instance.getActiveParallelBranchId());
+        if (parallelActive) {
+            actions.setParallelBranches(parallelBranchService.listByRequirementId(requirementId));
+        }
         return actions;
     }
 
+    @Transactional
+    public void autoTransitionAfterCountersign(Long requirementId, String nodeId) {
+        workflowRuntimeMigrationService.alignRequirementInstanceIfNeeded(requirementId);
+        Requirement requirement = requirementMapper.selectById(requirementId);
+        if (requirement == null) {
+            return;
+        }
+        WorkflowInstance instance = instanceMapper.selectOne(
+                new LambdaQueryWrapper<WorkflowInstance>()
+                        .eq(WorkflowInstance::getRequirementId, requirementId));
+        if (instance == null || !"running".equals(instance.getStatus())) {
+            return;
+        }
+        if (!nodeId.equals(instance.getCurrentNodeId())) {
+            return;
+        }
+
+        WorkflowGraphContext context = runtimeLoader.loadContext(instance.getWorkflowVersionId());
+        WorkflowNode currentNode = context.getNode(nodeId);
+        if (currentNode == null || !isCountersignEnabled(currentNode)) {
+            return;
+        }
+        if (!countersignService.canProceedAfterCountersign(instance.getId(), nodeId, currentNode)) {
+            return;
+        }
+
+        List<WorkflowNode> targets = graphNavigator.resolveAvailableTargets(context, nodeId, requirement);
+        if (targets.isEmpty()) {
+            return;
+        }
+
+        FlowTransitionRequest request = new FlowTransitionRequest();
+        request.setRequirementId(requirementId);
+        request.setToNodeId(targets.get(0).getNodeId());
+        request.setAction("submit");
+        request.setLockVersion(instance.getLockVersion());
+        transition(request);
+    }
+
+    private boolean isCountersignEnabled(WorkflowNode node) {
+        if (node == null || node.getProperties() == null) {
+            return false;
+        }
+        Object enabled = node.getProperties().get("countersignEnabled");
+        return Boolean.TRUE.equals(enabled);
+    }
+
     private boolean isApprovalEvaluationRequired(WorkflowNode currentNode) {
-        return currentNode != null && "approval".equalsIgnoreCase(currentNode.getNodeType());
+        if (currentNode == null || !"approval".equalsIgnoreCase(currentNode.getNodeType())) {
+            return false;
+        }
+        return !isCountersignEnabled(currentNode);
     }
 
     private void validateApprovalEvaluation(Integer rating, String comment) {
@@ -561,10 +706,10 @@ public class WorkflowEngineService {
             throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
         }
         Role role = roleMapper.selectById(roleId.longValue());
-        if (role == null || role.getCode() == null || role.getCode().isBlank()) {
+        if (role == null || (!StringUtils.hasText(role.getCode()) && !StringUtils.hasText(role.getName()))) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
         }
-        if (!SecurityUtils.getCurrentUserRoles().contains(role.getCode().trim())) {
+        if (!currentUserMatchesRole(role)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
         }
     }
@@ -584,12 +729,25 @@ public class WorkflowEngineService {
             throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
         }
         // 检查用户是否拥有角色组中的任一角色
-        List<String> userRoles = SecurityUtils.getCurrentUserRoles();
         boolean hasPermission = roles.stream()
-            .anyMatch(role -> role.getCode() != null && userRoles.contains(role.getCode().trim()));
+            .anyMatch(this::currentUserMatchesRole);
         if (!hasPermission) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
         }
+    }
+
+    private boolean currentUserMatchesRole(Role role) {
+        if (role == null) {
+            return false;
+        }
+        List<String> userRoles = SecurityUtils.getCurrentUserRoles();
+        if (userRoles.isEmpty()) {
+            return false;
+        }
+        if (StringUtils.hasText(role.getCode()) && userRoles.contains(role.getCode().trim())) {
+            return true;
+        }
+        return StringUtils.hasText(role.getName()) && userRoles.contains(role.getName().trim());
     }
 
     private void validateSpecifiedOrgPermission(WorkflowNode node, Long operatorId) {

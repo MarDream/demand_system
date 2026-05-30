@@ -53,3 +53,66 @@ export function getAvailableTransitions(requirementId: number) {
 export function executeTransition(requirementId: number, data: TransitionRequest) {
   return request.post<ApiResponse<TransitionResponse>>(`/v1/requirements/${requirementId}/transition`, data)
 }
+
+// 会签相关 API
+export interface CountersignRecord {
+  id: number
+  instanceId: number
+  nodeId: string
+  approverId: number
+  approverName?: string
+  status: string
+  rating?: number
+  comment?: string
+  approvedAt?: string
+  createdAt: string
+}
+
+export interface CountersignSubmitDTO {
+  requirementId: number
+  nodeId: string
+  status: 'approved' | 'rejected'
+  rating?: number
+  comment?: string
+}
+
+export function submitCountersignApproval(data: CountersignSubmitDTO) {
+  return request.post<ApiResponse<void>>('/v1/workflow/countersign/submit', data) as unknown as Promise<void>
+}
+
+export function getCountersignRecords(requirementId: number, nodeId: string) {
+  return request.get<ApiResponse<CountersignRecord[]>>('/v1/workflow/countersign/records', {
+    params: { requirementId, nodeId }
+  }) as unknown as Promise<CountersignRecord[]>
+}
+
+export function canCurrentUserCountersign(requirementId: number, nodeId: string) {
+  return request.get<ApiResponse<boolean>>('/v1/workflow/countersign/can-countersign', {
+    params: { requirementId, nodeId }
+  }) as unknown as Promise<boolean>
+}
+
+export interface ParallelBranch {
+  id: number
+  instanceId: number
+  parallelNodeId: string
+  branchNodeId: string
+  branchName: string
+  currentNodeId?: string | null
+  status: string
+  startedAt?: string | null
+  completedAt?: string | null
+  createdAt?: string
+}
+
+export function getParallelBranches(requirementId: number) {
+  return request.get<ApiResponse<ParallelBranch[]>>('/v1/workflow/parallel/branches', {
+    params: { requirementId },
+  }) as unknown as Promise<ParallelBranch[]>
+}
+
+export function switchParallelBranch(requirementId: number, branchId: number) {
+  return request.post<ApiResponse<void>>('/v1/workflow/parallel/switch', null, {
+    params: { requirementId, branchId },
+  }) as unknown as Promise<void>
+}

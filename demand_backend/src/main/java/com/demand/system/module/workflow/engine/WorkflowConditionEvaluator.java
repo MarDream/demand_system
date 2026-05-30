@@ -5,6 +5,7 @@ import com.demand.system.module.workflow.entity.WorkflowEdge;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.regex.Matcher;
@@ -74,5 +75,36 @@ public class WorkflowConditionEvaluator {
 
     private String normalize(String value) {
         return value == null ? null : value.trim();
+    }
+
+    public boolean evaluateStructuredCondition(Object condition, Requirement requirement) {
+        if (!(condition instanceof Map<?, ?> conditionMap)) {
+            return true;
+        }
+        Object fieldObj = conditionMap.get("field");
+        Object operatorObj = conditionMap.get("operator");
+        Object valueObj = conditionMap.get("value");
+        if (fieldObj == null || operatorObj == null) {
+            return true;
+        }
+        String field = fieldObj.toString();
+        String operator = operatorObj.toString();
+        String actual = readRequirementField(requirement, field);
+        if ("in".equalsIgnoreCase(operator)) {
+            if (valueObj instanceof List<?> list) {
+                return list.stream().map(String::valueOf).anyMatch(v -> Objects.equals(normalize(actual), normalize(v)));
+            }
+            return Objects.equals(normalize(actual), normalize(String.valueOf(valueObj)));
+        }
+        if ("notIn".equalsIgnoreCase(operator)) {
+            if (valueObj instanceof List<?> list) {
+                return list.stream().map(String::valueOf).noneMatch(v -> Objects.equals(normalize(actual), normalize(v)));
+            }
+            return !Objects.equals(normalize(actual), normalize(String.valueOf(valueObj)));
+        }
+        if ("ne".equalsIgnoreCase(operator)) {
+            return !Objects.equals(normalize(actual), normalize(String.valueOf(valueObj)));
+        }
+        return Objects.equals(normalize(actual), normalize(String.valueOf(valueObj)));
     }
 }

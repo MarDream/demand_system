@@ -35,7 +35,7 @@
       </template>
       <div v-show="expandedSections.statusDist" class="section-body">
         <div class="chart-box" v-loading="distLoading">
-          <v-chart v-if="pieLoaded" :option="pieOption" class="chart" autoresize />
+          <v-chart v-if="pieLoaded" :option="pieOption" :init-options="chartInitOptions" class="chart" autoresize />
           <el-empty v-else description="暂无数据" />
         </div>
       </div>
@@ -74,7 +74,7 @@
       </template>
       <div v-show="expandedSections.typeDist" class="section-body">
         <div class="chart-box" v-loading="distLoading">
-          <v-chart v-if="barLoaded" :option="barOption" class="chart" autoresize />
+          <v-chart v-if="barLoaded" :option="barOption" :init-options="chartInitOptions" class="chart" autoresize />
           <el-empty v-else description="暂无数据" />
         </div>
       </div>
@@ -135,7 +135,7 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import { Document, Loading, CircleCheck, Warning, ArrowRight } from '@element-plus/icons-vue'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
-import { CanvasRenderer } from 'echarts/renderers'
+import { SVGRenderer } from 'echarts/renderers'
 import { PieChart, BarChart } from 'echarts/charts'
 import { TitleComponent, TooltipComponent, LegendComponent, GridComponent } from 'echarts/components'
 import { getDashboardData, getDistributionData, getDurationData } from '@/api/modules/statistics'
@@ -144,7 +144,9 @@ import { useUserStore } from '@/stores/modules/user'
 import { formatDate } from '@/utils/format'
 import type { Requirement } from '@/types/requirement'
 
-use([CanvasRenderer, PieChart, BarChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent])
+use([SVGRenderer, PieChart, BarChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent])
+
+const chartInitOptions = { renderer: 'svg' as const }
 
 const userStore = useUserStore()
 

@@ -34,6 +34,7 @@ export interface Requirement {
   updatedAt: string
   creatorName?: string
   assigneeName?: string
+  currentHandlerName?: string
   opsFollowName?: string
   maintFollowName?: string
   departmentName?: string
@@ -215,4 +216,33 @@ export interface CustomFieldValue {
   valueNumber?: number
   valueDate?: string
   valueUserIds?: number[]
+}
+
+export interface RequirementTemplate {
+  id?: number
+  requirementTypeCode: string
+  templateName: string
+  templateContent: {
+    sections: TemplateSection[]
+  }
+  isActive?: number
+  creatorId?: number
+}
+
+export interface TemplateSection {
+  sectionId: string
+  sectionName: string
+  fieldType: 'text' | 'richtext' | 'textarea'
+  required: boolean
+  placeholder?: string
+  maxLength?: number
+  defaultContent?: string
+}
+
+export interface RequirementTemplateSave {
+  requirementTypeCode: string
+  templateName: string
+  templateContent: {
+    sections: TemplateSection[]
+  }
 }

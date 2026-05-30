@@ -81,6 +81,8 @@ public class RequirementVO {
 
     private String assigneeName;
 
+    private String currentHandlerName;
+
     private String opsFollowName;
 
     private String maintFollowName;
@@ -394,6 +396,14 @@ public class RequirementVO {
 
     public void setAssigneeName(String assigneeName) {
         this.assigneeName = assigneeName;
+    }
+
+    public String getCurrentHandlerName() {
+        return currentHandlerName;
+    }
+
+    public void setCurrentHandlerName(String currentHandlerName) {
+        this.currentHandlerName = currentHandlerName;
     }
 
     public String getOpsFollowName() {

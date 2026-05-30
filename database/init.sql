@@ -353,7 +353,7 @@ CREATE TABLE `requirement_comments` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `requirement_id` INT UNSIGNED NOT NULL COMMENT '需求ID',
   `user_id` INT UNSIGNED NOT NULL COMMENT '评论人ID',
-  `content` VARCHAR(500) NOT NULL COMMENT '评论内容',
+  `content` TEXT NOT NULL COMMENT '评论内容',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   INDEX `idx_requirement_id` (`requirement_id`),
@@ -1250,6 +1250,8 @@ CREATE TABLE IF NOT EXISTS `workflow_instances` (
   `previous_node_id` VARCHAR(100) DEFAULT NULL COMMENT '上一节点ID（用于回退）',
   `status` VARCHAR(50) DEFAULT 'running' COMMENT 'running/completed/cancelled',
   `lock_version` INT NOT NULL DEFAULT 0 COMMENT '流转乐观锁',
+  `parallel_node_id` VARCHAR(100) DEFAULT NULL COMMENT '当前并行网关节点ID',
+  `active_parallel_branch_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '当前激活并行分支ID',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -1569,3 +1571,105 @@ END$$
 DELIMITER ;
 CALL `apply_requirement_approval_evaluation_schema`();
 DROP PROCEDURE IF EXISTS `apply_requirement_approval_evaluation_schema`;
+
+-- -----------------------------------------------------
+-- 工作流会签记录表 workflow_countersign_records
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `workflow_countersign_records` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `instance_id` BIGINT UNSIGNED NOT NULL COMMENT '工作流实例ID',
+  `node_id` VARCHAR(100) NOT NULL COMMENT '会签节点ID',
+  `approver_id` BIGINT UNSIGNED NOT NULL COMMENT '审批人ID',
+  `status` VARCHAR(50) DEFAULT 'pending' COMMENT 'pending/approved/rejected',
+  `rating` TINYINT DEFAULT NULL COMMENT '评分1-5',
+  `comment` VARCHAR(1000) DEFAULT NULL COMMENT '审批意见',
+  `approved_at` DATETIME DEFAULT NULL COMMENT '审批时间',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `idx_instance_node` (`instance_id`, `node_id`),
+  INDEX `idx_approver_id` (`approver_id`),
+  INDEX `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工作流会签记录表';
+
+-- -----------------------------------------------------
+-- 需求模板表 requirement_templates
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `requirement_templates` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `requirement_type_code` VARCHAR(50) NOT NULL COMMENT '需求类型编码',
+  `template_name` VARCHAR(200) NOT NULL COMMENT '模板名称',
+  `template_content` JSON NOT NULL COMMENT '模板内容（结构化字段）',
+  `is_active` TINYINT DEFAULT 1 COMMENT '是否启用',
+  `creator_id` INT UNSIGNED NOT NULL COMMENT '创建人ID',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `uk_type_code` (`requirement_type_code`, `deleted_at`),
+  INDEX `idx_is_active` (`is_active`),
+  INDEX `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='需求模板表';
+
+-- -----------------------------------------------------
+-- 工作流并行分支表 workflow_parallel_branches
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `workflow_parallel_branches` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `instance_id` BIGINT UNSIGNED NOT NULL COMMENT '工作流实例ID',
+  `parallel_node_id` VARCHAR(100) NOT NULL COMMENT '并行网关节点ID',
+  `branch_node_id` VARCHAR(100) NOT NULL COMMENT '分支入口节点ID',
+  `branch_name` VARCHAR(100) NOT NULL COMMENT '分支名称',
+  `current_node_id` VARCHAR(100) DEFAULT NULL COMMENT '分支当前节点ID',
+  `status` VARCHAR(50) DEFAULT 'pending' COMMENT 'pending/running/completed/skipped',
+  `started_at` DATETIME DEFAULT NULL,
+  `completed_at` DATETIME DEFAULT NULL,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `idx_instance_id` (`instance_id`),
+  INDEX `idx_parallel_node_id` (`parallel_node_id`),
+  INDEX `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工作流并行分支执行记录';
+
+DROP PROCEDURE IF EXISTS `apply_workflow_parallel_schema`;
+DELIMITER $$
+CREATE PROCEDURE `apply_workflow_parallel_schema`()
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.TABLES
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'workflow_parallel_branches'
+  ) THEN
+    CREATE TABLE `workflow_parallel_branches` (
+      `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      `instance_id` BIGINT UNSIGNED NOT NULL COMMENT '工作流实例ID',
+      `parallel_node_id` VARCHAR(100) NOT NULL COMMENT '并行网关节点ID',
+      `branch_node_id` VARCHAR(100) NOT NULL COMMENT '分支入口节点ID',
+      `branch_name` VARCHAR(100) NOT NULL COMMENT '分支名称',
+      `current_node_id` VARCHAR(100) DEFAULT NULL COMMENT '分支当前节点ID',
+      `status` VARCHAR(50) DEFAULT 'pending' COMMENT 'pending/running/completed/skipped',
+      `started_at` DATETIME DEFAULT NULL,
+      `completed_at` DATETIME DEFAULT NULL,
+      `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (`id`),
+      INDEX `idx_instance_id` (`instance_id`),
+      INDEX `idx_parallel_node_id` (`parallel_node_id`),
+      INDEX `idx_status` (`status`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工作流并行分支执行记录';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'workflow_instances' AND COLUMN_NAME = 'parallel_node_id'
+  ) THEN
+    ALTER TABLE `workflow_instances`
+      ADD COLUMN `parallel_node_id` VARCHAR(100) DEFAULT NULL COMMENT '当前并行网关节点ID' AFTER `lock_version`;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'workflow_instances' AND COLUMN_NAME = 'active_parallel_branch_id'
+  ) THEN
+    ALTER TABLE `workflow_instances`
+      ADD COLUMN `active_parallel_branch_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '当前激活并行分支ID' AFTER `parallel_node_id`;
+  END IF;
+END$$
+DELIMITER ;
+CALL `apply_workflow_parallel_schema`();
+DROP PROCEDURE IF EXISTS `apply_workflow_parallel_schema`;

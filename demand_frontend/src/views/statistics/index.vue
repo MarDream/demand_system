@@ -55,7 +55,7 @@
           <template #header>
             <span class="chart-title">需求状态分布</span>
           </template>
-          <v-chart v-if="pieLoaded" :option="pieOption" class="chart" autoresize />
+          <v-chart v-if="pieLoaded" :option="pieOption" :init-options="chartInitOptions" class="chart" autoresize />
           <el-empty v-else description="暂无数据" />
         </el-card>
       </el-col>
@@ -64,7 +64,7 @@
           <template #header>
             <span class="chart-title">需求类型分布</span>
           </template>
-          <v-chart v-if="barLoaded" :option="barOption" class="chart" autoresize />
+          <v-chart v-if="barLoaded" :option="barOption" :init-options="chartInitOptions" class="chart" autoresize />
           <el-empty v-else description="暂无数据" />
         </el-card>
       </el-col>
@@ -127,12 +127,14 @@
 import { ref, onMounted } from 'vue'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
-import { CanvasRenderer } from 'echarts/renderers'
+import { SVGRenderer } from 'echarts/renderers'
 import { PieChart, BarChart, LineChart } from 'echarts/charts'
 import { TitleComponent, TooltipComponent, LegendComponent, GridComponent } from 'echarts/components'
 import { getDistributionData, getDurationData } from '@/api/modules/statistics'
 
-use([CanvasRenderer, PieChart, BarChart, LineChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent])
+use([SVGRenderer, PieChart, BarChart, LineChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent])
+
+const chartInitOptions = { renderer: 'svg' as const }
 
 // 统计卡片数据
 const total = ref(0)

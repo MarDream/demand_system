@@ -7,6 +7,7 @@ public class WorkflowMigrationReportDTO {
 
     private int markedLegacyCount;
     private int backfilledInstanceCount;
+    private int migratedRunningInstanceCount;
     private int skippedCount;
     private List<Long> failedRequirementIds = new ArrayList<>();
 
@@ -24,6 +25,14 @@ public class WorkflowMigrationReportDTO {
 
     public void setBackfilledInstanceCount(int backfilledInstanceCount) {
         this.backfilledInstanceCount = backfilledInstanceCount;
+    }
+
+    public int getMigratedRunningInstanceCount() {
+        return migratedRunningInstanceCount;
+    }
+
+    public void setMigratedRunningInstanceCount(int migratedRunningInstanceCount) {
+        this.migratedRunningInstanceCount = migratedRunningInstanceCount;
     }
 
     public int getSkippedCount() {

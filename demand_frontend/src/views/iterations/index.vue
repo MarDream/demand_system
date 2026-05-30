@@ -141,7 +141,12 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { EditPen, Delete, TrendCharts } from '@element-plus/icons-vue'
 import type { FormInstance } from 'element-plus'
-import * as echarts from 'echarts'
+import * as echarts from 'echarts/core'
+import { SVGRenderer } from 'echarts/renderers'
+import { LineChart } from 'echarts/charts'
+import { TooltipComponent, LegendComponent, GridComponent } from 'echarts/components'
+
+echarts.use([SVGRenderer, LineChart, TooltipComponent, LegendComponent, GridComponent])
 import { getIterationList, createIteration, updateIteration, deleteIteration } from '@/api/modules/iteration'
 import { requirementApi } from '@/api'
 import type { Iteration, IterationFormData, IterationRequirementOption } from '@/types/iteration'

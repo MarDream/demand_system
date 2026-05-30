@@ -10,7 +10,7 @@ import java.util.Set;
 public final class WorkflowNodeUtils {
 
     public static final Set<String> WAIT_NODE_TYPES = Set.of("start", "approval", "end");
-    public static final Set<String> PASS_THROUGH_NODE_TYPES = Set.of("condition", "cc");
+    public static final Set<String> PASS_THROUGH_NODE_TYPES = Set.of("condition", "cc", "parallel");
 
     private WorkflowNodeUtils() {
     }
