@@ -381,7 +381,7 @@ import type {
   RequirementAttachment,
   RequirementComment,
   RequirementHistory,
-  RequirementUpdate,
+  RequirementUpdate, RequirementDetailVO,
 } from '@/types/requirement'
 import { normalizeText, formatDate, stripPriorityPrefix } from '@/utils/format'
 import AppButton from '@/components/common/AppButton.vue'
@@ -1127,14 +1127,25 @@ async function submitCommentRich() {
 }
 
 async function initializePage() {
-  await Promise.all([loadConfig(), loadProjectOptions(), fetchDetail()])
-  await Promise.all([
-    fetchHistory(),
-    fetchChildren(),
-    fetchRelations(),
-    fetchComments(),
-    fetchApprovalEvaluations(),
+  // Load config and project options in parallel with batch detail fetch
+  const [batchData] = await Promise.all([
+    requirementApi.getRequirementDetailBatch(id),
+    loadConfig(),
+    loadProjectOptions(),
   ])
+  
+  // Populate data from batch response
+  if (batchData) {
+    detail.value = batchData.requirement
+    history.value = (batchData.history || []) as any
+    children.value = (batchData.children || []) as any
+    relatedRequirements.value = (batchData.relations || []) as any
+    comments.value = (batchData.comments || []) as any
+    approvalEvaluations.value = (batchData.approvalEvaluations || []) as any
+    
+    // Load project name and workflow meta after getting detail
+    await Promise.all([loadProjectName(), loadWorkflowMeta()])
+  }
 }
 
 onMounted(() => {

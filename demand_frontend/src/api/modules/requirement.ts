@@ -16,7 +16,7 @@ import type {
   RequirementSubmit,
   RequirementTemplate,
   RequirementTemplateSave,
-  RequirementUpdate,
+  RequirementUpdate, RequirementDetailVO,
 } from '@/types/requirement'
 
 export function getRequirementList(params: RequirementQuery) {
@@ -140,4 +140,7 @@ export function toggleRequirementTemplateStatus(id: number, isActive: number) {
   return request.put<ApiResponse>(`/v1/requirement/templates/${id}/status`, null, {
     params: { isActive }
   }) as unknown as Promise<void>
+}
+export function getRequirementDetailBatch(id: number) {
+  return request.get<ApiResponse<RequirementDetailVO>>(`/v1/requirements/${id}/detail-batch`) as unknown as Promise<RequirementDetailVO>
 }

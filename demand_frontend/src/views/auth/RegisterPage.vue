@@ -208,7 +208,7 @@ const flattenOrgTree = (list: OrgNode[]): OrgNode[] => {
 
 const loadRegionsAndDepartments = async () => {
   try {
-    const data = await getOrgTree()
+    const data = await getOrgTree() as OrgNode[]
     const flat = flattenOrgTree(data || [])
     regions.value = flat.filter(n => n.orgType === 'region' || n.orgType === 'company' || n.orgType === 'bureau')
     departments.value = flat.filter(n => n.orgType === 'department')
@@ -219,7 +219,7 @@ const loadRegionsAndDepartments = async () => {
 
 const loadPositions = async () => {
   try {
-    const data = await getPositionList()
+    const data = await getPositionList() as Position[]
     positions.value = data || []
   } catch (error) {
     console.error('加载岗位列表失败:', error)

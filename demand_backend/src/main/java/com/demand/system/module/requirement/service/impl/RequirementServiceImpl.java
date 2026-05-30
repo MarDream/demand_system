@@ -17,6 +17,7 @@ import com.demand.system.module.requirement.dto.RequirementDraftUpdateDTO;
 import com.demand.system.module.requirement.dto.RequirementMyListQueryDTO;
 import com.demand.system.module.requirement.dto.RequirementSubmitDTO;
 import com.demand.system.module.requirement.dto.NextNodeOptionDTO;
+import com.demand.system.module.requirement.dto.RequirementDetailVO;
 import com.demand.system.module.requirement.dto.RequirementQueryDTO;
 import com.demand.system.module.requirement.dto.RequirementUpdateDTO;
 import com.demand.system.module.requirement.dto.RequirementVO;
@@ -39,6 +40,8 @@ import com.demand.system.module.organization.dto.SysOrgVO;
 import com.demand.system.module.organization.service.SysOrgService;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.notification.service.NotificationService;
+import com.demand.system.module.relation.service.RelationService;
+import com.demand.system.module.relation.dto.RelationVO;
 import com.demand.system.module.project.entity.Project;
 import com.demand.system.module.project.mapper.ProjectMapper;
 import com.demand.system.module.knowledge.service.KnowledgeDocumentService;
@@ -109,6 +112,7 @@ public class RequirementServiceImpl implements RequirementService {
     private final UserOrganizationMapper userOrganizationMapper;
     private final SysOrgService sysOrgService;
     private final NotificationService notificationService;
+    private final RelationService relationService;
     private final WorkflowService workflowService;
     private final WorkflowEngineService workflowEngineService;
     private final WorkflowVersionMapper workflowVersionMapper;
@@ -131,7 +135,7 @@ public class RequirementServiceImpl implements RequirementService {
     private final RoleGroupMapper roleGroupMapper;
     private final ObjectMapper objectMapper;
 
-    public RequirementServiceImpl(RequirementMapper requirementMapper, RequirementHistoryMapper historyMapper, RequirementCommentMapper requirementCommentMapper, CustomFieldValueMapper customFieldValueMapper, UserMapper userMapper, UserOrganizationMapper userOrganizationMapper, SysOrgService sysOrgService, NotificationService notificationService, WorkflowService workflowService, WorkflowEngineService workflowEngineService, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowGraphNavigator workflowGraphNavigator, WorkflowRuntimeLoader workflowRuntimeLoader, WorkflowRuntimeMigrationService workflowRuntimeMigrationService, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, WorkflowInstanceMapper workflowInstanceMapper, WorkflowInstanceTransitionMapper workflowInstanceTransitionMapper, WorkflowTransitionRecordMapper workflowTransitionRecordMapper, WorkflowDefinitionEngine workflowDefinitionEngine, RequirementApprovalEvaluationService approvalEvaluationService, RequirementConfigService requirementConfigService, KnowledgeDocumentService knowledgeDocumentService, NodeStatusMapper nodeStatusMapper, ProjectMapper projectMapper, RoleMapper roleMapper, RoleGroupMapper roleGroupMapper, ObjectMapper objectMapper) {
+    public RequirementServiceImpl(RequirementMapper requirementMapper, RequirementHistoryMapper historyMapper, RequirementCommentMapper requirementCommentMapper, CustomFieldValueMapper customFieldValueMapper, UserMapper userMapper, UserOrganizationMapper userOrganizationMapper, SysOrgService sysOrgService, NotificationService notificationService, RelationService relationService, WorkflowService workflowService, WorkflowEngineService workflowEngineService, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowGraphNavigator workflowGraphNavigator, WorkflowRuntimeLoader workflowRuntimeLoader, WorkflowRuntimeMigrationService workflowRuntimeMigrationService, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, WorkflowInstanceMapper workflowInstanceMapper, WorkflowInstanceTransitionMapper workflowInstanceTransitionMapper, WorkflowTransitionRecordMapper workflowTransitionRecordMapper, WorkflowDefinitionEngine workflowDefinitionEngine, RequirementApprovalEvaluationService approvalEvaluationService, RequirementConfigService requirementConfigService, KnowledgeDocumentService knowledgeDocumentService, NodeStatusMapper nodeStatusMapper, ProjectMapper projectMapper, RoleMapper roleMapper, RoleGroupMapper roleGroupMapper, ObjectMapper objectMapper) {
         this.requirementMapper = requirementMapper;
         this.historyMapper = historyMapper;
         this.requirementCommentMapper = requirementCommentMapper;
@@ -140,6 +144,7 @@ public class RequirementServiceImpl implements RequirementService {
         this.userOrganizationMapper = userOrganizationMapper;
         this.sysOrgService = sysOrgService;
         this.notificationService = notificationService;
+        this.relationService = relationService;
         this.workflowService = workflowService;
         this.workflowEngineService = workflowEngineService;
         this.workflowVersionMapper = workflowVersionMapper;

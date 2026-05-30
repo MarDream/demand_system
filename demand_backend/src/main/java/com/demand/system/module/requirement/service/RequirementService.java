@@ -13,6 +13,7 @@ import com.demand.system.module.requirement.dto.RequirementSubmitDTO;
 import com.demand.system.module.requirement.dto.RequirementUpdateDTO;
 import com.demand.system.module.requirement.dto.RequirementVO;
 import com.demand.system.module.requirement.dto.NextNodeOptionDTO;
+import com.demand.system.module.requirement.dto.RequirementDetailVO;
 
 import java.util.List;
 import java.util.Map;
@@ -60,4 +61,11 @@ public interface RequirementService {
     List<Map<String, Object>> getHistory(Long requirementId);
 
     List<Map<String, Object>> getChildren(Long parentId);
+
+    /**
+     * 批量获取需求详情综合数据（包含历史、子需求、关联、评论、审批等）
+     * @param id 需求ID
+     * @return 需求详情综合数据
+     */
+    RequirementDetailVO getDetailBatch(Long id);
 }

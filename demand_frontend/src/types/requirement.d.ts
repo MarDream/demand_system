@@ -246,3 +246,13 @@ export interface RequirementTemplateSave {
     sections: TemplateSection[]
   }
 }
+
+// 需求详情综合VO（批量查询接口返回）
+export interface RequirementDetailVO {
+  requirement: Requirement
+  history: Record<string, any>[]
+  children: Record<string, any>[]
+  relations: Record<string, any>[]
+  comments: RequirementComment[]
+  approvalEvaluations: RequirementApprovalEvaluation[]
+}

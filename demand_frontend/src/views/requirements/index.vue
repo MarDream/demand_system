@@ -523,7 +523,14 @@ async function fetchData() {
     ElMessage.error('获取需求列表失败')
   } finally {
     loading.value = false
-    void refreshViewCounts()
+    // Update view counts based on current view mode
+    if (isDraftView.value) {
+      viewCounts.drafts = pagination.total
+    } else if (isPendingView.value) {
+      viewCounts.pending = pagination.total
+    } else if (isDoneView.value) {
+      viewCounts.done = tableData.value.length
+    }
   }
 }
 
@@ -690,7 +697,6 @@ onMounted(() => {
   loadFilterUsers()
   loadConfig()
   loadColumnConfig()
-  refreshViewCounts()
 })
 
 watch(tableData, (rows) => {
