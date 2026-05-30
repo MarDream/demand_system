@@ -786,6 +786,46 @@ public class RequirementServiceImpl implements RequirementService {
         return result;
     }
 
+    @Override
+    public RequirementDetailVO getDetailBatch(Long id) {
+        RequirementDetailVO result = new RequirementDetailVO();
+        
+        // 1. Get requirement basic info
+        RequirementVO requirement = getDetail(id);
+        result.setRequirement(requirement);
+        
+        // 2. Get history
+        result.setHistory(getHistory(id));
+        
+        // 3. Get children
+        result.setChildren(getChildren(id));
+        
+        // 4. Get relations
+        if (relationService != null) {
+            List<RelationVO> relationVOList = relationService.listByRequirement(id);
+            List<Map<String, Object>> relations = new ArrayList<>();
+            for (RelationVO vo : relationVOList) {
+                Map<String, Object> map = new java.util.HashMap<>();
+                map.put("id", vo.getTargetId());
+                map.put("title", vo.getTargetTitle());
+                map.put("type", vo.getTargetType());
+                map.put("status", vo.getTargetStatus());
+                map.put("priority", vo.getTargetPriority());
+                map.put("relationType", vo.getRelationType());
+                relations.add(map);
+            }
+            result.setRelations(relations);
+        }
+        
+        // 5. Get comments
+        result.setComments(getComments(id));
+        
+        // 6. Get approval evaluations
+        result.setApprovalEvaluations(getApprovalEvaluations(id));
+        
+        return result;
+    }
+
     private void recordHistory(Long requirementId, Long operatorId, String fieldName, String oldValue, String newValue) {
         RequirementHistory history = new RequirementHistory();
         history.setRequirementId(requirementId);

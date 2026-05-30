@@ -208,12 +208,10 @@ const flattenOrgTree = (list: OrgNode[]): OrgNode[] => {
 
 const loadRegionsAndDepartments = async () => {
   try {
-    const response = await getOrgTree()
-    if (response.data.code === 200) {
-      const flat = flattenOrgTree(response.data.data || [])
-      regions.value = flat.filter(n => n.orgType === 'region' || n.orgType === 'company' || n.orgType === 'bureau')
-      departments.value = flat.filter(n => n.orgType === 'department')
-    }
+    const data = await getOrgTree()
+    const flat = flattenOrgTree(data || [])
+    regions.value = flat.filter(n => n.orgType === 'region' || n.orgType === 'company' || n.orgType === 'bureau')
+    departments.value = flat.filter(n => n.orgType === 'department')
   } catch (error) {
     console.error('加载组织架构失败:', error)
   }
@@ -221,10 +219,8 @@ const loadRegionsAndDepartments = async () => {
 
 const loadPositions = async () => {
   try {
-    const response = await getPositionList()
-    if (response.data.code === 200) {
-      positions.value = response.data.data
-    }
+    const data = await getPositionList()
+    positions.value = data || []
   } catch (error) {
     console.error('加载岗位列表失败:', error)
   }
@@ -237,7 +233,7 @@ const handleRegister = async () => {
     if (valid) {
       loading.value = true
       try {
-        const response = await register({
+        await register({
           username: registerForm.username,
           realName: registerForm.realName,
           email: registerForm.email,
@@ -247,12 +243,8 @@ const handleRegister = async () => {
           positionId: registerForm.positionId
         })
 
-        if (response.data.code === 200) {
-          ElMessage.success('注册成功，请登录')
-          router.push('/login')
-        } else {
-          ElMessage.error(response.data.message || '注册失败')
-        }
+        ElMessage.success('注册成功，请登录')
+        router.push('/login')
       } catch (error: any) {
         ElMessage.error(error.response?.data?.message || '注册失败，请稍后重试')
       } finally {
