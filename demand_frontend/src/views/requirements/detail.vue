@@ -238,7 +238,36 @@
           </div>
           <div class="comment-editor-wrapper">
             <IsleEditorToolbar v-if="commentEditorInstance" :editor="commentEditorInstance" />
-            <IsleEditor v-model="commentRichText" :extensions="commentEditorExtensions" locale="zh" @create="onCommentEditorCreate" />
+            <div class="comment-editor-toolbar">
+              <el-button
+                link
+                type="primary"
+                size="small"
+                :loading="commentImageUploading"
+                @click="triggerCommentFileInput"
+              >
+                <el-icon style="margin-right: 4px"><Picture /></el-icon>插入图片
+              </el-button>
+              <span class="comment-editor-hint">支持点击选图 / 拖拽 / Ctrl+V 粘贴</span>
+              <input
+                ref="commentFileInputRef"
+                type="file"
+                accept="image/*"
+                multiple
+                style="display: none"
+                @change="handleCommentFileInput"
+              />
+            </div>
+            <div
+              class="comment-editor-dropzone"
+              :class="{ 'is-dragover': commentIsDragOver }"
+              @dragenter.prevent.stop="handleCommentDragEnter"
+              @dragover.prevent.stop="handleCommentDragOver"
+              @dragleave.prevent.stop="handleCommentDragLeave"
+              @drop.prevent.stop="handleCommentDrop"
+            >
+              <IsleEditor v-model="commentRichText" :extensions="commentEditorExtensions" locale="zh" @create="onCommentEditorCreate" />
+            </div>
           </div>
           <div class="comment-editor-actions">
             <AppButton type="primary" permission="button:requirement:comment" :loading="commentSubmitting" @click="submitCommentRich">
@@ -369,6 +398,7 @@
 import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Picture } from '@element-plus/icons-vue'
 import { requirementApi, projectApi, relationApi } from '@/api'
 import { downloadRequirementAttachment, uploadRequirementAttachment } from '@/api/modules/file'
 import type { RelationItem } from '@/api/modules/relation'
@@ -388,7 +418,32 @@ import AppButton from '@/components/common/AppButton.vue'
 import { hydrateRichTextImageHtml, buildRichTextImagePreviewUrl } from '@/utils/richTextFileImage'
 import { IsleEditor, IsleEditorToolbar, RichTextKit } from '@isle-editor/vue3'
 import { addLocale } from '@isle-editor/core'
-import Image from '@tiptap/extension-image'
+import { Node, mergeAttributes } from '@tiptap/core'
+
+const DEFAULT_IMAGE_WIDTH = 400
+const MIN_IMAGE_WIDTH = 50
+const MAX_IMAGE_WIDTH = 1600
+
+const CommentImage = Node.create({
+  name: 'commentImage',
+  inline: false,
+  group: 'block',
+  atom: true,
+  draggable: true,
+  addAttributes() {
+    return {
+      src: { default: null },
+      alt: { default: null },
+      width: { default: null },
+    }
+  },
+  parseHTML() {
+    return [{ tag: 'img[src]' }]
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['img', mergeAttributes({ class: 'comment-editor-image' }, HTMLAttributes)]
+  },
+})
 import '@isle-editor/vue3/dist/style.css'
 import PageContainer from '@/components/common/PageContainer.vue'
 
@@ -551,48 +606,182 @@ const commentEditorExtensions = [
   RichTextKit.configure({
     placeholder: { placeholder: '输入评论内容...' },
   }),
-  Image.configure({
-    inline: false,
-    allowBase64: true,
-    HTMLAttributes: { class: 'comment-editor-image' },
-  }),
+  CommentImage,
 ]
 
 function onCommentEditorCreate({ editor }: { editor: any }) {
   commentEditorInstance.value = editor
   const editorEl = editor.view.dom as HTMLElement
   editorEl.addEventListener('paste', handleCommentImagePaste as unknown as EventListener)
+  installImageResizeHandles(editor)
+}
+
+function installImageResizeHandles(editor: any) {
+  const editorEl = editor.view.dom as HTMLElement
+  let activeHandle: HTMLElement | null = null
+  let activeImg: HTMLImageElement | null = null
+  let startX = 0
+  let startWidth = 0
+
+  function createHandle(img: HTMLImageElement) {
+    removeHandle()
+    if (!img.classList.contains('comment-editor-image')) return
+    // 强制 img position relative 以容纳手柄
+    img.style.position = 'relative'
+    const handle = document.createElement('div')
+    handle.className = 'comment-image-resize-handle'
+    handle.title = '拖拽调整图片大小'
+    img.appendChild(handle)
+    activeHandle = handle
+
+    handle.addEventListener('mousedown', (e: MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      activeImg = img
+      startX = e.clientX
+      startWidth = img.getBoundingClientRect().width
+      document.addEventListener('mousemove', onMove)
+      document.addEventListener('mouseup', onUp)
+    })
+  }
+
+  function removeHandle() {
+    if (activeHandle && activeHandle.parentElement) {
+      activeHandle.parentElement.removeChild(activeHandle)
+    }
+    activeHandle = null
+    if (!activeImg) return
+    activeImg.style.cursor = ''
+  }
+
+  function onMove(e: MouseEvent) {
+    if (!activeImg) return
+    const dx = e.clientX - startX
+    const newWidth = Math.max(MIN_IMAGE_WIDTH, Math.min(MAX_IMAGE_WIDTH, Math.round(startWidth + dx)))
+    activeImg.setAttribute('width', String(newWidth))
+  }
+
+  function onUp() {
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    if (activeImg) {
+      const finalWidth = Number(activeImg.getAttribute('width')) || null
+      // 写回 tiptap 节点 attrs
+      try {
+        const pos = editor.view.posAtDOM(activeImg, 0)
+        editor.commands.setNodeSelection(pos)
+        editor.commands.updateAttributes('commentImage', { width: finalWidth })
+      } catch {}
+      activeImg.style.cursor = ''
+    }
+    activeImg = null
+  }
+
+  editorEl.addEventListener('mouseover', (e: MouseEvent) => {
+    const t = e.target as HTMLElement | null
+    if (t && t.tagName === 'IMG' && t.classList.contains('comment-editor-image')) {
+      createHandle(t as HTMLImageElement)
+    }
+  })
+  editorEl.addEventListener('mouseout', (e: MouseEvent) => {
+    const t = e.target as HTMLElement | null
+    if (t && t.tagName === 'IMG' && t.classList.contains('comment-editor-image')) {
+      // 仅当鼠标真正离开 img 才移除（避免冒泡）
+      const related = e.relatedTarget as Node | null
+      if (!related || !(t as Node).contains(related)) {
+        removeHandle()
+      }
+    }
+  })
 }
 
 const commentImageUploading = ref(false)
+const commentIsDragOver = ref(false)
+const commentFileInputRef = ref<HTMLInputElement | null>(null)
+let commentDragDepth = 0
+
+async function insertCommentImageFile(file: File) {
+  if (!file.type.startsWith('image/')) {
+    ElMessage.warning('仅支持图片文件: ' + file.name)
+    return
+  }
+  let processedFile = file
+  if (!file.name || file.name === 'image' || !file.name.includes('.')) {
+    const ext = file.type.split('/')[1] || 'png'
+    processedFile = new File([file], `clipboard_${Date.now()}.${ext}`, { type: file.type })
+  }
+  try {
+    commentImageUploading.value = true
+    ElMessage.info(`上传图片中: ${processedFile.name}`)
+    const attachment = await uploadRequirementAttachment(processedFile)
+    const src = attachment.fileId ? buildRichTextImagePreviewUrl(attachment.fileId) : attachment.url
+    if (src && commentEditorInstance.value) {
+      const safeAlt = processedFile.name.replace(/"/g, '&quot;')
+      const editor = commentEditorInstance.value
+      editor.chain().focus().insertContent({
+        type: 'commentImage',
+        attrs: { src, alt: safeAlt, width: DEFAULT_IMAGE_WIDTH },
+      }).run()
+      // 把光标推到图片节点之后，避免后续 insertContent 替换图片
+      const insertedImg = editor.view.dom.querySelector(
+        'img.comment-editor-image:last-of-type'
+      ) as HTMLElement | null
+      if (insertedImg) {
+        const imgPos = editor.view.posAtDOM(insertedImg, 0)
+        editor.commands.setTextSelection(imgPos + 1)
+      }
+      ElMessage.success(`图片 ${processedFile.name} 已插入`)
+    }
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, `图片 ${processedFile.name} 插入失败`))
+  } finally {
+    commentImageUploading.value = false
+  }
+}
 
 async function handleCommentImagePaste(event: ClipboardEvent) {
   const files = event.clipboardData?.files
   if (!files || files.length === 0) return
-
   for (const file of Array.from(files)) {
     if (!file.type.startsWith('image/')) continue
     event.preventDefault()
+    await insertCommentImageFile(file)
+  }
+}
 
-    let processedFile = file
-    if (!file.name || file.name === 'image' || !file.name.includes('.')) {
-      const ext = file.type.split('/')[1] || 'png'
-      processedFile = new File([file], `clipboard_${Date.now()}.${ext}`, { type: file.type })
-    }
+function triggerCommentFileInput() {
+  commentFileInputRef.value?.click()
+}
 
-    try {
-      commentImageUploading.value = true
-      ElMessage.info(`上传图片中: ${processedFile.name}`)
-      const attachment = await uploadRequirementAttachment(processedFile)
-      const src = attachment.fileId ? buildRichTextImagePreviewUrl(attachment.fileId) : attachment.url
-      if (src && commentEditorInstance.value) {
-        commentEditorInstance.value.chain().focus().setImage({ src, alt: processedFile.name }).run()
-        ElMessage.success(`图片 ${processedFile.name} 已插入`)
-      }
-    } catch {
-      ElMessage.error(`图片 ${processedFile.name} 插入失败`)
-    } finally {
-      commentImageUploading.value = false
+async function handleCommentFileInput(event: Event) {
+  const input = event.target as HTMLInputElement
+  if (!input.files || input.files.length === 0) return
+  const files = Array.from(input.files)
+  for (const file of files) {
+    await insertCommentImageFile(file)
+  }
+  input.value = ''
+}
+
+function handleCommentDragEnter() {
+  commentDragDepth += 1
+  if (commentDragDepth === 1) commentIsDragOver.value = true
+}
+function handleCommentDragOver() {
+  // 由 .prevent 阻止默认行为即可，必须 preventDefault 才能触发 drop
+}
+function handleCommentDragLeave() {
+  commentDragDepth = Math.max(0, commentDragDepth - 1)
+  if (commentDragDepth === 0) commentIsDragOver.value = false
+}
+async function handleCommentDrop(event: DragEvent) {
+  commentDragDepth = 0
+  commentIsDragOver.value = false
+  const files = event.dataTransfer?.files
+  if (!files || files.length === 0) return
+  for (const file of Array.from(files)) {
+    if (file.type.startsWith('image/')) {
+      await insertCommentImageFile(file)
     }
   }
 }
@@ -1264,6 +1453,50 @@ onMounted(() => {
   overflow: hidden;
   margin-top: 12px;
   min-height: 160px;
+}
+
+.comment-editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  background: #fafbfc;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.comment-editor-hint {
+  color: #909399;
+  font-size: 12px;
+}
+
+.comment-editor-dropzone {
+  min-height: 140px;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.comment-editor-dropzone.is-dragover {
+  background-color: #ecf5ff;
+  box-shadow: inset 0 0 0 2px #409eff;
+}
+
+.comment-editor-dropzone :deep(.comment-editor-image) {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+.comment-editor-dropzone :deep(.comment-image-resize-handle) {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 12px;
+  height: 12px;
+  background: #409eff;
+  border: 2px solid #ffffff;
+  border-radius: 2px;
+  cursor: nwse-resize;
+  z-index: 10;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .comment-editor-wrapper :deep(.comment-editor-image) {
