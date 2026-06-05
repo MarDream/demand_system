@@ -54,8 +54,8 @@
       <template v-else-if="context">
         <div v-if="previewType === 'office'" class="share-office-wrap">
           <iframe
-            v-if="kkFileViewUrl"
-            :src="kkFileViewUrl"
+            v-if="officePreviewUrl"
+            :src="officePreviewUrl"
             class="share-iframe"
             frameborder="0"
             allowfullscreen
@@ -116,10 +116,10 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Document, Download, FullScreen } from '@element-plus/icons-vue'
 import { getPublicShareContext, type PublicShareContext } from '@/api/modules/publicShare'
-import { KKFILEVIEW_IMAGE_PREVIEW_SET, KKFILEVIEW_SUPPORTED_EXTENSION_SET, KKFILEVIEW_TEXT_PREVIEW_SET, normalizeFileExtension } from '@/constants/knowledgeDocument'
+import { getOfficePreviewUrl } from '@/api/modules/preview'
+import { PREVIEW_IMAGE_SET, PREVIEW_SUPPORTED_EXTENSION_SET, PREVIEW_TEXT_SET, normalizeFileExtension } from '@/constants/knowledgeDocument'
 import { formatDate } from '@/utils/format'
 
-const KK_FILEVIEW_BASE = (import.meta.env.VITE_KK_FILEVIEW_BASE || 'http://localhost:8012').replace(/\/$/, '')
 const PREVIEW_LOADING_MIN_DURATION = 500
 
 const route = useRoute()
@@ -130,7 +130,7 @@ const context = ref<PublicShareContext | null>(null)
 const textContent = ref('')
 const fileUrl = ref('')
 const downloadUrl = ref('')
-const kkFileViewUrl = ref('')
+const officePreviewUrl = ref('')
 const previewContainerRef = ref<HTMLElement>()
 const isFullscreen = ref(false)
 const previewLoading = ref(false)
@@ -141,9 +141,9 @@ let previewLoadingTimer: ReturnType<typeof setTimeout> | null = null
 
 const previewType = computed(() => {
   const ext = normalizeFileExtension(context.value?.fileType)
-  if (KKFILEVIEW_IMAGE_PREVIEW_SET.has(ext)) return 'image'
-  if (KKFILEVIEW_TEXT_PREVIEW_SET.has(ext)) return 'text'
-  if (KKFILEVIEW_SUPPORTED_EXTENSION_SET.has(ext)) return 'office'
+  if (PREVIEW_IMAGE_SET.has(ext)) return 'image'
+  if (PREVIEW_TEXT_SET.has(ext)) return 'text'
+  if (PREVIEW_SUPPORTED_EXTENSION_SET.has(ext)) return 'office'
   return 'unsupported'
 })
 
@@ -180,7 +180,13 @@ async function loadShare(token: string) {
       endPreviewLoading()
     } else if (previewType.value === 'office') {
       if (share.previewUrl) {
-        kkFileViewUrl.value = `${KK_FILEVIEW_BASE}/onlinePreview?url=${encodeURIComponent(btoa(share.previewUrl))}`
+        try {
+          const previewRes = await getOfficePreviewUrl(share.previewUrl) as any
+          officePreviewUrl.value = previewRes.data?.previewUrl ?? previewRes.previewUrl ?? ''
+        } catch {
+          endPreviewLoading()
+          errorMessage.value = '无法生成文件预览地址'
+        }
       } else {
         endPreviewLoading()
         errorMessage.value = '无法生成文件预览地址'
@@ -239,7 +245,7 @@ function resetPreviewState() {
   textContent.value = ''
   fileUrl.value = ''
   downloadUrl.value = ''
-  kkFileViewUrl.value = ''
+  officePreviewUrl.value = ''
   previewLoading.value = false
   previewLoadingMessage.value = '正在为你整理预览内容...'
 }

@@ -53,7 +53,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Upload, Delete } from '@element-plus/icons-vue'
 import { getKnowledgeBases, uploadDocument, type KnowledgeBase } from '@/api/modules/knowledge'
-import { KKFILEVIEW_SUPPORTED_EXTENSION_SET, normalizeFileExtension } from '@/constants/knowledgeDocument'
+import { PREVIEW_SUPPORTED_EXTENSION_SET, normalizeFileExtension } from '@/constants/knowledgeDocument'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
@@ -99,7 +99,7 @@ onMounted(async () => {
 
 function isFileAllowed(file: File): boolean {
   const ext = normalizeFileExtension(file.name)
-  return !!ext && KKFILEVIEW_SUPPORTED_EXTENSION_SET.has(ext)
+  return !!ext && PREVIEW_SUPPORTED_EXTENSION_SET.has(ext)
 }
 
 function addFiles(files: File[] | FileList) {
@@ -114,7 +114,7 @@ function addFiles(files: File[] | FileList) {
     }
   }
   if (rejectedCount > 0) {
-    ElMessage.warning(`已忽略 ${rejectedCount} 个超出 kkFileView 支持范围的文件`)
+    ElMessage.warning(`已忽略 ${rejectedCount} 个超出系统支持预览范围的文件`)
   }
 }
 

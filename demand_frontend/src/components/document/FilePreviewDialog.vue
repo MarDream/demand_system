@@ -31,8 +31,8 @@
     <div ref="previewContainerRef" class="preview-container" :class="{ 'preview-container--fullscreen': isFullscreen }">
       <div v-if="previewType === 'office'" class="preview-office-wrap">
         <iframe
-          v-if="kkFileViewUrl"
-          :src="kkFileViewUrl"
+          v-if="officePreviewUrl"
+          :src="officePreviewUrl"
           class="preview-iframe"
           frameborder="0"
           allowfullscreen
@@ -89,12 +89,11 @@ import { ElMessage } from 'element-plus'
 import { Download, Document, FullScreen, ZoomIn, ZoomOut, RefreshLeft } from '@element-plus/icons-vue'
 import AppDialog from '@/components/common/AppDialog.vue'
 import { downloadDocumentBlob, getDocumentPreviewUrl } from '@/api/modules/knowledge'
-import { KKFILEVIEW_IMAGE_PREVIEW_SET, KKFILEVIEW_SUPPORTED_EXTENSION_SET, KKFILEVIEW_TEXT_PREVIEW_SET, normalizeFileExtension } from '@/constants/knowledgeDocument'
+import { getOfficePreviewUrl } from '@/api/modules/preview'
+import { PREVIEW_IMAGE_SET, PREVIEW_SUPPORTED_EXTENSION_SET, PREVIEW_TEXT_SET, normalizeFileExtension } from '@/constants/knowledgeDocument'
 import { useUserStore } from '@/stores/modules/user'
 
-const KK_FILEVIEW_BASE = (import.meta.env.VITE_KK_FILEVIEW_BASE || 'http://localhost:8012').replace(/\/$/, '')
 const PREVIEW_LOADING_MIN_DURATION = 500
-const DEFAULT_WATERMARK_ANGLE = '45'
 
 const props = defineProps<{
   modelValue: boolean
@@ -121,7 +120,7 @@ const visible = computed({
 const downloading = ref(false)
 const fileUrl = ref('')
 const textContent = ref('')
-const kkFileViewUrl = ref('')
+const officePreviewUrl = ref('')
 const isFullscreen = ref(false)
 const previewContainerRef = ref<HTMLElement>()
 const zoom = ref(100)
@@ -133,9 +132,9 @@ let previewLoadingTimer: ReturnType<typeof setTimeout> | null = null
 
 const previewType = computed(() => {
   const ext = normalizeFileExtension(props.fileType)
-  if (KKFILEVIEW_IMAGE_PREVIEW_SET.has(ext)) return 'image'
-  if (KKFILEVIEW_TEXT_PREVIEW_SET.has(ext)) return 'text'
-  if (KKFILEVIEW_SUPPORTED_EXTENSION_SET.has(ext)) return 'office'
+  if (PREVIEW_IMAGE_SET.has(ext)) return 'image'
+  if (PREVIEW_TEXT_SET.has(ext)) return 'text'
+  if (PREVIEW_SUPPORTED_EXTENSION_SET.has(ext)) return 'office'
   return 'unsupported'
 })
 
@@ -161,9 +160,11 @@ watch(() => props.modelValue, async (open) => {
     try {
       const res = await getDocumentPreviewUrl(props.knowledgeBaseId, props.documentId) as any
       const presignedUrl = res.data ?? res
-      kkFileViewUrl.value = buildKkFileViewUrl(presignedUrl)
+      const watermark = (userStore.userInfo?.realName || userStore.userInfo?.username || '').trim()
+      const previewRes = await getOfficePreviewUrl(presignedUrl, watermark || undefined) as any
+      officePreviewUrl.value = previewRes.data?.previewUrl ?? previewRes.previewUrl ?? ''
     } catch {
-      kkFileViewUrl.value = ''
+      officePreviewUrl.value = ''
       endPreviewLoading()
       ElMessage.error('获取预览地址失败')
     }
@@ -196,18 +197,6 @@ function getLoadingMessage(type: string) {
     return '图片正在展开，马上就好。'
   }
   return '正在整理文本内容，请稍候。'
-}
-
-function buildKkFileViewUrl(presignedUrl: string) {
-  const params = new URLSearchParams({
-    url: btoa(presignedUrl),
-    watermarkAngle: DEFAULT_WATERMARK_ANGLE,
-  })
-  const watermarkName = (userStore.userInfo?.realName || userStore.userInfo?.username || '').trim()
-  if (watermarkName) {
-    params.set('watermarkTxt', watermarkName)
-  }
-  return `${KK_FILEVIEW_BASE}/onlinePreview?${params.toString()}`
 }
 
 function beginPreviewLoading(message: string) {
@@ -245,7 +234,7 @@ function resetPreviewState() {
   loadingMessage.value = '正在为你整理预览内容...'
   textContent.value = ''
   fileUrl.value = ''
-  kkFileViewUrl.value = ''
+  officePreviewUrl.value = ''
 }
 
 function handleEmbeddedPreviewLoaded() {

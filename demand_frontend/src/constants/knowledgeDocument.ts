@@ -1,4 +1,5 @@
-const KKFILEVIEW_SUPPORTED_EXTENSIONS = [
+// 系统支持在线预览的文件类型集合（与具体预览服务实现无关）
+const PREVIEW_SUPPORTED_EXTENSIONS = [
   'docx', 'wps', 'doc', 'docm', 'xls', 'xlsx', 'csv', 'xlsm', 'ppt', 'pptx', 'vsd', 'rtf',
   'odt', 'wmf', 'emf', 'dps', 'et', 'ods', 'ots', 'tsv', 'odp', 'otp', 'sxi', 'ott',
   'vsdx', 'fodt', 'fods', 'xltx', 'tga', 'psd', 'dotm', 'ett', 'xlt', 'xltm', 'wpt',
@@ -26,10 +27,10 @@ const TEXT_PREVIEW_EXTENSIONS = [
   'rb', 'h', 'cs', 'aspx',
 ]
 
-export const KKFILEVIEW_SUPPORTED_EXTENSION_SET = new Set(KKFILEVIEW_SUPPORTED_EXTENSIONS)
-export const KKFILEVIEW_IMAGE_PREVIEW_SET = new Set(IMAGE_PREVIEW_EXTENSIONS)
-export const KKFILEVIEW_TEXT_PREVIEW_SET = new Set(TEXT_PREVIEW_EXTENSIONS)
-export const KKFILEVIEW_SUPPORTED_EXTENSION_COUNT = KKFILEVIEW_SUPPORTED_EXTENSION_SET.size
+export const PREVIEW_SUPPORTED_EXTENSION_SET = new Set(PREVIEW_SUPPORTED_EXTENSIONS)
+export const PREVIEW_IMAGE_SET = new Set(IMAGE_PREVIEW_EXTENSIONS)
+export const PREVIEW_TEXT_SET = new Set(TEXT_PREVIEW_EXTENSIONS)
+export const PREVIEW_SUPPORTED_EXTENSION_COUNT = PREVIEW_SUPPORTED_EXTENSION_SET.size
 
 export function normalizeFileExtension(fileNameOrType: string | null | undefined): string {
   if (!fileNameOrType) return ''

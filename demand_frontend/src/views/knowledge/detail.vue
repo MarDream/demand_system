@@ -349,7 +349,7 @@ import {
   retryDocuments,
 } from '@/api/modules/knowledge'
 import type { KnowledgeDocument } from '@/api/modules/knowledge'
-import { KKFILEVIEW_SUPPORTED_EXTENSION_SET, normalizeFileExtension } from '@/constants/knowledgeDocument'
+import { PREVIEW_SUPPORTED_EXTENSION_SET, normalizeFileExtension } from '@/constants/knowledgeDocument'
 
 const route = useRoute()
 const store = useKnowledgeStore()
@@ -436,7 +436,7 @@ onMounted(async () => {
 })
 
 function canPreview(fileType: string): boolean {
-  return KKFILEVIEW_SUPPORTED_EXTENSION_SET.has(normalizeFileExtension(fileType))
+  return PREVIEW_SUPPORTED_EXTENSION_SET.has(normalizeFileExtension(fileType))
 }
 
 async function fetchDocumentList(pageNum = documentFilters.pageNum) {
