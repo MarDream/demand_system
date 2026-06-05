@@ -6,7 +6,7 @@ import java.util.Set;
 
 public final class KnowledgeDocumentSupport {
 
-    public static final Set<String> KKFILEVIEW_SUPPORTED_EXTENSIONS = Set.copyOf(new LinkedHashSet<>(List.of(
+    public static final Set<String> PREVIEW_SUPPORTED_EXTENSIONS = Set.copyOf(new LinkedHashSet<>(List.of(
             "docx", "wps", "doc", "docm", "xls", "xlsx", "csv", "xlsm", "ppt", "pptx", "vsd", "rtf",
             "odt", "wmf", "emf", "dps", "et", "ods", "ots", "tsv", "odp", "otp", "sxi", "ott",
             "vsdx", "fodt", "fods", "xltx", "tga", "psd", "dotm", "ett", "xlt", "xltm", "wpt",
@@ -47,7 +47,7 @@ public final class KnowledgeDocumentSupport {
     }
 
     public static boolean isSupported(String extension) {
-        return extension != null && KKFILEVIEW_SUPPORTED_EXTENSIONS.contains(extension.toLowerCase());
+        return extension != null && PREVIEW_SUPPORTED_EXTENSIONS.contains(extension.toLowerCase());
     }
 
     public static boolean isVectorizable(String extension) {
