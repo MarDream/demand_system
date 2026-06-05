@@ -169,12 +169,6 @@ export const routes: RouteRecordRaw[] = [
         meta: { title: '模型配置', requiredPermissions: ['menu:settings:llm'] },
       },
       {
-        path: 'settings/omnidoc',
-        name: 'OmniDocSettings',
-        component: () => import('@/views/settings/omnidoc.vue'),
-        meta: { title: '在线办公', hidden: true, requiredPermissions: ['menu:rag'] },
-      },
-      {
         path: 'notifications',
         name: 'Notifications',
         component: () => import('@/views/notifications/index.vue'),

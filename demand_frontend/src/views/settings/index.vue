@@ -46,7 +46,6 @@ const cardMeta: Record<string, { description: string; color: string; buttonType:
   '/settings/rag': { description: '上传文档并进行智能检索与问答', color: '#16A085', buttonType: 'success' },
   '/settings/knowledge': { description: '创建和管理知识库，配置文档索引', color: '#2C3E50', buttonType: '' },
   '/settings/llm': { description: '配置文档知识库可用的大模型参数和密钥', color: '#9B59B6', buttonType: 'primary' },
-  '/settings/omnidoc': { description: '文件在线预览服务，支持 Office、PDF 等格式', color: '#E6A23C', buttonType: 'warning' },
 }
 
 // 权限校验映射：path -> 权限判断函数
@@ -61,7 +60,6 @@ const pathPermissions: Record<string, () => boolean> = {
   '/settings/rag': () => hasPermission('menu:rag'),
   '/settings/knowledge': () => hasPermission('menu:rag'),
   '/settings/llm': () => hasPermission('menu:settings:llm') || hasPermission('menu:system-config'),
-  '/settings/omnidoc': () => hasPermission('menu:rag'),
 }
 
 const iconMap: Record<string, Component> = {}
