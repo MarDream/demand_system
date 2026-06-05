@@ -160,7 +160,7 @@ watch(() => props.modelValue, async (open) => {
     try {
       const res = await getDocumentPreviewUrl(props.knowledgeBaseId, props.documentId) as any
       const presignedUrl = res.data ?? res
-      const watermark = (userStore.userInfo?.realName || userStore.userInfo?.username || '').trim()
+      const watermark = buildWatermark()
       const previewRes = await getOfficePreviewUrl(presignedUrl, watermark || undefined) as any
       officePreviewUrl.value = previewRes.data?.previewUrl ?? previewRes.previewUrl ?? ''
     } catch {
@@ -235,6 +235,38 @@ function resetPreviewState() {
   textContent.value = ''
   fileUrl.value = ''
   officePreviewUrl.value = ''
+}
+
+/**
+ * 构造 kkFileView 水印内容。
+ *
+ * 优先交替显示「登录用户名」与「手机号后 4 位」：
+ * - 行内 2~3 次混合，行间交替，共 3 行
+ * - 仅有用户名或仅有手机号时，退化为单值 3 行
+ * - 两者都缺失则返回空串，由调用方跳过水印
+ *
+ * 注意：kkFileView 4.x 的多行水印换行符是字面量 `\n`（反斜杠 + 字母 n），
+ * URL 编码后会变成 `%5Cn`，服务端会原样透传。不能用真正的换行符 `0x0A`。
+ */
+const KKFILEVIEW_LINE_BREAK = '\\n'
+
+function buildWatermark(): string {
+  const user = userStore.userInfo
+  const username = (user?.realName || user?.username || '').trim()
+  const phone = (user?.phone || '').trim()
+  const phone4 = phone ? phone.slice(-4) : ''
+
+  if (!username && !phone4) return ''
+
+  if (username && phone4) {
+    return [
+      `${username} ${phone4} ${username}`,
+      `${phone4} ${username} ${phone4}`,
+      `${username} ${phone4} ${username}`,
+    ].join(KKFILEVIEW_LINE_BREAK)
+  }
+
+  return Array(3).fill(username || phone4).join(KKFILEVIEW_LINE_BREAK)
 }
 
 function handleEmbeddedPreviewLoaded() {

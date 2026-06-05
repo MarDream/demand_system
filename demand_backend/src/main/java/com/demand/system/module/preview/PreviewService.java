@@ -19,6 +19,12 @@ import java.util.Base64;
 public class PreviewService {
 
     private static final String DEFAULT_WATERMARK_ANGLE = "45";
+    private static final String DEFAULT_WATERMARK_X_SPACE = "80";
+    private static final String DEFAULT_WATERMARK_Y_SPACE = "120";
+    private static final String DEFAULT_WATERMARK_FONT_SIZE = "12";
+    private static final String DEFAULT_WATERMARK_COLOR = "cccccc";
+    private static final String DEFAULT_WATERMARK_COLS = "3";
+    private static final String DEFAULT_WATERMARK_ROWS = "8";
 
     private final PreviewProperties properties;
 
@@ -48,6 +54,12 @@ public class PreviewService {
             query.append("&watermarkTxt=").append(encode(watermarkTxt));
         }
         query.append("&watermarkAngle=").append(DEFAULT_WATERMARK_ANGLE);
+        query.append("&watermarkXSpace=").append(DEFAULT_WATERMARK_X_SPACE);
+        query.append("&watermarkYSpace=").append(DEFAULT_WATERMARK_Y_SPACE);
+        query.append("&watermarkFontSize=").append(DEFAULT_WATERMARK_FONT_SIZE);
+        query.append("&watermarkColor=").append(DEFAULT_WATERMARK_COLOR);
+        query.append("&watermarkCols=").append(DEFAULT_WATERMARK_COLS);
+        query.append("&watermarkRows=").append(DEFAULT_WATERMARK_ROWS);
 
         return base + path + "?" + query;
     }
