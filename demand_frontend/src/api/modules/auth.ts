@@ -5,6 +5,7 @@ export interface AuthUserInfo {
   username: string
   realName: string
   email: string
+  phone?: string
   avatar: string
   roles: string[]
   roleNames?: string[]

@@ -11,6 +11,7 @@ public class UserInfoResponse {
     private String username;
     private String realName;
     private String email;
+    private String phone;
     private String avatar;
     private List<String> roles;
     private List<String> roleNames;
@@ -22,13 +23,14 @@ public class UserInfoResponse {
     public UserInfoResponse() {
     }
 
-    public UserInfoResponse(Long id, String username, String realName, String email, String avatar,
+    public UserInfoResponse(Long id, String username, String realName, String email, String phone, String avatar,
                            List<String> roles, List<String> roleNames, List<String> permissions, Boolean isSuperAdmin,
                            Long regionId, Long departmentId) {
         this.id = id;
         this.username = username;
         this.realName = realName;
         this.email = email;
+        this.phone = phone;
         this.avatar = avatar;
         this.roles = roles;
         this.roleNames = roleNames;
@@ -68,6 +70,14 @@ public class UserInfoResponse {
 
     public void setEmail(String email) {
         this.email = email;
+    }
+
+    public String getPhone() {
+        return phone;
+    }
+
+    public void setPhone(String phone) {
+        this.phone = phone;
     }
 
     public String getAvatar() {
@@ -135,6 +145,7 @@ public class UserInfoResponse {
         private String username;
         private String realName;
         private String email;
+        private String phone;
         private String avatar;
         private List<String> roles;
         private List<String> roleNames;
@@ -160,6 +171,11 @@ public class UserInfoResponse {
 
         public UserInfoResponseBuilder email(String email) {
             this.email = email;
+            return this;
+        }
+
+        public UserInfoResponseBuilder phone(String phone) {
+            this.phone = phone;
             return this;
         }
 
@@ -199,7 +215,7 @@ public class UserInfoResponse {
         }
 
         public UserInfoResponse build() {
-            return new UserInfoResponse(id, username, realName, email, avatar, roles, roleNames,
+            return new UserInfoResponse(id, username, realName, email, phone, avatar, roles, roleNames,
                     permissions, isSuperAdmin, regionId, departmentId);
         }
     }
