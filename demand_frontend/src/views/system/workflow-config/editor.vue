@@ -168,20 +168,38 @@
                 </el-form-item>
 
                 <el-form-item v-if="nodeForm.assigneeType === 'SPECIFIED_ROLE'" label="指定角色">
-                  <el-select v-model="nodeForm.assigneeRoleId" placeholder="请选择角色">
-                    <el-option v-for="role in roleList" :key="role.id" :label="role.name" :value="role.id" />
+                  <el-select v-model="nodeForm.assigneeRoleId" placeholder="请选择角色" :loading="assigneeOptionsLoading">
+                    <el-option
+                      v-for="role in roleSelectOptions"
+                      :key="role.id"
+                      :label="role.name"
+                      :value="role.id"
+                      :disabled="role.disabled"
+                    />
                   </el-select>
                 </el-form-item>
 
                 <el-form-item v-if="nodeForm.assigneeType === 'SPECIFIED_ROLE_GROUP'" label="指定角色组">
-                  <el-select v-model="nodeForm.assigneeRoleGroupId" placeholder="请选择角色组">
-                    <el-option v-for="group in roleGroupList" :key="group.id" :label="group.name" :value="group.id" />
+                  <el-select v-model="nodeForm.assigneeRoleGroupId" placeholder="请选择角色组" :loading="assigneeOptionsLoading">
+                    <el-option
+                      v-for="group in roleGroupSelectOptions"
+                      :key="group.id"
+                      :label="group.name"
+                      :value="group.id"
+                      :disabled="group.disabled"
+                    />
                   </el-select>
                 </el-form-item>
 
                 <el-form-item v-if="nodeForm.assigneeType === 'SPECIFIED_USER'" label="指定用户">
-                  <el-select v-model="nodeForm.assigneeUserIds" multiple placeholder="请选择用户">
-                    <el-option v-for="user in allUserList" :key="user.id" :label="user.realName || user.username" :value="user.id" />
+                  <el-select v-model="nodeForm.assigneeUserIds" multiple placeholder="请选择用户" :loading="assigneeOptionsLoading">
+                    <el-option
+                      v-for="user in userSelectOptions"
+                      :key="user.id"
+                      :label="user.realName || user.username"
+                      :value="user.id"
+                      :disabled="user.disabled"
+                    />
                   </el-select>
                 </el-form-item>
 
@@ -362,6 +380,7 @@ const roleList = ref<Array<{ id: number; name: string; code: string }>>([])
 const roleGroupList = ref<Array<{ id: number; name: string }>>([])
 const allUserList = ref<Array<{ id: number; realName: string; username: string }>>([])
 const orgTreeData = ref<any[]>([])
+const assigneeOptionsLoading = ref(false)
 
 const drawerVisible = ref(false)
 const drawerTitle = ref('')
@@ -498,6 +517,54 @@ const workflowEditorTitle = computed(() => {
 const nodeDrawerTitle = computed(() => isViewMode.value ? '节点详情' : '节点配置')
 const edgeDrawerTitle = computed(() => isViewMode.value ? '连线详情' : '连线配置')
 const showProjectRequiredCheckbox = computed(() => !hasProjectRequiredInPredecessors(nodeForm.nodeId))
+const roleSelectOptions = computed(() => {
+  const options = roleList.value.map(role => ({ ...role, disabled: false }))
+  const selectedRoleId = nodeForm.assigneeRoleId
+  if (
+    selectedRoleId !== undefined &&
+    selectedRoleId !== null &&
+    !options.some(role => role.id === selectedRoleId)
+  ) {
+    options.unshift({
+      id: selectedRoleId,
+      name: assigneeOptionsLoading.value ? '角色加载中...' : '角色不存在或已删除',
+      code: '',
+      disabled: true
+    })
+  }
+  return options
+})
+const roleGroupSelectOptions = computed(() => {
+  const options = roleGroupList.value.map(group => ({ ...group, disabled: false }))
+  const selectedGroupId = nodeForm.assigneeRoleGroupId
+  if (
+    selectedGroupId !== undefined &&
+    selectedGroupId !== null &&
+    !options.some(group => group.id === selectedGroupId)
+  ) {
+    options.unshift({
+      id: selectedGroupId,
+      name: assigneeOptionsLoading.value ? '角色组加载中...' : '角色组不存在或已删除',
+      disabled: true
+    })
+  }
+  return options
+})
+const userSelectOptions = computed(() => {
+  const options = allUserList.value.map(user => ({ ...user, disabled: false }))
+  const selectedUserIds = nodeForm.assigneeUserIds || []
+  selectedUserIds
+    .filter(userId => !options.some(user => user.id === userId))
+    .forEach(userId => {
+      options.unshift({
+        id: userId,
+        realName: assigneeOptionsLoading.value ? '用户加载中...' : '用户不存在或已删除',
+        username: '',
+        disabled: true
+      })
+    })
+  return options
+})
 const trimmedVersionName = computed(() => versionForm.name.trim())
 const duplicatedVersionRecord = computed(() => {
   const trimmedVersion = versionForm.version.trim()
@@ -1940,6 +2007,7 @@ onMounted(() => {
 })
 
 async function loadRoleAndUserList() {
+  assigneeOptionsLoading.value = true
   try {
     const [rolesRes, roleGroupsRes, usersRes, orgTreeRes]: any[] = await Promise.all([
       roleApi.getRoleList(),
@@ -1953,6 +2021,8 @@ async function loadRoleAndUserList() {
     orgTreeData.value = (orgTreeRes?.data ?? orgTreeRes ?? [])
   } catch {
     // ignore
+  } finally {
+    assigneeOptionsLoading.value = false
   }
 }
 

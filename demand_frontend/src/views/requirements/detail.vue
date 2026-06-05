@@ -613,68 +613,72 @@ function onCommentEditorCreate({ editor }: { editor: any }) {
   commentEditorInstance.value = editor
   const editorEl = editor.view.dom as HTMLElement
   editorEl.addEventListener('paste', handleCommentImagePaste as unknown as EventListener)
-  installImageResizeHandles(editor)
+  installImageHandleForElement = installImageResizeHandles(editor)
 }
+
+// 模块级引用，insertCommentImageFile 中用于主动为新图片安装 handle
+let installImageHandleForElement: ((img: HTMLImageElement) => void) | null = null
+// 模块级拖拽状态，供 inject 方式创建的 handle 也能使用
+let resizeActiveImg: HTMLImageElement | null = null
+let resizeStartX = 0
+let resizeStartWidth = 0
+let resizeActiveHandle: HTMLElement | null = null
+let resizeEditorRef: any = null
 
 function installImageResizeHandles(editor: any) {
   const editorEl = editor.view.dom as HTMLElement
-  let activeHandle: HTMLElement | null = null
-  let activeImg: HTMLImageElement | null = null
-  let startX = 0
-  let startWidth = 0
+  resizeEditorRef = editor
 
   function createHandle(img: HTMLImageElement) {
-    removeHandle()
+    removeAllHandles()
     if (!img.classList.contains('comment-editor-image')) return
-    // 强制 img position relative 以容纳手柄
     img.style.position = 'relative'
     const handle = document.createElement('div')
     handle.className = 'comment-image-resize-handle'
     handle.title = '拖拽调整图片大小'
     img.appendChild(handle)
-    activeHandle = handle
+    resizeActiveHandle = handle
 
     handle.addEventListener('mousedown', (e: MouseEvent) => {
       e.preventDefault()
       e.stopPropagation()
-      activeImg = img
-      startX = e.clientX
-      startWidth = img.getBoundingClientRect().width
-      document.addEventListener('mousemove', onMove)
-      document.addEventListener('mouseup', onUp)
+      resizeActiveImg = img
+      resizeStartX = e.clientX
+      resizeStartWidth = img.getBoundingClientRect().width
+      document.addEventListener('mousemove', onResizeMove)
+      document.addEventListener('mouseup', onResizeUp)
     })
   }
 
-  function removeHandle() {
-    if (activeHandle && activeHandle.parentElement) {
-      activeHandle.parentElement.removeChild(activeHandle)
+  function removeAllHandles() {
+    if (resizeActiveHandle && resizeActiveHandle.parentElement) {
+      resizeActiveHandle.parentElement.removeChild(resizeActiveHandle)
     }
-    activeHandle = null
-    if (!activeImg) return
-    activeImg.style.cursor = ''
+    resizeActiveHandle = null
+    if (!resizeActiveImg) return
+    resizeActiveImg.style.cursor = ''
   }
 
-  function onMove(e: MouseEvent) {
-    if (!activeImg) return
-    const dx = e.clientX - startX
-    const newWidth = Math.max(MIN_IMAGE_WIDTH, Math.min(MAX_IMAGE_WIDTH, Math.round(startWidth + dx)))
-    activeImg.setAttribute('width', String(newWidth))
+  function onResizeMove(e: MouseEvent) {
+    if (!resizeActiveImg) return
+    const dx = e.clientX - resizeStartX
+    const newWidth = Math.max(MIN_IMAGE_WIDTH, Math.min(MAX_IMAGE_WIDTH, Math.round(resizeStartWidth + dx)))
+    resizeActiveImg.setAttribute('width', String(newWidth))
   }
 
-  function onUp() {
-    document.removeEventListener('mousemove', onMove)
-    document.removeEventListener('mouseup', onUp)
-    if (activeImg) {
-      const finalWidth = Number(activeImg.getAttribute('width')) || null
-      // 写回 tiptap 节点 attrs
+  function onResizeUp() {
+    document.removeEventListener('mousemove', onResizeMove)
+    document.removeEventListener('mouseup', onResizeUp)
+    if (resizeActiveImg) {
+      const finalWidth = Number(resizeActiveImg.getAttribute('width')) || null
       try {
-        const pos = editor.view.posAtDOM(activeImg, 0)
-        editor.commands.setNodeSelection(pos)
-        editor.commands.updateAttributes('commentImage', { width: finalWidth })
+        const pos = resizeEditorRef.view.posAtDOM(resizeActiveImg, 0)
+        resizeEditorRef.commands.setNodeSelection(pos)
+        resizeEditorRef.commands.updateAttributes('commentImage', { width: finalWidth })
       } catch {}
-      activeImg.style.cursor = ''
+      resizeActiveImg.style.cursor = ''
     }
-    activeImg = null
+    resizeActiveImg = null
   }
 
   editorEl.addEventListener('mouseover', (e: MouseEvent) => {
@@ -686,13 +690,14 @@ function installImageResizeHandles(editor: any) {
   editorEl.addEventListener('mouseout', (e: MouseEvent) => {
     const t = e.target as HTMLElement | null
     if (t && t.tagName === 'IMG' && t.classList.contains('comment-editor-image')) {
-      // 仅当鼠标真正离开 img 才移除（避免冒泡）
       const related = e.relatedTarget as Node | null
       if (!related || !(t as Node).contains(related)) {
-        removeHandle()
+        removeAllHandles()
       }
     }
   })
+
+  return createHandle
 }
 
 const commentImageUploading = ref(false)
@@ -722,13 +727,73 @@ async function insertCommentImageFile(file: File) {
         type: 'commentImage',
         attrs: { src, alt: safeAlt, width: DEFAULT_IMAGE_WIDTH },
       }).run()
-      // 把光标推到图片节点之后，避免后续 insertContent 替换图片
-      const insertedImg = editor.view.dom.querySelector(
-        'img.comment-editor-image:last-of-type'
-      ) as HTMLElement | null
-      if (insertedImg) {
-        const imgPos = editor.view.posAtDOM(insertedImg, 0)
-        editor.commands.setTextSelection(imgPos + 1)
+      // 直接在 DOM 中找到刚插入的图片并注入带完整拖拽功能的 resize handle，
+      // 绕过 IsleEditor 复杂 DOM 结构下 mouseover 事件可能不触发的问题。
+      try {
+        const container = editor.view.dom
+        const allImgs = container.querySelectorAll
+          ? Array.from(container.querySelectorAll('img.comment-editor-image'))
+          : []
+        const lastImg = allImgs[allImgs.length - 1] as HTMLImageElement | undefined
+        if (lastImg && !lastImg.querySelector('.comment-image-resize-handle')) {
+          lastImg.style.position = 'relative'
+          const handle = document.createElement('div')
+          handle.className = 'comment-image-resize-handle'
+          handle.title = '拖拽调整图片大小'
+          lastImg.appendChild(handle)
+          handle.addEventListener('mousedown', (me: MouseEvent) => {
+            me.preventDefault()
+            me.stopPropagation()
+            let startX = me.clientX
+            let startWidth = lastImg.getBoundingClientRect().width
+            const onMove = (ev: MouseEvent) => {
+              const dx = ev.clientX - startX
+              const newWidth = Math.max(MIN_IMAGE_WIDTH, Math.min(MAX_IMAGE_WIDTH, Math.round(startWidth + dx)))
+              lastImg.setAttribute('width', String(newWidth))
+            }
+            const onUp = () => {
+              document.removeEventListener('mousemove', onMove)
+              document.removeEventListener('mouseup', onUp)
+              const finalWidth = Number(lastImg.getAttribute('width')) || null
+              try {
+                const pos = editor.view.posAtDOM(lastImg, 0)
+                editor.commands.setNodeSelection(pos)
+                editor.commands.updateAttributes('commentImage', { width: finalWidth })
+              } catch {}
+            }
+            document.addEventListener('mousemove', onMove)
+            document.addEventListener('mouseup', onUp)
+          })
+        }
+      } catch {}
+      // 块级原子节点 (inline:false, atom:true) 没有 inline content，
+      // 不能直接在图片位置/之后 setTextSelection（会抛 TextSelection endpoint 错误）。
+      // 在 doc 中找到刚插入的图片，将光标推到图片之后第一个 text block，
+      // 避免后续 insertContent 替换图片。
+      try {
+        const doc = editor.state.doc
+        let imagePos = -1
+        doc.descendants((node: any, pos: number) => {
+          if (node.type.name === 'commentImage' && pos > imagePos) {
+            imagePos = pos
+          }
+        })
+        if (imagePos >= 0) {
+          // 原子节点 nodeSize = 1，atomEnd 即图片结束位置
+          const atomEnd = imagePos + 1
+          let targetPos = -1
+          doc.descendants((node: any, pos: number) => {
+            if (pos >= atomEnd && node.isTextblock) {
+              targetPos = pos
+              return false
+            }
+          })
+          if (targetPos >= 0) {
+            editor.commands.setTextSelection(targetPos)
+          }
+        }
+      } catch {
+        // 手动调整光标失败不影响图片插入
       }
       ElMessage.success(`图片 ${processedFile.name} 已插入`)
     }
@@ -1483,6 +1548,7 @@ onMounted(() => {
   max-width: 100%;
   height: auto;
   border-radius: 6px;
+  position: relative;
 }
 
 .comment-editor-dropzone :deep(.comment-image-resize-handle) {

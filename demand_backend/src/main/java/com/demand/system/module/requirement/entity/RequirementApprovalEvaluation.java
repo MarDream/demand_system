@@ -1,6 +1,7 @@
 package com.demand.system.module.requirement.entity;
 
 import com.baomidou.mybatisplus.annotation.FieldFill;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -33,6 +34,7 @@ public class RequirementApprovalEvaluation {
 
     private Long evaluatorId;
 
+    @TableField(insertStrategy = FieldStrategy.ALWAYS)
     private Integer rating;
 
     private String content;

@@ -134,7 +134,7 @@ import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { register } from '@/api/modules/auth'
 import { getOrgTree } from '@/api/modules/organization'
 import { getPositionList } from '@/api/modules/user'
-import type { OrgNode } from '@/types/user'
+import type { OrgNode, Position } from '@/types/user'
 
 const router = useRouter()
 const registerFormRef = ref<FormInstance>()
@@ -208,7 +208,8 @@ const flattenOrgTree = (list: OrgNode[]): OrgNode[] => {
 
 const loadRegionsAndDepartments = async () => {
   try {
-    const data = await getOrgTree() as OrgNode[]
+    const res = await getOrgTree() as any
+    const data = res?.data ?? res as OrgNode[]
     const flat = flattenOrgTree(data || [])
     regions.value = flat.filter(n => n.orgType === 'region' || n.orgType === 'company' || n.orgType === 'bureau')
     departments.value = flat.filter(n => n.orgType === 'department')
@@ -219,7 +220,8 @@ const loadRegionsAndDepartments = async () => {
 
 const loadPositions = async () => {
   try {
-    const data = await getPositionList() as Position[]
+    const res = await getPositionList() as any
+    const data = res?.data ?? res as Position[]
     positions.value = data || []
   } catch (error) {
     console.error('加载岗位列表失败:', error)

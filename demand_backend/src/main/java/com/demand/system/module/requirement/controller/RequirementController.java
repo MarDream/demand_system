@@ -4,6 +4,7 @@ import com.demand.system.common.result.PageResult;
 import com.demand.system.common.result.Result;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.requirement.dto.RequirementCreateDTO;
+import com.demand.system.module.requirement.dto.RequirementDetailVO;
 import com.demand.system.module.requirement.dto.RequirementApprovalEvaluationVO;
 import com.demand.system.module.requirement.dto.RequirementApprovalSupplementCreateDTO;
 import com.demand.system.module.requirement.dto.RequirementCommentCreateDTO;
@@ -203,6 +204,11 @@ public class RequirementController {
     @GetMapping("/{id}/children")
     public Result<List<Map<String, Object>>> getChildren(@PathVariable Long id) {
         return Result.success(requirementService.getChildren(id));
+    }
+
+    @GetMapping("/{id}/detail-batch")
+    public Result<RequirementDetailVO> getDetailBatch(@PathVariable Long id) {
+        return Result.success(requirementService.getDetailBatch(id));
     }
 
     @GetMapping("/{id}")

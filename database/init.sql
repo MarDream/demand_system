@@ -1565,8 +1565,17 @@ BEGIN
     ALTER TABLE `requirement_approval_evaluations`
       ADD INDEX `idx_parent_id` (`parent_id`);
   END IF;
-  ALTER TABLE `requirement_approval_evaluations`
-    MODIFY COLUMN `rating` TINYINT DEFAULT NULL COMMENT '评价星级1-5';
+  -- 补充意见场景 rating 可能为 NULL，确保列允许 NULL
+  IF EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'requirement_approval_evaluations'
+      AND COLUMN_NAME = 'rating'
+      AND IS_NULLABLE = 'NO'
+  ) THEN
+    ALTER TABLE `requirement_approval_evaluations`
+      MODIFY COLUMN `rating` TINYINT DEFAULT NULL COMMENT '评价星级1-5';
+  END IF;
 END$$
 DELIMITER ;
 CALL `apply_requirement_approval_evaluation_schema`();
