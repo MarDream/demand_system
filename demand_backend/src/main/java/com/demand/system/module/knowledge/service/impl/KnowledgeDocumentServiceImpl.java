@@ -33,6 +33,9 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.io.MemoryUsageSetting;
+import org.apache.pdfbox.text.PDFTextStripper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -512,9 +515,9 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         doc.setUpdatedAt(LocalDateTime.now());
         documentMapper.updateById(doc);
 
-        String content;
+        List<String> chunks;
         try {
-            content = readDocumentContent(doc);
+            chunks = readDocumentContent(doc);
         } catch (Exception e) {
             doc.setStatus("failed");
             doc.setErrorMessage("文件读取失败: " + e.getMessage());
@@ -523,7 +526,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             return;
         }
 
-        if (content == null || content.isBlank()) {
+        if (chunks == null || chunks.isEmpty()) {
             doc.setChunkCount(0);
             doc.setStatus("stored");
             doc.setErrorMessage(null);
@@ -533,7 +536,6 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             return;
         }
 
-        List<String> chunks = splitContent(content);
         chunks = chunks.stream()
                 .map(KnowledgeDocumentServiceImpl::sanitizeText)
                 .filter(c -> !c.isBlank())
@@ -888,19 +890,28 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 .trim();
     }
 
-    private String readDocumentContent(KnowledgeDocument doc) throws Exception {
+    private List<String> readDocumentContent(KnowledgeDocument doc) throws Exception {
         String type = doc.getFileType();
         try (InputStream is = minioStorageService.download(doc.getMinioKey())) {
             if (KnowledgeDocumentSupport.isDirectTextPreview(type)) {
-                return readText(is);
+                // 纯文本预览走原文 + splitContent 路径
+                return splitContent(readText(is));
             }
-            return switch (type) {
+            // xlsx/xls 走 readExcel 流式切片（直接产出 chunks，不拼全文）
+            if ("xlsx".equals(type) || "xls".equals(type)) {
+                return readExcel(is);
+            }
+            // pdf/docx/doc 仍按原文读出，由 splitContent 切片
+            String raw = switch (type) {
                 case "pdf" -> readPdf(is);
                 case "docx" -> readDocx(is);
                 case "doc" -> readDoc(is);
-                case "xlsx", "xls" -> readExcel(is);
                 default -> "";
             };
+            if (raw == null || raw.isBlank()) {
+                return List.of();
+            }
+            return splitContent(raw);
         }
     }
 
@@ -916,9 +927,16 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     }
 
     private String readPdf(InputStream is) throws Exception {
-        try (var document = org.apache.pdfbox.Loader.loadPDF(is.readAllBytes())) {
-            var stripper = new org.apache.pdfbox.text.PDFTextStripper();
+        // PDFBox 默认对单个 record 限制 100MB，超大 PDF（image stream / 字体 / xref 等）
+        // 会抛 IOException。使用 setupMixed 取消内存限制并允许溢出到临时文件，
+        // 同时 try-catch 兜底，避免单个大 PDF 拖垮整个文档索引流程。
+        MemoryUsageSetting memUsage = MemoryUsageSetting.setupMixed(Integer.MAX_VALUE);
+        try (var document = Loader.loadPDF(is.readAllBytes(), null, null, null, memUsage.streamCache)) {
+            var stripper = new PDFTextStripper();
             return stripper.getText(document);
+        } catch (Exception e) {
+            log.error("PDF 内容解析失败（文件可能包含超大 record 或已损坏）: {}", e.getMessage());
+            return "";
         }
     }
 
@@ -936,22 +954,68 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
     }
 
-    private String readExcel(InputStream is) throws Exception {
+    private List<String> readExcel(InputStream is) {
+        // POI 默认对单个 zip entry 限制 100MB，超大 xlsx（embedded image / shared string / sheet data）
+        // 会抛 IOException。POI 的 setByteArrayMaxOverride 是 static 方法，
+        // 设置后对 readDocx/readDoc 等所有 POI 解析生效。
+        // 同时按 sheet 流式切片，避免 23MB+ xlsx 解析后把整个 StringBuilder 撑爆堆内存。
+        org.apache.poi.util.IOUtils.setByteArrayMaxOverride(Integer.MAX_VALUE);
+        List<String> chunks = new ArrayList<>();
+        int chunkSize = knowledgeConfig.getChunkSize();
+        int chunkOverlap = knowledgeConfig.getChunkOverlap();
         try (var wb = org.apache.poi.ss.usermodel.WorkbookFactory.create(is)) {
-            StringBuilder sb = new StringBuilder();
             for (int i = 0; i < wb.getNumberOfSheets(); i++) {
                 var sheet = wb.getSheetAt(i);
-                sb.append("Sheet: ").append(sheet.getSheetName()).append("\n");
+                if (sheet == null) {
+                    continue;
+                }
+                StringBuilder sheetBuilder = new StringBuilder();
+                sheetBuilder.append("Sheet: ").append(sheet.getSheetName()).append('\n');
                 for (var row : sheet) {
                     List<String> cells = new ArrayList<>();
                     for (var cell : row) {
                         cells.add(getCellText(cell));
                     }
-                    sb.append(String.join("\t", cells)).append("\n");
+                    sheetBuilder.append(String.join("\t", cells)).append('\n');
+
+                    // 单 sheet 累积到 chunkSize 时立即切片并清空，限制内存峰值
+                    if (sheetBuilder.length() >= chunkSize) {
+                        chunks.addAll(splitText(sheetBuilder.toString(), chunkSize, chunkOverlap));
+                        sheetBuilder.setLength(0);
+                    }
+                }
+                // sheet 收尾的残余文本也作为一个 chunk
+                if (sheetBuilder.length() > 0) {
+                    chunks.addAll(splitText(sheetBuilder.toString(), chunkSize, chunkOverlap));
                 }
             }
-            return sb.toString();
+            return chunks;
+        } catch (Exception e) {
+            log.error("Excel 内容解析失败（文件可能包含超大 zip entry 或已损坏）: {}", e.getMessage());
+            return chunks; // 失败时返回已解析的 chunks（可能为空），不再让上游抛错
         }
+    }
+
+    /**
+     * 按 chunkSize + chunkOverlap 把文本切成多个 chunk。逻辑与 {@link #splitContent} 一致，
+     * 但只接受文本片段（不调用 split("\\n\\n+")），专供 readExcel 按 sheet 流式切片使用。
+     */
+    private List<String> splitText(String text, int chunkSize, int chunkOverlap) {
+        List<String> result = new ArrayList<>();
+        if (text == null || text.isBlank()) {
+            return result;
+        }
+        for (int i = 0; i < text.length(); i += chunkSize - chunkOverlap) {
+            String sub = text.substring(i, Math.min(i + chunkSize, text.length()));
+            String trimmed = sub.trim();
+            if (!trimmed.isEmpty()) {
+                result.add(trimmed);
+            }
+            if (i + chunkSize >= text.length()) {
+                break;
+            }
+        }
+        return result;
     }
 
     private String getCellText(org.apache.poi.ss.usermodel.Cell cell) {
