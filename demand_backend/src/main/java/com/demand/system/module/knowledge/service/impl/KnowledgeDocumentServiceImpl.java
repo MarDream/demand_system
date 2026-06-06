@@ -25,6 +25,7 @@ import com.demand.system.module.knowledge.service.EmbeddingService;
 import com.demand.system.module.knowledge.service.KnowledgeDocumentService;
 import com.demand.system.module.knowledge.support.KnowledgeDocumentSupport;
 import com.demand.system.module.knowledge.vectorstore.MilvusVectorStore;
+import com.demand.system.module.preview.PreviewWarmupService;
 import com.demand.system.module.file.storage.MinioStorageService;
 import com.demand.system.module.requirement.dto.RequirementAttachmentDTO;
 import com.demand.system.module.requirement.entity.Requirement;
@@ -69,6 +70,14 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
+    /**
+     * 预览 URL 默认有效期（小时）。
+     *
+     * <p>原为 1 小时，但 kkFileView 异步转码 + 浏览器渲染链路总耗时可能超过 1 小时，
+     * 改为 24 小时兼容正常使用窗口。短任务不会变慢，URL 在用户重新打开预览时会重新签发。</p>
+     */
+    private static final int DEFAULT_PREVIEW_PRESIGN_HOURS = 24;
+
     private final KnowledgeDocumentMapper documentMapper;
     private final KnowledgeChunkMapper chunkMapper;
     private final KnowledgeBaseMapper knowledgeBaseMapper;
@@ -82,6 +91,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     private final KnowledgeDocumentShareMapper shareMapper;
     private final KnowledgeDocumentShareLogMapper shareLogMapper;
     private final com.demand.system.module.project.mapper.ProjectMapper projectMapper;
+    private final PreviewWarmupService previewWarmupService;
 
     @Value("${jwt.secret}")
     private String jwtSecret;
@@ -98,7 +108,8 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                                         RabbitTemplate rabbitTemplate,
                                         KnowledgeDocumentShareMapper shareMapper,
                                         KnowledgeDocumentShareLogMapper shareLogMapper,
-                                        com.demand.system.module.project.mapper.ProjectMapper projectMapper) {
+                                        com.demand.system.module.project.mapper.ProjectMapper projectMapper,
+                                        PreviewWarmupService previewWarmupService) {
         this.documentMapper = documentMapper;
         this.chunkMapper = chunkMapper;
         this.knowledgeBaseMapper = knowledgeBaseMapper;
@@ -112,6 +123,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         this.shareMapper = shareMapper;
         this.shareLogMapper = shareLogMapper;
         this.projectMapper = projectMapper;
+        this.previewWarmupService = previewWarmupService;
     }
 
     @Override
@@ -150,6 +162,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         doc.setUploaderId(uploaderId);
         doc.setDownloadCount(0);
         documentMapper.insert(doc);
+        enqueuePreviewWarmup(doc);
         if (vectorizable) {
             enqueueDocumentProcessing(doc.getId());
         }
@@ -187,6 +200,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             doc.setUploaderId(uploaderId);
             doc.setDownloadCount(0);
             documentMapper.insert(doc);
+            enqueuePreviewWarmup(doc);
             if ("pending".equals(doc.getStatus())) {
                 enqueueDocumentProcessing(doc.getId());
             }
@@ -310,7 +324,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
         String previewUrl = null;
         try {
-            previewUrl = minioStorageService.getPresignedUrlForDocker(result.document().getMinioKey(), 1);
+            previewUrl = minioStorageService.getPresignedUrlForDocker(result.document().getMinioKey(), DEFAULT_PREVIEW_PRESIGN_HOURS);
         } catch (Exception e) {
             log.warn("生成分享文档预签名 URL 失败: {}", e.getMessage());
         }
@@ -526,6 +540,17 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             return;
         }
 
+        // 检查是否是密码保护提示
+        if (chunks.size() == 1 && "[此文档受密码保护，无法建立索引]".equals(chunks.get(0))) {
+            doc.setChunkCount(0);
+            doc.setStatus("failed");
+            doc.setErrorMessage("此文档受密码保护，无法建立索引。请移除密码后重新上传。");
+            doc.setUpdatedAt(LocalDateTime.now());
+            documentMapper.updateById(doc);
+            updateKnowledgeBaseCount(doc.getKnowledgeBaseId());
+            return;
+        }
+
         if (chunks == null || chunks.isEmpty()) {
             doc.setChunkCount(0);
             doc.setStatus("stored");
@@ -631,6 +656,30 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         } catch (Exception e) {
             log.warn("消息队列发送失败，同步处理: docId={}", docId, e);
             processDocument(docId);
+        }
+    }
+
+    private void enqueuePreviewWarmup(KnowledgeDocument doc) {
+        if (doc == null || !KnowledgeDocumentSupport.needsKkFileViewWarmup(doc.getFileType())) {
+            return;
+        }
+        Runnable warmupTask = () -> {
+            try {
+                String previewUrl = minioStorageService.getPresignedUrlForDocker(doc.getMinioKey(), DEFAULT_PREVIEW_PRESIGN_HOURS);
+                previewWarmupService.warmup(previewUrl, doc.getFileName());
+            } catch (Exception e) {
+                log.warn("文档预览预热准备失败: docId={}", doc.getId(), e);
+            }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    warmupTask.run();
+                }
+            });
+        } else {
+            warmupTask.run();
         }
     }
 
@@ -934,8 +983,15 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         try (var document = Loader.loadPDF(is.readAllBytes(), null, null, null, memUsage.streamCache)) {
             var stripper = new PDFTextStripper();
             return stripper.getText(document);
+        } catch (org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException e) {
+            log.warn("PDF 文件受密码保护，无法提取文本: {}", e.getMessage());
+            return "[此文档受密码保护，无法建立索引]";
+        } catch (java.io.IOException e) {
+            // PDFBox 3.x 解析异常统一为 IOException，密码保护场景已由 InvalidPasswordException 覆盖
+            log.error("PDF 内容解析失败（文件可能损坏或格式异常）: {}", e.getMessage());
+            return "";
         } catch (Exception e) {
-            log.error("PDF 内容解析失败（文件可能包含超大 record 或已损坏）: {}", e.getMessage());
+            log.error("PDF 内容解析失败: {}", e.getMessage());
             return "";
         }
     }
@@ -944,6 +1000,12 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         try (var wb = new org.apache.poi.xwpf.usermodel.XWPFDocument(is)) {
             var extractor = new org.apache.poi.xwpf.extractor.XWPFWordExtractor(wb);
             return extractor.getText();
+        } catch (org.apache.poi.EncryptedDocumentException e) {
+            log.warn("DOCX 文件受密码保护，无法提取文本: {}", e.getMessage());
+            return "[此文档受密码保护，无法建立索引]";
+        } catch (Exception e) {
+            log.error("DOCX 内容解析失败: {}", e.getMessage());
+            return "";
         }
     }
 
@@ -951,6 +1013,12 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         try (var fs = new org.apache.poi.poifs.filesystem.POIFSFileSystem(is)) {
             var extractor = new org.apache.poi.hwpf.extractor.WordExtractor(fs);
             return extractor.getText();
+        } catch (org.apache.poi.EncryptedDocumentException e) {
+            log.warn("DOC 文件受密码保护，无法提取文本: {}", e.getMessage());
+            return "[此文档受密码保护，无法建立索引]";
+        } catch (Exception e) {
+            log.error("DOC 内容解析失败: {}", e.getMessage());
+            return "";
         }
     }
 
@@ -1141,12 +1209,17 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
     @Override
     public String getPreviewUrl(Long knowledgeBaseId, Long documentId) {
+        return getPreviewUrl(knowledgeBaseId, documentId, DEFAULT_PREVIEW_PRESIGN_HOURS);
+    }
+
+    @Override
+    public String getPreviewUrl(Long knowledgeBaseId, Long documentId, int expiryHours) {
         KnowledgeDocument doc = documentMapper.selectById(documentId);
         if (doc == null || !doc.getKnowledgeBaseId().equals(knowledgeBaseId)) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "文档不存在");
         }
         try {
-            return minioStorageService.getPresignedUrlForDocker(doc.getMinioKey(), 1);
+            return minioStorageService.getPresignedUrlForDocker(doc.getMinioKey(), expiryHours);
         } catch (Exception e) {
             throw new BusinessException(ErrorCode.INTERNAL_ERROR, "获取预览地址失败: " + e.getMessage());
         }

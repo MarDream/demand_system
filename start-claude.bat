@@ -1,2 +1,2 @@
 @echo off
-claude --dangerously-skip-permissions
+claude agents --dangerously-skip-permissions

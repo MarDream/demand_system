@@ -181,7 +181,7 @@ async function loadShare(token: string) {
     } else if (previewType.value === 'office') {
       if (share.previewUrl) {
         try {
-          const previewRes = await getOfficePreviewUrl(share.previewUrl) as any
+          const previewRes = await getOfficePreviewUrl({ fileUrl: share.previewUrl }) as any
           officePreviewUrl.value = previewRes.data?.previewUrl ?? previewRes.previewUrl ?? ''
         } catch {
           endPreviewLoading()
@@ -588,5 +588,11 @@ onBeforeUnmount(() => {
     top: 12px;
     right: 12px;
   }
+}
+
+/* 去掉全屏按钮的 focus 红色边框 */
+.share-page :deep(.el-button:focus) {
+  outline: none;
+  box-shadow: none;
 }
 </style>

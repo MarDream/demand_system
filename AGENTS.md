@@ -18,6 +18,8 @@ docs/              设计、接口、实施文档
 
 依赖服务：MySQL、Redis、RabbitMQ、MinIO、Elasticsearch、Milvus。
 
+外部预览服务源码：`E:\Project\mygit\kkFileView`。需要修改 kkFileView 行为时，直接在该本地源码目录中阅读和修改，不要重新拉取或另建副本。
+
 ## 常用命令
 
 前端：

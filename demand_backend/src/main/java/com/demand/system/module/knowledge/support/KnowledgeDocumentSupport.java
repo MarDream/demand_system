@@ -36,6 +36,15 @@ public final class KnowledgeDocumentSupport {
             "jpg", "jpeg", "png", "gif", "bmp", "ico", "jfif", "webp", "svg"
     )));
 
+    public static final Set<String> KKFILEVIEW_WARMUP_EXTENSIONS = Set.copyOf(new LinkedHashSet<>(List.of(
+            "docx", "wps", "doc", "docm", "xls", "xlsx", "csv", "xlsm", "ppt", "pptx", "vsd", "rtf",
+            "odt", "wmf", "emf", "dps", "et", "ods", "ots", "tsv", "odp", "otp", "sxi", "ott",
+            "vsdx", "fodt", "fods", "xltx", "dotm", "ett", "xlt", "xltm", "wpt", "dot", "xlam",
+            "dotx", "xla", "pages", "pptm",
+            "rar", "zip", "jar", "7-zip", "tar", "gzip", "7z",
+            "dwg", "dxf", "dwf", "iges", "igs", "dwt", "dng", "ifc", "dwfx", "stl", "cf2", "plt"
+    )));
+
     public static final Set<String> VECTORIZABLE_EXTENSIONS = Set.copyOf(new LinkedHashSet<>(List.of(
             "txt", "md", "csv", "tsv", "json", "xml", "xbrl", "log", "yml", "yaml", "html", "htm",
             "asp", "jsp", "properties", "gitignore", "java", "py", "python", "c", "cpp", "sql",
@@ -60,5 +69,9 @@ public final class KnowledgeDocumentSupport {
 
     public static boolean isImage(String extension) {
         return extension != null && IMAGE_EXTENSIONS.contains(extension.toLowerCase());
+    }
+
+    public static boolean needsKkFileViewWarmup(String extension) {
+        return extension != null && KKFILEVIEW_WARMUP_EXTENSIONS.contains(extension.toLowerCase());
     }
 }

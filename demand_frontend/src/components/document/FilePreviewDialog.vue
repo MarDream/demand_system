@@ -158,10 +158,12 @@ watch(() => props.modelValue, async (open) => {
 
   if (previewType.value === 'office') {
     try {
-      const res = await getDocumentPreviewUrl(props.knowledgeBaseId, props.documentId) as any
-      const presignedUrl = res.data ?? res
       const watermark = buildWatermark()
-      const previewRes = await getOfficePreviewUrl(presignedUrl, watermark || undefined) as any
+      const previewRes = await getOfficePreviewUrl({
+        knowledgeBaseId: props.knowledgeBaseId,
+        documentId: props.documentId,
+        watermarkTxt: watermark || undefined,
+      }) as any
       officePreviewUrl.value = previewRes.data?.previewUrl ?? previewRes.previewUrl ?? ''
     } catch {
       officePreviewUrl.value = ''
@@ -191,7 +193,7 @@ watch(() => props.modelValue, async (open) => {
 
 function getLoadingMessage(type: string) {
   if (type === 'office') {
-    return '文档较大时会先完成渲染，再进入预览。'
+    return '正在转换文档格式，请稍候...'
   }
   if (type === 'image') {
     return '图片正在展开，马上就好。'
@@ -207,6 +209,13 @@ function beginPreviewLoading(message: string) {
   loadingMessage.value = message
   previewLoadingStartedAt = Date.now()
   previewLoading.value = true
+}
+
+/**
+ * 模拟打字机效果的加载提示更新
+ */
+function updateLoadingMessage(message: string) {
+  loadingMessage.value = message
 }
 
 function endPreviewLoading() {
@@ -245,10 +254,9 @@ function resetPreviewState() {
  * - 仅有用户名或仅有手机号时，退化为单值 3 行
  * - 两者都缺失则返回空串，由调用方跳过水印
  *
- * 注意：kkFileView 4.x 的多行水印换行符是字面量 `\n`（反斜杠 + 字母 n），
- * URL 编码后会变成 `%5Cn`，服务端会原样透传。不能用真正的换行符 `0x0A`。
+ * 注意：多行水印使用真实换行符，由请求参数编码后透传给预览服务。
  */
-const KKFILEVIEW_LINE_BREAK = '\\n'
+const WATERMARK_LINE_BREAK = '\n'
 
 function buildWatermark(): string {
   const user = userStore.userInfo
@@ -259,14 +267,11 @@ function buildWatermark(): string {
   if (!username && !phone4) return ''
 
   if (username && phone4) {
-    return [
-      `${username} ${phone4} ${username}`,
-      `${phone4} ${username} ${phone4}`,
-      `${username} ${phone4} ${username}`,
-    ].join(KKFILEVIEW_LINE_BREAK)
+    // 只输出2行：姓名行和手机号行，kkFileView 会按行交替渲染
+    return [username, phone4].join(WATERMARK_LINE_BREAK)
   }
 
-  return Array(3).fill(username || phone4).join(KKFILEVIEW_LINE_BREAK)
+  return username || phone4
 }
 
 function handleEmbeddedPreviewLoaded() {
@@ -615,5 +620,11 @@ document.addEventListener('fullscreenchange', onFullscreenChange)
   min-height: 60vh;
   gap: 12px;
   color: #909399;
+}
+
+/* 去掉全屏/下载按钮的 focus 红色边框 */
+.file-preview-dialog :deep(.el-button:focus) {
+  outline: none;
+  box-shadow: none;
 }
 </style>

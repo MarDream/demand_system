@@ -13,6 +13,7 @@ demand_frontend/    # 前端 (Vite, 端口517x)
 demand_backend/     # 后端 (Spring Boot, 端口8081)
 database/           # 数据库初始化脚本
 scripts/            # Docker Compose
+E:\Project\mygit\kkFileView  # kkFileView服务源代码，可直接修改适配预览所需服务
 ```
 
 ## 关键配置
