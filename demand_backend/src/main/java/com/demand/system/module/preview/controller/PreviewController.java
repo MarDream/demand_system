@@ -84,9 +84,10 @@ public class PreviewController {
      * 返回 {@code status=completed} 时 {@code previewUrl} 可直接嵌入 iframe。</p>
      */
     @GetMapping("/office-status")
-    public Result<AsyncPreviewVO> pollOfficeStatus(@RequestParam("taskId") String taskId) {
+    public Result<AsyncPreviewVO> pollOfficeStatus(@RequestParam("taskId") String taskId,
+                                                   @RequestParam(value = "previewUrl", required = false) String previewUrl) {
         try {
-            AsyncPreviewVO result = previewService.pollAsyncPreviewStatus(taskId);
+            AsyncPreviewVO result = previewService.pollAsyncPreviewStatus(taskId, previewUrl);
             return Result.success(result);
         } catch (IllegalArgumentException e) {
             throw new BusinessException(400, e.getMessage());

@@ -30,6 +30,18 @@ export interface OfficePreviewResult {
   previewUrl?: string
   taskId?: string
   message?: string
+  progress?: number
+  waitingSeconds?: number
+}
+
+export interface OfficePreviewProgressEvent extends OfficePreviewResult {
+  phase: 'submit' | 'poll' | 'complete'
+  attempt: number
+  maxAttempts: number
+}
+
+export interface OfficePreviewRequestOptions {
+  onProgress?: (event: OfficePreviewProgressEvent) => void
 }
 
 /** 轮询间隔（毫秒） */
@@ -78,11 +90,14 @@ export async function submitOfficePreview(params: OfficePreviewParams): Promise<
 /**
  * 查询异步任务状态。
  *
- * <p>单次 HTTP 调用 < 1s，不会触发 axios 15s 超时。</p>
+ * <p>单次 HTTP 调用 < 1s，不会触发 axios 15s 超时。
+ * 传入 submit 阶段缓存的 previewUrl，后端会在 completed 时回填该 URL
+ * （kkFileView 的 /getOfficeOnlineHtmlUrl 返回的 convertUrl 是相对路径，
+ * 不能直接用于 iframe src）。</p>
  */
-export async function pollOfficeStatus(taskId: string): Promise<OfficePreviewResult> {
+export async function pollOfficeStatus(taskId: string, previewUrl: string): Promise<OfficePreviewResult> {
   const res = await request.get<OfficePreviewResult>('/v1/preview/office-status', {
-    params: { taskId },
+    params: { taskId, previewUrl },
     timeout: POLL_HTTP_TIMEOUT_MS,
   })
   return unwrap<OfficePreviewResult>(res)
@@ -97,8 +112,15 @@ export async function pollOfficeStatus(taskId: string): Promise<OfficePreviewRes
  */
 export async function getOfficePreviewUrl(
   params: OfficePreviewParams,
+  options?: OfficePreviewRequestOptions,
 ): Promise<{ data: OfficePreviewResult }> {
   const submitted = await submitOfficePreview(params)
+  options?.onProgress?.({
+    ...submitted,
+    phase: submitted.status === 'completed' ? 'complete' : 'submit',
+    attempt: 0,
+    maxAttempts: MAX_POLL_ATTEMPTS,
+  })
 
   if (submitted.status === 'completed') {
     return { data: submitted }
@@ -110,7 +132,13 @@ export async function getOfficePreviewUrl(
 
   for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
     await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS))
-    const status = await pollOfficeStatus(submitted.taskId)
+    const status = await pollOfficeStatus(submitted.taskId, submitted.previewUrl ?? '')
+    options?.onProgress?.({
+      ...status,
+      phase: status.status === 'completed' ? 'complete' : 'poll',
+      attempt: attempt + 1,
+      maxAttempts: MAX_POLL_ATTEMPTS,
+    })
     if (status.status === 'completed' && status.previewUrl) {
       return { data: status }
     }

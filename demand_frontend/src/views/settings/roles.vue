@@ -1,8 +1,19 @@
 <template>
   <PageContainer :breadcrumb="false">
     <div class="role-console">
-      <div class="role-page" :style="{ gridTemplateColumns: roleSidebarCollapsed ? '0px 0px minmax(0, 1fr)' : `${roleSidebarWidth}px 4px minmax(0, 1fr)` }" v-loading="loading">
-      <aside class="role-sidebar" :class="{ 'is-collapsed': roleSidebarCollapsed }">
+      <div class="role-page" :style="roleSidebar.styleVars.value" v-loading="loading">
+      <aside class="role-sidebar" :class="{ 'is-collapsed': roleSidebar.collapsed }">
+        <div class="sidebar-head">
+          <span class="sidebar-head__title">角色导航</span>
+          <el-button
+            link
+            class="sidebar-collapse-trigger"
+            title="收起侧边栏"
+            @click="roleSidebar.toggle"
+          >
+            <el-icon><ArrowLeft /></el-icon>
+          </el-button>
+        </div>
         <el-input v-model="keyword" placeholder="搜索角色" clearable>
           <template #prefix>
             <el-icon><Search /></el-icon>
@@ -70,13 +81,13 @@
         </el-tree>
       </aside>
 
-      <div class="sidebar-resizer" @mousedown="startResize" @dblclick="toggleRoleSidebar" />
+      <div class="sidebar-resizer" @mousedown="roleSidebar.startResize" @dblclick="roleSidebar.toggle" />
       <button
-        v-if="roleSidebarCollapsed"
+        v-if="roleSidebar.collapsed"
         class="sidebar-expand-btn"
         type="button"
         title="展开侧边栏"
-        @click="toggleRoleSidebar"
+        @click="roleSidebar.toggle"
       >
         <el-icon><ArrowRight /></el-icon>
       </button>
@@ -393,11 +404,12 @@
 <script setup lang="ts">
 import { computed, markRaw, onMounted, onUnmounted, reactive, ref, type Component } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { ArrowDown, ArrowRight, Search, Suitcase, Tickets, UserFilled, User, Tools, Plus, FolderOpened, Rank } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowLeft, ArrowRight, Search, Suitcase, Tickets, UserFilled, User, Tools, Plus, FolderOpened, Rank } from '@element-plus/icons-vue'
 import Sortable from 'sortablejs'
 import * as XLSX from 'xlsx'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppButton from '@/components/common/AppButton.vue'
+import { useCollapsibleSidebar } from '@/composables/useCollapsibleSidebar'
 import { useUserStore } from '@/stores/modules/user'
 import { exportToExcel } from '@/utils/excel'
 import {
@@ -484,9 +496,14 @@ const menuTree = ref<MenuItem[]>([])
 const expandedMenuKeys = ref<string[]>([])
 const expandedRoleGroupKeys = ref<string[]>([])
 const roleTreeRef = ref<any>(null)
-const roleSidebarWidth = ref(360)
-const roleSidebarCollapsed = ref(false)
-const ROLE_SIDEBAR_DEFAULT = 360
+const roleSidebar = useCollapsibleSidebar({
+  defaultWidth: 360,
+  minWidth: 240,
+  maxWidth: 520,
+  resizerWidth: 4,
+  widthVar: '--role-sidebar-width',
+  resizerWidthVar: '--role-sidebar-resizer-width',
+})
 const keyword = ref('')
 const permissionKeyword = ref('')
 const dialogVisible = ref(false)
@@ -1448,33 +1465,6 @@ function validateRoleGroupNameUnique(_rule: unknown, value: string, callback: (e
   }
 }
 
-function startResize(e: MouseEvent) {
-  e.preventDefault()
-  if (roleSidebarCollapsed.value) return
-  const startX = e.clientX
-  const startWidth = roleSidebarWidth.value
-
-  const onMouseMove = (ev: MouseEvent) => {
-    const delta = ev.clientX - startX
-    roleSidebarWidth.value = Math.min(Math.max(startWidth + delta, 240), 520)
-  }
-  const onMouseUp = () => {
-    document.removeEventListener('mousemove', onMouseMove)
-    document.removeEventListener('mouseup', onMouseUp)
-  }
-  document.addEventListener('mousemove', onMouseMove)
-  document.addEventListener('mouseup', onMouseUp)
-}
-
-function toggleRoleSidebar() {
-  roleSidebarCollapsed.value = !roleSidebarCollapsed.value
-  if (roleSidebarCollapsed.value) {
-    roleSidebarWidth.value = 0
-  } else {
-    roleSidebarWidth.value = ROLE_SIDEBAR_DEFAULT
-  }
-}
-
 function handleRoleNameInput() {
   if (!editingRole.value && !codeManuallyEdited.value) {
     form.code = generateRoleCode(form.name)
@@ -1659,7 +1649,7 @@ function permissionName(code: string) {
 .role-page {
   min-height: calc(100vh - 148px);
   display: grid;
-  grid-template-columns: 360px 4px minmax(0, 1fr);
+  grid-template-columns: var(--role-sidebar-width, 360px) var(--role-sidebar-resizer-width, 4px) minmax(0, 1fr);
   background: #fff;
   position: relative;
 }
@@ -1675,9 +1665,31 @@ function permissionName(code: string) {
 }
 
 .role-sidebar.is-collapsed {
-  padding: 0;
-  border-right: 0;
-  overflow: hidden;
+  display: none;
+}
+
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-sm;
+}
+
+.sidebar-head__title {
+  font-size: $font-size-sm;
+  font-weight: 600;
+  color: $text-color;
+}
+
+.sidebar-collapse-trigger {
+  padding: 4px;
+  color: $text-color-secondary;
+  border-radius: 4px;
+
+  &:hover {
+    color: $primary-color;
+    background: rgba(64, 158, 255, 0.08);
+  }
 }
 
 .sidebar-resizer {

@@ -9,7 +9,13 @@
     @close="handleClose"
   >
     <template #header-actions>
-      <el-button size="small" :loading="downloading" @click="handleDownload" title="下载文件">
+      <el-button
+        size="small"
+        :loading="downloading"
+        :class="{ 'preview-action-button--attention': isPreviewLoadSlow && !downloading }"
+        :title="isPreviewLoadSlow ? '等待时间较长，建议直接下载文件查看' : '下载文件'"
+        @click="handleDownload"
+      >
         <el-icon><Download /></el-icon>
       </el-button>
       <el-button size="small" @click="toggleFullscreen" title="全屏">
@@ -57,27 +63,26 @@
         <el-icon :size="48"><Document /></el-icon>
         <p>该文件类型暂不支持在线预览</p>
       </div>
-      <div v-if="previewLoading" class="preview-loading-mask">
-        <div class="preview-loading-card">
-          <div class="preview-loader">
-            <span class="preview-loader__sheet preview-loader__sheet--back"></span>
-            <span class="preview-loader__sheet preview-loader__sheet--mid"></span>
-            <span class="preview-loader__sheet preview-loader__sheet--front">
-              <span class="preview-loader__eyes">
-                <i></i>
-                <i></i>
-              </span>
-              <span class="preview-loader__smile"></span>
-            </span>
+      <div v-if="previewError" class="preview-error-mask">
+        <div class="preview-error-card">
+          <el-icon color="#ef4444" :size="48"><CircleCloseFilled /></el-icon>
+          <div class="preview-error__title">预览转换失败</div>
+          <div class="preview-error__desc">{{ previewError }}</div>
+          <div class="preview-error__hint">
+            大文件（&gt;30MB xlsx/pptx 等）在 kkFileView 转码时容易超时，建议直接下载原文件查看。
           </div>
-          <div class="preview-loading__title">正在准备文档预览</div>
-          <div class="preview-loading__desc">{{ loadingMessage }}</div>
-          <div class="preview-loading__dots" aria-hidden="true">
-            <span></span>
-            <span></span>
-            <span></span>
-          </div>
+          <el-button type="primary" :icon="Download" @click="handleDownload">下载原文件</el-button>
         </div>
+      </div>
+      <div v-if="previewLoading" class="preview-loading-mask">
+        <PreviewLoadingCard
+          title="正在准备文档预览"
+          :description="loadingMessage"
+          :progress="previewProgress"
+          :elapsed-seconds="previewElapsedSeconds"
+          :show-slow-notice="isPreviewLoadSlow"
+          slow-notice="等待时间较长，建议直接下载原文件查看，右上角下载按钮可直接使用。"
+        />
       </div>
     </div>
   </AppDialog>
@@ -86,14 +91,17 @@
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Download, Document, FullScreen, ZoomIn, ZoomOut, RefreshLeft } from '@element-plus/icons-vue'
+import { Download, Document, FullScreen, ZoomIn, ZoomOut, RefreshLeft, CircleCloseFilled } from '@element-plus/icons-vue'
 import AppDialog from '@/components/common/AppDialog.vue'
+import PreviewLoadingCard from '@/components/document/PreviewLoadingCard.vue'
 import { downloadDocumentBlob, getDocumentPreviewUrl } from '@/api/modules/knowledge'
 import { getOfficePreviewUrl } from '@/api/modules/preview'
 import { PREVIEW_IMAGE_SET, PREVIEW_SUPPORTED_EXTENSION_SET, PREVIEW_TEXT_SET, normalizeFileExtension } from '@/constants/knowledgeDocument'
 import { useUserStore } from '@/stores/modules/user'
+import { clampProgress, computeOfficePreviewProgress, fetchBlobWithProgress, fetchTextWithProgress } from '@/utils/previewLoading'
 
 const PREVIEW_LOADING_MIN_DURATION = 500
+const PREVIEW_SLOW_THRESHOLD_SECONDS = 15
 
 const props = defineProps<{
   modelValue: boolean
@@ -126,9 +134,14 @@ const previewContainerRef = ref<HTMLElement>()
 const zoom = ref(100)
 const previewLoading = ref(false)
 const loadingMessage = ref('正在为你整理预览内容...')
+const previewElapsedSeconds = ref(0)
+const previewError = ref('')
+const previewProgress = ref(0)
 
 let previewLoadingStartedAt = 0
 let previewLoadingTimer: ReturnType<typeof setTimeout> | null = null
+let previewElapsedTimer: ReturnType<typeof setInterval> | null = null
+let previewObjectUrl: string | null = null
 
 const previewType = computed(() => {
   const ext = normalizeFileExtension(props.fileType)
@@ -137,6 +150,8 @@ const previewType = computed(() => {
   if (PREVIEW_SUPPORTED_EXTENSION_SET.has(ext)) return 'office'
   return 'unsupported'
 })
+
+const isPreviewLoadSlow = computed(() => previewElapsedSeconds.value >= PREVIEW_SLOW_THRESHOLD_SECONDS)
 
 watch(() => props.modelValue, async (open) => {
   if (!open) {
@@ -163,12 +178,25 @@ watch(() => props.modelValue, async (open) => {
         knowledgeBaseId: props.knowledgeBaseId,
         documentId: props.documentId,
         watermarkTxt: watermark || undefined,
+      }, {
+        onProgress: event => {
+          if (event.message) {
+            loadingMessage.value = event.message
+          }
+          if (event.status === 'completed') {
+            setPreviewProgress(96)
+            return
+          }
+          setPreviewProgress(computeOfficePreviewProgress(event.progress, event.attempt, event.maxAttempts))
+        },
       }) as any
       officePreviewUrl.value = previewRes.data?.previewUrl ?? previewRes.previewUrl ?? ''
-    } catch {
+      setPreviewProgress(97)
+    } catch (err: unknown) {
       officePreviewUrl.value = ''
       endPreviewLoading()
-      ElMessage.error('获取预览地址失败')
+      const msg = err instanceof Error ? err.message : '获取预览地址失败'
+      previewError.value = msg || '预览转换失败，请尝试下载原文件查看'
     }
     return
   }
@@ -178,11 +206,15 @@ watch(() => props.modelValue, async (open) => {
     const url = res.data ?? res
 
     if (previewType.value === 'text') {
-      const resp = await fetch(url)
-      textContent.value = await resp.text()
+      textContent.value = await fetchTextWithProgress(url, setPreviewProgress)
+      setPreviewProgress(100)
       endPreviewLoading()
     } else {
-      fileUrl.value = url
+      const blob = await fetchBlobWithProgress(url, setPreviewProgress)
+      revokePreviewObjectUrl()
+      previewObjectUrl = window.URL.createObjectURL(blob)
+      fileUrl.value = previewObjectUrl
+      setPreviewProgress(96)
     }
   } catch {
     fileUrl.value = ''
@@ -208,6 +240,8 @@ function beginPreviewLoading(message: string) {
   }
   loadingMessage.value = message
   previewLoadingStartedAt = Date.now()
+  previewProgress.value = 8
+  startPreviewElapsedTimer()
   previewLoading.value = true
 }
 
@@ -220,6 +254,7 @@ function updateLoadingMessage(message: string) {
 
 function endPreviewLoading() {
   if (!previewLoading.value) return
+  stopPreviewElapsedTimer()
   const remaining = PREVIEW_LOADING_MIN_DURATION - (Date.now() - previewLoadingStartedAt)
   if (remaining <= 0) {
     previewLoading.value = false
@@ -234,16 +269,45 @@ function endPreviewLoading() {
   }, remaining)
 }
 
+function startPreviewElapsedTimer() {
+  stopPreviewElapsedTimer()
+  previewElapsedSeconds.value = 0
+  previewElapsedTimer = setInterval(() => {
+    previewElapsedSeconds.value = Math.floor((Date.now() - previewLoadingStartedAt) / 1000)
+  }, 1000)
+}
+
+function stopPreviewElapsedTimer() {
+  if (!previewElapsedTimer) return
+  clearInterval(previewElapsedTimer)
+  previewElapsedTimer = null
+}
+
+function setPreviewProgress(progress: number) {
+  previewProgress.value = Math.max(previewProgress.value, clampProgress(progress))
+}
+
+function revokePreviewObjectUrl() {
+  if (!previewObjectUrl) return
+  window.URL.revokeObjectURL(previewObjectUrl)
+  previewObjectUrl = null
+}
+
 function resetPreviewState() {
   if (previewLoadingTimer) {
     clearTimeout(previewLoadingTimer)
     previewLoadingTimer = null
   }
+  stopPreviewElapsedTimer()
   previewLoading.value = false
   loadingMessage.value = '正在为你整理预览内容...'
+  previewElapsedSeconds.value = 0
+  previewProgress.value = 0
   textContent.value = ''
+  revokePreviewObjectUrl()
   fileUrl.value = ''
   officePreviewUrl.value = ''
+  previewError.value = ''
 }
 
 /**
@@ -275,10 +339,12 @@ function buildWatermark(): string {
 }
 
 function handleEmbeddedPreviewLoaded() {
+  setPreviewProgress(100)
   endPreviewLoading()
 }
 
 function handleVisualPreviewLoaded() {
+  setPreviewProgress(100)
   endPreviewLoading()
 }
 
@@ -347,6 +413,8 @@ onBeforeUnmount(() => {
   if (previewLoadingTimer) {
     clearTimeout(previewLoadingTimer)
   }
+  revokePreviewObjectUrl()
+  stopPreviewElapsedTimer()
   document.removeEventListener('fullscreenchange', onFullscreenChange)
 })
 
@@ -525,6 +593,26 @@ document.addEventListener('fullscreenchange', onFullscreenChange)
   color: #64748b;
 }
 
+.preview-loading__timer {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.08);
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.preview-loading__notice {
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(251, 146, 60, 0.12);
+  border: 1px solid rgba(251, 146, 60, 0.2);
+  color: #c2410c;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
 .preview-loading__dots {
   display: flex;
   align-items: center;
@@ -570,6 +658,68 @@ document.addEventListener('fullscreenchange', onFullscreenChange)
     transform: translateY(-5px);
     opacity: 1;
   }
+}
+
+.preview-error-mask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(248, 251, 255, 0.96);
+  backdrop-filter: blur(8px);
+  z-index: 4;
+}
+.preview-error-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: min(380px, calc(100% - 32px));
+  padding: 28px 24px;
+  border-radius: 24px;
+  border: 1px solid rgba(239, 68, 68, 0.18);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 40px rgba(239, 68, 68, 0.12);
+  text-align: center;
+}
+.preview-error__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #b91c1c;
+}
+.preview-error__desc {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #475569;
+  word-break: break-all;
+}
+.preview-error__hint {
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(251, 146, 60, 0.08);
+  border: 1px solid rgba(251, 146, 60, 0.2);
+  color: #c2410c;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+@keyframes preview-button-pulse {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+    box-shadow: 0 0 0 0 rgba(251, 146, 60, 0.18);
+  }
+  50% {
+    transform: translateY(-1px) scale(1.04);
+    box-shadow: 0 0 0 8px rgba(251, 146, 60, 0);
+  }
+}
+
+:deep(.preview-action-button--attention) {
+  border-color: rgba(251, 146, 60, 0.55);
+  color: #ea580c;
+  animation: preview-button-pulse 1.25s ease-in-out infinite;
 }
 
 .preview-office-wrap {

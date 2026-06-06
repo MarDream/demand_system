@@ -12,10 +12,21 @@
       <div
         v-if="managementMode === 'basic'"
         class="member-layout"
-        :style="{ gridTemplateColumns: sidebarCollapsed ? '0px 0px minmax(0, 1fr)' : `${sidebarWidth}px 4px minmax(0, 1fr)` }"
+        :style="memberSidebar.styleVars.value"
         v-loading="loading"
       >
-        <aside class="member-sidebar" :class="{ 'is-collapsed': sidebarCollapsed }">
+        <aside class="member-sidebar" :class="{ 'is-collapsed': memberSidebar.collapsed }">
+          <div class="sidebar-head">
+            <span class="sidebar-head__title">组织架构</span>
+            <el-button
+              link
+              class="sidebar-collapse-trigger"
+              title="收起侧边栏"
+              @click="memberSidebar.toggle"
+            >
+              <el-icon><ArrowLeft /></el-icon>
+            </el-button>
+          </div>
           <el-input v-model="orgKeyword" placeholder="搜索成员、部门、角色" clearable>
             <template #prefix>
               <el-icon><Search /></el-icon>
@@ -58,13 +69,13 @@
           </div>
         </aside>
 
-        <div class="sidebar-resizer" @mousedown="startResize" @dblclick="toggleSidebar" />
+        <div class="sidebar-resizer" @mousedown="memberSidebar.startResize" @dblclick="memberSidebar.toggle" />
         <button
-          v-if="sidebarCollapsed"
+          v-if="memberSidebar.collapsed"
           class="sidebar-expand-btn"
           type="button"
           title="展开侧边栏"
-          @click="toggleSidebar"
+          @click="memberSidebar.toggle"
         >
           <el-icon><ArrowRight /></el-icon>
         </button>
@@ -267,8 +278,19 @@
         </main>
       </div>
 
-      <div v-else class="roster-layout" v-loading="loading">
-        <aside class="roster-nav">
+      <div v-else class="roster-layout" :style="rosterSidebar.styleVars.value" v-loading="loading">
+        <aside class="roster-nav" :class="{ 'is-collapsed': rosterSidebar.collapsed }">
+          <div class="sidebar-head">
+            <span class="sidebar-head__title">人事导航</span>
+            <el-button
+              link
+              class="sidebar-collapse-trigger"
+              title="收起侧边栏"
+              @click="rosterSidebar.toggle"
+            >
+              <el-icon><ArrowLeft /></el-icon>
+            </el-button>
+          </div>
           <div class="nav-section">
             <div class="nav-title">
               <el-icon><User /></el-icon>
@@ -287,6 +309,16 @@
             </button>
           </div>
         </aside>
+
+        <button
+          v-if="rosterSidebar.collapsed"
+          class="sidebar-expand-btn"
+          type="button"
+          title="展开侧边栏"
+          @click="rosterSidebar.toggle"
+        >
+          <el-icon><ArrowRight /></el-icon>
+        </button>
 
         <main class="roster-main">
           <div class="roster-header">
@@ -541,6 +573,7 @@
 import { computed, onMounted, reactive, ref, type Component } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
+  ArrowLeft,
   ArrowDown,
   ArrowRight,
   Clock,
@@ -572,6 +605,7 @@ import { formatDate as formatDateTime } from '@/utils/format'
 import { getRoleList } from '@/api/modules/role'
 import type { RoleItem } from '@/api/modules/menu'
 import { useUserStore } from '@/stores/modules/user'
+import { useCollapsibleSidebar } from '@/composables/useCollapsibleSidebar'
 import { usePermission } from '@/composables/usePermission'
 
 interface FlatOrgNode {
@@ -623,9 +657,20 @@ const orgKeyword = ref('')
 const activeOrgKey = ref('')
 const selectedDepartments = ref<DepartmentRow[]>([])
 const expandedKeys = ref<Set<string>>(new Set())
-const sidebarWidth = ref(284)
-const sidebarCollapsed = ref(false)
-const SIDEBAR_DEFAULT = 284
+const memberSidebar = useCollapsibleSidebar({
+  defaultWidth: 284,
+  minWidth: 200,
+  maxWidth: 500,
+  resizerWidth: 4,
+  widthVar: '--member-sidebar-width',
+  resizerWidthVar: '--member-sidebar-resizer-width',
+})
+const rosterSidebar = useCollapsibleSidebar({
+  defaultWidth: 244,
+  minWidth: 220,
+  maxWidth: 320,
+  widthVar: '--roster-sidebar-width',
+})
 
 const dialogVisible = ref(false)
 const departmentDrawerVisible = ref(false)
@@ -1300,33 +1345,6 @@ function toggleExpand(key: string) {
   expandedKeys.value = keys
 }
 
-function startResize(e: MouseEvent) {
-  e.preventDefault()
-  if (sidebarCollapsed.value) return
-  const startX = e.clientX
-  const startWidth = sidebarWidth.value
-
-  const onMouseMove = (ev: MouseEvent) => {
-    const delta = ev.clientX - startX
-    sidebarWidth.value = Math.min(Math.max(startWidth + delta, 200), 500)
-  }
-  const onMouseUp = () => {
-    document.removeEventListener('mousemove', onMouseMove)
-    document.removeEventListener('mouseup', onMouseUp)
-  }
-  document.addEventListener('mousemove', onMouseMove)
-  document.addEventListener('mouseup', onMouseUp)
-}
-
-function toggleSidebar() {
-  sidebarCollapsed.value = !sidebarCollapsed.value
-  if (sidebarCollapsed.value) {
-    sidebarWidth.value = 0
-  } else {
-    sidebarWidth.value = SIDEBAR_DEFAULT
-  }
-}
-
 function countUsersByOrg(id: number) {
   // 收集该组织及所有子组织的 ID
   const orgIds = collectOrgIds(orgTree.value, id)
@@ -1519,13 +1537,16 @@ onMounted(async () => {
 .member-layout,
 .roster-layout {
   display: grid;
-  grid-template-columns: 284px minmax(0, 1fr);
   min-height: calc(100vh - 220px);
   position: relative;
 }
 
 .member-layout {
-  grid-template-columns: 284px 4px minmax(0, 1fr);
+  grid-template-columns: var(--member-sidebar-width, 284px) var(--member-sidebar-resizer-width, 4px) minmax(0, 1fr);
+}
+
+.roster-layout {
+  grid-template-columns: var(--roster-sidebar-width, 244px) minmax(0, 1fr);
 }
 
 .sidebar-resizer {
@@ -1567,16 +1588,42 @@ onMounted(async () => {
 
 .member-sidebar,
 .roster-nav {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
   padding: $spacing-md;
   border-right: 1px solid $border-color;
   background: #fff;
   overflow: auto;
 }
 
-.member-sidebar.is-collapsed {
-  padding: 0;
-  border-right: 0;
-  overflow: hidden;
+.member-sidebar.is-collapsed,
+.roster-nav.is-collapsed {
+  display: none;
+}
+
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-sm;
+}
+
+.sidebar-head__title {
+  font-size: $font-size-sm;
+  font-weight: 600;
+  color: $text-color;
+}
+
+.sidebar-collapse-trigger {
+  padding: 4px;
+  color: $text-color-secondary;
+  border-radius: 4px;
+
+  &:hover {
+    color: $primary-color;
+    background: rgba(64, 158, 255, 0.08);
+  }
 }
 
 .sidebar-actions {

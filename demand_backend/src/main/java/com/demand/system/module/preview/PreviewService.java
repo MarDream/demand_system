@@ -207,9 +207,11 @@ public class PreviewService {
             String taskId = map.get("taskId") != null ? map.get("taskId").toString() : null;
             String convertUrl = map.get("convertUrl") != null ? map.get("convertUrl").toString() : null;
             String message = map.get("message") != null ? map.get("message").toString() : null;
+            Integer progress = map.get("progress") instanceof Number ? ((Number) map.get("progress")).intValue() : null;
+            Long waitingSeconds = map.get("waitingSeconds") instanceof Number ? ((Number) map.get("waitingSeconds")).longValue() : null;
 
             return switch (status) {
-                case 0, 1 -> AsyncPreviewVO.processing(taskId);
+                case 0, 1 -> AsyncPreviewVO.processing(taskId, null, message, progress, waitingSeconds);
                 case 2 -> AsyncPreviewVO.completed(convertUrl);
                 default -> AsyncPreviewVO.failed(message != null ? message : "预览转换失败");
             };

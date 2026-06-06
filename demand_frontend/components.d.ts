@@ -76,6 +76,7 @@ declare module 'vue' {
     HighlightText: typeof import('./src/components/common/HighlightText.vue')['default']
     IconPicker: typeof import('./src/components/common/IconPicker.vue')['default']
     PageContainer: typeof import('./src/components/common/PageContainer.vue')['default']
+    PreviewLoadingCard: typeof import('./src/components/document/PreviewLoadingCard.vue')['default']
     RAGSearchResult: typeof import('./src/components/document/RAGSearchResult.vue')['default']
     RemixIcon: typeof import('./src/components/common/RemixIcon.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']

@@ -4,11 +4,6 @@
     subtitle="集中管理知识库、文档分块与检索入口，提升团队沉淀和复用效率"
     :breadcrumb="false"
   >
-    <template #headerActions>
-      <el-button @click="store.fetchAllBases()" :loading="store.loading">刷新</el-button>
-      <AppButton type="primary" permission="button:knowledge:create" @click="openCreateDialog">新建知识库</AppButton>
-    </template>
-
     <div class="kb-page">
       <el-row :gutter="16" class="kb-overview">
         <el-col :xs="12" :md="6" v-for="item in overviewCards" :key="item.label">
@@ -22,13 +17,20 @@
 
       <el-card class="kb-panel" shadow="never">
         <div class="kb-toolbar">
-          <el-input
-            v-model="keyword"
-            placeholder="搜索知识库名称或描述"
-            clearable
-            class="kb-toolbar__search"
-          />
-          <el-segmented v-model="statusFilter" :options="statusOptions" class="kb-toolbar__filter" />
+          <div class="kb-toolbar__main">
+            <el-input
+              v-model="keyword"
+              placeholder="搜索知识库名称或描述"
+              clearable
+              class="kb-toolbar__search"
+            />
+            <el-segmented v-model="statusFilter" :options="statusOptions" class="kb-toolbar__filter" />
+          </div>
+
+          <div class="kb-toolbar__actions">
+            <el-button @click="store.fetchAllBases()" :loading="store.loading">刷新</el-button>
+            <AppButton type="primary" permission="button:knowledge:create" @click="openCreateDialog">新建知识库</AppButton>
+          </div>
         </div>
 
         <el-row v-if="filteredKnowledgeBases.length > 0" :gutter="20">
@@ -288,8 +290,26 @@ async function handleSubmit() {
   margin-bottom: $spacing-md;
 }
 
+.kb-toolbar__main {
+  display: flex;
+  align-items: center;
+  gap: $spacing-md;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
 .kb-toolbar__search {
   max-width: 360px;
+  flex: 1 1 260px;
+}
+
+.kb-toolbar__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: $spacing-sm;
+  flex-wrap: wrap;
 }
 
 .kb-card {
@@ -393,6 +413,15 @@ async function handleSubmit() {
   .kb-toolbar {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .kb-toolbar__main,
+  .kb-toolbar__actions {
+    width: 100%;
+  }
+
+  .kb-toolbar__actions {
+    justify-content: flex-start;
   }
 
   .kb-toolbar__search {

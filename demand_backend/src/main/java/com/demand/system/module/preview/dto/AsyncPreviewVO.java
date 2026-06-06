@@ -29,33 +29,49 @@ public class AsyncPreviewVO {
     /** 状态描述或错误信息 */
     private String message;
 
+    /** 转换进度（0-100），仅 processing/completed 场景有意义 */
+    private Integer progress;
+
+    /** 已等待秒数 */
+    private Long waitingSeconds;
+
     public AsyncPreviewVO() {
     }
 
     public AsyncPreviewVO(String status, String previewUrl, String taskId, String message) {
+        this(status, previewUrl, taskId, message, null, null);
+    }
+
+    public AsyncPreviewVO(String status, String previewUrl, String taskId, String message, Integer progress, Long waitingSeconds) {
         this.status = status;
         this.previewUrl = previewUrl;
         this.taskId = taskId;
         this.message = message;
+        this.progress = progress;
+        this.waitingSeconds = waitingSeconds;
     }
 
     public static AsyncPreviewVO processing(String taskId) {
-        return new AsyncPreviewVO("processing", null, taskId, "文件转换中，请稍候...");
+        return new AsyncPreviewVO("processing", null, taskId, "文件转换中，请稍候...", 0, 0L);
     }
 
     /**
      * 处理中（已签发 previewUrl，可在前端缓存待转码完成后使用）。
      */
     public static AsyncPreviewVO processing(String taskId, String previewUrl) {
-        return new AsyncPreviewVO("processing", previewUrl, taskId, "文件转换中，请稍候...");
+        return new AsyncPreviewVO("processing", previewUrl, taskId, "文件转换中，请稍候...", 0, 0L);
+    }
+
+    public static AsyncPreviewVO processing(String taskId, String previewUrl, String message, Integer progress, Long waitingSeconds) {
+        return new AsyncPreviewVO("processing", previewUrl, taskId, message, progress, waitingSeconds);
     }
 
     public static AsyncPreviewVO completed(String previewUrl) {
-        return new AsyncPreviewVO("completed", previewUrl, null, null);
+        return new AsyncPreviewVO("completed", previewUrl, null, null, 100, 0L);
     }
 
     public static AsyncPreviewVO failed(String message) {
-        return new AsyncPreviewVO("failed", null, null, message);
+        return new AsyncPreviewVO("failed", null, null, message, 0, 0L);
     }
 
     public String getStatus() {
@@ -88,5 +104,21 @@ public class AsyncPreviewVO {
 
     public void setMessage(String message) {
         this.message = message;
+    }
+
+    public Integer getProgress() {
+        return progress;
+    }
+
+    public void setProgress(Integer progress) {
+        this.progress = progress;
+    }
+
+    public Long getWaitingSeconds() {
+        return waitingSeconds;
+    }
+
+    public void setWaitingSeconds(Long waitingSeconds) {
+        this.waitingSeconds = waitingSeconds;
     }
 }

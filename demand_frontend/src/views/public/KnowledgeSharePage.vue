@@ -12,7 +12,13 @@
 
     <div ref="previewContainerRef" class="share-preview" :class="{ 'share-preview--fullscreen': isFullscreen }">
       <div class="share-preview__actions">
-        <el-button v-if="downloadUrl" type="primary" @click="downloadFile">
+        <el-button
+          v-if="downloadUrl"
+          type="primary"
+          :class="{ 'share-action-button--attention': isPreviewLoadSlow }"
+          :title="isPreviewLoadSlow ? '等待时间较长，建议直接下载文件查看' : '下载文件'"
+          @click="downloadFile"
+        >
           <el-icon><Download /></el-icon>
           <span>下载文件</span>
         </el-button>
@@ -22,26 +28,12 @@
       </div>
 
       <div v-if="pageLoading" class="share-loading-mask">
-        <div class="share-loading-card">
-          <div class="share-loader">
-            <span class="share-loader__sheet share-loader__sheet--back"></span>
-            <span class="share-loader__sheet share-loader__sheet--mid"></span>
-            <span class="share-loader__sheet share-loader__sheet--front">
-              <span class="share-loader__eyes">
-                <i></i>
-                <i></i>
-              </span>
-              <span class="share-loader__smile"></span>
-            </span>
-          </div>
-          <div class="share-loading__title">正在打开分享文档</div>
-          <div class="share-loading__desc">正在校验分享信息并准备预览内容，请稍候。</div>
-          <div class="share-loading__dots" aria-hidden="true">
-            <span></span>
-            <span></span>
-            <span></span>
-          </div>
-        </div>
+        <PreviewLoadingCard
+          title="正在打开分享文档"
+          description="正在校验分享信息并准备预览内容，请稍候。"
+          :progress="pageLoadingProgress"
+          :show-elapsed="false"
+        />
       </div>
 
       <el-result
@@ -85,26 +77,14 @@
       </template>
 
       <div v-if="previewLoading && !pageLoading && !errorMessage" class="share-loading-mask share-loading-mask--overlay">
-        <div class="share-loading-card">
-          <div class="share-loader">
-            <span class="share-loader__sheet share-loader__sheet--back"></span>
-            <span class="share-loader__sheet share-loader__sheet--mid"></span>
-            <span class="share-loader__sheet share-loader__sheet--front">
-              <span class="share-loader__eyes">
-                <i></i>
-                <i></i>
-              </span>
-              <span class="share-loader__smile"></span>
-            </span>
-          </div>
-          <div class="share-loading__title">正在准备文档预览</div>
-          <div class="share-loading__desc">{{ previewLoadingMessage }}</div>
-          <div class="share-loading__dots" aria-hidden="true">
-            <span></span>
-            <span></span>
-            <span></span>
-          </div>
-        </div>
+        <PreviewLoadingCard
+          title="正在准备文档预览"
+          :description="previewLoadingMessage"
+          :progress="previewProgress"
+          :elapsed-seconds="previewElapsedSeconds"
+          :show-slow-notice="isPreviewLoadSlow"
+          slow-notice="等待时间较长，建议直接下载原文件查看，右上角下载按钮可直接使用。"
+        />
       </div>
     </div>
   </div>
@@ -115,12 +95,15 @@ import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Document, Download, FullScreen } from '@element-plus/icons-vue'
+import PreviewLoadingCard from '@/components/document/PreviewLoadingCard.vue'
 import { getPublicShareContext, type PublicShareContext } from '@/api/modules/publicShare'
 import { getOfficePreviewUrl } from '@/api/modules/preview'
 import { PREVIEW_IMAGE_SET, PREVIEW_SUPPORTED_EXTENSION_SET, PREVIEW_TEXT_SET, normalizeFileExtension } from '@/constants/knowledgeDocument'
 import { formatDate } from '@/utils/format'
+import { clampProgress, computeOfficePreviewProgress, fetchBlobWithProgress, fetchTextWithProgress } from '@/utils/previewLoading'
 
 const PREVIEW_LOADING_MIN_DURATION = 500
+const PREVIEW_SLOW_THRESHOLD_SECONDS = 15
 
 const route = useRoute()
 
@@ -135,9 +118,14 @@ const previewContainerRef = ref<HTMLElement>()
 const isFullscreen = ref(false)
 const previewLoading = ref(false)
 const previewLoadingMessage = ref('正在为你整理预览内容...')
+const previewElapsedSeconds = ref(0)
+const previewProgress = ref(0)
+const pageLoadingProgress = ref(12)
 
 let previewLoadingStartedAt = 0
 let previewLoadingTimer: ReturnType<typeof setTimeout> | null = null
+let previewElapsedTimer: ReturnType<typeof setInterval> | null = null
+let previewObjectUrl: string | null = null
 
 const previewType = computed(() => {
   const ext = normalizeFileExtension(context.value?.fileType)
@@ -146,6 +134,8 @@ const previewType = computed(() => {
   if (PREVIEW_SUPPORTED_EXTENSION_SET.has(ext)) return 'office'
   return 'unsupported'
 })
+
+const isPreviewLoadSlow = computed(() => previewElapsedSeconds.value >= PREVIEW_SLOW_THRESHOLD_SECONDS)
 
 watch(
   () => route.params.token,
@@ -158,15 +148,18 @@ watch(
 
 async function loadShare(token: string) {
   pageLoading.value = true
+  pageLoadingProgress.value = 16
   errorMessage.value = ''
   resetPreviewState()
 
   try {
     const share = await getPublicShareContext(token)
+    pageLoadingProgress.value = 42
     context.value = share
     const accessToken = encodeURIComponent(share.accessToken)
     fileUrl.value = `/api/v1/public/knowledge/shares/${share.shareToken}/file?accessToken=${accessToken}`
     downloadUrl.value = `/api/v1/public/knowledge/shares/${share.shareToken}/download?accessToken=${accessToken}`
+    pageLoadingProgress.value = 100
     pageLoading.value = false
 
     if (previewType.value === 'unsupported') {
@@ -175,14 +168,32 @@ async function loadShare(token: string) {
     beginPreviewLoading(getLoadingMessage(previewType.value))
 
     if (previewType.value === 'text') {
-      const resp = await fetch(fileUrl.value)
-      textContent.value = await resp.text()
+      textContent.value = await fetchTextWithProgress(fileUrl.value, setPreviewProgress)
+      setPreviewProgress(100)
       endPreviewLoading()
+    } else if (previewType.value === 'image') {
+      const blob = await fetchBlobWithProgress(fileUrl.value, setPreviewProgress)
+      revokePreviewObjectUrl()
+      previewObjectUrl = window.URL.createObjectURL(blob)
+      fileUrl.value = previewObjectUrl
+      setPreviewProgress(96)
     } else if (previewType.value === 'office') {
       if (share.previewUrl) {
         try {
-          const previewRes = await getOfficePreviewUrl({ fileUrl: share.previewUrl }) as any
+          const previewRes = await getOfficePreviewUrl({ fileUrl: share.previewUrl }, {
+            onProgress: event => {
+              if (event.message) {
+                previewLoadingMessage.value = event.message
+              }
+              if (event.status === 'completed') {
+                setPreviewProgress(96)
+                return
+              }
+              setPreviewProgress(computeOfficePreviewProgress(event.progress, event.attempt, event.maxAttempts))
+            },
+          }) as any
           officePreviewUrl.value = previewRes.data?.previewUrl ?? previewRes.previewUrl ?? ''
+          setPreviewProgress(97)
         } catch {
           endPreviewLoading()
           errorMessage.value = '无法生成文件预览地址'
@@ -196,6 +207,7 @@ async function loadShare(token: string) {
     errorMessage.value = error?.message || '分享链接无法访问'
     endPreviewLoading()
   } finally {
+    pageLoadingProgress.value = 100
     pageLoading.value = false
   }
 }
@@ -217,11 +229,14 @@ function beginPreviewLoading(message: string) {
   }
   previewLoadingMessage.value = message
   previewLoadingStartedAt = Date.now()
+  previewProgress.value = 8
+  startPreviewElapsedTimer()
   previewLoading.value = true
 }
 
 function endPreviewLoading() {
   if (!previewLoading.value) return
+  stopPreviewElapsedTimer()
   const remaining = PREVIEW_LOADING_MIN_DURATION - (Date.now() - previewLoadingStartedAt)
   if (remaining <= 0) {
     previewLoading.value = false
@@ -236,25 +251,55 @@ function endPreviewLoading() {
   }, remaining)
 }
 
+function startPreviewElapsedTimer() {
+  stopPreviewElapsedTimer()
+  previewElapsedSeconds.value = 0
+  previewElapsedTimer = setInterval(() => {
+    previewElapsedSeconds.value = Math.floor((Date.now() - previewLoadingStartedAt) / 1000)
+  }, 1000)
+}
+
+function setPreviewProgress(progress: number) {
+  previewProgress.value = Math.max(previewProgress.value, clampProgress(progress))
+}
+
+function revokePreviewObjectUrl() {
+  if (!previewObjectUrl) return
+  window.URL.revokeObjectURL(previewObjectUrl)
+  previewObjectUrl = null
+}
+
+function stopPreviewElapsedTimer() {
+  if (!previewElapsedTimer) return
+  clearInterval(previewElapsedTimer)
+  previewElapsedTimer = null
+}
+
 function resetPreviewState() {
   if (previewLoadingTimer) {
     clearTimeout(previewLoadingTimer)
     previewLoadingTimer = null
   }
+  stopPreviewElapsedTimer()
   context.value = null
   textContent.value = ''
+  revokePreviewObjectUrl()
   fileUrl.value = ''
   downloadUrl.value = ''
   officePreviewUrl.value = ''
   previewLoading.value = false
   previewLoadingMessage.value = '正在为你整理预览内容...'
+  previewElapsedSeconds.value = 0
+  previewProgress.value = 0
 }
 
 function handleEmbeddedPreviewLoaded() {
+  setPreviewProgress(100)
   endPreviewLoading()
 }
 
 function handleImagePreviewLoaded() {
+  setPreviewProgress(100)
   endPreviewLoading()
 }
 
@@ -294,6 +339,8 @@ onBeforeUnmount(() => {
   if (previewLoadingTimer) {
     clearTimeout(previewLoadingTimer)
   }
+  revokePreviewObjectUrl()
+  stopPreviewElapsedTimer()
   document.removeEventListener('fullscreenchange', onFullscreenChange)
 })
 </script>
@@ -486,6 +533,26 @@ onBeforeUnmount(() => {
   color: #64748b;
 }
 
+.share-loading__timer {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.08);
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.share-loading__notice {
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(251, 146, 60, 0.12);
+  border: 1px solid rgba(251, 146, 60, 0.2);
+  color: #c2410c;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
 .share-loading__dots {
   display: flex;
   align-items: center;
@@ -531,6 +598,22 @@ onBeforeUnmount(() => {
     transform: translateY(-5px);
     opacity: 1;
   }
+}
+
+@keyframes share-button-pulse {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+    box-shadow: 0 0 0 0 rgba(251, 146, 60, 0.18);
+  }
+  50% {
+    transform: translateY(-1px) scale(1.03);
+    box-shadow: 0 0 0 8px rgba(251, 146, 60, 0);
+  }
+}
+
+:deep(.share-action-button--attention) {
+  border-color: rgba(251, 146, 60, 0.55);
+  animation: share-button-pulse 1.25s ease-in-out infinite;
 }
 
 .share-office-wrap {

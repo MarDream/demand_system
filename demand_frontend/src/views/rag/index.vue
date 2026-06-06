@@ -12,8 +12,19 @@
       <el-button type="primary" plain @click="goToKnowledgeManagement">管理知识库</el-button>
     </template>
 
-    <div class="rag-workspace">
-      <aside class="rag-shell rag-sidebar">
+    <div class="rag-workspace" :style="ragSidebar.styleVars.value">
+      <aside class="rag-shell rag-sidebar" :class="{ 'is-collapsed': ragSidebar.collapsed }">
+        <div class="rag-sidebar__header">
+          <div class="rag-sidebar__title">知识库导航</div>
+          <el-button
+            link
+            class="rag-sidebar__collapse-trigger"
+            title="收起侧边栏"
+            @click="ragSidebar.toggle"
+          >
+            <el-icon><ArrowLeft /></el-icon>
+          </el-button>
+        </div>
         <section class="sidebar-section">
           <div class="section-heading">
             <div>
@@ -89,6 +100,16 @@
           <el-empty v-else description="当前知识库还没有会话" />
         </section>
       </aside>
+
+      <button
+        v-if="ragSidebar.collapsed"
+        class="rag-sidebar-expand-btn"
+        type="button"
+        title="展开侧边栏"
+        @click="ragSidebar.toggle"
+      >
+        <el-icon><ArrowRight /></el-icon>
+      </button>
 
       <section class="rag-shell rag-chat">
         <header class="chat-header">
@@ -408,12 +429,13 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown, Delete, Document, Plus, RefreshRight, View } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowLeft, ArrowRight, Delete, Document, Plus, RefreshRight, View } from '@element-plus/icons-vue'
 import PageContainer from '@/components/common/PageContainer.vue'
 import HighlightText from '@/components/common/HighlightText.vue'
 import FilePreviewDialog from '@/components/document/FilePreviewDialog.vue'
 import { llmProviderApi, type LlmModel, type LlmProvider } from '@/api/modules/llmProvider'
 import { useKnowledgeStore } from '@/stores/knowledge'
+import { useCollapsibleSidebar } from '@/composables/useCollapsibleSidebar'
 import storage from '@/utils/storage'
 import { formatDate } from '@/utils/format'
 import type { KnowledgeBase, SearchMode, SearchResponse, SearchResultItem } from '@/api/modules/knowledge'
@@ -484,6 +506,12 @@ const RAG_WORKSPACE_STORAGE_KEY = 'rag-workspace-state-v1'
 
 const router = useRouter()
 const store = useKnowledgeStore()
+const ragSidebar = useCollapsibleSidebar({
+  defaultWidth: 320,
+  minWidth: 280,
+  maxWidth: 380,
+  widthVar: '--rag-sidebar-width',
+})
 
 const sessions = ref<RagSession[]>([])
 const selectedKbId = ref<number | null>(null)
@@ -1289,9 +1317,10 @@ function formatDateTime(timestamp: number) {
 <style scoped lang="scss">
 .rag-workspace {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr) 340px;
+  grid-template-columns: var(--rag-sidebar-width, 320px) minmax(0, 1fr) 340px;
   gap: $spacing-md;
   min-height: calc(100vh - 220px);
+  position: relative;
 }
 
 .rag-shell {
@@ -1312,6 +1341,57 @@ function formatDateTime(timestamp: number) {
   display: flex;
   flex-direction: column;
   gap: $spacing-md;
+}
+
+.rag-sidebar.is-collapsed {
+  display: none;
+}
+
+.rag-sidebar__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-sm;
+}
+
+.rag-sidebar__title {
+  font-size: $font-size-sm;
+  font-weight: 600;
+  color: $text-color;
+}
+
+.rag-sidebar__collapse-trigger {
+  padding: 4px;
+  color: $text-color-secondary;
+  border-radius: 4px;
+
+  &:hover {
+    color: $primary-color;
+    background: rgba(64, 158, 255, 0.08);
+  }
+}
+
+.rag-sidebar-expand-btn {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid $border-color;
+  border-left: 0;
+  border-radius: 0 6px 6px 0;
+  background: #fff;
+  cursor: pointer;
+  z-index: 2;
+  box-shadow: 2px 0 6px rgba(0, 0, 0, 0.06);
+
+  &:hover {
+    background: #f5f7fa;
+  }
 }
 
 .sidebar-section {
