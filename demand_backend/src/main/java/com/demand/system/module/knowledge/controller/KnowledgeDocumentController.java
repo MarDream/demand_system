@@ -108,6 +108,20 @@ public class KnowledgeDocumentController {
         return Result.success(Map.of("deleted", deleted));
     }
 
+    /**
+     * 跳过文档的索引（仅保留文件存储）。
+     *
+     * <p>适用于大文件卡死"持续索引中"的场景。操作后 status 切到 stored，
+     * 保留预览和下载能力。失败/卡死/pending/indexing 状态均可调用。</p>
+     */
+    @PostMapping("/{documentId}/skip-indexing")
+    public Result<Void> skipIndexing(
+            @PathVariable Long knowledgeBaseId,
+            @PathVariable Long documentId) {
+        documentService.skipIndexing(knowledgeBaseId, documentId);
+        return Result.success();
+    }
+
     @GetMapping("/{documentId}/preview")
     public Result<String> preview(
             @PathVariable Long knowledgeBaseId,

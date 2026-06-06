@@ -71,6 +71,33 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     /**
+     * xlsx/xls 大文件建索引时的文件大小阈值（字节）。
+     *
+     * <p>超过该阈值直接走 {@code stored} 路径，仅保存文件、不入 embedding 队列，
+     * 避免 20+ MB xlsx 在 readExcel + embedInBatches 阶段把处理线程卡到超时阈值。
+     * 阈值参考：东莞延伸清单 23.2 MB xlsx 三次重试均卡死。</p>
+     */
+    private static final long XLSX_INDEX_SIZE_LIMIT = 30L * 1024 * 1024;
+
+    /**
+     * 单次 readExcel 解析时最多扫描的行数（防止几万行大表拖垮解析阶段）。
+     */
+    private static final int EXCEL_MAX_ROWS = 50_000;
+
+    /**
+     * 单次 readExcel 解析时最多产出的 chunk 数（防止几万 chunks 把 embedding 阶段拖到 20 分钟以上）。
+     */
+    private static final int EXCEL_MAX_CHUNKS = 5_000;
+
+    /**
+     * POI zip entry 字节上限（兜底，防止 200MB+ zip entry 触发 OOM）。
+     *
+     * <p>原方案设 {@link Integer#MAX_VALUE} 会让超大 embedded image 把堆撑爆；
+     * 200MB 已经覆盖几乎所有正常 xlsx，超此值直接报错退出 readExcel 即可。</p>
+     */
+    private static final int POI_BYTE_ARRAY_MAX_OVERRIDE = 200 * 1024 * 1024;
+
+    /**
      * 预览 URL 默认有效期（小时）。
      *
      * <p>原为 1 小时，但 kkFileView 异步转码 + 浏览器渲染链路总耗时可能超过 1 小时，
@@ -153,7 +180,8 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         doc.setFileName(originalName);
         doc.setFileType(fileType);
         doc.setFileSize(file.getSize());
-        boolean vectorizable = KnowledgeDocumentSupport.isVectorizable(fileType);
+        boolean vectorizable = KnowledgeDocumentSupport.isVectorizable(fileType)
+                && !isTooLargeForIndexing(fileType, file.getSize());
         doc.setChunkCount(0);
         doc.setStatus(vectorizable ? "pending" : "stored");
         doc.setMinioKey(minioKey);
@@ -168,6 +196,21 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
 
         return toVO(doc);
+    }
+
+    /**
+     * xlsx/xls 大文件跳过 embedding 队列的判断。
+     *
+     * <p>超过 {@link #XLSX_INDEX_SIZE_LIMIT} 的 xlsx/xls 直接走 stored 路径，
+     * 仅保存文件不做向量化。其它类型暂不限制（DOCX/PDF 等场景下大文件也能正常解析）。
+     * 仍可通过文件下载 / kkFileView 预览访问。</p>
+     */
+    private boolean isTooLargeForIndexing(String fileType, long fileSize) {
+        if (fileType == null) {
+            return false;
+        }
+        String lower = fileType.toLowerCase();
+        return ("xlsx".equals(lower) || "xls".equals(lower)) && fileSize > XLSX_INDEX_SIZE_LIMIT;
     }
 
     @Override
@@ -502,6 +545,14 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         KnowledgeDocument doc = documentMapper.selectById(documentId);
         if (doc == null) {
             return;
+        }
+
+        // 重入 processDocument 时清空历史错误信息，避免残留"20 分钟超时"等误导性错误。
+        // 同时刷新 updated_at，挡住超时检查器在 20 分钟内再次误判（搜索以 updated_at < 阈值为准）。
+        if (doc.getErrorMessage() != null) {
+            doc.setErrorMessage(null);
+            doc.setUpdatedAt(LocalDateTime.now());
+            documentMapper.updateById(doc);
         }
 
         String fileType = doc.getFileType() != null ? doc.getFileType().toLowerCase() : "";
@@ -1026,20 +1077,30 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         // POI 默认对单个 zip entry 限制 100MB，超大 xlsx（embedded image / shared string / sheet data）
         // 会抛 IOException。POI 的 setByteArrayMaxOverride 是 static 方法，
         // 设置后对 readDocx/readDoc 等所有 POI 解析生效。
-        // 同时按 sheet 流式切片，避免 23MB+ xlsx 解析后把整个 StringBuilder 撑爆堆内存。
-        org.apache.poi.util.IOUtils.setByteArrayMaxOverride(Integer.MAX_VALUE);
+        // 上限 200MB 已经覆盖几乎所有正常 xlsx，超过此值直接抛错退出 readExcel 即可，
+        // 避免 Integer.MAX_VALUE 导致 embedded image 把堆撑爆。
+        // 同时按 sheet 流式切片 + 硬性行数/chunk 数双上限，避免 23MB+ xlsx 解析后
+        // 把整个 StringBuilder 撑爆堆内存或拖到 20 分钟超时阈值。
+        org.apache.poi.util.IOUtils.setByteArrayMaxOverride(POI_BYTE_ARRAY_MAX_OVERRIDE);
         List<String> chunks = new ArrayList<>();
         int chunkSize = knowledgeConfig.getChunkSize();
         int chunkOverlap = knowledgeConfig.getChunkOverlap();
         try (var wb = org.apache.poi.ss.usermodel.WorkbookFactory.create(is)) {
-            for (int i = 0; i < wb.getNumberOfSheets(); i++) {
-                var sheet = wb.getSheetAt(i);
+            for (int si = 0; si < wb.getNumberOfSheets() && chunks.size() < EXCEL_MAX_CHUNKS; si++) {
+                var sheet = wb.getSheetAt(si);
                 if (sheet == null) {
                     continue;
                 }
                 StringBuilder sheetBuilder = new StringBuilder();
                 sheetBuilder.append("Sheet: ").append(sheet.getSheetName()).append('\n');
+                int rowCount = 0;
                 for (var row : sheet) {
+                    // 行数 / chunk 数任一到达上限就立刻停止，避免几十万行 / 几万 chunks 把处理线程拖到 20 分钟超时
+                    if (++rowCount > EXCEL_MAX_ROWS || chunks.size() >= EXCEL_MAX_CHUNKS) {
+                        log.warn("Excel 解析触发硬上限: rowCount={}, chunks={}, maxRows={}, maxChunks={}",
+                                rowCount, chunks.size(), EXCEL_MAX_ROWS, EXCEL_MAX_CHUNKS);
+                        break;
+                    }
                     List<String> cells = new ArrayList<>();
                     for (var cell : row) {
                         cells.add(getCellText(cell));
@@ -1050,6 +1111,9 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                     if (sheetBuilder.length() >= chunkSize) {
                         chunks.addAll(splitText(sheetBuilder.toString(), chunkSize, chunkOverlap));
                         sheetBuilder.setLength(0);
+                        if (chunks.size() >= EXCEL_MAX_CHUNKS) {
+                            break;
+                        }
                     }
                 }
                 // sheet 收尾的残余文本也作为一个 chunk
@@ -1205,6 +1269,30 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             }
         }
         return deleted;
+    }
+
+    @Override
+    @Transactional
+    public void skipIndexing(Long knowledgeBaseId, Long documentId) {
+        KnowledgeDocument doc = documentMapper.selectById(documentId);
+        if (doc == null || !doc.getKnowledgeBaseId().equals(knowledgeBaseId)) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "文档不存在");
+        }
+        // 清理已有的 chunks 和 Milvus 向量
+        chunkMapper.delete(new LambdaQueryWrapper<KnowledgeChunk>()
+                .eq(KnowledgeChunk::getDocumentId, documentId));
+        try {
+            milvusVectorStore.deleteByDocumentId(String.valueOf(documentId));
+        } catch (Exception e) {
+            log.warn("Milvus向量清理失败: documentId={}", documentId, e);
+        }
+        doc.setStatus("stored");
+        doc.setChunkCount(0);
+        doc.setErrorMessage("已跳过索引，仅保留文件存储。如需建立索引请手动重传。");
+        doc.setUpdatedAt(LocalDateTime.now());
+        documentMapper.updateById(doc);
+        updateKnowledgeBaseCount(knowledgeBaseId);
+        log.info("已跳过文档索引: id={}, name={}", doc.getId(), doc.getFileName());
     }
 
     @Override

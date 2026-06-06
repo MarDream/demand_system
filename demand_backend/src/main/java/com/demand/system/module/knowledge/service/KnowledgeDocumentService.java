@@ -50,6 +50,14 @@ public interface KnowledgeDocumentService {
     int batchDelete(Long knowledgeBaseId, List<Long> documentIds);
 
     /**
+     * 跳过文档的索引（仅保留文件存储）。
+     *
+     * <p>适用于"持续索引中"卡死、已经放弃向量化的大文件场景。操作会清空已有 chunks
+     * 和 Milvus 向量，并把 status 切到 stored。预览和下载功能不受影响。</p>
+     */
+    void skipIndexing(Long knowledgeBaseId, Long documentId);
+
+    /**
      * 获取文档预览地址（默认有效期）。
      *
      * @return MinIO 预签名 URL
