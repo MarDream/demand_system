@@ -123,6 +123,15 @@ export function retryDocuments(knowledgeBaseId: number, documentIds: number[]) {
   return request.post<{ retried: number }>(`/v1/knowledge/bases/${knowledgeBaseId}/documents/retry`, { documentIds })
 }
 
+/**
+ * 跳过文档索引（仅保留文件存储）。
+ *
+ * 适用于"持续索引中"卡死场景。状态切到 stored，预览/下载能力保留。
+ */
+export function skipIndexing(knowledgeBaseId: number, documentId: number) {
+  return request.post<void>(`/v1/knowledge/bases/${knowledgeBaseId}/documents/${documentId}/skip-indexing`)
+}
+
 export function batchDeleteDocuments(knowledgeBaseId: number, documentIds: number[]) {
   return request.post<{ deleted: number }>(`/v1/knowledge/bases/${knowledgeBaseId}/documents/batch-delete`, { documentIds })
 }

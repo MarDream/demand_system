@@ -3,13 +3,6 @@
     <div class="kb-detail-layout">
       <!-- 主内容区 -->
       <main class="kb-main">
-        <div class="detail-toolbar" style="display:flex;justify-content:flex-end;margin-bottom:12px;">
-          <AppButton type="primary" permission="button:knowledge:upload" @click="showUploadDialog = true">
-            <el-icon><Upload /></el-icon>
-            上传文档
-          </AppButton>
-        </div>
-
         <!-- 筛选栏 -->
         <div class="filter-bar">
           <div class="filter-row">
@@ -59,6 +52,16 @@
               <el-button type="primary" class="filter-actions__primary" :icon="Search" @click="applyFilters">
                 检索
               </el-button>
+              <AppButton
+                type="primary"
+                plain
+                permission="button:knowledge:upload"
+                class="filter-actions__upload"
+                @click="showUploadDialog = true"
+              >
+                <el-icon><Upload /></el-icon>
+                上传文档
+              </AppButton>
               <el-button v-if="hasActiveFilters" class="filter-actions__secondary" @click="resetFilters">
                 重置
               </el-button>
@@ -191,12 +194,23 @@
                         <el-icon><RefreshRight /></el-icon>
                       </el-button>
                     </el-tooltip>
+                    <el-tooltip v-if="canSkipIndexing(row.status)" content="跳过索引（保留文件存储）">
+                      <el-button link type="info" size="small" @click="handleSkip(row)">
+                        <el-icon><CircleClose /></el-icon>
+                      </el-button>
+                    </el-tooltip>
                   </div>
                   <el-divider direction="vertical" class="action-divider" />
                   <!-- 危险类 -->
                   <div class="action-group__item">
-                    <el-tooltip content="日志">
-                      <el-button link type="info" size="small" @click="showLog(row)">
+                    <el-tooltip v-if="hasIncompleteProcess(row)" :content="getLogTooltip(row)">
+                      <el-button
+                        link
+                        type="warning"
+                        size="small"
+                        class="action-log-button--incomplete"
+                        @click="showLog(row)"
+                      >
                         <el-icon><Document /></el-icon>
                       </el-button>
                     </el-tooltip>
@@ -314,6 +328,7 @@
       <template #footer>
         <el-button @click="logDialogVisible = false">关闭</el-button>
         <el-button v-if="logDocument?.status === 'failed'" type="warning" @click="handleRetry(logDocument!); logDialogVisible = false">重传</el-button>
+        <el-button v-if="logDocument && canSkipIndexing(logDocument.status)" type="info" @click="handleSkip(logDocument); logDialogVisible = false">跳过索引</el-button>
       </template>
     </AppDialog>
 
@@ -334,7 +349,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import QRCode from 'qrcode'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Loading, View, Download, Share, RefreshRight, Delete, Document, Search, Upload } from '@element-plus/icons-vue'
+import { Loading, View, Download, Share, RefreshRight, Delete, Document, Search, Upload, CircleClose } from '@element-plus/icons-vue'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppDialog from '@/components/common/AppDialog.vue'
 import AppButton from '@/components/common/AppButton.vue'
@@ -347,6 +362,7 @@ import {
   deleteDocument,
   downloadDocumentBlob,
   retryDocuments,
+  skipIndexing,
 } from '@/api/modules/knowledge'
 import type { KnowledgeDocument } from '@/api/modules/knowledge'
 import { PREVIEW_SUPPORTED_EXTENSION_SET, normalizeFileExtension } from '@/constants/knowledgeDocument'
@@ -523,6 +539,34 @@ async function handleRetry(doc: KnowledgeDocument) {
   }
 }
 
+/**
+ * 大文件持续索引中、failed 等场景下显示"跳过索引"按钮。
+ * 已 stored/indexed 状态不再跳过（避免误操作覆盖已成功的索引结果）。
+ */
+function canSkipIndexing(status: string): boolean {
+  return ['pending', 'parsed', 'indexing', 'failed'].includes(status)
+}
+
+async function handleSkip(doc: KnowledgeDocument) {
+  try {
+    await ElMessageBox.confirm(
+      `确定跳过「${doc.fileName}」的索引？跳过后将保留文件存储，但不再提供语义检索（仍可预览/下载）。`,
+      '跳过索引',
+      { type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  try {
+    await skipIndexing(kbId, doc.id)
+    ElMessage.success('已跳过索引，文件已转为存储状态')
+    await fetchDocumentList()
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : '跳过失败'
+    ElMessage.error(msg)
+  }
+}
+
 function handleSelectionChange(rows: KnowledgeDocument[]) {
   selectedRows.value = rows
 }
@@ -643,6 +687,15 @@ async function handleDownload(doc: KnowledgeDocument) {
 function showLog(doc: KnowledgeDocument) {
   logDocument.value = doc
   logDialogVisible.value = true
+}
+
+function hasIncompleteProcess(doc?: KnowledgeDocument | null): boolean {
+  if (!doc) return false
+  return doc.status !== 'indexed'
+}
+
+function getLogTooltip(doc: KnowledgeDocument): string {
+  return hasIncompleteProcess(doc) ? '日志（流程未完整执行）' : '日志'
 }
 
 function getTimelineType(currentStatus: string | undefined, stepStatus: string): string {
@@ -845,10 +898,14 @@ function statusLabel(status: string) {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-left: auto;
   padding-bottom: 1px;
 }
 
 .filter-actions__primary,
+.filter-actions__upload,
 .filter-actions__secondary {
   height: 42px;
   padding: 0 18px;
@@ -911,6 +968,7 @@ function statusLabel(status: string) {
   .filter-actions {
     padding-bottom: 0;
     justify-content: flex-start;
+    margin-left: 0;
   }
 }
 
@@ -1013,6 +1071,22 @@ function statusLabel(status: string) {
 .action-divider {
   margin: 0 4px;
   height: 16px;
+}
+
+.action-log-button--incomplete {
+  position: relative;
+}
+
+.action-log-button--incomplete::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #e6a23c;
+  box-shadow: 0 0 0 2px #fff;
 }
 
 /* ===== 翻页区 ===== */
