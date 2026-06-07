@@ -33,8 +33,38 @@ E:\Project\mygit\kkFileView  # kkFileView服务源代码，可直接修改适配
 
 - JWT: 256位+ secret, Access 2h, Refresh 7d
 - 配置文件: `demand_backend/src/main/resources/application-dev.yml`，启动先加载记录基础设施对应的访问账号密码信息
-- **端口占用处理**: 启动服务时若端口被占用，直接杀掉占用进程后重启，不手动排查
-- **SQL维护**: 所有SQL变更整合到 database/init.sql，不新增独立SQL文件
+## 启动脚本
+
+| 脚本 | 用途 |
+|------|------|
+| `start-kkfileview.cmd` | 启动 kkFileView 预览服务 (端口8012) |
+| `start-all.bat` | 一键启动前后端+Docker容器 |
+
+### 启动命令
+
+```bash
+# 方式1: 一键全量启动 (前端5170 + 后端8081 + kkFileView8012)
+start-all.bat
+
+# 方式2: 单独启动各服务
+# 1. 启动Docker容器 (如果未运行)
+docker-compose -f scripts/docker-compose.yml up -d
+
+# 2. 启动 kkFileView (端口8012)
+start-kkfileview.cmd
+
+# 3. 启动后端 (端口8081)
+cd demand_backend && mvn spring-boot:run -Dspring-boot.run.profiles=dev
+
+# 4. 启动前端 (端口5170)
+cd demand_frontend && npm run dev
+```
+
+## 端口占用处理
+
+启动服务时若端口被占用，直接杀掉占用进程后重启，不手动排查
+
+## SQL维护
 - **Docker MySQL 中文乱码**: 通过 `docker exec mysql mysql` 执行SQL时必须加 `--default-character-set=utf8mb4`，否则中文会乱码
 
 ## 架构约定

@@ -8,9 +8,7 @@
           <el-radio-button value="pending">
             <el-badge :value="viewCounts.pending" :hidden="viewCounts.pending === 0">我的待办</el-badge>
           </el-radio-button>
-          <el-radio-button value="done">
-            <el-badge :value="viewCounts.done" :hidden="viewCounts.done === 0">我的已办</el-badge>
-          </el-radio-button>
+          <el-radio-button value="done">我的已办</el-radio-button>
           <el-radio-button value="drafts">
             <el-badge :value="viewCounts.drafts" :hidden="viewCounts.drafts === 0">我的草稿</el-badge>
           </el-radio-button>
@@ -435,19 +433,16 @@ const pagination = reactive({
 const viewCounts = reactive({
   drafts: 0,
   pending: 0,
-  done: 0,
 })
 
 async function refreshViewCounts() {
   try {
-    const [drafts, pending, done] = await Promise.all([
+    const [drafts, pending] = await Promise.all([
       requirementApi.getMyRequirementDrafts({ pageNum: 1, pageSize: 1 }),
       getMyRequirementPending({ pageNum: 1, pageSize: 1 }),
-      getMyRequirementDone(),
     ])
     viewCounts.drafts = drafts.total
     viewCounts.pending = pending.total
-    viewCounts.done = done.length
   } catch {
     // ignore count refresh failures
   }
@@ -528,8 +523,6 @@ async function fetchData() {
       viewCounts.drafts = pagination.total
     } else if (isPendingView.value) {
       viewCounts.pending = pagination.total
-    } else if (isDoneView.value) {
-      viewCounts.done = tableData.value.length
     }
   }
 }
@@ -562,6 +555,7 @@ function handleViewModeChange(value: 'all' | 'drafts' | 'pending' | 'done') {
   else if (value === 'done') query.view = 'done'
   router.replace({ query })
   fetchData()
+  refreshViewCounts()
 }
 
 function handleCreate() {
@@ -697,6 +691,7 @@ onMounted(() => {
   loadFilterUsers()
   loadConfig()
   loadColumnConfig()
+  refreshViewCounts()
 })
 
 watch(tableData, (rows) => {

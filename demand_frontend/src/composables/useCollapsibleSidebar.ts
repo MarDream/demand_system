@@ -1,4 +1,15 @@
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref } from 'vue'
+
+export interface CollapsibleSidebarHandle {
+  collapsed: boolean
+  styleVars: Record<string, string>
+  visibleWidth: number
+  startResize: (event: MouseEvent) => void
+  setWidth: (nextWidth: number) => void
+  collapse: () => void
+  expand: () => void
+  toggle: () => void
+}
 
 interface UseCollapsibleSidebarOptions {
   defaultWidth: number
@@ -9,7 +20,7 @@ interface UseCollapsibleSidebarOptions {
   resizerWidthVar?: string
 }
 
-export function useCollapsibleSidebar(options: UseCollapsibleSidebarOptions) {
+export function useCollapsibleSidebar(options: UseCollapsibleSidebarOptions): CollapsibleSidebarHandle {
   const minWidth = options.minWidth ?? options.defaultWidth
   const maxWidth = options.maxWidth ?? options.defaultWidth
   const resizerWidth = options.resizerWidth ?? 0
@@ -104,7 +115,12 @@ export function useCollapsibleSidebar(options: UseCollapsibleSidebarOptions) {
     clearResizeListeners()
   })
 
-  return {
+  // 使用 reactive 包装返回对象，让嵌套的 ref / computed 在模板中自动 unwrap，
+  // 避免 `:class="{ 'is-collapsed': roleSidebar.collapsed }"` 因 ref 对象本身 truthy 而误判。
+  // 模板里访问 `.collapsed` / `.styleVars` 时，reactive 会返回 ref/computed 当前的值（与 .value 等价），
+  // 因此调用方在模板中可以直接使用 `sidebar.collapsed`、`sidebar.styleVars`，
+  // 在 script 中也直接使用 `sidebar.collapsed`、`sidebar.styleVars`（无需 .value）。
+  return reactive({
     collapsed,
     styleVars,
     visibleWidth,
@@ -113,5 +129,5 @@ export function useCollapsibleSidebar(options: UseCollapsibleSidebarOptions) {
     collapse,
     expand,
     toggle,
-  }
+  }) as unknown as CollapsibleSidebarHandle
 }

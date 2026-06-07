@@ -1,7 +1,7 @@
 <template>
   <PageContainer :breadcrumb="false">
     <div class="role-console">
-      <div class="role-page" :style="roleSidebar.styleVars.value" v-loading="loading">
+      <div class="role-page" :style="roleSidebar.styleVars" v-loading="loading">
       <aside class="role-sidebar" :class="{ 'is-collapsed': roleSidebar.collapsed }">
         <div class="sidebar-head">
           <span class="sidebar-head__title">角色导航</span>
@@ -864,6 +864,9 @@ async function fetchRoles() {
     syncExpandedRoleGroups()
     if (selectedRole.value) {
       selectedRole.value = roles.value.find(item => item.id === selectedRole.value?.id) || null
+    }
+    if (!selectedRole.value && roles.value.length > 0) {
+      await selectRole(roles.value[0])
     }
     // Re-initialize role sortable after data fetch
     setTimeout(() => initRoleSortable(), 100)
@@ -1866,6 +1869,9 @@ function permissionName(code: string) {
 .role-main {
   min-width: 0;
   padding: $spacing-lg;
+  /* 显式指定 grid-column：当 sidebar 折叠（display: none）时，
+     防止 main 被错位放到第二个 track 而被压缩到 0 宽 */
+  grid-column: 3;
 }
 
 .role-detail {

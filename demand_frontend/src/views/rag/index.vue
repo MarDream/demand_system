@@ -12,7 +12,7 @@
       <el-button type="primary" plain @click="goToKnowledgeManagement">管理知识库</el-button>
     </template>
 
-    <div class="rag-workspace" :style="ragSidebar.styleVars.value">
+    <div class="rag-workspace" :style="ragSidebar.styleVars">
       <aside class="rag-shell rag-sidebar" :class="{ 'is-collapsed': ragSidebar.collapsed }">
         <div class="rag-sidebar__header">
           <div class="rag-sidebar__title">知识库导航</div>

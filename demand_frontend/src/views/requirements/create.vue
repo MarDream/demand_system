@@ -1330,7 +1330,7 @@ async function chooseNextNode(options: NextNodeOption[]) {
           }),
           h(
             'span',
-            `${option.nodeName}${option.bindStatusName ? ` (${option.bindStatusName})` : ''}${option.projectRequired ? ' [需绑定项目]' : ''}`,
+            `${option.nodeName}${option.projectRequired ? ' [需绑定项目]' : ''}`,
           ),
         ])),
       ]),

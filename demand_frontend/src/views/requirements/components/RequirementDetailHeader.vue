@@ -164,9 +164,8 @@ function transitionOptionValue(transition: TransitionOption) {
 
 function transitionOptionLabel(transition: TransitionOption) {
   const baseLabel = transition.label || transition.toNodeName
-  const statusLabel = transition.bindStatusName ? ' (' + transition.bindStatusName + ')' : ''
   const projectLabel = transition.projectRequired ? ' [需绑定项目]' : ''
-  return baseLabel + statusLabel + projectLabel
+  return baseLabel + projectLabel
 }
 
 function projectOptionLabel(project: { name: string; status?: string | null; endDate?: string | null }) {

@@ -52,7 +52,7 @@ export function getMyRequirementPending(params: RequirementMyListQuery) {
  */
 export function getMyRequirementDone(params?: { keyword?: string }) {
   return request.get<ApiResponse<Requirement[]>>('/v1/requirements/my-done', { params })
-    .then(res => res.data || []) as unknown as Promise<Requirement[]>
+    .then(res => (Array.isArray(res) ? res : (res as any)?.data || [])) as unknown as Promise<Requirement[]>
 }
 
 export function getRequirementNextNodes(id: number) {

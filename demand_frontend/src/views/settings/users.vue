@@ -12,7 +12,7 @@
       <div
         v-if="managementMode === 'basic'"
         class="member-layout"
-        :style="memberSidebar.styleVars.value"
+        :style="memberSidebar.styleVars"
         v-loading="loading"
       >
         <aside class="member-sidebar" :class="{ 'is-collapsed': memberSidebar.collapsed }">
@@ -278,7 +278,7 @@
         </main>
       </div>
 
-      <div v-else class="roster-layout" :style="rosterSidebar.styleVars.value" v-loading="loading">
+      <div v-else class="roster-layout" :style="rosterSidebar.styleVars" v-loading="loading">
         <aside class="roster-nav" :class="{ 'is-collapsed': rosterSidebar.collapsed }">
           <div class="sidebar-head">
             <span class="sidebar-head__title">人事导航</span>
@@ -980,7 +980,7 @@ async function loadOrgData() {
     roleList.value = normalizeArray<RoleItem>(rolesRes)
 
     if (!activeOrgKey.value && orgTree.value.length > 0) {
-      activeOrgKey.value = `org-${orgTree.value[0].id}`
+      activeOrgKey.value = resolveInitialOrgKey()
       expandedKeys.value = new Set(orgTree.value.map(n => `org-${n.id}`))
     }
   } catch (error) {
@@ -1323,8 +1323,9 @@ function handleDepartmentCommand(command: string, row: DepartmentRow) {
   }
 }
 
-function selectOrg(node: FlatOrgNode) {
+async function selectOrg(node: FlatOrgNode) {
   activeOrgKey.value = node.key
+  memberView.value = 'members'
   queryParams.username = ''
   queryParams.realName = ''
   queryParams.status = ''
@@ -1332,7 +1333,7 @@ function selectOrg(node: FlatOrgNode) {
   queryParams.regionId = undefined
   queryParams.departmentId = undefined
   pageNum.value = 1
-  fetchList()
+  await fetchList()
 }
 
 function toggleExpand(key: string) {
@@ -1473,11 +1474,18 @@ onMounted(async () => {
   await loadOrgData()
   const node = activeOrgNode.value
   if (node) {
-    selectOrg(node)
+    await selectOrg(node)
   } else {
-    fetchList()
+    await fetchList()
   }
 })
+
+function resolveInitialOrgKey() {
+  const preferredNode = flatOrgNodes.value.find(node => node.parentKey !== null && node.count > 0)
+    || flatOrgNodes.value.find(node => node.count > 0)
+    || flatOrgNodes.value[0]
+  return preferredNode?.key || ''
+}
 </script>
 
 <style lang="scss" scoped>
@@ -1723,6 +1731,9 @@ onMounted(async () => {
   min-width: 0;
   padding: $spacing-lg;
   background: #fff;
+  /* 显式指定 grid-column：当 sidebar 折叠（display: none）时，
+     防止 main 被错位放到第二个 track 而被压缩到 0 宽 */
+  grid-column: 3;
 }
 
 .org-header,
