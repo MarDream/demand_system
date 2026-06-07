@@ -496,6 +496,8 @@ public class WorkflowEngineService {
         actions.setCurrentNodeStatusCode(currentNodeStatusCode);
         actions.setCurrentNodeStatusName(resolveNodeStatusName(currentNodeStatusCode));
         actions.setLockVersion(instance.getLockVersion());
+        // 修复 P2：返回当前节点是否必填意见，前端按此显示必填提示
+        actions.setCurrentNodeRequireComment(isCommentRequired(currentNode));
 
         Long operatorId = SecurityUtils.getCurrentUserId();
         boolean canOperate = hasOperatePermission(instance, requirement, currentNode, operatorId);

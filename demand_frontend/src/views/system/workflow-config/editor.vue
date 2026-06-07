@@ -136,6 +136,23 @@
                 <el-tag>{{ getNodeTypeLabel(nodeForm.nodeType) }}</el-tag>
               </el-form-item>
 
+              <!-- 显示可流转的下个节点名称 -->
+              <el-form-item v-if="nextNodeNames.length > 0" label="可流转节点">
+                <el-select
+                  :model-value="selectedNextNode"
+                  placeholder="请选择目标节点"
+                  clearable
+                  @update:model-value="onNextNodeChange"
+                >
+                  <el-option
+                    v-for="name in nextNodeNames"
+                    :key="name"
+                    :label="name"
+                    :value="name"
+                  />
+                </el-select>
+              </el-form-item>
+
               <el-form-item label="绑定节点状态">
                 <el-select v-model="nodeForm.nodeStatusCode" placeholder="请选择节点状态" clearable filterable>
                   <el-option
@@ -386,6 +403,13 @@ const drawerVisible = ref(false)
 const drawerTitle = ref('')
 const selectedNode = ref<any>(null)
 const selectedEdge = ref<any>(null)
+const selectedNextNode = ref<string>('')
+
+// 选择可流转节点时的处理
+const onNextNodeChange = (nodeName: string | null) => {
+  selectedNextNode.value = nodeName || ''
+  // 可根据业务需求扩展：比如高亮连线、打开目标节点配置等
+}
 const versionForm = reactive<{
   version: string
   name: string
@@ -404,6 +428,38 @@ const nodeTypes = [
   { type: 'parallel', label: '并行', icon: '⑂' },
   { type: 'end', label: '结束', icon: '■' }
 ]
+
+// 计算当前节点可流转的下个节点名称列表
+const nextNodeNames = computed(() => {
+  if (!lf || !selectedNode.value?.id) return []
+
+  const graphData = lf.getGraphData() as {
+    nodes?: Array<{ id?: string; text?: { value: string } }>
+    edges?: Array<{ sourceNodeId?: string; targetNodeId?: string }>
+  }
+
+  if (!graphData?.edges) return []
+
+  // 找出所有从当前节点出发的边
+  const outgoingEdges = (graphData.edges || []).filter(
+    (edge) => edge.sourceNodeId === selectedNode.value!.id
+  )
+
+  if (outgoingEdges.length === 0) return []
+
+  // 构建节点ID到名称的映射
+  const nodeNameMap = new Map<string, string>()
+  ;(graphData.nodes || []).forEach((node) => {
+    if (node.id) {
+      nodeNameMap.set(node.id, node.text?.value || node.id)
+    }
+  })
+
+  // 获取所有下一个节点的名称
+  return outgoingEdges
+    .map((edge) => nodeNameMap.get(edge.targetNodeId || ''))
+    .filter((name): name is string => !!name)
+})
 
 // 节点表单
 const nodeForm = reactive<Partial<WorkflowNodeDTO> & {
@@ -1598,6 +1654,7 @@ const handleNodeDragStart = (node: any) => {
 const handleNodeClick = (data: any) => {
   selectedNode.value = data
   selectedEdge.value = null
+  selectedNextNode.value = ''
   drawerTitle.value = nodeDrawerTitle.value
   drawerVisible.value = true
 
@@ -1644,6 +1701,50 @@ const handleEdgeClick = (data: any) => {
 }
 
 // 保存节点配置
+// 修复 P1：客户端连通性预校验（与服务端 WorkflowConfigServiceImpl.validateConfigStructure 对齐）
+// 避免无效工作流被提交，提示用户尽早修正
+const validateBeforeSave = (): { valid: boolean; error?: string } => {
+  if (!lf) return { valid: false, error: '画布未初始化' }
+
+  const graphData = lf.getGraphData() as any
+  const nodes = graphData?.nodes || []
+  const edges = graphData?.edges || []
+
+  if (nodes.length === 0) {
+    return { valid: false, error: '工作流必须至少包含一个节点' }
+  }
+
+  const nodeTypes = new Set<string>()
+  const nodeIds = new Set<string>()
+  for (const node of nodes) {
+    if (node.type) {
+      nodeTypes.add(String(node.type).toLowerCase())
+    }
+    if (node.id) {
+      nodeIds.add(String(node.id))
+    }
+  }
+  if (!nodeTypes.has('start')) {
+    return { valid: false, error: '工作流必须包含开始节点' }
+  }
+  if (!nodeTypes.has('end')) {
+    return { valid: false, error: '工作流必须包含结束节点' }
+  }
+
+  const terminalStates = new Set(['cancelled', 'accepted', 'rejected'])
+  for (const edge of edges) {
+    const sourceId = edge.sourceNodeId ? String(edge.sourceNodeId) : ''
+    const targetId = edge.targetNodeId ? String(edge.targetNodeId) : ''
+    if (sourceId && !terminalStates.has(sourceId.toLowerCase()) && !nodeIds.has(sourceId)) {
+      return { valid: false, error: `连线引用了不存在的源节点: ${sourceId}` }
+    }
+    if (targetId && !terminalStates.has(targetId.toLowerCase()) && !nodeIds.has(targetId)) {
+      return { valid: false, error: `连线引用了不存在的目标节点: ${targetId}` }
+    }
+  }
+  return { valid: true }
+}
+
 const handleSaveNodeConfig = () => {
   if (!lf || !selectedNode.value) return
 
@@ -1822,6 +1923,13 @@ const handleClearCanvas = async () => {
 // 保存草稿
 const handleSave = async () => {
   if (!lf) return
+
+  // 修复 P1：保存前客户端连通性校验（与服务端 validateConfigStructure 对齐）
+  const clientValidation = validateBeforeSave()
+  if (!clientValidation.valid) {
+    ElMessage.error(clientValidation.error || '工作流配置不合法')
+    return
+  }
 
   saving.value = true
   try {

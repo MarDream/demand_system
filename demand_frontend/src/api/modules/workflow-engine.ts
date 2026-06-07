@@ -10,6 +10,11 @@ export interface FlowTransitionRequest {
   lockVersion?: number | null
 }
 
+export interface TransitionAssigneeCandidate {
+  id: number
+  name: string
+}
+
 export interface AvailableTransition {
   toNodeId: string
   toNodeName: string
@@ -17,6 +22,11 @@ export interface AvailableTransition {
   bindStatusCode?: string | null
   bindStatusName?: string | null
   projectRequired?: boolean | null
+  assigneeType?: string | null
+  assigneeTypeName?: string | null
+  assigneeDisplayName?: string | null
+  assigneeCandidates?: TransitionAssigneeCandidate[] | null
+  defaultAssigneeId?: number | null
 }
 
 export interface WorkflowAvailableActions {
@@ -37,6 +47,8 @@ export interface WorkflowAvailableActions {
   parallelActive?: boolean | null
   activeParallelBranchId?: number | null
   parallelBranches?: import('@/api/modules/workflow').ParallelBranch[] | null
+  /** 修复 P2：当前节点是否要求必填审批意见 */
+  currentNodeRequireComment?: boolean | null
 }
 
 export interface TransitionVO {

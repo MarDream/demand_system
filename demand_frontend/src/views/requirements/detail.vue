@@ -2,105 +2,21 @@
   <PageContainer variant="card" :breadcrumb="false">
     <div v-loading="loading" class="detail-page">
       <template v-if="detail">
-        <div class="detail-actions">
-          <div class="header-actions">
-            <div v-if="showCurrentNodeStatus" class="current-node-status">
-              <span class="current-node-status__label">当前节点</span>
-              <span class="current-node-status__value">{{ currentNodeDisplayName }}</span>
-              <span class="current-node-status__divider">/</span>
-              <span class="current-node-status__label">节点状态</span>
-              <el-tag size="small" effect="plain" :type="statusTagType(currentNodeStatusName)">
-                {{ currentNodeStatusName }}
-              </el-tag>
+        <div class="detail-layout">
+          <div class="detail-main">
+            <div v-if="showPrimaryActions" class="detail-actions">
+              <div class="detail-actions__primary">
+                <AppButton permission="button:requirement:update" @click="handleEdit">编辑</AppButton>
+                <AppButton type="success" permission="button:requirement:split" @click="handleSplit">拆分子需求</AppButton>
+                <AppButton type="danger" permission="button:requirement:delete">
+                  <el-popconfirm title="确定删除该需求吗？" @confirm="handleDelete">
+                    <template #reference>
+                      <el-button type="danger">删除</el-button>
+                    </template>
+                  </el-popconfirm>
+                </AppButton>
+              </div>
             </div>
-            <AppButton permission="button:requirement:update" @click="handleEdit">编辑</AppButton>
-            <AppButton type="success" permission="button:requirement:split" @click="handleSplit">拆分子需求</AppButton>
-            <AppButton type="danger" permission="button:requirement:delete">
-              <el-popconfirm title="确定删除该需求吗？" @confirm="handleDelete">
-                <template #reference>
-                  <el-button type="danger">删除</el-button>
-                </template>
-              </el-popconfirm>
-            </AppButton>
-            <el-select
-              v-model="selectedTransitionTargetId"
-              :disabled="transitionLoading || transitionOptions.length === 0"
-              :placeholder="transitionOptions.length > 0 ? '选择目标节点' : '当前无可执行操作'"
-              style="width: 140px; margin-right: 8px"
-            >
-              <el-option
-                v-for="transition in transitionOptions"
-                :key="transitionOptionKey(transition)"
-                :label="transitionOptionLabel(transition)"
-                :value="transitionOptionValue(transition)"
-              />
-            </el-select>
-            <el-select
-              v-if="requiresProjectBinding"
-              v-model="bindingProjectId"
-              filterable
-              clearable
-              placeholder="流转前绑定项目"
-              style="width: 180px; margin-right: 8px"
-            >
-              <el-option
-                v-for="project in bindableProjects"
-                :key="project.id"
-                :label="projectOptionLabel(project)"
-                :value="project.id"
-              />
-            </el-select>
-            <AppButton
-              v-if="usingUnifiedEngine && workflowRuntime.countersignEnabled"
-              type="warning"
-              permission="button:requirement:submit"
-              @click="openCountersignDialog(workflowRuntime.currentNodeId || '')"
-            >
-              会签审批
-            </AppButton>
-            <el-select
-              v-if="workflowRuntime.parallelActive && parallelBranches.length > 0"
-              :model-value="workflowRuntime.activeParallelBranchId"
-              placeholder="切换并行分支"
-              style="width: 160px; margin-right: 8px"
-              @change="handleSwitchParallelBranch"
-            >
-              <el-option
-                v-for="branch in parallelBranches"
-                :key="branch.id"
-                :label="`${branch.branchName} (${parallelBranchStatusLabel(branch.status)})`"
-                :value="branch.id"
-                :disabled="branch.status === 'completed' || branch.status === 'skipped'"
-              />
-            </el-select>
-            <AppButton
-              type="primary"
-              :loading="transitionLoading"
-              :disabled="transitionOptions.length === 0 || (requiresProjectBinding && !bindingProjectId)"
-              permission="button:requirement:submit"
-              @click="handleStatusTransition"
-            >
-              提交审核
-            </AppButton>
-            <AppButton
-              v-if="usingUnifiedEngine && workflowRuntime.canRollback"
-              :loading="transitionLoading"
-              permission="button:requirement:rollback"
-              @click="handleRollback"
-            >
-              驳回
-            </AppButton>
-            <AppButton
-              v-if="usingUnifiedEngine && workflowRuntime.canCancel"
-              type="warning"
-              :loading="transitionLoading"
-              permission="button:requirement:cancel"
-              @click="handleCancel"
-            >
-              取消
-            </AppButton>
-          </div>
-        </div>
 
         <!-- Tabs -->
         <el-tabs v-model="activeTab" class="detail-tabs">
@@ -236,44 +152,51 @@
           <div class="section-header">
             <h3>评论</h3>
           </div>
-          <div class="comment-editor-wrapper">
-            <IsleEditorToolbar v-if="commentEditorInstance" :editor="commentEditorInstance" />
-            <div class="comment-editor-toolbar">
-              <el-button
-                link
-                type="primary"
-                size="small"
-                :loading="commentImageUploading"
-                @click="triggerCommentFileInput"
+          <template v-if="canEditComment">
+            <div class="comment-editor-wrapper">
+              <IsleEditorToolbar v-if="commentEditorInstance" :editor="commentEditorInstance" />
+              <div class="comment-editor-toolbar">
+                <el-button
+                  link
+                  type="primary"
+                  size="small"
+                  :loading="commentImageUploading"
+                  @click="triggerCommentFileInput"
+                >
+                  <el-icon style="margin-right: 4px"><Picture /></el-icon>插入图片
+                </el-button>
+                <span class="comment-editor-hint">支持点击选图 / 拖拽 / Ctrl+V 粘贴</span>
+                <input
+                  ref="commentFileInputRef"
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  style="display: none"
+                  @change="handleCommentFileInput"
+                />
+              </div>
+              <div
+                class="comment-editor-dropzone"
+                :class="{ 'is-dragover': commentIsDragOver }"
+                @dragenter.prevent.stop="handleCommentDragEnter"
+                @dragover.prevent.stop="handleCommentDragOver"
+                @dragleave.prevent.stop="handleCommentDragLeave"
+                @drop.prevent.stop="handleCommentDrop"
               >
-                <el-icon style="margin-right: 4px"><Picture /></el-icon>插入图片
-              </el-button>
-              <span class="comment-editor-hint">支持点击选图 / 拖拽 / Ctrl+V 粘贴</span>
-              <input
-                ref="commentFileInputRef"
-                type="file"
-                accept="image/*"
-                multiple
-                style="display: none"
-                @change="handleCommentFileInput"
-              />
+                <IsleEditor v-model="commentRichText" :extensions="commentEditorExtensions" locale="zh" @create="onCommentEditorCreate" />
+              </div>
             </div>
-            <div
-              class="comment-editor-dropzone"
-              :class="{ 'is-dragover': commentIsDragOver }"
-              @dragenter.prevent.stop="handleCommentDragEnter"
-              @dragover.prevent.stop="handleCommentDragOver"
-              @dragleave.prevent.stop="handleCommentDragLeave"
-              @drop.prevent.stop="handleCommentDrop"
-            >
-              <IsleEditor v-model="commentRichText" :extensions="commentEditorExtensions" locale="zh" @create="onCommentEditorCreate" />
+            <div class="comment-editor-actions">
+              <template v-if="commentDraftDirty">
+                <el-button :disabled="commentSubmitting" @click="cancelCommentDraft">
+                  取消
+                </el-button>
+                <el-button type="primary" :loading="commentSubmitting" @click="submitCommentRich">
+                  保存
+                </el-button>
+              </template>
             </div>
-          </div>
-          <div class="comment-editor-actions">
-            <AppButton type="primary" permission="button:requirement:comment" :loading="commentSubmitting" @click="submitCommentRich">
-              提交评论
-            </AppButton>
-          </div>
+          </template>
           <el-empty v-if="comments.length === 0" description="暂无评论" :image-size="40" />
           <div v-for="comment in comments" :key="comment.id" class="comment-item">
             <el-avatar :size="32">{{ comment.userName?.charAt(0) || 'U' }}</el-avatar>
@@ -285,6 +208,172 @@
               <div class="rich-content comment-body" v-html="hydrateRichTextImageHtml(comment.content || '')"></div>
             </div>
           </div>
+        </div>
+
+          </div>
+
+          <aside
+            v-if="showWorkflowActionPanel"
+            :class="['workflow-sidebar', { 'is-collapsed': workflowPanelCollapsed }]"
+          >
+            <div class="workflow-sidebar__rail">
+              <el-button
+                class="workflow-sidebar__toggle-button"
+                text
+                circle
+                @click="workflowPanelCollapsed = !workflowPanelCollapsed"
+              >
+                <el-icon>
+                  <ArrowRightBold v-if="workflowPanelCollapsed" />
+                  <ArrowLeftBold v-else />
+                </el-icon>
+              </el-button>
+              <span v-if="workflowPanelCollapsed" class="workflow-sidebar__collapsed-title">审批功能</span>
+            </div>
+
+            <div v-if="!workflowPanelCollapsed" class="workflow-action-panel">
+              <div class="workflow-action-panel__header">
+                <div>
+                  <div class="workflow-action-panel__title">审批功能</div>
+                  <div class="workflow-action-panel__subtitle">选择目标节点并提交到下一审批环节</div>
+                </div>
+              </div>
+
+              <div v-if="showCurrentNodeStatus" class="current-node-status workflow-action-panel__status">
+                <span class="current-node-status__label">当前节点</span>
+                <span class="current-node-status__value">{{ currentNodeDisplayName }}</span>
+                <span class="current-node-status__divider">/</span>
+                <span class="current-node-status__label">节点状态</span>
+                <el-tag size="small" effect="plain" :type="statusTagType(currentNodeStatusName)">
+                  {{ currentNodeStatusName }}
+                </el-tag>
+              </div>
+
+              <div class="workflow-action-panel__body">
+                <div class="workflow-action-panel__field">
+                  <span class="workflow-action-panel__field-label">目标节点</span>
+                  <el-select
+                    v-model="selectedTransitionTargetId"
+                    :disabled="transitionLoading || transitionOptions.length === 0"
+                    :placeholder="transitionOptions.length > 0 ? '选择目标节点' : '当前无可执行操作'"
+                    class="workflow-action-panel__control"
+                  >
+                    <el-option
+                      v-for="transition in transitionOptions"
+                      :key="transitionOptionKey(transition)"
+                      :label="transitionOptionLabel(transition)"
+                      :value="transitionOptionValue(transition)"
+                    />
+                  </el-select>
+                </div>
+
+                <div class="workflow-action-panel__field">
+                  <span class="workflow-action-panel__field-label">下个节点处理人</span>
+                  <div class="workflow-action-panel__assignee">
+                    <el-tag
+                      v-if="selectedTransitionAssigneeTypeName"
+                      size="small"
+                      effect="plain"
+                      type="info"
+                    >
+                      {{ selectedTransitionAssigneeTypeName }}
+                    </el-tag>
+                    <el-select
+                      v-if="showTransitionAssigneeSelector"
+                      v-model="selectedTransitionAssigneeId"
+                      class="workflow-action-panel__assignee-select"
+                    >
+                      <el-option
+                        v-for="candidate in selectedTransitionAssigneeCandidates"
+                        :key="candidate.id"
+                        :label="candidate.name"
+                        :value="candidate.id"
+                      />
+                    </el-select>
+                    <span v-else class="workflow-action-panel__assignee-value">{{ selectedTransitionAssigneeDisplayName }}</span>
+                  </div>
+                </div>
+
+                <div v-if="requiresProjectBinding" class="workflow-action-panel__field">
+                  <span class="workflow-action-panel__field-label">绑定项目</span>
+                  <el-select
+                    v-model="bindingProjectId"
+                    filterable
+                    clearable
+                    placeholder="流转前绑定项目"
+                    class="workflow-action-panel__control"
+                  >
+                    <el-option
+                      v-for="project in bindableProjects"
+                      :key="project.id"
+                      :label="projectOptionLabel(project)"
+                      :value="project.id"
+                    />
+                  </el-select>
+                </div>
+
+                <div
+                  v-if="workflowRuntime.parallelActive && parallelBranches.length > 0"
+                  class="workflow-action-panel__field"
+                >
+                  <span class="workflow-action-panel__field-label">并行分支</span>
+                  <el-select
+                    :model-value="workflowRuntime.activeParallelBranchId"
+                    placeholder="切换并行分支"
+                    class="workflow-action-panel__control"
+                    @change="handleSwitchParallelBranch"
+                  >
+                    <el-option
+                      v-for="branch in parallelBranches"
+                      :key="branch.id"
+                      :label="`${branch.branchName} (${parallelBranchStatusLabel(branch.status)})`"
+                      :value="branch.id"
+                      :disabled="branch.status === 'completed' || branch.status === 'skipped'"
+                    />
+                  </el-select>
+                </div>
+
+                <div class="workflow-action-panel__actions">
+                  <AppButton
+                    v-if="usingUnifiedEngine && workflowRuntime.countersignEnabled"
+                    type="warning"
+                    permission="button:requirement:submit"
+                    @click="openCountersignDialog(workflowRuntime.currentNodeId || '')"
+                  >
+                    会签审批
+                  </AppButton>
+                  <AppButton
+                    v-if="usingUnifiedEngine && workflowRuntime.canRollback"
+                    :loading="transitionLoading"
+                    permission="button:requirement:rollback"
+                    @click="handleRollback"
+                  >
+                    驳回
+                  </AppButton>
+                  <AppButton
+                    v-if="usingUnifiedEngine && workflowRuntime.canCancel"
+                    type="warning"
+                    :loading="transitionLoading"
+                    permission="button:requirement:cancel"
+                    @click="handleCancel"
+                  >
+                    取消需求
+                  </AppButton>
+                </div>
+
+                <div class="workflow-action-panel__submit-actions">
+                  <el-button
+                    type="primary"
+                    :loading="transitionLoading"
+                    :disabled="transitionSubmitDisabled"
+                    @click="handleStatusTransition"
+                  >
+                    提交
+                  </el-button>
+                </div>
+              </div>
+            </div>
+          </aside>
         </div>
 
         <el-dialog
@@ -323,14 +412,21 @@
             <span class="approval-dialog-label">评分</span>
             <el-rate v-model="approvalRating" :max="5" />
           </div>
-          <el-input
-            v-model="approvalComment"
-            type="textarea"
-            :rows="4"
-            placeholder="请输入审核意见（选填）"
-            maxlength="1000"
-            show-word-limit
-          />
+          <el-form-item
+            label="审核意见"
+            :required="isCommentRequired"
+            :error="approvalCommentError"
+            style="margin-bottom: 12px;"
+          >
+            <el-input
+              v-model="approvalComment"
+              type="textarea"
+              :rows="4"
+              :placeholder="isCommentRequired ? '请输入审核意见（必填）' : '请输入审核意见（选填）'"
+              maxlength="1000"
+              show-word-limit
+            />
+          </el-form-item>
           <template #footer>
             <el-button @click="approvalDialogVisible = false">取消</el-button>
             <el-button type="primary" :loading="transitionLoading" @click="confirmApprovalTransition">
@@ -395,15 +491,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Picture } from '@element-plus/icons-vue'
+import { ArrowLeftBold, ArrowRightBold, Picture } from '@element-plus/icons-vue'
 import { requirementApi, projectApi, relationApi } from '@/api'
 import { downloadRequirementAttachment, uploadRequirementAttachment } from '@/api/modules/file'
 import type { RelationItem } from '@/api/modules/relation'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
-import { workflowEngineApi, type AvailableTransition, type WorkflowAvailableActions } from '@/api/modules/workflow-engine'
+import { workflowEngineApi, type AvailableTransition, type TransitionAssigneeCandidate, type WorkflowAvailableActions } from '@/api/modules/workflow-engine'
 import { getCountersignRecords, canCurrentUserCountersign, submitCountersignApproval, switchParallelBranch, type CountersignRecord, type ParallelBranch } from '@/api/modules/workflow'
 import type {
   Requirement,
@@ -415,35 +511,11 @@ import type {
 } from '@/types/requirement'
 import { normalizeText, formatDate, stripPriorityPrefix } from '@/utils/format'
 import AppButton from '@/components/common/AppButton.vue'
+import { usePermission } from '@/composables/usePermission'
 import { hydrateRichTextImageHtml, buildRichTextImagePreviewUrl } from '@/utils/richTextFileImage'
 import { IsleEditor, IsleEditorToolbar, RichTextKit } from '@isle-editor/vue3'
 import { addLocale } from '@isle-editor/core'
-import { Node, mergeAttributes } from '@tiptap/core'
-
-const DEFAULT_IMAGE_WIDTH = 400
-const MIN_IMAGE_WIDTH = 50
-const MAX_IMAGE_WIDTH = 1600
-
-const CommentImage = Node.create({
-  name: 'commentImage',
-  inline: false,
-  group: 'block',
-  atom: true,
-  draggable: true,
-  addAttributes() {
-    return {
-      src: { default: null },
-      alt: { default: null },
-      width: { default: null },
-    }
-  },
-  parseHTML() {
-    return [{ tag: 'img[src]' }]
-  },
-  renderHTML({ HTMLAttributes }) {
-    return ['img', mergeAttributes({ class: 'comment-editor-image' }, HTMLAttributes)]
-  },
-})
+import Image from '@tiptap/extension-image'
 import '@isle-editor/vue3/dist/style.css'
 import PageContainer from '@/components/common/PageContainer.vue'
 
@@ -535,6 +607,7 @@ addLocale('zh', {
 
 const route = useRoute()
 const router = useRouter()
+const { hasAnyPermission, hasPermission } = usePermission()
 
 const id = Number(route.params.id)
 const loading = ref(false)
@@ -564,8 +637,10 @@ const workflowRuntime = ref<WorkflowAvailableActions>({
 })
 const usingUnifiedEngine = ref(false)
 const selectedTransitionTargetId = ref<string | number | null>(null)
+const selectedTransitionAssigneeId = ref<number | null>(null)
 const bindingProjectId = ref<number | null>(null)
 const transitionLoading = ref(false)
+const workflowPanelCollapsed = ref(false)
 // 会签相关
 const countersignDialogVisible = ref(false)
 const countersignDialogLoading = ref(false)
@@ -581,6 +656,12 @@ const currentNodeStatusName = computed(() => {
 })
 const currentNodeDisplayName = computed(() => {
   return workflowRuntime.value.currentNodeName || '当前节点'
+})
+// 修复 P2：当前节点是否必填意见（来自后端 currentNodeRequireComment）
+const isCommentRequired = computed(() => Boolean(workflowRuntime.value.currentNodeRequireComment))
+const approvalCommentError = computed(() => {
+  if (!isCommentRequired.value) return ''
+  return approvalComment.value.trim() ? '' : '当前节点要求必须填写意见'
 })
 const showCurrentNodeStatus = computed(() => {
   return usingUnifiedEngine.value
@@ -606,98 +687,26 @@ const commentEditorExtensions = [
   RichTextKit.configure({
     placeholder: { placeholder: '输入评论内容...' },
   }),
-  CommentImage,
+  Image.configure({
+    inline: false,
+    allowBase64: true,
+    resize: {
+      enabled: true,
+      directions: ['top-left', 'top-right', 'bottom-left', 'bottom-right'],
+      minWidth: 100,
+      minHeight: 100,
+      alwaysPreserveAspectRatio: true,
+    },
+    HTMLAttributes: {
+      class: 'comment-editor-image',
+    },
+  }),
 ]
 
 function onCommentEditorCreate({ editor }: { editor: any }) {
   commentEditorInstance.value = editor
   const editorEl = editor.view.dom as HTMLElement
   editorEl.addEventListener('paste', handleCommentImagePaste as unknown as EventListener)
-  installImageHandleForElement = installImageResizeHandles(editor)
-}
-
-// 模块级引用，insertCommentImageFile 中用于主动为新图片安装 handle
-let installImageHandleForElement: ((img: HTMLImageElement) => void) | null = null
-// 模块级拖拽状态，供 inject 方式创建的 handle 也能使用
-let resizeActiveImg: HTMLImageElement | null = null
-let resizeStartX = 0
-let resizeStartWidth = 0
-let resizeActiveHandle: HTMLElement | null = null
-let resizeEditorRef: any = null
-
-function installImageResizeHandles(editor: any) {
-  const editorEl = editor.view.dom as HTMLElement
-  resizeEditorRef = editor
-
-  function createHandle(img: HTMLImageElement) {
-    removeAllHandles()
-    if (!img.classList.contains('comment-editor-image')) return
-    img.style.position = 'relative'
-    const handle = document.createElement('div')
-    handle.className = 'comment-image-resize-handle'
-    handle.title = '拖拽调整图片大小'
-    img.appendChild(handle)
-    resizeActiveHandle = handle
-
-    handle.addEventListener('mousedown', (e: MouseEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-      resizeActiveImg = img
-      resizeStartX = e.clientX
-      resizeStartWidth = img.getBoundingClientRect().width
-      document.addEventListener('mousemove', onResizeMove)
-      document.addEventListener('mouseup', onResizeUp)
-    })
-  }
-
-  function removeAllHandles() {
-    if (resizeActiveHandle && resizeActiveHandle.parentElement) {
-      resizeActiveHandle.parentElement.removeChild(resizeActiveHandle)
-    }
-    resizeActiveHandle = null
-    if (!resizeActiveImg) return
-    resizeActiveImg.style.cursor = ''
-  }
-
-  function onResizeMove(e: MouseEvent) {
-    if (!resizeActiveImg) return
-    const dx = e.clientX - resizeStartX
-    const newWidth = Math.max(MIN_IMAGE_WIDTH, Math.min(MAX_IMAGE_WIDTH, Math.round(resizeStartWidth + dx)))
-    resizeActiveImg.setAttribute('width', String(newWidth))
-  }
-
-  function onResizeUp() {
-    document.removeEventListener('mousemove', onResizeMove)
-    document.removeEventListener('mouseup', onResizeUp)
-    if (resizeActiveImg) {
-      const finalWidth = Number(resizeActiveImg.getAttribute('width')) || null
-      try {
-        const pos = resizeEditorRef.view.posAtDOM(resizeActiveImg, 0)
-        resizeEditorRef.commands.setNodeSelection(pos)
-        resizeEditorRef.commands.updateAttributes('commentImage', { width: finalWidth })
-      } catch {}
-      resizeActiveImg.style.cursor = ''
-    }
-    resizeActiveImg = null
-  }
-
-  editorEl.addEventListener('mouseover', (e: MouseEvent) => {
-    const t = e.target as HTMLElement | null
-    if (t && t.tagName === 'IMG' && t.classList.contains('comment-editor-image')) {
-      createHandle(t as HTMLImageElement)
-    }
-  })
-  editorEl.addEventListener('mouseout', (e: MouseEvent) => {
-    const t = e.target as HTMLElement | null
-    if (t && t.tagName === 'IMG' && t.classList.contains('comment-editor-image')) {
-      const related = e.relatedTarget as Node | null
-      if (!related || !(t as Node).contains(related)) {
-        removeAllHandles()
-      }
-    }
-  })
-
-  return createHandle
 }
 
 const commentImageUploading = ref(false)
@@ -723,78 +732,7 @@ async function insertCommentImageFile(file: File) {
     if (src && commentEditorInstance.value) {
       const safeAlt = processedFile.name.replace(/"/g, '&quot;')
       const editor = commentEditorInstance.value
-      editor.chain().focus().insertContent({
-        type: 'commentImage',
-        attrs: { src, alt: safeAlt, width: DEFAULT_IMAGE_WIDTH },
-      }).run()
-      // 直接在 DOM 中找到刚插入的图片并注入带完整拖拽功能的 resize handle，
-      // 绕过 IsleEditor 复杂 DOM 结构下 mouseover 事件可能不触发的问题。
-      try {
-        const container = editor.view.dom
-        const allImgs = container.querySelectorAll
-          ? Array.from(container.querySelectorAll('img.comment-editor-image'))
-          : []
-        const lastImg = allImgs[allImgs.length - 1] as HTMLImageElement | undefined
-        if (lastImg && !lastImg.querySelector('.comment-image-resize-handle')) {
-          lastImg.style.position = 'relative'
-          const handle = document.createElement('div')
-          handle.className = 'comment-image-resize-handle'
-          handle.title = '拖拽调整图片大小'
-          lastImg.appendChild(handle)
-          handle.addEventListener('mousedown', (me: MouseEvent) => {
-            me.preventDefault()
-            me.stopPropagation()
-            let startX = me.clientX
-            let startWidth = lastImg.getBoundingClientRect().width
-            const onMove = (ev: MouseEvent) => {
-              const dx = ev.clientX - startX
-              const newWidth = Math.max(MIN_IMAGE_WIDTH, Math.min(MAX_IMAGE_WIDTH, Math.round(startWidth + dx)))
-              lastImg.setAttribute('width', String(newWidth))
-            }
-            const onUp = () => {
-              document.removeEventListener('mousemove', onMove)
-              document.removeEventListener('mouseup', onUp)
-              const finalWidth = Number(lastImg.getAttribute('width')) || null
-              try {
-                const pos = editor.view.posAtDOM(lastImg, 0)
-                editor.commands.setNodeSelection(pos)
-                editor.commands.updateAttributes('commentImage', { width: finalWidth })
-              } catch {}
-            }
-            document.addEventListener('mousemove', onMove)
-            document.addEventListener('mouseup', onUp)
-          })
-        }
-      } catch {}
-      // 块级原子节点 (inline:false, atom:true) 没有 inline content，
-      // 不能直接在图片位置/之后 setTextSelection（会抛 TextSelection endpoint 错误）。
-      // 在 doc 中找到刚插入的图片，将光标推到图片之后第一个 text block，
-      // 避免后续 insertContent 替换图片。
-      try {
-        const doc = editor.state.doc
-        let imagePos = -1
-        doc.descendants((node: any, pos: number) => {
-          if (node.type.name === 'commentImage' && pos > imagePos) {
-            imagePos = pos
-          }
-        })
-        if (imagePos >= 0) {
-          // 原子节点 nodeSize = 1，atomEnd 即图片结束位置
-          const atomEnd = imagePos + 1
-          let targetPos = -1
-          doc.descendants((node: any, pos: number) => {
-            if (pos >= atomEnd && node.isTextblock) {
-              targetPos = pos
-              return false
-            }
-          })
-          if (targetPos >= 0) {
-            editor.commands.setTextSelection(targetPos)
-          }
-        }
-      } catch {
-        // 手动调整光标失败不影响图片插入
-      }
+      editor.chain().focus().setImage({ src, alt: safeAlt, width: 400 }).run()
       ElMessage.success(`图片 ${processedFile.name} 已插入`)
     }
   } catch (error) {
@@ -860,7 +798,9 @@ function resetWorkflowMeta() {
   }
   usingUnifiedEngine.value = false
   selectedTransitionTargetId.value = null
+  selectedTransitionAssigneeId.value = null
   bindingProjectId.value = null
+  workflowPanelCollapsed.value = false
 }
 
 function resolveErrorMessage(error: unknown, fallback: string) {
@@ -922,7 +862,7 @@ async function loadWorkflowMeta() {
       workflowRuntime.value = actions
       usingUnifiedEngine.value = true
       parallelBranches.value = actions.parallelBranches || []
-      selectedTransitionTargetId.value = actions.transitions[0]?.toNodeId ?? null
+      selectedTransitionTargetId.value = getDefaultVisibleTransition(actions.transitions)?.toNodeId ?? null
       return
     } catch {
       usingUnifiedEngine.value = false
@@ -942,16 +882,27 @@ async function fetchHistory() {
     if (detail.value?.workflowInstanceId) {
       const transitions = await workflowEngineApi.getTransitionHistory(id)
       history.value = Array.isArray(transitions)
-        ? transitions.map((item: any) => ({
-            id: item.id,
-            requirementId: item.requirementId,
-            operatorId: item.operatorId,
-            operatorName: item.operatorName,
-            fieldName: item.action === 'rollback' ? '流程驳回' : item.action === 'cancel' ? '流程取消' : '流程流转',
-            oldValue: item.fromNodeName || item.fromNodeId || '开始',
-            newValue: item.toNodeName || item.toNodeId || (item.durationDisplay ? `已处理（${item.durationDisplay}）` : '完成'),
-            createdAt: item.createdAt,
-          }))
+        ? transitions.map((item: any) => {
+            // 修复 P1：action=proxy_approve 标记为"代审批"以便审计追踪
+            const fieldName = item.action === 'rollback'
+              ? '流程驳回'
+              : item.action === 'cancel'
+                ? '流程取消'
+                : item.action === 'proxy_approve'
+                  ? '代审批'
+                  : '流程流转'
+            return {
+              id: item.id,
+              requirementId: item.requirementId,
+              operatorId: item.operatorId,
+              operatorName: item.operatorName,
+              action: item.action,
+              fieldName,
+              oldValue: item.fromNodeName || item.fromNodeId || '开始',
+              newValue: item.toNodeName || item.toNodeId || (item.durationDisplay ? `已处理（${item.durationDisplay}）` : '完成'),
+              createdAt: item.createdAt,
+            }
+          })
         : []
       return
     }
@@ -1139,13 +1090,45 @@ async function handleAttachmentDownload(attachment: RequirementAttachment) {
 
 type TransitionOption = AvailableTransition
 
-const transitionOptions = computed<TransitionOption[]>(() => workflowRuntime.value.transitions)
+const transitionOptions = computed<TransitionOption[]>(() => {
+  return workflowRuntime.value.transitions.filter(transition => !isCancelTransition(transition))
+})
 
 const selectedUnifiedTransition = computed<AvailableTransition | null>(() => {
   if (!usingUnifiedEngine.value) return null
   return workflowRuntime.value.transitions.find(
     (transition) => transition.toNodeId === String(selectedTransitionTargetId.value ?? ''),
   ) || null
+})
+
+const selectedTransitionAssigneeCandidates = computed<TransitionAssigneeCandidate[]>(() => {
+  return selectedUnifiedTransition.value?.assigneeCandidates || []
+})
+
+const selectedTransitionAssigneeTypeName = computed(() => {
+  return selectedUnifiedTransition.value?.assigneeTypeName || ''
+})
+
+const showTransitionAssigneeSelector = computed(() => {
+  return selectedTransitionAssigneeCandidates.value.length > 1
+})
+
+const selectedTransitionAssigneeOption = computed<TransitionAssigneeCandidate | null>(() => {
+  if (!selectedTransitionAssigneeCandidates.value.length) {
+    return null
+  }
+  return selectedTransitionAssigneeCandidates.value.find(
+    candidate => candidate.id === selectedTransitionAssigneeId.value,
+  ) || selectedTransitionAssigneeCandidates.value[0] || null
+})
+
+const selectedTransitionAssigneeDisplayName = computed(() => {
+  if (!selectedUnifiedTransition.value) {
+    return transitionOptions.value.length > 0 ? '请选择目标节点' : '当前无可执行操作'
+  }
+  return selectedTransitionAssigneeOption.value?.name
+    || selectedUnifiedTransition.value.assigneeDisplayName
+    || '未配置处理人'
 })
 
 const requiresProjectBinding = computed(() => (
@@ -1155,6 +1138,76 @@ const requiresProjectBinding = computed(() => (
 ))
 
 const bindableProjects = computed(() => projectOptions.value)
+
+const showPrimaryActions = computed(() => {
+  return hasAnyPermission([
+    'button:requirement:update',
+    'button:requirement:split',
+    'button:requirement:delete',
+  ])
+})
+
+const commentDraftDirty = computed(() => hasMeaningfulCommentContent(commentRichText.value))
+const canOperateCurrentNode = computed(() => {
+  if (!usingUnifiedEngine.value) {
+    return true
+  }
+  return Boolean(
+    workflowRuntime.value.canTransition
+    || workflowRuntime.value.canRollback
+    || workflowRuntime.value.canCancel
+    || workflowRuntime.value.canCountersign
+  )
+})
+const canEditComment = computed(() => {
+  return hasPermission('button:requirement:comment') && canOperateCurrentNode.value
+})
+
+const transitionSubmitDisabled = computed(() => {
+  return transitionOptions.value.length === 0 || (requiresProjectBinding.value && !bindingProjectId.value)
+})
+
+const showWorkflowActionPanel = computed(() => {
+  return showCurrentNodeStatus.value
+    || transitionOptions.value.length > 0
+    || Boolean(workflowRuntime.value.countersignEnabled)
+    || Boolean(workflowRuntime.value.canRollback)
+    || Boolean(workflowRuntime.value.canCancel)
+    || (Boolean(workflowRuntime.value.parallelActive) && parallelBranches.value.length > 0)
+})
+
+watch(
+  selectedUnifiedTransition,
+  (transition) => {
+    const fallbackId = transition?.defaultAssigneeId ?? transition?.assigneeCandidates?.[0]?.id ?? null
+    selectedTransitionAssigneeId.value = fallbackId
+  },
+  { immediate: true },
+)
+
+watch(
+  canEditComment,
+  (allowed) => {
+    if (!allowed) {
+      resetCommentDraft()
+    }
+  },
+  { immediate: true },
+)
+
+function isCancelTransition(transition: TransitionOption | null | undefined) {
+  if (!transition) return false
+  const statusCode = transition.bindStatusCode?.trim().toUpperCase()
+  if (statusCode === 'CANCELLED') {
+    return true
+  }
+  const text = `${transition.toNodeName || ''} ${transition.label || ''} ${transition.bindStatusName || ''}`.replace(/\s+/g, '')
+  return text.includes('已取消')
+}
+
+function getDefaultVisibleTransition(transitions: TransitionOption[]) {
+  return transitions.find(transition => !isCancelTransition(transition)) || null
+}
 
 function transitionOptionKey(transition: TransitionOption) {
   return transition.toNodeId
@@ -1166,9 +1219,8 @@ function transitionOptionValue(transition: TransitionOption) {
 
 function transitionOptionLabel(transition: TransitionOption) {
   const baseLabel = transition.label || transition.toNodeName
-  const statusLabel = transition.bindStatusName ? ` (${transition.bindStatusName})` : ''
   const projectLabel = transition.projectRequired ? ' [需绑定项目]' : ''
-  return `${baseLabel}${statusLabel}${projectLabel}`
+  return `${baseLabel}${projectLabel}`
 }
 
 // Handlers
@@ -1288,6 +1340,11 @@ async function confirmApprovalTransition() {
     ElMessage.warning('请选择 1-5 星评价')
     return
   }
+  // 修复 P2：节点要求必填意见时，前端先校验
+  if (isCommentRequired.value && !approvalComment.value.trim()) {
+    ElMessage.warning('当前节点要求必须填写意见')
+    return
+  }
   await executeTransition({
     rating: approvalRating.value,
     comment: approvalComment.value.trim() || undefined,
@@ -1361,23 +1418,43 @@ async function confirmAndExecute(
 
 async function submitCommentRich() {
   const html = commentEditorInstance.value?.getHTML?.() || ''
-  const content = html.trim()
-  if (!content || content === '<p></p>') {
+  if (!hasMeaningfulCommentContent(html)) {
     ElMessage.warning('请输入评论内容')
     return
   }
+  const content = html.trim()
 
   commentSubmitting.value = true
   try {
     await requirementApi.createRequirementComment(id, { content })
     ElMessage.success('评论已提交')
-    commentEditorInstance.value?.commands?.clearContent?.()
+    resetCommentDraft()
     await fetchComments()
   } catch (error) {
     ElMessage.error(resolveErrorMessage(error, '评论提交失败'))
   } finally {
     commentSubmitting.value = false
   }
+}
+
+function cancelCommentDraft() {
+  resetCommentDraft()
+}
+
+function resetCommentDraft() {
+  commentRichText.value = ''
+  commentEditorInstance.value?.commands?.clearContent?.()
+}
+
+function hasMeaningfulCommentContent(html: string) {
+  if (!html) return false
+  if (/<img\b/i.test(html)) return true
+  const text = html
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return text.length > 0
 }
 
 async function initializePage() {
@@ -1412,17 +1489,176 @@ onMounted(() => {
   min-height: 200px;
 }
 
-.detail-actions {
+.detail-layout {
   display: flex;
-  justify-content: flex-end;
-  margin-bottom: 24px;
+  align-items: flex-start;
+  gap: 16px;
 }
 
-.header-actions {
+.detail-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.detail-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 16px;
+}
+
+.detail-actions__primary {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.workflow-sidebar {
+  position: sticky;
+  top: 16px;
+  flex: 0 0 360px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.workflow-sidebar.is-collapsed {
+  flex-basis: 60px;
+}
+
+.workflow-sidebar__rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 40px;
+  padding: 8px 4px;
+  border: 1px solid #d9ecff;
+  border-radius: 12px;
+  background: #f9fcff;
+  box-shadow: 0 8px 24px rgba(31, 35, 41, 0.04);
+}
+
+.workflow-sidebar__toggle-button {
+  color: #409eff;
+}
+
+.workflow-sidebar__collapsed-title {
+  color: #606266;
+  font-size: 12px;
+  line-height: 1.2;
+  writing-mode: vertical-rl;
+  letter-spacing: 2px;
+}
+
+.workflow-action-panel {
+  flex: 1;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #d9ecff;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #f9fcff 0%, #ffffff 100%);
+  box-shadow: 0 12px 32px rgba(31, 35, 41, 0.08);
+}
+
+.workflow-action-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid #eaf3ff;
+}
+
+.workflow-action-panel__title {
+  color: #303133;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.workflow-action-panel__subtitle {
+  margin-top: 2px;
+  color: #909399;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.workflow-action-panel__status {
+  margin-bottom: 14px;
+}
+
+.workflow-action-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.workflow-action-panel__field {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.workflow-action-panel__field-label {
+  flex: 0 0 92px;
+  padding-top: 6px;
+  color: #606266;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.workflow-action-panel__control {
+  flex: 1;
+  min-width: 0;
+}
+
+.workflow-action-panel__assignee {
+  flex: 1;
+  min-height: 32px;
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  padding: 5px 10px;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.workflow-action-panel__assignee-select {
+  flex: 1;
+  min-width: 0;
+}
+
+.workflow-action-panel__assignee-value {
+  color: #303133;
+  font-size: 13px;
+  line-height: 20px;
+  word-break: break-all;
+}
+
+.workflow-action-panel__actions {
+  display: flex;
+  justify-content: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 8px;
+}
+
+.workflow-action-panel__submit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid #ebeef5;
+}
+
+.workflow-action-panel__submit-actions :deep(.el-button),
+.workflow-action-panel__submit-actions :deep(button) {
+  min-width: 88px;
 }
 
 .current-node-status {
@@ -1448,6 +1684,53 @@ onMounted(() => {
 
 .current-node-status__divider {
   color: #c0c4cc;
+}
+
+@media (max-width: 960px) {
+  .detail-layout {
+    flex-direction: column;
+  }
+
+  .detail-main,
+  .workflow-sidebar,
+  .workflow-action-panel,
+  .detail-actions__primary {
+    width: 100%;
+  }
+
+  .workflow-sidebar {
+    position: static;
+    flex-basis: auto;
+  }
+
+  .workflow-sidebar.is-collapsed {
+    flex-basis: auto;
+  }
+
+  .workflow-sidebar__rail {
+    flex-direction: row;
+    width: auto;
+    writing-mode: initial;
+  }
+
+  .workflow-sidebar__collapsed-title {
+    writing-mode: initial;
+    letter-spacing: 0;
+  }
+
+  .workflow-action-panel {
+    min-width: 0;
+  }
+
+  .workflow-action-panel__field {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .workflow-action-panel__field-label {
+    flex: none;
+    padding-top: 0;
+  }
 }
 
 .detail-tabs {
@@ -1545,24 +1828,65 @@ onMounted(() => {
 }
 
 .comment-editor-dropzone :deep(.comment-editor-image) {
+  display: block;
   max-width: 100%;
   height: auto;
   border-radius: 6px;
   position: relative;
 }
 
-.comment-editor-dropzone :deep(.comment-image-resize-handle) {
+.comment-editor-dropzone :deep([data-resize-container]) {
+  margin-top: 12px;
+  margin-bottom: 12px;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.comment-editor-dropzone :deep([data-resize-wrapper]) {
+  display: inline-block !important;
+  max-width: 100%;
+}
+
+.comment-editor-dropzone :deep([data-resize-container].ProseMirror-selectednode .comment-editor-image),
+.comment-editor-dropzone :deep([data-resize-container][data-resize-state='true'] .comment-editor-image),
+.comment-editor-dropzone :deep([data-resize-wrapper].ProseMirror-selectednode .comment-editor-image) {
+  outline: 2px solid rgba(64, 158, 255, 0.45);
+  outline-offset: 2px;
+}
+
+.comment-editor-dropzone :deep([data-resize-handle]) {
   position: absolute;
-  right: -4px;
-  bottom: -4px;
   width: 12px;
   height: 12px;
-  background: #409eff;
-  border: 2px solid #ffffff;
-  border-radius: 2px;
+  border-radius: 999px;
+  border: 2px solid #fff;
+  background: var(--el-color-primary);
+  box-shadow: 0 0 0 1px rgba(64, 158, 255, 0.28), 0 2px 8px rgba(64, 158, 255, 0.25);
+  z-index: 3;
+}
+
+.comment-editor-dropzone :deep([data-resize-handle='top-left']) {
+  top: -6px;
+  left: -6px;
   cursor: nwse-resize;
-  z-index: 10;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.comment-editor-dropzone :deep([data-resize-handle='top-right']) {
+  top: -6px;
+  right: -6px;
+  cursor: nesw-resize;
+}
+
+.comment-editor-dropzone :deep([data-resize-handle='bottom-left']) {
+  bottom: -6px;
+  left: -6px;
+  cursor: nesw-resize;
+}
+
+.comment-editor-dropzone :deep([data-resize-handle='bottom-right']) {
+  right: -6px;
+  bottom: -6px;
+  cursor: nwse-resize;
 }
 
 .comment-editor-wrapper :deep(.comment-editor-image) {

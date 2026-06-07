@@ -153,6 +153,8 @@ export interface RequirementHistory {
   newValue: string
   createdAt: string
   operatorName?: string
+  /** 修复 P1：后端 transition action（submit/rollback/cancel/proxy_approve 等） */
+  action?: string
 }
 
 export interface RequirementComment {
