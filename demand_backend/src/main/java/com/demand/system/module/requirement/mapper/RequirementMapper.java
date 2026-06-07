@@ -16,6 +16,20 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
             "WHERE requirement_no LIKE CONCAT(#{datePrefix}, '%')")
     Integer selectMaxDailySequence(@Param("datePrefix") String datePrefix);
 
+    /**
+     * 修复 P0：绕过 @TableLogic 过滤，按 ID 查询需求（包括已删除记录）
+     * 用于 restore 等需要访问已删除数据的场景
+     */
+    @Select("SELECT * FROM requirements WHERE id = #{id} LIMIT 1")
+    Requirement selectByIdIncludeDeleted(@Param("id") Long id);
+
+    /**
+     * 修复 P0：绕过 @TableLogic 过滤，更新需求（包括已删除记录）
+     * 用于 restore 操作
+     */
+    @org.apache.ibatis.annotations.Update("UPDATE requirements SET deleted_at = 0, updated_at = NOW() WHERE id = #{id}")
+    int restoreById(@Param("id") Long id);
+
     @Select("SELECT r.*, u1.real_name as creator_name, u2.real_name as assignee_name, " +
             "(SELECT COUNT(*) FROM requirements WHERE parent_id = r.id AND deleted_at = 0) as child_count " +
             "FROM requirements r " +
@@ -131,20 +145,92 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                        @Param("keyword") String keyword);
 
     /**
-     * 我的已办 - 查询用户参与过审批的需求
+     * 我的已办 - 查询当前用户创建的已提交需求 或 审批过的需求，排除当前待我审批的需求
      * @param userId 当前用户ID
-     * @param isSuperAdmin 是否超级管理员
+     * @param roleCodes 当前用户角色编码列表
+     * @param directOrgIds 当前用户直接所属组织ID列表
+     * @param scopedOrgIds 当前用户含子级的组织ID列表
      * @param keyword 关键词搜索（可选）
      */
     @Select({
             "<script>",
             "SELECT DISTINCT r.*",
             "FROM requirements r",
-            "INNER JOIN workflow_instances wi ON wi.id = r.workflow_instance_id",
-            "INNER JOIN workflow_instance_transitions wit ON wit.requirement_id = r.id AND wit.operator_id = #{userId}",
-            "WHERE r.deleted_at = 0",
-            "  AND r.is_draft = 0",
-            "  AND wi.status IN ('completed', 'cancelled')",
+            "WHERE r.is_draft = 0",
+            "  AND (",
+            "    r.creator_id = #{userId}",
+            "    OR EXISTS (",
+            "      SELECT 1 FROM workflow_instance_transitions wit",
+            "      WHERE wit.requirement_id = r.id AND wit.operator_id = #{userId}",
+            "    )",
+            "  )",
+            "  AND NOT EXISTS (",
+            "    SELECT 1",
+            "    FROM workflow_instances wi2",
+            "    JOIN workflow_nodes wn2 ON wn2.workflow_version_id = wi2.workflow_version_id AND wn2.node_id = wi2.current_node_id",
+            "    WHERE wi2.id = r.workflow_instance_id",
+            "      AND wi2.status = 'running'",
+            "      AND wn2.assignee_type IS NOT NULL",
+            "      AND wn2.assignee_type != ''",
+            "      AND (",
+            "        (wn2.assignee_type = 'SPECIFIED_USER' AND wn2.assignee_user_ids IS NOT NULL",
+            "            AND JSON_CONTAINS(wn2.assignee_user_ids, CAST(#{userId} AS JSON)))",
+            "        <if test='roleCodes != null and roleCodes.size() &gt; 0'>",
+            "          OR (wn2.assignee_type = 'SPECIFIED_ROLE' AND EXISTS (",
+            "            SELECT 1 FROM roles rr2",
+            "            WHERE rr2.id = wn2.assignee_role_id",
+            "              AND rr2.deleted_at = 0",
+            "              AND (rr2.code IN",
+            "              <foreach collection='roleCodes' item='rc' open='(' separator=',' close=')'>",
+            "                #{rc}",
+            "              </foreach>",
+            "              OR rr2.name IN",
+            "              <foreach collection='roleCodes' item='roleName' open='(' separator=',' close=')'>",
+            "                #{roleName}",
+            "              </foreach>)",
+            "          ))",
+            "          OR (wn2.assignee_type = 'SPECIFIED_ROLE_GROUP' AND EXISTS (",
+            "            SELECT 1 FROM roles rg2",
+            "            WHERE rg2.role_group_id = wn2.assignee_role_group_id",
+            "              AND rg2.deleted_at = 0",
+            "              AND (rg2.code IN",
+            "              <foreach collection='roleCodes' item='groupRoleCode' open='(' separator=',' close=')'>",
+            "                #{groupRoleCode}",
+            "              </foreach>",
+            "              OR rg2.name IN",
+            "              <foreach collection='roleCodes' item='groupRoleName' open='(' separator=',' close=')'>",
+            "                #{groupRoleName}",
+            "              </foreach>)",
+            "          ))",
+            "        </if>",
+            "        <if test='directOrgIds != null and directOrgIds.size() &gt; 0'>",
+            "          OR (wn2.assignee_type = 'SPECIFIED_ORG' AND (",
+            "            (COALESCE(JSON_UNQUOTE(JSON_EXTRACT(wn2.properties, '$.orgScopeType')), 'include_children') = 'current'",
+            "              AND wn2.assignee_org_id IN",
+            "              <foreach collection='directOrgIds' item='orgId' open='(' separator=',' close=')'>",
+            "                #{orgId}",
+            "              </foreach>",
+            "            )",
+            "            <if test='scopedOrgIds != null and scopedOrgIds.size() &gt; 0'>",
+            "              OR (COALESCE(JSON_UNQUOTE(JSON_EXTRACT(wn2.properties, '$.orgScopeType')), 'include_children') != 'current'",
+            "                AND wn2.assignee_org_id IN",
+            "                <foreach collection='scopedOrgIds' item='scopedOrgId' open='(' separator=',' close=')'>",
+            "                  #{scopedOrgId}",
+            "                </foreach>",
+            "              )",
+            "            </if>",
+            "          ))",
+            "        </if>",
+            "        OR (wn2.assignee_type = 'PREV_APPROVER' AND #{userId} = (",
+            "          SELECT wit2.operator_id FROM workflow_instance_transitions wit2",
+            "          WHERE wit2.instance_id = wi2.id",
+            "            AND wit2.to_node_id = wi2.current_node_id",
+            "          ORDER BY wit2.id DESC",
+            "          LIMIT 1",
+            "        ))",
+            "        OR (wn2.assignee_type = 'CREATOR' AND r.creator_id = #{userId})",
+            "      )",
+            "  )",
             "  <if test='keyword != null and keyword != \"\"'>",
             "    AND (r.title LIKE CONCAT('%', #{keyword}, '%') OR r.description LIKE CONCAT('%', #{keyword}, '%'))",
             "  </if>",
@@ -152,6 +238,8 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
             "</script>"
     })
     List<Requirement> selectMyDone(@Param("userId") Long userId,
-                                   @Param("isSuperAdmin") boolean isSuperAdmin,
+                                   @Param("roleCodes") List<String> roleCodes,
+                                   @Param("directOrgIds") List<Long> directOrgIds,
+                                   @Param("scopedOrgIds") List<Long> scopedOrgIds,
                                    @Param("keyword") String keyword);
 }

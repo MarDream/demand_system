@@ -1,5 +1,7 @@
 package com.demand.system.module.workflow.dto;
 
+import java.util.List;
+
 public class AvailableTransitionDTO {
 
     private String toNodeId;
@@ -13,6 +15,16 @@ public class AvailableTransitionDTO {
     private String bindStatusName;
 
     private Boolean projectRequired;
+
+    private String assigneeType;
+
+    private String assigneeTypeName;
+
+    private String assigneeDisplayName;
+
+    private List<AssigneeCandidateDTO> assigneeCandidates;
+
+    private Long defaultAssigneeId;
 
     public String getToNodeId() {
         return toNodeId;
@@ -60,5 +72,45 @@ public class AvailableTransitionDTO {
 
     public void setProjectRequired(Boolean projectRequired) {
         this.projectRequired = projectRequired;
+    }
+
+    public String getAssigneeType() {
+        return assigneeType;
+    }
+
+    public void setAssigneeType(String assigneeType) {
+        this.assigneeType = assigneeType;
+    }
+
+    public String getAssigneeTypeName() {
+        return assigneeTypeName;
+    }
+
+    public void setAssigneeTypeName(String assigneeTypeName) {
+        this.assigneeTypeName = assigneeTypeName;
+    }
+
+    public String getAssigneeDisplayName() {
+        return assigneeDisplayName;
+    }
+
+    public void setAssigneeDisplayName(String assigneeDisplayName) {
+        this.assigneeDisplayName = assigneeDisplayName;
+    }
+
+    public List<AssigneeCandidateDTO> getAssigneeCandidates() {
+        return assigneeCandidates;
+    }
+
+    public void setAssigneeCandidates(List<AssigneeCandidateDTO> assigneeCandidates) {
+        this.assigneeCandidates = assigneeCandidates;
+    }
+
+    public Long getDefaultAssigneeId() {
+        return defaultAssigneeId;
+    }
+
+    public void setDefaultAssigneeId(Long defaultAssigneeId) {
+        this.defaultAssigneeId = defaultAssigneeId;
     }
 }

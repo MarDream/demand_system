@@ -651,8 +651,11 @@ public class RequirementServiceImpl implements RequirementService {
 
     @Override
     public List<RequirementVO> listMyDone(String keyword, Long userId) {
-        boolean isSuperAdmin = SecurityUtils.getCurrentUserRoles().contains("admin");
-        List<Requirement> requirements = requirementMapper.selectMyDone(userId, isSuperAdmin, keyword);
+        List<String> roleCodes = SecurityUtils.getCurrentUserRoles();
+        List<Long> directOrgIds = resolveDirectOrgIds(userId);
+        List<Long> scopedOrgIds = resolveScopedOrgIds(directOrgIds);
+
+        List<Requirement> requirements = requirementMapper.selectMyDone(userId, roleCodes, directOrgIds, scopedOrgIds, keyword);
         List<RequirementVO> list = new ArrayList<>();
         for (Requirement r : requirements) {
             RequirementVO vo = new RequirementVO();
@@ -702,7 +705,8 @@ public class RequirementServiceImpl implements RequirementService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void restore(Long id, Long userId) {
-        Requirement existing = requirementMapper.selectById(id);
+        // 修复 P0：使用自定义 SQL 绕过 @TableLogic 过滤，查询包含已删除记录
+        Requirement existing = requirementMapper.selectByIdIncludeDeleted(id);
         if (existing == null) {
             throw new BusinessException("需求不存在");
         }
@@ -721,9 +725,8 @@ public class RequirementServiceImpl implements RequirementService {
             throw new BusinessException("只有创建者或管理员可以恢复需求");
         }
 
-        UpdateWrapper<Requirement> wrapper = new UpdateWrapper<>();
-        wrapper.eq("id", id).set("deleted_at", null);
-        requirementMapper.update(null, wrapper);
+        // 修复 P0：使用自定义 SQL 绕过 @TableLogic 拦截
+        requirementMapper.restoreById(id);
     }
 
     @Override

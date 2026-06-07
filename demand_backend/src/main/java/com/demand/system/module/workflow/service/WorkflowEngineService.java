@@ -20,8 +20,11 @@ import com.demand.system.module.user.mapper.UserMapper;
 import com.demand.system.module.user.mapper.UserOrganizationMapper;
 import com.demand.system.module.rbac.entity.Role;
 import com.demand.system.module.rbac.entity.RoleGroup;
+import com.demand.system.module.rbac.entity.UserRole;
 import com.demand.system.module.rbac.mapper.RoleMapper;
 import com.demand.system.module.rbac.mapper.RoleGroupMapper;
+import com.demand.system.module.rbac.mapper.UserRoleMapper;
+import com.demand.system.module.workflow.dto.AssigneeCandidateDTO;
 import com.demand.system.module.workflow.dto.ParallelBranchVO;
 import com.demand.system.module.workflow.dto.AvailableTransitionDTO;
 import com.demand.system.module.workflow.dto.FlowTransitionRequest;
@@ -45,6 +48,8 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDate;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -67,6 +72,7 @@ public class WorkflowEngineService {
     private final UserMapper userMapper;
     private final RoleMapper roleMapper;
     private final RoleGroupMapper roleGroupMapper;
+    private final UserRoleMapper userRoleMapper;
     private final UserOrganizationMapper userOrganizationMapper;
     private final SysOrgMapper sysOrgMapper;
     private final NodeStatusMapper nodeStatusMapper;
@@ -82,7 +88,8 @@ public class WorkflowEngineService {
                                WorkflowNodeMapper nodeMapper, WorkflowEdgeMapper edgeMapper,
                                RequirementMapper requirementMapper, RequirementHistoryMapper requirementHistoryMapper,
                                ProjectMapper projectMapper, UserMapper userMapper, RoleMapper roleMapper,
-                               RoleGroupMapper roleGroupMapper, UserOrganizationMapper userOrganizationMapper,
+                               RoleGroupMapper roleGroupMapper, UserRoleMapper userRoleMapper,
+                               UserOrganizationMapper userOrganizationMapper,
                                SysOrgMapper sysOrgMapper,
                                NodeStatusMapper nodeStatusMapper, WorkflowGraphNavigator graphNavigator,
                                WorkflowRuntimeLoader runtimeLoader, WorkflowRuntimeMigrationService workflowRuntimeMigrationService,
@@ -100,6 +107,7 @@ public class WorkflowEngineService {
         this.userMapper = userMapper;
         this.roleMapper = roleMapper;
         this.roleGroupMapper = roleGroupMapper;
+        this.userRoleMapper = userRoleMapper;
         this.userOrganizationMapper = userOrganizationMapper;
         this.sysOrgMapper = sysOrgMapper;
         this.nodeStatusMapper = nodeStatusMapper;
@@ -221,8 +229,20 @@ public class WorkflowEngineService {
         if (approvalEvaluationRequired) {
             validateApprovalEvaluation(request.getRating(), request.getComment());
         }
+        // 修复 P2：按节点 properties.requireComment 校验意见必填
+        if (isCommentRequired(currentNode)
+                && (request.getComment() == null || request.getComment().trim().isEmpty())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "当前节点要求必须填写意见");
+        }
 
         closeCurrentTransition(instance.getId());
+
+        // 修复：检测代审批行为。SUPER_ADMIN 不在节点 assignee 中时，action 标记为 proxy_approve
+        String resolvedAction = request.getAction() != null ? request.getAction() : "submit";
+        boolean isProxyApproval = isProxyApproval(currentNode, operatorId);
+        if (isProxyApproval && !"cancel".equals(resolvedAction) && !"rollback".equals(resolvedAction)) {
+            resolvedAction = "proxy_approve";
+        }
 
         WorkflowInstanceTransition newTransition = new WorkflowInstanceTransition();
         newTransition.setInstanceId(instance.getId());
@@ -232,7 +252,7 @@ public class WorkflowEngineService {
         newTransition.setToNodeId(request.getToNodeId());
         newTransition.setToNodeName(targetNode.getNodeName());
         newTransition.setOperatorId(operatorId);
-        newTransition.setAction(request.getAction() != null ? request.getAction() : "submit");
+        newTransition.setAction(resolvedAction);
         newTransition.setComment(request.getComment());
         newTransition.setStartedAt(LocalDateTime.now());
         transitionMapper.insert(newTransition);
@@ -493,6 +513,12 @@ public class WorkflowEngineService {
                 dto.setBindStatusCode(nodeStatusCode);
                 dto.setBindStatusName(resolveNodeStatusName(nodeStatusCode));
                 dto.setProjectRequired(WorkflowNodeUtils.isProjectRequired(targetNode));
+                dto.setAssigneeType(targetNode.getAssigneeType());
+                dto.setAssigneeTypeName(resolveAssigneeTypeName(targetNode));
+                List<AssigneeCandidateDTO> assigneeCandidates = resolveAssigneeCandidates(targetNode, requirement, operatorId);
+                dto.setAssigneeCandidates(assigneeCandidates);
+                dto.setDefaultAssigneeId(!assigneeCandidates.isEmpty() ? assigneeCandidates.get(0).getId() : null);
+                dto.setAssigneeDisplayName(resolveAssigneeDisplayName(targetNode, requirement, operatorId, assigneeCandidates));
                 return dto;
             }).collect(Collectors.toList());
         }
@@ -570,11 +596,78 @@ public class WorkflowEngineService {
         return Boolean.TRUE.equals(enabled);
     }
 
+    /**
+     * 修复：判断当前操作是否属于"代审批"。
+     * 当 SUPER_ADMIN 提交审批节点但其本身不在节点 assignee 列表中时，
+     * 标记为代审批（proxy_approve），便于审计追踪。
+     */
+    private boolean isProxyApproval(WorkflowNode node, Long operatorId) {
+        if (node == null || operatorId == null || !hasAdminBypassPermission()) {
+            return false;
+        }
+        String nodeType = node.getNodeType();
+        if (!"approval".equalsIgnoreCase(nodeType) && !"wait".equalsIgnoreCase(nodeType)) {
+            return false;
+        }
+        String assigneeType = node.getAssigneeType();
+        if (!StringUtils.hasText(assigneeType)) {
+            return true;
+        }
+        switch (assigneeType) {
+            case "SPECIFIED_USER":
+                return node.getAssigneeUserIds() == null
+                        || !node.getAssigneeUserIds().contains(operatorId);
+            case "SPECIFIED_ROLE": {
+                Integer roleId = node.getAssigneeRoleId();
+                if (roleId == null) {
+                    return true;
+                }
+                Role role = roleMapper.selectById(roleId.longValue());
+                return !currentUserMatchesRole(role);
+            }
+            case "SPECIFIED_ROLE_GROUP": {
+                Long roleGroupId = node.getAssigneeRoleGroupId();
+                if (roleGroupId == null) {
+                    return true;
+                }
+                List<Role> roles = roleMapper.selectList(
+                        new LambdaQueryWrapper<Role>()
+                                .eq(Role::getRoleGroupId, roleGroupId)
+                                .eq(Role::getDeletedAt, 0)
+                );
+                return roles.stream().noneMatch(this::currentUserMatchesRole);
+            }
+            case "SPECIFIED_ORG": {
+                Long orgId = node.getAssigneeOrgId();
+                if (orgId == null) {
+                    return true;
+                }
+                return !resolveOperatorOrgIds(operatorId).contains(orgId);
+            }
+            case "CREATOR":
+            case "PREV_APPROVER":
+            default:
+                return false;
+        }
+    }
+
     private boolean isApprovalEvaluationRequired(WorkflowNode currentNode) {
         if (currentNode == null || !"approval".equalsIgnoreCase(currentNode.getNodeType())) {
             return false;
         }
         return !isCountersignEnabled(currentNode);
+    }
+
+    /**
+     * 修复 P2：判断当前节点是否要求必填审批意见。
+     * 读取节点 properties.requireComment。
+     */
+    private boolean isCommentRequired(WorkflowNode currentNode) {
+        if (currentNode == null || currentNode.getProperties() == null) {
+            return false;
+        }
+        Object value = currentNode.getProperties().get("requireComment");
+        return Boolean.TRUE.equals(value);
     }
 
     private void validateApprovalEvaluation(Integer rating, String comment) {
@@ -1015,6 +1108,250 @@ public class WorkflowEngineService {
             return nodeStatus.getName();
         }
         return nodeStatusCode;
+    }
+
+    private String resolveAssigneeTypeName(WorkflowNode node) {
+        if (node == null) {
+            return "";
+        }
+        String assigneeType = node.getAssigneeType();
+        if (!StringUtils.hasText(assigneeType)) {
+            return "end".equalsIgnoreCase(node.getNodeType()) ? "结束节点" : "";
+        }
+        return switch (assigneeType) {
+            case "SPECIFIED_USER" -> "指定用户";
+            case "SPECIFIED_ROLE" -> "指定角色";
+            case "SPECIFIED_ROLE_GROUP" -> "指定角色组";
+            case "SPECIFIED_ORG" -> "指定组织";
+            case "CREATOR" -> "提交人";
+            case "PREV_APPROVER" -> "上一节点处理人";
+            default -> assigneeType;
+        };
+    }
+
+    private List<AssigneeCandidateDTO> resolveAssigneeCandidates(WorkflowNode node, Requirement requirement, Long operatorId) {
+        if (node == null) {
+            return Collections.emptyList();
+        }
+
+        String assigneeType = node.getAssigneeType();
+        if (!StringUtils.hasText(assigneeType)) {
+            return Collections.emptyList();
+        }
+
+        return switch (assigneeType) {
+            case "SPECIFIED_USER" -> buildUserCandidates(node.getAssigneeUserIds());
+            case "SPECIFIED_ROLE" -> resolveUserCandidatesByRoleIds(node.getAssigneeRoleId() == null
+                    ? Collections.emptySet()
+                    : Set.of(node.getAssigneeRoleId().longValue()));
+            case "SPECIFIED_ROLE_GROUP" -> resolveRoleGroupCandidates(node.getAssigneeRoleGroupId());
+            case "SPECIFIED_ORG" -> resolveOrgCandidates(node);
+            case "CREATOR" -> buildUserCandidates(requirement != null && requirement.getCreatorId() != null
+                    ? List.of(requirement.getCreatorId())
+                    : Collections.emptyList());
+            case "PREV_APPROVER" -> buildUserCandidates(operatorId != null ? List.of(operatorId) : Collections.emptyList());
+            default -> Collections.emptyList();
+        };
+    }
+
+    private String resolveAssigneeDisplayName(WorkflowNode node,
+                                              Requirement requirement,
+                                              Long operatorId,
+                                              List<AssigneeCandidateDTO> assigneeCandidates) {
+        if (node == null) {
+            return "-";
+        }
+
+        if (assigneeCandidates != null && !assigneeCandidates.isEmpty()) {
+            return assigneeCandidates.get(0).getName();
+        }
+
+        String assigneeType = node.getAssigneeType();
+        if (!StringUtils.hasText(assigneeType)) {
+            return "end".equalsIgnoreCase(node.getNodeType()) ? "流程结束" : "-";
+        }
+
+        return switch (assigneeType) {
+            case "SPECIFIED_USER" -> "未指定用户";
+            case "SPECIFIED_ROLE" -> resolveRoleName(node.getAssigneeRoleId()) + "（暂无成员）";
+            case "SPECIFIED_ROLE_GROUP" -> resolveRoleGroupName(node.getAssigneeRoleGroupId()) + "（暂无成员）";
+            case "SPECIFIED_ORG" -> resolveOrgDisplayName(node) + "（暂无成员）";
+            case "CREATOR" -> resolveUserName(requirement != null ? requirement.getCreatorId() : null, "提交人");
+            case "PREV_APPROVER" -> resolveUserName(operatorId, "上一节点处理人");
+            default -> assigneeType;
+        };
+    }
+
+    private List<AssigneeCandidateDTO> resolveRoleGroupCandidates(Long roleGroupId) {
+        if (roleGroupId == null) {
+            return Collections.emptyList();
+        }
+        List<Role> roles = roleMapper.selectList(new LambdaQueryWrapper<Role>()
+                .eq(Role::getRoleGroupId, roleGroupId));
+        Set<Long> roleIds = roles.stream()
+                .map(Role::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        return resolveUserCandidatesByRoleIds(roleIds);
+    }
+
+    private List<AssigneeCandidateDTO> resolveOrgCandidates(WorkflowNode node) {
+        Long orgId = node.getAssigneeOrgId();
+        if (orgId == null) {
+            return Collections.emptyList();
+        }
+
+        LinkedHashSet<Long> orgIds = new LinkedHashSet<>();
+        orgIds.add(orgId);
+        Object scopeType = WorkflowNodeUtils.readProperty(node, "orgScopeType");
+        if ("include_children".equals(scopeType)) {
+            List<SysOrg> organizations = sysOrgMapper.selectList(new LambdaQueryWrapper<SysOrg>()
+                    .like(SysOrg::getPath, "/" + orgId + "/"));
+            for (SysOrg organization : organizations) {
+                if (organization != null && organization.getId() != null) {
+                    orgIds.add(organization.getId());
+                }
+            }
+        }
+
+        LinkedHashSet<Long> userIds = new LinkedHashSet<>();
+        List<User> users = userMapper.selectList(new LambdaQueryWrapper<>());
+        for (User user : users) {
+            if (user == null) {
+                continue;
+            }
+            if (orgIds.contains(user.getOrgId()) || orgIds.contains(user.getDepartmentId()) || orgIds.contains(user.getRegionId())) {
+                userIds.add(user.getId());
+            }
+        }
+
+        List<UserOrganization> organizations = userOrganizationMapper.selectList(new LambdaQueryWrapper<>());
+        for (UserOrganization organization : organizations) {
+            if (organization == null || organization.getUserId() == null) {
+                continue;
+            }
+            if (orgIds.contains(organization.getOrgId())
+                    || orgIds.contains(organization.getDepartmentId())
+                    || orgIds.contains(organization.getRegionId())) {
+                userIds.add(organization.getUserId());
+            }
+        }
+
+        return buildUserCandidates(userIds);
+    }
+
+    private List<AssigneeCandidateDTO> resolveUserCandidatesByRoleIds(Set<Long> roleIds) {
+        if (roleIds == null || roleIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<UserRole> userRoles = userRoleMapper.selectList(new LambdaQueryWrapper<UserRole>()
+                .in(UserRole::getRoleId, roleIds));
+        LinkedHashSet<Long> userIds = userRoles.stream()
+                .map(UserRole::getUserId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        return buildUserCandidates(userIds);
+    }
+
+    private List<AssigneeCandidateDTO> buildUserCandidates(Collection<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        LinkedHashSet<Long> normalizedIds = userIds.stream()
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (normalizedIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<User> users = userMapper.selectBatchIds(normalizedIds);
+        Map<Long, User> userMap = users == null ? Collections.emptyMap() : users.stream()
+                .filter(Objects::nonNull)
+                .filter(user -> user.getId() != null)
+                .collect(Collectors.toMap(User::getId, user -> user, (left, right) -> left));
+
+        List<AssigneeCandidateDTO> candidates = new ArrayList<>();
+        for (Long userId : normalizedIds) {
+            User user = userMap.get(userId);
+            AssigneeCandidateDTO candidate = new AssigneeCandidateDTO();
+            candidate.setId(userId);
+            candidate.setName(resolveUserDisplayName(user, userId));
+            candidates.add(candidate);
+        }
+        return candidates;
+    }
+
+    private String resolveUserDisplayName(User user, Long userId) {
+        if (user != null) {
+            if (StringUtils.hasText(user.getRealName())) {
+                return user.getRealName().trim();
+            }
+            if (StringUtils.hasText(user.getUsername())) {
+                return user.getUsername().trim();
+            }
+        }
+        return userId == null ? "未知用户" : "用户#" + userId;
+    }
+
+    private String resolveRoleName(Integer roleId) {
+        if (roleId == null) {
+            return "未指定角色";
+        }
+        Role role = roleMapper.selectById(Long.valueOf(roleId.longValue()));
+        if (role == null) {
+            return "未指定角色";
+        }
+        if (StringUtils.hasText(role.getName())) {
+            return role.getName().trim();
+        }
+        if (StringUtils.hasText(role.getCode())) {
+            return role.getCode().trim();
+        }
+        return "角色#" + roleId;
+    }
+
+    private String resolveRoleGroupName(Long roleGroupId) {
+        if (roleGroupId == null) {
+            return "未指定角色组";
+        }
+        RoleGroup roleGroup = roleGroupMapper.selectById(roleGroupId);
+        if (roleGroup == null || !StringUtils.hasText(roleGroup.getName())) {
+            return "角色组#" + roleGroupId;
+        }
+        return roleGroup.getName().trim();
+    }
+
+    private String resolveOrgDisplayName(WorkflowNode node) {
+        Long orgId = node.getAssigneeOrgId();
+        if (orgId == null) {
+            return "未指定组织";
+        }
+        SysOrg org = sysOrgMapper.selectById(orgId);
+        String orgName = org != null && StringUtils.hasText(org.getName()) ? org.getName().trim() : "组织#" + orgId;
+        Object scopeType = WorkflowNodeUtils.readProperty(node, "orgScopeType");
+        if ("include_children".equals(scopeType)) {
+            return orgName + "（当前层级及子层级）";
+        }
+        return orgName + "（仅当前层级）";
+    }
+
+    private String resolveUserName(Long userId, String fallback) {
+        if (userId == null) {
+            return fallback;
+        }
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            return fallback;
+        }
+        if (StringUtils.hasText(user.getRealName())) {
+            return user.getRealName().trim();
+        }
+        if (StringUtils.hasText(user.getUsername())) {
+            return user.getUsername().trim();
+        }
+        return fallback;
     }
 
     private String formatDuration(Long seconds) {

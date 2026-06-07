@@ -41,7 +41,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 
@@ -113,16 +115,24 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             throw new BusinessException("用户未登录");
         }
 
-        Long normalizedProjectId = normalizeProjectId(projectId);
-        WorkflowVersion draftVersion = findLatestInactiveVersion(normalizedProjectId);
+        // 修复：保存前做连通性和基本结构校验，避免保存无效流程
+        validateConfigStructure(configDTO);
 
-        // 已提交待审核的版本不能继续覆盖，保存时应创建新的草稿版本
-        if (draftVersion == null || hasPendingApproval(draftVersion.getId())) {
-            draftVersion = createDraftVersion(normalizedProjectId, currentUserId);
+        Long normalizedProjectId = normalizeProjectId(projectId);
+        WorkflowVersion existingDraft = findLatestInactiveVersion(normalizedProjectId);
+
+        // 修复：现有草稿已提交审核时禁止保存
+        if (existingDraft != null && hasPendingApproval(existingDraft.getId())) {
+            throw new BusinessException("现有草稿已提交审核，请等待审核完成后再保存");
         }
 
-        // 删除旧的节点和连线
-        deleteVersionConfig(draftVersion.getId());
+        // 修复：总是创建新草稿版本，不再覆盖现有未审核的 draft
+        // 仅将 activation_status=draft 的旧版本归档，保留 inactive 历史版本
+        if (existingDraft != null && "draft".equals(existingDraft.getActivationStatus())) {
+            existingDraft.setActivationStatus("archived");
+            workflowVersionMapper.updateById(existingDraft);
+        }
+        WorkflowVersion draftVersion = createDraftVersion(normalizedProjectId, currentUserId);
 
         // 保存新的节点
         if (configDTO.getNodes() != null && !configDTO.getNodes().isEmpty()) {
@@ -130,6 +140,10 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
                 WorkflowNode node = new WorkflowNode();
                 BeanUtils.copyProperties(nodeDTO, node);
                 node.setWorkflowVersionId(draftVersion.getId());
+                // 修复：给 node_id 加版本前缀，避免跨版本冲突
+                if (StringUtils.hasText(node.getNodeId()) && !node.getNodeId().startsWith("v" + draftVersion.getId() + "_")) {
+                    node.setNodeId("v" + draftVersion.getId() + "_" + node.getNodeId());
+                }
                 workflowNodeMapper.insert(node);
             }
         }
@@ -140,6 +154,15 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
                 WorkflowEdge edge = new WorkflowEdge();
                 BeanUtils.copyProperties(edgeDTO, edge);
                 edge.setWorkflowVersionId(draftVersion.getId());
+                // 同步给 edge 引用添加版本前缀
+                String prefix = "v" + draftVersion.getId() + "_";
+                if (StringUtils.hasText(edge.getSourceNodeId()) && !edge.getSourceNodeId().startsWith(prefix)) {
+                    edge.setSourceNodeId(prefix + edge.getSourceNodeId());
+                }
+                if (StringUtils.hasText(edge.getTargetNodeId()) && !edge.getTargetNodeId().startsWith(prefix)
+                        && !isTerminalStatus(edge.getTargetNodeId())) {
+                    edge.setTargetNodeId(prefix + edge.getTargetNodeId());
+                }
                 workflowEdgeMapper.insert(edge);
             }
         }
@@ -447,6 +470,74 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         LambdaQueryWrapper<WorkflowEdge> edgeQuery = new LambdaQueryWrapper<>();
         edgeQuery.eq(WorkflowEdge::getWorkflowVersionId, versionId);
         workflowEdgeMapper.delete(edgeQuery);
+    }
+
+    /**
+     * 判断节点 ID 是否为终止状态字符串（如 cancelled/accepted/rejected），
+     * 这些值不应加版本前缀。
+     */
+    private boolean isTerminalStatus(String nodeId) {
+        if (nodeId == null) {
+            return false;
+        }
+        String lower = nodeId.toLowerCase();
+        return "cancelled".equals(lower) || "accepted".equals(lower) || "rejected".equals(lower);
+    }
+
+    /**
+     * 修复：保存工作流前做基本结构校验，必须包含开始和结束节点，
+     * 且边引用的节点 ID 必须存在。避免保存无效流程。
+     */
+    private void validateConfigStructure(WorkflowConfigDTO configDTO) {
+        if (configDTO == null) {
+            throw new BusinessException("工作流配置不能为空");
+        }
+        List<WorkflowNodeDTO> nodes = configDTO.getNodes();
+        if (nodes == null || nodes.isEmpty()) {
+            throw new BusinessException("工作流必须至少包含一个节点");
+        }
+
+        boolean hasStart = false;
+        boolean hasEnd = false;
+        Set<String> nodeIds = new HashSet<>();
+        for (WorkflowNodeDTO node : nodes) {
+            if (node == null) {
+                continue;
+            }
+            if (StringUtils.hasText(node.getNodeId())) {
+                nodeIds.add(node.getNodeId());
+            }
+            if ("start".equalsIgnoreCase(node.getNodeType())) {
+                hasStart = true;
+            }
+            if ("end".equalsIgnoreCase(node.getNodeType())) {
+                hasEnd = true;
+            }
+        }
+        if (!hasStart) {
+            throw new BusinessException("工作流必须包含开始节点");
+        }
+        if (!hasEnd) {
+            throw new BusinessException("工作流必须包含结束节点");
+        }
+
+        if (configDTO.getEdges() != null) {
+            for (WorkflowEdgeDTO edge : configDTO.getEdges()) {
+                if (edge == null) {
+                    continue;
+                }
+                if (StringUtils.hasText(edge.getSourceNodeId())
+                        && !isTerminalStatus(edge.getSourceNodeId())
+                        && !nodeIds.contains(edge.getSourceNodeId())) {
+                    throw new BusinessException("连线引用了不存在的源节点: " + edge.getSourceNodeId());
+                }
+                if (StringUtils.hasText(edge.getTargetNodeId())
+                        && !isTerminalStatus(edge.getTargetNodeId())
+                        && !nodeIds.contains(edge.getTargetNodeId())) {
+                    throw new BusinessException("连线引用了不存在的目标节点: " + edge.getTargetNodeId());
+                }
+            }
+        }
     }
 
     private WorkflowVersion findLatestInactiveVersion(Long projectId) {
