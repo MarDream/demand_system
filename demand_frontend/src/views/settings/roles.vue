@@ -185,7 +185,7 @@
                     <el-checkbox
                       :model-value="isMenuChecked(node)"
                       :indeterminate="isMenuIndeterminate(node)"
-                      :disabled="!canGrantSelectedRole || !node.menuPermission"
+                      :disabled="!canGrantSelectedRole || !node.menuPermission || !isGrantablePermission(node.menuPermission.code)"
                       @change="(checked: boolean) => handleMenuCheck(node, checked)"
                     >
                       <span class="menu-name">{{ node.name }}</span>
@@ -202,7 +202,7 @@
                         v-for="button in node.buttons"
                         :key="button.code"
                         :model-value="selectedPermissions.includes(button.code)"
-                        :disabled="!canGrantSelectedRole"
+                        :disabled="!canGrantSelectedRole || !isGrantablePermission(button.code)"
                         border
                         @change="(checked: boolean) => setPermissionChecked(button.code, checked)"
                       >
@@ -230,7 +230,7 @@
                           <el-checkbox
                             :model-value="isMenuChecked(child)"
                             :indeterminate="isMenuIndeterminate(child)"
-                            :disabled="!canGrantSelectedRole || !child.menuPermission"
+                            :disabled="!canGrantSelectedRole || !child.menuPermission || !isGrantablePermission(child.menuPermission.code)"
                             @change="(checked: boolean) => handleMenuCheck(child, checked)"
                           >
                             <span class="menu-name">{{ child.name }}</span>
@@ -245,7 +245,7 @@
                             v-for="button in child.buttons"
                             :key="button.code"
                             :model-value="selectedPermissions.includes(button.code)"
-                            :disabled="!canGrantSelectedRole"
+                            :disabled="!canGrantSelectedRole || !isGrantablePermission(button.code)"
                             border
                             @change="(checked: boolean) => setPermissionChecked(button.code, checked)"
                           >
@@ -266,7 +266,7 @@
                     v-for="permission in filteredOrphanPermissions"
                     :key="permission.code"
                     :model-value="selectedPermissions.includes(permission.code)"
-                    :disabled="!canGrantSelectedRole"
+                    :disabled="!canGrantSelectedRole || !isGrantablePermission(permission.code)"
                     border
                     @change="(checked: boolean) => setPermissionChecked(permission.code, checked)"
                   >
@@ -980,13 +980,21 @@ async function fetchRolePermissions(roleId: number) {
       getGrantablePermissions(),
       getRolePermissions(roleId),
     ]) as any[]
-    const permissionSet = new Set<string>([...(grantable || []), ...((rolePermission?.permissionCodes || []) as string[])])
-    grantablePermissions.value = Array.from(permissionSet)
+    // grantablePermissions 只存储当前用户可授权的权限
+    grantablePermissions.value = grantable || []
     selectedPermissions.value = rolePermission?.permissionCodes || []
     expandedMenuKeys.value = defaultExpandedKeys(menuPermissionTree.value)
   } finally {
     permissionLoading.value = false
   }
+}
+
+/**
+ * 判断权限是否在当前用户可授权范围内
+ * 用于控制未归类权限的 checkbox 禁用状态
+ */
+function isGrantablePermission(code: string): boolean {
+  return grantablePermissions.value.includes(code)
 }
 
 function openCreate() {
@@ -1563,6 +1571,9 @@ function showTodo(action: string) {
 
 function permissionName(code: string) {
   const labelMap: Record<string, string> = {
+    'menu:dashboard': '仪表盘菜单',
+    'menu:requirement': '需求管理菜单',
+    'menu:iteration': '迭代管理菜单',
     'menu:system-config': '系统配置菜单',
     'menu:settings:project': '项目管理菜单',
     'menu:settings:user': '用户管理菜单',

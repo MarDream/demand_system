@@ -38,9 +38,10 @@ public final class RbacConstants {
     public static final String PERMISSION_BUTTON_RAG_SEARCH = "button:rag:search";
 
     public static final String PERMISSION_MENU_SETTINGS_LLM = "menu:settings:llm";
-    public static final String PERMISSION_BUTTON_LLM_CREATE = "button:llm:create";
-    public static final String PERMISSION_BUTTON_LLM_UPDATE = "button:llm:update";
-    public static final String PERMISSION_BUTTON_LLM_DELETE = "button:llm:delete";
+    public static final String PERMISSION_BUTTON_LLM_CREATE = "button:llm-provider:create";
+    public static final String PERMISSION_BUTTON_LLM_UPDATE = "button:llm-provider:update";
+    public static final String PERMISSION_BUTTON_LLM_DELETE = "button:llm-provider:delete";
+    public static final String PERMISSION_BUTTON_LLM_TEST = "button:llm-provider:test";
 
     public static final Set<String> PROTECTED_ROLE_CODES = Set.of(
             ROLE_SUPER_ADMIN,
@@ -48,7 +49,14 @@ public final class RbacConstants {
             ROLE_ADMIN
     );
 
+    public static final String PERMISSION_MENU_DASHBOARD = "menu:dashboard";
+    public static final String PERMISSION_MENU_REQUIREMENT = "menu:requirement";
+    public static final String PERMISSION_MENU_ITERATION = "menu:iteration";
+
     public static final List<String> ALL_PERMISSION_CODES = List.of(
+            PERMISSION_MENU_DASHBOARD,
+            PERMISSION_MENU_REQUIREMENT,
+            PERMISSION_MENU_ITERATION,
             PERMISSION_MENU_SYSTEM_CONFIG,
             PERMISSION_MENU_SETTINGS_PROJECT,
             PERMISSION_MENU_SETTINGS_USER,
@@ -74,6 +82,7 @@ public final class RbacConstants {
             PERMISSION_MENU_SETTINGS_LLM,
             PERMISSION_BUTTON_LLM_CREATE,
             PERMISSION_BUTTON_LLM_UPDATE,
-            PERMISSION_BUTTON_LLM_DELETE
+            PERMISSION_BUTTON_LLM_DELETE,
+            PERMISSION_BUTTON_LLM_TEST
     );
 }

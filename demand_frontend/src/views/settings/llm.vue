@@ -5,139 +5,145 @@
       <p class="config-desc">管理大模型接入组和模型实例，支持 OpenAI 和 Anthropic 协议</p>
     </div>
 
-    <div class="tab-content">
-      <div class="tab-header">
-        <div class="tab-header-left">
-          <el-button :icon="Setting" circle @click="showColumnConfig = true" title="列设置" />
+    <div class="config-layout">
+      <!-- 左侧：接入组列表 -->
+      <div class="provider-panel">
+        <div class="panel-header">
+          <span class="panel-title">接入组</span>
+          <el-button :icon="Plus" size="small" type="primary" @click="openCreateProvider">新增</el-button>
         </div>
-        <AppButton type="primary" permission="button:llm-provider:create" @click="openCreateProvider">
-          <el-icon><Plus /></el-icon>
-          新增接入组
-        </AppButton>
-      </div>
-
-      <el-table :data="providers" border style="width: 100%" v-loading="loading" row-key="id">
-        <el-table-column type="expand">
-          <template #default="{ row }">
-            <div class="expand-content">
-              <div class="expand-header">
-                <span class="expand-title">模型列表 ({{ row.models?.length ?? 0 }})</span>
-                <el-button type="primary" size="small" @click="openCreateModel(row)">
-                  <el-icon><Plus /></el-icon> 新增模型
-                </el-button>
+        <div class="provider-list" v-loading="loading">
+          <div
+            v-for="p in providers"
+            :key="p.id"
+            class="provider-item"
+            :class="{ 'is-selected': selectedProviderId === p.id }"
+            @click="selectedProviderId = p.id!"
+          >
+            <div class="provider-item-main">
+              <div class="provider-item-left">
+                <div class="provider-name">
+                  <span>{{ p.name }}</span>
+                  <el-tag :type="p.protocol === 'openai' ? 'primary' : 'warning'" size="small">
+                    {{ p.protocol === 'openai' ? 'OpenAI' : 'Anthropic' }}
+                  </el-tag>
+                </div>
+                <div class="provider-meta">{{ p.baseUrl }}</div>
               </div>
-              <el-table :data="row.models ?? []" size="small" style="width: 100%">
-                <el-table-column prop="name" label="名称" min-width="120" />
-                <el-table-column prop="modelId" label="模型ID" min-width="140" show-overflow-tooltip />
-                <el-table-column prop="modelType" label="类型" width="100" align="center">
-                  <template #default="{ row: model }">
-                    <el-tag :type="typeTagType(model.modelType)" size="small">{{ model.modelType }}</el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column prop="temperature" label="温度" width="60" align="center" />
-                <el-table-column prop="maxTokens" label="Max Tokens" width="90" align="center" />
-                <el-table-column label="默认" width="55" align="center">
-                  <template #default="{ row: model }">
-                    <el-tag v-if="model.isDefault" type="success" size="small">是</el-tag>
-                    <span v-else>-</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="状态" width="60" align="center">
-                  <template #default="{ row: model }">
-                    <el-switch :model-value="model.enabled" size="small" @change="handleToggleModel(row, model)" />
-                  </template>
-                </el-table-column>
-                <el-table-column label="连通性" width="70" align="center">
-                  <template #default="{ row: model }">
-                    <div class="conn-status">
-                      <template v-if="testingModels[model.id!]">
-                        <el-icon class="is-loading"><Loading /></el-icon>
-                      </template>
-                      <template v-else-if="model.testSuccess != null">
-                        <el-tooltip :content="connTooltip(model)" placement="top">
-                          <span class="conn-light" :class="connLightClass(model)"></span>
-                        </el-tooltip>
-                      </template>
-                      <span v-else class="conn-pending">-</span>
-                    </div>
-                  </template>
-                </el-table-column>
-                <el-table-column label="操作" width="90" align="center">
-                  <template #default="{ row: model }">
-                    <el-tooltip content="测试" placement="top">
-                      <el-icon class="action-icon" @click="handleTestModel(model)"><Connection /></el-icon>
-                    </el-tooltip>
-                    <el-tooltip content="编辑" placement="top">
-                      <span v-permission="'button:llm-provider:update'" class="action-icon primary" @click="openEditModel(model)"><EditPen /></span>
-                    </el-tooltip>
-                    <el-tooltip content="删除" placement="top">
-                      <span v-permission="'button:llm-provider:delete'" class="action-icon danger" @click="handleDeleteModel(model)"><Delete /></span>
-                    </el-tooltip>
-                  </template>
-                </el-table-column>
-              </el-table>
+              <div class="provider-item-right">
+                <el-switch
+                  :model-value="p.enabled"
+                  size="small"
+                  @change="handleToggleProvider(p)"
+                  @click.stop
+                />
+                <div class="provider-count">{{ p.models?.length ?? 0 }} 个模型</div>
+              </div>
             </div>
-          </template>
-        </el-table-column>
-
-        <template v-for="col in visibleColumns" :key="col.key">
-          <el-table-column
-            v-if="col.key === 'name'"
-            prop="name" label="名称" min-width="140"
-          />
-          <el-table-column
-            v-else-if="col.key === 'protocol'"
-            prop="protocol" label="协议" width="100" align="center"
-          >
-            <template #default="{ row }">
-              <el-tag :type="row.protocol === 'openai' ? 'primary' : 'warning'" size="small">
-                {{ row.protocol === 'openai' ? 'OpenAI' : 'Anthropic' }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column
-            v-else-if="col.key === 'baseUrl'"
-            prop="baseUrl" label="API Base URL" min-width="240" show-overflow-tooltip
-          />
-          <el-table-column
-            v-else-if="col.key === 'apiKey'"
-            prop="maskedApiKey" label="API Key" width="160"
-          />
-          <el-table-column
-            v-else-if="col.key === 'modelCount'"
-            label="模型数" width="80" align="center"
-          >
-            <template #default="{ row }">{{ row.models?.length ?? 0 }}</template>
-          </el-table-column>
-          <el-table-column
-            v-else-if="col.key === 'enabled'"
-            label="状态" width="70" align="center"
-          >
-            <template #default="{ row }">
-              <el-switch :model-value="row.enabled" size="small" @change="handleToggleProvider(row)" />
-            </template>
-          </el-table-column>
-          <el-table-column
-            v-else-if="col.key === 'operations'"
-            label="操作" width="140" fixed="right" align="center"
-          >
-            <template #default="{ row }">
+            <div class="provider-item-actions" @click.stop>
               <el-tooltip content="嗅探模型" placement="top">
-                <el-icon class="action-icon" style="color: #E6A23C;" @click="handleSniff(row)"><Search /></el-icon>
+                <el-icon class="action-icon" style="color: #E6A23C;" @click="handleSniff(p)"><Search /></el-icon>
               </el-tooltip>
               <el-tooltip content="查看密钥" placement="top">
-                <el-icon class="action-icon" @click="handleViewApiKey(row)"><View /></el-icon>
+                <el-icon class="action-icon" @click="handleViewApiKey(p)"><View /></el-icon>
               </el-tooltip>
               <el-tooltip content="编辑" placement="top">
-                <span v-permission="'button:llm-provider:update'" class="action-icon primary" @click="openEditProvider(row)"><EditPen /></span>
+                <span v-permission="'button:llm-provider:update'">
+                  <el-icon class="action-icon primary" @click="openEditProvider(p)"><EditPen /></el-icon>
+                </span>
               </el-tooltip>
               <el-tooltip content="删除" placement="top">
-                <span v-permission="'button:llm-provider:delete'" class="action-icon danger" @click="handleDeleteProvider(row)"><Delete /></span>
+                <span v-permission="'button:llm-provider:delete'">
+                  <el-icon class="action-icon danger" @click="handleDeleteProvider(p)"><Delete /></el-icon>
+                </span>
               </el-tooltip>
-            </template>
-          </el-table-column>
+            </div>
+          </div>
+          <el-empty v-if="!loading && providers.length === 0" description="暂无接入组" />
+        </div>
+      </div>
+
+      <!-- 右侧：模型管理 -->
+      <div class="model-panel">
+        <div v-if="!selectedProviderId" class="model-empty">
+          <el-empty description="请选择左侧接入组" />
+        </div>
+        <template v-else-if="selectedProvider">
+          <div class="panel-header">
+            <div class="panel-header-left">
+              <span class="panel-title">
+                {{ selectedProvider.name }} 的模型
+                <el-tag :type="selectedProvider.protocol === 'openai' ? 'primary' : 'warning'" size="small" style="margin-left: 8px;">
+                  {{ selectedProvider.protocol === 'openai' ? 'OpenAI' : 'Anthropic' }}
+                </el-tag>
+              </span>
+              <el-button :icon="Plus" size="small" type="primary" @click="openCreateModel(selectedProvider)">新增模型</el-button>
+            </div>
+            <div class="panel-header-right">
+              <el-tooltip content="嗅探可用模型" placement="top">
+                <el-button size="small" :icon="Search" @click="handleSniff(selectedProvider)">嗅探</el-button>
+              </el-tooltip>
+            </div>
+          </div>
+
+          <el-table :data="selectedProviderModels" border style="width: 100%" size="small" row-key="id">
+            <el-table-column prop="name" label="名称" min-width="120" />
+            <el-table-column prop="modelId" label="模型ID" min-width="140" show-overflow-tooltip />
+            <el-table-column prop="modelType" label="类型" width="100" align="center">
+              <template #default="{ row }">
+                <el-tag :type="typeTagType(row.modelType)" size="small">{{ row.modelType || 'general' }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="temperature" label="温度" width="60" align="center" />
+            <el-table-column prop="maxTokens" label="Max Tokens" width="90" align="center" />
+            <el-table-column label="默认" width="55" align="center">
+              <template #default="{ row }">
+                <el-tag v-if="row.isDefault" type="success" size="small">是</el-tag>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="60" align="center">
+              <template #default="{ row }">
+                <el-switch :model-value="row.enabled" size="small" @change="handleToggleModel(selectedProvider, row)" />
+              </template>
+            </el-table-column>
+            <el-table-column label="连通性" width="90" align="center">
+              <template #default="{ row }">
+                <div class="conn-status">
+                  <template v-if="testingModels[row.id!]">
+                    <span class="testing-text"><el-icon class="is-loading"><Loading /></el-icon> 测试中</span>
+                  </template>
+                  <template v-else-if="row.testSuccess != null">
+                    <el-tooltip :content="connTooltip(row)" placement="top">
+                      <span class="conn-light" :class="connLightClass(row)"></span>
+                    </el-tooltip>
+                  </template>
+                  <span v-else class="conn-pending">-</span>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="110" align="center">
+              <template #default="{ row }">
+                <el-tooltip content="测试连通性" placement="top">
+                  <el-icon class="action-icon" @click="handleTestModel(row)"><Connection /></el-icon>
+                </el-tooltip>
+                <el-tooltip content="编辑" placement="top">
+                  <span v-permission="'button:llm-provider:update'">
+                    <el-icon class="action-icon primary" @click="openEditModel(row)"><EditPen /></el-icon>
+                  </span>
+                </el-tooltip>
+                <el-tooltip content="删除" placement="top">
+                  <span v-permission="'button:llm-provider:delete'">
+                    <el-icon class="action-icon danger" @click="handleDeleteModel(row)"><Delete /></el-icon>
+                  </span>
+                </el-tooltip>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <el-empty v-if="selectedProviderModels.length === 0" description="暂无模型，请新增或嗅探" />
         </template>
-      </el-table>
+      </div>
     </div>
 
     <!-- 列设置对话框 -->
@@ -314,6 +320,7 @@ import AppButton from '@/components/common/AppButton.vue'
 const loading = ref(false)
 const submitting = ref(false)
 const providers = ref<LlmProvider[]>([])
+const selectedProviderId = ref<number | null>(null)
 
 // Column config
 const showColumnConfig = ref(false)
@@ -349,6 +356,14 @@ const visibleColumns = computed(() => {
   }
   return cols
 })
+
+// Computed
+const selectedProvider = computed(() =>
+  providers.value.find(p => p.id === selectedProviderId.value) ?? null
+)
+const selectedProviderModels = computed(() =>
+  selectedProvider.value?.models ?? []
+)
 
 async function loadColumnConfig() {
   try {
@@ -433,6 +448,10 @@ async function loadProviders() {
   try {
     const res = await llmProviderApi.list() as any
     providers.value = res?.data ?? res ?? []
+    // Auto-select first provider
+    if (providers.value.length > 0 && selectedProviderId.value === null) {
+      selectedProviderId.value = providers.value[0].id!
+    }
   } catch {
     providers.value = []
   } finally {
@@ -519,6 +538,9 @@ async function handleDeleteProvider(row: LlmProvider) {
   try {
     await llmProviderApi.delete(row.id!)
     ElMessage.success('删除成功')
+    if (selectedProviderId.value === row.id) {
+      selectedProviderId.value = providers.value.find(p => p.id !== row.id)?.id ?? null
+    }
     await loadProviders()
   } catch {
     ElMessage.error('删除失败')
@@ -671,6 +693,7 @@ function typeTagType(modelType: string): string {
     opus: 'warning',
     embedding: '',
     rerank: '',
+    general: '',
   }
   return map[modelType] ?? ''
 }
@@ -733,88 +756,219 @@ async function handleSniffImport() {
 <style scoped lang="scss">
 .config-container {
   padding: 20px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .config-header {
-  margin-bottom: 24px;
+  margin-bottom: 20px;
+  flex-shrink: 0;
   h2 { margin: 0 0 8px; font-size: 22px; color: #303133; }
   .config-desc { margin: 0; color: #909399; font-size: 14px; }
 }
 
-.tab-content {
-  background: #fff;
-  border-radius: 8px;
-  padding: 20px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+// ==================== 两栏布局 ====================
+.config-layout {
+  flex: 1;
+  display: flex;
+  gap: 16px;
+  min-height: 0;
+  overflow: hidden;
 }
 
-.tab-header {
+// ==================== 左侧接入组面板 ====================
+.provider-panel {
+  width: 340px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+
+.panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #f0f2f5;
+  flex-shrink: 0;
 }
 
-.tab-header-left {
+.panel-header-left {
   display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.panel-header-right {
+  display: flex;
+  align-items: center;
   gap: 8px;
 }
 
-// Expand
-.expand-content {
-  padding: 12px 20px 20px 50px;
-}
-
-.expand-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.expand-title {
+.panel-title {
   font-size: 14px;
   font-weight: 600;
-  color: #303133;
+  color: #1f2937;
 }
 
-// Conn status
+.provider-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.provider-item {
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  border: 1.5px solid transparent;
+  transition: all 0.18s ease;
+  background: #fafafa;
+
+  &:hover {
+    background: #f0f7ff;
+    border-color: #d0e3ff;
+  }
+
+  &.is-selected {
+    background: #eff6ff;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+}
+
+.provider-item-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.provider-item-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.provider-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #1f2937;
+  margin-bottom: 4px;
+}
+
+.provider-meta {
+  font-size: 12px;
+  color: #9ca3af;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-item-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.provider-count {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.provider-item-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #e5e7eb;
+}
+
+// ==================== 右侧模型面板 ====================
+.model-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+
+.model-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.model-panel .el-table {
+  flex: 1;
+  border-radius: 0;
+}
+
+// ==================== 操作图标 ====================
+.action-icon {
+  font-size: 15px;
+  cursor: pointer;
+  color: #6b7280;
+  padding: 2px;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+
+  &:hover {
+    color: var(--el-color-primary);
+    background: rgba(59, 130, 246, 0.08);
+  }
+  &.primary { color: var(--el-color-primary); }
+  &.primary:hover { color: var(--el-color-primary); }
+  &.danger { color: #ef4444; }
+  &.danger:hover { color: #dc2626; background: rgba(239, 68, 68, 0.08); }
+}
+
+// ==================== 连通性状态 ====================
 .conn-status {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 4px;
   height: 20px;
 }
 
-.conn-pending { color: #c0c4cc; font-size: 14px; }
+.testing-text {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.conn-pending { color: #d1d5db; font-size: 13px; }
 
 .conn-light {
   display: inline-block;
-  width: 14px;
-  height: 14px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
-  box-shadow: 0 0 4px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.12);
 }
 
-.conn-green { background-color: #67C23A; box-shadow: 0 0 6px rgba(103, 194, 58, 0.5); }
-.conn-yellow { background-color: #E6A23C; box-shadow: 0 0 6px rgba(230, 162, 60, 0.5); }
-.conn-red { background-color: #F56C6C; box-shadow: 0 0 6px rgba(245, 108, 108, 0.5); }
+.conn-green { background-color: #22c55e; }
+.conn-yellow { background-color: #f59e0b; }
+.conn-red { background-color: #ef4444; }
 
-// Action icons
-.action-icon {
-  font-size: 16px;
-  cursor: pointer;
-  margin: 0 4px;
-  color: #606266;
-  transition: color 0.2s;
-
-  &:hover { color: var(--el-color-primary); }
-  &.primary { color: var(--el-color-primary); }
-  &.danger { color: #F56C6C; }
-  &.danger:hover { color: #e04040; }
-}
-
-// Dialog form
+// ==================== 对话框 ====================
 .form-section-title {
   font-size: 13px;
   font-weight: 600;
@@ -890,10 +1044,10 @@ async function handleSniffImport() {
   }
 
   :deep(.el-dialog__title) {
-    font-size: 28px;
-    font-weight: 700;
+    font-size: 18px;
+    font-weight: 600;
     color: #1f2937;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.01em;
   }
 
   :deep(.el-dialog__body) {

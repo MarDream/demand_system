@@ -1027,13 +1027,14 @@ CREATE TABLE `llm_models` (
 -- 模型配置权限
 INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `status`) VALUES
 (31, 'menu:settings:llm', '模型配置菜单', 'MENU', '系统设置-模型配置', 1),
-(32, 'button:llm:create', '新增模型配置', 'BUTTON', '模型配置-新增', 1),
-(33, 'button:llm:update', '编辑模型配置', 'BUTTON', '模型配置-编辑', 1),
-(34, 'button:llm:delete', '删除模型配置', 'BUTTON', '模型配置-删除', 1);
+(32, 'button:llm-provider:create', '新建模型提供商', 'BUTTON', 'LLM配置-新建提供商', 1),
+(33, 'button:llm-provider:update', '编辑模型提供商', 'BUTTON', 'LLM配置-编辑提供商', 1),
+(34, 'button:llm-provider:delete', '删除模型提供商', 'BUTTON', 'LLM配置-删除提供商', 1),
+(78, 'button:llm-provider:test', '测试模型提供商', 'BUTTON', 'LLM配置-测试提供商', 1);
 
 -- SUPER_ADMIN 授权模型配置权限
 INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`) VALUES
-(1, 31), (1, 32), (1, 33), (1, 34);
+(1, 31), (1, 32), (1, 33), (1, 34), (1, 78);
 
 -- 模型配置菜单（系统设置子菜单）
 INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
@@ -1110,12 +1111,6 @@ INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description
 (73, 'button:workflow:activate', '启用/停用工作流', 'BUTTON', '工作流配置-启用停用', 1),
 (74, 'button:workflow:approve', '审批工作流', 'BUTTON', '工作流配置-审批', 1);
 
--- LLM模型配置详细权限
-INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `status`) VALUES
-(75, 'button:llm-provider:create', '新建模型提供商', 'BUTTON', 'LLM配置-新建提供商', 1),
-(76, 'button:llm-provider:update', '编辑模型提供商', 'BUTTON', 'LLM配置-编辑提供商', 1),
-(77, 'button:llm-provider:delete', '删除模型提供商', 'BUTTON', 'LLM配置-删除提供商', 1),
-(78, 'button:llm-provider:test', '测试模型提供商', 'BUTTON', 'LLM配置-测试提供商', 1);
 
 -- 需求管理下的按钮菜单
 INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
@@ -1179,7 +1174,7 @@ INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_
 (1, 61, 1), (1, 62, 1), (1, 63, 1), (1, 64, 1), (1, 65, 1), (1, 66, 1),
 (1, 67, 1), (1, 68, 1), (1, 69, 1),
 (1, 70, 1), (1, 71, 1), (1, 72, 1), (1, 73, 1), (1, 74, 1),
-(1, 75, 1), (1, 76, 1), (1, 77, 1), (1, 78, 1);
+(1, 78, 1);
 
 -- =====================================================
 -- Sprint 1 增量变更：工作流实例 + 流转记录 + 项目/岗位字段补全
