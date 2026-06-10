@@ -97,6 +97,16 @@ public class RequirementController {
         return Result.success(requirementService.listMyPending(query, userId));
     }
 
+    @GetMapping("/my-follows")
+    @PreAuthorize("isAuthenticated()")
+    public Result<PageResult<RequirementVO>> listMyFollows(RequirementMyListQueryDTO query) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) {
+            return Result.fail(401, "未登录或登录已过期");
+        }
+        return Result.success(requirementService.listMyFollows(query, userId));
+    }
+
     @GetMapping("/my-done")
     @PreAuthorize("isAuthenticated()")
     public Result<List<RequirementVO>> listMyDone(@RequestParam(required = false) String keyword) {
@@ -106,6 +116,28 @@ public class RequirementController {
         }
         List<RequirementVO> list = requirementService.listMyDone(keyword, userId);
         return Result.success(list);
+    }
+
+    @PostMapping("/{id}/follow")
+    @PreAuthorize("isAuthenticated()")
+    public Result<Void> follow(@PathVariable Long id) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) {
+            return Result.fail(401, "未登录或登录已过期");
+        }
+        requirementService.follow(id, userId);
+        return Result.success();
+    }
+
+    @DeleteMapping("/{id}/follow")
+    @PreAuthorize("isAuthenticated()")
+    public Result<Void> unfollow(@PathVariable Long id) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) {
+            return Result.fail(401, "未登录或登录已过期");
+        }
+        requirementService.unfollow(id, userId);
+        return Result.success();
     }
 
     @GetMapping("/{id}/next-nodes")

@@ -47,6 +47,10 @@ export function getMyRequirementPending(params: RequirementMyListQuery) {
   return request.get<ApiResponse<PageResult<Requirement>>>('/v1/requirements/my-pending', { params }) as unknown as Promise<PageResult<Requirement>>
 }
 
+export function getMyRequirementFollows(params: RequirementMyListQuery) {
+  return request.get<ApiResponse<PageResult<Requirement>>>('/v1/requirements/my-follows', { params }) as unknown as Promise<PageResult<Requirement>>
+}
+
 /**
  * 获取我的已办需求列表
  */
@@ -73,6 +77,14 @@ export function deleteRequirement(id: number) {
 
 export function restoreRequirement(id: number) {
   return request.post<ApiResponse>(`/v1/requirements/${id}/restore`) as unknown as Promise<void>
+}
+
+export function followRequirement(id: number) {
+  return request.post<ApiResponse>(`/v1/requirements/${id}/follow`) as unknown as Promise<void>
+}
+
+export function unfollowRequirement(id: number) {
+  return request.delete<ApiResponse>(`/v1/requirements/${id}/follow`) as unknown as Promise<void>
 }
 
 export function getRequirementHistory(id: number) {

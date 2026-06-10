@@ -83,6 +83,20 @@ public final class RbacConstants {
             PERMISSION_BUTTON_LLM_CREATE,
             PERMISSION_BUTTON_LLM_UPDATE,
             PERMISSION_BUTTON_LLM_DELETE,
-            PERMISSION_BUTTON_LLM_TEST
+            PERMISSION_BUTTON_LLM_TEST,
+            "menu:requirement:view:all",
+            "menu:requirement:view:pending",
+            "menu:requirement:view:done",
+            "menu:requirement:view:draft",
+            "button:requirement:create",
+            "button:requirement:update",
+            "button:requirement:delete",
+            "button:requirement:export",
+            "button:requirement:submit",
+            "button:requirement:split",
+            "button:requirement:comment",
+            "button:requirement:rollback",
+            "button:requirement:cancel",
+            "button:requirement:batch-delete"
     );
 }

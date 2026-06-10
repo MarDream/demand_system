@@ -1011,6 +1011,14 @@ async function fetchList() {
   }
 }
 
+async function refreshUserManagement(resetPage = false) {
+  if (resetPage) {
+    pageNum.value = 1
+  }
+  await loadOrgData()
+  await fetchList()
+}
+
 function handleSearch() {
   queryParams.orgId = undefined
   queryParams.regionId = undefined
@@ -1133,7 +1141,7 @@ async function handleDelete(row: UserInfo) {
     })
     await userApi.deleteUser(row.id)
     ElMessage.success('删除成功')
-    fetchList()
+    await refreshUserManagement()
   } catch {
     // user cancelled or error
   }
@@ -1178,6 +1186,7 @@ async function handleSubmit() {
   submitting.value = true
 
   try {
+    const shouldResetPage = !isEdit.value
     if (isEdit.value && editId.value) {
       await userApi.updateUser(editId.value, {
         realName: form.realName,
@@ -1208,7 +1217,7 @@ async function handleSubmit() {
       ElMessage.success('创建成功，系统已按默认规则生成初始密码并尝试发送邮件')
     }
     dialogVisible.value = false
-    fetchList()
+    await refreshUserManagement(shouldResetPage)
   } finally {
     submitting.value = false
   }

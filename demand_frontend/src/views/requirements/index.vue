@@ -4,29 +4,30 @@
     <FilterCard>
       <div class="view-switch">
         <el-radio-group v-model="viewMode" size="small" @change="handleViewModeChange">
-          <el-radio-button value="all">全部需求</el-radio-button>
-          <el-radio-button value="pending">
+          <el-radio-button v-if="hasPermission('menu:requirement:view:all')" value="all">全部需求</el-radio-button>
+          <el-radio-button v-if="hasPermission('menu:requirement:view:pending')" value="pending">
             <el-badge :value="viewCounts.pending" :hidden="viewCounts.pending === 0">我的待办</el-badge>
           </el-radio-button>
-          <el-radio-button value="done">我的已办</el-radio-button>
-          <el-radio-button value="drafts">
+          <el-radio-button v-if="hasPermission('menu:requirement:view:done')" value="done">我的已办</el-radio-button>
+          <el-radio-button v-if="hasPermission('menu:requirement:view:follow')" value="follows">我的关注</el-radio-button>
+          <el-radio-button v-if="hasPermission('menu:requirement:view:draft')" value="drafts">
             <el-badge :value="viewCounts.drafts" :hidden="viewCounts.drafts === 0">我的草稿</el-badge>
           </el-radio-button>
         </el-radio-group>
       </div>
       <el-form :model="filterForm" inline>
         <div class="filter-main">
-          <el-form-item v-if="!isDraftView && !isPendingView && !isDoneView" label="需求类型">
+          <el-form-item v-if="isAllView" label="需求类型">
             <el-select v-model="filterForm.type" placeholder="全部" clearable style="width: 140px">
               <el-option v-for="t in configTypes" :key="t.code" :label="t.name" :value="t.code" />
             </el-select>
           </el-form-item>
-          <el-form-item v-if="!isDraftView && !isPendingView && !isDoneView" label="优先级">
+          <el-form-item v-if="isAllView" label="优先级">
             <el-select v-model="filterForm.priority" placeholder="全部" clearable style="width: 100px">
               <el-option v-for="p in configPriorities" :key="p.code" :label="p.name" :value="p.code" />
             </el-select>
           </el-form-item>
-          <el-form-item v-if="!isDraftView && !isPendingView && !isDoneView" label="状态">
+          <el-form-item v-if="isAllView" label="状态">
             <el-select v-model="filterForm.status" placeholder="全部" clearable style="width: 120px">
               <el-option label="新建" value="新建" />
               <el-option label="待分析" value="待分析" />
@@ -41,7 +42,7 @@
               <el-option label="已取消" value="已取消" />
             </el-select>
           </el-form-item>
-          <el-form-item v-if="!isDraftView && !isPendingView && !isDoneView" label="负责人">
+          <el-form-item v-if="isAllView" label="负责人">
             <el-select v-model="filterForm.assigneeId" placeholder="请选择" clearable style="width: 140px">
               <el-option v-for="user in filterUserList" :key="user.id" :label="user.realName || user.username" :value="user.id" />
             </el-select>
@@ -51,7 +52,7 @@
           </el-form-item>
         </div>
         <el-collapse-transition>
-          <div v-show="filterExpanded && !isDraftView && !isPendingView && !isDoneView" class="filter-extra">
+          <div v-show="filterExpanded && isAllView" class="filter-extra">
             <el-form-item label="时间维度">
               <el-select v-model="timeDimension" placeholder="选择时间维度" style="width: 140px">
                 <el-option label="创建时间" value="createdAt" />
@@ -90,12 +91,12 @@
       <template #toolbar>
         <Toolbar>
           <template #left>
-            <el-button type="primary" @click="handleCreate">新建需求</el-button>
-            <el-button @click="handleExport">导出Excel</el-button>
+            <el-button v-if="hasPermission('button:requirement:create')" type="primary" @click="handleCreate">新建需求</el-button>
+            <el-button v-if="hasPermission('button:requirement:export')" @click="handleExport">导出Excel</el-button>
           </template>
           <template #right>
             <el-button :icon="Setting" circle @click="showColumnConfig = true" title="列设置" />
-            <el-button type="danger" :disabled="selectedIds.length === 0" @click="handleBatchDelete">
+            <el-button v-if="hasPermission('button:requirement:batch-delete')" type="danger" :disabled="selectedIds.length === 0" @click="handleBatchDelete">
               批量删除
             </el-button>
           </template>
@@ -173,8 +174,16 @@
                   {{ formatDate(row[col.key]) }}
                 </template>
                 <template v-else-if="col.key === 'operations'">
+                  <el-tooltip :content="row.followed ? '取消关注' : '添加关注'" placement="top">
+                    <el-button
+                      link
+                      :type="row.followed ? 'warning' : 'info'"
+                      :icon="row.followed ? StarFilled : Star"
+                      @click="handleToggleFollow(row)"
+                    />
+                  </el-tooltip>
                   <!-- 我的待办/已办视图根据operationType显示不同按钮 -->
-                  <template v-if="isPendingView || isDoneView">
+                  <template v-if="isPendingView || isDoneView || isFollowView">
                     <el-button v-if="row.operationType === 'edit'" link type="primary" @click="handleEdit(row)">编辑</el-button>
                     <el-button v-if="row.operationType === 'approve'" link type="warning" @click="handleOpen(row)">待办</el-button>
                     <el-button v-if="row.operationType === 'view'" link type="primary" @click="handleOpen(row)">查看</el-button>
@@ -242,15 +251,16 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { TableInstance } from 'element-plus'
-import { Setting, View, Edit, Delete, ArrowDown, ArrowRight } from '@element-plus/icons-vue'
+import { Setting, View, Edit, Delete, ArrowDown, ArrowRight, Star, StarFilled } from '@element-plus/icons-vue'
 import { exportToExcel } from '@/utils/excel'
 import { requirementApi, userApi } from '@/api'
-import { getMyRequirementPending, getMyRequirementDone } from '@/api/modules/requirement'
+import { getMyRequirementPending, getMyRequirementDone, getMyRequirementFollows } from '@/api/modules/requirement'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
 import { getColumnConfig, saveColumnConfig } from '@/api/modules/requirement'
 import type { Requirement, RequirementMyListQuery, RequirementQuery } from '@/types/requirement'
 import type { User } from '@/types/user'
 import { normalizeText, formatDate, stripPriorityPrefix } from '@/utils/format'
+import { usePermission } from '@/composables/usePermission'
 import PageContainer from '@/components/common/PageContainer.vue'
 import FilterCard from '@/components/common/FilterCard.vue'
 import TableCard from '@/components/common/TableCard.vue'
@@ -258,12 +268,27 @@ import Toolbar from '@/components/common/Toolbar.vue'
 
 const route = useRoute()
 const router = useRouter()
+const { hasPermission } = usePermission()
 
 const filterExpanded = ref(true)
-const viewMode = ref<'all' | 'drafts' | 'pending' | 'done'>(route.query.view === 'drafts' ? 'drafts' : route.query.view === 'pending' ? 'pending' : route.query.view === 'done' ? 'done' : 'all')
+type RequirementViewMode = 'all' | 'drafts' | 'pending' | 'done' | 'follows'
+
+const viewMode = ref<RequirementViewMode>(
+  route.query.view === 'drafts'
+    ? 'drafts'
+    : route.query.view === 'pending'
+      ? 'pending'
+      : route.query.view === 'done'
+        ? 'done'
+        : route.query.view === 'follows'
+          ? 'follows'
+          : 'all',
+)
+const isAllView = computed(() => viewMode.value === 'all')
 const isDraftView = computed(() => viewMode.value === 'drafts')
 const isPendingView = computed(() => viewMode.value === 'pending')
 const isDoneView = computed(() => viewMode.value === 'done')
+const isFollowView = computed(() => viewMode.value === 'follows')
 
 const DEFAULT_PROJECT_ID = 1
 
@@ -483,6 +508,18 @@ async function fetchData() {
       return
     }
 
+    if (isFollowView.value) {
+      const params: RequirementMyListQuery = {
+        keyword: filterForm.keyword || undefined,
+        pageNum: pagination.pageNum,
+        pageSize: pagination.pageSize,
+      }
+      const data = await getMyRequirementFollows(params)
+      tableData.value = data.list
+      pagination.total = data.total
+      return
+    }
+
     const params: RequirementQuery = {
       projectId: DEFAULT_PROJECT_ID,
       pageNum: pagination.pageNum,
@@ -545,7 +582,7 @@ function handleReset() {
   fetchData()
 }
 
-function handleViewModeChange(value: 'all' | 'drafts' | 'pending' | 'done') {
+function handleViewModeChange(value: RequirementViewMode) {
   viewMode.value = value
   pagination.pageNum = 1
   selectedIds.value = []
@@ -553,6 +590,7 @@ function handleViewModeChange(value: 'all' | 'drafts' | 'pending' | 'done') {
   if (value === 'drafts') query.view = 'drafts'
   else if (value === 'pending') query.view = 'pending'
   else if (value === 'done') query.view = 'done'
+  else if (value === 'follows') query.view = 'follows'
   router.replace({ query })
   fetchData()
   refreshViewCounts()
@@ -585,6 +623,26 @@ async function handleDelete(id: number) {
     fetchData()
   } catch {
     ElMessage.error('删除失败')
+  }
+}
+
+async function handleToggleFollow(row: Requirement) {
+  const nextFollowed = !row.followed
+  try {
+    if (!nextFollowed) {
+      await requirementApi.unfollowRequirement(row.id)
+      row.followed = false
+      ElMessage.success('已取消关注')
+      if (isFollowView.value) {
+        fetchData()
+      }
+      return
+    }
+    await requirementApi.followRequirement(row.id)
+    row.followed = true
+    ElMessage.success('已添加关注')
+  } catch {
+    ElMessage.error(nextFollowed ? '添加关注失败' : '取消关注失败')
   }
 }
 

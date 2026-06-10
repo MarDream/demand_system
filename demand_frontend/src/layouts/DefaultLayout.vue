@@ -177,13 +177,8 @@ const settingsMenuOrder: Record<string, number> = {
   '/settings/roles': 2,
   '/settings/requirements': 4,
   '/system/workflow-config': 5,
-  '/settings/workflow-approvals': 6,
   '/settings/menus': 7,
   '/settings/llm': 10,
-}
-
-const menuTitleOverrides: Record<string, string> = {
-  '/settings/workflow-approvals': '工作流管理',
 }
 
 function buildSidebarItems(items: MenuItem[]): SidebarItem[] {
@@ -200,7 +195,7 @@ function buildSidebarItems(items: MenuItem[]): SidebarItem[] {
       return {
         index: m.path || `menu-${m.id}`,
         path: isDirectory ? (defaultChildPath || ownPath) : (ownPath || defaultChildPath),
-        title: menuTitleOverrides[ownPath] || m.name,
+        title: m.name,
         icon: remix ? iconName : (iconMap[iconName] || iconMap['Document']),
         isRemix: remix,
         children,
@@ -215,7 +210,6 @@ function rebuildSidebarMenus() {
   const builtMenus = buildSidebarItems(menuList.value)
   const settingsMenu = builtMenus.find(item => item.path === '/settings' || item.title === '系统配置')
   const canAccessLlm = hasPermission('menu:settings:llm') || hasPermission('menu:system-config')
-  const canAccessWorkflowApprovals = hasAnyRole(['admin']) || hasPermission('menu:settings:workflow')
 
   if (settingsMenu && canAccessLlm && !settingsMenu.children.some(child => child.path === '/settings/llm')) {
     settingsMenu.children.push({
@@ -223,17 +217,6 @@ function rebuildSidebarMenus() {
       path: '/settings/llm',
       title: '模型配置',
       icon: 'ri-robot-2-line',
-      isRemix: true,
-      children: [],
-    })
-  }
-
-  if (settingsMenu && canAccessWorkflowApprovals && !settingsMenu.children.some(child => child.path === '/settings/workflow-approvals')) {
-    settingsMenu.children.push({
-      index: '/settings/workflow-approvals',
-      path: '/settings/workflow-approvals',
-      title: '工作流管理',
-      icon: 'ri-task-line',
       isRemix: true,
       children: [],
     })

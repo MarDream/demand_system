@@ -13,4 +13,9 @@ public final class ErrorCode {
     public static final int CONFLICT = 409;
     public static final int BUSINESS_ERROR = 500;
     public static final int INTERNAL_ERROR = 5000;
+
+    // 认证相关错误码
+    public static final int AUTH_FAILED = 4010;
+    public static final int TOKEN_EXPIRED = 4011;
+    public static final int TOKEN_INVALID = 4012;
 }

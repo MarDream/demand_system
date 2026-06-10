@@ -144,6 +144,40 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                        @Param("projectId") Long projectId,
                                        @Param("keyword") String keyword);
 
+    @Select({
+            "<script>",
+            "SELECT r.*",
+            "FROM requirement_follows rf",
+            "JOIN requirements r ON r.id = rf.requirement_id",
+            "WHERE rf.user_id = #{userId}",
+            "  AND r.deleted_at = 0",
+            "  <if test='projectId != null'> AND r.project_id = #{projectId} </if>",
+            "  <if test='keyword != null and keyword != \"\"'>",
+            "    AND (r.title LIKE CONCAT('%', #{keyword}, '%') OR r.description LIKE CONCAT('%', #{keyword}, '%'))",
+            "  </if>",
+            "  <if test='isSuperAdmin == false'>",
+            "    <choose>",
+            "      <when test='visibleOrgIds != null and visibleOrgIds.size() &gt; 0'>",
+            "        AND r.org_id IN",
+            "        <foreach collection='visibleOrgIds' item='orgId' open='(' separator=',' close=')'>",
+            "          #{orgId}",
+            "        </foreach>",
+            "      </when>",
+            "      <otherwise>",
+            "        AND r.creator_id = #{userId}",
+            "      </otherwise>",
+            "    </choose>",
+            "  </if>",
+            "ORDER BY rf.created_at DESC, rf.id DESC",
+            "</script>"
+    })
+    IPage<Requirement> selectMyFollows(IPage<Requirement> page,
+                                       @Param("userId") Long userId,
+                                       @Param("projectId") Long projectId,
+                                       @Param("keyword") String keyword,
+                                       @Param("isSuperAdmin") boolean isSuperAdmin,
+                                       @Param("visibleOrgIds") List<Long> visibleOrgIds);
+
     /**
      * 我的已办 - 查询当前用户创建的已提交需求 或 审批过的需求，排除当前待我审批的需求
      * @param userId 当前用户ID

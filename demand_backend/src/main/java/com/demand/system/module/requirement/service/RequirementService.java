@@ -40,6 +40,8 @@ public interface RequirementService {
 
     PageResult<RequirementVO> listMyPending(RequirementMyListQueryDTO query, Long userId);
 
+    PageResult<RequirementVO> listMyFollows(RequirementMyListQueryDTO query, Long userId);
+
     /**
      * 我的已办 - 查询用户参与过审批的需求
      * @param keyword 关键词搜索（可选）
@@ -47,6 +49,10 @@ public interface RequirementService {
      * @return 需求列表
      */
     List<RequirementVO> listMyDone(String keyword, Long userId);
+
+    void follow(Long requirementId, Long userId);
+
+    void unfollow(Long requirementId, Long userId);
 
     void delete(Long id, Long userId);
 

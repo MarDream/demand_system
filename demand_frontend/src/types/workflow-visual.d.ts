@@ -29,6 +29,12 @@ export interface WorkflowEdgeDTO {
 export interface WorkflowConfigDTO {
   nodes: WorkflowNodeDTO[]
   edges: WorkflowEdgeDTO[]
+  /** 有值=编辑已有草稿版本；null=新建草稿版本 */
+  versionId?: number
+  /** 目标版本号（前端传入或后端建议） */
+  version?: string
+  /** 目标版本名称 */
+  versionName?: string
 }
 
 export interface WorkflowValidationIssue {

@@ -61,12 +61,6 @@ export const routes: RouteRecordRaw[] = [
         meta: { title: '迭代管理', icon: 'Calendar' },
       },
       {
-        path: 'todo',
-        name: 'TodoTasks',
-        redirect: '/requirements?view=pending',
-        meta: { title: '待办任务', icon: 'List' },
-      },
-      {
         path: 'reviews',
         name: 'Reviews',
         component: () => import('@/views/reviews/index.vue'),
@@ -125,12 +119,6 @@ export const routes: RouteRecordRaw[] = [
         name: 'RoleManage',
         component: () => import('@/views/settings/roles.vue'),
         meta: { title: '角色管理', hidden: true, requiredPermissions: ['menu:settings:role'] },
-      },
-      {
-        path: 'settings/workflow-approvals',
-        name: 'WorkflowApprovals',
-        component: () => import('@/views/system/workflow-config/index.vue'),
-        meta: { title: '工作流管理', hidden: true, requiredPermissions: ['menu:settings:workflow'] },
       },
       {
         path: 'system/workflow-config',

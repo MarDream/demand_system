@@ -264,10 +264,10 @@
                   :mode="nodeForm.countersignMode ?? 'FIXED'"
                   :approvers="nodeForm.countersignApprovers ?? []"
                   :users="allUserList"
-                  @update:enabled="nodeForm.countersignEnabled = $event"
+                  @update:enabled="handleCountersignEnabledChange"
                   @update:strategy="nodeForm.countersignStrategy = $event"
                   @update:mode="nodeForm.countersignMode = $event"
-                  @update:approvers="nodeForm.countersignApprovers = $event"
+                  @update:approvers="handleCountersignApproversChange"
                 />
               </template>
 
@@ -334,7 +334,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onBeforeUnmount, reactive } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, reactive, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppButton from '@/components/common/AppButton.vue'
@@ -361,7 +361,6 @@ import {
   submitForApproval,
   getVersionConfig,
   getVersionHistory,
-  updateWorkflowVersionMeta
 } from '@/api/modules/workflow-visual'
 import { nodeStatusApi, type NodeStatus } from '@/api/modules/workflow-engine'
 import * as roleApi from '@/api/modules/role'
@@ -404,11 +403,15 @@ const drawerTitle = ref('')
 const selectedNode = ref<any>(null)
 const selectedEdge = ref<any>(null)
 const selectedNextNode = ref<string>('')
+const SELECTED_NEXT_NODE_PROPERTY = 'selectedNextNode'
 
 // 选择可流转节点时的处理
-const onNextNodeChange = (nodeName: string | null) => {
+const onNextNodeChange = (nodeName: string | null | undefined) => {
   selectedNextNode.value = nodeName || ''
-  // 可根据业务需求扩展：比如高亮连线、打开目标节点配置等
+  nodeForm.properties = {
+    ...(nodeForm.properties || {}),
+    [SELECTED_NEXT_NODE_PROPERTY]: selectedNextNode.value
+  }
 }
 const versionForm = reactive<{
   version: string
@@ -500,6 +503,36 @@ const nodeForm = reactive<Partial<WorkflowNodeDTO> & {
   parallelType: 'AND',
   parallelBranches: []
 })
+
+// 会签配置：需求提出人占位 ID（与 CountersignConfig 中保持一致）
+const COUNTERSIGN_CREATOR_PLACEHOLDER_ID = -1
+
+// 用户首次启用会签开关时，若会签人列表为空，自动填入「需求提出人」占位
+watch(
+  () => nodeForm.countersignEnabled,
+  (newVal, oldVal) => {
+    if (newVal && !oldVal) {
+      ensureDefaultCountersignApprover()
+    }
+  },
+)
+
+function ensureDefaultCountersignApprover() {
+  if (!nodeForm.countersignApprovers || nodeForm.countersignApprovers.length === 0) {
+    nodeForm.countersignApprovers = [COUNTERSIGN_CREATOR_PLACEHOLDER_ID]
+  }
+}
+
+function handleCountersignEnabledChange(value: boolean) {
+  nodeForm.countersignEnabled = value
+  if (value) {
+    ensureDefaultCountersignApprover()
+  }
+}
+
+function handleCountersignApproversChange(value: number[]) {
+  nodeForm.countersignApprovers = value
+}
 
 // 边表单
 const edgeForm = reactive({
@@ -1654,7 +1687,8 @@ const handleNodeDragStart = (node: any) => {
 const handleNodeClick = (data: any) => {
   selectedNode.value = data
   selectedEdge.value = null
-  selectedNextNode.value = ''
+  const savedNextNode = data.properties?.[SELECTED_NEXT_NODE_PROPERTY]
+  selectedNextNode.value = typeof savedNextNode === 'string' && nextNodeNames.value.includes(savedNextNode) ? savedNextNode : ''
   drawerTitle.value = nodeDrawerTitle.value
   drawerVisible.value = true
 
@@ -1749,6 +1783,12 @@ const handleSaveNodeConfig = () => {
   if (!lf || !selectedNode.value) return
 
   normalizeCurrentNodeProjectRequired()
+  if (nodeForm.countersignEnabled && nodeForm.countersignMode === 'FIXED') {
+    ensureDefaultCountersignApprover()
+  }
+
+  const validNextNode = nextNodeNames.value.includes(selectedNextNode.value) ? selectedNextNode.value : ''
+  selectedNextNode.value = validNextNode
 
   const nodeData = {
     id: nodeForm.nodeId,
@@ -1772,6 +1812,7 @@ const handleSaveNodeConfig = () => {
       nodeStatusCode: nodeForm.nodeStatusCode,
       allowCancel: nodeForm.allowCancel,
       projectRequired: showProjectRequiredCheckbox.value ? nodeForm.projectRequired : false,
+      [SELECTED_NEXT_NODE_PROPERTY]: validNextNode,
       // 会签配置
       countersignEnabled: nodeForm.countersignEnabled,
       countersignStrategy: nodeForm.countersignStrategy,
@@ -1942,6 +1983,9 @@ const handleSave = async () => {
 
     // 转换为后端需要的格式
     const config: WorkflowConfigDTO = {
+      versionId: currentVersion.value?.id,
+      version: desiredVersionMeta?.version,
+      versionName: desiredVersionMeta?.name,
       nodes: graphData.nodes.map((node: any) => ({
         nodeId: node.id!,
         nodeType: node.type as any,
@@ -1966,29 +2010,11 @@ const handleSave = async () => {
     }
 
     const savedVersion = await saveWorkflowConfig(projectId, config)
-  if (savedVersion) {
+    if (savedVersion) {
       applyCurrentVersion(savedVersion)
       await loadVersionHistory()
       await syncEditorVersionRoute(savedVersion.id, projectId)
-
-      if (
-        desiredVersionMeta &&
-        desiredVersionMeta.version &&
-        desiredVersionMeta.name &&
-        (
-          desiredVersionMeta.version !== savedVersion.version ||
-          desiredVersionMeta.name !== savedVersion.name
-        )
-      ) {
-        const updatedVersion = await updateWorkflowVersionMeta(savedVersion.id, {
-          version: desiredVersionMeta.version,
-          name: desiredVersionMeta.name
-        })
-        applyCurrentVersion(updatedVersion)
-        syncVersionForm(updatedVersion)
-      } else {
-        syncVersionForm(savedVersion)
-      }
+      syncVersionForm(savedVersion)
     }
 
     ElMessage.success('保存成功')

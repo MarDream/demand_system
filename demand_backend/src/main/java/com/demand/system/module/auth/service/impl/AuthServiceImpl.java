@@ -15,6 +15,8 @@ import com.demand.system.module.auth.service.VerificationCodeService;
 import com.demand.system.module.rbac.support.RbacPermissionResolver;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -60,15 +62,15 @@ public class AuthServiceImpl implements AuthService {
         );
 
         if (user == null) {
-            throw new BusinessException("用户名或密码错误");
+            throw new BadCredentialsException("用户名或密码错误");
         }
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new BusinessException("用户名或密码错误");
+            throw new BadCredentialsException("用户名或密码错误");
         }
 
         if (!"active".equals(user.getStatus())) {
-            throw new BusinessException("账户已被禁用，请联系管理员");
+            throw new DisabledException("账户已被禁用，请联系管理员");
         }
 
         List<String> roles = rbacPermissionResolver.resolveRoles(user.getId());

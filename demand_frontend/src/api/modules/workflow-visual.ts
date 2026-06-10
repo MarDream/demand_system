@@ -96,6 +96,20 @@ export function rejectWorkflow(id: number, data: ApprovalRequestDTO) {
   return request.post<void>(`/v1/workflow-approvals/${id}/reject`, data) as unknown as Promise<void>
 }
 
+/**
+ * 删除单条审核记录
+ */
+export function deleteWorkflowApproval(id: number) {
+  return request.delete<void>(`/v1/workflow-approvals/${id}`) as unknown as Promise<void>
+}
+
+/**
+ * 清空全部审核记录
+ */
+export function clearAllWorkflowApprovals() {
+  return request.delete<void>('/v1/workflow-approvals') as unknown as Promise<void>
+}
+
 export function validateWorkflowVersion(versionId: number) {
   return request.post<WorkflowValidationIssue[]>(`/v1/workflows/versions/${versionId}/validate`) as unknown as Promise<WorkflowValidationIssue[]>
 }

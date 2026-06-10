@@ -21,18 +21,44 @@
         <el-select
           :model-value="approvers"
           multiple
-          placeholder="请选择会签人"
-          @update:model-value="emit('update:approvers', $event)"
+          filterable
+          :filter-method="handleFilter"
+          placeholder="可搜索选择其他会签人"
+          style="width: 100%"
+          @update:model-value="onApproversChange"
         >
-          <el-option v-for="user in users" :key="user.id" :label="user.realName || user.username" :value="user.id" />
+          <el-option
+            v-for="option in candidateOptions"
+            :key="option.key"
+            :label="option.label"
+            :value="option.value"
+          />
         </el-select>
+        <div class="countersign-hint">
+          默认包含「需求提出人」，可继续搜索选择其他用户。
+        </div>
       </el-form-item>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-defineProps<{
+import { computed, ref } from 'vue'
+
+/**
+ * 会签人配置组件
+ *
+ * 约定：
+ * - 特殊占位 ID CREATOR_PLACEHOLDER_ID = -1 表示"需求提出人"。
+ *   在工作流执行时，后端会将其动态替换为当前需求的 creatorId。
+ * - 首次打开会签配置时，approvers 默认包含「需求提出人」占位。
+ * - 用户可继续搜索选择其他具体用户加入会签人列表。
+ */
+
+const CREATOR_PLACEHOLDER_ID = -1
+const CREATOR_PLACEHOLDER_LABEL = '需求提出人'
+
+const props = defineProps<{
   enabled: boolean
   strategy: 'ALL' | 'ANY' | 'MAJORITY'
   mode: 'FIXED' | 'DYNAMIC'
@@ -46,4 +72,62 @@ const emit = defineEmits<{
   'update:mode': [value: 'FIXED' | 'DYNAMIC']
   'update:approvers': [value: number[]]
 }>()
+
+const searchKeyword = ref('')
+
+const isCreatorPlaceholder = (id: number) => id === CREATOR_PLACEHOLDER_ID
+
+const candidateOptions = computed(() => {
+  const keyword = searchKeyword.value.trim().toLowerCase()
+  const realUsers = props.users ?? []
+  const filteredUsers = keyword
+    ? realUsers.filter(user => {
+        const name = (user.realName || user.username || '').toLowerCase()
+        return name.includes(keyword)
+      })
+    : realUsers
+
+  const creatorOption = {
+    key: `creator-${CREATOR_PLACEHOLDER_ID}`,
+    value: CREATOR_PLACEHOLDER_ID,
+    label: CREATOR_PLACEHOLDER_LABEL,
+  }
+
+  return [
+    creatorOption,
+    ...filteredUsers
+      .filter(user => !isCreatorPlaceholder(user.id))
+      .map(user => ({
+        key: `user-${user.id}`,
+        value: user.id,
+        label: user.realName || user.username || `用户#${user.id}`,
+      })),
+  ]
+})
+
+const handleFilter = (keyword: string) => {
+  searchKeyword.value = keyword
+}
+
+const onApproversChange = (next: number[]) => {
+  // 始终保留「需求提出人」默认项，同时允许追加具体用户
+  const valid = [CREATOR_PLACEHOLDER_ID]
+  next
+    .filter((id) => !isCreatorPlaceholder(id) && (props.users ?? []).some(user => user.id === id))
+    .forEach((id) => {
+      if (!valid.includes(id)) {
+        valid.push(id)
+      }
+    })
+  emit('update:approvers', valid)
+}
 </script>
+
+<style scoped>
+.countersign-hint {
+  margin-top: 4px;
+  color: #909399;
+  font-size: 12px;
+  line-height: 1.4;
+}
+</style>

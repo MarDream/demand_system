@@ -23,10 +23,12 @@ import com.demand.system.module.requirement.dto.RequirementUpdateDTO;
 import com.demand.system.module.requirement.dto.RequirementVO;
 import com.demand.system.module.requirement.entity.Requirement;
 import com.demand.system.module.requirement.entity.RequirementComment;
+import com.demand.system.module.requirement.entity.RequirementFollow;
 import com.demand.system.module.requirement.entity.RequirementHistory;
 import com.demand.system.module.requirement.entity.RequirementTypeConfig;
 import com.demand.system.module.requirement.mapper.CustomFieldValueMapper;
 import com.demand.system.module.requirement.mapper.RequirementCommentMapper;
+import com.demand.system.module.requirement.mapper.RequirementFollowMapper;
 import com.demand.system.module.requirement.mapper.RequirementHistoryMapper;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
 import com.demand.system.module.requirement.service.RequirementApprovalEvaluationService;
@@ -49,6 +51,7 @@ import com.demand.system.module.rbac.entity.Role;
 import com.demand.system.module.rbac.entity.RoleGroup;
 import com.demand.system.module.rbac.mapper.RoleGroupMapper;
 import com.demand.system.module.rbac.mapper.RoleMapper;
+import com.demand.system.module.rbac.support.RbacConstants;
 import com.demand.system.module.workflow.entity.WorkflowEdge;
 import com.demand.system.module.workflow.entity.WorkflowInstance;
 import com.demand.system.module.workflow.entity.WorkflowNode;
@@ -105,6 +108,7 @@ public class RequirementServiceImpl implements RequirementService {
     private static final DateTimeFormatter REQUIREMENT_NO_TIMESTAMP_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
     private final RequirementMapper requirementMapper;
+    private final RequirementFollowMapper requirementFollowMapper;
     private final RequirementHistoryMapper historyMapper;
     private final RequirementCommentMapper requirementCommentMapper;
     private final CustomFieldValueMapper customFieldValueMapper;
@@ -135,8 +139,9 @@ public class RequirementServiceImpl implements RequirementService {
     private final RoleGroupMapper roleGroupMapper;
     private final ObjectMapper objectMapper;
 
-    public RequirementServiceImpl(RequirementMapper requirementMapper, RequirementHistoryMapper historyMapper, RequirementCommentMapper requirementCommentMapper, CustomFieldValueMapper customFieldValueMapper, UserMapper userMapper, UserOrganizationMapper userOrganizationMapper, SysOrgService sysOrgService, NotificationService notificationService, RelationService relationService, WorkflowService workflowService, WorkflowEngineService workflowEngineService, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowGraphNavigator workflowGraphNavigator, WorkflowRuntimeLoader workflowRuntimeLoader, WorkflowRuntimeMigrationService workflowRuntimeMigrationService, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, WorkflowInstanceMapper workflowInstanceMapper, WorkflowInstanceTransitionMapper workflowInstanceTransitionMapper, WorkflowTransitionRecordMapper workflowTransitionRecordMapper, WorkflowDefinitionEngine workflowDefinitionEngine, RequirementApprovalEvaluationService approvalEvaluationService, RequirementConfigService requirementConfigService, KnowledgeDocumentService knowledgeDocumentService, NodeStatusMapper nodeStatusMapper, ProjectMapper projectMapper, RoleMapper roleMapper, RoleGroupMapper roleGroupMapper, ObjectMapper objectMapper) {
+    public RequirementServiceImpl(RequirementMapper requirementMapper, RequirementFollowMapper requirementFollowMapper, RequirementHistoryMapper historyMapper, RequirementCommentMapper requirementCommentMapper, CustomFieldValueMapper customFieldValueMapper, UserMapper userMapper, UserOrganizationMapper userOrganizationMapper, SysOrgService sysOrgService, NotificationService notificationService, RelationService relationService, WorkflowService workflowService, WorkflowEngineService workflowEngineService, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowGraphNavigator workflowGraphNavigator, WorkflowRuntimeLoader workflowRuntimeLoader, WorkflowRuntimeMigrationService workflowRuntimeMigrationService, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, WorkflowInstanceMapper workflowInstanceMapper, WorkflowInstanceTransitionMapper workflowInstanceTransitionMapper, WorkflowTransitionRecordMapper workflowTransitionRecordMapper, WorkflowDefinitionEngine workflowDefinitionEngine, RequirementApprovalEvaluationService approvalEvaluationService, RequirementConfigService requirementConfigService, KnowledgeDocumentService knowledgeDocumentService, NodeStatusMapper nodeStatusMapper, ProjectMapper projectMapper, RoleMapper roleMapper, RoleGroupMapper roleGroupMapper, ObjectMapper objectMapper) {
         this.requirementMapper = requirementMapper;
+        this.requirementFollowMapper = requirementFollowMapper;
         this.historyMapper = historyMapper;
         this.requirementCommentMapper = requirementCommentMapper;
         this.customFieldValueMapper = customFieldValueMapper;
@@ -173,6 +178,18 @@ public class RequirementServiceImpl implements RequirementService {
         Page<Requirement> page = new Page<>(query.getPageNum(), query.getPageSize());
 
         LambdaQueryWrapper<Requirement> wrapper = new LambdaQueryWrapper<>();
+
+        Long currentUserId = SecurityUtils.getCurrentUserId();
+        List<String> currentRoleCodes = SecurityUtils.getCurrentUserRoles();
+        boolean isSuperAdmin = isSuperAdmin(currentRoleCodes);
+        if (!isSuperAdmin) {
+            List<Long> visibleOrgIds = resolveVisibleOrgIds(currentUserId, false);
+            if (visibleOrgIds.isEmpty()) {
+                wrapper.eq(Requirement::getCreatorId, currentUserId == null ? -1L : currentUserId);
+            } else {
+                wrapper.in(Requirement::getOrgId, visibleOrgIds);
+            }
+        }
 
         if (query.getProjectId() != null) {
             wrapper.eq(Requirement::getProjectId, query.getProjectId());
@@ -239,10 +256,7 @@ public class RequirementServiceImpl implements RequirementService {
 
         List<RequirementVO> voList = new ArrayList<>();
         for (Requirement r : resultPage.getRecords()) {
-            RequirementVO vo = new RequirementVO();
-            BeanUtils.copyProperties(r, vo);
-            fillUserNames(vo, r);
-            voList.add(vo);
+            voList.add(toRequirementVO(r, currentUserId, false));
         }
 
         return new PageResult<>(voList, resultPage.getTotal(), query.getPageNum(), query.getPageSize());
@@ -260,6 +274,7 @@ public class RequirementServiceImpl implements RequirementService {
         Long userId = SecurityUtils.getCurrentUserId();
         if (userId != null) {
             fillPermissionFields(vo, r, userId);
+            fillFollowed(vo, r.getId(), userId);
         }
         return vo;
     }
@@ -607,8 +622,7 @@ public class RequirementServiceImpl implements RequirementService {
         Requirement latest = requirementMapper.selectById(requirementId);
         RequirementVO vo = new RequirementVO();
         if (latest != null) {
-            BeanUtils.copyProperties(latest, vo);
-            fillUserNames(vo, latest);
+            vo = toRequirementVO(latest, userId, true);
         }
         return vo;
     }
@@ -619,11 +633,7 @@ public class RequirementServiceImpl implements RequirementService {
         var result = requirementMapper.selectMyDrafts(page, userId, null, null, query.getProjectId(), query.getKeyword());
         List<RequirementVO> list = new ArrayList<>();
         for (Requirement r : result.getRecords()) {
-            RequirementVO vo = new RequirementVO();
-            BeanUtils.copyProperties(r, vo);
-            fillUserNames(vo, r);
-            fillPermissionFields(vo, r, userId);
-            list.add(vo);
+            list.add(toRequirementVO(r, userId, true));
         }
         return new PageResult<>(list, result.getTotal(), query.getPageNum(), query.getPageSize());
     }
@@ -640,11 +650,23 @@ public class RequirementServiceImpl implements RequirementService {
                 query.getProjectId(), query.getKeyword());
         List<RequirementVO> list = new ArrayList<>();
         for (Requirement r : result.getRecords()) {
-            RequirementVO vo = new RequirementVO();
-            BeanUtils.copyProperties(r, vo);
-            fillUserNames(vo, r);
-            fillPermissionFields(vo, r, userId);
-            list.add(vo);
+            list.add(toRequirementVO(r, userId, true));
+        }
+        return new PageResult<>(list, result.getTotal(), query.getPageNum(), query.getPageSize());
+    }
+
+    @Override
+    public PageResult<RequirementVO> listMyFollows(RequirementMyListQueryDTO query, Long userId) {
+        List<String> currentRoleCodes = SecurityUtils.getCurrentUserRoles();
+        boolean isSuperAdmin = isSuperAdmin(currentRoleCodes);
+        List<Long> visibleOrgIds = resolveVisibleOrgIds(userId, isSuperAdmin);
+
+        Page<Requirement> page = new Page<>(query.getPageNum(), query.getPageSize());
+        var result = requirementMapper.selectMyFollows(page, userId, query.getProjectId(), query.getKeyword(),
+                isSuperAdmin, visibleOrgIds);
+        List<RequirementVO> list = new ArrayList<>();
+        for (Requirement r : result.getRecords()) {
+            list.add(toRequirementVO(r, userId, true));
         }
         return new PageResult<>(list, result.getTotal(), query.getPageNum(), query.getPageSize());
     }
@@ -658,13 +680,39 @@ public class RequirementServiceImpl implements RequirementService {
         List<Requirement> requirements = requirementMapper.selectMyDone(userId, roleCodes, directOrgIds, scopedOrgIds, keyword);
         List<RequirementVO> list = new ArrayList<>();
         for (Requirement r : requirements) {
-            RequirementVO vo = new RequirementVO();
-            BeanUtils.copyProperties(r, vo);
-            fillUserNames(vo, r);
-            fillPermissionFields(vo, r, userId);
-            list.add(vo);
+            list.add(toRequirementVO(r, userId, true));
         }
         return list;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void follow(Long requirementId, Long userId) {
+        Requirement requirement = requirementMapper.selectById(requirementId);
+        if (requirement == null) {
+            throw new BusinessException("需求不存在");
+        }
+        if (!canViewRequirement(requirement, userId)) {
+            throw new BusinessException(403, "无权关注该需求");
+        }
+        Long count = requirementFollowMapper.selectCount(new LambdaQueryWrapper<RequirementFollow>()
+                .eq(RequirementFollow::getRequirementId, requirementId)
+                .eq(RequirementFollow::getUserId, userId));
+        if (count != null && count > 0) {
+            return;
+        }
+        RequirementFollow follow = new RequirementFollow();
+        follow.setRequirementId(requirementId);
+        follow.setUserId(userId);
+        requirementFollowMapper.insert(follow);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void unfollow(Long requirementId, Long userId) {
+        requirementFollowMapper.delete(new LambdaQueryWrapper<RequirementFollow>()
+                .eq(RequirementFollow::getRequirementId, requirementId)
+                .eq(RequirementFollow::getUserId, userId));
     }
 
     @Override
@@ -1286,6 +1334,70 @@ public class RequirementServiceImpl implements RequirementService {
             return user.getRealName();
         }
         return user.getUsername();
+    }
+
+    private RequirementVO toRequirementVO(Requirement requirement, Long userId, boolean fillPermission) {
+        RequirementVO vo = new RequirementVO();
+        BeanUtils.copyProperties(requirement, vo);
+        fillUserNames(vo, requirement);
+        if (userId != null) {
+            if (fillPermission) {
+                fillPermissionFields(vo, requirement, userId);
+            }
+            fillFollowed(vo, requirement.getId(), userId);
+        }
+        return vo;
+    }
+
+    private void fillFollowed(RequirementVO vo, Long requirementId, Long userId) {
+        if (requirementId == null || userId == null) {
+            vo.setFollowed(false);
+            return;
+        }
+        Long count = requirementFollowMapper.selectCount(new LambdaQueryWrapper<RequirementFollow>()
+                .eq(RequirementFollow::getRequirementId, requirementId)
+                .eq(RequirementFollow::getUserId, userId));
+        vo.setFollowed(count != null && count > 0);
+    }
+
+    private boolean isSuperAdmin(List<String> roleCodes) {
+        if (roleCodes == null) {
+            return false;
+        }
+        return roleCodes.stream().anyMatch(roleCode ->
+                RbacConstants.ROLE_SUPER_ADMIN.equalsIgnoreCase(roleCode)
+                        || RbacConstants.ROLE_SUPER_ADMIN_DB.equalsIgnoreCase(roleCode)
+                        || RbacConstants.ROLE_ADMIN.equalsIgnoreCase(roleCode)
+                        || "admin".equalsIgnoreCase(roleCode)
+        );
+    }
+
+    private List<Long> resolveVisibleOrgIds(Long userId, boolean isSuperAdmin) {
+        if (isSuperAdmin || userId == null) {
+            return List.of();
+        }
+        User currentUser = userMapper.selectById(userId);
+        if (currentUser == null || currentUser.getOrgId() == null) {
+            return List.of();
+        }
+        List<Long> visibleOrgIds = sysOrgService.getDescendantIds(currentUser.getOrgId());
+        LinkedHashSet<Long> orgIdSet = new LinkedHashSet<>(visibleOrgIds);
+        orgIdSet.add(currentUser.getOrgId());
+        return new ArrayList<>(orgIdSet);
+    }
+
+    private boolean canViewRequirement(Requirement requirement, Long userId) {
+        if (requirement == null || userId == null) {
+            return false;
+        }
+        if (isSuperAdmin(SecurityUtils.getCurrentUserRoles())) {
+            return true;
+        }
+        if (Objects.equals(requirement.getCreatorId(), userId)) {
+            return true;
+        }
+        List<Long> visibleOrgIds = resolveVisibleOrgIds(userId, false);
+        return requirement.getOrgId() != null && visibleOrgIds.contains(requirement.getOrgId());
     }
 
     /**

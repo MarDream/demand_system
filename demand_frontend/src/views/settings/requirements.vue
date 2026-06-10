@@ -17,9 +17,9 @@
 
           <el-table ref="typeTableRef" :data="types" border style="width: 100%" row-key="id">
             <el-table-column width="60" align="center">
-              <template>
-                <el-icon class="drag-handle" style="cursor: move;">
-                  <Rank />
+              <template #default>
+                <el-icon class="drag-handle" :size="18">
+                  <Operation />
                 </el-icon>
               </template>
             </el-table-column>
@@ -61,9 +61,9 @@
 
           <el-table ref="priorityTableRef" :data="priorities" border style="width: 100%" row-key="id">
             <el-table-column width="60" align="center">
-              <template>
-                <el-icon class="drag-handle" style="cursor: grab;">
-                  <Grid />
+              <template #default>
+                <el-icon class="drag-handle" :size="18">
+                  <Operation />
                 </el-icon>
               </template>
             </el-table-column>
@@ -106,9 +106,9 @@
 
           <el-table ref="nodeStatusTableRef" :data="nodeStatuses" border style="width: 100%" row-key="id">
             <el-table-column width="60" align="center">
-              <template>
-                <el-icon class="drag-handle" style="cursor: grab;">
-                  <Rank />
+              <template #default>
+                <el-icon class="drag-handle" :size="18">
+                  <Operation />
                 </el-icon>
               </template>
             </el-table-column>
@@ -228,7 +228,7 @@
 import { ref, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { Plus, Rank, Grid, EditPen, Delete } from '@element-plus/icons-vue'
+import { Plus, Rank, Operation, EditPen, Delete } from '@element-plus/icons-vue'
 import { requirementConfigApi, type RequirementType, type Priority, type SortItem } from '@/api/modules/requirementConfig'
 import { nodeStatusApi, type NodeStatus, type SortItem as NodeStatusSortItem } from '@/api/modules/workflow-engine'
 import { normalizeText } from '@/utils/format'
@@ -668,17 +668,34 @@ onMounted(() => {
 }
 
 .drag-handle {
-  cursor: move;
-  color: #909399;
-  transition: color 0.3s;
+  cursor: grab;
+  color: #c0c4cc;
+  padding: 6px;
+  border-radius: 4px;
+  transition: color 0.2s, background-color 0.2s, transform 0.15s;
+  user-select: none;
 
   &:hover {
     color: #409EFF;
+    background-color: #ecf5ff;
+  }
+
+  &:active {
+    cursor: grabbing;
+    color: #337ecc;
+    background-color: #d9ecff;
+    transform: scale(1.1);
   }
 }
 
 :deep(.sortable-ghost) {
-  opacity: 0.4;
+  opacity: 0.35;
+  background: #ecf5ff !important;
+  outline: 2px dashed #409EFF;
+  outline-offset: -2px;
+}
+
+:deep(.sortable-chosen) {
   background: #f5f7fa;
 }
 

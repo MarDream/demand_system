@@ -196,21 +196,22 @@
                     <span class="menu-count">{{ selectedCount(node.allPermissions) }}/{{ node.allPermissions.length }}</span>
                   </div>
 
-                  <div v-if="expandedMenuKeys.includes(node.key)" class="menu-permission-children">
-                    <div v-if="node.buttons.length" class="button-permission-grid" :style="{ marginLeft: `${34 + node.level * 18}px` }">
-                      <el-checkbox
-                        v-for="button in node.buttons"
-                        :key="button.code"
-                        :model-value="selectedPermissions.includes(button.code)"
-                        :disabled="!canGrantSelectedRole || !isGrantablePermission(button.code)"
-                        border
-                        @change="(checked: boolean) => setPermissionChecked(button.code, checked)"
-                      >
-                        <span class="permission-name">{{ button.name }}</span>
-                        <span class="permission-code">{{ button.code }}</span>
-                      </el-checkbox>
-                    </div>
-                    <div v-if="node.children.length" class="nested-permission-list">
+                  <!-- 一级菜单的按钮始终展开显示 -->
+                  <div v-if="node.buttons.length" class="button-permission-grid" :style="{ marginLeft: `${34 + node.level * 18}px` }">
+                    <el-checkbox
+                      v-for="button in node.buttons"
+                      :key="button.code"
+                      :model-value="selectedPermissions.includes(button.code)"
+                      :disabled="!canGrantSelectedRole || !isGrantablePermission(button.code)"
+                      border
+                      @change="(checked: boolean) => setPermissionChecked(button.code, checked)"
+                    >
+                      <span class="permission-name">{{ button.name }}</span>
+                    </el-checkbox>
+                  </div>
+
+                  <!-- 子菜单（二级、三级）需要展开后才显示 -->
+                  <div v-if="expandedMenuKeys.includes(node.key) && node.children.length" class="menu-permission-children">
                       <div
                         v-for="child in node.children"
                         :key="child.key"
@@ -250,12 +251,10 @@
                             @change="(checked: boolean) => setPermissionChecked(button.code, checked)"
                           >
                             <span class="permission-name">{{ button.name }}</span>
-                            <span class="permission-code">{{ button.code }}</span>
                           </el-checkbox>
                         </div>
                       </div>
                     </div>
-                  </div>
                 </div>
               </div>
 
@@ -271,7 +270,6 @@
                     @change="(checked: boolean) => setPermissionChecked(permission.code, checked)"
                   >
                     <span class="permission-name">{{ permission.name }}</span>
-                    <span class="permission-code">{{ permission.code }}</span>
                   </el-checkbox>
                 </div>
               </div>
@@ -1346,18 +1344,14 @@ function toggleMenuExpand(key: string) {
 }
 
 function defaultExpandedKeys(nodes: MenuPermissionNode[]) {
+  // 默认只展开一级菜单（顶级），二级、三级菜单保持折叠
   const keys: string[] = []
-  const walk = (items: MenuPermissionNode[]) => {
-    items.forEach(item => {
-      const selected = selectedCount(item.allPermissions)
-      if (selected > 0 || item.level === 0) {
-        keys.push(item.key)
-      }
-      walk(item.children)
-    })
-  }
-  walk(nodes)
-  return Array.from(new Set(keys))
+  nodes.forEach(item => {
+    if (item.level === 0) {
+      keys.push(item.key)
+    }
+  })
+  return keys
 }
 
 function menuTypeLabel(type: string) {
@@ -1583,6 +1577,10 @@ function permissionName(code: string) {
     'menu:menu-management': '菜单管理菜单',
     'menu:rag': 'RAG文档中心菜单',
     'menu:settings:llm': '模型配置菜单',
+    'menu:requirement:view:all': '全部需求',
+    'menu:requirement:view:pending': '我的待办',
+    'menu:requirement:view:done': '我的已办',
+    'menu:requirement:view:draft': '我的草稿',
     'button:role:create': '新增角色',
     'button:role:update': '编辑角色',
     'button:role:delete': '删除角色',
@@ -1595,6 +1593,16 @@ function permissionName(code: string) {
     'button:user:update': '编辑用户',
     'button:user:delete': '删除用户',
     'button:workflow:config': '工作流配置',
+    'button:requirement:create': '新建需求',
+    'button:requirement:update': '编辑',
+    'button:requirement:delete': '删除',
+    'button:requirement:export': '导出Excel',
+    'button:requirement:submit': '提交',
+    'button:requirement:split': '拆分子需求',
+    'button:requirement:comment': '评论',
+    'button:requirement:rollback': '驳回',
+    'button:requirement:cancel': '取消',
+    'button:requirement:batch-delete': '批量删除',
     'button:rag:upload': '文档上传',
     'button:rag:search': '文档搜索',
     'button:llm:create': '新增模型配置',

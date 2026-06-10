@@ -165,6 +165,15 @@
                 <div class="summary-chip rejected">已拒绝 {{ approvalSummary.rejected }}</div>
               </div>
               <div class="toolbar-right">
+                <el-button
+                  v-if="canProcessApproval && approvals.length > 0"
+                  type="danger"
+                  plain
+                  @click="handleClearAllApprovals"
+                >
+                  <el-icon><Delete /></el-icon>
+                  清空全部
+                </el-button>
                 <el-select v-model="projectFilter" clearable placeholder="筛选项目" style="width: 180px">
                   <el-option
                     v-for="item in projectOptions"
@@ -254,6 +263,9 @@
                   </el-tooltip>
                   <el-tooltip v-else-if="row.status === 'REJECTED'" content="已拒绝" placement="top">
                     <el-button link type="danger" :icon="CircleClose" disabled />
+                  </el-tooltip>
+                  <el-tooltip v-if="canProcessApproval" content="删除记录" placement="top">
+                    <el-button link type="danger" :icon="Delete" @click="handleDeleteApproval(row)" v-permission="'button:workflow:approve'" />
                   </el-tooltip>
                 </template>
               </el-table-column>
@@ -453,7 +465,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh, Setting, CircleCheck, CircleClose, Document } from '@element-plus/icons-vue'
+import { Plus, Refresh, Setting, CircleCheck, CircleClose, Document, Delete } from '@element-plus/icons-vue'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import { formatDate as formatDateTime } from '@/utils/format'
@@ -463,6 +475,8 @@ import { usePermission } from '@/composables/usePermission'
 import {
   GLOBAL_WORKFLOW_PROJECT_ID,
   approveWorkflow,
+  clearAllWorkflowApprovals,
+  deleteWorkflowApproval,
   deleteWorkflowVersion,
   getVersionConfig,
   getVersionHistory,
@@ -519,10 +533,8 @@ const pagination = reactive({
   size: 10,
 })
 
-const pageTitle = computed(() => route.path === '/settings/workflow-approvals' ? '工作流管理' : '工作流配置')
-const pageDescription = computed(() => route.path === '/settings/workflow-approvals'
-  ? '集中管理工作流版本、审核记录、启停切换与删除操作。'
-  : '维护工作流版本、流程审核和生效状态。')
+const pageTitle = '工作流配置'
+const pageDescription = '维护工作流版本、流程审核和生效状态。'
 const canProcessApproval = computed(() => hasAnyRole(['admin']))
 const activeVersionCount = computed(() => versions.value.filter(item => item.isActive === 1).length)
 const sourceMenuPath = computed(() => resolveActiveMenuPath(route))
@@ -909,6 +921,41 @@ function handleViewVersion(row: WorkflowApprovalDTO) {
       sourceMenu: sourceMenuPath.value,
     },
   })
+}
+
+async function handleDeleteApproval(row: WorkflowApprovalDTO) {
+  const label = row.versionName || `V${row.version}`
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除审核记录"${label}"吗？删除后不可恢复。`,
+      '删除确认',
+      { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' },
+    )
+    await deleteWorkflowApproval(row.id)
+    ElMessage.success('删除成功')
+    await reloadAllData()
+  } catch {
+    // 用户取消
+  }
+}
+
+async function handleClearAllApprovals() {
+  if (approvals.value.length === 0) {
+    ElMessage.info('当前没有审核记录可清空')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确定要清空全部 ${approvals.value.length} 条审核记录吗？删除后不可恢复。`,
+      '清空确认',
+      { confirmButtonText: '确定清空', cancelButtonText: '取消', type: 'warning' },
+    )
+    await clearAllWorkflowApprovals()
+    ElMessage.success('已清空全部审核记录')
+    await reloadAllData()
+  } catch {
+    // 用户取消
+  }
 }
 
 async function confirmProcess() {

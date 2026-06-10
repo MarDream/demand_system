@@ -45,6 +45,7 @@ export interface Requirement {
   canApprove?: boolean     // 可审批
   isParticipant?: boolean  // 是否参与人
   operationType?: 'edit' | 'approve' | 'view'  // 操作类型
+  followed?: boolean       // 当前登录用户是否已关注
 }
 
 export interface RequirementAttachment {

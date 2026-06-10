@@ -328,7 +328,15 @@ public class WorkflowEngineService {
     }
 
     /**
+     * 会签人占位 ID：-1 表示"需求提出人"，在运行时解析为 requirement.creatorId
+     */
+    private static final long COUNTERSIGN_CREATOR_PLACEHOLDER_ID = -1L;
+
+    /**
      * 解析会签人列表
+     *
+     * 会签人 ID 列表中可包含占位值 -1（表示"需求提出人"），
+     * 在工作流执行时会被动态解析为 requirement.creatorId。
      */
     private List<Long> resolveCountersignApprovers(WorkflowNode node, Requirement requirement) {
         Map<String, Object> properties = node.getProperties();
@@ -336,20 +344,59 @@ public class WorkflowEngineService {
             return Collections.emptyList();
         }
 
-        String countersignMode = (String) properties.get("countersignMode");
-        if ("FIXED".equals(countersignMode)) {
-            @SuppressWarnings("unchecked")
-            List<Long> fixedApprovers = (List<Long>) properties.get("countersignApprovers");
-            return fixedApprovers != null ? fixedApprovers : Collections.emptyList();
+        Object rawApprovers = "FIXED".equals(properties.get("countersignMode"))
+                ? properties.get("countersignApprovers")
+                : node.getAssigneeUserIds();
+
+        List<Long> approverIds = normalizeApproverIds(rawApprovers);
+        if (approverIds.isEmpty()) {
+            return Collections.emptyList();
         }
 
-        // DYNAMIC 模式下，从 assigneeUserIds 获取
-        List<Long> assigneeUserIds = node.getAssigneeUserIds();
-        if (assigneeUserIds != null && !assigneeUserIds.isEmpty()) {
-            return assigneeUserIds;
+        Long creatorId = requirement == null ? null : requirement.getCreatorId();
+        LinkedHashSet<Long> resolved = new LinkedHashSet<>();
+        for (Long approverId : approverIds) {
+            if (approverId == COUNTERSIGN_CREATOR_PLACEHOLDER_ID) {
+                if (creatorId != null) {
+                    resolved.add(creatorId);
+                }
+                continue;
+            }
+            resolved.add(approverId);
+        }
+        return new ArrayList<>(resolved);
+    }
+
+    private List<Long> normalizeApproverIds(Object rawApprovers) {
+        if (!(rawApprovers instanceof Collection<?> collection)) {
+            return Collections.emptyList();
         }
 
-        return Collections.emptyList();
+        List<Long> approverIds = new ArrayList<>();
+        for (Object item : collection) {
+            Long id = normalizeApproverId(item);
+            if (id != null) {
+                approverIds.add(id);
+            }
+        }
+        return approverIds;
+    }
+
+    private Long normalizeApproverId(Object value) {
+        if (value instanceof Long longValue) {
+            return longValue;
+        }
+        if (value instanceof Integer integerValue) {
+            return integerValue.longValue();
+        }
+        if (value instanceof String stringValue && StringUtils.hasText(stringValue)) {
+            try {
+                return Long.parseLong(stringValue.trim());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     @Transactional

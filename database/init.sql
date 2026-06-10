@@ -61,6 +61,11 @@ CREATE TABLE `projects` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `name` VARCHAR(200) NOT NULL COMMENT '项目名称',
   `description` TEXT COMMENT '项目描述',
+  `company_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '归属公司ID',
+  `team` VARCHAR(200) DEFAULT NULL COMMENT '归属团队',
+  `leader_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '负责人ID',
+  `start_date` DATE DEFAULT NULL COMMENT '开始日期',
+  `end_date` DATE DEFAULT NULL COMMENT '截止日期',
   `creator_id` INT UNSIGNED NOT NULL COMMENT '创建人ID',
   `status` VARCHAR(50) DEFAULT 'active' COMMENT '状态',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -69,7 +74,9 @@ CREATE TABLE `projects` (
   PRIMARY KEY (`id`),
   INDEX `idx_creator_id` (`creator_id`),
   INDEX `idx_status` (`status`),
-  INDEX `idx_deleted_at` (`deleted_at`)
+  INDEX `idx_deleted_at` (`deleted_at`),
+  INDEX `idx_company_id` (`company_id`),
+  INDEX `idx_leader_id` (`leader_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目表';
 
 -- -----------------------------------------------------
@@ -273,6 +280,21 @@ CREATE TABLE `requirements` (
   INDEX `idx_priority` (`priority`),
   UNIQUE INDEX `uk_requirement_no` (`requirement_no`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='需求表';
+
+-- -----------------------------------------------------
+-- 14.1 需求关注表 requirement_follows
+-- -----------------------------------------------------
+DROP TABLE IF EXISTS `requirement_follows`;
+CREATE TABLE `requirement_follows` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `requirement_id` INT UNSIGNED NOT NULL COMMENT '需求ID',
+  `user_id` INT UNSIGNED NOT NULL COMMENT '关注用户ID',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `uk_requirement_user` (`requirement_id`, `user_id`),
+  INDEX `idx_user_id` (`user_id`),
+  INDEX `idx_requirement_id` (`requirement_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='需求关注表';
 
 -- -----------------------------------------------------
 -- 15. 文件记录表 file_records
@@ -956,6 +978,16 @@ ALTER TABLE requirements ADD COLUMN IF NOT EXISTS analysis_completed_at DATETIME
 ALTER TABLE requirements ADD COLUMN IF NOT EXISTS confirm_at DATETIME DEFAULT NULL COMMENT '需求确认时间' AFTER analysis_completed_at;
 ALTER TABLE requirements ADD COLUMN IF NOT EXISTS development_completed_at DATETIME DEFAULT NULL COMMENT '开发完成时间' AFTER confirm_at;
 ALTER TABLE requirements ADD COLUMN IF NOT EXISTS cc_user_ids JSON DEFAULT NULL COMMENT '抄送人ID列表' AFTER development_completed_at;
+CREATE TABLE IF NOT EXISTS `requirement_follows` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `requirement_id` INT UNSIGNED NOT NULL COMMENT '需求ID',
+  `user_id` INT UNSIGNED NOT NULL COMMENT '关注用户ID',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `uk_requirement_user` (`requirement_id`, `user_id`),
+  INDEX `idx_user_id` (`user_id`),
+  INDEX `idx_requirement_id` (`requirement_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='需求关注表';
 SET @requirements_no_index_exists := (
   SELECT COUNT(1)
   FROM information_schema.statistics
@@ -1040,18 +1072,6 @@ INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`) VALUES
 INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
 (16, 0, '模型配置', 'MENU', '/settings/llm', 'LlmConfig', 'views/settings/llm.vue', 'MagicStick', 10, 'menu:settings:llm', 1, 1, 0);
 
--- 工作流管理菜单权限
-INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `status`) VALUES
-(35, 'menu:settings:workflow:approval', '工作流管理菜单', 'MENU', '工作流管理菜单入口', 1);
-
--- 工作流管理菜单（系统配置子菜单）
-INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
-(33, 7, '工作流管理', 'MENU', '/settings/workflow-approvals', 'WorkflowApprovals', 'views/system/workflow-config/index.vue', 'Stamp', 7, 'menu:settings:workflow:approval', 1, 1, 0);
-
--- SUPER_ADMIN 授权工作流管理权限
-INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_by`) VALUES
-(1, 35, 1);
-
 -- =====================================================
 -- 全量权限补全：需求/项目/迭代/评审/知识库/待办/通知/统计
 -- =====================================================
@@ -1111,6 +1131,15 @@ INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description
 (73, 'button:workflow:activate', '启用/停用工作流', 'BUTTON', '工作流配置-启用停用', 1),
 (74, 'button:workflow:approve', '审批工作流', 'BUTTON', '工作流配置-审批', 1);
 
+-- 需求管理视图权限
+INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `status`) VALUES
+(79, 'menu:requirement:view:all', '全部需求视图', 'MENU', '需求管理-全部需求', 1),
+(80, 'menu:requirement:view:pending', '我的待办视图', 'MENU', '需求管理-我的待办', 1),
+(81, 'menu:requirement:view:done', '我的已办视图', 'MENU', '需求管理-我的已办', 1),
+(82, 'menu:requirement:view:draft', '我的草稿视图', 'MENU', '需求管理-我的草稿', 1),
+(83, 'button:requirement:batch-delete', '批量删除需求', 'BUTTON', '需求管理-批量删除', 1),
+(84, 'menu:requirement:view:follow', '我的关注视图', 'MENU', '需求管理-我的关注', 1);
+
 
 -- 需求管理下的按钮菜单
 INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
@@ -1118,7 +1147,17 @@ INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, 
 (41, 2, '编辑需求', 'BUTTON', NULL, NULL, NULL, NULL, 2, 'button:requirement:update', 1, 1, 0),
 (42, 2, '删除需求', 'BUTTON', NULL, NULL, NULL, NULL, 3, 'button:requirement:delete', 1, 1, 0),
 (43, 2, '导出需求', 'BUTTON', NULL, NULL, NULL, NULL, 4, 'button:requirement:export', 1, 1, 0),
-(44, 2, '提交需求', 'BUTTON', NULL, NULL, NULL, NULL, 5, 'button:requirement:submit', 1, 1, 0);
+(44, 2, '提交需求', 'BUTTON', NULL, NULL, NULL, NULL, 5, 'button:requirement:submit', 1, 1, 0),
+(45, 2, '拆分需求', 'BUTTON', NULL, NULL, NULL, NULL, 6, 'button:requirement:split', 1, 1, 0),
+(46, 2, '评论需求', 'BUTTON', NULL, NULL, NULL, NULL, 7, 'button:requirement:comment', 1, 1, 0),
+(47, 2, '回退需求', 'BUTTON', NULL, NULL, NULL, NULL, 8, 'button:requirement:rollback', 1, 1, 0),
+(48, 2, '撤销需求', 'BUTTON', NULL, NULL, NULL, NULL, 9, 'button:requirement:cancel', 1, 1, 0),
+(79, 2, '全部需求视图', 'BUTTON', NULL, NULL, NULL, NULL, 10, 'menu:requirement:view:all', 1, 1, 0),
+(80, 2, '我的待办视图', 'BUTTON', NULL, NULL, NULL, NULL, 11, 'menu:requirement:view:pending', 1, 1, 0),
+(81, 2, '我的已办视图', 'BUTTON', NULL, NULL, NULL, NULL, 12, 'menu:requirement:view:done', 1, 1, 0),
+(82, 2, '我的草稿视图', 'BUTTON', NULL, NULL, NULL, NULL, 13, 'menu:requirement:view:draft', 1, 1, 0),
+(83, 2, '批量删除需求', 'BUTTON', NULL, NULL, NULL, NULL, 14, 'button:requirement:batch-delete', 1, 1, 0),
+(84, 2, '我的关注视图', 'BUTTON', NULL, NULL, NULL, NULL, 15, 'menu:requirement:view:follow', 1, 1, 0);
 
 -- 项目管理下的按钮菜单
 INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
@@ -1174,7 +1213,20 @@ INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_
 (1, 61, 1), (1, 62, 1), (1, 63, 1), (1, 64, 1), (1, 65, 1), (1, 66, 1),
 (1, 67, 1), (1, 68, 1), (1, 69, 1),
 (1, 70, 1), (1, 71, 1), (1, 72, 1), (1, 73, 1), (1, 74, 1),
-(1, 78, 1);
+(1, 78, 1), (1, 79, 1), (1, 80, 1), (1, 81, 1), (1, 82, 1), (1, 83, 1), (1, 84, 1);
+
+-- 业务角色授权需求管理视图权限
+INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`) VALUES
+-- 产品经理：全部需求 + 我的草稿 + 新建需求 + 导出 + 批量删除
+(4, 79), (4, 82), (4, 84), (4, 40), (4, 43), (4, 83),
+-- 项目经理：全部需求 + 我的待办 + 我的已办 + 我的草稿 + 新建需求 + 导出 + 批量删除
+(5, 79), (5, 80), (5, 81), (5, 82), (5, 84), (5, 40), (5, 43), (5, 83),
+-- 开发人员：我的待办 + 我的已办 + 导出
+(6, 80), (6, 81), (6, 84), (6, 43),
+-- 测试人员：我的待办 + 我的已办 + 导出
+(7, 80), (7, 81), (7, 84), (7, 43),
+-- 评审人：全部需求 + 我的待办 + 我的已办 + 导出
+(8, 79), (8, 80), (8, 81), (8, 84), (8, 43);
 
 -- =====================================================
 -- Sprint 1 增量变更：工作流实例 + 流转记录 + 项目/岗位字段补全
@@ -1281,13 +1333,8 @@ CREATE TABLE IF NOT EXISTS `workflow_instance_transitions` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工作流流转记录';
 
 -- -----------------------------------------------------
--- 项目表字段补全
+-- 知识库文档表字段补全
 -- -----------------------------------------------------
-ALTER TABLE projects ADD COLUMN IF NOT EXISTS `company_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '归属公司ID' AFTER description;
-ALTER TABLE projects ADD COLUMN IF NOT EXISTS `team` VARCHAR(200) DEFAULT NULL COMMENT '归属团队' AFTER company_id;
-ALTER TABLE projects ADD COLUMN IF NOT EXISTS `leader_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '负责人ID' AFTER team;
-ALTER TABLE projects ADD COLUMN IF NOT EXISTS `start_date` DATE DEFAULT NULL COMMENT '开始日期' AFTER leader_id;
-ALTER TABLE projects ADD COLUMN IF NOT EXISTS `end_date` DATE DEFAULT NULL COMMENT '截止日期' AFTER start_date;
 ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS `project_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联项目ID' AFTER knowledge_base_id;
 ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS `requirement_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联需求ID' AFTER minio_key;
 ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS `source_type` VARCHAR(50) DEFAULT NULL COMMENT '来源类型(requirement/knowledge_base)' AFTER requirement_id;

@@ -70,5 +70,15 @@ public interface WorkflowConfigService {
      */
     void rejectWorkflow(Long approvalId, String comment);
 
+    /**
+     * 删除单条审核记录
+     */
+    void deleteApproval(Long approvalId);
+
+    /**
+     * 清空全部审核记录
+     */
+    void clearAllApprovals();
+
     List<com.demand.system.module.workflow.dto.WorkflowValidationIssue> validateVersion(Long versionId);
 }

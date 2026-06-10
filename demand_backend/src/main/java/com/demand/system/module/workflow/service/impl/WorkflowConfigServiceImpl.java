@@ -115,58 +115,85 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             throw new BusinessException("用户未登录");
         }
 
-        // 修复：保存前做连通性和基本结构校验，避免保存无效流程
+        // 保存前做连通性和基本结构校验，避免保存无效流程
         validateConfigStructure(configDTO);
 
         Long normalizedProjectId = normalizeProjectId(projectId);
-        WorkflowVersion existingDraft = findLatestInactiveVersion(normalizedProjectId);
 
-        // 修复：现有草稿已提交审核时禁止保存
-        if (existingDraft != null && hasPendingApproval(existingDraft.getId())) {
-            throw new BusinessException("现有草稿已提交审核，请等待审核完成后再保存");
-        }
-
-        // 修复：总是创建新草稿版本，不再覆盖现有未审核的 draft
-        // 仅将 activation_status=draft 的旧版本归档，保留 inactive 历史版本
-        if (existingDraft != null && "draft".equals(existingDraft.getActivationStatus())) {
-            existingDraft.setActivationStatus("archived");
-            workflowVersionMapper.updateById(existingDraft);
-        }
-        WorkflowVersion draftVersion = createDraftVersion(normalizedProjectId, currentUserId);
-
-        // 保存新的节点
-        if (configDTO.getNodes() != null && !configDTO.getNodes().isEmpty()) {
-            for (WorkflowNodeDTO nodeDTO : configDTO.getNodes()) {
-                WorkflowNode node = new WorkflowNode();
-                BeanUtils.copyProperties(nodeDTO, node);
-                node.setWorkflowVersionId(draftVersion.getId());
-                // 修复：给 node_id 加版本前缀，避免跨版本冲突
-                if (StringUtils.hasText(node.getNodeId()) && !node.getNodeId().startsWith("v" + draftVersion.getId() + "_")) {
-                    node.setNodeId("v" + draftVersion.getId() + "_" + node.getNodeId());
-                }
-                workflowNodeMapper.insert(node);
+        // 场景A：有 versionId → 编辑已有草稿版本
+        if (configDTO.getVersionId() != null) {
+            WorkflowVersion existingVersion = workflowVersionMapper.selectById(configDTO.getVersionId());
+            if (existingVersion == null) {
+                throw new BusinessException("草稿版本不存在");
             }
-        }
-
-        // 保存新的连线
-        if (configDTO.getEdges() != null && !configDTO.getEdges().isEmpty()) {
-            for (WorkflowEdgeDTO edgeDTO : configDTO.getEdges()) {
-                WorkflowEdge edge = new WorkflowEdge();
-                BeanUtils.copyProperties(edgeDTO, edge);
-                edge.setWorkflowVersionId(draftVersion.getId());
-                // 同步给 edge 引用添加版本前缀
-                String prefix = "v" + draftVersion.getId() + "_";
-                if (StringUtils.hasText(edge.getSourceNodeId()) && !edge.getSourceNodeId().startsWith(prefix)) {
-                    edge.setSourceNodeId(prefix + edge.getSourceNodeId());
-                }
-                if (StringUtils.hasText(edge.getTargetNodeId()) && !edge.getTargetNodeId().startsWith(prefix)
-                        && !isTerminalStatus(edge.getTargetNodeId())) {
-                    edge.setTargetNodeId(prefix + edge.getTargetNodeId());
-                }
-                workflowEdgeMapper.insert(edge);
+            if (!existingVersion.getProjectId().equals(normalizedProjectId)) {
+                throw new BusinessException("该草稿版本不属于当前项目");
             }
+            if (!"draft".equals(existingVersion.getActivationStatus())) {
+                throw new BusinessException("只有草稿状态支持编辑保存");
+            }
+            if (existingVersion.getIsActive() != null && existingVersion.getIsActive() == 1) {
+                throw new BusinessException("启用中的版本不支持编辑");
+            }
+            if (hasPendingApproval(existingVersion.getId())) {
+                throw new BusinessException("该版本已提交审核，请等待审核完成后再保存");
+            }
+
+            // 如有版本号或名称变更，先校验
+            if (StringUtils.hasText(configDTO.getVersion()) || StringUtils.hasText(configDTO.getVersionName())) {
+                String targetVersion = StringUtils.hasText(configDTO.getVersion())
+                        ? normalizeVersion(configDTO.getVersion())
+                        : existingVersion.getVersion();
+                String targetName = StringUtils.hasText(configDTO.getVersionName())
+                        ? normalizeVersionName(configDTO.getVersionName())
+                        : existingVersion.getName();
+                validateVersionMeta(existingVersion.getProjectId(), existingVersion.getId(), targetVersion, targetName);
+                existingVersion.setVersion(targetVersion);
+                existingVersion.setName(targetName);
+            }
+
+            // 删除旧节点和连线
+            deleteVersionConfig(existingVersion.getId());
+
+            // 保存新节点
+            saveNodes(configDTO.getNodes(), existingVersion.getId());
+            // 保存新连线
+            saveEdges(configDTO.getEdges(), existingVersion.getId());
+
+            // 重新编译
+            List<WorkflowNode> savedNodes = workflowNodeMapper.selectList(new LambdaQueryWrapper<WorkflowNode>()
+                    .eq(WorkflowNode::getWorkflowVersionId, existingVersion.getId()));
+            List<WorkflowEdge> savedEdges = workflowEdgeMapper.selectList(new LambdaQueryWrapper<WorkflowEdge>()
+                    .eq(WorkflowEdge::getWorkflowVersionId, existingVersion.getId()));
+            workflowGraphValidator.validateOrThrow(savedNodes, savedEdges);
+            WorkflowGraphCompiler.CompiledWorkflow compiled = workflowGraphCompiler.compile(existingVersion.getId(), savedNodes, savedEdges);
+            existingVersion.setDefinition(compiled.definitionJson());
+            existingVersion.setRuntimeHash(compiled.runtimeHash());
+            workflowVersionMapper.updateById(existingVersion);
+
+            log.info("更新工作流草稿成功，projectId={}, versionId={}", normalizedProjectId, existingVersion.getId());
+            return toVersionDTO(existingVersion);
         }
 
+        // 场景B：无 versionId → 新建草稿版本
+        // 先校验版本号冲突（支持语义等价检测，如 1 vs 1.0.0）
+        String targetVersion = StringUtils.hasText(configDTO.getVersion())
+                ? normalizeVersion(configDTO.getVersion())
+                : null;
+        String targetName = StringUtils.hasText(configDTO.getVersionName())
+                ? normalizeVersionName(configDTO.getVersionName())
+                : null;
+        validateVersionMeta(normalizedProjectId, null, targetVersion, targetName);
+
+        // 创建新草稿版本
+        WorkflowVersion draftVersion = createDraftVersion(normalizedProjectId, currentUserId, targetVersion, targetName);
+
+        // 保存节点
+        saveNodes(configDTO.getNodes(), draftVersion.getId());
+        // 保存连线
+        saveEdges(configDTO.getEdges(), draftVersion.getId());
+
+        // 编译并更新版本
         List<WorkflowNode> savedNodes = workflowNodeMapper.selectList(new LambdaQueryWrapper<WorkflowNode>()
                 .eq(WorkflowNode::getWorkflowVersionId, draftVersion.getId()));
         List<WorkflowEdge> savedEdges = workflowEdgeMapper.selectList(new LambdaQueryWrapper<WorkflowEdge>()
@@ -175,11 +202,52 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         WorkflowGraphCompiler.CompiledWorkflow compiled = workflowGraphCompiler.compile(draftVersion.getId(), savedNodes, savedEdges);
         draftVersion.setDefinition(compiled.definitionJson());
         draftVersion.setRuntimeHash(compiled.runtimeHash());
-        draftVersion.setActivationStatus("draft");
         workflowVersionMapper.updateById(draftVersion);
 
-        log.info("保存工作流配置成功，projectId={}, versionId={}", normalizedProjectId, draftVersion.getId());
+        log.info("新建工作流草稿成功，projectId={}, versionId={}, version={}", normalizedProjectId, draftVersion.getId(), draftVersion.getVersion());
         return toVersionDTO(draftVersion);
+    }
+
+    /**
+     * 保存节点列表（带版本前缀）
+     */
+    private void saveNodes(List<WorkflowNodeDTO> nodes, Long versionId) {
+        if (nodes == null || nodes.isEmpty()) {
+            return;
+        }
+        String prefix = "v" + versionId + "_";
+        for (WorkflowNodeDTO nodeDTO : nodes) {
+            WorkflowNode node = new WorkflowNode();
+            BeanUtils.copyProperties(nodeDTO, node);
+            node.setWorkflowVersionId(versionId);
+            if (StringUtils.hasText(node.getNodeId()) && !node.getNodeId().startsWith(prefix)) {
+                node.setNodeId(prefix + node.getNodeId());
+            }
+            workflowNodeMapper.insert(node);
+        }
+    }
+
+    /**
+     * 保存连线列表（带版本前缀）
+     */
+    private void saveEdges(List<WorkflowEdgeDTO> edges, Long versionId) {
+        if (edges == null || edges.isEmpty()) {
+            return;
+        }
+        String prefix = "v" + versionId + "_";
+        for (WorkflowEdgeDTO edgeDTO : edges) {
+            WorkflowEdge edge = new WorkflowEdge();
+            BeanUtils.copyProperties(edgeDTO, edge);
+            edge.setWorkflowVersionId(versionId);
+            if (StringUtils.hasText(edge.getSourceNodeId()) && !edge.getSourceNodeId().startsWith(prefix)) {
+                edge.setSourceNodeId(prefix + edge.getSourceNodeId());
+            }
+            if (StringUtils.hasText(edge.getTargetNodeId()) && !edge.getTargetNodeId().startsWith(prefix)
+                    && !isTerminalStatus(edge.getTargetNodeId())) {
+                edge.setTargetNodeId(prefix + edge.getTargetNodeId());
+            }
+            workflowEdgeMapper.insert(edge);
+        }
     }
 
     @Override
@@ -264,26 +332,12 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             throw new BusinessException("该版本已提交审核，暂不支持修改版本信息");
         }
 
-        String normalizedName = normalizeVersionName(updateDTO.getName());
-        if (normalizedName == null) {
-            throw new BusinessException("版本名称不能为空");
-        }
-
         String targetVersion = normalizeVersion(updateDTO.getVersion());
-        if (!WorkflowVersionUtils.isValid(targetVersion)) {
-            throw new BusinessException("版本号格式需为正整数或 1.0.0");
-        }
-
-        boolean duplicateVersion = workflowVersionMapper.selectList(new LambdaQueryWrapper<WorkflowVersion>()
-                        .eq(WorkflowVersion::getProjectId, version.getProjectId()))
-                .stream()
-                .anyMatch(item -> !item.getId().equals(versionId) && WorkflowVersionUtils.sameVersion(item.getVersion(), targetVersion));
-        if (duplicateVersion) {
-            throw new BusinessException("版本号 V" + targetVersion + " 已存在，请重新输入");
-        }
+        String targetName = normalizeVersionName(updateDTO.getName());
+        validateVersionMeta(version.getProjectId(), versionId, targetVersion, targetName);
 
         version.setVersion(targetVersion);
-        version.setName(normalizedName);
+        version.setName(targetName);
         workflowVersionMapper.updateById(version);
 
         return toVersionDTO(version);
@@ -426,6 +480,61 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         log.info("审核拒绝工作流版本，approvalId={}, versionId={}", approvalId, approval.getWorkflowVersionId());
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteApproval(Long approvalId) {
+        WorkflowApproval approval = workflowApprovalMapper.selectById(approvalId);
+        if (approval == null) {
+            throw new BusinessException("审核记录不存在");
+        }
+
+        // 如果删除的是待审核记录，需同步将版本状态回退为 draft
+        if ("pending".equals(approval.getStatus())) {
+            WorkflowVersion version = workflowVersionMapper.selectById(approval.getWorkflowVersionId());
+            if (version != null && "pending".equals(version.getActivationStatus())) {
+                // 检查该版本是否还有其他待审核记录
+                LambdaQueryWrapper<WorkflowApproval> query = new LambdaQueryWrapper<>();
+                query.eq(WorkflowApproval::getWorkflowVersionId, approval.getWorkflowVersionId())
+                        .eq(WorkflowApproval::getStatus, "pending")
+                        .ne(WorkflowApproval::getId, approvalId);
+                long remainingPending = workflowApprovalMapper.selectCount(query);
+                if (remainingPending == 0) {
+                    version.setActivationStatus("draft");
+                    workflowVersionMapper.updateById(version);
+                }
+            }
+        }
+
+        workflowApprovalMapper.deleteById(approvalId);
+        log.info("删除审核记录，approvalId={}", approvalId);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void clearAllApprovals() {
+        // 将所有 pending 状态的版本回退为 draft
+        LambdaQueryWrapper<WorkflowApproval> pendingQuery = new LambdaQueryWrapper<>();
+        pendingQuery.eq(WorkflowApproval::getStatus, "pending");
+        List<WorkflowApproval> pendingApprovals = workflowApprovalMapper.selectList(pendingQuery);
+
+        Set<Long> processedVersionIds = new HashSet<>();
+        for (WorkflowApproval approval : pendingApprovals) {
+            Long versionId = approval.getWorkflowVersionId();
+            if (versionId != null && !processedVersionIds.contains(versionId)) {
+                WorkflowVersion version = workflowVersionMapper.selectById(versionId);
+                if (version != null && "pending".equals(version.getActivationStatus())) {
+                    version.setActivationStatus("draft");
+                    workflowVersionMapper.updateById(version);
+                }
+                processedVersionIds.add(versionId);
+            }
+        }
+
+        // 清空全部审核记录
+        workflowApprovalMapper.delete(new LambdaQueryWrapper<>());
+        log.info("清空全部审核记录，共处理 {} 条待审核记录关联的版本状态回退", pendingApprovals.size());
+    }
+
     // ========== 私有方法 ==========
 
     private WorkflowConfigDTO loadVersionConfig(Long versionId) {
@@ -540,6 +649,49 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         }
     }
 
+    /**
+     * 公共版本元数据校验（新建和更新草稿均可复用）
+     *
+     * @param projectId        项目ID
+     * @param excludeVersionId 排除的版本ID（新建时传 null，更新时传当前版本ID）
+     * @param version          目标版本号（可传 null，null 时不校验格式和重复）
+     * @param versionName      目标版本名称（可传 null，null 时不校验名称）
+     */
+    private void validateVersionMeta(Long projectId, Long excludeVersionId, String version, String versionName) {
+        // 校验版本名称
+        if (StringUtils.hasText(versionName)) {
+            String normalized = normalizeVersionName(versionName);
+            if (normalized == null || normalized.isEmpty()) {
+                throw new BusinessException("版本名称不能为空");
+            }
+        } else {
+            throw new BusinessException("版本名称不能为空");
+        }
+
+        // 校验版本号格式和重复
+        if (StringUtils.hasText(version)) {
+            String normalized = normalizeVersion(version);
+            if (!WorkflowVersionUtils.isValid(normalized)) {
+                throw new BusinessException("版本号格式需为正整数或 1.0.0");
+            }
+            boolean duplicate = workflowVersionMapper.selectList(
+                            new LambdaQueryWrapper<WorkflowVersion>()
+                                    .eq(WorkflowVersion::getProjectId, projectId))
+                    .stream()
+                    .anyMatch(item -> {
+                        if (excludeVersionId != null && item.getId().equals(excludeVersionId)) {
+                            return false;
+                        }
+                        return WorkflowVersionUtils.sameVersion(item.getVersion(), normalized);
+                    });
+            if (duplicate) {
+                throw new BusinessException("版本号 V" + normalized + " 已存在，请重新输入");
+            }
+        } else {
+            throw new BusinessException("版本号不能为空");
+        }
+    }
+
     private WorkflowVersion findLatestInactiveVersion(Long projectId) {
         LambdaQueryWrapper<WorkflowVersion> versionQuery = new LambdaQueryWrapper<>();
         versionQuery.eq(WorkflowVersion::getProjectId, projectId)
@@ -564,26 +716,27 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
                 .last("LIMIT 1"));
     }
 
-    private WorkflowVersion createDraftVersion(Long projectId, Long currentUserId) {
-        String latestVersion = workflowVersionMapper.selectList(new LambdaQueryWrapper<WorkflowVersion>()
-                        .eq(WorkflowVersion::getProjectId, projectId))
-                .stream()
-                .sorted(WorkflowVersionUtils.byVersionDesc())
-                .map(WorkflowVersion::getVersion)
-                .findFirst()
-                .orElse(null);
-        String nextVersion = WorkflowVersionUtils.suggestNext(latestVersion);
-        WorkflowVersion draftVersion = new WorkflowVersion();
-        draftVersion.setProjectId(projectId);
-        draftVersion.setVersion(nextVersion);
-        draftVersion.setName("草稿版本 v" + nextVersion);
-        draftVersion.setDefinition("{\"nodes\":[],\"edges\":[]}");
-        draftVersion.setIsActive(0);
-        draftVersion.setActivationStatus("draft");
-        draftVersion.setCreatorId(currentUserId);
-        draftVersion.setCreatedAt(LocalDateTime.now());
-        workflowVersionMapper.insert(draftVersion);
-        return draftVersion;
+    private WorkflowVersion createDraftVersion(Long projectId, Long currentUserId, String version, String versionName) {
+        String draftVersion = version != null ? version : WorkflowVersionUtils.suggestNext(
+                workflowVersionMapper.selectList(new LambdaQueryWrapper<WorkflowVersion>()
+                                .eq(WorkflowVersion::getProjectId, projectId))
+                        .stream()
+                        .sorted(WorkflowVersionUtils.byVersionDesc())
+                        .map(WorkflowVersion::getVersion)
+                        .findFirst()
+                        .orElse(null));
+        String draftName = versionName != null ? versionName : "草稿版本 v" + draftVersion;
+        WorkflowVersion newVersion = new WorkflowVersion();
+        newVersion.setProjectId(projectId);
+        newVersion.setVersion(draftVersion);
+        newVersion.setName(draftName);
+        newVersion.setDefinition("{\"nodes\":[],\"edges\":[]}");
+        newVersion.setIsActive(0);
+        newVersion.setActivationStatus("draft");
+        newVersion.setCreatorId(currentUserId);
+        newVersion.setCreatedAt(LocalDateTime.now());
+        workflowVersionMapper.insert(newVersion);
+        return newVersion;
     }
 
     private String normalizeVersion(String version) {

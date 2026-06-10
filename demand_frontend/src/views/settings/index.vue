@@ -30,9 +30,7 @@ import { getCurrentMenus, type MenuItem } from '@/api/modules/menu'
 
 const { hasPermission, hasAnyRole, hasAnyPermission } = usePermission()
 
-const pathTitleOverrides: Record<string, string> = {
-  '/settings/workflow-approvals': '工作流管理',
-}
+const pathTitleOverrides: Record<string, string> = {}
 
 // path -> 卡片额外配置（描述、颜色等不从菜单获取的部分）
 const cardMeta: Record<string, { description: string; color: string; buttonType: string }> = {
@@ -41,7 +39,6 @@ const cardMeta: Record<string, { description: string; color: string; buttonType:
   '/settings/roles': { description: '维护团队角色、授权范围和高风险操作权限', color: '#3B82F6', buttonType: 'primary' },
   '/settings/requirements': { description: '管理系统需求类型和优先级配置', color: '#909399', buttonType: '' },
   '/system/workflow-config': { description: '在系统设置中维护工作流与审批配置', color: '#8E44AD', buttonType: 'primary' },
-  '/settings/workflow-approvals': { description: '集中管理工作流版本、审核记录、启停状态与删除操作', color: '#D97706', buttonType: 'warning' },
   '/settings/menus': { description: '维护菜单、按钮以及角色授权能力', color: '#F56C6C', buttonType: 'danger' },
   '/settings/rag': { description: '上传文档并进行智能检索与问答', color: '#16A085', buttonType: 'success' },
   '/settings/knowledge': { description: '创建和管理知识库，配置文档索引', color: '#2C3E50', buttonType: '' },
@@ -55,7 +52,6 @@ const pathPermissions: Record<string, () => boolean> = {
   '/settings/roles': () => hasPermission('menu:settings:role') || hasPermission('menu:system-config'),
   '/settings/requirements': () => hasPermission('menu:settings:requirement') || hasPermission('menu:system-config'),
   '/system/workflow-config': () => hasAnyRole(['admin', 'workflow:config']) || hasPermission('menu:settings:workflow'),
-  '/settings/workflow-approvals': () => hasPermission('menu:settings:workflow') || hasAnyRole(['admin']),
   '/settings/menus': () => hasPermission('menu:menu-management') || hasAnyPermission(['button:menu:create', 'button:menu:update', 'button:menu:delete']),
   '/settings/rag': () => hasPermission('menu:rag'),
   '/settings/knowledge': () => hasPermission('menu:rag'),
@@ -68,7 +64,7 @@ for (const [name, comp] of Object.entries(ElementPlusIcons)) {
 }
 
 const menuItems = ref<MenuItem[]>([])
-const fallbackPaths = ['/settings/workflow-approvals', '/settings/llm']
+const fallbackPaths = ['/settings/llm']
 
 onMounted(async () => {
   try {
@@ -126,16 +122,12 @@ const visibleCards = computed<CardItem[]>(() => {
       path,
       title: path === '/settings/llm'
         ? '模型配置'
-        : path === '/settings/workflow-approvals'
-          ? '工作流管理'
-          : path,
+        : path,
       description: meta.description,
       icon: path === '/settings/llm'
         ? 'ri-robot-2-line'
-        : path === '/settings/workflow-approvals'
-          ? 'ri-task-line'
-          : 'Setting',
-      isRemix: path === '/settings/llm' || path === '/settings/workflow-approvals',
+        : 'Setting',
+      isRemix: path === '/settings/llm',
       color: meta.color,
       buttonType: meta.buttonType,
       visible: () => true,

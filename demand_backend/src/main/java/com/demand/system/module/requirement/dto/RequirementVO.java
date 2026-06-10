@@ -102,6 +102,8 @@ public class RequirementVO {
 
     private String operationType;
 
+    private Boolean followed;
+
     public Long getId() {
         return id;
     }
@@ -476,5 +478,13 @@ public class RequirementVO {
 
     public void setOperationType(String operationType) {
         this.operationType = operationType;
+    }
+
+    public Boolean getFollowed() {
+        return followed;
+    }
+
+    public void setFollowed(Boolean followed) {
+        this.followed = followed;
     }
 }

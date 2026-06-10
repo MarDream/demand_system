@@ -141,6 +141,26 @@ public class WorkflowVisualConfigController {
         return Result.success();
     }
 
+    /**
+     * 删除单条审核记录
+     */
+    @DeleteMapping("/workflow-approvals/{id}")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:approve')")
+    public Result<Void> deleteApproval(@PathVariable Long id) {
+        workflowConfigService.deleteApproval(id);
+        return Result.success();
+    }
+
+    /**
+     * 清空全部审核记录
+     */
+    @DeleteMapping("/workflow-approvals")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN')")
+    public Result<Void> clearAllApprovals() {
+        workflowConfigService.clearAllApprovals();
+        return Result.success();
+    }
+
     @PostMapping("/workflows/versions/{versionId}/validate")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
     public Result<List<com.demand.system.module.workflow.dto.WorkflowValidationIssue>> validateVersion(@PathVariable Long versionId) {
