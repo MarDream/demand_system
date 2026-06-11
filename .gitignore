@@ -11,6 +11,10 @@ demand_backend/target/
 demand_frontend/dist/
 demand_frontend/node_modules/
 
+# Test artifacts (临时调试截图、E2E 报告等，不入库)
+data/
+contracts/openapi/
+
 # IDE
 .idea/
 *.iml

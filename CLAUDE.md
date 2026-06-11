@@ -35,30 +35,27 @@ E:\Project\mygit\kkFileView  # kkFileView服务源代码，可直接修改适配
 - 配置文件: `demand_backend/src/main/resources/application-dev.yml`，启动先加载记录基础设施对应的访问账号密码信息
 ## 启动脚本
 
-| 脚本 | 用途 |
+`start-all.bat` 是项目仓库的**唯一启动入口**，不接受任何子脚本分散。
+
+| 调用 | 用途 |
 |------|------|
-| `start-all.bat` | 一键启动前后端+全部 Docker 容器（含 kkfileview） |
-| `start-kkfileview.cmd` | 单独拉起 kkfileview 容器（端口8012），用 `docker compose` 方式 |
-| `scripts/compose-check.sh` / `compose-check.bat` | 检查全部基础设施 + kkfileview 容器健康状态 |
+| `start-all.bat` | 一键启动前后端 + 全部 Docker 容器（含 kkfileview） |
+| `start-all.bat check` | 仅健康检查（不启动应用） |
+| `start-all.bat down` | 停止所有 Docker 容器 |
+| `start-all.bat e2e` | 跑全链路 E2E（依赖 + 后端 + 前端 + Playwright） |
+| `start-all.bat contract` | 导出后端 OpenAPI 契约到 `contracts/openapi/` |
 
 ### 启动命令
 
 ```bash
-# 方式1: 一键全量启动 (前端5170 + 后端8081 + kkfileview8012 + 全部基础设施)
+# 一键全量启动 (前端5170 + 后端8081 + kkfileview8012 + 全部基础设施)
 start-all.bat
 
-# 方式2: 单独启动各服务
-# 1. 启动Docker容器（含 kkfileview, 推荐）
-docker compose -f scripts/docker-compose.yml up -d
+# 健康检查
+start-all.bat check
 
-# 2. (可选) 单独拉起 kkfileview 预览服务
-start-kkfileview.cmd
-
-# 3. 启动后端 (端口8081)
-cd demand_backend && mvn spring-boot:run -Dspring-boot.run.profiles=dev
-
-# 4. 启动前端 (端口5170)
-cd demand_frontend && npm run dev
+# 停止所有容器
+start-all.bat down
 ```
 
 ### kkFileView 容器化要点

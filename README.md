@@ -34,34 +34,31 @@ demand_system/
 
 ## 本地开发（推荐）
 
-### 1) 启动基础设施（MySQL / Redis / RabbitMQ / MinIO / ES）
+**唯一启动入口：`start-all.bat`**
+
+### 1) 一键全量启动（基础设施 + 后端 + 前端）
 
 ```bash
-bash scripts/compose-up.sh
+start-all.bat
 ```
 
-> MinIO 会自动创建 bucket：`demand-system`
+> 自动拉起 MySQL / Redis / RabbitMQ / MinIO / Elasticsearch / Milvus / kkFileView，
+> 等待关键容器健康，启动后端（端口 8081）和前端（端口 5170）。
 
-### 2) 启动后端
+### 2) 常用子命令
 
 ```bash
-cd demand_backend
-mvn spring-boot:run
+start-all.bat check      # 健康检查（不启动应用）
+start-all.bat down       # 停止所有 Docker 容器
+start-all.bat e2e        # 全链路 E2E（依赖 + 后端 + 前端 + Playwright）
+start-all.bat contract   # 导出 OpenAPI 契约到 contracts/openapi/
 ```
 
-后端端口：`8081`，OpenAPI：`http://localhost:8081/v3/api-docs`
+后端 OpenAPI：`http://localhost:8081/v3/api-docs`
+MinIO 控制台：`http://localhost:9001`（admin / admin123456）
+RabbitMQ 管理：`http://localhost:15672`（admin / admin）
 
-### 3) 启动前端
-
-```bash
-cd demand_frontend
-npm install
-npm run dev
-```
-
-前端端口：`5176`
-
-## 全量集成测试（后端 + E2E + 一键全链路）
+## 全量集成测试
 
 ### 后端集成测试（Testcontainers，需要本机可用 Docker）
 
@@ -77,15 +74,15 @@ cd demand_frontend
 npm run test:e2e
 ```
 
-### 一键全链路（起依赖 + 起后端 + 起前端 + 跑 E2E）
+### 一键全链路 E2E（起依赖 + 起后端 + 起前端 + 跑测试）
 
 ```bash
-bash scripts/e2e.sh
+start-all.bat e2e
 ```
 
 ### 导出接口契约（OpenAPI）
 
 ```bash
-bash scripts/contract.sh
+start-all.bat contract
 ```
 <!-- DREAMFIELD_README_HEADER_END -->
