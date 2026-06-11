@@ -49,6 +49,12 @@ export interface WorkflowAvailableActions {
   parallelBranches?: import('@/api/modules/workflow').ParallelBranch[] | null
   /** 修复 P2：当前节点是否要求必填审批意见 */
   currentNodeRequireComment?: boolean | null
+  /** 当前用户是否可编辑此需求（基于工作流节点权限判断） */
+  canEdit?: boolean | null
+  /** 当前用户是否可删除此需求（仅创建人或管理员） */
+  canDelete?: boolean | null
+  /** 当前用户是否可拆分子需求（与 canEdit 一致） */
+  canSplit?: boolean | null
 }
 
 export interface TransitionVO {

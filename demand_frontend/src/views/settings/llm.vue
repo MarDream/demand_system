@@ -711,12 +711,37 @@ async function handleSniff(row: LlmProvider) {
     const data = res?.data ?? res ?? []
     sniffedModels.value = data
     sniffSelectedModelIds.value = data.filter((m: SniffedModel) => !m.alreadyExists).map((m: SniffedModel) => m.modelId)
-  } catch {
-    ElMessage.error('嗅探模型失败，请检查接入配置')
+  } catch (error) {
+    ElMessage.error(formatSniffError(error))
     sniffDialogVisible.value = false
   } finally {
     sniffing.value = false
   }
+}
+
+function formatSniffError(error: unknown): string {
+  const message = getRequestErrorMessage(error)
+  return message ? `嗅探模型失败：${message}` : '嗅探模型失败，请检查接入配置'
+}
+
+function getRequestErrorMessage(error: unknown): string {
+  const requestError = error as {
+    message?: string
+    response?: {
+      data?: string | { message?: string }
+    }
+  }
+  const data = requestError.response?.data
+  if (typeof data === 'string' && data.trim()) {
+    return data
+  }
+  if (typeof data === 'object' && data?.message?.trim()) {
+    return data.message
+  }
+  if (requestError.message?.trim()) {
+    return requestError.message
+  }
+  return ''
 }
 
 async function handleSniffImport() {

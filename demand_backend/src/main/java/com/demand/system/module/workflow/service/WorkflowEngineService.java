@@ -550,6 +550,12 @@ public class WorkflowEngineService {
         boolean canOperate = hasOperatePermission(instance, requirement, currentNode, operatorId);
         boolean canCancel = canCancelRequirement(requirement, instance, currentNode, operatorId);
 
+        // 基于工作流节点权限判断编辑/删除/拆分权限
+        boolean isCreatorOrAdmin = isCreatorOrAdmin(requirement, operatorId);
+        actions.setCanEdit(canOperate);
+        actions.setCanDelete(isCreatorOrAdmin);
+        actions.setCanSplit(canOperate);
+
         List<AvailableTransitionDTO> transitions = Collections.emptyList();
         if (canOperate) {
             transitions = graphNavigator.resolveAvailableTargets(context, instance.getCurrentNodeId(), requirement)

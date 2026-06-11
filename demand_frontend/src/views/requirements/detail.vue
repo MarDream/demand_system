@@ -6,15 +6,15 @@
           <div class="detail-main">
             <div v-if="showPrimaryActions" class="detail-actions">
               <div class="detail-actions__primary">
-                <AppButton permission="button:requirement:update" @click="handleEdit">编辑</AppButton>
-                <AppButton type="success" permission="button:requirement:split" @click="handleSplit">拆分子需求</AppButton>
-                <AppButton type="danger" permission="button:requirement:delete">
+                <el-button v-if="canEditRequirement" type="primary" @click="handleEdit">编辑</el-button>
+                <el-button v-if="canSplitRequirement" type="success" @click="handleSplit">拆分子需求</el-button>
+                <el-button v-if="canDeleteRequirement" type="danger">
                   <el-popconfirm title="确定删除该需求吗？" @confirm="handleDelete">
                     <template #reference>
                       <el-button type="danger">删除</el-button>
                     </template>
                   </el-popconfirm>
-                </AppButton>
+                </el-button>
               </div>
             </div>
 
@@ -60,7 +60,7 @@
           <div v-if="children.length > 0" class="children-section">
             <div class="section-header">
               <h3>子需求（{{ children.length }} 个）</h3>
-              <AppButton type="primary" size="small" permission="button:requirement:split" @click="handleSplit">+ 拆分子需求</AppButton>
+              <el-button v-if="canSplitRequirement" type="primary" size="small" @click="handleSplit">+ 拆分子需求</el-button>
             </div>
             <el-table :data="children" border size="small">
               <el-table-column label="ID" width="60" align="center">
@@ -1140,11 +1140,56 @@ const requiresProjectBinding = computed(() => (
 const bindableProjects = computed(() => projectOptions.value)
 
 const showPrimaryActions = computed(() => {
-  return hasAnyPermission([
-    'button:requirement:update',
-    'button:requirement:split',
-    'button:requirement:delete',
-  ])
+  // 草稿：创建人可见编辑/删除
+  if (detail.value?.isDraft) {
+    return hasPermission('button:requirement:update') || hasPermission('button:requirement:delete')
+  }
+  // 非草稿：根据工作流权限动态判断
+  return Boolean(canEditRequirement.value || canSplitRequirement.value || canDeleteRequirement.value)
+})
+
+/** 当前用户是否可编辑需求（基于工作流节点权限） */
+const canEditRequirement = computed(() => {
+  // 草稿：创建人可编辑
+  if (detail.value?.isDraft) {
+    return hasPermission('button:requirement:update')
+  }
+  // 非草稿：需同时有静态权限和工作流节点权限
+  if (!hasPermission('button:requirement:update')) {
+    return false
+  }
+  if (usingUnifiedEngine.value) {
+    return Boolean(workflowRuntime.value.canEdit)
+  }
+  return true
+})
+
+/** 当前用户是否可拆分子需求（基于工作流节点权限） */
+const canSplitRequirement = computed(() => {
+  if (!hasPermission('button:requirement:split')) {
+    return false
+  }
+  if (detail.value?.isDraft) {
+    return false // 草稿不允许拆分
+  }
+  if (usingUnifiedEngine.value) {
+    return Boolean(workflowRuntime.value.canSplit)
+  }
+  return true
+})
+
+/** 当前用户是否可删除需求（创建人或管理员） */
+const canDeleteRequirement = computed(() => {
+  if (!hasPermission('button:requirement:delete')) {
+    return false
+  }
+  if (detail.value?.isDraft) {
+    return true // 草稿创建人可删除
+  }
+  if (usingUnifiedEngine.value) {
+    return Boolean(workflowRuntime.value.canDelete)
+  }
+  return true
 })
 
 const commentDraftDirty = computed(() => hasMeaningfulCommentContent(commentRichText.value))

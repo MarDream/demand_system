@@ -151,6 +151,7 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
             "JOIN requirements r ON r.id = rf.requirement_id",
             "WHERE rf.user_id = #{userId}",
             "  AND r.deleted_at = 0",
+            "  AND r.is_draft = 0",
             "  <if test='projectId != null'> AND r.project_id = #{projectId} </if>",
             "  <if test='keyword != null and keyword != \"\"'>",
             "    AND (r.title LIKE CONCAT('%', #{keyword}, '%') OR r.description LIKE CONCAT('%', #{keyword}, '%'))",

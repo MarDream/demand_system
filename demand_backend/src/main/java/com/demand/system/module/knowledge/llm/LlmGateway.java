@@ -7,14 +7,33 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.*;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
+import java.net.URI;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Component
 public class LlmGateway {
     private static final Logger log = LoggerFactory.getLogger(LlmGateway.class);
+    private static final Pattern V1_PATH_SEGMENT = Pattern.compile("(?i)(^|/)v1($|/)");
+    private static final List<String> MODEL_LIST_FIELDS = List.of("data", "models", "model", "items", "results", "list");
+    private static final List<String> MODEL_ID_FIELDS = List.of("id", "model", "model_id", "modelId", "name", "value");
+    private static final List<String> MODEL_OWNER_FIELDS = List.of(
+            "owned_by", "ownedBy", "owner", "provider", "display_name", "displayName", "type"
+    );
+    private static final List<String> API_ENDPOINT_SUFFIXES = List.of(
+            "/chat/completions",
+            "/completions",
+            "/responses",
+            "/embeddings",
+            "/messages",
+            "/models",
+            "/rerank"
+    );
 
     private final LlmGatewayConfig config;
     private final ObjectMapper objectMapper;
@@ -107,8 +126,7 @@ public class LlmGateway {
             headers.setContentType(MediaType.APPLICATION_JSON);
 
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
-            String base = provider.getBaseUrl().replaceAll("/+$", "");
-            String url = base + path;
+            String url = buildApiUrl(provider, path);
             ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
             return objectMapper.readTree(response.getBody());
         } catch (Exception e) {
@@ -253,8 +271,7 @@ public class LlmGateway {
             body.put("temperature", normalizeTemperature(temperature));
 
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
-            String base = provider.getBaseUrl().replaceAll("/+$", "");
-            String url = base + "/messages";
+            String url = buildApiUrl(provider, "/messages");
             ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
             return objectMapper.readTree(response.getBody());
         } catch (Exception e) {
@@ -273,49 +290,242 @@ public class LlmGateway {
     // ==================== Model List (Sniff) ====================
 
     public List<ModelInfo> fetchModelList(LlmGatewayConfig.Provider provider) {
-        Protocol protocol = config.resolveProtocol(provider);
         try {
             RestTemplate restTemplate = new RestTemplate();
             HttpHeaders headers = buildHeaders(provider);
             headers.setContentType(MediaType.APPLICATION_JSON);
 
             HttpEntity<Void> entity = new HttpEntity<>(headers);
-            String base = provider.getBaseUrl().replaceAll("/+$", "");
-            String url;
-            if (protocol == Protocol.ANTHROPIC) {
-                url = base + "/models";
-            } else {
-                url = base + "/models";
-            }
+            String url = buildApiUrl(provider, "/models");
 
             ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
             JsonNode root = objectMapper.readTree(response.getBody());
 
-            List<ModelInfo> models = new ArrayList<>();
-            JsonNode dataNode = root.get("data");
-            if (dataNode != null && dataNode.isArray()) {
-                for (JsonNode item : dataNode) {
-                    String id = item.has("id") ? item.get("id").asText() : null;
-                    if (id == null || id.isEmpty()) continue;
-                    String ownedBy = item.has("owned_by") ? item.get("owned_by").asText() : null;
-                    models.add(new ModelInfo(id, ownedBy));
-                }
-            }
-
-            // Anthropic: root itself may be array
-            if (models.isEmpty() && root.isArray()) {
-                for (JsonNode item : root) {
-                    String id = item.has("id") ? item.get("id").asText() : null;
-                    if (id == null || id.isEmpty()) continue;
-                    String ownedBy = item.has("owned_by") ? item.get("owned_by").asText() : null;
-                    models.add(new ModelInfo(id, ownedBy));
-                }
-            }
-
-            return models;
+            return parseModelList(root);
         } catch (Exception e) {
-            throw new RuntimeException("获取模型列表失败: " + e.getMessage(), e);
+            throw new RuntimeException("获取模型列表失败: " + describeApiException(e), e);
         }
+    }
+
+    private String buildApiUrl(LlmGatewayConfig.Provider provider, String path) {
+        String base = normalizeApiBaseUrl(provider);
+        String normalizedPath = path.startsWith("/") ? path : "/" + path;
+        return base + normalizedPath;
+    }
+
+    private String normalizeApiBaseUrl(LlmGatewayConfig.Provider provider) {
+        String baseUrl = provider.getBaseUrl();
+        if (baseUrl == null || baseUrl.isBlank()) {
+            throw new IllegalArgumentException("API Base URL不能为空");
+        }
+
+        String base = stripQueryAndFragment(baseUrl.trim()).replaceAll("/+$", "");
+        Protocol protocol = config.resolveProtocol(provider);
+        if (protocol == Protocol.OPENAI || protocol == Protocol.ANTHROPIC) {
+            return normalizeVersionedApiRoot(base);
+        }
+        return base;
+    }
+
+    private String stripQueryAndFragment(String url) {
+        int queryIndex = url.indexOf('?');
+        int fragmentIndex = url.indexOf('#');
+        int end = url.length();
+        if (queryIndex >= 0) {
+            end = Math.min(end, queryIndex);
+        }
+        if (fragmentIndex >= 0) {
+            end = Math.min(end, fragmentIndex);
+        }
+        return url.substring(0, end);
+    }
+
+    private String normalizeVersionedApiRoot(String base) {
+        String versionRoot = truncateAfterV1Segment(base);
+        if (versionRoot != null) {
+            return versionRoot;
+        }
+
+        String endpointRoot = stripKnownEndpointSuffix(base);
+        versionRoot = truncateAfterV1Segment(endpointRoot);
+        if (versionRoot != null) {
+            return versionRoot;
+        }
+
+        return endpointRoot + "/v1";
+    }
+
+    private String truncateAfterV1Segment(String base) {
+        try {
+            URI uri = URI.create(base);
+            String rawPath = uri.getRawPath();
+            if (rawPath == null || rawPath.isBlank()) {
+                return null;
+            }
+            Matcher matcher = V1_PATH_SEGMENT.matcher(rawPath);
+            if (!matcher.find()) {
+                return null;
+            }
+            int rootEnd = matcher.start() + matcher.group(1).length() + "v1".length();
+            String rootPath = rawPath.substring(0, rootEnd);
+            return new URI(uri.getScheme(), uri.getRawAuthority(), rootPath, null, null).toString();
+        } catch (Exception e) {
+            Matcher matcher = V1_PATH_SEGMENT.matcher(base);
+            if (!matcher.find()) {
+                return null;
+            }
+            int rootEnd = matcher.start() + matcher.group(1).length() + "v1".length();
+            return base.substring(0, rootEnd);
+        }
+    }
+
+    private String stripKnownEndpointSuffix(String base) {
+        String lowerBase = base.toLowerCase(Locale.ROOT);
+        for (String suffix : API_ENDPOINT_SUFFIXES) {
+            if (lowerBase.endsWith(suffix)) {
+                return base.substring(0, base.length() - suffix.length()).replaceAll("/+$", "");
+            }
+        }
+        return base;
+    }
+
+    private String describeApiException(Exception e) {
+        if (e instanceof RestClientResponseException responseException) {
+            String upstreamMessage = extractUpstreamErrorMessage(responseException.getResponseBodyAsString());
+            String status = "HTTP " + responseException.getStatusCode().value();
+            return upstreamMessage == null ? status : status + ": " + upstreamMessage;
+        }
+        return e.getMessage();
+    }
+
+    private String extractUpstreamErrorMessage(String body) {
+        if (body == null || body.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(body);
+            String message = firstText(root.path("error"), "message", "type", "code");
+            if (message != null) {
+                return message;
+            }
+            message = firstText(root, "message", "msg", "detail", "error_description");
+            if (message != null) {
+                return message;
+            }
+            JsonNode error = root.get("error");
+            if (error != null && error.isValueNode()) {
+                return error.asText();
+            }
+        } catch (IllegalArgumentException e) {
+            // Fall through to a capped raw body; some OpenAI-compatible services return plain text.
+        } catch (Exception e) {
+            // Fall through to a capped raw body; some OpenAI-compatible services return plain text.
+        }
+        return body.length() > 500 ? body.substring(0, 500) : body;
+    }
+
+    private List<ModelInfo> parseModelList(JsonNode root) {
+        Map<String, ModelInfo> models = new LinkedHashMap<>();
+        collectModels(root, models, 0);
+        return new ArrayList<>(models.values());
+    }
+
+    private void collectModels(JsonNode node, Map<String, ModelInfo> models, int depth) {
+        if (node == null || node.isMissingNode() || node.isNull() || depth > 8) {
+            return;
+        }
+
+        if (node.isArray()) {
+            for (JsonNode item : node) {
+                collectModelItem(item, models);
+                if (item.isObject()) {
+                    collectModelsFromKnownFields(item, models, depth + 1);
+                }
+            }
+            return;
+        }
+
+        if (node.isObject()) {
+            collectModelItem(node, models);
+            collectModelsFromKnownFields(node, models, depth + 1);
+        }
+    }
+
+    private void collectModelsFromKnownFields(JsonNode node, Map<String, ModelInfo> models, int depth) {
+        for (String field : MODEL_LIST_FIELDS) {
+            JsonNode child = node.get(field);
+            if (child != null) {
+                if (child.isObject() && ("models".equals(field) || "model".equals(field))) {
+                    collectModelMap(child, models);
+                }
+                collectModels(child, models, depth);
+            }
+        }
+    }
+
+    private void collectModelMap(JsonNode node, Map<String, ModelInfo> models) {
+        if (firstText(node, MODEL_ID_FIELDS) != null) {
+            return;
+        }
+        for (Map.Entry<String, JsonNode> entry : node.properties()) {
+            JsonNode value = entry.getValue();
+            if (value == null || value.isNull()) {
+                continue;
+            }
+            if (value.isObject()) {
+                String id = firstText(value, MODEL_ID_FIELDS);
+                String ownedBy = firstText(value, MODEL_OWNER_FIELDS);
+                if (id == null || id.isBlank()) {
+                    id = entry.getKey();
+                }
+                if (!models.containsKey(id)) {
+                    models.put(id, new ModelInfo(id, ownedBy));
+                }
+            } else if (value.isValueNode()) {
+                String id = value.asText();
+                if ((id == null || id.isBlank()) && entry.getKey() != null && !entry.getKey().isBlank()) {
+                    id = entry.getKey();
+                }
+                if (id != null && !id.isBlank() && !models.containsKey(id)) {
+                    models.put(id, new ModelInfo(id, null));
+                }
+            }
+        }
+    }
+
+    private void collectModelItem(JsonNode item, Map<String, ModelInfo> models) {
+        String id;
+        String ownedBy = null;
+        if (item.isValueNode()) {
+            id = item.asText();
+        } else if (item.isObject()) {
+            id = firstText(item, MODEL_ID_FIELDS);
+            ownedBy = firstText(item, MODEL_OWNER_FIELDS);
+        } else {
+            return;
+        }
+
+        if (id == null || id.isBlank() || models.containsKey(id)) {
+            return;
+        }
+        models.put(id, new ModelInfo(id, ownedBy));
+    }
+
+    private String firstText(JsonNode node, List<String> fields) {
+        for (String field : fields) {
+            JsonNode value = node.get(field);
+            if (value != null && value.isValueNode()) {
+                String text = value.asText();
+                if (text != null && !text.isBlank()) {
+                    return text;
+                }
+            }
+        }
+        return null;
+    }
+
+    private String firstText(JsonNode node, String... fields) {
+        return firstText(node, Arrays.asList(fields));
     }
 
     public static class ModelInfo {

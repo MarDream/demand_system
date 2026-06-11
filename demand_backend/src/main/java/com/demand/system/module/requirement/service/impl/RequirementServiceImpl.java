@@ -179,6 +179,9 @@ public class RequirementServiceImpl implements RequirementService {
 
         LambdaQueryWrapper<Requirement> wrapper = new LambdaQueryWrapper<>();
 
+        // 草稿仅出现在草稿箱，全部需求中排除草稿
+        wrapper.eq(Requirement::getIsDraft, false);
+
         Long currentUserId = SecurityUtils.getCurrentUserId();
         List<String> currentRoleCodes = SecurityUtils.getCurrentUserRoles();
         boolean isSuperAdmin = isSuperAdmin(currentRoleCodes);

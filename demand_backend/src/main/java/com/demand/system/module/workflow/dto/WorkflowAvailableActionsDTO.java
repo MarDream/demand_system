@@ -48,6 +48,15 @@ public class WorkflowAvailableActionsDTO {
     /** 修复 P2：当前节点是否要求必填审批意见（来自节点 properties.requireComment） */
     private Boolean currentNodeRequireComment;
 
+    /** 当前用户是否可编辑此需求（基于工作流节点权限判断） */
+    private Boolean canEdit;
+
+    /** 当前用户是否可删除此需求（仅创建人或管理员，且在可操作节点上） */
+    private Boolean canDelete;
+
+    /** 当前用户是否可拆分子需求（与 canEdit 一致） */
+    private Boolean canSplit;
+
     public Boolean getCanTransition() {
         return canTransition;
     }
@@ -190,5 +199,29 @@ public class WorkflowAvailableActionsDTO {
 
     public void setCurrentNodeRequireComment(Boolean currentNodeRequireComment) {
         this.currentNodeRequireComment = currentNodeRequireComment;
+    }
+
+    public Boolean getCanEdit() {
+        return canEdit;
+    }
+
+    public void setCanEdit(Boolean canEdit) {
+        this.canEdit = canEdit;
+    }
+
+    public Boolean getCanDelete() {
+        return canDelete;
+    }
+
+    public void setCanDelete(Boolean canDelete) {
+        this.canDelete = canDelete;
+    }
+
+    public Boolean getCanSplit() {
+        return canSplit;
+    }
+
+    public void setCanSplit(Boolean canSplit) {
+        this.canSplit = canSplit;
     }
 }

@@ -10,15 +10,15 @@
           {{ currentNodeStatusName }}
         </el-tag>
       </div>
-      <AppButton permission="button:requirement:update" @click="$emit('edit')">编辑</AppButton>
-      <AppButton type="success" permission="button:requirement:split" @click="$emit('split')">拆分子需求</AppButton>
-      <AppButton type="danger" permission="button:requirement:delete">
+      <el-button v-if="canEditRequirement" type="primary" @click="$emit('edit')">编辑</el-button>
+      <el-button v-if="canSplitRequirement" type="success" @click="$emit('split')">拆分子需求</el-button>
+      <el-button v-if="canDeleteRequirement" type="danger">
         <el-popconfirm title="确定删除该需求吗？" @confirm="$emit('delete')">
           <template #reference>
             <el-button type="danger">删除</el-button>
           </template>
         </el-popconfirm>
-      </AppButton>
+      </el-button>
       <el-select
         v-model="localSelectedTransitionTargetId"
         :disabled="transitionLoading || transitionOptions.length === 0"
@@ -118,6 +118,9 @@ const props = defineProps<{
   currentNodeDisplayName: string
   showCurrentNodeStatus: boolean
   bindableProjects: Array<{ id: number; name: string; status?: string | null; endDate?: string | null }>
+  canEditRequirement?: boolean
+  canSplitRequirement?: boolean
+  canDeleteRequirement?: boolean
 }>()
 
 const emit = defineEmits<{

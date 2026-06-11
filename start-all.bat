@@ -33,33 +33,50 @@ echo ============================================
 echo.
 
 :: 1) 启动 Docker 容器（含 mysql/redis/rabbitmq/minio/milvus/kkfileview）
-echo [1/4] 启动 Docker 容器...
-docker ps --format "table {{.Names}}" | findstr /C:"kkfileview" >nul 2>&1
-if errorlevel 1 (
-    echo   启动 docker compose 全部服务...
-    docker compose -f "%COMPOSE_FILE%" up -d
-) else (
-    echo   kkfileview 容器已运行 ✓，其它容器按需启动
-    docker compose -f "%COMPOSE_FILE%" up -d
-)
+echo [1 of 4] 检查 Docker 容器...
+call :containers_ready
+if not "%CONTAINERS_READY%"=="1" goto start_containers
+echo   Docker 容器已运行，跳过 compose up
+goto after_containers
+:start_containers
+echo   启动 docker compose 全部服务...
+docker compose -f "%COMPOSE_FILE%" up -d
+:after_containers
 
-:: 2) 健康检查 - 等待关键容器就绪
+:: 2) 健康检查 - 冷启动才等待关键容器就绪
 echo.
-echo [2/4] 健康检查...
+echo [2 of 4] 健康检查...
+if not "%CONTAINERS_READY%"=="1" goto wait_containers
+echo   已检测到依赖容器可用，跳过等待
+goto after_container_check
+:wait_containers
 call :wait_healthy kkfileview %KKFILEVIEW_PORT% "kkFileView"
 call :wait_healthy mysql 3306 "MySQL"
 call :wait_healthy redis 6379 "Redis"
 call :wait_healthy minio 9000 "MinIO"
+:after_container_check
 
 :: 3) 启动后端
 echo.
-echo [3/4] 启动后端服务（端口%BACKEND_PORT%）...
+echo [3 of 4] 启动后端服务（端口%BACKEND_PORT%）...
+call :is_port_listening %BACKEND_PORT%
+if not "%PORT_LISTENING%"=="1" goto start_backend
+echo   后端端口 %BACKEND_PORT% 已监听，复用现有服务
+goto after_backend
+:start_backend
 start "DemandBackend" cmd /k "cd /d %ROOT_DIR%demand_backend && mvn spring-boot:run -Dspring-boot.run.profiles=dev"
+:after_backend
 
 :: 4) 启动前端
 echo.
-echo [4/4] 启动前端服务（端口%FRONTEND_PORT%）...
+echo [4 of 4] 启动前端服务（端口%FRONTEND_PORT%）...
+call :is_port_listening %FRONTEND_PORT%
+if not "%PORT_LISTENING%"=="1" goto start_frontend
+echo   前端端口 %FRONTEND_PORT% 已监听，复用现有服务
+goto after_frontend
+:start_frontend
 start "DemandFrontend" cmd /k "cd /d %ROOT_DIR%demand_frontend && npm run dev"
+:after_frontend
 
 echo.
 echo ============================================
@@ -226,6 +243,34 @@ exit /b 0
 :: ============================================================
 ::  工具函数
 :: ============================================================
+
+:is_port_listening
+set "PORT=%~1"
+set "PORT_LISTENING=0"
+powershell -NoProfile -Command "if(Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue){exit 0}else{exit 1}" >nul 2>&1
+if not errorlevel 1 set "PORT_LISTENING=1"
+goto :eof
+
+:is_container_ready
+set "CONTAINER_NAME=%~1"
+set "CONTAINER_READY=0"
+set "CONTAINER_STATUS="
+set "CONTAINER_HEALTH="
+for /f "tokens=*" %%s in ('docker inspect -f "{{.State.Status}}" %CONTAINER_NAME% 2^>nul') do set "CONTAINER_STATUS=%%s"
+if not "%CONTAINER_STATUS%"=="running" goto :eof
+for /f "tokens=*" %%s in ('docker inspect -f "{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}" %CONTAINER_NAME% 2^>nul') do set "CONTAINER_HEALTH=%%s"
+if "%CONTAINER_HEALTH%"=="starting" goto :eof
+if "%CONTAINER_HEALTH%"=="unhealthy" goto :eof
+set "CONTAINER_READY=1"
+goto :eof
+
+:containers_ready
+set "CONTAINERS_READY=1"
+for %%c in (mysql redis rabbitmq minio elasticsearch milvus kkfileview) do (
+    call :is_container_ready %%c
+    if not "!CONTAINER_READY!"=="1" set "CONTAINERS_READY=0"
+)
+goto :eof
 
 :wait_healthy
 set "NAME=%~1"
