@@ -19,6 +19,7 @@ call :check_service elasticsearch 9200
 call :check_service milvus 19530
 call :check_service milvus-minio 9002
 call :check_service milvus-etcd 2379
+call :check_service kkfileview 8012
 
 echo.
 echo ==========================================

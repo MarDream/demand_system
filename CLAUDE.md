@@ -37,20 +37,21 @@ E:\Project\mygit\kkFileView  # kkFileView服务源代码，可直接修改适配
 
 | 脚本 | 用途 |
 |------|------|
-| `start-kkfileview.cmd` | 启动 kkFileView 预览服务 (端口8012) |
-| `start-all.bat` | 一键启动前后端+Docker容器 |
+| `start-all.bat` | 一键启动前后端+全部 Docker 容器（含 kkfileview） |
+| `start-kkfileview.cmd` | 单独拉起 kkfileview 容器（端口8012），用 `docker compose` 方式 |
+| `scripts/compose-check.sh` / `compose-check.bat` | 检查全部基础设施 + kkfileview 容器健康状态 |
 
 ### 启动命令
 
 ```bash
-# 方式1: 一键全量启动 (前端5170 + 后端8081 + kkFileView8012)
+# 方式1: 一键全量启动 (前端5170 + 后端8081 + kkfileview8012 + 全部基础设施)
 start-all.bat
 
 # 方式2: 单独启动各服务
-# 1. 启动Docker容器 (如果未运行)
-docker-compose -f scripts/docker-compose.yml up -d
+# 1. 启动Docker容器（含 kkfileview, 推荐）
+docker compose -f scripts/docker-compose.yml up -d
 
-# 2. 启动 kkFileView (端口8012)
+# 2. (可选) 单独拉起 kkfileview 预览服务
 start-kkfileview.cmd
 
 # 3. 启动后端 (端口8081)
@@ -59,6 +60,13 @@ cd demand_backend && mvn spring-boot:run -Dspring-boot.run.profiles=dev
 # 4. 启动前端 (端口5170)
 cd demand_frontend && npm run dev
 ```
+
+### kkFileView 容器化要点
+- 镜像：`kkfileview:5.0.1`，由 `E:\Project\mygit\kkFileView\Dockerfile.standalone` 构建
+- 内置 CJK 字体（fonts-noto-cjk） + 浏览器原生 PDF viewer 模板（scripts/pdf-direct.ftl）
+- PDF 缓存目录走 named volume `kkfileview_file:/opt/kkFileView-5.0.0/file`，避免容器重启后丢缓存
+- 如需重建镜像：`cd E:\Project\mygit\kkFileView && ./scripts/build-docker.sh 5.0.1`
+- 详见 `.claude/skills/kkfileview-cjk-pdf-rendering-fix.md`
 
 ## 端口占用处理
 

@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # 定义需要检查的服务
-SERVICES=("mysql" "redis" "rabbitmq" "minio" "elasticsearch" "milvus" "milvus-minio" "milvus-etcd")
+SERVICES=("mysql" "redis" "rabbitmq" "minio" "elasticsearch" "milvus" "milvus-minio" "milvus-etcd" "kkfileview")
 
 echo "=========================================="
 echo "  基础设施连接检查"
@@ -53,6 +53,7 @@ check_service "elasticsearch" "9200" || ((failed++))
 check_service "milvus" "19530/9091" || ((failed++))
 check_service "milvus-minio" "9002" || ((failed++))
 check_service "milvus-etcd" "2379" || ((failed++))
+check_service "kkfileview" "8012" || ((failed++))
 
 echo ""
 echo "=========================================="
