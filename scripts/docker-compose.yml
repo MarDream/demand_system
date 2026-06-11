@@ -162,15 +162,34 @@ services:
       retries: 5
 
   kkfileview:
-    image: kkfileview:local
+    image: kkfileview:5.0.1
     container_name: kkfileview
     restart: unless-stopped
     ports:
       - "8012:8012"
     environment:
       - TZ=Asia/Shanghai
+      # 不覆盖 base.url（让 kkFileView 从请求 Host 头推断成 localhost:8012），
+      # 浏览器侧返回的 PDF 链接必须用浏览器能解析的地址，
+      # host.docker.internal 仅供容器内下载 MinIO 文件使用
+      # 容器化后 MinIO 走容器名或 host.docker.internal，
+      # 加上默认的 localhost/127.0.0.1 覆盖 kkFileView 的默认白名单
+      - KK_TRUST_HOST=localhost,127.0.0.1,host.docker.internal,minio,kkfileview
+      # 切到宿主机 redis 作为分布式缓存
+      # （容器内通过 host.docker.internal 解析到宿主机 6379）
+      - KK_CACHE_TYPE=redis
+      - KK_SPRING_REDISSON_ADDRESS=redis://host.docker.internal:6379
+      # 持久化 PDF 缓存目录到 named volume，避免容器重启后 PDF 文件丢失、
+      # redis 中残留幽灵缓存导致 kkFileView 假装转码完成
+      - KK_FILE_DIR=/opt/kkFileView-5.0.0/file
+    extra_hosts:
+      # 跨平台兼容：让容器内 host.docker.internal 解析为宿主机网关
+      # Windows Docker Desktop 默认支持；Linux docker 需要这行
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - kkfileview_file:/opt/kkFileView-5.0.0/file
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8012/", "-O", "/dev/null"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8012/"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -185,3 +204,4 @@ volumes:
   etcd_data:
   milvus_minio_data:
   milvus_data:
+  kkfileview_file:
