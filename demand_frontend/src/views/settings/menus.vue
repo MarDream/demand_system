@@ -505,15 +505,15 @@ async function handleSavePermission() {
 }
 
 .menu-name-content--directory {
-  color: #303133;
+  color: var(--color-text-primary);
 }
 
 .menu-name-content--menu {
-  color: #303133;
+  color: var(--color-text-primary);
 }
 
 .menu-name-content--button {
-  color: #606266;
+  color: var(--color-text-secondary);
   font-size: 13px;
 }
 

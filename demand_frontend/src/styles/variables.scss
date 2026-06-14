@@ -1,35 +1,58 @@
-$primary-color: #409EFF;
-$success-color: #67C23A;
-$warning-color: #E6A23C;
-$danger-color: #F56C6C;
-$info-color: #909399;
-$bg-color: #F0F2F5;
-$bg-container: #FFFFFF;
-$text-color: #303133;
-$text-color-secondary: #606266;
-$text-color-placeholder: #909399;
-$border-color: #ebeef5;
-$sidebar-bg: #304156;
-$sidebar-text: #BFCBD9;
-$sidebar-active: #409EFF;
-$sidebar-width: 210px;
-$sidebar-collapsed-width: 64px;
-$header-height: 50px;
-$tags-height: 34px;
-$spacing-xs: 4px;
-$spacing-sm: 8px;
-$spacing-md: 16px;
-$spacing-lg: 24px;
-$spacing-xl: 32px;
+// ===== 需求管理系统 - 全局变量 =====
+// 所有值引用 Token 体系，不再使用硬编码
 
-$page-padding: $spacing-md;
-$card-padding: $spacing-md;
-$card-radius: 8px;
-$font-size-xs: 12px;
-$font-size-sm: 13px;
-$font-size-base: 14px;
-$font-size-md: 16px;
-$font-size-lg: 18px;
-$border-radius-base: 4px;
-$shadow-sm: 0 2px 4px rgba(0,0,0,0.08);
-$shadow-base: 0 2px 12px rgba(0,0,0,0.1);
+// ----- 主题色（兼容旧引用，映射至 Token） -----
+$primary-color: var(--color-accent);
+$success-color: var(--color-success);
+$warning-color: var(--color-warning);
+$danger-color: var(--color-danger);
+$info-color: var(--color-muted-text);
+
+// ----- 背景 -----
+$bg-color: var(--color-background);
+$bg-container: var(--color-surface);
+
+// ----- 文字 -----
+$text-color: var(--color-text-primary);
+$text-color-secondary: var(--color-text-secondary);
+$text-color-placeholder: var(--color-text-placeholder);
+
+// ----- 边框 -----
+$border-color: var(--color-border);
+
+// ----- 侧边栏 -----
+$sidebar-bg: var(--color-sidebar-bg);
+$sidebar-text: var(--color-sidebar-text);
+$sidebar-active: var(--color-sidebar-active);
+$sidebar-width: var(--sidebar-width);
+$sidebar-collapsed-width: var(--sidebar-collapsed-width);
+
+// ----- 头部 -----
+$header-height: var(--header-height);
+$tags-height: var(--tags-height);
+
+// ----- 间距 -----
+$spacing-xs: var(--spacing-xs);
+$spacing-sm: var(--spacing-sm);
+$spacing-md: var(--spacing-md);
+$spacing-lg: var(--spacing-lg);
+$spacing-xl: var(--spacing-xl);
+
+// ----- 页面与卡片 -----
+$page-padding: var(--page-padding);
+$card-padding: var(--card-padding);
+$card-radius: var(--radius-lg);
+
+// ----- 字号 -----
+$font-size-xs: var(--font-size-xs);
+$font-size-sm: var(--font-size-sm);
+$font-size-base: var(--font-size-base);
+$font-size-md: var(--font-size-md);
+$font-size-lg: var(--font-size-lg);
+
+// ----- 圆角 -----
+$border-radius-base: var(--radius-md);
+
+// ----- 阴影 -----
+$shadow-sm: var(--shadow-sm);
+$shadow-base: var(--shadow-md);

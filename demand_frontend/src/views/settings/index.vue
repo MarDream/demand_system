@@ -34,12 +34,12 @@ const pathTitleOverrides: Record<string, string> = {}
 
 // path -> 卡片额外配置（描述、颜色等不从菜单获取的部分）
 const cardMeta: Record<string, { description: string; color: string; buttonType: string }> = {
-  '/settings/projects': { description: '创建、编辑和管理项目，配置项目成员', color: '#409EFF', buttonType: 'primary' },
-  '/settings/users': { description: '管理成员账号、部门组织、角色权限和账号状态', color: '#67C23A', buttonType: 'success' },
+  '/settings/projects': { description: '创建、编辑和管理项目，配置项目成员', color: 'var(--color-accent)', buttonType: 'primary' },
+  '/settings/users': { description: '管理成员账号、部门组织、角色权限和账号状态', color: 'var(--color-success)', buttonType: 'success' },
   '/settings/roles': { description: '维护团队角色、授权范围和高风险操作权限', color: '#3B82F6', buttonType: 'primary' },
-  '/settings/requirements': { description: '管理系统需求类型和优先级配置', color: '#909399', buttonType: '' },
+  '/settings/requirements': { description: '管理系统需求类型和优先级配置', color: 'var(--color-muted-text)', buttonType: '' },
   '/system/workflow-config': { description: '在系统设置中维护工作流与审批配置', color: '#8E44AD', buttonType: 'primary' },
-  '/settings/menus': { description: '维护菜单、按钮以及角色授权能力', color: '#F56C6C', buttonType: 'danger' },
+  '/settings/menus': { description: '维护菜单、按钮以及角色授权能力', color: 'var(--color-danger)', buttonType: 'danger' },
   '/settings/rag': { description: '上传文档并进行智能检索与问答', color: '#16A085', buttonType: 'success' },
   '/settings/knowledge': { description: '创建和管理知识库，配置文档索引', color: '#2C3E50', buttonType: '' },
   '/settings/llm': { description: '配置文档知识库可用的大模型参数和密钥', color: '#9B59B6', buttonType: 'primary' },
@@ -95,7 +95,7 @@ const visibleCards = computed<CardItem[]>(() => {
     .filter(m => m.menuType === 'MENU' && m.enabled === 1 && m.visible === 1)
     .map(m => {
       const path = m.path || ''
-      const meta = cardMeta[path] || { description: m.name, color: '#909399', buttonType: '' }
+      const meta = cardMeta[path] || { description: m.name, color: 'var(--color-muted-text)', buttonType: '' }
       const iconName = m.icon || 'Setting'
       const remix = isRemixIcon(iconName)
       return {
@@ -149,12 +149,12 @@ const visibleCards = computed<CardItem[]>(() => {
   h2 {
     margin: 0 0 8px;
     font-size: 22px;
-    color: #303133;
+    color: var(--color-text-primary);
   }
 
   .settings-desc {
     margin: 0;
-    color: #909399;
+    color: var(--color-muted-text);
     font-size: 14px;
   }
 }
@@ -184,12 +184,12 @@ const visibleCards = computed<CardItem[]>(() => {
     h3 {
       margin: 16px 0 8px;
       font-size: 18px;
-      color: #303133;
+      color: var(--color-text-primary);
     }
 
     p {
       margin: 0 0 16px;
-      color: #909399;
+      color: var(--color-muted-text);
       font-size: 13px;
     }
   }

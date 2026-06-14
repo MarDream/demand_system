@@ -14,9 +14,9 @@
         :default-active="activeMenu"
         :default-openeds="openedMenus"
         :collapse="!sidebarOpened"
-        background-color="#304156"
-        text-color="#BFCBD9"
-        active-text-color="#409EFF"
+        background-color="var(--color-sidebar-bg)"
+        text-color="var(--color-sidebar-text)"
+        active-text-color="var(--color-sidebar-active)"
         router
       >
         <template v-for="item in visibleMenus" :key="item.index">
@@ -337,16 +337,20 @@ async function handleLogout() {
   display: flex;
 }
 
+// ===== 侧边栏 =====
 .sidebar {
-  width: $sidebar-width;
-  background-color: $sidebar-bg;
-  transition: width 0.3s;
+  width: var(--sidebar-width);
+  background: var(--color-sidebar-bg-gradient);
+  box-shadow: var(--shadow-sidebar);
+  transition: width 0.3s var(--ease-standard);
   flex-shrink: 0;
   overflow: hidden;
   position: relative;
+  display: flex;
+  flex-direction: column;
 
   &--collapsed {
-    width: $sidebar-collapsed-width;
+    width: var(--sidebar-collapsed-width);
   }
 }
 
@@ -362,10 +366,11 @@ async function handleLogout() {
 
   &:hover,
   &:active {
-    background-color: rgba(64, 158, 255, 0.5);
+    background-color: var(--color-accent-overlay);
   }
 }
 
+// Logo 区域
 .sidebar-logo {
   height: 74px;
   display: flex;
@@ -373,11 +378,27 @@ async function handleLogout() {
   justify-content: flex-start;
   gap: 12px;
   padding: 0 18px;
-  color: #fff;
-  font-size: $font-size-lg;
-  font-weight: 600;
+  color: var(--color-on-primary);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
   white-space: nowrap;
   overflow: hidden;
+  position: relative;
+  border-bottom: 1px solid var(--color-sidebar-border);
+
+  // Logo 发光效果
+  &::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 24px;
+    transform: translateY(-50%);
+    width: 52px;
+    height: 52px;
+    background: radial-gradient(circle, var(--color-accent-glow) 0%, transparent 70%);
+    filter: blur(16px);
+    pointer-events: none;
+  }
 }
 
 .sidebar-logo__image {
@@ -385,11 +406,18 @@ async function handleLogout() {
   height: 52px;
   flex-shrink: 0;
   object-fit: contain;
+  filter: drop-shadow(0 2px 8px var(--color-accent-glow-strong));
+  transition: transform var(--transition-normal);
+
+  &:hover {
+    transform: scale(1.05);
+  }
 }
 
 .sidebar-logo__text {
   overflow: hidden;
   text-overflow: ellipsis;
+  letter-spacing: 0.5px;
 }
 
 .sidebar--collapsed .sidebar-logo__text {
@@ -406,32 +434,51 @@ async function handleLogout() {
   height: 42px;
 }
 
-.main-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
+// 菜单增强
+:deep(.el-menu) {
+  border-right: none;
 
-.header {
-  height: $header-height;
-  background: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 $spacing-md;
-  box-shadow: $shadow-sm;
-}
+  .el-menu-item,
+  .el-sub-menu__title {
+    margin: 2px 8px;
+    border-radius: var(--radius-md);
+    height: 44px;
+    line-height: 44px;
+    transition: all var(--transition-fast);
 
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: $spacing-sm;
-}
+    &:hover {
+      background-color: var(--color-sidebar-hover) !important;
+    }
+  }
 
-.hamburger {
-  cursor: pointer;
-  font-size: $font-size-md;
+  .el-menu-item.is-active {
+    background-color: var(--color-sidebar-hover) !important;
+    color: var(--color-sidebar-active) !important;
+    position: relative;
+
+    // 左侧激活指示条
+    &::before {
+      content: '';
+      position: absolute;
+      left: -8px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 3px;
+      height: 60%;
+      background: var(--color-sidebar-active);
+      border-radius: 0 3px 3px 0;
+    }
+  }
+
+  // 子菜单
+  .el-sub-menu .el-menu-item {
+    min-width: auto;
+    height: 40px;
+    line-height: 40px;
+    padding-left: 52px !important;
+    margin: 1px 8px;
+    font-size: var(--font-size-sm);
+  }
 }
 
 .sidebar-remix-icon {
@@ -453,17 +500,66 @@ async function handleLogout() {
   cursor: pointer;
 }
 
+// ===== 主内容区 =====
+.main-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+// 头部
+.header {
+  height: var(--header-height);
+  background: var(--color-header-bg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--spacing-md);
+  box-shadow: var(--shadow-xs);
+  border-bottom: 1px solid var(--color-header-border);
+  z-index: var(--z-sticky);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.hamburger {
+  cursor: pointer;
+  font-size: var(--font-size-md);
+  color: var(--color-header-text);
+  padding: 6px;
+  border-radius: var(--radius-md);
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+
+  &:hover {
+    background-color: var(--color-surface-alt);
+    color: var(--color-accent);
+  }
+}
+
 .header-right {
   display: flex;
   align-items: center;
-  gap: $spacing-md;
+  gap: var(--spacing-md);
 }
 
+// 用户信息
 .user-info {
   display: flex;
   align-items: center;
-  gap: $spacing-xs;
+  gap: var(--spacing-sm);
   cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--radius-md);
+  transition: background-color var(--transition-fast);
+
+  &:hover {
+    background-color: var(--color-surface-alt);
+  }
 }
 
 .user-meta {
@@ -473,86 +569,97 @@ async function handleLogout() {
 }
 
 .user-name {
-  font-size: $font-size-sm;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
   line-height: 1.2;
 }
 
 .user-role {
   font-size: 12px;
   line-height: 1.2;
-  color: #909399;
+  color: var(--color-muted-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+// 内容区域
 .app-main {
   flex: 1;
   padding: 0;
   overflow: auto;
-  background: $bg-color;
+  background: var(--color-background);
 }
 
+// 通知
 .notification-badge {
   cursor: pointer;
 }
 
+// 页面过渡
 .fade-enter-active,
 .fade-leave-active {
-  transition: opacity 0.2s;
+  transition: opacity 0.2s var(--ease-standard);
 }
+
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
 }
 
-.notification-popover .popover-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-weight: 600;
-  margin-bottom: 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #ebeef5;
-}
+// 通知弹窗
+.notification-popover {
+  .popover-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: var(--font-weight-semibold);
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--color-border);
+  }
 
-.notification-popover .popover-empty {
-  text-align: center;
-  color: #909399;
-  padding: 20px 0;
-  font-size: 13px;
-}
+  .popover-empty {
+    text-align: center;
+    color: var(--color-muted-text);
+    padding: 20px 0;
+    font-size: var(--font-size-sm);
+  }
 
-.notification-popover .popover-item {
-  padding: 8px 0;
-  border-bottom: 1px solid #f2f6fc;
-  cursor: pointer;
-}
+  .popover-item {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--color-surface-alt);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    transition: background-color var(--transition-fast);
 
-.notification-popover .popover-item:hover {
-  background: #f5f7fa;
-}
+    &:hover {
+      background: var(--color-surface-alt);
+    }
+  }
 
-.notification-popover .popover-item.unread {
-  background: #ecf5ff;
-}
+  .popover-item.unread {
+    background: var(--color-info-light);
+  }
 
-.notification-popover .popover-item-title {
-  font-size: 13px;
-  font-weight: 500;
-}
+  .popover-item-title {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+  }
 
-.notification-popover .popover-item-content {
-  font-size: 12px;
-  color: #606266;
-  margin: 2px 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+  .popover-item-content {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+    margin: 2px 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 
-.notification-popover .popover-item-time {
-  font-size: 11px;
-  color: #909399;
+  .popover-item-time {
+    font-size: 11px;
+    color: var(--color-muted-text);
+  }
 }
 </style>

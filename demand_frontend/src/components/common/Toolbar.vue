@@ -22,7 +22,7 @@ withDefaults(defineProps<{
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: $spacing-md;
+  gap: var(--spacing-md);
 }
 
 .app-toolbar--wrap {
@@ -34,7 +34,7 @@ withDefaults(defineProps<{
 .app-toolbar__right {
   display: flex;
   align-items: center;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
   flex-wrap: wrap;
 }
 
@@ -42,4 +42,3 @@ withDefaults(defineProps<{
   justify-content: flex-end;
 }
 </style>
-

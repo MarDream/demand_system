@@ -47,6 +47,10 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
             "  AND r.last_saved_at IS NOT NULL",
             "  AND r.creator_id = #{userId}",
             "  <if test='projectId != null'> AND r.project_id = #{projectId} </if>",
+            "  <if test='type != null and type != \"\"'> AND r.type = #{type} </if>",
+            "  <if test='priority != null and priority != \"\"'> AND r.priority = #{priority} </if>",
+            "  <if test='status != null and status != \"\"'> AND r.status = #{status} </if>",
+            "  <if test='assigneeId != null'> AND r.assignee_id = #{assigneeId} </if>",
             "  <if test='keyword != null and keyword != \"\"'>",
             "    AND (r.title LIKE CONCAT('%', #{keyword}, '%') OR r.description LIKE CONCAT('%', #{keyword}, '%'))",
             "  </if>",
@@ -58,6 +62,10 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                       @Param("userDepartmentId") Long userDepartmentId,
                                       @Param("roleCodes") List<String> roleCodes,
                                       @Param("projectId") Long projectId,
+                                      @Param("type") String type,
+                                      @Param("priority") String priority,
+                                      @Param("status") String status,
+                                      @Param("assigneeId") Long assigneeId,
                                       @Param("keyword") String keyword);
 
     @Select({
@@ -72,6 +80,10 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
             "  AND wn.assignee_type IS NOT NULL",
             "  AND wn.assignee_type != ''",
             "  <if test='projectId != null'> AND r.project_id = #{projectId} </if>",
+            "  <if test='type != null and type != \"\"'> AND r.type = #{type} </if>",
+            "  <if test='priority != null and priority != \"\"'> AND r.priority = #{priority} </if>",
+            "  <if test='status != null and status != \"\"'> AND r.status = #{status} </if>",
+            "  <if test='assigneeId != null'> AND r.assignee_id = #{assigneeId} </if>",
             "  <if test='keyword != null and keyword != \"\"'>",
             "    AND (r.title LIKE CONCAT('%', #{keyword}, '%') OR r.description LIKE CONCAT('%', #{keyword}, '%'))",
             "  </if>",
@@ -142,6 +154,10 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                        @Param("directOrgIds") List<Long> directOrgIds,
                                        @Param("scopedOrgIds") List<Long> scopedOrgIds,
                                        @Param("projectId") Long projectId,
+                                       @Param("type") String type,
+                                       @Param("priority") String priority,
+                                       @Param("status") String status,
+                                       @Param("assigneeId") Long assigneeId,
                                        @Param("keyword") String keyword);
 
     @Select({
@@ -153,6 +169,10 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
             "  AND r.deleted_at = 0",
             "  AND r.is_draft = 0",
             "  <if test='projectId != null'> AND r.project_id = #{projectId} </if>",
+            "  <if test='type != null and type != \"\"'> AND r.type = #{type} </if>",
+            "  <if test='priority != null and priority != \"\"'> AND r.priority = #{priority} </if>",
+            "  <if test='status != null and status != \"\"'> AND r.status = #{status} </if>",
+            "  <if test='assigneeId != null'> AND r.assignee_id = #{assigneeId} </if>",
             "  <if test='keyword != null and keyword != \"\"'>",
             "    AND (r.title LIKE CONCAT('%', #{keyword}, '%') OR r.description LIKE CONCAT('%', #{keyword}, '%'))",
             "  </if>",
@@ -175,6 +195,10 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
     IPage<Requirement> selectMyFollows(IPage<Requirement> page,
                                        @Param("userId") Long userId,
                                        @Param("projectId") Long projectId,
+                                       @Param("type") String type,
+                                       @Param("priority") String priority,
+                                       @Param("status") String status,
+                                       @Param("assigneeId") Long assigneeId,
                                        @Param("keyword") String keyword,
                                        @Param("isSuperAdmin") boolean isSuperAdmin,
                                        @Param("visibleOrgIds") List<Long> visibleOrgIds);
@@ -191,7 +215,13 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
             "<script>",
             "SELECT DISTINCT r.*",
             "FROM requirements r",
-            "WHERE r.is_draft = 0",
+            "WHERE r.deleted_at = 0",
+            "  AND r.is_draft = 0",
+            "  <if test='projectId != null'> AND r.project_id = #{projectId} </if>",
+            "  <if test='type != null and type != \"\"'> AND r.type = #{type} </if>",
+            "  <if test='priority != null and priority != \"\"'> AND r.priority = #{priority} </if>",
+            "  <if test='status != null and status != \"\"'> AND r.status = #{status} </if>",
+            "  <if test='assigneeId != null'> AND r.assignee_id = #{assigneeId} </if>",
             "  AND (",
             "    r.creator_id = #{userId}",
             "    OR EXISTS (",
@@ -272,9 +302,15 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
             "ORDER BY r.updated_at DESC",
             "</script>"
     })
-    List<Requirement> selectMyDone(@Param("userId") Long userId,
-                                   @Param("roleCodes") List<String> roleCodes,
-                                   @Param("directOrgIds") List<Long> directOrgIds,
-                                   @Param("scopedOrgIds") List<Long> scopedOrgIds,
-                                   @Param("keyword") String keyword);
+    IPage<Requirement> selectMyDone(IPage<Requirement> page,
+                                    @Param("userId") Long userId,
+                                    @Param("roleCodes") List<String> roleCodes,
+                                    @Param("directOrgIds") List<Long> directOrgIds,
+                                    @Param("scopedOrgIds") List<Long> scopedOrgIds,
+                                    @Param("projectId") Long projectId,
+                                    @Param("type") String type,
+                                    @Param("priority") String priority,
+                                    @Param("status") String status,
+                                    @Param("assigneeId") Long assigneeId,
+                                    @Param("keyword") String keyword);
 }

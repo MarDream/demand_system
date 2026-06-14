@@ -1,18 +1,28 @@
 import LogicFlow from '@logicflow/core'
 import { CircleNode, CircleNodeModel, RectNode, RectNodeModel, DiamondNode, DiamondNodeModel } from '@logicflow/core'
 
+// 语义化颜色常量
+const COLORS = {
+  success: '#10B981',
+  accent: '#0369A1',
+  warning: '#F59E0B',
+  danger: '#DC2626',
+  purple: '#8B5CF6',
+  muted: '#64748B',
+}
+
 // 节点样式配置
 export const nodeStyleConfig = {
   start: {
-    fill: '#67c23a',
-    stroke: '#67c23a',
+    fill: COLORS.success,
+    stroke: COLORS.success,
     strokeWidth: 2,
     fillOpacity: 0.1,
     r: 40
   },
   approval: {
-    fill: '#409eff',
-    stroke: '#409eff',
+    fill: COLORS.accent,
+    stroke: COLORS.accent,
     strokeWidth: 2,
     fillOpacity: 0.1,
     width: 120,
@@ -21,8 +31,8 @@ export const nodeStyleConfig = {
     ry: 5
   },
   cc: {
-    fill: '#e6a23c',
-    stroke: '#e6a23c',
+    fill: COLORS.warning,
+    stroke: COLORS.warning,
     strokeWidth: 2,
     fillOpacity: 0.1,
     width: 120,
@@ -31,24 +41,24 @@ export const nodeStyleConfig = {
     ry: 5
   },
   condition: {
-    fill: '#f56c6c',
-    stroke: '#f56c6c',
+    fill: COLORS.danger,
+    stroke: COLORS.danger,
     strokeWidth: 2,
     fillOpacity: 0.1,
     width: 80,
     height: 80
   },
   parallel: {
-    fill: '#9b59b6',
-    stroke: '#9b59b6',
+    fill: COLORS.purple,
+    stroke: COLORS.purple,
     strokeWidth: 2,
     fillOpacity: 0.1,
     width: 80,
     height: 80
   },
   end: {
-    fill: '#909399',
-    stroke: '#909399',
+    fill: COLORS.muted,
+    stroke: COLORS.muted,
     strokeWidth: 2,
     fillOpacity: 0.1,
     r: 40

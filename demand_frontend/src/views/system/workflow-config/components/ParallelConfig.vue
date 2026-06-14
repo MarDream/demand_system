@@ -88,7 +88,7 @@ function removeBranch(index: number) {
 
 <style scoped>
 .hint {
-  color: #909399;
+  color: var(--color-muted-text);
   font-size: 12px;
   margin: 0 0 12px;
 }

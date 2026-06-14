@@ -18,6 +18,8 @@ public class WorkflowVersionDTO {
 
     private String runtimeHash;
 
+    private String configHash;
+
     private LocalDateTime activatedAt;
 
     private Long creatorId;
@@ -90,6 +92,14 @@ public class WorkflowVersionDTO {
 
     public void setRuntimeHash(String runtimeHash) {
         this.runtimeHash = runtimeHash;
+    }
+
+    public String getConfigHash() {
+        return configHash;
+    }
+
+    public void setConfigHash(String configHash) {
+        this.configHash = configHash;
     }
 
     public LocalDateTime getActivatedAt() {

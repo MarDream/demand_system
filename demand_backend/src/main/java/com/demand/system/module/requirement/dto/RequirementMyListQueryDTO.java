@@ -4,6 +4,14 @@ public class RequirementMyListQueryDTO {
 
     private Long projectId;
 
+    private String type;
+
+    private String priority;
+
+    private String status;
+
+    private Long assigneeId;
+
     private String keyword;
 
     private int pageNum = 1;
@@ -16,6 +24,38 @@ public class RequirementMyListQueryDTO {
 
     public void setProjectId(Long projectId) {
         this.projectId = projectId;
+    }
+
+    public String getType() {
+        return type;
+    }
+
+    public void setType(String type) {
+        this.type = type;
+    }
+
+    public String getPriority() {
+        return priority;
+    }
+
+    public void setPriority(String priority) {
+        this.priority = priority;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public Long getAssigneeId() {
+        return assigneeId;
+    }
+
+    public void setAssigneeId(Long assigneeId) {
+        this.assigneeId = assigneeId;
     }
 
     public String getKeyword() {
@@ -31,7 +71,7 @@ public class RequirementMyListQueryDTO {
     }
 
     public void setPageNum(int pageNum) {
-        this.pageNum = pageNum;
+        this.pageNum = Math.max(pageNum, 1);
     }
 
     public int getPageSize() {
@@ -39,7 +79,6 @@ public class RequirementMyListQueryDTO {
     }
 
     public void setPageSize(int pageSize) {
-        this.pageSize = pageSize;
+        this.pageSize = Math.min(Math.max(pageSize, 1), 100);
     }
 }
-

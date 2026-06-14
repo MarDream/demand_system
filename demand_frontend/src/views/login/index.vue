@@ -108,7 +108,7 @@ async function handleLogin() {
 .login-container {
   width: 100%;
   height: 100vh;
-  background: linear-gradient(135deg, #409EFF 0%, #304156 100%);
+  background: linear-gradient(135deg, var(--color-accent) 0%, var(--color-sidebar-bg) 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -136,7 +136,7 @@ async function handleLogin() {
 
 .login-title {
   font-size: 24px;
-  color: #303133;
+  color: var(--color-text-primary);
   font-weight: 600;
   margin: 0;
 }
@@ -166,13 +166,13 @@ async function handleLogin() {
   justify-content: center;
 
   .link {
-    color: #409EFF;
+    color: var(--color-accent);
     text-decoration: none;
     font-size: 14px;
     transition: color 0.3s;
 
     &:hover {
-      color: #66b1ff;
+      color: var(--color-accent-hover);
     }
   }
 

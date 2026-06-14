@@ -82,6 +82,7 @@ declare module 'vue' {
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SmartSearchBar: typeof import('./src/components/document/SmartSearchBar.vue')['default']
+    StatCardPro: typeof import('./src/components/common/StatCardPro.vue')['default']
     TableCard: typeof import('./src/components/common/TableCard.vue')['default']
     Toolbar: typeof import('./src/components/common/Toolbar.vue')['default']
   }

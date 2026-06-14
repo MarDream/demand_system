@@ -224,6 +224,7 @@ CREATE TABLE `iterations` (
   `capacity` DECIMAL(10, 2) DEFAULT NULL COMMENT '迭代容量',
   `status` VARCHAR(50) DEFAULT 'planned' COMMENT '状态',
   `creator_id` INT UNSIGNED NOT NULL COMMENT '创建人ID',
+  `version` INT NOT NULL DEFAULT 0 COMMENT '乐观锁版本号',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
@@ -424,6 +425,7 @@ CREATE TABLE `reviews` (
   PRIMARY KEY (`id`),
   INDEX `idx_requirement_id` (`requirement_id`),
   INDEX `idx_reviewer_id` (`reviewer_id`),
+  UNIQUE INDEX `uk_requirement_reviewer` (`requirement_id`, `reviewer_id`),
   INDEX `idx_result` (`result`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='评审表';
 
@@ -463,6 +465,22 @@ CREATE TABLE `priorities` (
 -- =====================================================
 -- SEED DATA - 初始化数据
 -- =====================================================
+
+-- 职位表（注册页岗位下拉使用）
+CREATE TABLE IF NOT EXISTS `positions` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name` VARCHAR(100) NOT NULL COMMENT '职位名称',
+  `code` VARCHAR(50) DEFAULT NULL COMMENT '职位编码',
+  `level` INT DEFAULT NULL COMMENT '职位级别',
+  `description` VARCHAR(255) DEFAULT NULL COMMENT '职位描述',
+  `sort_order` INT DEFAULT 0 COMMENT '排序',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `uk_position_code` (`code`),
+  INDEX `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='职位表';
 
 -- 职位数据
 INSERT INTO `positions` (`id`, `name`, `code`, `level`, `description`) VALUES
@@ -524,6 +542,7 @@ CREATE TABLE `roles` (
   `role_group_id` INT UNSIGNED DEFAULT NULL COMMENT '角色组ID',
   `sort_order` INT DEFAULT 0 COMMENT '排序',
   `is_system` TINYINT DEFAULT 0 COMMENT '是否系统角色 0=否 1=是',
+  `is_admin` TINYINT DEFAULT 0 COMMENT '是否管理员角色 0=否 1=是',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
@@ -551,15 +570,15 @@ CREATE TABLE `user_roles` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户角色关系表';
 
 -- 角色数据（移到建表之后）
-INSERT INTO `roles` (`code`, `name`, `description`, `is_system`) VALUES
-('SUPER_ADMIN', '超级管理员', '系统最高权限，可管理所有配置', 1),
-('REGION_ADMIN', '区域管理员', '管理指定区域的部门和人员', 1),
-('DEPT_ADMIN', '部门管理员', '管理指定部门的人员', 1),
-('PRODUCT_MANAGER', '产品经理', '负责需求评审和验收', 0),
-('PROJECT_MANAGER', '项目经理', '负责项目管理和迭代规划', 0),
-('DEVELOPER', '开发人员', '负责需求开发', 0),
-('TESTER', '测试人员', '负责需求测试', 0),
-('REVIEWER', '评审人', '负责需求评审', 0);
+INSERT INTO `roles` (`code`, `name`, `description`, `is_system`, `is_admin`) VALUES
+('SUPER_ADMIN', '超级管理员', '系统最高权限，可管理所有配置', 1, 1),
+('REGION_ADMIN', '区域管理员', '管理指定区域的部门和人员', 1, 0),
+('DEPT_ADMIN', '部门管理员', '管理指定部门的人员', 1, 0),
+('PRODUCT_MANAGER', '产品经理', '负责需求评审和验收', 0, 0),
+('PROJECT_MANAGER', '项目经理', '负责项目管理和迭代规划', 0, 0),
+('DEVELOPER', '开发人员', '负责需求开发', 0, 0),
+('TESTER', '测试人员', '负责需求测试', 0, 0),
+('REVIEWER', '评审人', '负责需求评审', 0, 0);
 
 -- 给admin用户分配超级管理员角色
 INSERT INTO `user_roles` (`user_id`, `role_id`, `project_id`) VALUES
@@ -970,14 +989,70 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- -----------------------------------------------------
 -- 增量变更：需求表新增字段
 -- -----------------------------------------------------
-ALTER TABLE requirements ADD COLUMN IF NOT EXISTS ops_follow_id BIGINT UNSIGNED DEFAULT NULL COMMENT '运营跟进人ID' AFTER assignee_id;
-ALTER TABLE requirements ADD COLUMN IF NOT EXISTS maint_follow_id BIGINT UNSIGNED DEFAULT NULL COMMENT '运维跟进人ID' AFTER ops_follow_id;
-ALTER TABLE requirements ADD COLUMN IF NOT EXISTS department_id BIGINT UNSIGNED DEFAULT NULL COMMENT '归属部门ID' AFTER maint_follow_id;
-ALTER TABLE requirements ADD COLUMN IF NOT EXISTS requirement_no VARCHAR(64) DEFAULT NULL COMMENT '需求编号' AFTER department_id;
-ALTER TABLE requirements ADD COLUMN IF NOT EXISTS analysis_completed_at DATETIME DEFAULT NULL COMMENT '分析完成时间' AFTER due_date;
-ALTER TABLE requirements ADD COLUMN IF NOT EXISTS confirm_at DATETIME DEFAULT NULL COMMENT '需求确认时间' AFTER analysis_completed_at;
-ALTER TABLE requirements ADD COLUMN IF NOT EXISTS development_completed_at DATETIME DEFAULT NULL COMMENT '开发完成时间' AFTER confirm_at;
-ALTER TABLE requirements ADD COLUMN IF NOT EXISTS cc_user_ids JSON DEFAULT NULL COMMENT '抄送人ID列表' AFTER development_completed_at;
+DROP PROCEDURE IF EXISTS `apply_requirement_base_schema`;
+DELIMITER $$
+CREATE PROCEDURE `apply_requirement_base_schema`()
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'requirements' AND COLUMN_NAME = 'ops_follow_id'
+  ) THEN
+    ALTER TABLE `requirements`
+      ADD COLUMN `ops_follow_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '运营跟进人ID' AFTER `assignee_id`;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'requirements' AND COLUMN_NAME = 'maint_follow_id'
+  ) THEN
+    ALTER TABLE `requirements`
+      ADD COLUMN `maint_follow_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '运维跟进人ID' AFTER `ops_follow_id`;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'requirements' AND COLUMN_NAME = 'department_id'
+  ) THEN
+    ALTER TABLE `requirements`
+      ADD COLUMN `department_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '归属部门ID' AFTER `maint_follow_id`;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'requirements' AND COLUMN_NAME = 'requirement_no'
+  ) THEN
+    ALTER TABLE `requirements`
+      ADD COLUMN `requirement_no` VARCHAR(64) DEFAULT NULL COMMENT '需求编号' AFTER `department_id`;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'requirements' AND COLUMN_NAME = 'analysis_completed_at'
+  ) THEN
+    ALTER TABLE `requirements`
+      ADD COLUMN `analysis_completed_at` DATETIME DEFAULT NULL COMMENT '分析完成时间' AFTER `due_date`;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'requirements' AND COLUMN_NAME = 'confirm_at'
+  ) THEN
+    ALTER TABLE `requirements`
+      ADD COLUMN `confirm_at` DATETIME DEFAULT NULL COMMENT '需求确认时间' AFTER `analysis_completed_at`;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'requirements' AND COLUMN_NAME = 'development_completed_at'
+  ) THEN
+    ALTER TABLE `requirements`
+      ADD COLUMN `development_completed_at` DATETIME DEFAULT NULL COMMENT '开发完成时间' AFTER `confirm_at`;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'requirements' AND COLUMN_NAME = 'cc_user_ids'
+  ) THEN
+    ALTER TABLE `requirements`
+      ADD COLUMN `cc_user_ids` JSON DEFAULT NULL COMMENT '抄送人ID列表' AFTER `development_completed_at`;
+  END IF;
+END$$
+DELIMITER ;
+CALL `apply_requirement_base_schema`();
+DROP PROCEDURE IF EXISTS `apply_requirement_base_schema`;
 CREATE TABLE IF NOT EXISTS `requirement_follows` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `requirement_id` INT UNSIGNED NOT NULL COMMENT '需求ID',
@@ -998,7 +1073,7 @@ SET @requirements_no_index_exists := (
 SET @requirements_no_index_sql := IF(
   @requirements_no_index_exists = 0,
   'ALTER TABLE requirements ADD UNIQUE INDEX uk_requirement_no (requirement_no)',
-  'SELECT 1'
+  'DO 0'
 );
 PREPARE stmt_requirements_no_index FROM @requirements_no_index_sql;
 EXECUTE stmt_requirements_no_index;
@@ -1335,20 +1410,96 @@ CREATE TABLE IF NOT EXISTS `workflow_instance_transitions` (
 -- -----------------------------------------------------
 -- 知识库文档表字段补全
 -- -----------------------------------------------------
-ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS `project_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联项目ID' AFTER knowledge_base_id;
-ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS `requirement_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联需求ID' AFTER minio_key;
-ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS `source_type` VARCHAR(50) DEFAULT NULL COMMENT '来源类型(requirement/knowledge_base)' AFTER requirement_id;
-ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS `source_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '来源业务ID' AFTER source_type;
-ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS `download_count` INT UNSIGNED DEFAULT 0 COMMENT '下载次数' AFTER uploader_id;
+DROP PROCEDURE IF EXISTS `apply_knowledge_document_schema`;
+DELIMITER $$
+CREATE PROCEDURE `apply_knowledge_document_schema`()
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'knowledge_documents' AND COLUMN_NAME = 'project_id'
+  ) THEN
+    ALTER TABLE `knowledge_documents`
+      ADD COLUMN `project_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联项目ID' AFTER `knowledge_base_id`;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'knowledge_documents' AND COLUMN_NAME = 'requirement_id'
+  ) THEN
+    ALTER TABLE `knowledge_documents`
+      ADD COLUMN `requirement_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联需求ID' AFTER `minio_key`;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'knowledge_documents' AND COLUMN_NAME = 'source_type'
+  ) THEN
+    ALTER TABLE `knowledge_documents`
+      ADD COLUMN `source_type` VARCHAR(50) DEFAULT NULL COMMENT '来源类型(requirement/knowledge_base)' AFTER `requirement_id`;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'knowledge_documents' AND COLUMN_NAME = 'source_id'
+  ) THEN
+    ALTER TABLE `knowledge_documents`
+      ADD COLUMN `source_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '来源业务ID' AFTER `source_type`;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'knowledge_documents' AND COLUMN_NAME = 'download_count'
+  ) THEN
+    ALTER TABLE `knowledge_documents`
+      ADD COLUMN `download_count` INT UNSIGNED DEFAULT 0 COMMENT '下载次数' AFTER `uploader_id`;
+  END IF;
+END$$
+DELIMITER ;
+CALL `apply_knowledge_document_schema`();
+DROP PROCEDURE IF EXISTS `apply_knowledge_document_schema`;
 
 -- -----------------------------------------------------
 -- 需求表增加工作流相关字段
 -- -----------------------------------------------------
-ALTER TABLE requirements ADD COLUMN IF NOT EXISTS `workflow_instance_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '工作流实例ID' AFTER iteration_id;
-ALTER TABLE requirements ADD COLUMN IF NOT EXISTS `node_status` VARCHAR(50) DEFAULT 'DRAFT' COMMENT '当前节点状态' AFTER workflow_instance_id;
-ALTER TABLE requirements ADD COLUMN IF NOT EXISTS `is_draft` TINYINT DEFAULT 1 COMMENT '是否草稿 0=否 1=是' AFTER node_status;
-ALTER TABLE requirements ADD COLUMN IF NOT EXISTS `last_saved_at` DATETIME DEFAULT NULL COMMENT '最后保存草稿时间（用于区分"自动草稿"和"手动保存草稿"）' AFTER is_draft;
-ALTER TABLE requirements ADD COLUMN IF NOT EXISTS `creator_role_codes` JSON DEFAULT NULL COMMENT '创建人角色码快照（SecurityUtils.getCurrentUserRoles），用于草稿可见性(同部门同角色)' AFTER last_saved_at;
+DROP PROCEDURE IF EXISTS `apply_requirement_workflow_schema`;
+DELIMITER $$
+CREATE PROCEDURE `apply_requirement_workflow_schema`()
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'requirements' AND COLUMN_NAME = 'workflow_instance_id'
+  ) THEN
+    ALTER TABLE `requirements`
+      ADD COLUMN `workflow_instance_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '工作流实例ID' AFTER `iteration_id`;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'requirements' AND COLUMN_NAME = 'node_status'
+  ) THEN
+    ALTER TABLE `requirements`
+      ADD COLUMN `node_status` VARCHAR(50) DEFAULT 'DRAFT' COMMENT '当前节点状态' AFTER `workflow_instance_id`;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'requirements' AND COLUMN_NAME = 'is_draft'
+  ) THEN
+    ALTER TABLE `requirements`
+      ADD COLUMN `is_draft` TINYINT DEFAULT 1 COMMENT '是否草稿 0=否 1=是' AFTER `node_status`;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'requirements' AND COLUMN_NAME = 'last_saved_at'
+  ) THEN
+    ALTER TABLE `requirements`
+      ADD COLUMN `last_saved_at` DATETIME DEFAULT NULL COMMENT '最后保存草稿时间（用于区分"自动草稿"和"手动保存草稿"）' AFTER `is_draft`;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'requirements' AND COLUMN_NAME = 'creator_role_codes'
+  ) THEN
+    ALTER TABLE `requirements`
+      ADD COLUMN `creator_role_codes` JSON DEFAULT NULL COMMENT '创建人角色码快照（SecurityUtils.getCurrentUserRoles），用于草稿可见性(同部门同角色)' AFTER `last_saved_at`;
+  END IF;
+END$$
+DELIMITER ;
+CALL `apply_requirement_workflow_schema`();
+DROP PROCEDURE IF EXISTS `apply_requirement_workflow_schema`;
 
 -- -----------------------------------------------------
 -- 部门管理者角色配置（部门维度配置角色码集合）
@@ -1488,10 +1639,42 @@ CREATE TABLE IF NOT EXISTS `sys_org` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一组织架构表';
 
 -- 关联表添加 org_id
-ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `job_number` VARCHAR(20) DEFAULT NULL COMMENT '工号(A001~Z999, AA001...)' AFTER `department_id`;
-ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `org_id` INT UNSIGNED DEFAULT NULL COMMENT '所属组织ID';
-ALTER TABLE `user_organizations` ADD COLUMN IF NOT EXISTS `org_id` INT UNSIGNED DEFAULT NULL COMMENT '组织ID';
-ALTER TABLE `requirements` ADD COLUMN IF NOT EXISTS `org_id` INT UNSIGNED DEFAULT NULL COMMENT '归属组织ID';
+DROP PROCEDURE IF EXISTS `apply_org_relation_schema`;
+DELIMITER $$
+CREATE PROCEDURE `apply_org_relation_schema`()
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'job_number'
+  ) THEN
+    ALTER TABLE `users`
+      ADD COLUMN `job_number` VARCHAR(20) DEFAULT NULL COMMENT '工号(A001~Z999, AA001...)' AFTER `department_id`;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'org_id'
+  ) THEN
+    ALTER TABLE `users`
+      ADD COLUMN `org_id` INT UNSIGNED DEFAULT NULL COMMENT '所属组织ID';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_organizations' AND COLUMN_NAME = 'org_id'
+  ) THEN
+    ALTER TABLE `user_organizations`
+      ADD COLUMN `org_id` INT UNSIGNED DEFAULT NULL COMMENT '组织ID';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'requirements' AND COLUMN_NAME = 'org_id'
+  ) THEN
+    ALTER TABLE `requirements`
+      ADD COLUMN `org_id` INT UNSIGNED DEFAULT NULL COMMENT '归属组织ID';
+  END IF;
+END$$
+DELIMITER ;
+CALL `apply_org_relation_schema`();
+DROP PROCEDURE IF EXISTS `apply_org_relation_schema`;
 
 -- 初始化统一组织数据（直接插入，不再依赖旧 regions/departments 表）
 INSERT INTO `sys_org` (id, name, parent_id, org_type, code, description, sort_order, path, level, created_at, updated_at, deleted_at) VALUES
@@ -1555,6 +1738,37 @@ END$$
 DELIMITER ;
 CALL `apply_workflow_engine_schema_upgrades`();
 DROP PROCEDURE IF EXISTS `apply_workflow_engine_schema_upgrades`;
+
+DROP PROCEDURE IF EXISTS `apply_iteration_review_schema_upgrades`;
+DELIMITER $$
+CREATE PROCEDURE `apply_iteration_review_schema_upgrades`()
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'iterations' AND COLUMN_NAME = 'version'
+  ) THEN
+    ALTER TABLE `iterations`
+      ADD COLUMN `version` INT NOT NULL DEFAULT 0 COMMENT '乐观锁版本号' AFTER `creator_id`;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'reviews' AND INDEX_NAME = 'uk_requirement_reviewer'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM (
+      SELECT `requirement_id`, `reviewer_id`
+      FROM `reviews`
+      GROUP BY `requirement_id`, `reviewer_id`
+      HAVING COUNT(*) > 1
+      LIMIT 1
+    ) duplicated_reviews
+  ) THEN
+    ALTER TABLE `reviews`
+      ADD UNIQUE INDEX `uk_requirement_reviewer` (`requirement_id`, `reviewer_id`);
+  END IF;
+END$$
+DELIMITER ;
+CALL `apply_iteration_review_schema_upgrades`();
+DROP PROCEDURE IF EXISTS `apply_iteration_review_schema_upgrades`;
 
 DROP PROCEDURE IF EXISTS `apply_requirement_approval_evaluation_schema`;
 DELIMITER $$

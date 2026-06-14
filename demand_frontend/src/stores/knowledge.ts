@@ -7,12 +7,15 @@ import {
   generateDocumentShareLink,
   getAllKnowledgeBases,
   getDocuments,
+  migrateKnowledgeBaseDocuments,
   searchKnowledge,
   updateKnowledgeBase,
   uploadDocument,
   type KnowledgeBase,
   type KnowledgeDocument,
   type KnowledgeDocumentQueryParams,
+  type KnowledgeMigrateParams,
+  type KnowledgeMigrateResult,
   type SearchMode,
   type SearchResponse
 } from '@/api/modules/knowledge'
@@ -50,6 +53,16 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   async function removeBase(id: number) {
     await deleteKnowledgeBase(id)
     await fetchAllBases()
+  }
+
+  /**
+   * 将源知识库下的文档迁移到目标知识库。
+   * 通常在删除源知识库前调用，以保留文档数据。
+   */
+  async function migrateDocuments(sourceId: number, params: KnowledgeMigrateParams): Promise<KnowledgeMigrateResult> {
+    const res = await migrateKnowledgeBaseDocuments(sourceId, params) as any
+    await fetchAllBases()
+    return (res?.data ?? res) as KnowledgeMigrateResult
   }
 
   async function fetchDocuments(knowledgeBaseId: number, params: KnowledgeDocumentQueryParams = { pageNum: 1, pageSize: 20 }) {
@@ -113,6 +126,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     createBase,
     updateBase,
     removeBase,
+    migrateDocuments,
     fetchDocuments,
     uploadDoc,
     removeDoc,

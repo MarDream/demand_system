@@ -150,7 +150,10 @@ function statusTagType(status: string): string {
   const map: Record<string, string> = {
     '新建': 'info', '待分析': 'warning', '待确认': 'warning', '待评审': 'warning',
     '评审中': 'warning', '已通过': 'success', '开发中': 'primary', '测试中': 'info',
-    '已上线': 'success', '已验收': 'success', '已取消': 'info',
+    '已上线': 'success', '已验收': 'success', '已取消': 'info', '已拒绝': 'danger',
+    '打回': 'danger', '测试不通过': 'danger', '验收不通过': 'danger',
+    PENDING_REVIEW: 'warning', REJECTED: 'danger', SENT_BACK: 'danger',
+    TEST_FAILED: 'danger', ACCEPT_FAILED: 'danger',
   }
   return map[status] || 'info'
 }
@@ -216,12 +219,12 @@ function parallelBranchStatusLabel(status: string): string {
 }
 
 .current-node-status__label {
-  color: #606266;
+  color: var(--color-text-secondary);
   font-size: 13px;
 }
 
 .current-node-status__value {
-  color: #303133;
+  color: var(--color-text-primary);
   font-size: 13px;
   font-weight: 500;
 }

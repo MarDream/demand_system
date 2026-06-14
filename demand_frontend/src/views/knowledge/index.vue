@@ -49,6 +49,9 @@
                     <template #dropdown>
                       <el-dropdown-menu>
                         <el-dropdown-item v-if="hasPermission('button:knowledge:update')" command="edit" :disabled="deletingId === kb.id">编辑</el-dropdown-item>
+                        <el-dropdown-item v-if="hasPermission('button:knowledge:migrate')" command="migrate" :disabled="!kb.docCount || deletingId === kb.id" divided>
+                          迁移文档
+                        </el-dropdown-item>
                         <el-dropdown-item v-if="hasPermission('button:knowledge:delete')" command="delete" :disabled="deletingId === kb.id" divided>
                           <span class="text-danger">删除</span>
                         </el-dropdown-item>
@@ -75,6 +78,19 @@
                 <el-button size="small" @click="goToDetail(kb.id)">进入知识库</el-button>
                 <AppButton size="small" type="primary" permission="button:knowledge:update" :disabled="deletingId === kb.id" @click="openEditDialog(kb)">
                   编辑
+                </AppButton>
+                <AppButton
+                  v-if="kb.docCount > 0"
+                  size="small"
+                  type="warning"
+                  permission="button:knowledge:migrate"
+                  :disabled="deletingId === kb.id"
+                  @click="openMigrateDialog(kb)"
+                >
+                  迁移文档
+                </AppButton>
+                <AppButton size="small" type="danger" plain permission="button:knowledge:delete" :disabled="deletingId === kb.id" @click="handleDelete(kb)">
+                  删除
                 </AppButton>
               </div>
             </el-card>
@@ -108,6 +124,82 @@
         <el-button type="primary" @click="handleSubmit" :loading="submitting">确定</el-button>
       </template>
     </AppDialog>
+
+    <!-- 文档迁移对话框 -->
+    <el-dialog
+      v-model="showMigrateDialog"
+      title="迁移文档到其他知识库"
+      width="640px"
+      :close-on-click-modal="false"
+    >
+      <template v-if="migratingKb">
+        <el-alert
+          v-if="migratingKb.docCount > 0"
+          type="warning"
+          :closable="false"
+          show-icon
+        >
+          <template #title>
+            <strong>「{{ migratingKb.name }}」</strong> 当前包含
+            <strong>{{ migratingKb.docCount }}</strong> 个文档、
+            <strong>{{ migratingKb.chunkCount }}</strong> 个分块
+          </template>
+          迁移后这些文档将归属到目标知识库，便于删除源知识库时保留数据。
+        </el-alert>
+
+        <el-form :model="migrateForm" label-width="100px" style="margin-top: 16px">
+          <el-form-item label="目标知识库" required>
+            <el-select
+              v-model="migrateForm.targetId"
+              placeholder="选择目标知识库"
+              filterable
+              style="width: 100%"
+              :disabled="availableTargets.length === 0"
+            >
+              <el-option
+                v-for="opt in availableTargets"
+                :key="opt.id"
+                :label="`${opt.name}（${opt.docCount} 文档 / ${opt.chunkCount} 分块）`"
+                :value="opt.id"
+              />
+            </el-select>
+            <div v-if="availableTargets.length === 0" class="migrate-hint">
+              没有可用的目标知识库，请先创建其他知识库。
+            </div>
+          </el-form-item>
+          <el-form-item label="迁移原因">
+            <el-input
+              v-model="migrateForm.reason"
+              type="textarea"
+              :rows="2"
+              placeholder="例如：删除前的数据迁移、合并到统一知识库等"
+              maxlength="200"
+              show-word-limit
+            />
+          </el-form-item>
+        </el-form>
+
+        <el-divider>迁移影响说明</el-divider>
+        <ul class="migrate-impact">
+          <li>📦 数据库：<code>knowledge_documents</code> / <code>knowledge_chunks</code> 表的 <code>knowledge_base_id</code> 字段会被更新</li>
+          <li>🧠 向量：原 Milvus 向量将被删除，文档会通过消息队列<strong>异步重新索引</strong>到目标知识库</li>
+          <li>📊 计数：源/目标知识库的文档数和分块数会自动调整</li>
+          <li>📁 文件：MinIO 中的文件本身<strong>保持不变</strong>，无需复制</li>
+        </ul>
+      </template>
+
+      <template #footer>
+        <el-button @click="showMigrateDialog = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="migrating"
+          :disabled="!migrateForm.targetId"
+          @click="confirmMigrate"
+        >
+          确认迁移
+        </el-button>
+      </template>
+    </el-dialog>
   </PageContainer>
 </template>
 
@@ -134,6 +226,15 @@ const form = reactive({ name: '', description: '' })
 const keyword = ref('')
 const statusFilter = ref<'all' | 'active' | 'archived'>('all')
 
+// 迁移相关状态
+const showMigrateDialog = ref(false)
+const migratingKb = ref<KnowledgeBase | null>(null)
+const migrating = ref(false)
+const migrateForm = reactive({
+  targetId: undefined as number | undefined,
+  reason: '',
+})
+
 const statusOptions = [
   { label: '全部', value: 'all' },
   { label: '活跃', value: 'active' },
@@ -149,6 +250,14 @@ const filteredKnowledgeBases = computed(() => {
       || (kb.description || '').toLowerCase().includes(search)
     return matchStatus && matchKeyword
   })
+})
+
+// 可选目标知识库：排除当前正在迁移的源知识库
+const availableTargets = computed(() => {
+  if (!migratingKb.value) return []
+  return store.knowledgeBases.filter(
+    (kb) => kb.id !== migratingKb.value!.id && kb.status === 'active'
+  )
 })
 
 const overviewCards = computed(() => {
@@ -190,9 +299,52 @@ function openEditDialog(kb: KnowledgeBase) {
   showCreateDialog.value = true
 }
 
+// ===== 迁移流程 =====
+function openMigrateDialog(kb: KnowledgeBase) {
+  migratingKb.value = kb
+  migrateForm.targetId = undefined
+  migrateForm.reason = ''
+  showMigrateDialog.value = true
+}
+
+async function confirmMigrate() {
+  if (!migratingKb.value || !migrateForm.targetId) return
+  const sourceName = migratingKb.value.name
+  const target = store.knowledgeBases.find((kb) => kb.id === migrateForm.targetId)
+  const targetName = target?.name || '目标知识库'
+
+  try {
+    await ElMessageBox.confirm(
+      `确认将「${sourceName}」下的所有文档迁移到「${targetName}」？该操作会立即更新数据库与计数，并向消息队列发送重新索引任务。`,
+      '确认迁移',
+      { type: 'warning', confirmButtonText: '确认迁移', cancelButtonText: '取消' }
+    )
+  } catch {
+    return
+  }
+
+  migrating.value = true
+  try {
+    const result = await store.migrateDocuments(migratingKb.value.id, {
+      targetKnowledgeBaseId: migrateForm.targetId,
+      reason: migrateForm.reason || undefined,
+    })
+    ElMessage.success(
+      `迁移完成：${result.migratedDocuments} 个文档、${result.migratedChunks} 个分块（后台正在重新索引）`
+    )
+    showMigrateDialog.value = false
+  } catch (err: any) {
+    ElMessage.error(err?.message || '迁移失败')
+  } finally {
+    migrating.value = false
+  }
+}
+
 async function handleCommand(cmd: string, kb: KnowledgeBase) {
   if (cmd === 'edit') {
     openEditDialog(kb)
+  } else if (cmd === 'migrate') {
+    openMigrateDialog(kb)
   } else if (cmd === 'delete') {
     await handleDelete(kb)
   }
@@ -200,17 +352,45 @@ async function handleCommand(cmd: string, kb: KnowledgeBase) {
 
 async function handleDelete(kb: KnowledgeBase) {
   if (deletingId.value) return
+
+  // 当知识库下还有文档时，强制要求先迁移
+  if ((kb.docCount || 0) > 0) {
+    const choice = await ElMessageBox({
+      type: 'warning',
+      title: '该知识库下还有文档',
+      message: `「${kb.name}」包含 ${kb.docCount} 个文档、${kb.chunkCount} 个分块。直接删除将不可恢复地清理这些数据。\n\n请先选择处理方式：`,
+      showCancelButton: true,
+      showClose: true,
+      confirmButtonText: '先迁移文档',
+      cancelButtonText: '我已知晓，强制删除',
+      distinguishCancelAndClose: true,
+      dangerouslyUseHTMLString: false,
+    }).then(() => 'migrate').catch((action) => action)
+
+    if (choice === 'close') return
+    if (choice === 'migrate') {
+      openMigrateDialog(kb)
+      return
+    }
+    // choice === 'cancel' -> 强制删除
+  }
+
   try {
     await ElMessageBox.confirm(
       `确定删除知识库「${kb.name}」？删除后将同步清理该知识库下的文档和索引数据。`,
       '确认删除',
-      { type: 'warning' }
+      { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' }
     )
-    deletingId.value = kb.id
+  } catch {
+    return
+  }
+
+  deletingId.value = kb.id
+  try {
     await store.removeBase(kb.id)
     ElMessage.success('删除成功')
-  } catch {
-    // 用户取消或接口错误时保持当前列表状态。
+  } catch (err: any) {
+    ElMessage.error(err?.message || '删除失败')
   } finally {
     if (deletingId.value === kb.id) {
       deletingId.value = null
@@ -246,7 +426,7 @@ async function handleSubmit() {
 .kb-page {
   display: flex;
   flex-direction: column;
-  gap: $spacing-md;
+  gap: var(--spacing-md);
 }
 
 .kb-overview {
@@ -254,13 +434,13 @@ async function handleSubmit() {
 }
 
 .overview-card {
-  border-radius: $card-radius;
-  border: 1px solid $border-color;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
 }
 
 .overview-label {
-  color: $text-color-secondary;
-  font-size: $font-size-sm;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
 }
 
 .overview-value {
@@ -268,32 +448,32 @@ async function handleSubmit() {
   font-size: 28px;
   line-height: 1.2;
   font-weight: 700;
-  color: $text-color;
+  color: var(--color-text-primary);
 }
 
 .overview-tip {
   margin-top: 6px;
   font-size: 12px;
-  color: $text-color-placeholder;
+  color: var(--color-text-placeholder);
 }
 
 .kb-panel {
-  border-radius: $card-radius;
-  border: 1px solid $border-color;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
 }
 
 .kb-toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: $spacing-md;
-  margin-bottom: $spacing-md;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
 }
 
 .kb-toolbar__main {
   display: flex;
   align-items: center;
-  gap: $spacing-md;
+  gap: var(--spacing-md);
   flex: 1;
   min-width: 0;
   flex-wrap: wrap;
@@ -308,14 +488,14 @@ async function handleSubmit() {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
   flex-wrap: wrap;
 }
 
 .kb-card {
   margin-bottom: 20px;
   cursor: pointer;
-  border-radius: $card-radius;
+  border-radius: var(--radius-lg);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -327,7 +507,7 @@ async function handleSubmit() {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
 }
 
 .kb-header__main {
@@ -340,17 +520,17 @@ async function handleSubmit() {
 .kb-name {
   font-weight: 600;
   font-size: 16px;
-  color: $text-color;
+  color: var(--color-text-primary);
   word-break: break-word;
 }
 
 .more-btn {
   cursor: pointer;
-  color: $text-color-placeholder;
+  color: var(--color-text-placeholder);
 }
 
 .kb-desc {
-  color: $text-color-secondary;
+  color: var(--color-text-secondary);
   font-size: 13px;
   line-height: 1.7;
   margin: 0 0 14px;
@@ -367,22 +547,22 @@ async function handleSubmit() {
 .kb-stat {
   padding: 12px;
   border-radius: 10px;
-  background: #f8fafc;
-  border: 1px solid #eef2f7;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
 }
 
 .kb-stat__value {
   display: block;
   font-size: 18px;
   font-weight: 700;
-  color: $text-color;
+  color: var(--color-text-primary);
 }
 
 .kb-stat__label {
   display: block;
   margin-top: 4px;
   font-size: 12px;
-  color: $text-color-secondary;
+  color: var(--color-text-secondary);
 }
 
 .kb-footer {
@@ -397,16 +577,44 @@ async function handleSubmit() {
   gap: 8px;
   margin-top: 16px;
   padding-top: 12px;
-  border-top: 1px solid $border-color;
+  border-top: 1px solid var(--color-border);
+  flex-wrap: wrap;
 }
 
 .kb-creator {
-  color: $text-color-placeholder;
+  color: var(--color-text-placeholder);
   font-size: 12px;
 }
 
 .text-danger {
-  color: $danger-color;
+  color: var(--color-danger);
+}
+
+.migrate-hint {
+  font-size: var(--font-size-xs);
+  color: var(--color-muted-text);
+  margin-top: 4px;
+}
+
+.migrate-impact {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  line-height: 1.8;
+
+  li {
+    padding: 4px 0;
+  }
+
+  code {
+    background: var(--color-surface-alt);
+    padding: 1px 6px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    color: var(--color-text-primary);
+  }
 }
 
 @media (max-width: 768px) {

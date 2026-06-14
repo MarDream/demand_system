@@ -109,13 +109,12 @@ public class RequirementController {
 
     @GetMapping("/my-done")
     @PreAuthorize("isAuthenticated()")
-    public Result<List<RequirementVO>> listMyDone(@RequestParam(required = false) String keyword) {
+    public Result<PageResult<RequirementVO>> listMyDone(RequirementMyListQueryDTO query) {
         Long userId = SecurityUtils.getCurrentUserId();
         if (userId == null) {
             return Result.fail(401, "未登录或登录已过期");
         }
-        List<RequirementVO> list = requirementService.listMyDone(keyword, userId);
-        return Result.success(list);
+        return Result.success(requirementService.listMyDone(query, userId));
     }
 
     @PostMapping("/{id}/follow")

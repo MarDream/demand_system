@@ -48,7 +48,7 @@ public interface RequirementService {
      * @param userId 当前用户ID
      * @return 需求列表
      */
-    List<RequirementVO> listMyDone(String keyword, Long userId);
+    PageResult<RequirementVO> listMyDone(RequirementMyListQueryDTO query, Long userId);
 
     void follow(Long requirementId, Long userId);
 

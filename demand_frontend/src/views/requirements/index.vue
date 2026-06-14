@@ -17,17 +17,17 @@
       </div>
       <el-form :model="filterForm" inline>
         <div class="filter-main">
-          <el-form-item v-if="isAllView" label="需求类型">
+          <el-form-item label="需求类型">
             <el-select v-model="filterForm.type" placeholder="全部" clearable style="width: 140px">
               <el-option v-for="t in configTypes" :key="t.code" :label="t.name" :value="t.code" />
             </el-select>
           </el-form-item>
-          <el-form-item v-if="isAllView" label="优先级">
+          <el-form-item label="优先级">
             <el-select v-model="filterForm.priority" placeholder="全部" clearable style="width: 100px">
               <el-option v-for="p in configPriorities" :key="p.code" :label="p.name" :value="p.code" />
             </el-select>
           </el-form-item>
-          <el-form-item v-if="isAllView" label="状态">
+          <el-form-item label="状态">
             <el-select v-model="filterForm.status" placeholder="全部" clearable style="width: 120px">
               <el-option label="新建" value="新建" />
               <el-option label="待分析" value="待分析" />
@@ -40,9 +40,13 @@
               <el-option label="已上线" value="已上线" />
               <el-option label="已验收" value="已验收" />
               <el-option label="已取消" value="已取消" />
+              <el-option label="已拒绝" value="已拒绝" />
+              <el-option label="打回" value="打回" />
+              <el-option label="测试不通过" value="测试不通过" />
+              <el-option label="验收不通过" value="验收不通过" />
             </el-select>
           </el-form-item>
-          <el-form-item v-if="isAllView" label="负责人">
+          <el-form-item label="负责人">
             <el-select v-model="filterForm.assigneeId" placeholder="请选择" clearable style="width: 140px">
               <el-option v-for="user in filterUserList" :key="user.id" :label="user.realName || user.username" :value="user.id" />
             </el-select>
@@ -308,7 +312,7 @@ const allColumns: ColumnDef[] = [
   { key: 'type', label: '类型', width: 100 },
   { key: 'priority', label: '优先级', width: 90 },
   { key: 'status', label: '状态', width: 100 },
-  { key: 'creatorName', label: '创建人', width: 100 },
+  { key: 'creatorName', label: '提出人', width: 100 },
   { key: 'assigneeName', label: '负责人', width: 100 },
   { key: 'opsFollowName', label: '运营跟进人', width: 110 },
   { key: 'maintFollowName', label: '运维跟进人', width: 110 },
@@ -460,6 +464,18 @@ const viewCounts = reactive({
   pending: 0,
 })
 
+function buildMyListParams(): RequirementMyListQuery {
+  return {
+    type: filterForm.type || undefined,
+    priority: filterForm.priority || undefined,
+    status: filterForm.status || undefined,
+    assigneeId: filterForm.assigneeId,
+    keyword: filterForm.keyword || undefined,
+    pageNum: pagination.pageNum,
+    pageSize: pagination.pageSize,
+  }
+}
+
 async function refreshViewCounts() {
   try {
     const [drafts, pending] = await Promise.all([
@@ -478,50 +494,34 @@ async function fetchData() {
   loading.value = true
   try {
     if (isDraftView.value) {
-      const params: RequirementMyListQuery = {
-        keyword: filterForm.keyword || undefined,
-        pageNum: pagination.pageNum,
-        pageSize: pagination.pageSize,
-      }
-      const data = await requirementApi.getMyRequirementDrafts(params)
+      const data = await requirementApi.getMyRequirementDrafts(buildMyListParams())
       tableData.value = data.list
       pagination.total = data.total
       return
     }
 
     if (isPendingView.value) {
-      const params: RequirementMyListQuery = {
-        keyword: filterForm.keyword || undefined,
-        pageNum: pagination.pageNum,
-        pageSize: pagination.pageSize,
-      }
-      const data = await getMyRequirementPending(params)
+      const data = await getMyRequirementPending(buildMyListParams())
       tableData.value = data.list
       pagination.total = data.total
       return
     }
 
     if (isDoneView.value) {
-      const data = await getMyRequirementDone({ keyword: filterForm.keyword })
-      tableData.value = data
-      pagination.total = data.length
+      const data = await getMyRequirementDone(buildMyListParams())
+      tableData.value = data.list
+      pagination.total = data.total
       return
     }
 
     if (isFollowView.value) {
-      const params: RequirementMyListQuery = {
-        keyword: filterForm.keyword || undefined,
-        pageNum: pagination.pageNum,
-        pageSize: pagination.pageSize,
-      }
-      const data = await getMyRequirementFollows(params)
+      const data = await getMyRequirementFollows(buildMyListParams())
       tableData.value = data.list
       pagination.total = data.total
       return
     }
 
     const params: RequirementQuery = {
-      projectId: DEFAULT_PROJECT_ID,
       pageNum: pagination.pageNum,
       pageSize: pagination.pageSize,
     }
@@ -704,7 +704,7 @@ async function handleExport() {
       '类型': typeLabel(row.type),
       '优先级': priorityLabel(row.priority),
       '状态': row.status || '',
-      '创建人': row.creatorName || '-',
+      '提出人': row.creatorName || '-',
       '负责人': row.currentHandlerName || row.assigneeName || '-',
       '运营跟进人': row.opsFollowName || '-',
       '运维跟进人': row.maintFollowName || '-',
@@ -739,7 +739,10 @@ function statusTagType(status: string): string {
   const map: Record<string, string> = {
     '新建': 'info', '待分析': 'warning', '待确认': 'warning', '待评审': 'warning',
     '评审中': 'warning', '已通过': 'success', '开发中': 'primary', '测试中': 'info',
-    '已上线': 'success', '已验收': 'success', '已取消': 'info',
+    '已上线': 'success', '已验收': 'success', '已取消': 'info', '已拒绝': 'danger',
+    '打回': 'danger', '测试不通过': 'danger', '验收不通过': 'danger',
+    PENDING_REVIEW: 'warning', REJECTED: 'danger', SENT_BACK: 'danger',
+    TEST_FAILED: 'danger', ACCEPT_FAILED: 'danger',
   }
   return map[status] || 'info'
 }
@@ -768,7 +771,7 @@ watch(tableData, (rows) => {
 }
 
 .expand-row__text {
-  color: $text-color-placeholder;
+  color: var(--color-text-placeholder);
 }
 
 .requirement-title {
@@ -787,7 +790,7 @@ watch(tableData, (rows) => {
   border: none;
   border-radius: 4px;
   background: transparent;
-  color: $text-color-secondary;
+  color: var(--color-text-secondary);
   cursor: pointer;
 
   &:hover {

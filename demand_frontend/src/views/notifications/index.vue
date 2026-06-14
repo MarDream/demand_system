@@ -111,7 +111,7 @@ onMounted(() => {
   display: flex;
   gap: 12px;
   padding: 16px;
-  border-bottom: 1px solid $border-color;
+  border-bottom: 1px solid var(--color-border);
   cursor: pointer;
   transition: background 0.2s;
 }
@@ -121,7 +121,7 @@ onMounted(() => {
 }
 
 .notification-item.unread {
-  background: #ecf5ff;
+  background: var(--color-info-light);
 }
 
 .notification-item.unread:hover {
@@ -132,7 +132,7 @@ onMounted(() => {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: $primary-color;
+  background: var(--color-accent);
   margin-top: 6px;
   flex-shrink: 0;
 }
@@ -155,13 +155,13 @@ onMounted(() => {
 
 .item-text {
   margin: 0 0 4px;
-  color: $text-color-secondary;
+  color: var(--color-text-secondary);
   font-size: 13px;
   line-height: 1.5;
 }
 
 .item-time {
-  color: $text-color-placeholder;
+  color: var(--color-text-placeholder);
   font-size: 12px;
 }
 

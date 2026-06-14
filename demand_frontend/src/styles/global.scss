@@ -1,3 +1,22 @@
+// ===== 需求管理系统 - 全局样式 =====
+// 引入 Token + Element Plus 覆盖 + 基础重置 + 通用样式
+
+// 1. Token 体系（先加载，提供 CSS 自定义属性）
+@use './tokens/colors';
+@use './tokens/typography';
+@use './tokens/spacing';
+@use './tokens/shadows';
+@use './tokens/motion';
+@use './tokens/layout';
+
+// 2. 全局变量（兼容旧 SCSS 变量引用）
+@use './variables';
+
+// 3. Element Plus 主题覆盖
+@use './element-overrides';
+
+// ===== 基础重置 =====
+
 * {
   margin: 0;
   padding: 0;
@@ -7,40 +26,79 @@
 html, body {
   width: 100%;
   height: 100%;
-  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', Arial, sans-serif;
-  font-size: $font-size-base;
-  color: #303133;
-  background-color: #F0F2F5;
+  font-family: var(--font-family-base);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-primary);
+  background-color: var(--color-background);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
+
+// ===== 滚动条 =====
 
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-thumb {
-  background: #dcdfe6;
-  border-radius: 3px;
+  background: var(--color-slate-300, #CBD5E1);
+  border-radius: var(--radius-full);
+
+  &:hover {
+    background: var(--color-slate-400, #94A3B8);
+  }
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 
-// ===== Table Header Center Alignment =====
+// ===== 聚焦状态 =====
+
+:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+}
+
+// ===== 选中文字 =====
+
+::selection {
+  background-color: var(--color-info-light);
+  color: var(--color-text-primary);
+}
+
+// ===== 链接 =====
+
+a {
+  color: var(--color-accent);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+
+  &:hover {
+    color: var(--color-accent-hover);
+  }
+}
+
+// ===== 表头居中 =====
 
 .el-table .el-table__header-wrapper th .cell {
   text-align: center;
 }
 
-// ===== Dashboard & Common Utility Styles =====
+// ===== Dashboard & 统计卡片 =====
 
 .stat-card {
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-  border: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  transition: transform var(--transition-normal), box-shadow var(--transition-normal), border-color var(--transition-fast);
 
   &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-card-hover);
+    border-color: var(--color-accent);
   }
 }
 
@@ -48,22 +106,23 @@ html, body {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  margin-bottom: $spacing-lg;
+  margin-bottom: var(--spacing-lg);
 
   h2 {
-    font-size: $font-size-lg + 4px;
-    font-weight: 600;
-    color: #303133;
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text-primary);
     margin: 0;
+    letter-spacing: -0.025em;
   }
 }
 
-// ===== Dialog Enhancements =====
+// ===== 对话框增强 =====
 
 .app-draggable-dialog {
-  border-radius: 8px;
+  border-radius: var(--radius-xl);
   overflow: hidden;
-  box-shadow: 0 18px 48px rgba(31, 45, 61, 0.18);
+  box-shadow: var(--shadow-dialog);
 }
 
 .app-draggable-dialog__header {
@@ -75,39 +134,40 @@ html, body {
   .el-dialog__header {
     display: flex;
     align-items: center;
-    min-height: 48px;
-    padding: 14px 54px 14px 20px;
+    min-height: 52px;
+    padding: 16px 56px 16px 24px;
     margin-right: 0;
-    border-bottom: 1px solid #ebeef5;
-    background: linear-gradient(180deg, #ffffff 0%, #fafbfc 100%);
+    border-bottom: 1px solid var(--color-border);
+    background: var(--gradient-header);
   }
 
   .el-dialog__title {
-    color: #1f2937;
-    font-size: 16px;
-    font-weight: 600;
+    color: var(--color-text-primary);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: -0.01em;
   }
 
   .el-dialog__headerbtn {
-    top: 10px;
-    right: 12px;
+    top: 12px;
+    right: 14px;
     width: 32px;
     height: 32px;
-    border-radius: 8px;
-    transition: background-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+    border-radius: var(--radius-md);
+    transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
 
     .el-dialog__close {
-      color: #909399;
+      color: var(--color-muted-text);
       font-size: 18px;
       font-weight: 700;
     }
 
     &:hover {
-      background-color: #f2f3f5;
+      background-color: var(--color-danger-light);
       transform: rotate(90deg);
 
       .el-dialog__close {
-        color: #f56c6c;
+        color: var(--color-danger);
       }
     }
   }
@@ -115,47 +175,47 @@ html, body {
 
 .el-message-box.app-draggable-dialog {
   .el-message-box__header {
-    min-height: 48px;
-    padding: 14px 54px 14px 20px;
-    border-bottom: 1px solid #ebeef5;
-    background: linear-gradient(180deg, #ffffff 0%, #fafbfc 100%);
+    min-height: 52px;
+    padding: 16px 56px 16px 24px;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--gradient-header);
   }
 
   .el-message-box__title {
-    color: #1f2937;
-    font-size: 16px;
-    font-weight: 600;
+    color: var(--color-text-primary);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
   }
 
   .el-message-box__headerbtn {
-    top: 10px;
-    right: 12px;
+    top: 12px;
+    right: 14px;
     width: 32px;
     height: 32px;
-    border-radius: 8px;
-    transition: background-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+    border-radius: var(--radius-md);
+    transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
 
     .el-message-box__close {
-      color: #909399;
+      color: var(--color-muted-text);
       font-size: 18px;
       font-weight: 700;
     }
 
     &:hover {
-      background-color: #f2f3f5;
+      background-color: var(--color-danger-light);
       transform: rotate(90deg);
 
       .el-message-box__close {
-        color: #f56c6c;
+        color: var(--color-danger);
       }
     }
   }
 }
 
-// ===== Settings Form Dialogs =====
+// ===== 设置表单对话框 =====
 
 .el-dialog.settings-form-dialog {
-  border-radius: 14px;
+  border-radius: var(--radius-xl);
   overflow: hidden;
 
   .el-dialog__body {
@@ -176,7 +236,7 @@ html, body {
     justify-content: flex-end;
     min-height: 32px;
     padding-right: 16px;
-    color: #4b5563;
+    color: var(--color-text-secondary);
     white-space: nowrap;
     word-break: keep-all;
     overflow: hidden;
@@ -190,9 +250,84 @@ html, body {
   .form-tip {
     margin-top: 8px;
     line-height: 1.6;
-    color: #6b7280;
+    color: var(--color-muted-text);
   }
 }
+
+// ===== 表格专业样式 =====
+
+.table-pro {
+  --el-table-row-hover-bg-color: var(--color-info-light);
+  --el-table-header-bg-color: var(--color-surface-alt);
+
+  // 斑马纹
+  .el-table__row:nth-child(even) {
+    background-color: var(--color-surface-alt);
+  }
+
+  .el-table__row {
+    cursor: pointer;
+    transition: background-color var(--duration-fast) var(--ease-standard);
+  }
+
+  // 表头
+  .el-table__header th {
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  // 操作列按钮组
+  .action-group {
+    display: flex;
+    gap: var(--spacing-xs);
+    align-items: center;
+
+    .el-button {
+      .el-icon {
+        margin-right: 2px;
+      }
+    }
+  }
+}
+
+// ===== 空状态 =====
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-2xl) var(--spacing-lg);
+  text-align: center;
+
+  &__icon {
+    font-size: 48px;
+    color: var(--color-text-placeholder);
+    margin-bottom: var(--spacing-md);
+  }
+
+  &__title {
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-secondary);
+    margin-bottom: var(--spacing-sm);
+  }
+
+  &__description {
+    font-size: var(--font-size-sm);
+    color: var(--color-muted-text);
+    max-width: 320px;
+  }
+
+  &__action {
+    margin-top: var(--spacing-lg);
+  }
+}
+
+// ===== 响应式 =====
 
 @media (max-width: 768px) {
   .el-dialog.settings-form-dialog {
@@ -206,5 +341,48 @@ html, body {
     .el-dialog__footer {
       padding: 0 18px 18px;
     }
+  }
+}
+
+// ===== 动画工具类 =====
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity var(--duration-normal) var(--ease-standard);
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.slide-up-enter-active {
+  transition: all var(--duration-normal) var(--ease-decelerate);
+}
+
+.slide-up-leave-active {
+  transition: all var(--duration-fast) var(--ease-accelerate);
+}
+
+.slide-up-enter-from {
+  opacity: 0;
+  transform: translateY(12px);
+}
+
+.slide-up-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+// ===== 无障碍 =====
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

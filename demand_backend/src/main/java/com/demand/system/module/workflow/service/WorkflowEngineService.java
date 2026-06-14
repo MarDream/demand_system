@@ -1270,7 +1270,13 @@ public class WorkflowEngineService {
         }
 
         LinkedHashSet<Long> userIds = new LinkedHashSet<>();
-        List<User> users = userMapper.selectList(new LambdaQueryWrapper<>());
+        List<User> users = userMapper.selectList(new LambdaQueryWrapper<User>()
+                .and(wrapper -> wrapper
+                        .in(User::getOrgId, orgIds)
+                        .or()
+                        .in(User::getDepartmentId, orgIds)
+                        .or()
+                        .in(User::getRegionId, orgIds)));
         for (User user : users) {
             if (user == null) {
                 continue;
@@ -1280,7 +1286,13 @@ public class WorkflowEngineService {
             }
         }
 
-        List<UserOrganization> organizations = userOrganizationMapper.selectList(new LambdaQueryWrapper<>());
+        List<UserOrganization> organizations = userOrganizationMapper.selectList(new LambdaQueryWrapper<UserOrganization>()
+                .and(wrapper -> wrapper
+                        .in(UserOrganization::getOrgId, orgIds)
+                        .or()
+                        .in(UserOrganization::getDepartmentId, orgIds)
+                        .or()
+                        .in(UserOrganization::getRegionId, orgIds)));
         for (UserOrganization organization : organizations) {
             if (organization == null || organization.getUserId() == null) {
                 continue;

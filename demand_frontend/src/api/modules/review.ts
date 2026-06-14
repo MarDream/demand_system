@@ -1,5 +1,10 @@
 import request from '@/api/request'
-import type { ApiResponse } from '@/types/api'
+import type { ApiResponse, PageResult } from '@/types/api'
+import type { Review, ReviewListQuery } from '@/types/review'
+
+export function getReviews(params: ReviewListQuery) {
+  return request.get<ApiResponse<PageResult<Review>>>('/v1/reviews', { params }) as unknown as Promise<PageResult<Review>>
+}
 
 export function getReviewList(requirementId: number) {
   return request.get<ApiResponse>(`/v1/requirements/${requirementId}/reviews`)

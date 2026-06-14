@@ -120,17 +120,20 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
 
         Long normalizedProjectId = normalizeProjectId(projectId);
 
-        // 场景A：有 versionId → 编辑已有草稿版本
+        // 场景A：有 versionId → 编辑已有版本
         if (configDTO.getVersionId() != null) {
             WorkflowVersion existingVersion = workflowVersionMapper.selectById(configDTO.getVersionId());
             if (existingVersion == null) {
-                throw new BusinessException("草稿版本不存在");
+                throw new BusinessException("版本不存在");
             }
             if (!existingVersion.getProjectId().equals(normalizedProjectId)) {
-                throw new BusinessException("该草稿版本不属于当前项目");
+                throw new BusinessException("该版本不属于当前项目");
             }
-            if (!"draft".equals(existingVersion.getActivationStatus())) {
-                throw new BusinessException("只有草稿状态支持编辑保存");
+
+            String status = existingVersion.getActivationStatus();
+            // pending 状态不允许编辑（审核中）
+            if ("pending".equals(status)) {
+                throw new BusinessException("该版本已提交审核，请等待审核完成后再保存");
             }
             if (existingVersion.getIsActive() != null && existingVersion.getIsActive() == 1) {
                 throw new BusinessException("启用中的版本不支持编辑");
@@ -138,6 +141,11 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             if (hasPendingApproval(existingVersion.getId())) {
                 throw new BusinessException("该版本已提交审核，请等待审核完成后再保存");
             }
+            // draft / approved / inactive / rejected 状态都允许编辑保存
+
+            // 记录旧的 hash 用于后续对比
+            String oldRuntimeHash = existingVersion.getRuntimeHash();
+            String oldConfigHash = existingVersion.getConfigHash();
 
             // 如有版本号或名称变更，先校验
             if (StringUtils.hasText(configDTO.getVersion()) || StringUtils.hasText(configDTO.getVersionName())) {
@@ -169,9 +177,24 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             WorkflowGraphCompiler.CompiledWorkflow compiled = workflowGraphCompiler.compile(existingVersion.getId(), savedNodes, savedEdges);
             existingVersion.setDefinition(compiled.definitionJson());
             existingVersion.setRuntimeHash(compiled.runtimeHash());
+            existingVersion.setConfigHash(compiled.configHash());
+
+            // 根据 hash 对比决定 activationStatus
+            // approved / inactive / rejected 状态编辑后，如配置变更则回退为 draft
+            if ("approved".equals(status) || "inactive".equals(status) || "rejected".equals(status)) {
+                boolean configChanged = !compiled.runtimeHash().equals(oldRuntimeHash)
+                                     || (oldConfigHash == null || !compiled.configHash().equals(oldConfigHash));
+                if (configChanged) {
+                    existingVersion.setActivationStatus("draft");
+                    log.info("非启用版本配置变更，回退为草稿状态，versionId={}, 原状态={}", existingVersion.getId(), status);
+                } else {
+                    log.info("非启用版本仅修改元数据，保持原状态，versionId={}, status={}", existingVersion.getId(), status);
+                }
+            }
+
             workflowVersionMapper.updateById(existingVersion);
 
-            log.info("更新工作流草稿成功，projectId={}, versionId={}", normalizedProjectId, existingVersion.getId());
+            log.info("更新工作流版本成功，projectId={}, versionId={}, status={}", normalizedProjectId, existingVersion.getId(), existingVersion.getActivationStatus());
             return toVersionDTO(existingVersion);
         }
 
@@ -202,6 +225,7 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         WorkflowGraphCompiler.CompiledWorkflow compiled = workflowGraphCompiler.compile(draftVersion.getId(), savedNodes, savedEdges);
         draftVersion.setDefinition(compiled.definitionJson());
         draftVersion.setRuntimeHash(compiled.runtimeHash());
+        draftVersion.setConfigHash(compiled.configHash());
         workflowVersionMapper.updateById(draftVersion);
 
         log.info("新建工作流草稿成功，projectId={}, versionId={}, version={}", normalizedProjectId, draftVersion.getId(), draftVersion.getVersion());
@@ -262,7 +286,16 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         WorkflowVersion draftVersion = findLatestInactiveVersion(normalizedProjectId);
 
         if (draftVersion == null) {
-            throw new BusinessException("没有可提交的草稿版本");
+            throw new BusinessException("没有可提交的版本");
+        }
+
+        // 仅 draft / inactive / rejected / approved（未启用）状态可提交审核
+        String status = draftVersion.getActivationStatus();
+        if ("pending".equals(status)) {
+            throw new BusinessException("该版本已提交审核，请等待审核完成");
+        }
+        if ("active".equals(status)) {
+            throw new BusinessException("启用中的版本无需提交审核");
         }
 
         if (hasPendingApproval(draftVersion.getId())) {
@@ -286,7 +319,7 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         approval.setSubmittedAt(LocalDateTime.now());
         workflowApprovalMapper.insert(approval);
 
-        log.info("提交工作流审核成功，projectId={}, versionId={}", normalizedProjectId, draftVersion.getId());
+        log.info("提交工作流审核成功，projectId={}, versionId={}, 原状态={}", normalizedProjectId, draftVersion.getId(), status);
     }
 
     @Override

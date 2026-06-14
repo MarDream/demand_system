@@ -71,19 +71,19 @@ const showHeader = computed(() => {
 
 <style scoped lang="scss">
 .app-page {
-  padding: $page-padding;
+  padding: var(--page-padding-lg);
   display: flex;
   flex-direction: column;
-  gap: $spacing-md;
+  gap: var(--spacing-md);
   min-height: 100%;
 }
 
 .app-page--card {
   .app-page__content {
-    background: $bg-container;
-    border: 1px solid $border-color;
-    border-radius: $card-radius;
-    padding: $card-padding;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: var(--card-padding-lg);
   }
 }
 
@@ -91,40 +91,41 @@ const showHeader = computed(() => {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: $spacing-md;
+  gap: var(--spacing-md);
 }
 
 .app-page__header-left {
   display: flex;
   flex-direction: column;
-  gap: $spacing-xs;
+  gap: var(--spacing-xs);
   min-width: 0;
 }
 
 .app-page__title {
   display: flex;
   flex-direction: column;
-  gap: $spacing-xs;
+  gap: var(--spacing-xs);
 }
 
 .app-page__h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--font-size-xl);
   line-height: 1.3;
-  font-weight: 600;
-  color: $text-color;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+  letter-spacing: -0.02em;
 }
 
 .app-page__subtitle {
-  color: $text-color-secondary;
-  font-size: $font-size-sm;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
 }
 
 .app-page__header-actions {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
   flex-wrap: wrap;
 }
 

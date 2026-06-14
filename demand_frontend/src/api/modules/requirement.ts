@@ -54,9 +54,8 @@ export function getMyRequirementFollows(params: RequirementMyListQuery) {
 /**
  * 获取我的已办需求列表
  */
-export function getMyRequirementDone(params?: { keyword?: string }) {
-  return request.get<ApiResponse<Requirement[]>>('/v1/requirements/my-done', { params })
-    .then(res => (Array.isArray(res) ? res : (res as any)?.data || [])) as unknown as Promise<Requirement[]>
+export function getMyRequirementDone(params: RequirementMyListQuery) {
+  return request.get<ApiResponse<PageResult<Requirement>>>('/v1/requirements/my-done', { params }) as unknown as Promise<PageResult<Requirement>>
 }
 
 export function getRequirementNextNodes(id: number) {

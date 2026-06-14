@@ -22,6 +22,8 @@ public class WorkflowVersion {
 
     private String runtimeHash;
 
+    private String configHash;
+
     private Integer isActive;
 
     private String activationStatus;
@@ -78,6 +80,14 @@ public class WorkflowVersion {
 
     public void setRuntimeHash(String runtimeHash) {
         this.runtimeHash = runtimeHash;
+    }
+
+    public String getConfigHash() {
+        return configHash;
+    }
+
+    public void setConfigHash(String configHash) {
+        this.configHash = configHash;
     }
 
     public Integer getIsActive() {

@@ -169,7 +169,7 @@ const barOption = ref({
     name: '数量',
     type: 'bar',
     data: [] as number[],
-    itemStyle: { color: '#409EFF' },
+    itemStyle: { color: 'var(--color-accent)' },
   }],
 })
 
@@ -180,10 +180,10 @@ const durationData = ref<{ stateName: string; avgHours: number; maxHours: number
 const projectRates = ref<{ name: string; rate: number; completed: number; total: number }[]>([])
 
 const getProgressColor = (rate: number) => {
-  if (rate >= 80) return '#67C23A'
-  if (rate >= 50) return '#409EFF'
-  if (rate >= 30) return '#E6A23C'
-  return '#F56C6C'
+  if (rate >= 80) return 'var(--color-success)'
+  if (rate >= 50) return 'var(--color-accent)'
+  if (rate >= 30) return 'var(--color-warning)'
+  return 'var(--color-danger)'
 }
 
 const loadDistributionData = async () => {
@@ -279,22 +279,22 @@ onMounted(() => {
         border-radius: 12px;
         margin-right: 16px;
 
-        &.total { background: linear-gradient(135deg, #409EFF, #66b1ff); }
-        &.status { background: linear-gradient(135deg, #67C23A, #85ce61); }
-        &.type { background: linear-gradient(135deg, #E6A23C, #ebb563); }
-        &.priority { background: linear-gradient(135deg, #F56C6C, #f78989); }
+        &.total { background: linear-gradient(135deg, var(--color-accent), var(--color-accent-hover)); }
+        &.status { background: linear-gradient(135deg, var(--color-success), var(--color-success)); }
+        &.type { background: linear-gradient(135deg, var(--color-warning), var(--color-warning)); }
+        &.priority { background: linear-gradient(135deg, var(--color-danger), var(--color-danger)); }
       }
 
       .stat-info {
         .stat-value {
           font-size: 28px;
           font-weight: 600;
-          color: #303133;
+          color: var(--color-text-primary);
         }
 
         .stat-label {
           font-size: 14px;
-          color: #909399;
+          color: var(--color-muted-text);
           margin-top: 4px;
         }
       }
@@ -339,7 +339,7 @@ onMounted(() => {
       .progress-text {
         width: 60px;
         text-align: right;
-        color: #909399;
+        color: var(--color-muted-text);
         font-size: 14px;
         flex-shrink: 0;
       }

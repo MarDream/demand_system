@@ -4,8 +4,10 @@ import com.demand.system.common.result.PageResult;
 import com.demand.system.common.result.Result;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.knowledge.dto.KnowledgeBaseCreateDTO;
+import com.demand.system.module.knowledge.dto.KnowledgeBaseMigrateDTO;
 import com.demand.system.module.knowledge.dto.KnowledgeBaseUpdateDTO;
 import com.demand.system.module.knowledge.dto.KnowledgeBaseVO;
+import com.demand.system.module.knowledge.dto.KnowledgeMigrateResultVO;
 import com.demand.system.module.knowledge.service.KnowledgeBaseService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
@@ -59,5 +61,16 @@ public class KnowledgeBaseController {
     public Result<Void> delete(@PathVariable Long id) {
         knowledgeBaseService.delete(id);
         return Result.success();
+    }
+
+    /**
+     * 将源知识库下的文档迁移到目标知识库。
+     * 通常在删除前调用，保留数据的同时支持清理源知识库。
+     */
+    @PostMapping("/{id}/migrate")
+    public Result<KnowledgeMigrateResultVO> migrateDocuments(
+            @PathVariable Long id,
+            @Valid @RequestBody KnowledgeBaseMigrateDTO dto) {
+        return Result.success(knowledgeBaseService.migrateDocuments(id, dto));
     }
 }

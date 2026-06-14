@@ -769,7 +769,7 @@ document.addEventListener('fullscreenchange', onFullscreenChange)
   justify-content: center;
   min-height: 60vh;
   gap: 12px;
-  color: #909399;
+  color: var(--color-muted-text);
 }
 
 /* 去掉全屏/下载按钮的 focus 红色边框 */

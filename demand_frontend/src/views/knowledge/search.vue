@@ -268,7 +268,7 @@ function scoreType(score: number) {
   width: 200px;
 }
 .result-count {
-  color: #909399;
+  color: var(--color-muted-text);
   font-size: 13px;
   margin-bottom: 16px;
 }
@@ -288,7 +288,7 @@ function scoreType(score: number) {
 }
 .selected-count {
   font-size: 13px;
-  color: #606266;
+  color: var(--color-text-secondary);
 }
 .results-toolbar__right {
   display: flex;
@@ -302,7 +302,7 @@ function scoreType(score: number) {
 }
 .answer-content {
   line-height: 1.8;
-  color: #606266;
+  color: var(--color-text-secondary);
 }
 .result-card {
   margin-bottom: 16px;
@@ -320,7 +320,7 @@ function scoreType(score: number) {
 .result-rank {
   font-size: 24px;
   font-weight: 700;
-  color: #409EFF;
+  color: var(--color-accent);
   min-width: 36px;
   text-align: center;
   padding-top: 4px;
@@ -345,17 +345,17 @@ function scoreType(score: number) {
 }
 .result-kb, .result-page {
   font-size: 12px;
-  color: #909399;
+  color: var(--color-muted-text);
 }
 .result-title {
   font-size: 13px;
-  color: #606266;
+  color: var(--color-text-secondary);
   font-weight: 500;
   margin-bottom: 6px;
 }
 .result-content {
   font-size: 13px;
-  color: #606266;
+  color: var(--color-text-secondary);
   line-height: 1.8;
   background: #f5f7fa;
   padding: 12px;
@@ -371,7 +371,7 @@ function scoreType(score: number) {
 }
 .requirement-ref__title {
   font-size: 12px;
-  color: #67c23a;
+  color: var(--color-success);
   font-weight: 600;
   margin-bottom: 6px;
 }
@@ -381,11 +381,11 @@ function scoreType(score: number) {
   align-items: center;
   flex-wrap: wrap;
   font-size: 13px;
-  color: #303133;
+  color: var(--color-text-primary);
 }
 .requirement-ref__summary {
   margin-top: 6px;
-  color: #606266;
+  color: var(--color-text-secondary);
   font-size: 12px;
   line-height: 1.6;
 }
@@ -404,7 +404,7 @@ function scoreType(score: number) {
 .search-tip {
   text-align: center;
   padding: 80px 0;
-  color: #909399;
+  color: var(--color-muted-text);
 }
 .search-tip p {
   margin-top: 16px;

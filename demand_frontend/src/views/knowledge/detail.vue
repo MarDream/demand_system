@@ -859,7 +859,7 @@ function statusLabel(status: string) {
 
 .filter-input :deep(.is-focus),
 .filter-input :deep(.el-range-editor.is-active) {
-  border-color: #409eff;
+  border-color: var(--color-accent);
   box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.12);
 }
 
@@ -992,7 +992,7 @@ function statusLabel(status: string) {
 
 .batch-count {
   font-size: 13px;
-  color: #409EFF;
+  color: var(--color-accent);
   font-weight: 500;
 }
 
@@ -1015,7 +1015,7 @@ function statusLabel(status: string) {
 .table-wrapper {
   background: #fff;
   border-radius: 8px;
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--color-border);
   overflow: hidden;
 }
 
@@ -1026,7 +1026,7 @@ function statusLabel(status: string) {
 }
 
 .file-name-link {
-  color: #409EFF;
+  color: var(--color-accent);
   cursor: pointer;
   &:hover {
     text-decoration: underline;
@@ -1034,7 +1034,7 @@ function statusLabel(status: string) {
 }
 
 .file-name-text {
-  color: #303133;
+  color: var(--color-text-primary);
 }
 
 .file-type-tag {
@@ -1048,14 +1048,14 @@ function statusLabel(status: string) {
 .requirement-id {
   font-family: 'SF Mono', 'Consolas', monospace;
   font-size: 12px;
-  color: #606266;
+  color: var(--color-text-secondary);
   background: #f4f4f5;
   padding: 2px 6px;
   border-radius: 4px;
 }
 
 .text-secondary {
-  color: #909399;
+  color: var(--color-muted-text);
 }
 
 .action-group {
@@ -1085,7 +1085,7 @@ function statusLabel(status: string) {
   width: 6px;
   height: 6px;
   border-radius: 999px;
-  background: #e6a23c;
+  background: var(--color-warning);
   box-shadow: 0 0 0 2px #fff;
 }
 
@@ -1096,25 +1096,25 @@ function statusLabel(status: string) {
   justify-content: space-between;
   background: #fff;
   border-radius: 8px;
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--color-border);
   padding: 12px 20px;
   margin-top: 12px;
 }
 
 .pagination-info {
   font-size: 13px;
-  color: #606266;
+  color: var(--color-text-secondary);
   font-feature-settings: 'tnum';
 }
 
 .pagination-info strong {
-  color: #303133;
+  color: var(--color-text-primary);
   font-weight: 600;
 }
 
 .pagination {
   --el-pagination-button-bg-color: #fff;
-  --el-pagination-hover-color: #409EFF;
+  --el-pagination-hover-color: var(--color-accent);
 }
 
 /* ===== 分享弹窗 ===== */
@@ -1129,7 +1129,7 @@ function statusLabel(status: string) {
   padding: 10px 12px;
   border-radius: 6px;
   background: #f5f7fa;
-  color: #606266;
+  color: var(--color-text-secondary);
   word-break: break-all;
   text-align: left;
   min-height: 42px;
@@ -1141,7 +1141,7 @@ function statusLabel(status: string) {
   display: block;
 }
 .share-tip {
-  color: #909399;
+  color: var(--color-muted-text);
   font-size: 12px;
 }
 
@@ -1168,12 +1168,12 @@ function statusLabel(status: string) {
 .log-error-title {
   font-weight: 600;
   font-size: 13px;
-  color: #303133;
+  color: var(--color-text-primary);
   margin-bottom: 8px;
 }
 .log-error-content {
   background: #fef0f0;
-  color: #f56c6c;
+  color: var(--color-danger);
   padding: 10px 12px;
   border-radius: 4px;
   font-size: 13px;
@@ -1187,7 +1187,7 @@ function statusLabel(status: string) {
   margin-left: 6px;
   vertical-align: middle;
   animation: spin 1s linear infinite;
-  color: #e6a23c;
+  color: var(--color-warning);
   font-size: 14px;
 }
 @keyframes spin {

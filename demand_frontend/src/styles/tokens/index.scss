@@ -1,0 +1,9 @@
+// ===== 需求管理系统 - Token 统一导出 =====
+// 使用方式: @use '@/styles/tokens' as *;
+
+@forward 'colors';
+@forward 'typography';
+@forward 'spacing';
+@forward 'shadows';
+@forward 'motion';
+@forward 'layout';

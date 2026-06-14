@@ -271,6 +271,7 @@ public class RequirementServiceImpl implements RequirementService {
         if (r == null) {
             throw new BusinessException("需求不存在");
         }
+        requireViewPermission(r, "无权查看该需求");
         RequirementVO vo = new RequirementVO();
         BeanUtils.copyProperties(r, vo);
         fillUserNames(vo, r);
@@ -534,7 +535,7 @@ public class RequirementServiceImpl implements RequirementService {
 
         WorkflowVersion active = findActiveWorkflowVersion(requirement.getProjectId());
         if (active == null || active.getIsActive() == null || active.getIsActive() != 1) {
-            throw new BusinessException(400, "当前项目未启用工作流");
+            throw new BusinessException(400, "当前工作流正调整中，请保存草稿，稍后再提交");
         }
         WorkflowGraphContext context = workflowRuntimeLoader.loadContext(active.getId());
         WorkflowNode startNode = context.nodesById().values().stream()
@@ -579,7 +580,7 @@ public class RequirementServiceImpl implements RequirementService {
 
         WorkflowVersion active = findActiveWorkflowVersion(requirement.getProjectId());
         if (active == null || active.getIsActive() == null || active.getIsActive() != 1) {
-            throw new BusinessException(400, "当前项目未启用工作流");
+            throw new BusinessException(400, "当前工作流正调整中，请保存草稿，稍后再提交");
         }
 
         WorkflowGraphContext context = workflowRuntimeLoader.loadContext(active.getId());
@@ -633,7 +634,8 @@ public class RequirementServiceImpl implements RequirementService {
     @Override
     public PageResult<RequirementVO> listMyDrafts(RequirementMyListQueryDTO query, Long userId) {
         Page<Requirement> page = new Page<>(query.getPageNum(), query.getPageSize());
-        var result = requirementMapper.selectMyDrafts(page, userId, null, null, query.getProjectId(), query.getKeyword());
+        var result = requirementMapper.selectMyDrafts(page, userId, null, null, query.getProjectId(),
+                query.getType(), query.getPriority(), query.getStatus(), query.getAssigneeId(), query.getKeyword());
         List<RequirementVO> list = new ArrayList<>();
         for (Requirement r : result.getRecords()) {
             list.add(toRequirementVO(r, userId, true));
@@ -650,7 +652,8 @@ public class RequirementServiceImpl implements RequirementService {
 
         Page<Requirement> page = new Page<>(query.getPageNum(), query.getPageSize());
         var result = requirementMapper.selectMyPending(page, userId, roleCodes, directOrgIds, scopedOrgIds,
-                query.getProjectId(), query.getKeyword());
+                query.getProjectId(), query.getType(), query.getPriority(), query.getStatus(), query.getAssigneeId(),
+                query.getKeyword());
         List<RequirementVO> list = new ArrayList<>();
         for (Requirement r : result.getRecords()) {
             list.add(toRequirementVO(r, userId, true));
@@ -665,8 +668,9 @@ public class RequirementServiceImpl implements RequirementService {
         List<Long> visibleOrgIds = resolveVisibleOrgIds(userId, isSuperAdmin);
 
         Page<Requirement> page = new Page<>(query.getPageNum(), query.getPageSize());
-        var result = requirementMapper.selectMyFollows(page, userId, query.getProjectId(), query.getKeyword(),
-                isSuperAdmin, visibleOrgIds);
+        var result = requirementMapper.selectMyFollows(page, userId, query.getProjectId(), query.getType(),
+                query.getPriority(), query.getStatus(), query.getAssigneeId(), query.getKeyword(), isSuperAdmin,
+                visibleOrgIds);
         List<RequirementVO> list = new ArrayList<>();
         for (Requirement r : result.getRecords()) {
             list.add(toRequirementVO(r, userId, true));
@@ -675,17 +679,20 @@ public class RequirementServiceImpl implements RequirementService {
     }
 
     @Override
-    public List<RequirementVO> listMyDone(String keyword, Long userId) {
+    public PageResult<RequirementVO> listMyDone(RequirementMyListQueryDTO query, Long userId) {
         List<String> roleCodes = SecurityUtils.getCurrentUserRoles();
         List<Long> directOrgIds = resolveDirectOrgIds(userId);
         List<Long> scopedOrgIds = resolveScopedOrgIds(directOrgIds);
 
-        List<Requirement> requirements = requirementMapper.selectMyDone(userId, roleCodes, directOrgIds, scopedOrgIds, keyword);
+        Page<Requirement> page = new Page<>(query.getPageNum(), query.getPageSize());
+        var result = requirementMapper.selectMyDone(page, userId, roleCodes, directOrgIds, scopedOrgIds,
+                query.getProjectId(), query.getType(), query.getPriority(), query.getStatus(), query.getAssigneeId(),
+                query.getKeyword());
         List<RequirementVO> list = new ArrayList<>();
-        for (Requirement r : requirements) {
+        for (Requirement r : result.getRecords()) {
             list.add(toRequirementVO(r, userId, true));
         }
-        return list;
+        return new PageResult<>(list, result.getTotal(), query.getPageNum(), query.getPageSize());
     }
 
     @Override
@@ -782,7 +789,7 @@ public class RequirementServiceImpl implements RequirementService {
 
     @Override
     public List<RequirementCommentVO> getComments(Long requirementId) {
-        ensureRequirementExists(requirementId);
+        ensureRequirementVisible(requirementId);
         return requirementCommentMapper.selectByRequirementId(requirementId);
     }
 
@@ -814,17 +821,19 @@ public class RequirementServiceImpl implements RequirementService {
 
     @Override
     public List<RequirementApprovalEvaluationVO> getApprovalEvaluations(Long requirementId) {
-        ensureRequirementExists(requirementId);
+        ensureRequirementVisible(requirementId);
         return approvalEvaluationService.listByRequirementId(requirementId);
     }
 
     @Override
     public List<Map<String, Object>> getHistory(Long requirementId) {
+        ensureRequirementVisible(requirementId);
         return historyMapper.selectHistoryByRequirement(requirementId);
     }
 
     @Override
     public List<Map<String, Object>> getChildren(Long parentId) {
+        ensureRequirementVisible(parentId);
         LambdaQueryWrapper<Requirement> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Requirement::getParentId, parentId)
                 .eq(Requirement::getDeletedAt, 0)
@@ -832,7 +841,11 @@ public class RequirementServiceImpl implements RequirementService {
 
         List<Requirement> children = requirementMapper.selectList(wrapper);
         List<Map<String, Object>> result = new ArrayList<>();
+        Long userId = SecurityUtils.getCurrentUserId();
         for (Requirement r : children) {
+            if (!canViewRequirement(r, userId)) {
+                continue;
+            }
             Map<String, Object> map = new java.util.HashMap<>();
             map.put("id", r.getId());
             map.put("requirementNo", r.getRequirementNo());
@@ -901,6 +914,19 @@ public class RequirementServiceImpl implements RequirementService {
             throw new BusinessException("需求不存在");
         }
         return requirement;
+    }
+
+    private Requirement ensureRequirementVisible(Long requirementId) {
+        Requirement requirement = ensureRequirementExists(requirementId);
+        requireViewPermission(requirement, "无权查看该需求");
+        return requirement;
+    }
+
+    private void requireViewPermission(Requirement requirement, String message) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (!canViewRequirement(requirement, userId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, message);
+        }
     }
 
     private String strVal(Object val) {

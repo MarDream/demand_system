@@ -1,0 +1,22 @@
+// ===== 需求管理系统 - 间距系统 =====
+// 基于 8dp 栅格，4dp 微调
+
+:root {
+  --spacing-0: 0;
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  --spacing-2xl: 48px;
+  --spacing-3xl: 64px;
+
+  // 语义间距
+  --page-padding: var(--spacing-md);
+  --page-padding-lg: var(--spacing-lg);
+  --card-padding: var(--spacing-md);
+  --card-padding-lg: var(--spacing-lg);
+  --section-gap: var(--spacing-lg);
+  --group-gap: var(--spacing-md);
+  --item-gap: var(--spacing-sm);
+}

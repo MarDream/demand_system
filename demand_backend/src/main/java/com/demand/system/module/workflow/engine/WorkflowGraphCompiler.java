@@ -29,6 +29,7 @@ public class WorkflowGraphCompiler {
     public record CompiledWorkflow(
             String definitionJson,
             String runtimeHash,
+            String configHash,
             Set<String> waitNodeIds,
             List<FlattenedTransition> transitions,
             List<WorkflowNodePermission> permissions
@@ -54,6 +55,10 @@ public class WorkflowGraphCompiler {
         } catch (JsonProcessingException e) {
             throw new com.demand.system.common.exception.BusinessException("工作流定义编译失败");
         }
+
+        // 计算配置哈希（包含节点和连线的全量属性，用于检测配置变更）
+        String configJson = buildConfigFingerprint(nodes, edges);
+        String configHash = sha256(configJson);
 
         Set<String> waitNodeIds = new LinkedHashSet<>();
         List<FlattenedTransition> transitions = new ArrayList<>();
@@ -109,7 +114,7 @@ public class WorkflowGraphCompiler {
             permissions.add(permission);
         }
 
-        return new CompiledWorkflow(definitionJson, sha256(definitionJson), waitNodeIds, deduplicate(transitions), permissions);
+        return new CompiledWorkflow(definitionJson, sha256(definitionJson), configHash, waitNodeIds, deduplicate(transitions), permissions);
     }
 
     private void appendFlattenedTransitions(WorkflowGraphContext context, String originWaitNodeId, String currentNodeId,
@@ -194,6 +199,57 @@ public class WorkflowGraphCompiler {
             return objectMapper.writeValueAsString(value);
         } catch (JsonProcessingException e) {
             return "[]";
+        }
+    }
+
+    /**
+     * 构建全量配置指纹 JSON，包含节点和连线的所有属性。
+     * 用于检测节点属性变更（如 assigneeType、timeoutHours 等），
+     * 这些属性不在 definitionJson 中但属于配置变更。
+     */
+    private String buildConfigFingerprint(List<WorkflowNode> nodes, List<WorkflowEdge> edges) {
+        try {
+            var configMap = new java.util.LinkedHashMap<String, Object>();
+            var nodeList = new ArrayList<java.util.LinkedHashMap<String, Object>>();
+            if (nodes != null) {
+                for (WorkflowNode node : nodes) {
+                    if (node == null) continue;
+                    var m = new java.util.LinkedHashMap<String, Object>();
+                    m.put("nodeId", node.getNodeId());
+                    m.put("nodeName", node.getNodeName());
+                    m.put("nodeType", node.getNodeType());
+                    m.put("assigneeType", node.getAssigneeType());
+                    m.put("assigneeRoleId", node.getAssigneeRoleId());
+                    m.put("assigneeRoleGroupId", node.getAssigneeRoleGroupId());
+                    m.put("assigneeOrgId", node.getAssigneeOrgId());
+                    m.put("assigneeUserIds", node.getAssigneeUserIds());
+                    m.put("timeoutHours", node.getTimeoutHours());
+                    m.put("timeoutAction", node.getTimeoutAction());
+                    m.put("properties", node.getProperties());
+                    nodeList.add(m);
+                }
+            }
+            configMap.put("nodes", nodeList);
+
+            var edgeList = new ArrayList<java.util.LinkedHashMap<String, Object>>();
+            if (edges != null) {
+                for (WorkflowEdge edge : edges) {
+                    if (edge == null) continue;
+                    var m = new java.util.LinkedHashMap<String, Object>();
+                    m.put("edgeId", edge.getEdgeId());
+                    m.put("sourceNodeId", edge.getSourceNodeId());
+                    m.put("targetNodeId", edge.getTargetNodeId());
+                    m.put("label", edge.getLabel());
+                    m.put("condition", edge.getCondition());
+                    m.put("properties", edge.getProperties());
+                    edgeList.add(m);
+                }
+            }
+            configMap.put("edges", edgeList);
+
+            return objectMapper.writeValueAsString(configMap);
+        } catch (JsonProcessingException e) {
+            throw new com.demand.system.common.exception.BusinessException("工作流配置指纹序列化失败");
         }
     }
 

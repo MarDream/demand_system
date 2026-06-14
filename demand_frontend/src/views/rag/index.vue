@@ -1318,29 +1318,29 @@ function formatDateTime(timestamp: number) {
 .rag-workspace {
   display: grid;
   grid-template-columns: var(--rag-sidebar-width, 320px) minmax(0, 1fr) 340px;
-  gap: $spacing-md;
+  gap: var(--spacing-md);
   min-height: calc(100vh - 220px);
   position: relative;
 }
 
 .rag-shell {
   border-radius: 12px;
-  border: 1px solid $border-color;
-  background: $bg-container;
-  color: $text-color;
-  box-shadow: $shadow-sm;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
 
 .rag-sidebar,
 .rag-insights {
-  padding: $spacing-md;
+  padding: var(--spacing-md);
 }
 
 .rag-sidebar {
   display: flex;
   flex-direction: column;
-  gap: $spacing-md;
+  gap: var(--spacing-md);
 }
 
 .rag-sidebar.is-collapsed {
@@ -1351,22 +1351,22 @@ function formatDateTime(timestamp: number) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
 }
 
 .rag-sidebar__title {
-  font-size: $font-size-sm;
+  font-size: var(--font-size-sm);
   font-weight: 600;
-  color: $text-color;
+  color: var(--color-text-primary);
 }
 
 .rag-sidebar__collapse-trigger {
   padding: 4px;
-  color: $text-color-secondary;
+  color: var(--color-text-secondary);
   border-radius: 4px;
 
   &:hover {
-    color: $primary-color;
+    color: var(--color-accent);
     background: rgba(64, 158, 255, 0.08);
   }
 }
@@ -1381,7 +1381,7 @@ function formatDateTime(timestamp: number) {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid $border-color;
+  border: 1px solid var(--color-border);
   border-left: 0;
   border-radius: 0 6px 6px 0;
   background: #fff;
@@ -1398,7 +1398,7 @@ function formatDateTime(timestamp: number) {
   border-radius: 10px;
   background: #f8fafc;
   border: 1px solid rgba(235, 238, 245, 0.9);
-  padding: $spacing-md;
+  padding: var(--spacing-md);
 }
 
 .sidebar-section--fill {
@@ -1414,24 +1414,24 @@ function formatDateTime(timestamp: number) {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
 }
 
 .section-label,
 .insight-card__label,
 .chat-title__label {
-  font-size: $font-size-sm;
+  font-size: var(--font-size-sm);
   font-weight: 600;
-  color: $text-color;
+  color: var(--color-text-primary);
 }
 
 .section-tip,
 .chat-empty__desc,
 .insight-empty__desc {
   margin-top: 4px;
-  font-size: $font-size-xs;
+  font-size: var(--font-size-xs);
   line-height: 1.6;
-  color: $text-color-secondary;
+  color: var(--color-text-secondary);
 }
 
 .section-badge {
@@ -1439,16 +1439,16 @@ function formatDateTime(timestamp: number) {
   padding: 2px 10px;
   border-radius: 999px;
   background: rgba(64, 158, 255, 0.12);
-  color: $primary-color;
-  font-size: $font-size-xs;
+  color: var(--color-accent);
+  font-size: var(--font-size-xs);
   font-weight: 600;
   text-align: center;
 }
 
 .knowledge-grid {
-  margin-top: $spacing-sm;
+  margin-top: var(--spacing-sm);
   display: grid;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
 }
 
 .knowledge-card,
@@ -1463,9 +1463,9 @@ function formatDateTime(timestamp: number) {
 .knowledge-card {
   padding: 12px;
   border-radius: 10px;
-  background: $bg-container;
-  border: 1px solid $border-color;
-  color: $text-color;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
   transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }
 
@@ -1476,7 +1476,7 @@ function formatDateTime(timestamp: number) {
 }
 
 .knowledge-card:hover {
-  box-shadow: $shadow-sm;
+  box-shadow: var(--shadow-sm);
 }
 
 .knowledge-card--active {
@@ -1500,7 +1500,7 @@ function formatDateTime(timestamp: number) {
 .knowledge-card__title,
 .citation-item__top {
   justify-content: space-between;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
 }
 
 .knowledge-card__title span {
@@ -1509,24 +1509,24 @@ function formatDateTime(timestamp: number) {
 
 .knowledge-card__desc {
   margin-top: 6px;
-  font-size: $font-size-xs;
+  font-size: var(--font-size-xs);
   line-height: 1.6;
-  color: $text-color-secondary;
+  color: var(--color-text-secondary);
 }
 
 .knowledge-card__meta {
-  gap: $spacing-sm;
-  margin-top: $spacing-sm;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
   flex-wrap: wrap;
-  font-size: $font-size-xs;
-  color: $text-color-placeholder;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-placeholder);
 }
 
 .session-list {
-  margin-top: $spacing-sm;
+  margin-top: var(--spacing-sm);
   display: flex;
   flex-direction: column;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
   min-height: 0;
   overflow: auto;
 }
@@ -1534,17 +1534,17 @@ function formatDateTime(timestamp: number) {
 .session-item {
   padding: 10px 12px;
   border-radius: 10px;
-  background: $bg-container;
-  border: 1px solid $border-color;
-  color: $text-color;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
   display: flex;
   justify-content: space-between;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
   transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }
 
 .session-item:hover {
-  box-shadow: $shadow-sm;
+  box-shadow: var(--shadow-sm);
 }
 
 .session-item--active {
@@ -1557,7 +1557,7 @@ function formatDateTime(timestamp: number) {
 }
 
 .session-item__title {
-  font-size: $font-size-base;
+  font-size: var(--font-size-base);
   font-weight: 600;
 }
 
@@ -1565,16 +1565,16 @@ function formatDateTime(timestamp: number) {
 .message-bubble__footer,
 .citation-item__meta,
 .composer-actions__tip {
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
   flex-wrap: wrap;
-  font-size: $font-size-xs;
-  color: $text-color-placeholder;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-placeholder);
 }
 
 .session-item__context {
   margin-top: 6px;
-  color: $primary-color;
-  font-size: $font-size-xs;
+  color: var(--color-accent);
+  font-size: var(--font-size-xs);
 }
 
 .rag-chat {
@@ -1584,8 +1584,8 @@ function formatDateTime(timestamp: number) {
 }
 
 .chat-header {
-  padding: $spacing-md $spacing-lg;
-  border-bottom: 1px solid $border-color;
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border);
   background: linear-gradient(180deg, #ffffff, #fbfcfe);
 }
 
@@ -1597,25 +1597,25 @@ function formatDateTime(timestamp: number) {
 }
 
 .chat-filters {
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
   flex-wrap: wrap;
   justify-content: flex-end;
 }
 
 .chat-stream {
   flex: 1;
-  padding: $spacing-lg;
+  padding: var(--spacing-lg);
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: $spacing-md;
-  background: $bg-container;
+  gap: var(--spacing-md);
+  background: var(--color-surface);
 }
 
 .chat-empty,
 .insight-empty {
   border-radius: 12px;
-  padding: $spacing-lg;
+  padding: var(--spacing-lg);
   border: 1px dashed rgba(144, 147, 153, 0.35);
   background: #fbfcfe;
 }
@@ -1625,7 +1625,7 @@ function formatDateTime(timestamp: number) {
 .insight-card__title {
   font-size: 16px;
   font-weight: 700;
-  color: $text-color;
+  color: var(--color-text-primary);
 }
 
 .message-row {
@@ -1645,12 +1645,12 @@ function formatDateTime(timestamp: number) {
   padding: 12px 14px;
   border-radius: 12px;
   background: #f8fafc;
-  border: 1px solid $border-color;
+  border: 1px solid var(--color-border);
   cursor: default;
 }
 
 .message-row--user .message-bubble {
-  background: $primary-color;
+  background: var(--color-accent);
   border-color: rgba(64, 158, 255, 0.65);
   border-top-right-radius: 6px;
 }
@@ -1675,8 +1675,8 @@ function formatDateTime(timestamp: number) {
 }
 
 .message-bubble__role {
-  font-size: $font-size-xs;
-  color: $text-color-placeholder;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-placeholder);
 }
 
 .message-row--user .message-bubble__role {
@@ -1687,7 +1687,7 @@ function formatDateTime(timestamp: number) {
   margin-top: 6px;
   line-height: 1.75;
   white-space: pre-wrap;
-  color: $text-color;
+  color: var(--color-text-primary);
 }
 
 .message-row--user .message-bubble__content {
@@ -1700,8 +1700,8 @@ function formatDateTime(timestamp: number) {
 
 .message-bubble__hint {
   margin-top: 8px;
-  font-size: $font-size-sm;
-  color: $text-color-secondary;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
 }
 
 .thinking-loader {
@@ -1727,23 +1727,23 @@ function formatDateTime(timestamp: number) {
 }
 
 .composer-panel {
-  padding: $spacing-md $spacing-lg $spacing-lg;
-  border-top: 1px solid $border-color;
+  padding: var(--spacing-md) var(--spacing-lg) var(--spacing-lg);
+  border-top: 1px solid var(--color-border);
   background: #fbfcfe;
 }
 
 .insight-card__tags {
   display: flex;
   align-items: center;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
   flex-wrap: wrap;
 }
 
 .composer-shell {
   border-radius: 12px;
   padding: 12px 14px;
-  border: 1px solid $border-color;
-  background: $bg-container;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
 
 .composer-shell--disabled {
@@ -1760,23 +1760,23 @@ function formatDateTime(timestamp: number) {
     padding: 0;
     border: 0;
     background: transparent;
-    color: $text-color;
+    color: var(--color-text-primary);
     box-shadow: none;
     font-size: 16px;
     line-height: 1.6;
   }
 
   :deep(.el-textarea__inner::placeholder) {
-    color: $text-color-placeholder;
+    color: var(--color-text-placeholder);
   }
 }
 
 .composer-bottom {
-  margin-top: $spacing-md;
+  margin-top: var(--spacing-md);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: $spacing-md;
+  gap: var(--spacing-md);
 }
 
 .composer-bottom__left,
@@ -1790,21 +1790,21 @@ function formatDateTime(timestamp: number) {
 
 .composer-bottom__left {
   min-width: 0;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
   flex: 1;
 }
 
 .composer-bottom__right {
   justify-content: flex-end;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
   flex-wrap: wrap;
 }
 
 .composer-tipline {
   min-width: 0;
-  font-size: $font-size-xs;
+  font-size: var(--font-size-xs);
   line-height: 1.6;
-  color: $text-color-secondary;
+  color: var(--color-text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1824,18 +1824,18 @@ function formatDateTime(timestamp: number) {
   padding: 0 12px;
   min-height: 36px;
   background: rgba(64, 158, 255, 0.1);
-  color: $text-color;
+  color: var(--color-text-primary);
   gap: 8px;
 }
 
 .composer-ghost-action {
   cursor: pointer;
-  font-size: $font-size-sm;
+  font-size: var(--font-size-sm);
 }
 
 .composer-pill {
   cursor: pointer;
-  font-size: $font-size-sm;
+  font-size: var(--font-size-sm);
 }
 
 .composer-pill--model {
@@ -1848,8 +1848,8 @@ function formatDateTime(timestamp: number) {
   padding: 0 12px;
   min-height: 36px;
   background: rgba(64, 158, 255, 0.12);
-  color: $primary-color;
-  font-size: $font-size-sm;
+  color: var(--color-accent);
+  font-size: var(--font-size-sm);
   font-weight: 600;
 }
 
@@ -1868,7 +1868,7 @@ function formatDateTime(timestamp: number) {
   width: 40px;
   height: 40px;
   border-radius: 10px;
-  background: $primary-color;
+  background: var(--color-accent);
   color: #ffffff;
   display: inline-flex;
   align-items: center;
@@ -1897,8 +1897,8 @@ function formatDateTime(timestamp: number) {
 
 .composer-menu__title,
 .composer-menu__group-label {
-  color: $text-color-secondary;
-  font-size: $font-size-xs;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
   font-weight: 600;
 }
 
@@ -1910,7 +1910,7 @@ function formatDateTime(timestamp: number) {
 
 .composer-menu__group + .composer-menu__group {
   padding-top: 10px;
-  border-top: 1px solid $border-color;
+  border-top: 1px solid var(--color-border);
 }
 
 .composer-menu__item {
@@ -1919,11 +1919,11 @@ function formatDateTime(timestamp: number) {
   padding: 10px 12px;
   border-radius: 10px;
   background: #f8fafc;
-  color: $text-color;
+  color: var(--color-text-primary);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
   cursor: pointer;
   text-align: left;
   transition: background-color 0.18s ease, transform 0.18s ease;
@@ -1939,35 +1939,35 @@ function formatDateTime(timestamp: number) {
 }
 
 .composer-menu__label {
-  font-size: $font-size-base;
+  font-size: var(--font-size-base);
   font-weight: 600;
 }
 
 .composer-menu__hint {
   margin-top: 4px;
-  color: $text-color-secondary;
-  font-size: $font-size-xs;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
 }
 
 .composer-menu__check {
   min-width: 16px;
   text-align: right;
   font-size: 18px;
-  color: $primary-color;
+  color: var(--color-accent);
 }
 
 .rag-insights {
   display: flex;
   flex-direction: column;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
   overflow: auto;
 }
 
 .insight-card {
   border-radius: 10px;
-  padding: $spacing-md;
+  padding: var(--spacing-md);
   background: #fbfcfe;
-  border: 1px solid $border-color;
+  border: 1px solid var(--color-border);
 }
 
 .insight-card--summary {
@@ -1976,26 +1976,26 @@ function formatDateTime(timestamp: number) {
 }
 
 .summary-content {
-  margin-top: $spacing-sm;
+  margin-top: var(--spacing-sm);
   line-height: 1.8;
-  color: $text-color;
+  color: var(--color-text-primary);
 }
 
 .thinking-list,
 .keypoint-list,
 .citation-list {
-  margin-top: $spacing-sm;
+  margin-top: var(--spacing-sm);
 }
 
 .thinking-list {
   display: flex;
   flex-direction: column;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
 }
 
 .thinking-item {
   display: flex;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
 }
 
 .thinking-item__index {
@@ -2003,59 +2003,59 @@ function formatDateTime(timestamp: number) {
   height: 24px;
   border-radius: 999px;
   background: rgba(64, 158, 255, 0.12);
-  color: $primary-color;
+  color: var(--color-accent);
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  font-size: $font-size-xs;
+  font-size: var(--font-size-xs);
 }
 
 .thinking-item__title,
 .citation-item__name {
   font-weight: 600;
-  color: $text-color;
+  color: var(--color-text-primary);
 }
 
 .thinking-item__detail {
   margin-top: 4px;
   line-height: 1.7;
-  color: $text-color-secondary;
+  color: var(--color-text-secondary);
 }
 
 .keypoint-list {
   padding-left: 18px;
   display: flex;
   flex-direction: column;
-  gap: $spacing-sm;
-  color: $text-color;
+  gap: var(--spacing-sm);
+  color: var(--color-text-primary);
   line-height: 1.7;
 }
 
 .citation-list {
   display: flex;
   flex-direction: column;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
 }
 
 .citation-item {
   padding: 12px;
   border-radius: 10px;
   background: #f8fafc;
-  border: 1px solid $border-color;
-  color: $text-color;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
   transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }
 
 .citation-item:hover {
-  box-shadow: $shadow-sm;
+  box-shadow: var(--shadow-sm);
 }
 
 .citation-item__name {
   display: flex;
   align-items: center;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
 }
 
 .citation-item__meta {
@@ -2065,16 +2065,16 @@ function formatDateTime(timestamp: number) {
 .citation-item__excerpt {
   margin-top: 8px;
   line-height: 1.7;
-  color: $text-color-secondary;
+  color: var(--color-text-secondary);
 }
 
 .citation-item__excerpt :deep(mark) {
   background: rgba(64, 158, 255, 0.16);
-  color: $text-color;
+  color: var(--color-text-primary);
 }
 
 .rag-workspace :deep(.el-empty__description p) {
-  color: $text-color-secondary;
+  color: var(--color-text-secondary);
 }
 
 .rag-workspace :deep(.el-button.is-text) {
@@ -2083,10 +2083,10 @@ function formatDateTime(timestamp: number) {
 
 .rag-workspace :deep(.rag-composer-popover.el-popover) {
   border-radius: 12px;
-  border: 1px solid $border-color;
-  background: $bg-container;
-  box-shadow: $shadow-base;
-  padding: $spacing-sm;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-md);
+  padding: var(--spacing-sm);
 }
 
 @keyframes pulse {
@@ -2133,11 +2133,11 @@ function formatDateTime(timestamp: number) {
   .composer-panel,
   .rag-sidebar,
   .rag-insights {
-    padding: $spacing-md;
+    padding: var(--spacing-md);
   }
 
   .chat-stream {
-    padding: $spacing-md;
+    padding: var(--spacing-md);
   }
 
   .chat-filters,

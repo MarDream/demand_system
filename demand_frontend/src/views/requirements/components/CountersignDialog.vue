@@ -111,17 +111,17 @@ function handleClose() {
 .countersign-records-title {
   font-size: 14px;
   font-weight: 500;
-  color: #303133;
+  color: var(--color-text-primary);
   margin-bottom: 12px;
 }
 
 .countersign-submit {
   padding-top: 16px;
-  border-top: 1px solid #ebeef5;
+  border-top: 1px solid var(--color-border);
 }
 
 .countersign-tip {
-  color: #606266;
+  color: var(--color-text-secondary);
   font-size: 14px;
   margin-bottom: 16px;
 }
@@ -134,7 +134,7 @@ function handleClose() {
 }
 
 .countersign-label {
-  color: #606266;
+  color: var(--color-text-secondary);
   font-size: 14px;
 }
 

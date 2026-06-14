@@ -102,6 +102,24 @@ export function deleteKnowledgeBase(id: number) {
   return request.delete(`/v1/knowledge/bases/${id}`)
 }
 
+// 文档迁移
+export interface KnowledgeMigrateParams {
+  targetKnowledgeBaseId: number
+  documentIds?: number[]
+  reason?: string
+}
+
+export interface KnowledgeMigrateResult {
+  migratedDocuments: number
+  migratedChunks: number
+  sourceKnowledgeBaseId: number
+  targetKnowledgeBaseId: number
+}
+
+export function migrateKnowledgeBaseDocuments(id: number, data: KnowledgeMigrateParams) {
+  return request.post<KnowledgeMigrateResult>(`/v1/knowledge/bases/${id}/migrate`, data)
+}
+
 // 文档管理
 export function uploadDocument(knowledgeBaseId: number, file: File) {
   const formData = new FormData()

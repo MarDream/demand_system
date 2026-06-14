@@ -1581,6 +1581,7 @@ function permissionName(code: string) {
     'menu:requirement:view:pending': '我的待办',
     'menu:requirement:view:done': '我的已办',
     'menu:requirement:view:draft': '我的草稿',
+    'menu:requirement:view:follow': '我的关注',
     'button:role:create': '新增角色',
     'button:role:update': '编辑角色',
     'button:role:delete': '删除角色',
@@ -1616,9 +1617,9 @@ function permissionName(code: string) {
 <style scoped lang="scss">
 .role-console {
   min-height: calc(100vh - 82px);
-  background: $bg-container;
-  border: 1px solid $border-color;
-  border-radius: $card-radius;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 
@@ -1626,15 +1627,15 @@ function permissionName(code: string) {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: $spacing-md;
+  gap: var(--spacing-md);
 }
 
 .role-heading__title {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: $text-color;
-  font-size: $font-size-lg;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-lg);
   font-weight: 700;
   white-space: nowrap;
 }
@@ -1642,9 +1643,9 @@ function permissionName(code: string) {
 .role-heading__hint {
   padding: 8px 12px;
   border-radius: 6px;
-  background: #606266;
+  background: var(--color-text-secondary);
   color: #fff;
-  font-size: $font-size-sm;
+  font-size: var(--font-size-sm);
 }
 
 .mode-switch {
@@ -1664,7 +1665,7 @@ function permissionName(code: string) {
 
 .mode-switch :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
   background: #fff;
-  color: $text-color;
+  color: var(--color-text-primary);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
 }
 
@@ -1679,9 +1680,9 @@ function permissionName(code: string) {
 .role-sidebar {
   display: flex;
   flex-direction: column;
-  gap: $spacing-md;
-  padding: $spacing-md;
-  border-right: 1px solid $border-color;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  border-right: 1px solid var(--color-border);
   background: #fff;
   overflow: auto;
 }
@@ -1694,22 +1695,22 @@ function permissionName(code: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
 }
 
 .sidebar-head__title {
-  font-size: $font-size-sm;
+  font-size: var(--font-size-sm);
   font-weight: 600;
-  color: $text-color;
+  color: var(--color-text-primary);
 }
 
 .sidebar-collapse-trigger {
   padding: 4px;
-  color: $text-color-secondary;
+  color: var(--color-text-secondary);
   border-radius: 4px;
 
   &:hover {
-    color: $primary-color;
+    color: var(--color-accent);
     background: rgba(64, 158, 255, 0.08);
   }
 }
@@ -1724,7 +1725,7 @@ function permissionName(code: string) {
 
   &:hover,
   &:active {
-    background: $primary-color;
+    background: var(--color-accent);
   }
 }
 
@@ -1738,7 +1739,7 @@ function permissionName(code: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid $border-color;
+  border: 1px solid var(--color-border);
   border-left: 0;
   border-radius: 0 6px 6px 0;
   background: #fff;
@@ -1753,26 +1754,26 @@ function permissionName(code: string) {
 
 .sidebar-actions {
   display: flex;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
   flex-wrap: wrap;
 }
 
 .role-group {
   display: flex;
   flex-direction: column;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
 }
 
 .role-groups {
   display: flex;
   flex-direction: column;
-  gap: $spacing-md;
+  gap: var(--spacing-md);
 }
 
 .role-group__header {
   display: flex;
   align-items: center;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
 }
 
 .role-group__title {
@@ -1780,12 +1781,12 @@ function permissionName(code: string) {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: $spacing-xs;
+  gap: var(--spacing-xs);
   padding: 4px 0;
   border: 0;
   background: transparent;
-  color: $text-color-secondary;
-  font-size: $font-size-sm;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
   font-weight: 600;
   text-align: left;
   cursor: pointer;
@@ -1801,7 +1802,7 @@ function permissionName(code: string) {
 .role-group__body {
   display: flex;
   flex-direction: column;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
 }
 
 .role-group__count {
@@ -1810,17 +1811,17 @@ function permissionName(code: string) {
   padding: 1px 7px;
   border-radius: 999px;
   background: #edf2f7;
-  color: $text-color-placeholder;
+  color: var(--color-text-placeholder);
   text-align: center;
-  font-size: $font-size-xs;
+  font-size: var(--font-size-xs);
 }
 
 .role-group__empty {
   padding: 12px;
-  border-radius: $border-radius-base;
+  border-radius: var(--radius-md);
   background: #f8fafc;
-  color: $text-color-placeholder;
-  font-size: $font-size-sm;
+  color: var(--color-text-placeholder);
+  font-size: var(--font-size-sm);
   text-align: center;
 }
 
@@ -1828,14 +1829,14 @@ function permissionName(code: string) {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
   padding: 12px;
   border: 1px solid transparent;
-  border-radius: $border-radius-base;
+  border-radius: var(--radius-md);
   background: transparent;
   text-align: left;
   cursor: grab;
-  color: $text-color;
+  color: var(--color-text-primary);
   user-select: none;
   transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
 }
@@ -1848,7 +1849,7 @@ function permissionName(code: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
 }
 
 .role-item:hover {
@@ -1861,7 +1862,7 @@ function permissionName(code: string) {
 }
 
 .role-item.is-active {
-  background: #ecf5ff;
+  background: var(--color-info-light);
   border-color: #b3d8ff;
 }
 
@@ -1880,14 +1881,14 @@ function permissionName(code: string) {
 }
 
 .role-item__meta {
-  color: $text-color-placeholder;
-  font-size: $font-size-xs;
+  color: var(--color-text-placeholder);
+  font-size: var(--font-size-xs);
   word-break: break-all;
 }
 
 .role-main {
   min-width: 0;
-  padding: $spacing-lg;
+  padding: var(--spacing-lg);
   /* 显式指定 grid-column：当 sidebar 折叠（display: none）时，
      防止 main 被错位放到第二个 track 而被压缩到 0 宽 */
   grid-column: 3;
@@ -1896,7 +1897,7 @@ function permissionName(code: string) {
 .role-detail {
   display: flex;
   flex-direction: column;
-  gap: $spacing-md;
+  gap: var(--spacing-md);
 }
 
 .detail-header,
@@ -1905,69 +1906,69 @@ function permissionName(code: string) {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: $spacing-md;
+  gap: var(--spacing-md);
 }
 
 .detail-title {
   display: flex;
   align-items: center;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
   font-size: 22px;
   font-weight: 700;
-  color: $text-color;
+  color: var(--color-text-primary);
 }
 
 .detail-code {
   margin-top: 6px;
-  color: $text-color-placeholder;
-  font-size: $font-size-sm;
+  color: var(--color-text-placeholder);
+  font-size: var(--font-size-sm);
 }
 
 .detail-actions {
   display: flex;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
   flex-wrap: wrap;
 }
 
 .detail-description {
   margin: 0;
-  color: $text-color-secondary;
+  color: var(--color-text-secondary);
   line-height: 1.7;
 }
 
 .role-actions-bar {
   display: flex;
   align-items: center;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
   flex-wrap: wrap;
-  padding: $spacing-sm 0 $spacing-md;
+  padding: var(--spacing-sm) 0 var(--spacing-md);
 }
 
 .permission-panel {
-  padding-top: $spacing-md;
-  border-top: 1px solid $border-color;
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-border);
 }
 
 .panel-head {
-  margin-bottom: $spacing-md;
+  margin-bottom: var(--spacing-md);
 }
 
 .panel-head h3 {
   margin: 0 0 6px;
-  font-size: $font-size-lg;
-  color: $text-color;
+  font-size: var(--font-size-lg);
+  color: var(--color-text-primary);
 }
 
 .panel-head p {
   margin: 0;
-  color: $text-color-secondary;
-  font-size: $font-size-sm;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
 }
 
 .permission-content {
   display: flex;
   flex-direction: column;
-  gap: $spacing-md;
+  gap: var(--spacing-md);
 }
 
 .permission-toolbar .el-input {
@@ -1975,17 +1976,17 @@ function permissionName(code: string) {
 }
 
 .permission-table {
-  border-top: 1px solid $border-color;
+  border-top: 1px solid var(--color-border);
 }
 
 .menu-permission-list {
   display: flex;
   flex-direction: column;
-  border-top: 1px solid $border-color;
+  border-top: 1px solid var(--color-border);
 }
 
 .menu-permission-node {
-  border-bottom: 1px solid $border-color;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .menu-permission-node.is-nested {
@@ -1997,8 +1998,8 @@ function permissionName(code: string) {
   display: grid;
   grid-template-columns: 28px minmax(220px, 1fr) minmax(180px, 320px) 88px;
   align-items: center;
-  gap: $spacing-sm;
-  padding: 8px $spacing-md;
+  gap: var(--spacing-sm);
+  padding: 8px var(--spacing-md);
   background: #fff;
 }
 
@@ -2018,19 +2019,19 @@ function permissionName(code: string) {
 }
 
 .menu-name {
-  margin-right: $spacing-sm;
-  color: $text-color;
+  margin-right: var(--spacing-sm);
+  color: var(--color-text-primary);
   font-weight: 600;
 }
 
 .menu-count {
-  color: $text-color-secondary;
+  color: var(--color-text-secondary);
   text-align: right;
-  font-size: $font-size-sm;
+  font-size: var(--font-size-sm);
 }
 
 .menu-permission-children {
-  padding: 0 0 $spacing-sm;
+  padding: 0 0 var(--spacing-sm);
   background: #fbfdff;
 }
 
@@ -2042,8 +2043,8 @@ function permissionName(code: string) {
 .button-permission-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: $spacing-sm;
-  padding: $spacing-sm $spacing-md $spacing-md;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md) var(--spacing-md);
 }
 
 .button-permission-grid :deep(.el-checkbox.is-bordered) {
@@ -2052,7 +2053,7 @@ function permissionName(code: string) {
   margin-right: 0;
   padding: 9px 12px;
   align-items: flex-start;
-  border-radius: $border-radius-base;
+  border-radius: var(--radius-md);
   background: #fff;
 }
 
@@ -2067,23 +2068,23 @@ function permissionName(code: string) {
 .orphan-permissions {
   display: flex;
   flex-direction: column;
-  gap: $spacing-sm;
-  padding-top: $spacing-md;
+  gap: var(--spacing-sm);
+  padding-top: var(--spacing-md);
 }
 
 .orphan-title {
-  color: $text-color;
+  color: var(--color-text-primary);
   font-weight: 700;
 }
 
 .permission-table__row {
   display: grid;
   grid-template-columns: 160px minmax(0, 1fr) 90px;
-  gap: $spacing-md;
+  gap: var(--spacing-md);
   align-items: start;
   min-height: 64px;
-  padding: $spacing-md 0;
-  border-bottom: 1px solid $border-color;
+  padding: var(--spacing-md) 0;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .permission-table__head {
@@ -2091,24 +2092,24 @@ function permissionName(code: string) {
   align-items: center;
   padding: 0;
   background: #f5f7fa;
-  color: $text-color-secondary;
+  color: var(--color-text-secondary);
   font-weight: 600;
 }
 
 .permission-table__head > div {
-  padding: 0 $spacing-md;
+  padding: 0 var(--spacing-md);
 }
 
 .permission-module {
-  padding-left: $spacing-md;
-  color: $text-color;
+  padding-left: var(--spacing-md);
+  color: var(--color-text-primary);
   font-weight: 600;
   line-height: 32px;
 }
 
 .permission-count {
-  padding-right: $spacing-md;
-  color: $text-color-secondary;
+  padding-right: var(--spacing-md);
+  color: var(--color-text-secondary);
   line-height: 32px;
   text-align: right;
 }
@@ -2116,7 +2117,7 @@ function permissionName(code: string) {
 .permission-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
 }
 
 .permission-grid :deep(.el-checkbox.is-bordered) {
@@ -2125,7 +2126,7 @@ function permissionName(code: string) {
   margin-right: 0;
   padding: 9px 12px;
   align-items: flex-start;
-  border-radius: $border-radius-base;
+  border-radius: var(--radius-md);
 }
 
 .permission-grid :deep(.el-checkbox__label) {
@@ -2137,12 +2138,12 @@ function permissionName(code: string) {
 }
 
 .permission-name {
-  color: $text-color;
+  color: var(--color-text-primary);
 }
 
 .permission-code {
-  color: $text-color-placeholder;
-  font-size: $font-size-xs;
+  color: var(--color-text-placeholder);
+  font-size: var(--font-size-xs);
   word-break: break-all;
 }
 
@@ -2151,37 +2152,37 @@ function permissionName(code: string) {
   display: grid;
   grid-template-columns: minmax(280px, 520px) minmax(320px, 1fr);
   align-items: center;
-  gap: $spacing-xl;
+  gap: var(--spacing-xl);
 }
 
 .guide-copy h2 {
-  margin: 0 0 $spacing-md;
+  margin: 0 0 var(--spacing-md);
   font-size: 28px;
-  color: $text-color;
+  color: var(--color-text-primary);
 }
 
 .guide-copy h3 {
-  margin: $spacing-xl 0 $spacing-sm;
-  font-size: $font-size-lg;
-  color: $text-color;
+  margin: var(--spacing-xl) 0 var(--spacing-sm);
+  font-size: var(--font-size-lg);
+  color: var(--color-text-primary);
 }
 
 .guide-copy p,
 .guide-copy li {
-  color: $text-color-secondary;
+  color: var(--color-text-secondary);
   line-height: 1.8;
 }
 
 .guide-copy ul {
   padding-left: 18px;
-  margin-bottom: $spacing-lg;
+  margin-bottom: var(--spacing-lg);
 }
 
 .flow-preview {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: $spacing-xl;
+  gap: var(--spacing-xl);
   align-items: center;
 }
 
@@ -2189,7 +2190,7 @@ function permissionName(code: string) {
   position: relative;
   display: flex;
   align-items: center;
-  gap: $spacing-md;
+  gap: var(--spacing-md);
 }
 
 .flow-avatar {
@@ -2206,9 +2207,9 @@ function permissionName(code: string) {
 .flow-label {
   min-width: 132px;
   padding: 10px 14px;
-  background: #ecf5ff;
-  border-radius: $border-radius-base;
-  color: $text-color;
+  background: var(--color-info-light);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
   font-weight: 600;
 }
 
@@ -2217,7 +2218,7 @@ function permissionName(code: string) {
   left: 36px;
   top: 80px;
   width: 1px;
-  height: $spacing-xl;
+  height: var(--spacing-xl);
   border-left: 1px dashed #a8abb2;
 }
 
@@ -2225,7 +2226,7 @@ function permissionName(code: string) {
   .role-heading {
     align-items: flex-start;
     flex-direction: column;
-    gap: $spacing-sm;
+    gap: var(--spacing-sm);
   }
 
   .mode-switch {
@@ -2252,7 +2253,7 @@ function permissionName(code: string) {
 
   .role-sidebar {
     border-right: 0;
-    border-bottom: 1px solid $border-color;
+    border-bottom: 1px solid var(--color-border);
   }
 
   .flow-preview {
@@ -2261,8 +2262,8 @@ function permissionName(code: string) {
 
   .permission-table__row {
     grid-template-columns: 1fr;
-    gap: $spacing-sm;
-    padding: $spacing-md;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md);
   }
 
   .permission-table__head {
@@ -2318,7 +2319,7 @@ function permissionName(code: string) {
   padding: 1px 6px;
   border-radius: 10px;
   background: #edf2f7;
-  color: #909399;
+  color: var(--color-muted-text);
   font-size: 11px;
   text-align: center;
 }
@@ -2348,11 +2349,11 @@ function permissionName(code: string) {
 .drag-handle {
   flex-shrink: 0;
   cursor: grab;
-  color: $text-color-placeholder;
+  color: var(--color-text-placeholder);
   transition: color 0.2s;
 
   &:hover {
-    color: $primary-color;
+    color: var(--color-accent);
   }
 
   &:active {
@@ -2362,16 +2363,16 @@ function permissionName(code: string) {
 
 .drag-handle--group {
   font-size: 14px;
-  margin-right: $spacing-xs;
+  margin-right: var(--spacing-xs);
 }
 
 .sortable-ghost {
   opacity: 0.4;
-  background: #ecf5ff;
+  background: var(--color-info-light);
 }
 
 .sortable-chosen {
-  border-color: $primary-color;
+  border-color: var(--color-accent);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   cursor: grabbing !important;
 }

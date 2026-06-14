@@ -147,7 +147,7 @@ import { LineChart } from 'echarts/charts'
 import { TooltipComponent, LegendComponent, GridComponent } from 'echarts/components'
 
 echarts.use([SVGRenderer, LineChart, TooltipComponent, LegendComponent, GridComponent])
-import { getIterationList, createIteration, updateIteration, deleteIteration } from '@/api/modules/iteration'
+import { getIterationList, createIteration, updateIteration, deleteIteration, getBurndownData } from '@/api/modules/iteration'
 import { requirementApi } from '@/api'
 import type { Iteration, IterationFormData, IterationRequirementOption } from '@/types/iteration'
 import PageContainer from '@/components/common/PageContainer.vue'
@@ -217,40 +217,20 @@ const getStatusLabel = (status: string) => {
 }
 
 const getProgressColor = (progress: number | undefined) => {
-  if (!progress) return '#909399'
-  if (progress >= 100) return '#67C23A'
-  if (progress >= 60) return '#409EFF'
-  if (progress >= 30) return '#E6A23C'
-  return '#F56C6C'
+  if (!progress) return 'var(--color-muted-text)'
+  if (progress >= 100) return 'var(--color-success)'
+  if (progress >= 60) return 'var(--color-accent)'
+  if (progress >= 30) return 'var(--color-warning)'
+  return 'var(--color-danger)'
 }
 
 // 加载数据
 const loadIterations = async () => {
   try {
     iterations.value = (await getIterationList(projectId.value)) as unknown as Iteration[]
-  } catch {
-    ElMessage.warning('迭代数据加载失败，使用模拟数据')
-    const now = new Date()
-    iterations.value = [
-      {
-        id: 1, projectId: projectId.value, name: 'Sprint 1', description: '第一个迭代',
-        startDate: '2024-03-01', endDate: '2024-03-15', capacity: 20,
-        status: 'completed', creatorId: 1, createdAt: '2024-02-25',
-        requirementCount: 8, progress: 100,
-      },
-      {
-        id: 2, projectId: projectId.value, name: 'Sprint 2', description: '第二个迭代',
-        startDate: '2024-03-18', endDate: '2024-04-01', capacity: 25,
-        status: 'in_progress', creatorId: 1, createdAt: '2024-03-15',
-        requirementCount: 10, progress: 65,
-      },
-      {
-        id: 3, projectId: projectId.value, name: 'Sprint 3', description: '第三个迭代',
-        startDate: '2024-04-05', endDate: '2024-04-20', capacity: 30,
-        status: 'not_started', creatorId: 1, createdAt: '2024-04-01',
-        requirementCount: 12, progress: 0,
-      },
-    ]
+  } catch (error) {
+    iterations.value = []
+    ElMessage.error(resolveErrorMessage(error, '迭代数据加载失败'))
   }
 }
 
@@ -285,6 +265,7 @@ const openDialog = (row?: Iteration) => {
       startDate: row.startDate,
       endDate: row.endDate,
       capacity: row.capacity || 0,
+      version: row.version,
       requirementIds: requirementOptions.value
         .filter((item) => item.iterationId === row.id)
         .map((item) => item.id),
@@ -309,10 +290,8 @@ const submitForm = async () => {
     }
     dialogVisible.value = false
     await Promise.all([loadIterations(), loadRequirementOptions()])
-  } catch {
-    ElMessage.success(isEditing.value ? '迭代更新成功（模拟）' : '迭代创建成功（模拟）')
-    dialogVisible.value = false
-    await Promise.all([loadIterations(), loadRequirementOptions()])
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, isEditing.value ? '迭代更新失败' : '迭代创建失败'))
   }
 }
 
@@ -321,9 +300,8 @@ const handleDelete = async (row: Iteration) => {
     await deleteIteration(row.id)
     ElMessage.success('删除成功')
     await Promise.all([loadIterations(), loadRequirementOptions()])
-  } catch {
-    iterations.value = iterations.value.filter((i) => i.id !== row.id)
-    ElMessage.success('删除成功（模拟）')
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '删除失败'))
   }
 }
 
@@ -337,28 +315,28 @@ const viewBurndown = async (row: Iteration) => {
   currentIteration.value = row
   burndownVisible.value = true
 
-  // 模拟燃尽图数据
-  burndownData.value = []
-  const start = new Date(row.startDate)
-  const end = new Date(row.endDate)
-  const total = row.requirementCount || 10
-  const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
-
-  for (let i = 0; i <= days; i++) {
-    const d = new Date(start)
-    d.setDate(d.getDate() + i)
-    const progress = row.progress || 0
-    const remaining = Math.max(0, total - Math.round(total * (progress / 100) * (i / days)))
-    burndownData.value.push({
-      date: d.toISOString().split('T')[0],
-      remaining,
-      completed: total - remaining,
-      total,
-    })
+  try {
+    const res = await getBurndownData(row.id) as any
+    const payload = res?.data || res
+    const rawList = Array.isArray(payload) ? payload : Array.isArray(payload?.series) ? payload.series : Array.isArray(payload?.list) ? payload.list : []
+    burndownData.value = rawList.map((item: any) => ({
+      date: item.date,
+      completed: Number(item.completed ?? item.completedCount ?? 0),
+      total: Number(item.total ?? item.totalCount ?? row.requirementCount ?? 0),
+      remaining: Number(item.remaining ?? item.remainingCount ?? Math.max(0, Number(item.total ?? item.totalCount ?? row.requirementCount ?? 0) - Number(item.completed ?? item.completedCount ?? 0))),
+    }))
+  } catch (error) {
+    burndownData.value = []
+    ElMessage.error(resolveErrorMessage(error, '燃尽图数据加载失败'))
   }
 
   await nextTick()
   renderBurndownChart()
+}
+
+function resolveErrorMessage(error: unknown, fallback: string) {
+  const message = (error as any)?.response?.data?.message || (error as any)?.message
+  return typeof message === 'string' && message.trim() ? message : fallback
 }
 
 const disposeBurndownChart = () => {

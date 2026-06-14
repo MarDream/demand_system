@@ -198,7 +198,7 @@ function handleClear() {
   gap: 4px;
   margin-bottom: 4px;
   padding-bottom: 4px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border);
 }
 .icon-picker-sub-tabs {
   border-bottom: none;
@@ -209,15 +209,15 @@ function handleClear() {
   font-size: 12px;
   border-radius: 4px;
   cursor: pointer;
-  color: #606266;
+  color: var(--color-text-secondary);
   white-space: nowrap;
   transition: all 0.15s;
 }
 .icon-picker-tab:hover {
-  background: #f0f2f5;
+  background: var(--color-surface-alt);
 }
 .icon-picker-tab.active {
-  background: #409eff;
+  background: var(--color-accent);
   color: #fff;
 }
 .icon-picker-grid {
@@ -242,10 +242,10 @@ function handleClear() {
   transition: all 0.15s;
 }
 .icon-picker-item:hover {
-  background: #ecf5ff;
+  background: var(--color-info-light);
 }
 .icon-picker-item.selected {
-  background: #409eff;
+  background: var(--color-accent);
   color: #fff;
 }
 .icon-picker-item-name {
@@ -262,10 +262,10 @@ function handleClear() {
   justify-content: space-between;
   align-items: center;
   padding-top: 8px;
-  border-top: 1px solid #ebeef5;
+  border-top: 1px solid var(--color-border);
 }
 .icon-picker-count {
   font-size: 12px;
-  color: #909399;
+  color: var(--color-muted-text);
 }
 </style>

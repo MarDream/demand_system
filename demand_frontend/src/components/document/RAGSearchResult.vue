@@ -152,7 +152,7 @@ function highlightText(text: string) {
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: #409EFF;
+  background: var(--color-accent);
   color: #fff;
   display: flex;
   align-items: center;
@@ -167,8 +167,8 @@ function highlightText(text: string) {
   background: #dcdfe6;
 }
 .step-content { flex: 1; padding-bottom: 12px; }
-.step-label { font-weight: 600; font-size: 14px; color: #303133; margin-bottom: 2px; }
-.step-detail { font-size: 13px; color: #606266; line-height: 1.6; }
+.step-label { font-weight: 600; font-size: 14px; color: var(--color-text-primary); margin-bottom: 2px; }
+.step-detail { font-size: 13px; color: var(--color-text-secondary); line-height: 1.6; }
 .llm-answer {
   margin-bottom: 20px;
   padding: 16px;
@@ -182,15 +182,15 @@ function highlightText(text: string) {
   gap: 8px;
   font-weight: 600;
   margin-bottom: 12px;
-  color: #409EFF;
+  color: var(--color-accent);
 }
 .answer-content {
   font-size: 14px;
   line-height: 1.8;
-  color: #303133;
+  color: var(--color-text-primary);
   white-space: pre-wrap;
 }
-.result-count { margin: 16px 0; color: #606266; font-size: 14px; }
+.result-count { margin: 16px 0; color: var(--color-text-secondary); font-size: 14px; }
 .result-card { margin-bottom: 16px; }
 .doc-header { display: flex; justify-content: space-between; align-items: center; }
 .doc-name { display: flex; align-items: center; gap: 4px; font-weight: 600; }
@@ -199,8 +199,8 @@ function highlightText(text: string) {
   padding: 12px;
   background: #f5f7fa;
   border-radius: 6px;
-  border-left: 3px solid #409EFF;
+  border-left: 3px solid var(--color-accent);
 }
-.chunk-title { font-size: 12px; color: #909399; margin-bottom: 6px; font-weight: 500; }
-.chunk-text { font-size: 13px; color: #606266; line-height: 1.8; }
+.chunk-title { font-size: 12px; color: var(--color-muted-text); margin-bottom: 6px; font-weight: 500; }
+.chunk-text { font-size: 13px; color: var(--color-text-secondary); line-height: 1.8; }
 </style>

@@ -81,7 +81,7 @@ defineEmits<{
 .extra-row-label {
   font-size: 14px;
   font-weight: 500;
-  color: #303133;
+  color: var(--color-text-primary);
   white-space: nowrap;
 }
 
@@ -93,7 +93,7 @@ defineEmits<{
 
 .relation-count {
   font-size: 13px;
-  color: #909399;
+  color: var(--color-muted-text);
 }
 
 .relation-table {

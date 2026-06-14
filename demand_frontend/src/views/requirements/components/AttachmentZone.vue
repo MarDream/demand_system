@@ -152,7 +152,7 @@ function formatFileSize(size?: number | null) {
 }
 
 .attachment-uploading {
-  color: #909399;
+  color: var(--color-muted-text);
   font-size: 13px;
   padding: 8px 0;
 }
@@ -166,7 +166,7 @@ function formatFileSize(size?: number | null) {
   align-items: center;
   justify-content: space-between;
   padding: 8px 0;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .attachment-item:last-child {
@@ -187,7 +187,7 @@ function formatFileSize(size?: number | null) {
 }
 
 .attachment-size {
-  color: #909399;
+  color: var(--color-muted-text);
   font-size: 12px;
 }
 </style>

@@ -118,11 +118,11 @@ function handleDelete(_doc: unknown) {}
   align-items: center;
   justify-content: center;
   background: rgba(64, 158, 255, 0.1);
-  border: 2px dashed #409eff;
+  border: 2px dashed var(--color-accent);
   border-radius: 8px;
   pointer-events: none;
   font-size: 16px;
-  color: #409eff;
+  color: var(--color-accent);
   gap: 8px;
 }
 

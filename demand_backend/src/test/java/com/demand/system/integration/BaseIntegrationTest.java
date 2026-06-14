@@ -10,15 +10,13 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.MySQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.MountableFile;
 
 import java.nio.file.Path;
+import java.util.List;
 
-@Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
 public abstract class BaseIntegrationTest {
@@ -28,7 +26,6 @@ public abstract class BaseIntegrationTest {
     private static final DockerImageName RABBIT_IMAGE = DockerImageName.parse("rabbitmq:management");
     private static final DockerImageName MINIO_IMAGE = DockerImageName.parse("minio/minio:latest");
 
-    @Container
     static final MySQLContainer<?> MYSQL = new MySQLContainer<>(MYSQL_IMAGE)
             .withDatabaseName("demand_system")
             .withUsername("root")
@@ -38,25 +35,26 @@ public abstract class BaseIntegrationTest {
                     "/docker-entrypoint-initdb.d/init.sql"
             );
 
-    @Container
     static final GenericContainer<?> REDIS = new GenericContainer<>(REDIS_IMAGE)
             .withExposedPorts(6379)
             .waitingFor(Wait.forLogMessage(".*Ready to accept connections.*\\n", 1));
 
-    @Container
     static final GenericContainer<?> RABBITMQ = new GenericContainer<>(RABBIT_IMAGE)
             .withExposedPorts(5672)
             .withEnv("RABBITMQ_DEFAULT_USER", "admin")
             .withEnv("RABBITMQ_DEFAULT_PASS", "admin")
             .waitingFor(Wait.forLogMessage(".*Server startup complete.*\\n", 1));
 
-    @Container
     static final GenericContainer<?> MINIO = new GenericContainer<>(MINIO_IMAGE)
             .withExposedPorts(9000)
             .withEnv("MINIO_ROOT_USER", "admin")
             .withEnv("MINIO_ROOT_PASSWORD", "admin123456")
             .withCommand("server", "/data")
             .waitingFor(Wait.forHttp("/minio/health/live").forPort(9000));
+
+    static {
+        List.of(MINIO, MYSQL, REDIS, RABBITMQ).forEach(GenericContainer::start);
+    }
 
     @DynamicPropertySource
     static void registerProperties(DynamicPropertyRegistry registry) {

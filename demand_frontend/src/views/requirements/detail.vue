@@ -32,8 +32,8 @@
             <el-descriptions-item label="状态">
               <el-tag :type="statusTagType(detail.status)">{{ detail.status }}</el-tag>
             </el-descriptions-item>
-            <el-descriptions-item label="提出人">{{ detail.assigneeName || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="创建人">{{ detail.creatorName || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="提出人">{{ detail.creatorName || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="负责人">{{ detail.currentHandlerName || detail.assigneeName || '-' }}</el-descriptions-item>
             <el-descriptions-item label="创建时间">{{ formatDate(detail.createdAt) }}</el-descriptions-item>
             <el-descriptions-item label="所属迭代">{{ detail.iterationId || '-' }}</el-descriptions-item>
             <el-descriptions-item label="期望上线时间">{{ detail.dueDate || '-' }}</el-descriptions-item>
@@ -93,8 +93,58 @@
           </div>
         </el-tab-pane>
 
-        </el-tabs>
+        <el-tab-pane label="流转历史" name="history">
+          <el-empty v-if="history.length === 0" description="暂无流转历史" :image-size="60" />
+          <el-timeline v-else class="requirement-history-timeline">
+            <el-timeline-item
+              v-for="item in history"
+              :key="item.id"
+              :timestamp="formatDate(item.createdAt)"
+              placement="top"
+            >
+              <div class="history-item">
+                <div class="history-item__title">
+                  <strong>{{ item.operatorName || '系统' }}</strong>
+                  <el-tag size="small" effect="plain">{{ item.fieldName || '流转记录' }}</el-tag>
+                </div>
+                <div class="history-item__content">
+                  <span>{{ item.oldValue || '-' }}</span>
+                  <span class="history-item__arrow">-&gt;</span>
+                  <span>{{ item.newValue || '-' }}</span>
+                </div>
+              </div>
+            </el-timeline-item>
+          </el-timeline>
+        </el-tab-pane>
 
+        <el-tab-pane label="关联需求" name="relations">
+          <el-empty v-if="relatedRequirements.length === 0" description="暂无关联需求" :image-size="60" />
+          <el-table v-else :data="relatedRequirements" border size="small">
+            <el-table-column label="标题" min-width="220">
+              <template #default="{ row }">
+                <el-link type="primary" @click="router.push({ name: 'RequirementDetail', params: { id: row.id } })">
+                  {{ row.title || '-' }}
+                </el-link>
+              </template>
+            </el-table-column>
+            <el-table-column label="关系" prop="relationType" width="120" align="center" />
+            <el-table-column label="类型" width="100" align="center">
+              <template #default="{ row }">{{ typeLabel(row.type) }}</template>
+            </el-table-column>
+            <el-table-column label="优先级" width="100" align="center">
+              <template #default="{ row }">
+                <el-tag :type="priorityTagType(row.priority)" size="small">{{ priorityLabel(row.priority) }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="110" align="center">
+              <template #default="{ row }">
+                <el-tag :type="statusTagType(row.status)" size="small">{{ row.status || '-' }}</el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+
+        <el-tab-pane label="审核记录" name="approvals">
         <div class="approval-evaluations-section">
           <div class="section-header">
             <h3>审核记录</h3>
@@ -147,6 +197,9 @@
           </el-timeline>
         </div>
 
+        </el-tab-pane>
+
+        <el-tab-pane label="评论" name="comments">
         <!-- 评论区 -->
         <div class="comment-section-block">
           <div class="section-header">
@@ -209,6 +262,10 @@
             </div>
           </div>
         </div>
+
+        </el-tab-pane>
+
+        </el-tabs>
 
           </div>
 
@@ -1014,7 +1071,10 @@ function statusTagType(status: string): string {
   const map: Record<string, string> = {
     '新建': 'info', '待分析': 'warning', '待确认': 'warning', '待评审': 'warning',
     '评审中': 'warning', '已通过': 'success', '开发中': 'primary', '测试中': 'info',
-    '已上线': 'success', '已验收': 'success', '已取消': 'info',
+    '已上线': 'success', '已验收': 'success', '已取消': 'info', '已拒绝': 'danger',
+    '打回': 'danger', '测试不通过': 'danger', '验收不通过': 'danger',
+    PENDING_REVIEW: 'warning', REJECTED: 'danger', SENT_BACK: 'danger',
+    TEST_FAILED: 'danger', ACCEPT_FAILED: 'danger',
   }
   return map[status] || 'info'
 }
@@ -1585,11 +1645,11 @@ onMounted(() => {
 }
 
 .workflow-sidebar__toggle-button {
-  color: #409eff;
+  color: var(--color-accent);
 }
 
 .workflow-sidebar__collapsed-title {
-  color: #606266;
+  color: var(--color-text-secondary);
   font-size: 12px;
   line-height: 1.2;
   writing-mode: vertical-rl;
@@ -1616,7 +1676,7 @@ onMounted(() => {
 }
 
 .workflow-action-panel__title {
-  color: #303133;
+  color: var(--color-text-primary);
   font-size: 16px;
   font-weight: 600;
   line-height: 24px;
@@ -1624,7 +1684,7 @@ onMounted(() => {
 
 .workflow-action-panel__subtitle {
   margin-top: 2px;
-  color: #909399;
+  color: var(--color-muted-text);
   font-size: 12px;
   line-height: 18px;
 }
@@ -1648,7 +1708,7 @@ onMounted(() => {
 .workflow-action-panel__field-label {
   flex: 0 0 92px;
   padding-top: 6px;
-  color: #606266;
+  color: var(--color-text-secondary);
   font-size: 13px;
   line-height: 20px;
 }
@@ -1677,7 +1737,7 @@ onMounted(() => {
 }
 
 .workflow-action-panel__assignee-value {
-  color: #303133;
+  color: var(--color-text-primary);
   font-size: 13px;
   line-height: 20px;
   word-break: break-all;
@@ -1698,7 +1758,7 @@ onMounted(() => {
   flex-wrap: wrap;
   margin-top: 4px;
   padding-top: 14px;
-  border-top: 1px solid #ebeef5;
+  border-top: 1px solid var(--color-border);
 }
 
 .workflow-action-panel__submit-actions :deep(.el-button),
@@ -1717,12 +1777,12 @@ onMounted(() => {
 }
 
 .current-node-status__label {
-  color: #606266;
+  color: var(--color-text-secondary);
   font-size: 13px;
 }
 
 .current-node-status__value {
-  color: #303133;
+  color: var(--color-text-primary);
   font-size: 13px;
   font-weight: 500;
 }
@@ -1792,12 +1852,12 @@ onMounted(() => {
 }
 
 .old-value {
-  color: #909399;
+  color: var(--color-muted-text);
   text-decoration: line-through;
 }
 
 .new-value {
-  color: #409eff;
+  color: var(--color-accent);
   font-weight: 500;
 }
 
@@ -1815,7 +1875,7 @@ onMounted(() => {
   display: flex;
   gap: 12px;
   padding: 16px 0;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .comment-content {
@@ -1830,14 +1890,14 @@ onMounted(() => {
 }
 
 .comment-time {
-  color: #909399;
+  color: var(--color-muted-text);
   font-size: 12px;
 }
 
 .comment-section-block {
   margin-top: 32px;
   padding-top: 24px;
-  border-top: 1px solid #ebeef5;
+  border-top: 1px solid var(--color-border);
 }
 
 .comment-editor-wrapper {
@@ -1854,11 +1914,11 @@ onMounted(() => {
   gap: 12px;
   padding: 6px 10px;
   background: #fafbfc;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .comment-editor-hint {
-  color: #909399;
+  color: var(--color-muted-text);
   font-size: 12px;
 }
 
@@ -1868,8 +1928,8 @@ onMounted(() => {
 }
 
 .comment-editor-dropzone.is-dragover {
-  background-color: #ecf5ff;
-  box-shadow: inset 0 0 0 2px #409eff;
+  background-color: var(--color-info-light);
+  box-shadow: inset 0 0 0 2px var(--color-accent);
 }
 
 .comment-editor-dropzone :deep(.comment-editor-image) {
@@ -1973,7 +2033,7 @@ onMounted(() => {
 }
 
 .attachment-meta {
-  color: #909399;
+  color: var(--color-muted-text);
   font-size: 12px;
 }
 
@@ -1991,14 +2051,14 @@ onMounted(() => {
 }
 
 .section-hint {
-  color: #909399;
+  color: var(--color-muted-text);
   font-size: 12px;
 }
 
 .approval-evaluations-section {
   margin-top: 32px;
   padding-top: 24px;
-  border-top: 1px solid #ebeef5;
+  border-top: 1px solid var(--color-border);
 }
 
 .approval-evaluation-timeline {
@@ -2007,7 +2067,7 @@ onMounted(() => {
 }
 
 .approval-evaluation-card {
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--color-border);
   background: #fafafa;
 }
 
@@ -2040,13 +2100,13 @@ onMounted(() => {
 }
 
 .approval-evaluation-rating__label {
-  color: #909399;
+  color: var(--color-muted-text);
   font-size: 12px;
 }
 
 .approval-evaluation-content {
   margin: 12px 0 0 44px;
-  color: #303133;
+  color: var(--color-text-primary);
   line-height: 1.6;
   white-space: pre-wrap;
 }
@@ -2084,19 +2144,19 @@ onMounted(() => {
   align-items: center;
   padding: 2px 6px;
   border-radius: 999px;
-  background: #409eff;
+  background: var(--color-accent);
   color: #fff;
   font-size: 12px;
 }
 
 .approval-supplement-item__time {
-  color: #909399;
+  color: var(--color-muted-text);
   font-size: 12px;
 }
 
 .approval-supplement-item__content {
   margin: 0;
-  color: #303133;
+  color: var(--color-text-primary);
   line-height: 1.6;
   white-space: pre-wrap;
 }
@@ -2108,7 +2168,7 @@ onMounted(() => {
 
 .approval-dialog-tip {
   margin: 0 0 16px;
-  color: #606266;
+  color: var(--color-text-secondary);
   font-size: 13px;
 }
 
@@ -2120,7 +2180,7 @@ onMounted(() => {
 }
 
 .approval-dialog-label {
-  color: #606266;
+  color: var(--color-text-secondary);
   font-size: 14px;
 }
 
@@ -2132,17 +2192,17 @@ onMounted(() => {
 .countersign-records-title {
   font-size: 14px;
   font-weight: 500;
-  color: #303133;
+  color: var(--color-text-primary);
   margin-bottom: 12px;
 }
 
 .countersign-submit {
   padding-top: 16px;
-  border-top: 1px solid #ebeef5;
+  border-top: 1px solid var(--color-border);
 }
 
 .countersign-tip {
-  color: #606266;
+  color: var(--color-text-secondary);
   font-size: 14px;
   margin-bottom: 16px;
 }
@@ -2155,7 +2215,7 @@ onMounted(() => {
 }
 
 .countersign-label {
-  color: #606266;
+  color: var(--color-text-secondary);
   font-size: 14px;
 }
 

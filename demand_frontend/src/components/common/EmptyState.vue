@@ -18,6 +18,6 @@ defineProps<{ text?: string }>()
   align-items: center;
   justify-content: center;
   padding: 48px;
-  color: #909399;
+  color: var(--color-muted-text);
 }
 </style>

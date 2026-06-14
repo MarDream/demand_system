@@ -41,7 +41,7 @@ public class RequirementFlowIT extends BaseIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
 
-        mockMvc.perform(get("/api/v1/requirements")
+        mockMvc.perform(get("/api/v1/requirements/my-drafts")
                         .header("Authorization", "Bearer " + token)
                         .queryParam("projectId", "1")
                         .queryParam("keyword", title)

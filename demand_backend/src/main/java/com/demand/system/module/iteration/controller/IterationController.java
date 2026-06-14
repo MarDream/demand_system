@@ -7,6 +7,7 @@ import com.demand.system.module.iteration.dto.IterationUpdateDTO;
 import com.demand.system.module.iteration.dto.IterationVO;
 import com.demand.system.module.iteration.service.IterationService;
 import jakarta.validation.Valid;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -23,18 +24,21 @@ public class IterationController {
     }
 
     @GetMapping("/projects/{id}/iterations")
+    @PreAuthorize("isAuthenticated()")
     public Result<List<IterationVO>> listByProject(@PathVariable Long id) {
         List<IterationVO> list = iterationService.listByProject(id);
         return Result.success(list);
     }
 
     @GetMapping("/iterations/{id}")
+    @PreAuthorize("isAuthenticated()")
     public Result<IterationVO> getById(@PathVariable Long id) {
         IterationVO vo = iterationService.getById(id);
         return Result.success(vo);
     }
 
     @PostMapping("/projects/{id}/iterations")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:iteration:create')")
     public Result<Void> create(@PathVariable Long id, @RequestBody IterationCreateDTO dto) {
         dto.setProjectId(id);
         // 验证必须在setProjectId之后执行
@@ -50,6 +54,7 @@ public class IterationController {
     }
 
     @PutMapping("/iterations/{id}")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:iteration:update')")
     public Result<Void> update(@PathVariable Long id, @RequestBody IterationUpdateDTO dto) {
         dto.setId(id);
         jakarta.validation.Validator validator = jakarta.validation.Validation.buildDefaultValidatorFactory().getValidator();
@@ -63,12 +68,14 @@ public class IterationController {
     }
 
     @DeleteMapping("/iterations/{id}")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:iteration:delete')")
     public Result<Void> delete(@PathVariable Long id) {
         iterationService.delete(id);
         return Result.success();
     }
 
     @PostMapping("/iterations/{id}/requirements")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:iteration:update')")
     public Result<Void> assignRequirements(
             @PathVariable Long id,
             @RequestBody Map<String, List<Long>> body) {
@@ -81,6 +88,7 @@ public class IterationController {
     }
 
     @GetMapping("/iterations/{id}/burndown")
+    @PreAuthorize("isAuthenticated()")
     public Result<Map<String, Object>> getBurndownData(@PathVariable Long id) {
         Map<String, Object> data = iterationService.getBurndownData(id);
         return Result.success(data);

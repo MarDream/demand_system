@@ -1,0 +1,169 @@
+// ===== 需求管理系统 - Element Plus 主题覆盖 =====
+// 通过覆盖 Element Plus CSS 自定义属性，统一视觉风格
+
+:root {
+  // ----- 主色 -----
+  --el-color-primary: #0369A1;
+  --el-color-primary-light-3: #0284C7;
+  --el-color-primary-light-5: #38BDF8;
+  --el-color-primary-light-7: #7DD3FC;
+  --el-color-primary-light-8: #BAE6FD;
+  --el-color-primary-light-9: #E0F2FE;
+  --el-color-primary-dark-2: #075985;
+
+  // ----- 成功色 -----
+  --el-color-success: #10B981;
+  --el-color-success-light-3: #34D399;
+  --el-color-success-light-5: #6EE7B7;
+  --el-color-success-light-7: #A7F3D0;
+  --el-color-success-light-8: #D1FAE5;
+  --el-color-success-light-9: #ECFDF5;
+  --el-color-success-dark-2: #059669;
+
+  // ----- 警告色 -----
+  --el-color-warning: #F59E0B;
+  --el-color-warning-light-3: #FBBF24;
+  --el-color-warning-light-5: #FCD34D;
+  --el-color-warning-light-7: #FDE68A;
+  --el-color-warning-light-8: #FEF3C7;
+  --el-color-warning-light-9: #FFFBEB;
+  --el-color-warning-dark-2: #D97706;
+
+  // ----- 危险色 -----
+  --el-color-danger: #DC2626;
+  --el-color-danger-light-3: #EF4444;
+  --el-color-danger-light-5: #F87171;
+  --el-color-danger-light-7: #FCA5A5;
+  --el-color-danger-light-8: #FEE2E2;
+  --el-color-danger-light-9: #FEF2F2;
+  --el-color-danger-dark-2: #B91C1C;
+
+  // ----- 信息色 -----
+  --el-color-info: #64748B;
+  --el-color-info-light-3: #94A3B8;
+  --el-color-info-light-5: #CBD5E1;
+  --el-color-info-light-7: #E2E8F0;
+  --el-color-info-light-8: #F1F5F9;
+  --el-color-info-light-9: #F8FAFC;
+  --el-color-info-dark-2: #475569;
+
+  // ----- 文字色 -----
+  --el-text-color-primary: #111827;
+  --el-text-color-regular: #374151;
+  --el-text-color-secondary: #6B7280;
+  --el-text-color-placeholder: #9CA3AF;
+  --el-text-color-disabled: #D1D5DB;
+
+  // ----- 边框色 -----
+  --el-border-color: #E2E8F0;
+  --el-border-color-light: #F1F5F9;
+  --el-border-color-lighter: #F8FAFC;
+  --el-border-color-extra-light: #FFFFFF;
+  --el-border-color-dark: #CBD5E1;
+  --el-border-color-darker: #94A3B8;
+
+  // ----- 填充色 -----
+  --el-fill-color: #F1F5F9;
+  --el-fill-color-light: #F8FAFC;
+  --el-fill-color-lighter: #FFFFFF;
+  --el-fill-color-extra-light: #FFFFFF;
+  --el-fill-color-dark: #E2E8F0;
+  --el-fill-color-darker: #CBD5E1;
+  --el-fill-color-blank: #FFFFFF;
+
+  // ----- 背景色 -----
+  --el-bg-color: #FFFFFF;
+  --el-bg-color-page: #F8FAFC;
+  --el-bg-color-overlay: #FFFFFF;
+
+  // ----- 圆角 -----
+  --el-border-radius-base: 8px;
+  --el-border-radius-small: 4px;
+  --el-border-radius-round: 16px;
+  --el-border-radius-circle: 100%;
+
+  // ----- 阴影 -----
+  --el-box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.04);
+  --el-box-shadow-light: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --el-box-shadow-lighter: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --el-box-shadow-dark: 0 10px 15px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.04);
+
+  // ----- 字体 -----
+  --el-font-family: 'Plus Jakarta Sans', 'PingFang SC', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, sans-serif;
+  --el-font-size-extra-large: 20px;
+  --el-font-size-large: 16px;
+  --el-font-size-medium: 14px;
+  --el-font-size-base: 14px;
+  --el-font-size-small: 13px;
+  --el-font-size-extra-small: 12px;
+
+  // ----- 过渡 -----
+  --el-transition-duration: 0.25s;
+  --el-transition-duration-fast: 0.15s;
+
+  // ----- 遮罩 -----
+  --el-overlay-color: rgba(15, 23, 42, 0.5);
+  --el-overlay-color-light: rgba(15, 23, 42, 0.12);
+  --el-overlay-color-lighter: rgba(15, 23, 42, 0.06);
+}
+
+// ----- 组件级覆盖 -----
+
+// 按钮圆角
+.el-button {
+  --el-button-border-radius: var(--el-border-radius-base);
+}
+
+// 卡片圆角
+.el-card {
+  --el-card-border-radius: 12px;
+  border: 1px solid var(--el-border-color);
+}
+
+// 对话框圆角
+.el-dialog {
+  --el-dialog-border-radius: 16px;
+}
+
+// 输入框圆角
+.el-input {
+  --el-input-border-radius: var(--el-border-radius-base);
+}
+
+// 下拉框圆角
+.el-select__wrapper {
+  border-radius: var(--el-border-radius-base);
+}
+
+// 表格优化
+.el-table {
+  --el-table-border-color: var(--el-border-color-lighter);
+  --el-table-header-bg-color: #F8FAFC;
+
+  // 表头文字加粗
+  .el-table__header th {
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+    font-size: 13px;
+  }
+
+  // 行悬浮效果
+  .el-table__row:hover > td {
+    background-color: rgba(3, 105, 161, 0.04) !important;
+  }
+}
+
+// 标签页
+.el-tabs__item.is-active {
+  font-weight: 600;
+}
+
+// Tag 圆角
+.el-tag {
+  --el-tag-border-radius: 6px;
+}
+
+// Message Box 圆角
+.el-message-box {
+  border-radius: 16px;
+}

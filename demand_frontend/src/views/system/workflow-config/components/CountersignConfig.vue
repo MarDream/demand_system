@@ -126,7 +126,7 @@ const onApproversChange = (next: number[]) => {
 <style scoped>
 .countersign-hint {
   margin-top: 4px;
-  color: #909399;
+  color: var(--color-muted-text);
   font-size: 12px;
   line-height: 1.4;
 }

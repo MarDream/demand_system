@@ -76,7 +76,7 @@ function handleReset() {
 <style scoped>
 .approval-dialog-tip {
   margin: 0 0 16px;
-  color: #606266;
+  color: var(--color-text-secondary);
   font-size: 13px;
 }
 
@@ -88,7 +88,7 @@ function handleReset() {
 }
 
 .approval-dialog-label {
-  color: #606266;
+  color: var(--color-text-secondary);
   font-size: 14px;
 }
 </style>

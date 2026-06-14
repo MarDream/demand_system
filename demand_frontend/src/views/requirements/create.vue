@@ -171,10 +171,10 @@
               </el-select>
             </el-form-item>
 
-            <el-form-item label="提出人" prop="assigneeId">
+            <el-form-item label="负责人" prop="assigneeId">
               <el-select
                 v-model="formData.assigneeId"
-                placeholder="请选择提出人"
+                placeholder="请选择负责人"
                 filterable
                 style="width: 100%"
               >
@@ -487,6 +487,23 @@ function isDescriptionEmpty(html: string) {
   return !text
 }
 
+function isEditorEffectivelyEmpty(editor: any): boolean {
+  if (!editor) return true
+  try {
+    if (typeof editor.isEmpty === 'boolean') {
+      if (!editor.isEmpty) return false
+    }
+    const text = (editor.getText?.() || '').trim()
+    if (text) return false
+    const html = (editor.getHTML?.() || '').trim()
+    // 只包含空段落/占位符/换行视为空
+    return html === ''
+      || /^<p[^>]*>(\s|&nbsp;|<br\s*\/?>)*<\/p>$/i.test(html)
+  } catch {
+    return true
+  }
+}
+
 function buildTemplateDescription(sections: TemplateSection[]) {
   return sections.map((section) => {
     if (section.fieldType === 'richtext') {
@@ -578,7 +595,7 @@ const formRules = computed<FormRules>(() => ({
   title: [{ required: true, message: '请输入需求标题', trigger: 'blur' }],
   type: isEditMode.value ? [{ required: true, message: '请选择需求类型', trigger: 'change' }] : [],
   priority: [{ required: true, message: '请选择优先级', trigger: 'change' }],
-  assigneeId: [{ required: true, message: '请选择提出人', trigger: 'change' }],
+  assigneeId: [{ required: true, message: '请选择负责人', trigger: 'change' }],
 }))
 
 const selectedType = computed(() => configTypes.value.find((item) => item.code === formData.type))
@@ -650,7 +667,7 @@ const editorExtensions = [
       directions: ['top-left', 'top-right', 'bottom-left', 'bottom-right'],
       minWidth: 100,
       minHeight: 100,
-      alwaysPreserveAspectRatio: true,
+      alwaysPreserveAspectRatio: false,
     },
     HTMLAttributes: {
       class: 'requirement-editor-image',
@@ -673,8 +690,11 @@ function onEditorCreate({ editor }: { editor: any }) {
 watch(
   () => formData.description,
   (val) => {
-    if (editorInstance.value && isEditMode.value && val && editorInstance.value.getHTML() !== val) {
-      editorInstance.value.commands.setContent(val)
+    if (editorInstance.value && val && editorInstance.value.getHTML() !== val) {
+      // 编辑模式：始终同步；新建模式：仅当编辑器实质为空时同步（避免覆盖用户已输入内容）
+      if (isEditMode.value || isEditorEffectivelyEmpty(editorInstance.value)) {
+        editorInstance.value.commands.setContent(val)
+      }
     }
   },
 )
@@ -1224,7 +1244,21 @@ async function validateForms() {
   return !!basicValid && !!infoValid
 }
 
+function syncDescriptionFromEditor() {
+  if (editorInstance.value) {
+    try {
+      const html = editorInstance.value.getHTML()
+      if (typeof html === 'string') {
+        formData.description = html
+      }
+    } catch {
+      // 编辑器尚未就绪时保持原值
+    }
+  }
+}
+
 function buildRequirementPayload() {
+  syncDescriptionFromEditor()
   const ccUserIds = showCcField.value ? formData.ccUserIds : []
   const payload: any = {
     projectId: formData.projectId,
@@ -1256,6 +1290,7 @@ function buildRequirementPayload() {
 }
 
 function buildDraftPayload() {
+  syncDescriptionFromEditor()
   const ccUserIds = showCcField.value ? formData.ccUserIds : []
   const payload: any = {
     projectId: formData.projectId,
@@ -1486,7 +1521,7 @@ watch(() => formData.type, (typeCode) => {
 
 <style scoped lang="scss">
 .create-page {
-  padding: $page-padding;
+  padding: var(--page-padding-lg);
   min-height: 100%;
   display: flex;
   flex-direction: column;
@@ -1503,12 +1538,12 @@ watch(() => formData.type, (typeCode) => {
 .card-title {
   font-size: 14px;
   font-weight: 600;
-  color: $text-color;
+  color: var(--color-text-primary);
 }
 
 .card-subtitle {
   font-size: 12px;
-  color: $text-color-secondary;
+  color: var(--color-text-secondary);
 }
 
 .form-container {
@@ -1521,14 +1556,14 @@ watch(() => formData.type, (typeCode) => {
 
 .right-panel {
   position: sticky;
-  top: $spacing-md;
+  top: var(--spacing-md);
 }
 
 .form-card {
   height: 100%;
-  border-radius: $card-radius;
-  box-shadow: $shadow-sm;
-  border: 1px solid $border-color;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--color-border);
 }
 
 .form-card :deep(.el-card__header) {
@@ -1541,7 +1576,7 @@ watch(() => formData.type, (typeCode) => {
 
 .form-card :deep(.el-form-item__label) {
   font-weight: 500;
-  color: $text-color;
+  color: var(--color-text-primary);
 }
 
 .inline-fields {
@@ -1561,7 +1596,7 @@ watch(() => formData.type, (typeCode) => {
 }
 
 .editor-wrapper {
-  border: 1px solid $border-color;
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   overflow-x: hidden;
   background: #fff;
@@ -1666,10 +1701,10 @@ watch(() => formData.type, (typeCode) => {
   border-radius: 50%;
 }
 
-.priority-dot.p0 { background: #f56c6c; }
-.priority-dot.p1 { background: #e6a23c; }
-.priority-dot.p2 { background: #409eff; }
-.priority-dot.p3 { background: #909399; }
+.priority-dot.p0 { background: var(--color-danger); }
+.priority-dot.p1 { background: var(--color-warning); }
+.priority-dot.p2 { background: var(--color-accent); }
+.priority-dot.p3 { background: var(--color-muted-text); }
 
 /* User Option */
 .user-option {
@@ -1681,9 +1716,9 @@ watch(() => formData.type, (typeCode) => {
 /* Info Cards */
 .info-card {
   margin-bottom: 16px;
-  border-radius: $card-radius;
-  box-shadow: $shadow-sm;
-  border: 1px solid $border-color;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--color-border);
 }
 
 .info-card:last-child {
@@ -1717,7 +1752,7 @@ watch(() => formData.type, (typeCode) => {
 .extra-row-label {
   font-size: 14px;
   font-weight: 500;
-  color: $text-color;
+  color: var(--color-text-primary);
   white-space: nowrap;
 }
 
@@ -1729,7 +1764,7 @@ watch(() => formData.type, (typeCode) => {
 
 .relation-count {
   font-size: 13px;
-  color: $text-color-secondary;
+  color: var(--color-text-secondary);
 }
 
 /* Upload Zone */
@@ -1788,7 +1823,7 @@ watch(() => formData.type, (typeCode) => {
 }
 
 .attachment-uploading {
-  color: $text-color-secondary;
+  color: var(--color-text-secondary);
   font-size: 13px;
   padding: 8px 0;
 }
@@ -1805,8 +1840,8 @@ watch(() => formData.type, (typeCode) => {
   position: sticky;
   bottom: 0;
   padding: 12px 0;
-  background: $bg-container;
-  border-top: 1px solid $border-color;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
   display: flex;
   justify-content: flex-end;
   gap: 12px;

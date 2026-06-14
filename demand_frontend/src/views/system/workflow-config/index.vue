@@ -114,7 +114,7 @@
               <el-table-column label="操作" min-width="360" fixed="right">
                 <template #default="{ row }">
                   <el-button link type="primary" @click="viewWorkflow(row)">查看</el-button>
-                  <el-button link type="primary" @click="editWorkflow(row)" v-permission="'button:workflow:update'">编辑</el-button>
+                  <el-button link type="primary" @click="editWorkflow(row)" v-permission="'button:workflow:update'" :disabled="versionApprovalStatus(row) === 'PENDING' || row.isActive === 1">编辑</el-button>
                   <el-button link type="info" @click="focusApprovalHistory(row)">审核记录</el-button>
                   <el-button
                     link
@@ -1031,13 +1031,13 @@ onMounted(() => {
 .overview-header h2,
 .card-header h3 {
   margin: 0;
-  color: #303133;
+  color: var(--color-text-primary);
 }
 
 .overview-header p,
 .card-header p {
   margin: 6px 0 0;
-  color: #909399;
+  color: var(--color-muted-text);
   font-size: 13px;
 }
 
@@ -1052,7 +1052,7 @@ onMounted(() => {
 .summary-card {
   padding: 16px;
   border-radius: 14px;
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--color-border);
   background: #f8fafc;
 }
 
@@ -1072,14 +1072,14 @@ onMounted(() => {
 .summary-value {
   font-size: 26px;
   font-weight: 700;
-  color: #303133;
+  color: var(--color-text-primary);
 }
 
 .metric-label,
 .summary-label {
   margin-top: 6px;
   font-size: 12px;
-  color: #909399;
+  color: var(--color-muted-text);
 }
 
 .management-tabs {
@@ -1126,7 +1126,7 @@ onMounted(() => {
 
 .task-name {
   font-weight: 600;
-  color: #303133;
+  color: var(--color-text-primary);
 }
 
 .task-project,
@@ -1134,7 +1134,7 @@ onMounted(() => {
 .comment-text,
 .detail-subtitle,
 .node-name {
-  color: #606266;
+  color: var(--color-text-secondary);
 }
 
 .comment-text {
@@ -1156,14 +1156,14 @@ onMounted(() => {
 .detail-title {
   font-size: 18px;
   font-weight: 600;
-  color: #303133;
+  color: var(--color-text-primary);
 }
 
 .detail-section-title {
   margin-bottom: 12px;
   font-size: 14px;
   font-weight: 600;
-  color: #303133;
+  color: var(--color-text-primary);
 }
 
 .detail-section-title.minor {
@@ -1192,7 +1192,7 @@ onMounted(() => {
   padding: 10px 12px;
   border-radius: 10px;
   background: #fff;
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--color-border);
 }
 
 .node-item + .node-item {
@@ -1211,15 +1211,15 @@ onMounted(() => {
   line-height: 1.6;
 
   &.success {
-    color: #67c23a;
+    color: var(--color-success);
   }
 
   &.warning {
-    color: #e6a23c;
+    color: var(--color-warning);
   }
 
   &.error {
-    color: #f56c6c;
+    color: var(--color-danger);
   }
 }
 

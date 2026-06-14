@@ -3,6 +3,7 @@ package com.demand.system.module.iteration.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.demand.system.common.exception.BusinessException;
+import com.demand.system.common.result.ErrorCode;
 import com.demand.system.module.iteration.dto.IterationCreateDTO;
 import com.demand.system.module.iteration.dto.IterationUpdateDTO;
 import com.demand.system.module.iteration.dto.IterationVO;
@@ -94,6 +95,7 @@ public class IterationServiceImpl implements IterationService {
         BeanUtils.copyProperties(dto, iteration);
         iteration.setCreatorId(userId);
         iteration.setStatus("未开始");
+        iteration.setVersion(0);
         iterationMapper.insert(iteration);
         syncIterationRequirements(iteration.getId(), dto.getProjectId(), dto.getRequirementIds());
     }
@@ -107,7 +109,8 @@ public class IterationServiceImpl implements IterationService {
         }
 
         UpdateWrapper<Iteration> updateWrapper = new UpdateWrapper<>();
-        updateWrapper.eq("id", dto.getId());
+        updateWrapper.eq("id", dto.getId())
+                .eq("version", dto.getVersion() == null ? existing.getVersion() : dto.getVersion());
 
         if (dto.getName() != null) {
             updateWrapper.set("name", dto.getName());
@@ -127,8 +130,13 @@ public class IterationServiceImpl implements IterationService {
         if (dto.getStatus() != null) {
             updateWrapper.set("status", dto.getStatus());
         }
+        Integer currentVersion = dto.getVersion() == null ? existing.getVersion() : dto.getVersion();
+        updateWrapper.set("version", (currentVersion == null ? 0 : currentVersion) + 1);
 
-        iterationMapper.update(null, updateWrapper);
+        int updated = iterationMapper.update(null, updateWrapper);
+        if (updated <= 0) {
+            throw new BusinessException(ErrorCode.CONFLICT, "迭代已被他人修改，请刷新后重试");
+        }
         syncIterationRequirements(existing.getId(), existing.getProjectId(), dto.getRequirementIds());
     }
 

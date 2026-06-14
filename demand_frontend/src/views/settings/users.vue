@@ -1501,8 +1501,8 @@ function resolveInitialOrgKey() {
 .member-console {
   min-height: calc(100vh - 82px);
   overflow: hidden;
-  border: 1px solid $border-color;
-  border-radius: $card-radius;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
   background: #fff;
 }
 
@@ -1511,21 +1511,21 @@ function resolveInitialOrgKey() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: $spacing-md;
-  padding: 0 $spacing-lg;
-  border-bottom: 1px solid $border-color;
+  gap: var(--spacing-md);
+  padding: 0 var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border);
   background: #fff;
 
   h2 {
     margin: 8px 0 0;
-    color: $text-color;
-    font-size: $font-size-lg;
+    color: var(--color-text-primary);
+    font-size: var(--font-size-lg);
   }
 }
 
 .page-crumb {
-  color: $text-color-secondary;
-  font-size: $font-size-sm;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
 }
 
 .mode-switch {
@@ -1540,13 +1540,13 @@ function resolveInitialOrgKey() {
   border: 0;
   background: transparent;
   box-shadow: none;
-  color: $text-color;
+  color: var(--color-text-primary);
   font-weight: 500;
 }
 
 .mode-switch :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
-  background: #ecf5ff;
-  color: #409eff;
+  background: var(--color-info-light);
+  color: var(--color-accent);
   font-weight: 600;
   box-shadow: none;
 }
@@ -1576,7 +1576,7 @@ function resolveInitialOrgKey() {
 
   &:hover,
   &:active {
-    background: $primary-color;
+    background: var(--color-accent);
   }
 }
 
@@ -1590,7 +1590,7 @@ function resolveInitialOrgKey() {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid $border-color;
+  border: 1px solid var(--color-border);
   border-left: 0;
   border-radius: 0 6px 6px 0;
   background: #fff;
@@ -1607,9 +1607,9 @@ function resolveInitialOrgKey() {
 .roster-nav {
   display: flex;
   flex-direction: column;
-  gap: $spacing-sm;
-  padding: $spacing-md;
-  border-right: 1px solid $border-color;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  border-right: 1px solid var(--color-border);
   background: #fff;
   overflow: auto;
 }
@@ -1623,22 +1623,22 @@ function resolveInitialOrgKey() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
 }
 
 .sidebar-head__title {
-  font-size: $font-size-sm;
+  font-size: var(--font-size-sm);
   font-weight: 600;
-  color: $text-color;
+  color: var(--color-text-primary);
 }
 
 .sidebar-collapse-trigger {
   padding: 4px;
-  color: $text-color-secondary;
+  color: var(--color-text-secondary);
   border-radius: 4px;
 
   &:hover {
-    color: $primary-color;
+    color: var(--color-accent);
     background: rgba(64, 158, 255, 0.08);
   }
 }
@@ -1646,8 +1646,8 @@ function resolveInitialOrgKey() {
 .sidebar-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: $spacing-sm;
-  margin: $spacing-md 0;
+  gap: var(--spacing-sm);
+  margin: var(--spacing-md) 0;
 }
 
 .org-list,
@@ -1663,11 +1663,11 @@ function resolveInitialOrgKey() {
   min-height: 38px;
   display: flex;
   align-items: center;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
   border: 0;
   border-radius: 4px;
   background: transparent;
-  color: $text-color;
+  color: var(--color-text-primary);
   text-align: left;
   cursor: pointer;
 }
@@ -1715,10 +1715,10 @@ function resolveInitialOrgKey() {
 .org-item-btn {
   display: inline-flex;
   align-items: center;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
   border: 0;
   background: transparent;
-  color: $text-color;
+  color: var(--color-text-primary);
   cursor: pointer;
   padding: 0;
   flex: 1;
@@ -1732,13 +1732,13 @@ function resolveInitialOrgKey() {
 }
 
 .org-count {
-  color: $text-color-secondary;
+  color: var(--color-text-secondary);
 }
 
 .member-main,
 .roster-main {
   min-width: 0;
-  padding: $spacing-lg;
+  padding: var(--spacing-lg);
   background: #fff;
   /* 显式指定 grid-column：当 sidebar 折叠（display: none）时，
      防止 main 被错位放到第二个 track 而被压缩到 0 宽 */
@@ -1752,7 +1752,7 @@ function resolveInitialOrgKey() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: $spacing-md;
+  gap: var(--spacing-md);
   flex-wrap: wrap;
 }
 
@@ -1762,11 +1762,11 @@ function resolveInitialOrgKey() {
   flex-wrap: wrap;
   gap: 4px;
   margin-bottom: 6px;
-  font-size: $font-size-sm;
+  font-size: var(--font-size-sm);
 }
 
 .org-breadcrumb-link {
-  color: $primary-color;
+  color: var(--color-accent);
   cursor: pointer;
 
   &:hover {
@@ -1775,31 +1775,31 @@ function resolveInitialOrgKey() {
 }
 
 .org-breadcrumb-current {
-  color: $text-color;
+  color: var(--color-text-primary);
   font-weight: 500;
 }
 
 .org-breadcrumb-sep {
-  color: $text-color-placeholder;
+  color: var(--color-text-placeholder);
 }
 
 .org-title {
   display: flex;
   align-items: center;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
   font-size: 22px;
   font-weight: 700;
-  color: $text-color;
+  color: var(--color-text-primary);
 }
 
 .org-header p {
   margin: 8px 0 0;
-  color: $text-color-secondary;
+  color: var(--color-text-secondary);
 }
 
 .action-row {
   justify-content: flex-start;
-  margin: $spacing-lg 0 $spacing-md;
+  margin: var(--spacing-lg) 0 var(--spacing-md);
 }
 
 .member-table {
@@ -1829,15 +1829,15 @@ function resolveInitialOrgKey() {
 .member-name {
   display: inline-flex;
   align-items: center;
-  gap: $spacing-sm;
-  color: $text-color;
+  gap: var(--spacing-sm);
+  color: var(--color-text-primary);
   font-weight: 600;
 }
 
 .member-sub {
   margin-top: 2px;
-  color: $text-color-placeholder;
-  font-size: $font-size-xs;
+  color: var(--color-text-placeholder);
+  font-size: var(--font-size-xs);
 }
 
 .status-dot {
@@ -1846,39 +1846,39 @@ function resolveInitialOrgKey() {
   height: 7px;
   margin-right: 6px;
   border-radius: 50%;
-  background: $success-color;
+  background: var(--color-success);
 }
 
 .status-dot.is-disabled {
-  background: $text-color-placeholder;
+  background: var(--color-text-placeholder);
 }
 
 .nav-title {
   display: flex;
   align-items: center;
-  gap: $spacing-sm;
-  margin: $spacing-md 0 $spacing-sm;
-  color: $text-color;
+  gap: var(--spacing-sm);
+  margin: var(--spacing-md) 0 var(--spacing-sm);
+  color: var(--color-text-primary);
   font-weight: 700;
 }
 
 .roster-header h3 {
   margin: 0;
   font-size: 22px;
-  color: $text-color;
+  color: var(--color-text-primary);
 }
 
 .roster-links {
   display: flex;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
   flex-wrap: wrap;
 }
 
 .stats-board {
   display: grid;
   grid-template-columns: minmax(160px, 1.1fr) repeat(8, minmax(96px, 1fr));
-  gap: $spacing-sm;
-  margin: $spacing-lg 0 $spacing-md;
+  gap: var(--spacing-sm);
+  margin: var(--spacing-lg) 0 var(--spacing-md);
 }
 
 .stat-card {
@@ -1887,8 +1887,8 @@ function resolveInitialOrgKey() {
   flex-direction: column;
   justify-content: center;
   gap: 6px;
-  padding: $spacing-md;
-  border: 1px solid $border-color;
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   background: #fff;
 }
@@ -1898,13 +1898,13 @@ function resolveInitialOrgKey() {
 
   span,
   strong {
-    color: $primary-color;
+    color: var(--color-accent);
   }
 }
 
 .stat-card span {
-  color: $text-color;
-  font-size: $font-size-sm;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
 }
 
 .stat-card strong {
@@ -1915,7 +1915,7 @@ function resolveInitialOrgKey() {
 
 .roster-filter {
   justify-content: flex-start;
-  margin-bottom: $spacing-md;
+  margin-bottom: var(--spacing-md);
 }
 
 .roster-filter .el-input {
@@ -1933,14 +1933,14 @@ function resolveInitialOrgKey() {
 .pagination-row {
   display: flex;
   justify-content: flex-end;
-  padding: $spacing-md $spacing-lg;
-  border-top: 1px solid $border-color;
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-top: 1px solid var(--color-border);
   background: #fff;
 }
 
 .department-management {
   min-height: calc(100vh - 220px);
-  padding: $spacing-lg;
+  padding: var(--spacing-lg);
   background: #fff;
 }
 
@@ -1949,24 +1949,24 @@ function resolveInitialOrgKey() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: $spacing-md;
+  gap: var(--spacing-md);
   flex-wrap: wrap;
 }
 
 .department-title {
-  color: $text-color;
+  color: var(--color-text-primary);
   font-size: 22px;
   font-weight: 700;
 }
 
 .department-head p {
   margin: 8px 0 0;
-  color: $text-color-secondary;
+  color: var(--color-text-secondary);
 }
 
 .department-actions {
   justify-content: flex-start;
-  margin: $spacing-lg 0 $spacing-sm;
+  margin: var(--spacing-lg) 0 var(--spacing-sm);
 }
 
 .department-table {
@@ -1976,45 +1976,45 @@ function resolveInitialOrgKey() {
 .department-name-cell {
   display: inline-flex;
   align-items: center;
-  gap: $spacing-sm;
-  color: $text-color;
+  gap: var(--spacing-sm);
+  color: var(--color-text-primary);
 }
 
 .drawer-section-title {
   margin: -20px -20px 18px;
   padding: 10px 20px;
   background: #f2f3f5;
-  color: $text-color-secondary;
-  font-size: $font-size-sm;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
 }
 
 .department-form :deep(.el-form-item__label) {
-  color: $text-color;
+  color: var(--color-text-primary);
   font-weight: 600;
 }
 
 .effective-tip {
-  margin: -6px 0 $spacing-md;
-  color: $text-color-secondary;
-  font-size: $font-size-sm;
+  margin: -6px 0 var(--spacing-md);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
 }
 
 .department-option {
   display: inline-flex;
   align-items: center;
-  gap: $spacing-xs;
+  gap: var(--spacing-xs);
 }
 
 .org-chain-text {
-  color: $text-color;
-  font-size: $font-size-base;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-base);
   line-height: 32px;
 }
 
 .drawer-footer {
   display: flex;
   justify-content: flex-end;
-  gap: $spacing-sm;
+  gap: var(--spacing-sm);
 }
 
 @media (max-width: 1200px) {
@@ -2028,7 +2028,7 @@ function resolveInitialOrgKey() {
     height: auto;
     align-items: flex-start;
     flex-direction: column;
-    padding: $spacing-md;
+    padding: var(--spacing-md);
   }
 
   .member-layout,
@@ -2043,7 +2043,7 @@ function resolveInitialOrgKey() {
   .member-sidebar,
   .roster-nav {
     border-right: 0;
-    border-bottom: 1px solid $border-color;
+    border-bottom: 1px solid var(--color-border);
   }
 
   .mode-switch,

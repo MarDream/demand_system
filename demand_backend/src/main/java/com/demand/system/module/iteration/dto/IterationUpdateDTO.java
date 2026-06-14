@@ -23,6 +23,8 @@ public class IterationUpdateDTO {
 
     private String status;
 
+    private Integer version;
+
     private List<Long> requirementIds;
 
     public Long getId() {
@@ -79,6 +81,14 @@ public class IterationUpdateDTO {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public Integer getVersion() {
+        return version;
+    }
+
+    public void setVersion(Integer version) {
+        this.version = version;
     }
 
     public List<Long> getRequirementIds() {

@@ -18,10 +18,10 @@
 .layout-container {
   height: 100vh;
   .el-header {
-    background-color: $sidebar-bg;
+    background: var(--color-sidebar-bg-gradient);
     color: white;
-    line-height: $header-height;
-    font-size: $font-size-md;
+    line-height: var(--header-height);
+    font-size: var(--font-size-md);
   }
 }
 </style>

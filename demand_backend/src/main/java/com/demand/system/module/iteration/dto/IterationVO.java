@@ -24,6 +24,8 @@ public class IterationVO {
 
     private Long creatorId;
 
+    private Integer version;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
@@ -104,6 +106,14 @@ public class IterationVO {
 
     public void setCreatorId(Long creatorId) {
         this.creatorId = creatorId;
+    }
+
+    public Integer getVersion() {
+        return version;
+    }
+
+    public void setVersion(Integer version) {
+        this.version = version;
     }
 
     public LocalDateTime getCreatedAt() {

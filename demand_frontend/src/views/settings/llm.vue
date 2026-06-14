@@ -42,7 +42,7 @@
             </div>
             <div class="provider-item-actions" @click.stop>
               <el-tooltip content="嗅探模型" placement="top">
-                <el-icon class="action-icon" style="color: #E6A23C;" @click="handleSniff(p)"><Search /></el-icon>
+                <el-icon class="action-icon" style="color: var(--color-warning);" @click="handleSniff(p)"><Search /></el-icon>
               </el-tooltip>
               <el-tooltip content="查看密钥" placement="top">
                 <el-icon class="action-icon" @click="handleViewApiKey(p)"><View /></el-icon>
@@ -789,8 +789,8 @@ async function handleSniffImport() {
 .config-header {
   margin-bottom: 20px;
   flex-shrink: 0;
-  h2 { margin: 0 0 8px; font-size: 22px; color: #303133; }
-  .config-desc { margin: 0; color: #909399; font-size: 14px; }
+  h2 { margin: 0 0 8px; font-size: 22px; color: var(--color-text-primary); }
+  .config-desc { margin: 0; color: var(--color-muted-text); font-size: 14px; }
 }
 
 // ==================== 两栏布局 ====================
@@ -819,7 +819,7 @@ async function handleSniffImport() {
   justify-content: space-between;
   align-items: center;
   padding: 14px 16px;
-  border-bottom: 1px solid #f0f2f5;
+  border-bottom: 1px solid var(--color-surface-alt);
   flex-shrink: 0;
 }
 
@@ -997,7 +997,7 @@ async function handleSniffImport() {
 .form-section-title {
   font-size: 13px;
   font-weight: 600;
-  color: #303133;
+  color: var(--color-text-primary);
   margin: 8px 0 16px;
   padding-left: 10px;
   border-left: 3px solid var(--el-color-primary);

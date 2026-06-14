@@ -252,7 +252,7 @@ const editingType = ref<RequirementType | null>(null)
 const typeForm = ref({
   name: '',
   code: '',
-  color: '#409EFF',
+  color: 'var(--color-accent)',
   sortOrder: 0,
   isDefault: false
 })
@@ -271,7 +271,7 @@ const priorityForm = ref({
   name: '',
   code: '',
   level: 2,
-  color: '#409EFF',
+  color: 'var(--color-accent)',
   sortOrder: 0,
   isDefault: false
 })
@@ -307,7 +307,7 @@ const openTypeDialog = (type?: RequirementType) => {
     typeForm.value = {
       name: type.name,
       code: type.code,
-      color: type.color || '#409EFF',
+      color: type.color || 'var(--color-accent)',
       sortOrder: type.sortOrder || 0,
       isDefault: type.isDefault || false
     }
@@ -315,7 +315,7 @@ const openTypeDialog = (type?: RequirementType) => {
     typeForm.value = {
       name: '',
       code: '',
-      color: '#409EFF',
+      color: 'var(--color-accent)',
       sortOrder: 0,
       isDefault: false
     }
@@ -362,7 +362,7 @@ const openPriorityDialog = (priority?: Priority) => {
       name: priority.name,
       code: priority.code,
       level: priority.level || 2,
-      color: priority.color || '#409EFF',
+      color: priority.color || 'var(--color-accent)',
       sortOrder: priority.sortOrder || 0,
       isDefault: priority.isDefault || false
     }
@@ -371,7 +371,7 @@ const openPriorityDialog = (priority?: Priority) => {
       name: '',
       code: '',
       level: 2,
-      color: '#409EFF',
+      color: 'var(--color-accent)',
       sortOrder: 0,
       isDefault: false
     }
@@ -527,7 +527,7 @@ const editingNodeStatus = ref<NodeStatus | null>(null)
 const nodeStatusForm = ref({
   name: '',
   code: '',
-  color: '#409EFF',
+  color: 'var(--color-accent)',
   sortOrder: 0,
   isStart: false,
   isEnd: false,
@@ -554,14 +554,14 @@ const openNodeStatusDialog = (status?: NodeStatus) => {
     nodeStatusForm.value = {
       name: status.name,
       code: status.code,
-      color: status.color || '#409EFF',
+      color: status.color || 'var(--color-accent)',
       sortOrder: status.sortOrder || 0,
       isStart: status.isStart || false,
       isEnd: status.isEnd || false,
       isCancel: status.isCancel || false
     }
   } else {
-    nodeStatusForm.value = { name: '', code: '', color: '#409EFF', sortOrder: 0, isStart: false, isEnd: false, isCancel: false }
+    nodeStatusForm.value = { name: '', code: '', color: 'var(--color-accent)', sortOrder: 0, isStart: false, isEnd: false, isCancel: false }
   }
   nodeStatusDialogVisible.value = true
 }
@@ -625,12 +625,12 @@ onMounted(() => {
   h2 {
     margin: 0 0 8px;
     font-size: 22px;
-    color: #303133;
+    color: var(--color-text-primary);
   }
 
   .config-desc {
     margin: 0;
-    color: #909399;
+    color: var(--color-muted-text);
     font-size: 14px;
   }
 }
@@ -663,7 +663,7 @@ onMounted(() => {
 
 .form-tip {
   margin-left: 8px;
-  color: #909399;
+  color: var(--color-muted-text);
   font-size: 12px;
 }
 
@@ -676,8 +676,8 @@ onMounted(() => {
   user-select: none;
 
   &:hover {
-    color: #409EFF;
-    background-color: #ecf5ff;
+    color: var(--color-accent);
+    background-color: var(--color-info-light);
   }
 
   &:active {
@@ -690,8 +690,8 @@ onMounted(() => {
 
 :deep(.sortable-ghost) {
   opacity: 0.35;
-  background: #ecf5ff !important;
-  outline: 2px dashed #409EFF;
+  background: var(--color-info-light) !important;
+  outline: 2px dashed var(--color-accent);
   outline-offset: -2px;
 }
 

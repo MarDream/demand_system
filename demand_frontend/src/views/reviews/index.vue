@@ -31,7 +31,7 @@
       </div>
 
       <!-- 评审列表 -->
-      <el-table :data="filteredReviews" border style="width: 100%; margin-top: 16px">
+      <el-table v-loading="loading" :data="reviews" border style="width: 100%; margin-top: 16px">
         <el-table-column label="需求ID" width="90">
           <template #default="{ row }">{{ row.requirementId }}</template>
         </el-table-column>
@@ -58,6 +58,16 @@
           </template>
         </el-table-column>
       </el-table>
+      <el-pagination
+        v-model:current-page="pagination.pageNum"
+        v-model:page-size="pagination.pageSize"
+        :page-sizes="[10, 20, 50, 100]"
+        :total="pagination.total"
+        layout="total, sizes, prev, pager, next, jumper"
+        class="review-pagination"
+        @size-change="loadReviews"
+        @current-change="loadReviews"
+      />
     </el-card>
 
     <!-- 评审详情对话框 -->
@@ -120,27 +130,24 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { View, EditPen } from '@element-plus/icons-vue'
-import { updateReview } from '@/api/modules/review'
+import { getReviews, updateReview } from '@/api/modules/review'
 import AppButton from '@/components/common/AppButton.vue'
+import type { Review } from '@/types/review'
 
-interface ReviewRecord {
-  id: number
-  requirementId: number
-  requirementTitle: string
-  result: string
-  reviewerId: number
-  reviewerName: string
-  comment: string | null
-  suggestions: string | null
-  reviewedAt: string | null
-}
+type ReviewRecord = Review
 
 const reviews = ref<ReviewRecord[]>([])
 const filterRequirementId = ref('')
 const filterResult = ref('')
+const loading = ref(false)
+const pagination = reactive({
+  pageNum: 1,
+  pageSize: 10,
+  total: 0,
+})
 const detailVisible = ref(false)
 const detailMode = ref<'view' | 'edit'>('view')
 const currentReview = ref<ReviewRecord | null>(null)
@@ -148,14 +155,6 @@ const reviewForm = ref({
   result: '',
   comment: '',
   suggestions: '',
-})
-
-const filteredReviews = computed(() => {
-  return reviews.value.filter((r) => {
-    if (filterRequirementId.value && String(r.requirementId) !== filterRequirementId.value) return false
-    if (filterResult.value && r.result !== filterResult.value) return false
-    return true
-  })
 })
 
 const getResultType = (result: string) => {
@@ -167,15 +166,25 @@ const getResultType = (result: string) => {
   return map[result] || 'info'
 }
 
-const loadReviews = () => {
-  // 模拟数据，API 返回后切换
-  reviews.value = [
-    { id: 1, requirementId: 1, requirementTitle: '用户登录功能优化', result: '通过', reviewerId: 1, reviewerName: '张三', comment: '功能完善，符合需求', suggestions: null, reviewedAt: '2024-03-20 10:00:00' },
-    { id: 2, requirementId: 2, requirementTitle: '数据报表导出功能', result: '需修改', reviewerId: 2, reviewerName: '李四', comment: '导出格式需要调整', suggestions: '增加PDF格式导出选项', reviewedAt: '2024-03-21 14:30:00' },
-    { id: 3, requirementId: 3, requirementTitle: '消息通知系统', result: '不通过', reviewerId: 3, reviewerName: '王五', comment: '缺少邮件通知功能', suggestions: '补充邮件、短信通知渠道', reviewedAt: null },
-    { id: 4, requirementId: 4, requirementTitle: '权限管理模块', result: '通过', reviewerId: 1, reviewerName: '张三', comment: 'RBAC设计合理', suggestions: null, reviewedAt: '2024-03-22 09:15:00' },
-    { id: 5, requirementId: 5, requirementTitle: '搜索功能优化', result: '', reviewerId: 2, reviewerName: '李四', comment: null, suggestions: null, reviewedAt: null },
-  ]
+const loadReviews = async () => {
+  loading.value = true
+  try {
+    const requirementId = Number(filterRequirementId.value)
+    const data = await getReviews({
+      requirementId: Number.isFinite(requirementId) && requirementId > 0 ? requirementId : undefined,
+      result: filterResult.value || undefined,
+      pageNum: pagination.pageNum,
+      pageSize: pagination.pageSize,
+    })
+    reviews.value = data.list
+    pagination.total = data.total
+  } catch (error) {
+    reviews.value = []
+    pagination.total = 0
+    ElMessage.error(resolveErrorMessage(error, '评审列表加载失败'))
+  } finally {
+    loading.value = false
+  }
 }
 
 const viewDetail = (row: ReviewRecord) => {
@@ -206,12 +215,18 @@ const submitReview = async () => {
   try {
     await updateReview(currentReview.value.id, reviewForm.value)
     ElMessage.success('评审提交成功')
-  } catch {
-    ElMessage.success('评审提交成功（模拟）')
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '评审提交失败'))
+    return
   }
 
   detailVisible.value = false
-  loadReviews()
+  await loadReviews()
+}
+
+function resolveErrorMessage(error: unknown, fallback: string) {
+  const message = (error as any)?.response?.data?.message || (error as any)?.message
+  return typeof message === 'string' && message.trim() ? message : fallback
 }
 
 onMounted(() => {

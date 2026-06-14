@@ -45,13 +45,17 @@
           <div class="header-right">
             <AppButton v-if="!isViewMode" permission="button:workflow:update" @click="handleSave" :loading="saving">
               <el-icon><DocumentCopy /></el-icon>
-              保存草稿
+              {{ ['approved', 'inactive', 'rejected'].includes(currentVersion?.activationStatus ?? '') && !configDirty ? '保存名称' : '保存草稿' }}
             </AppButton>
-            <AppButton v-if="!isViewMode" type="primary" permission="button:workflow:update" @click="handleSubmit" :loading="submitting">
+            <AppButton v-if="!isViewMode && (!['approved', 'inactive', 'rejected'].includes(currentVersion?.activationStatus ?? '') || configDirty)" type="primary" permission="button:workflow:update" @click="handleSubmit" :loading="submitting">
               <el-icon><Check /></el-icon>
               提交审核
             </AppButton>
           </div>
+        </div>
+        <div v-if="['approved', 'inactive', 'rejected'].includes(currentVersion?.activationStatus ?? '') && !isViewMode" class="approved-edit-warning">
+          <el-icon><WarningFilled /></el-icon>
+          当前版本{{ currentVersion?.activationStatus === 'approved' ? '已审核通过' : currentVersion?.activationStatus === 'inactive' ? '已停用' : '审核被拒绝' }}。修改节点或连线配置后保存，版本将回退为草稿状态，需重新提交审核。仅修改版本名称则保持原状态。
         </div>
       </template>
 
@@ -349,7 +353,8 @@ import {
   ZoomOut,
   Refresh,
   Grid,
-  Delete
+  Delete,
+  WarningFilled
 } from '@element-plus/icons-vue'
 import LogicFlow from '@logicflow/core'
 import dagre from '@dagrejs/dagre'
@@ -391,6 +396,7 @@ const isEditMode = ref(false)
 const currentVersion = ref<WorkflowVersionDTO>()
 const saving = ref(false)
 const submitting = ref(false)
+const configDirty = ref(false)
 const versionHistory = ref<WorkflowVersionDTO[]>([])
 const roleList = ref<Array<{ id: number; name: string; code: string }>>([])
 const roleGroupList = ref<Array<{ id: number; name: string }>>([])
@@ -1654,6 +1660,12 @@ const initLogicFlow = () => {
     selectedEdge.value = null
   })
 
+  // 监听节点/连线结构性变更（approved 版本编辑时用于检测配置是否变化）
+  lf.on('node:dnd-add', () => { configDirty.value = true })
+  lf.on('node:delete', () => { configDirty.value = true })
+  lf.on('edge:add', () => { configDirty.value = true })
+  lf.on('edge:delete', () => { configDirty.value = true })
+
   // 渲染初始数据
   lf.render({
     nodes: [],
@@ -1827,6 +1839,7 @@ const handleSaveNodeConfig = () => {
   lf.updateText(nodeForm.nodeId!, nodeForm.nodeName || '')
 
   ElMessage.success('节点配置已保存')
+  configDirty.value = true
   drawerVisible.value = false
 }
 
@@ -1847,6 +1860,7 @@ const handleSaveEdgeConfig = () => {
   }
 
   ElMessage.success('连线配置已保存')
+  configDirty.value = true
   drawerVisible.value = false
 }
 
@@ -1970,6 +1984,19 @@ const handleSave = async () => {
   if (!clientValidation.valid) {
     ElMessage.error(clientValidation.error || '工作流配置不合法')
     return
+  }
+
+  // approved 版本修改了节点/连线时的确认提示
+  if (currentVersion.value?.activationStatus === 'approved' && configDirty.value) {
+    try {
+      await ElMessageBox.confirm(
+        '当前版本已审核通过，修改节点/连线配置后保存将使版本回退为草稿状态，需重新提交审核。确定继续保存吗？',
+        '版本状态变更确认',
+        { confirmButtonText: '确定保存', cancelButtonText: '取消', type: 'warning' }
+      )
+    } catch {
+      return false
+    }
   }
 
   saving.value = true
@@ -2204,12 +2231,12 @@ onBeforeUnmount(() => {
         .scope-tag {
           margin-top: 6px;
           font-size: 13px;
-          color: #909399;
+          color: var(--color-muted-text);
         }
 
         .version-tag {
           font-size: 14px;
-          color: #909399;
+          color: var(--color-muted-text);
           margin-left: 8px;
         }
 
@@ -2234,7 +2261,7 @@ onBeforeUnmount(() => {
 
           .version-prefix {
             font-size: 14px;
-            color: #606266;
+            color: var(--color-text-secondary);
             font-weight: 600;
           }
 
@@ -2248,19 +2275,19 @@ onBeforeUnmount(() => {
           line-height: 1.4;
 
           &.info {
-            color: #909399;
+            color: var(--color-muted-text);
           }
 
           &.success {
-            color: #67c23a;
+            color: var(--color-success);
           }
 
           &.warning {
-            color: #e6a23c;
+            color: var(--color-warning);
           }
 
           &.error {
-            color: #f56c6c;
+            color: var(--color-danger);
           }
         }
 
@@ -2273,6 +2300,24 @@ onBeforeUnmount(() => {
     .header-right {
       display: flex;
       gap: 12px;
+    }
+  }
+
+  .approved-edit-warning {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #b88230;
+    background: #fff7e6;
+    border-top: 1px solid #f3d19e;
+
+    .el-icon {
+      flex-shrink: 0;
+      font-size: 16px;
     }
   }
 
@@ -2291,7 +2336,7 @@ onBeforeUnmount(() => {
         font-size: 14px;
         font-weight: 600;
         margin-bottom: 12px;
-        color: #303133;
+        color: var(--color-text-primary);
       }
 
       .node-palette {
@@ -2311,8 +2356,8 @@ onBeforeUnmount(() => {
           transition: all 0.3s;
 
           &:hover {
-            border-color: #409eff;
-            background: #ecf5ff;
+            border-color: var(--color-accent);
+            background: var(--color-info-light);
           }
 
           &.is-readonly {
@@ -2334,28 +2379,28 @@ onBeforeUnmount(() => {
           }
 
           &.start {
-            border-color: #67c23a;
-            .node-icon { color: #67c23a; }
+            border-color: var(--color-success);
+            .node-icon { color: var(--color-success); }
           }
 
           &.approval {
-            border-color: #409eff;
-            .node-icon { color: #409eff; }
+            border-color: var(--color-accent);
+            .node-icon { color: var(--color-accent); }
           }
 
           &.cc {
-            border-color: #e6a23c;
-            .node-icon { color: #e6a23c; }
+            border-color: var(--color-warning);
+            .node-icon { color: var(--color-warning); }
           }
 
           &.condition {
-            border-color: #f56c6c;
-            .node-icon { color: #f56c6c; }
+            border-color: var(--color-danger);
+            .node-icon { color: var(--color-danger); }
           }
 
           &.end {
-            border-color: #909399;
-            .node-icon { color: #909399; }
+            border-color: var(--color-muted-text);
+            .node-icon { color: var(--color-muted-text); }
           }
         }
       }
@@ -2392,7 +2437,7 @@ onBeforeUnmount(() => {
         ol {
           margin: 0;
           padding-left: 18px;
-          color: #606266;
+          color: var(--color-text-secondary);
           font-size: 12px;
           line-height: 1.7;
         }

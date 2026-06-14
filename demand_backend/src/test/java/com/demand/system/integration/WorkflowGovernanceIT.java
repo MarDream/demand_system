@@ -27,7 +27,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 public class WorkflowGovernanceIT extends BaseIntegrationTest {
 
     private static final String DEFAULT_PASSWORD = "admin123";
-    private static final String DEFAULT_PASSWORD_HASH = "$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iKTVKIUi";
+    private static final String DEFAULT_PASSWORD_HASH = "$2b$12$.SPoAlnnJvD.VajrVmgCdeBTWE/DQ75Ym/P9dGL.3IzT4ewED9QVG";
 
     @Autowired
     private MockMvc mockMvc;
@@ -380,7 +380,8 @@ public class WorkflowGovernanceIT extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.code").value(200))
                 .andReturn();
 
-        return JsonPath.read(result.getResponse().getContentAsString(), "$.data[0].id");
+        Number id = JsonPath.read(result.getResponse().getContentAsString(), "$.data[0].id");
+        return id.longValue();
     }
 
     private void activateWorkflowVersion(Long versionId, Long projectId, String token) throws Exception {
@@ -420,7 +421,8 @@ public class WorkflowGovernanceIT extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.data.list[0].title").value(title))
                 .andReturn();
 
-        return JsonPath.read(result.getResponse().getContentAsString(), "$.data.list[0].id");
+        Number id = JsonPath.read(result.getResponse().getContentAsString(), "$.data.list[0].id");
+        return id.longValue();
     }
 
     private Long getStateId(Long projectId, String stateName) {

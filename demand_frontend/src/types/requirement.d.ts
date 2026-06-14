@@ -102,6 +102,10 @@ export interface RequirementDraftUpdate extends Partial<RequirementDraftCreate> 
 
 export interface RequirementMyListQuery {
   projectId?: number
+  type?: string
+  priority?: string
+  status?: string
+  assigneeId?: number
   keyword?: string
   pageNum: number
   pageSize: number

@@ -8,6 +8,7 @@ export interface Iteration {
   capacity: number | null
   status: string
   creatorId: number
+  version?: number
   createdAt: string
   requirementCount?: number
   progress?: number
@@ -29,5 +30,6 @@ export interface IterationFormData {
   startDate: string
   endDate: string
   capacity: number
+  version?: number
   requirementIds: number[]
 }

@@ -85,6 +85,7 @@ public class WorkflowActivationServiceImpl implements WorkflowActivationService 
 
         version.setDefinition(compiled.definitionJson());
         version.setRuntimeHash(compiled.runtimeHash());
+        version.setConfigHash(compiled.configHash());
         version.setIsActive(1);
         version.setActivationStatus("active");
         version.setActivatedAt(LocalDateTime.now());
