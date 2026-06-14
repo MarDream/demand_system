@@ -57,6 +57,11 @@ public class WorkflowAvailableActionsDTO {
     /** 当前用户是否可拆分子需求（与 canEdit 一致） */
     private Boolean canSplit;
 
+    /** 关联工作流版本当前是否处于启用状态（is_active=1）。
+     *  当为 false 时，所有 canTransition/canRollback/canCancel 都会是 false 且 transitions 为空，
+     *  表示工作流被管理员停用，不允许执行任何流转操作。 */
+    private Boolean workflowActive;
+
     public Boolean getCanTransition() {
         return canTransition;
     }
@@ -223,5 +228,13 @@ public class WorkflowAvailableActionsDTO {
 
     public void setCanSplit(Boolean canSplit) {
         this.canSplit = canSplit;
+    }
+
+    public Boolean getWorkflowActive() {
+        return workflowActive;
+    }
+
+    public void setWorkflowActive(Boolean workflowActive) {
+        this.workflowActive = workflowActive;
     }
 }

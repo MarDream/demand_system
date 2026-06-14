@@ -101,18 +101,19 @@
                 <el-icon><Refresh /></el-icon>
                 重置
               </el-button>
-              <el-button
+              <AppButton
                 class="toolbar-action-btn"
                 @click="handleFormatLayout"
+                permission="button:workflow:update"
                 :disabled="isViewMode"
               >
                 <el-icon><Grid /></el-icon>
                 格式化排版
-              </el-button>
-              <el-button class="toolbar-action-btn" @click="handleClearCanvas" type="danger" :disabled="isViewMode">
+              </AppButton>
+              <AppButton class="toolbar-action-btn" @click="handleClearCanvas" type="danger" permission="button:workflow:update" :disabled="isViewMode">
                 <el-icon><Delete /></el-icon>
                 清空画布
-              </el-button>
+              </AppButton>
             </div>
           </div>
         </div>
@@ -297,8 +298,8 @@
               </template>
 
               <el-form-item v-if="!isViewMode">
-                <el-button type="primary" @click="handleSaveNodeConfig">保存配置</el-button>
-                <el-button @click="handleDeleteNode" type="danger">删除节点</el-button>
+                <AppButton type="primary" permission="button:workflow:update" @click="handleSaveNodeConfig">保存配置</AppButton>
+                <AppButton permission="button:workflow:update" @click="handleDeleteNode" type="danger">删除节点</AppButton>
               </el-form-item>
             </el-form>
           </div>
@@ -326,8 +327,8 @@
               </el-form-item>
 
               <el-form-item v-if="!isViewMode">
-                <el-button type="primary" @click="handleSaveEdgeConfig">保存配置</el-button>
-                <el-button @click="handleDeleteEdge" type="danger">删除连线</el-button>
+                <AppButton type="primary" permission="button:workflow:update" @click="handleSaveEdgeConfig">保存配置</AppButton>
+                <AppButton permission="button:workflow:update" @click="handleDeleteEdge" type="danger">删除连线</AppButton>
               </el-form-item>
             </el-form>
           </div>

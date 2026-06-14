@@ -55,6 +55,10 @@ export interface WorkflowAvailableActions {
   canDelete?: boolean | null
   /** 当前用户是否可拆分子需求（与 canEdit 一致） */
   canSplit?: boolean | null
+  /** 关联工作流版本当前是否处于启用状态（is_active=1）。
+   *  false 时表示工作流被管理员停用，canTransition/canRollback/canCancel 都会是 false，
+   *  前端应隐藏操作按钮并提示"工作流已停用"。 */
+  workflowActive?: boolean | null
 }
 
 export interface TransitionVO {

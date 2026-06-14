@@ -13,6 +13,8 @@
           <el-radio-button v-if="hasPermission('menu:requirement:view:draft')" value="drafts">
             <el-badge :value="viewCounts.drafts" :hidden="viewCounts.drafts === 0">我的草稿</el-badge>
           </el-radio-button>
+          <!-- 兜底：保证 el-radio-group 至少有一个有效子节点，避免 [ElOnlyChild] 警告 -->
+          <el-radio-button v-if="visibleViewOptions === 0" value="all" disabled>暂无可见视图</el-radio-button>
         </el-radio-group>
       </div>
       <el-form :model="filterForm" inline>
@@ -197,10 +199,19 @@
                     <el-tooltip content="查看详情" placement="top">
                       <el-button link type="primary" :icon="View" @click="handleOpen(row)" />
                     </el-tooltip>
-                    <el-tooltip content="编辑" placement="top">
-                      <el-button link type="primary" :icon="Edit" @click="handleEdit(row)" />
+                    <el-tooltip v-if="hasPermission('button:requirement:update')" content="编辑" placement="top">
+                      <el-button
+                        link
+                        type="primary"
+                        :icon="Edit"
+                        @click="handleEdit(row)"
+                      />
                     </el-tooltip>
-                    <el-popconfirm title="确定删除该需求吗？" @confirm="handleDelete(row.id)">
+                    <el-popconfirm
+                      v-if="hasPermission('button:requirement:delete')"
+                      title="确定删除该需求吗？"
+                      @confirm="handleDelete(row.id)"
+                    >
                       <template #reference>
                         <el-button link type="danger" :icon="Delete" title="删除" />
                       </template>
@@ -288,6 +299,14 @@ const viewMode = ref<RequirementViewMode>(
           ? 'follows'
           : 'all',
 )
+// 计算 el-radio-group 实际能看到的子项数量，避免出现零子节点触发 [ElOnlyChild] 警告
+const visibleViewOptions = computed(() => [
+  hasPermission('menu:requirement:view:all'),
+  hasPermission('menu:requirement:view:pending'),
+  hasPermission('menu:requirement:view:done'),
+  hasPermission('menu:requirement:view:follow'),
+  hasPermission('menu:requirement:view:draft'),
+].filter(Boolean).length)
 const isAllView = computed(() => viewMode.value === 'all')
 const isDraftView = computed(() => viewMode.value === 'drafts')
 const isPendingView = computed(() => viewMode.value === 'pending')
@@ -601,6 +620,10 @@ function handleCreate() {
 }
 
 function handleEdit(row: Requirement) {
+  if (!hasPermission('button:requirement:update')) {
+    ElMessage.error('您没有编辑需求的权限')
+    return
+  }
   router.push({ name: 'RequirementCreate', query: { id: row.id } })
 }
 
@@ -826,6 +849,13 @@ watch(tableData, (rows) => {
 
 .view-switch {
   margin-bottom: 12px;
+}
+
+.view-switch__empty {
+  display: inline-block;
+  padding: 4px 12px;
+  color: var(--color-text-secondary, #909399);
+  font-size: 14px;
 }
 
 .filter-toggle {

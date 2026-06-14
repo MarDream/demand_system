@@ -1425,8 +1425,107 @@ public class RequirementServiceImpl implements RequirementService {
         if (Objects.equals(requirement.getCreatorId(), userId)) {
             return true;
         }
+        // 参与过需求审批/历史流转的人可查看（覆盖"我的待办/已办"场景，避免列表可见但点不进详情）
+        if (isParticipant(requirement.getId(), userId)) {
+            return true;
+        }
+        // 被指派为当前工作流节点处理人也可查看（与 selectMyPending 列表判定保持一致，
+        // 避免"我的待办"列表能看见但点进详情被 403）
+        if (isAssignedAsCurrentNodeApprover(requirement, userId)) {
+            return true;
+        }
         List<Long> visibleOrgIds = resolveVisibleOrgIds(userId, false);
         return requirement.getOrgId() != null && visibleOrgIds.contains(requirement.getOrgId());
+    }
+
+    /**
+     * 判定用户是否被指派为当前工作流节点的处理人。
+     * 与 {@link com.demand.system.module.requirement.mapper.RequirementMapper#selectMyPending} 的
+     * 6 种 assignee_type 分支完全对齐，保证"我的待办"列表可见的每一条都至少能查看。
+     */
+    private boolean isAssignedAsCurrentNodeApprover(Requirement requirement, Long userId) {
+        if (requirement == null || userId == null || requirement.getWorkflowInstanceId() == null) {
+            return false;
+        }
+        WorkflowInstance instance = workflowInstanceMapper.selectById(requirement.getWorkflowInstanceId());
+        if (instance == null || !"running".equals(instance.getStatus())) {
+            return false;
+        }
+        WorkflowNode node = workflowNodeMapper.selectOne(
+            new LambdaQueryWrapper<WorkflowNode>()
+                .eq(WorkflowNode::getWorkflowVersionId, instance.getWorkflowVersionId())
+                .eq(WorkflowNode::getNodeId, instance.getCurrentNodeId())
+        );
+        if (node == null) {
+            return false;
+        }
+        String assigneeType = node.getAssigneeType();
+        if (!StringUtils.hasText(assigneeType)) {
+            return false;
+        }
+        switch (assigneeType) {
+            case "SPECIFIED_USER":
+                return node.getAssigneeUserIds() != null && node.getAssigneeUserIds().contains(userId);
+            case "SPECIFIED_ROLE":
+                if (node.getAssigneeRoleId() == null) {
+                    return false;
+                }
+                Role role = roleMapper.selectById(node.getAssigneeRoleId().longValue());
+                return role != null && currentUserMatchesRole(role);
+            case "SPECIFIED_ROLE_GROUP":
+                if (node.getAssigneeRoleGroupId() == null) {
+                    return false;
+                }
+                List<Role> groupRoles = roleMapper.selectList(
+                    new LambdaQueryWrapper<Role>()
+                        .eq(Role::getRoleGroupId, node.getAssigneeRoleGroupId())
+                        .eq(Role::getDeletedAt, 0)
+                );
+                return groupRoles.stream().anyMatch(this::currentUserMatchesRole);
+            case "SPECIFIED_ORG": {
+                Long orgId = node.getAssigneeOrgId();
+                if (orgId == null) {
+                    return false;
+                }
+                List<Long> directOrgIds = resolveDirectOrgIds(userId);
+                Map<String, Object> properties = node.getProperties();
+                String scope = properties == null ? "include_children"
+                        : String.valueOf(properties.get("orgScopeType"));
+                if ("current".equalsIgnoreCase(scope)) {
+                    return directOrgIds.contains(orgId);
+                }
+                List<Long> scopedOrgIds = resolveScopedOrgIds(directOrgIds);
+                return scopedOrgIds.contains(orgId);
+            }
+            case "PREV_APPROVER": {
+                WorkflowInstanceTransition last = workflowInstanceTransitionMapper.selectOne(
+                    new LambdaQueryWrapper<WorkflowInstanceTransition>()
+                        .eq(WorkflowInstanceTransition::getInstanceId, instance.getId())
+                        .eq(WorkflowInstanceTransition::getToNodeId, instance.getCurrentNodeId())
+                        .orderByDesc(WorkflowInstanceTransition::getId)
+                        .last("LIMIT 1")
+                );
+                return last != null && Objects.equals(last.getOperatorId(), userId);
+            }
+            case "CREATOR":
+                return Objects.equals(requirement.getCreatorId(), userId);
+            default:
+                return false;
+        }
+    }
+
+    private boolean currentUserMatchesRole(Role role) {
+        if (role == null) {
+            return false;
+        }
+        List<String> userRoles = SecurityUtils.getCurrentUserRoles();
+        if (userRoles.isEmpty()) {
+            return false;
+        }
+        if (StringUtils.hasText(role.getCode()) && userRoles.contains(role.getCode().trim())) {
+            return true;
+        }
+        return StringUtils.hasText(role.getName()) && userRoles.contains(role.getName().trim());
     }
 
     /**
@@ -1480,12 +1579,22 @@ public class RequirementServiceImpl implements RequirementService {
      * 判断用户是否参与过需求的审批（在workflow_instance_transitions中有记录）
      */
     private boolean isParticipant(Long requirementId, Long userId) {
-        Long count = workflowInstanceTransitionMapper.selectCount(
+        // 1. 参与过审批流转（在 workflow_instance_transitions 有记录）
+        Long transitionCount = workflowInstanceTransitionMapper.selectCount(
             new LambdaQueryWrapper<WorkflowInstanceTransition>()
                 .eq(WorkflowInstanceTransition::getRequirementId, requirementId)
                 .eq(WorkflowInstanceTransition::getOperatorId, userId)
         );
-        return count != null && count > 0;
+        if (transitionCount != null && transitionCount > 0) {
+            return true;
+        }
+        // 2. 编辑过字段历史（在 requirement_history 有记录）—— 覆盖"我只是改了描述/工时但没进审批"的场景
+        Long historyCount = historyMapper.selectCount(
+            new LambdaQueryWrapper<RequirementHistory>()
+                .eq(RequirementHistory::getRequirementId, requirementId)
+                .eq(RequirementHistory::getOperatorId, userId)
+        );
+        return historyCount != null && historyCount > 0;
     }
 
     private void sendStatusChangeNotifications(Requirement requirement, String newStatus, Long operatorId) {

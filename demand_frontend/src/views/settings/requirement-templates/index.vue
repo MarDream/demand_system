@@ -2,7 +2,7 @@
   <div class="requirement-templates-page">
     <div class="page-header">
       <h2>需求模板管理</h2>
-      <el-button type="primary" @click="handleCreate">新建模板</el-button>
+      <AppButton type="primary" permission="button:requirement-template:create" @click="handleCreate">新建模板</AppButton>
     </div>
 
     <el-table :data="templates" border v-loading="loading">
@@ -17,15 +17,16 @@
       </el-table-column>
       <el-table-column label="操作" width="250">
         <template #default="{ row }">
-          <el-button size="small" @click="handleEdit(row)">编辑</el-button>
-          <el-button
+          <AppButton size="small" permission="button:requirement-template:update" @click="handleEdit(row)">编辑</AppButton>
+          <AppButton
             size="small"
             :type="row.isActive === 1 ? 'warning' : 'success'"
+            permission="button:requirement-template:toggle"
             @click="handleToggleStatus(row)"
           >
             {{ row.isActive === 1 ? '禁用' : '启用' }}
-          </el-button>
-          <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
+          </AppButton>
+          <AppButton size="small" type="danger" permission="button:requirement-template:delete" @click="handleDelete(row)">删除</AppButton>
         </template>
       </el-table-column>
     </el-table>
@@ -100,14 +101,14 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSave">保存</el-button>
+        <AppButton type="primary" :permission="savePermission" @click="handleSave">保存</AppButton>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getAllRequirementTemplates,
@@ -122,6 +123,7 @@ const loading = ref(false)
 const saving = ref(false)
 const dialogVisible = ref(false)
 const dialogTitle = ref('新建模板')
+const savePermission = computed(() => form.value.id ? 'button:requirement-template:update' : 'button:requirement-template:create')
 const form = ref<RequirementTemplate>({
   requirementTypeCode: '',
   templateName: '',

@@ -10,7 +10,7 @@
       <div class="provider-panel">
         <div class="panel-header">
           <span class="panel-title">接入组</span>
-          <el-button :icon="Plus" size="small" type="primary" @click="openCreateProvider">新增</el-button>
+          <AppButton :icon="Plus" size="small" type="primary" permission="button:llm-provider:create" @click="openCreateProvider">新增</AppButton>
         </div>
         <div class="provider-list" v-loading="loading">
           <div
@@ -31,21 +31,27 @@
                 <div class="provider-meta">{{ p.baseUrl }}</div>
               </div>
               <div class="provider-item-right">
-                <el-switch
-                  :model-value="p.enabled"
-                  size="small"
-                  @change="handleToggleProvider(p)"
-                  @click.stop
-                />
+                <span v-permission="'button:llm-provider:update'">
+                  <el-switch
+                    :model-value="p.enabled"
+                    size="small"
+                    @change="handleToggleProvider(p)"
+                    @click.stop
+                  />
+                </span>
                 <div class="provider-count">{{ p.models?.length ?? 0 }} 个模型</div>
               </div>
             </div>
             <div class="provider-item-actions" @click.stop>
               <el-tooltip content="嗅探模型" placement="top">
-                <el-icon class="action-icon" style="color: var(--color-warning);" @click="handleSniff(p)"><Search /></el-icon>
+                <span v-permission="'button:llm-provider:test'">
+                  <el-icon class="action-icon" style="color: var(--color-warning);" @click="handleSniff(p)"><Search /></el-icon>
+                </span>
               </el-tooltip>
               <el-tooltip content="查看密钥" placement="top">
-                <el-icon class="action-icon" @click="handleViewApiKey(p)"><View /></el-icon>
+                <span v-permission="'button:llm-provider:update'">
+                  <el-icon class="action-icon" @click="handleViewApiKey(p)"><View /></el-icon>
+                </span>
               </el-tooltip>
               <el-tooltip content="编辑" placement="top">
                 <span v-permission="'button:llm-provider:update'">
@@ -77,11 +83,11 @@
                   {{ selectedProvider.protocol === 'openai' ? 'OpenAI' : 'Anthropic' }}
                 </el-tag>
               </span>
-              <el-button :icon="Plus" size="small" type="primary" @click="openCreateModel(selectedProvider)">新增模型</el-button>
+              <AppButton :icon="Plus" size="small" type="primary" permission="button:llm-provider:create" @click="openCreateModel(selectedProvider)">新增模型</AppButton>
             </div>
             <div class="panel-header-right">
               <el-tooltip content="嗅探可用模型" placement="top">
-                <el-button size="small" :icon="Search" @click="handleSniff(selectedProvider)">嗅探</el-button>
+                <AppButton size="small" :icon="Search" permission="button:llm-provider:test" @click="handleSniff(selectedProvider)">嗅探</AppButton>
               </el-tooltip>
             </div>
           </div>
@@ -104,7 +110,9 @@
             </el-table-column>
             <el-table-column label="状态" width="60" align="center">
               <template #default="{ row }">
-                <el-switch :model-value="row.enabled" size="small" @change="handleToggleModel(selectedProvider, row)" />
+                <span v-permission="'button:llm-provider:update'">
+                  <el-switch :model-value="row.enabled" size="small" @change="handleToggleModel(selectedProvider, row)" />
+                </span>
               </template>
             </el-table-column>
             <el-table-column label="连通性" width="90" align="center">
@@ -125,7 +133,9 @@
             <el-table-column label="操作" width="110" align="center">
               <template #default="{ row }">
                 <el-tooltip content="测试连通性" placement="top">
-                  <el-icon class="action-icon" @click="handleTestModel(row)"><Connection /></el-icon>
+                  <span v-permission="'button:llm-provider:test'">
+                    <el-icon class="action-icon" @click="handleTestModel(row)"><Connection /></el-icon>
+                  </span>
                 </el-tooltip>
                 <el-tooltip content="编辑" placement="top">
                   <span v-permission="'button:llm-provider:update'">
@@ -217,7 +227,7 @@
       <template #footer>
         <div class="dialog-footer">
           <el-button @click="providerDialogVisible = false">取消</el-button>
-          <el-button type="primary" :loading="submitting" @click="handleProviderSubmit">保存</el-button>
+          <AppButton type="primary" :loading="submitting" :permission="providerSavePermission" @click="handleProviderSubmit">保存</AppButton>
         </div>
       </template>
     </el-dialog>
@@ -260,7 +270,7 @@
       </el-form>
       <template #footer>
         <el-button @click="modelDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleModelSubmit">保存</el-button>
+        <AppButton type="primary" :loading="submitting" :permission="modelSavePermission" @click="handleModelSubmit">保存</AppButton>
       </template>
     </el-dialog>
 
@@ -290,9 +300,9 @@
       </div>
       <template #footer>
         <el-button @click="sniffDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" :disabled="sniffSelectedModelIds.length === 0" @click="handleSniffImport">
+        <AppButton type="primary" :loading="submitting" :disabled="sniffSelectedModelIds.length === 0" permission="button:llm-provider:create" @click="handleSniffImport">
           导入选中 ({{ sniffSelectedModelIds.length }})
-        </el-button>
+        </AppButton>
       </template>
     </el-dialog>
   </div>
@@ -363,6 +373,12 @@ const selectedProvider = computed(() =>
 )
 const selectedProviderModels = computed(() =>
   selectedProvider.value?.models ?? []
+)
+const providerSavePermission = computed(() =>
+  editingProviderId.value ? 'button:llm-provider:update' : 'button:llm-provider:create'
+)
+const modelSavePermission = computed(() =>
+  editingModelId.value ? 'button:llm-provider:update' : 'button:llm-provider:create'
 )
 
 async function loadColumnConfig() {

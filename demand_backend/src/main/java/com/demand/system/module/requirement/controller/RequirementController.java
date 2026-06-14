@@ -160,7 +160,7 @@ public class RequirementController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('button:requirement:update')")
     public Result<Void> update(@PathVariable Long id, @Valid @RequestBody RequirementUpdateDTO dto) {
         Long userId = SecurityUtils.getCurrentUserId();
         if (userId == null) {
@@ -172,7 +172,7 @@ public class RequirementController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('button:requirement:delete')")
     public Result<Void> delete(@PathVariable Long id) {
         Long userId = SecurityUtils.getCurrentUserId();
         if (userId == null) {

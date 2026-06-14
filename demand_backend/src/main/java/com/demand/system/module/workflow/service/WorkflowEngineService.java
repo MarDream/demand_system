@@ -38,6 +38,7 @@ import com.demand.system.module.workflow.mapper.WorkflowEdgeMapper;
 import com.demand.system.module.workflow.mapper.WorkflowInstanceMapper;
 import com.demand.system.module.workflow.mapper.WorkflowInstanceTransitionMapper;
 import com.demand.system.module.workflow.mapper.WorkflowNodeMapper;
+import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.demand.system.module.workflow.mapper.NodeStatusMapper;
 import com.demand.system.module.workflow.support.WorkflowNodeUtils;
 import org.springframework.context.annotation.Lazy;
@@ -66,6 +67,7 @@ public class WorkflowEngineService {
     private final WorkflowInstanceTransitionMapper transitionMapper;
     private final WorkflowNodeMapper nodeMapper;
     private final WorkflowEdgeMapper edgeMapper;
+    private final WorkflowVersionMapper workflowVersionMapper;
     private final RequirementMapper requirementMapper;
     private final RequirementHistoryMapper requirementHistoryMapper;
     private final ProjectMapper projectMapper;
@@ -86,6 +88,7 @@ public class WorkflowEngineService {
 
     public WorkflowEngineService(WorkflowInstanceMapper instanceMapper, WorkflowInstanceTransitionMapper transitionMapper,
                                WorkflowNodeMapper nodeMapper, WorkflowEdgeMapper edgeMapper,
+                               WorkflowVersionMapper workflowVersionMapper,
                                RequirementMapper requirementMapper, RequirementHistoryMapper requirementHistoryMapper,
                                ProjectMapper projectMapper, UserMapper userMapper, RoleMapper roleMapper,
                                RoleGroupMapper roleGroupMapper, UserRoleMapper userRoleMapper,
@@ -101,6 +104,7 @@ public class WorkflowEngineService {
         this.transitionMapper = transitionMapper;
         this.nodeMapper = nodeMapper;
         this.edgeMapper = edgeMapper;
+        this.workflowVersionMapper = workflowVersionMapper;
         this.requirementMapper = requirementMapper;
         this.requirementHistoryMapper = requirementHistoryMapper;
         this.projectMapper = projectMapper;
@@ -118,6 +122,36 @@ public class WorkflowEngineService {
         this.approvalEvaluationService = approvalEvaluationService;
         this.countersignService = countersignService;
         this.parallelBranchService = parallelBranchService;
+    }
+
+    /**
+     * 校验工作流版本当前是否处于启用状态（is_active=1）。
+     * 工作流被管理员停用后，已存在的工作流实例不允许继续流转/驳回/取消，
+     * 避免历史实例绕开停用控制继续修改状态机，破坏工作流启用/停用的边界。
+     */
+    private void requireWorkflowActive(WorkflowInstance instance) {
+        if (instance == null || instance.getWorkflowVersionId() == null) {
+            return;
+        }
+        WorkflowVersion version = workflowVersionMapper.selectById(instance.getWorkflowVersionId());
+        if (version == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "工作流版本不存在，无法执行流转操作");
+        }
+        if (version.getIsActive() == null || version.getIsActive() != 1) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "当前工作流正调整中，请稍后再提交");
+        }
+    }
+
+    /**
+     * 只读查询工作流版本是否处于启用状态。用于 getAvailableActions 等接口
+     * 在工作流停用时静默返回空 actions（前端自然不会渲染操作按钮）。
+     */
+    private boolean isWorkflowVersionActive(WorkflowInstance instance) {
+        if (instance == null || instance.getWorkflowVersionId() == null) {
+            return false;
+        }
+        WorkflowVersion version = workflowVersionMapper.selectById(instance.getWorkflowVersionId());
+        return version != null && version.getIsActive() != null && version.getIsActive() == 1;
     }
 
     @Transactional
@@ -207,6 +241,7 @@ public class WorkflowEngineService {
         if (instance == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "工作流实例不存在");
         }
+        requireWorkflowActive(instance);
         if ("completed".equals(instance.getStatus()) || "cancelled".equals(instance.getStatus())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "工作流已结束，无法流转");
         }
@@ -404,6 +439,7 @@ public class WorkflowEngineService {
         workflowRuntimeMigrationService.alignRequirementInstanceIfNeeded(requirementId);
         Long operatorId = SecurityUtils.getCurrentUserId();
         WorkflowInstance instance = getRunningInstance(requirementId);
+        requireWorkflowActive(instance);
 
         if (instance.getPreviousNodeId() == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "已在开始节点，无法回退");
@@ -462,6 +498,7 @@ public class WorkflowEngineService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "需求不存在");
         }
         WorkflowInstance instance = getRunningInstance(requirementId);
+        requireWorkflowActive(instance);
 
         WorkflowNode currentNode = getNode(instance.getWorkflowVersionId(), instance.getCurrentNodeId());
         if ("end".equals(currentNode.getNodeType())) {
@@ -527,6 +564,13 @@ public class WorkflowEngineService {
                         .eq(WorkflowInstance::getRequirementId, requirementId)
         );
         if (instance == null || !"running".equals(instance.getStatus())) {
+            return actions;
+        }
+
+        // 工作流启用状态：实例存在但版本已停用时，不返回任何可用操作，前端不会渲染按钮
+        boolean workflowActive = isWorkflowVersionActive(instance);
+        actions.setWorkflowActive(workflowActive);
+        if (!workflowActive) {
             return actions;
         }
 
@@ -1337,11 +1381,17 @@ public class WorkflowEngineService {
         Map<Long, User> userMap = users == null ? Collections.emptyMap() : users.stream()
                 .filter(Objects::nonNull)
                 .filter(user -> user.getId() != null)
+                // 过滤掉已软删除的用户，避免历史脏数据进入候选列表
+                .filter(user -> user.getDeletedAt() == null || user.getDeletedAt() == 0L)
                 .collect(Collectors.toMap(User::getId, user -> user, (left, right) -> left));
 
         List<AssigneeCandidateDTO> candidates = new ArrayList<>();
         for (Long userId : normalizedIds) {
+            // 过滤孤儿引用：userMap 中查不到（用户不存在或已软删除）的不进入候选
             User user = userMap.get(userId);
+            if (user == null) {
+                continue;
+            }
             AssigneeCandidateDTO candidate = new AssigneeCandidateDTO();
             candidate.setId(userId);
             candidate.setName(resolveUserDisplayName(user, userId));

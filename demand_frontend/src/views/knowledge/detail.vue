@@ -99,7 +99,7 @@
               <el-button size="small" type="primary" :loading="batchDownloading" @click="handleBatchDownload" v-permission="'button:knowledge:download'">
                 {{ selectedRows.length >= 2 ? '打包下载' : '下载' }} ({{ selectedRows.length }})
               </el-button>
-              <el-button size="small" type="warning" :loading="batchRetrying" @click="handleBatchRetry">
+              <el-button size="small" type="warning" :loading="batchRetrying" @click="handleBatchRetry" v-permission="'button:knowledge:upload'">
                 批量重传
               </el-button>
               <el-button size="small" type="danger" :loading="batchDeleting" @click="handleBatchDelete" v-permission="'button:knowledge:delete'">
@@ -171,7 +171,7 @@
                   <!-- 查看类 -->
                   <div class="action-group__item">
                     <el-tooltip v-if="canPreview(row.fileType)" content="预览">
-                      <el-button link type="primary" size="small" @click="handlePreview(row)">
+                      <el-button link type="primary" size="small" @click="handlePreview(row)" v-permission="'button:knowledge:download'">
                         <el-icon><View /></el-icon>
                       </el-button>
                     </el-tooltip>
@@ -190,12 +190,12 @@
                       </el-button>
                     </el-tooltip>
                     <el-tooltip v-if="row.status === 'failed'" content="重传">
-                      <el-button link type="warning" size="small" @click="handleRetry(row)">
+                      <el-button link type="warning" size="small" @click="handleRetry(row)" v-permission="'button:knowledge:upload'">
                         <el-icon><RefreshRight /></el-icon>
                       </el-button>
                     </el-tooltip>
                     <el-tooltip v-if="canSkipIndexing(row.status)" content="跳过索引（保留文件存储）">
-                      <el-button link type="info" size="small" @click="handleSkip(row)">
+                      <el-button link type="info" size="small" @click="handleSkip(row)" v-permission="'button:knowledge:upload'">
                         <el-icon><CircleClose /></el-icon>
                       </el-button>
                     </el-tooltip>
@@ -278,7 +278,7 @@
       </div>
       <template #footer>
         <el-button @click="shareDialogVisible = false">关闭</el-button>
-        <el-button type="primary" @click="generateCurrentShareLink">生成链接</el-button>
+        <el-button type="primary" @click="generateCurrentShareLink" v-permission="'button:knowledge:share'">生成链接</el-button>
         <el-button :disabled="!currentShareLink" @click="copyCurrentShareLink">复制链接</el-button>
       </template>
     </AppDialog>
@@ -327,7 +327,7 @@
       </div>
       <template #footer>
         <el-button @click="logDialogVisible = false">关闭</el-button>
-        <el-button v-if="logDocument?.status === 'failed'" type="warning" @click="handleRetry(logDocument!); logDialogVisible = false">重传</el-button>
+        <el-button v-if="logDocument?.status === 'failed'" type="warning" @click="handleRetry(logDocument!); logDialogVisible = false" v-permission="'button:knowledge:upload'">重传</el-button>
         <el-button v-if="logDocument && canSkipIndexing(logDocument.status)" type="info" @click="handleSkip(logDocument); logDialogVisible = false">跳过索引</el-button>
       </template>
     </AppDialog>

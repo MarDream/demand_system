@@ -48,7 +48,7 @@
         />
       </el-select>
       <AppButton
-        v-if="usingUnifiedEngine && workflowRuntime.countersignEnabled"
+        v-if="usingUnifiedEngine && workflowRuntime.canCountersign"
         type="warning"
         permission="button:requirement:submit"
         @click="$emit('openCountersign', workflowRuntime.currentNodeId || '')"

@@ -170,6 +170,7 @@
                   type="danger"
                   plain
                   @click="handleClearAllApprovals"
+                  v-permission="'button:workflow:approve'"
                 >
                   <el-icon><Delete /></el-icon>
                   清空全部
@@ -308,7 +309,7 @@
       </el-form>
       <template #footer>
         <el-button @click="versionDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="versionSaving" @click="handleSaveVersionMeta">保存</el-button>
+        <AppButton type="primary" :loading="versionSaving" permission="button:workflow:update" @click="handleSaveVersionMeta">保存</AppButton>
       </template>
     </el-dialog>
 
@@ -349,13 +350,14 @@
       </div>
       <template #footer>
         <el-button @click="processDialogVisible = false">取消</el-button>
-        <el-button
+        <AppButton
           :type="processAction === 'approve' ? 'primary' : 'danger'"
           :loading="submitting"
+          permission="button:workflow:approve"
           @click="confirmProcess"
         >
           确认{{ processAction === 'approve' ? '通过' : '拒绝' }}
-        </el-button>
+        </AppButton>
       </template>
     </el-dialog>
 
@@ -496,7 +498,7 @@ import type {
 
 const route = useRoute()
 const router = useRouter()
-const { hasAnyRole } = usePermission()
+const { hasPermission } = usePermission()
 
 const versionLoading = ref(false)
 const approvalLoading = ref(false)
@@ -535,7 +537,7 @@ const pagination = reactive({
 
 const pageTitle = '工作流配置'
 const pageDescription = '维护工作流版本、流程审核和生效状态。'
-const canProcessApproval = computed(() => hasAnyRole(['admin']))
+const canProcessApproval = computed(() => hasPermission('button:workflow:approve'))
 const activeVersionCount = computed(() => versions.value.filter(item => item.isActive === 1).length)
 const sourceMenuPath = computed(() => resolveActiveMenuPath(route))
 const approvalSummary = computed(() => ({

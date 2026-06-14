@@ -1192,6 +1192,13 @@ INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description
 (65, 'button:knowledge:download', '下载文档', 'BUTTON', '知识库-下载文档', 1),
 (66, 'button:knowledge:share', '分享文档', 'BUTTON', '知识库-分享', 1);
 
+-- 需求模板权限
+INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `status`) VALUES
+(94, 'button:requirement-template:create', '新建需求模板', 'BUTTON', '需求模板-新建', 1),
+(95, 'button:requirement-template:update', '编辑需求模板', 'BUTTON', '需求模板-编辑', 1),
+(96, 'button:requirement-template:delete', '删除需求模板', 'BUTTON', '需求模板-删除', 1),
+(97, 'button:requirement-template:toggle', '启停需求模板', 'BUTTON', '需求模板-启停', 1);
+
 -- 需求配置权限
 INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `status`) VALUES
 (67, 'button:requirement-config:create', '新增配置项', 'BUTTON', '需求配置-新增', 1),
@@ -1207,13 +1214,21 @@ INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description
 (74, 'button:workflow:approve', '审批工作流', 'BUTTON', '工作流配置-审批', 1);
 
 -- 需求管理视图权限
-INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `status`) VALUES
+-- 注：id 79~84 已被历史 INSERT IGNORE 占用(button:requirement:* 等)，为避免 ON DUPLICATE KEY 失效，
+--    view:follow 单独使用 id 93；首次插入与二次重跑均能正确落库。
+INSERT INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `status`) VALUES
 (79, 'menu:requirement:view:all', '全部需求视图', 'MENU', '需求管理-全部需求', 1),
 (80, 'menu:requirement:view:pending', '我的待办视图', 'MENU', '需求管理-我的待办', 1),
 (81, 'menu:requirement:view:done', '我的已办视图', 'MENU', '需求管理-我的已办', 1),
 (82, 'menu:requirement:view:draft', '我的草稿视图', 'MENU', '需求管理-我的草稿', 1),
 (83, 'button:requirement:batch-delete', '批量删除需求', 'BUTTON', '需求管理-批量删除', 1),
-(84, 'menu:requirement:view:follow', '我的关注视图', 'MENU', '需求管理-我的关注', 1);
+(93, 'menu:requirement:view:follow', '我的关注', 'MENU', '需求管理-我的关注', 1)
+ON DUPLICATE KEY UPDATE
+  `code` = VALUES(`code`),
+  `name` = VALUES(`name`),
+  `type` = VALUES(`type`),
+  `description` = VALUES(`description`),
+  `status` = VALUES(`status`);
 
 
 -- 需求管理下的按钮菜单
@@ -1232,7 +1247,7 @@ INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, 
 (81, 2, '我的已办视图', 'BUTTON', NULL, NULL, NULL, NULL, 12, 'menu:requirement:view:done', 1, 1, 0),
 (82, 2, '我的草稿视图', 'BUTTON', NULL, NULL, NULL, NULL, 13, 'menu:requirement:view:draft', 1, 1, 0),
 (83, 2, '批量删除需求', 'BUTTON', NULL, NULL, NULL, NULL, 14, 'button:requirement:batch-delete', 1, 1, 0),
-(84, 2, '我的关注视图', 'BUTTON', NULL, NULL, NULL, NULL, 15, 'menu:requirement:view:follow', 1, 1, 0);
+(84, 2, '我的关注', 'BUTTON', NULL, NULL, NULL, NULL, 15, 'menu:requirement:view:follow', 1, 1, 0);
 
 -- 项目管理下的按钮菜单
 INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
@@ -1256,13 +1271,22 @@ INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, 
 (61, 8, '新建知识库', 'BUTTON', NULL, NULL, NULL, NULL, 1, 'button:knowledge:create', 1, 1, 0),
 (62, 8, '编辑知识库', 'BUTTON', NULL, NULL, NULL, NULL, 2, 'button:knowledge:update', 1, 1, 0),
 (63, 8, '删除知识库', 'BUTTON', NULL, NULL, NULL, NULL, 3, 'button:knowledge:delete', 1, 1, 0),
-(64, 8, '上传文档', 'BUTTON', NULL, NULL, NULL, NULL, 4, 'button:knowledge:upload', 1, 1, 0);
+(64, 8, '上传文档', 'BUTTON', NULL, NULL, NULL, NULL, 4, 'button:knowledge:upload', 1, 1, 0),
+(65, 8, '下载文档', 'BUTTON', NULL, NULL, NULL, NULL, 5, 'button:knowledge:download', 1, 1, 0),
+(66, 8, '分享文档', 'BUTTON', NULL, NULL, NULL, NULL, 6, 'button:knowledge:share', 1, 1, 0);
 
 -- 需求配置下的按钮菜单
 INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
 (67, 13, '新增配置项', 'BUTTON', NULL, NULL, NULL, NULL, 1, 'button:requirement-config:create', 1, 1, 0),
 (68, 13, '编辑配置项', 'BUTTON', NULL, NULL, NULL, NULL, 2, 'button:requirement-config:update', 1, 1, 0),
 (69, 13, '删除配置项', 'BUTTON', NULL, NULL, NULL, NULL, 3, 'button:requirement-config:delete', 1, 1, 0);
+
+-- 需求模板下的按钮菜单
+INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
+(85, 13, '新建需求模板', 'BUTTON', NULL, NULL, NULL, NULL, 4, 'button:requirement-template:create', 1, 1, 0),
+(86, 13, '编辑需求模板', 'BUTTON', NULL, NULL, NULL, NULL, 5, 'button:requirement-template:update', 1, 1, 0),
+(87, 13, '删除需求模板', 'BUTTON', NULL, NULL, NULL, NULL, 6, 'button:requirement-template:delete', 1, 1, 0),
+(88, 13, '启停需求模板', 'BUTTON', NULL, NULL, NULL, NULL, 7, 'button:requirement-template:toggle', 1, 1, 0);
 
 -- 工作流配置下的按钮菜单
 INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
@@ -1276,7 +1300,8 @@ INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, 
 INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
 (75, 16, '新建提供商', 'BUTTON', NULL, NULL, NULL, NULL, 1, 'button:llm-provider:create', 1, 1, 0),
 (76, 16, '编辑提供商', 'BUTTON', NULL, NULL, NULL, NULL, 2, 'button:llm-provider:update', 1, 1, 0),
-(77, 16, '删除提供商', 'BUTTON', NULL, NULL, NULL, NULL, 3, 'button:llm-provider:delete', 1, 1, 0);
+(77, 16, '删除提供商', 'BUTTON', NULL, NULL, NULL, NULL, 3, 'button:llm-provider:delete', 1, 1, 0),
+(78, 16, '测试提供商', 'BUTTON', NULL, NULL, NULL, NULL, 4, 'button:llm-provider:test', 1, 1, 0);
 
 -- SUPER_ADMIN 授权全部新增权限
 INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_by`) VALUES
@@ -1290,18 +1315,27 @@ INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_
 (1, 70, 1), (1, 71, 1), (1, 72, 1), (1, 73, 1), (1, 74, 1),
 (1, 78, 1), (1, 79, 1), (1, 80, 1), (1, 81, 1), (1, 82, 1), (1, 83, 1), (1, 84, 1);
 
+INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_by`)
+SELECT 1, `id`, 1 FROM `sys_permissions`
+WHERE `code` IN (
+  'button:requirement-template:create',
+  'button:requirement-template:update',
+  'button:requirement-template:delete',
+  'button:requirement-template:toggle'
+);
+
 -- 业务角色授权需求管理视图权限
 INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`) VALUES
 -- 产品经理：全部需求 + 我的草稿 + 新建需求 + 导出 + 批量删除
-(4, 79), (4, 82), (4, 84), (4, 40), (4, 43), (4, 83),
+(4, 79), (4, 82), (4, 93), (4, 40), (4, 43), (4, 83),
 -- 项目经理：全部需求 + 我的待办 + 我的已办 + 我的草稿 + 新建需求 + 导出 + 批量删除
-(5, 79), (5, 80), (5, 81), (5, 82), (5, 84), (5, 40), (5, 43), (5, 83),
+(5, 79), (5, 80), (5, 81), (5, 82), (5, 93), (5, 40), (5, 43), (5, 83),
 -- 开发人员：我的待办 + 我的已办 + 导出
-(6, 80), (6, 81), (6, 84), (6, 43),
+(6, 80), (6, 81), (6, 93), (6, 43),
 -- 测试人员：我的待办 + 我的已办 + 导出
-(7, 80), (7, 81), (7, 84), (7, 43),
+(7, 80), (7, 81), (7, 93), (7, 43),
 -- 评审人：全部需求 + 我的待办 + 我的已办 + 导出
-(8, 79), (8, 80), (8, 81), (8, 84), (8, 43);
+(8, 79), (8, 80), (8, 81), (8, 93), (8, 43);
 
 -- =====================================================
 -- Sprint 1 增量变更：工作流实例 + 流转记录 + 项目/岗位字段补全

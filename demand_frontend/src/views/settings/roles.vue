@@ -704,8 +704,25 @@ const grantDisabledReason = computed(() => {
   return '当前账号无权配置该角色权限。'
 })
 
+const menuPermissionNameMap = computed(() => {
+  const names = new Map<string, string>()
+  const walk = (items: MenuItem[]) => {
+    items.forEach(item => {
+      if (item.permissionCode && item.name) {
+        names.set(item.permissionCode, item.name)
+      }
+      walk(item.children || [])
+    })
+  }
+  walk(menuTree.value)
+  return names
+})
+
 const permissionOptions = computed<PermissionOption[]>(() => {
-  return grantablePermissions.value.map(code => ({ code, name: permissionName(code) }))
+  return grantablePermissions.value.map(code => ({
+    code,
+    name: menuPermissionNameMap.value.get(code) || permissionName(code),
+  }))
 })
 
 const permissionOptionMap = computed(() => {
@@ -982,6 +999,9 @@ async function fetchRolePermissions(roleId: number) {
     grantablePermissions.value = grantable || []
     selectedPermissions.value = rolePermission?.permissionCodes || []
     expandedMenuKeys.value = defaultExpandedKeys(menuPermissionTree.value)
+  } catch (err) {
+    // 错误已由 request 拦截器弹 ElMessage 提示，这里只兜底避免错误向上冒泡触发 Vue 警告
+    console.error('加载角色权限失败:', err)
   } finally {
     permissionLoading.value = false
   }
@@ -1056,6 +1076,9 @@ async function handleSavePermissions() {
     await saveRolePermissions(selectedRole.value.id, selectedPermissions.value)
     ElMessage.success('权限保存成功')
     await fetchRolePermissions(selectedRole.value.id)
+  } catch (err) {
+    // 错误已由 request 拦截器弹 ElMessage 提示，这里只兜底避免错误向上冒泡触发 Vue 警告
+    console.error('保存权限失败:', err)
   } finally {
     permissionSaving.value = false
   }
@@ -1243,9 +1266,13 @@ function buildMenuPermissionTree(items: MenuItem[], level: number): MenuPermissi
       const menuPermission = item.permissionCode ? permissionOptionMap.value.get(item.permissionCode) || null : null
       const buttons = (item.children || [])
         .filter(child => child.menuType === 'BUTTON' && child.permissionCode)
-        .map(child => permissionOptionMap.value.get(child.permissionCode || '') || {
-          code: child.permissionCode || '',
-          name: child.name,
+        .map(child => {
+          const code = child.permissionCode || ''
+          const option = permissionOptionMap.value.get(code)
+          return {
+            code,
+            name: child.name || option?.name || permissionName(code),
+          }
         })
         .filter(button => !!button.code)
       const children = buildMenuPermissionTree(item.children || [], level + 1)
@@ -1593,7 +1620,32 @@ function permissionName(code: string) {
     'button:user:create': '新增用户',
     'button:user:update': '编辑用户',
     'button:user:delete': '删除用户',
+    'button:project:create': '新建项目',
+    'button:project:update': '编辑项目',
+    'button:project:delete': '删除项目',
+    'button:project:import': '导入项目',
+    'button:project:export': '导出项目',
+    'button:iteration:create': '新建迭代',
+    'button:iteration:update': '编辑迭代',
+    'button:iteration:delete': '删除迭代',
+    'button:review:create': '发起评审',
+    'button:review:update': '编辑评审',
+    'button:review:submit': '提交评审',
+    'button:knowledge:create': '新建知识库',
+    'button:knowledge:update': '编辑知识库',
+    'button:knowledge:delete': '删除知识库',
+    'button:knowledge:upload': '上传文档',
+    'button:knowledge:download': '下载文档',
+    'button:knowledge:share': '分享文档',
+    'button:requirement-config:create': '新增配置项',
+    'button:requirement-config:update': '编辑配置项',
+    'button:requirement-config:delete': '删除配置项',
     'button:workflow:config': '工作流配置',
+    'button:workflow:create': '新建工作流',
+    'button:workflow:update': '编辑工作流',
+    'button:workflow:delete': '删除工作流',
+    'button:workflow:activate': '启用/停用工作流',
+    'button:workflow:approve': '审批工作流',
     'button:requirement:create': '新建需求',
     'button:requirement:update': '编辑',
     'button:requirement:delete': '删除',
@@ -1604,11 +1656,19 @@ function permissionName(code: string) {
     'button:requirement:rollback': '驳回',
     'button:requirement:cancel': '取消',
     'button:requirement:batch-delete': '批量删除',
+    'button:requirement-template:create': '新建需求模板',
+    'button:requirement-template:update': '编辑需求模板',
+    'button:requirement-template:delete': '删除需求模板',
+    'button:requirement-template:toggle': '启停需求模板',
     'button:rag:upload': '文档上传',
     'button:rag:search': '文档搜索',
     'button:llm:create': '新增模型配置',
     'button:llm:update': '编辑模型配置',
     'button:llm:delete': '删除模型配置',
+    'button:llm-provider:create': '新建模型提供商',
+    'button:llm-provider:update': '编辑模型提供商',
+    'button:llm-provider:delete': '删除模型提供商',
+    'button:llm-provider:test': '测试模型提供商',
   }
   return labelMap[code] || code
 }

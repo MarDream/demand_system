@@ -34,8 +34,13 @@ function handleAuthExpired(redirect?: string) {
   redirectToLogin(redirect)
 }
 
-function isAuthErrorCode(code?: number) {
-  return code === 401 || code === 403
+/**
+ * 仅当业务码为 401（认证失败/token 过期）时才视为登录态失效。
+ * 业务码 403（无权访问 / 越权操作）属于业务级权限不足，保留登录态，
+ * 由调用方/弹窗提示用户处理，避免误踢出导致页面"闪退"。
+ */
+function isAuthExpired(code?: number) {
+  return code === 401
 }
 
 service.interceptors.request.use(
@@ -59,10 +64,11 @@ service.interceptors.response.use(
     const res = response.data
     if (res.code !== 200) {
       ElMessage.error(res.message || '请求失败')
-      if (isAuthErrorCode(res.code)) {
+      if (isAuthExpired(res.code)) {
         handleAuthExpired(window.location.pathname + window.location.search + window.location.hash)
       }
-      return Promise.reject(new Error(res.message || '请求失败'))
+      // 在 Error 上附加业务码，便于业务 catch 区分（如业务 403 已弹过提示则静默）
+      return Promise.reject(Object.assign(new Error(res.message || '请求失败'), { code: res.code }))
     }
     return res.data as unknown as AxiosResponse
   },
@@ -76,6 +82,12 @@ service.interceptors.response.use(
       if (originalRequest.url?.includes('/v1/auth/refresh')) {
         handleAuthExpired(currentPath)
         return Promise.reject(error)
+      }
+
+      // 登录接口的401是"账号或密码错误"，不是"token过期"，不走refresh逻辑
+      // 错误消息由 login.vue 的 catch 统一弹，避免重复
+      if (originalRequest.url?.includes('/v1/auth/login')) {
+        return Promise.reject(new Error(error.response?.data?.message || '用户名或密码错误'))
       }
 
       if (isRefreshing) {
@@ -118,15 +130,16 @@ service.interceptors.response.use(
         setRefreshToken(newRefreshToken)
 
         onTokenRefreshed(newToken)
-        isRefreshing = false
 
         originalRequest.headers = originalRequest.headers || {}
         originalRequest.headers.Authorization = `Bearer ${newToken}`
         return service(originalRequest)
       } catch (refreshError) {
-        isRefreshing = false
         handleAuthExpired(currentPath)
         return Promise.reject(refreshError)
+      } finally {
+        // 确保所有路径（成功/失败/提前return）都重置刷新状态，避免后续请求永久卡在等待队列
+        isRefreshing = false
       }
     }
 

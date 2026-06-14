@@ -306,6 +306,16 @@
                 </el-tag>
               </div>
 
+              <el-alert
+                v-if="usingUnifiedEngine && !isWorkflowActive"
+                class="workflow-action-panel__alert"
+                type="warning"
+                :closable="false"
+                show-icon
+                title="当前工作流已停用"
+                description="因工作流正调整中或已停用，暂不支持提交审核、驳回或取消等操作。请等待管理员重新启用工作流后再试。"
+              />
+
               <div class="workflow-action-panel__body">
                 <div class="workflow-action-panel__field">
                   <span class="workflow-action-panel__field-label">目标节点</span>
@@ -392,7 +402,7 @@
 
                 <div class="workflow-action-panel__actions">
                   <AppButton
-                    v-if="usingUnifiedEngine && workflowRuntime.countersignEnabled"
+                    v-if="usingUnifiedEngine && workflowRuntime.canCountersign"
                     type="warning"
                     permission="button:requirement:submit"
                     @click="openCountersignDialog(workflowRuntime.currentNodeId || '')"
@@ -1269,13 +1279,26 @@ const canEditComment = computed(() => {
 })
 
 const transitionSubmitDisabled = computed(() => {
+  if (!isWorkflowActive.value) {
+    return true
+  }
   return transitionOptions.value.length === 0 || (requiresProjectBinding.value && !bindingProjectId.value)
+})
+
+/** 工作流是否处于启用状态：默认 true（无 workflowInstanceId 时按启用处理，避免误判）；
+ *  显式返回 false 才视为停用（与后端 workflowActive=false 对齐）。 */
+const isWorkflowActive = computed(() => {
+  if (!usingUnifiedEngine.value) {
+    return true
+  }
+  const flag = workflowRuntime.value.workflowActive
+  return flag === undefined || flag === null ? true : Boolean(flag)
 })
 
 const showWorkflowActionPanel = computed(() => {
   return showCurrentNodeStatus.value
     || transitionOptions.value.length > 0
-    || Boolean(workflowRuntime.value.countersignEnabled)
+    || Boolean(workflowRuntime.value.canCountersign)
     || Boolean(workflowRuntime.value.canRollback)
     || Boolean(workflowRuntime.value.canCancel)
     || (Boolean(workflowRuntime.value.parallelActive) && parallelBranches.value.length > 0)
@@ -1348,6 +1371,10 @@ async function handleDelete() {
 }
 
 async function handleStatusTransition() {
+  if (!isWorkflowActive.value) {
+    ElMessage.warning('当前工作流已停用，暂不支持提交审核')
+    return
+  }
   if (!selectedTransitionTargetId.value) {
     ElMessage.warning('请选择目标节点')
     return
@@ -1482,6 +1509,10 @@ async function submitSupplement() {
 }
 
 async function handleRollback() {
+  if (!isWorkflowActive.value) {
+    ElMessage.warning('当前工作流已停用，暂不支持驳回')
+    return
+  }
   await confirmAndExecute(
     '请输入驳回原因', '驳回需求', '确认驳回', '请输入驳回原因',
     (v) => workflowEngineApi.rollback(id, v || undefined),
@@ -1491,6 +1522,10 @@ async function handleRollback() {
 }
 
 async function handleCancel() {
+  if (!isWorkflowActive.value) {
+    ElMessage.warning('当前工作流已停用，暂不支持取消')
+    return
+  }
   await confirmAndExecute(
     '请输入取消原因', '取消需求', '确认取消', '取消原因必填',
     (v) => workflowEngineApi.cancel(id, v),
@@ -1564,12 +1599,27 @@ function hasMeaningfulCommentContent(html: string) {
 
 async function initializePage() {
   // Load config and project options in parallel with batch detail fetch
-  const [batchData] = await Promise.all([
-    requirementApi.getRequirementDetailBatch(id),
-    loadConfig(),
-    loadProjectOptions(),
-  ])
-  
+  // 注：getRequirementDetailBatch 在用户无权查看时会返回 code=403，
+  //     request.ts 已不再对业务 403 清 token，但 promise 仍 reject；
+  //     这里兜住异常并提供友好提示，避免控制台 Uncaught 噪声。
+  let batchData: any = null
+  try {
+    [batchData] = await Promise.all([
+      requirementApi.getRequirementDetailBatch(id),
+      loadConfig(),
+      loadProjectOptions(),
+    ])
+  } catch (error: any) {
+    // 业务 403（无权查看等）由 request.ts 拦截器统一弹过 ElMessage.error，
+    // 这里静默避免重复提示；其他错误（网络异常/500 等）仍弹消息
+    if (error?.code !== 403) {
+      const msg = error?.message || '加载需求详情失败'
+      ElMessage.error(msg)
+    }
+    loading.value = false
+    return
+  }
+
   // Populate data from batch response
   if (batchData) {
     detail.value = batchData.requirement
@@ -1578,7 +1628,7 @@ async function initializePage() {
     relatedRequirements.value = (batchData.relations || []) as any
     comments.value = (batchData.comments || []) as any
     approvalEvaluations.value = (batchData.approvalEvaluations || []) as any
-    
+
     // Load project name and workflow meta after getting detail
     await Promise.all([loadProjectName(), loadWorkflowMeta()])
   }
@@ -1690,6 +1740,10 @@ onMounted(() => {
 }
 
 .workflow-action-panel__status {
+  margin-bottom: 14px;
+}
+
+.workflow-action-panel__alert {
   margin-bottom: 14px;
 }
 

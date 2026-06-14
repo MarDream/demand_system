@@ -433,6 +433,7 @@ import { requirementApi, projectApi, relationApi, userApi, iterationApi } from '
 import { getRequirementTemplateByType } from '@/api/modules/requirement'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
 import { downloadRequirementAttachment, uploadRequirementAttachment } from '@/api/modules/file'
+import { usePermission } from '@/composables/usePermission'
 import type { RelationItem } from '@/api/modules/relation'
 import { buildRichTextImagePreviewUrl, hydrateRichTextImageHtml, serializeRichTextImageHtml } from '@/utils/richTextFileImage'
 import { formatDate, normalizeText, stripPriorityPrefix } from '@/utils/format'
@@ -444,6 +445,7 @@ import type { OrgNode, User } from '@/types/user'
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
+const { hasPermission } = usePermission()
 
 const formRef = ref<FormInstance>()
 const infoFormRef = ref<FormInstance>()
@@ -1423,7 +1425,18 @@ async function handleSubmit() {
     if (hadExistingRequirement || relatedRequirements.value.length > 0) {
       await syncRelations(draft.id)
     }
-    const nextNodes = await requirementApi.getRequirementNextNodes(draft.id)
+
+    let nextNodes: NextNodeOption[]
+    try {
+      nextNodes = await requirementApi.getRequirementNextNodes(draft.id)
+    } catch (wfError) {
+      const msg = resolveErrorMessage(wfError, '')
+      if (msg.includes('工作流') || msg.includes('保存草稿')) {
+        ElMessage.warning({ message: '当前没有可用的已启用工作流，已自动保存为草稿，请配置并启用工作流后再提交审核。', duration: 5000 })
+        return
+      }
+      throw wfError
+    }
     const nextNodeId = await chooseNextNode(nextNodes)
     if (!nextNodeId) return
     const selectedNode = nextNodes.find((item) => item.nodeId === nextNodeId)
@@ -1506,6 +1519,12 @@ async function loadCreateFormConfig(projectId = formData.projectId) {
 }
 
 onMounted(async () => {
+  // 编辑模式：先校验权限，无权限直接跳回列表
+  if (isEditMode.value && !hasPermission('button:requirement:update')) {
+    ElMessage.error('您没有编辑需求的权限')
+    router.replace({ name: 'Requirements' })
+    return
+  }
   await Promise.all([
     loadProjects(),
     loadUsers(),
