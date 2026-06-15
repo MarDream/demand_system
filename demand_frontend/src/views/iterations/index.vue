@@ -51,7 +51,7 @@
               </el-popconfirm>
             </AppButton>
             <el-tooltip content="查看燃尽图">
-              <el-button link type="info" @click="viewBurndown(row)"><el-icon><TrendCharts /></el-icon></el-button>
+              <el-button v-permission="'button:iteration:view'" link type="info" @click="viewBurndown(row)"><el-icon><TrendCharts /></el-icon></el-button>
             </el-tooltip>
           </template>
         </el-table-column>

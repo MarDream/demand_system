@@ -15,6 +15,7 @@ import com.demand.system.module.rbac.service.RolePermissionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -22,6 +23,7 @@ import java.util.List;
 @Tag(name = "角色授权管理", description = "RBAC角色授权接口")
 @RestController
 @RequestMapping("/api/v1/rbac/roles")
+@PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN')")
 public class RolePermissionController {
 
     private final RolePermissionService rolePermissionService;
@@ -88,6 +90,7 @@ public class RolePermissionController {
 
     @Operation(summary = "保存角色权限")
     @PutMapping("/{roleId}/permissions")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:role:grant')")
     public Result<Void> saveRolePermissions(@PathVariable Long roleId,
                                             @Valid @RequestBody RolePermissionSaveDTO request) {
         request.setRoleId(roleId);

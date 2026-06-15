@@ -13,8 +13,27 @@
           <el-form ref="formRef" :model="formData" :rules="formRules" label-position="top" @submit.prevent>
             <!-- 需求类型 & 优先级 -->
             <div class="inline-fields">
-              <el-form-item v-if="isEditMode" label="需求类型" prop="type" class="inline-item">
+              <el-form-item label="需求类型" prop="type" class="inline-item">
+                <el-select
+                  v-if="!isEditMode"
+                  v-model="formData.type"
+                  placeholder="请选择需求类型"
+                  style="width: 100%"
+                >
+                  <el-option
+                    v-for="type in configTypes"
+                    :key="type.code"
+                    :label="type.name"
+                    :value="type.code"
+                  >
+                    <span class="priority-option">
+                      <span v-if="type.color" class="priority-dot" :style="{ backgroundColor: type.color }"></span>
+                      {{ type.name }}
+                    </span>
+                  </el-option>
+                </el-select>
                 <el-input
+                  v-else
                   :model-value="selectedTypeLabel"
                   readonly
                   placeholder="请先在需求配置中维护需求类型"
@@ -284,12 +303,12 @@
     <div class="action-bar">
       <el-button @click="handleCancel">取消</el-button>
       <template v-if="isDraftMode">
-        <el-button :loading="submitting" @click="handleSaveDraft">保存草稿</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleSubmit">
+        <el-button v-permission="'button:requirement:draft'" :loading="submitting" @click="handleSaveDraft">保存草稿</el-button>
+        <el-button v-permission="'button:requirement:submit'" type="primary" :loading="submitting" @click="handleSubmit">
           提交审核
         </el-button>
       </template>
-      <el-button v-else type="primary" :loading="submitting" @click="handleSubmit">
+      <el-button v-else v-permission="'button:requirement:submit'" type="primary" :loading="submitting" @click="handleSubmit">
         {{ submitButtonText }}
       </el-button>
     </div>
@@ -430,7 +449,7 @@ addLocale('zh', {
 })
 
 import { requirementApi, projectApi, relationApi, userApi, iterationApi } from '@/api'
-import { getRequirementTemplateByType } from '@/api/modules/requirement'
+import { getRequirementTemplateByType, getRequirementTemplatesByType } from '@/api/modules/requirement'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
 import { downloadRequirementAttachment, uploadRequirementAttachment } from '@/api/modules/file'
 import { usePermission } from '@/composables/usePermission'
@@ -439,7 +458,7 @@ import { buildRichTextImagePreviewUrl, hydrateRichTextImageHtml, serializeRichTe
 import { formatDate, normalizeText, stripPriorityPrefix } from '@/utils/format'
 import PageContainer from '@/components/common/PageContainer.vue'
 import { useUserStore } from '@/stores'
-import type { NextNodeOption, Requirement, RequirementAttachment, TemplateSection } from '@/types/requirement'
+import type { NextNodeOption, Requirement, RequirementAttachment, RequirementTemplate, TemplateSection } from '@/types/requirement'
 import type { OrgNode, User } from '@/types/user'
 
 const route = useRoute()
@@ -519,15 +538,73 @@ function buildTemplateDescription(sections: TemplateSection[]) {
   }).filter(Boolean).join('')
 }
 
+function resolveTemplateContent(template?: RequirementTemplate | null) {
+  if (!template?.templateContent) return ''
+
+  const directContent = template.templateContent.contentHtml?.trim()
+  if (directContent) return directContent
+
+  const sections = template.templateContent.sections || []
+  if (sections.length === 0) return ''
+  return buildTemplateDescription(sections)
+}
+
 async function applyRequirementTemplate(typeCode?: string, force = false) {
   if (!typeCode || isEditMode.value || templateApplying.value) return
   templateApplying.value = true
   try {
-    const template = await getRequirementTemplateByType(typeCode)
-    const sections = template.templateContent?.sections || []
-    if (sections.length === 0) return
+    // 获取该类型下所有启用的模板
+    const templateList = await getRequirementTemplatesByType(typeCode)
+    let template
 
-    const nextDescription = buildTemplateDescription(sections)
+    if (templateList.length === 0) {
+      // 无模板，使用默认模板
+      template = await getRequirementTemplateByType(typeCode)
+    } else if (templateList.length === 1) {
+      // 只有一个模板，直接使用
+      template = templateList[0]
+    } else {
+      // 多个模板，弹出选择对话框
+      if (!force && !isDescriptionEmpty(formData.description)) {
+        try {
+          await ElMessageBox.confirm('应用模板将覆盖当前描述内容，是否继续？', '应用需求模板', {
+            confirmButtonText: '继续',
+            cancelButtonText: '取消',
+            type: 'warning',
+          })
+        } catch {
+          return
+        }
+      }
+
+      // 用 ElMessageBox.prompt 让用户输入选择的序号
+      const defaultTemplate = templateList.find(t => t.isDefault === 1)
+      const optionText = templateList.map((t, i) =>
+        `${i + 1}. ${t.templateName}${t.isDefault === 1 ? '（默认）' : ''}`
+      ).join('\n')
+
+      try {
+        const { value } = await ElMessageBox.prompt(
+          `可选模板：\n${optionText}\n\n请输入序号选择模板`,
+          '选择需求模板',
+          {
+            confirmButtonText: '应用',
+            cancelButtonText: '取消',
+            inputValue: defaultTemplate ? String(templateList.indexOf(defaultTemplate) + 1) : '1',
+            inputPattern: new RegExp(`^[1-${templateList.length}]$`),
+            inputErrorMessage: `请输入 1-${templateList.length} 之间的数字`,
+          }
+        )
+        const index = parseInt(value) - 1
+        template = templateList[index] || defaultTemplate || templateList[0]
+      } catch {
+        // 用户取消选择，使用默认模板
+        template = defaultTemplate || templateList[0]
+      }
+    }
+
+    if (!template) return
+    const nextDescription = resolveTemplateContent(template)
     if (!nextDescription) return
 
     if (!force && !isDescriptionEmpty(formData.description)) {
@@ -595,7 +672,7 @@ const formData = reactive({
 const formRules = computed<FormRules>(() => ({
   projectId: [{ required: true, message: '请选择所属项目', trigger: 'change' }],
   title: [{ required: true, message: '请输入需求标题', trigger: 'blur' }],
-  type: isEditMode.value ? [{ required: true, message: '请选择需求类型', trigger: 'change' }] : [],
+  type: [{ required: true, message: '请选择需求类型', trigger: 'change' }],
   priority: [{ required: true, message: '请选择优先级', trigger: 'change' }],
   assigneeId: [{ required: true, message: '请选择负责人', trigger: 'change' }],
 }))

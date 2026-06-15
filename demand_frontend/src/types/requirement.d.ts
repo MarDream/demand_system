@@ -177,6 +177,7 @@ export interface RequirementCommentCreate {
 
 export interface RequirementApprovalSupplementCreate {
   content: string
+  attachments?: RequirementAttachment[]
 }
 
 export interface RequirementApprovalEvaluation {
@@ -199,6 +200,7 @@ export interface RequirementApprovalEvaluation {
   resultLabel?: string | null
   rating?: number | null
   content?: string | null
+  attachments?: RequirementAttachment[]
   createdAt: string
   supplements?: RequirementApprovalEvaluation[]
 }
@@ -230,10 +232,14 @@ export interface RequirementTemplate {
   requirementTypeCode: string
   templateName: string
   templateContent: {
-    sections: TemplateSection[]
+    contentHtml?: string
+    sections?: TemplateSection[]
   }
   isActive?: number
+  isDefault?: number
+  sortOrder?: number
   creatorId?: number
+  requirementTypeName?: string
 }
 
 export interface TemplateSection {
@@ -247,11 +253,15 @@ export interface TemplateSection {
 }
 
 export interface RequirementTemplateSave {
+  id?: number
   requirementTypeCode: string
   templateName: string
   templateContent: {
-    sections: TemplateSection[]
+    contentHtml?: string
+    sections?: TemplateSection[]
   }
+  isDefault?: number
+  sortOrder?: number
 }
 
 // 需求详情综合VO（批量查询接口返回）

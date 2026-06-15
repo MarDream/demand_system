@@ -1,6 +1,9 @@
 package com.demand.system.module.workflow.dto;
 
+import com.demand.system.module.requirement.dto.RequirementAttachmentDTO;
 import jakarta.validation.constraints.NotNull;
+
+import java.util.List;
 
 public class FlowTransitionRequest {
 
@@ -20,6 +23,9 @@ public class FlowTransitionRequest {
     private Integer rating;
 
     private Integer lockVersion;
+
+    /** 审批附件 */
+    private List<RequirementAttachmentDTO> attachments;
 
     public Long getRequirementId() {
         return requirementId;
@@ -75,5 +81,13 @@ public class FlowTransitionRequest {
 
     public void setLockVersion(Integer lockVersion) {
         this.lockVersion = lockVersion;
+    }
+
+    public List<RequirementAttachmentDTO> getAttachments() {
+        return attachments;
+    }
+
+    public void setAttachments(List<RequirementAttachmentDTO> attachments) {
+        this.attachments = attachments;
     }
 }

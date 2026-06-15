@@ -9,6 +9,7 @@ import com.demand.system.module.requirement.service.RequirementConfigService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -25,24 +26,28 @@ public class RequirementConfigController {
     }
 
     @GetMapping("/types")
+    @PreAuthorize("isAuthenticated()")
     @Operation(summary = "获取需求类型列表")
     public Result<List<RequirementTypeConfig>> listTypes() {
         return configService.listTypes();
     }
 
     @GetMapping("/projects/{projectId}/create-form")
+    @PreAuthorize("isAuthenticated()")
     @Operation(summary = "获取新建需求表单配置")
     public Result<RequirementFormConfigDTO> getCreateFormConfig(@PathVariable Long projectId) {
         return configService.getCreateFormConfig(projectId);
     }
 
     @PostMapping("/types")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:requirement-config:create')")
     @Operation(summary = "创建需求类型")
     public Result<Void> createType(@Valid @RequestBody RequirementTypeConfig type) {
         return configService.createType(type);
     }
 
     @PutMapping("/types/{id}")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:requirement-config:update')")
     @Operation(summary = "更新需求类型")
     public Result<Void> updateType(@PathVariable Long id, @Valid @RequestBody RequirementTypeConfig type) {
         type.setId(id);
@@ -50,30 +55,35 @@ public class RequirementConfigController {
     }
 
     @DeleteMapping("/types/{id}")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:requirement-config:delete')")
     @Operation(summary = "删除需求类型")
     public Result<Void> deleteType(@PathVariable Long id) {
         return configService.deleteType(id);
     }
 
     @PostMapping("/types/sort")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:requirement-config:update')")
     @Operation(summary = "需求类型排序", description = "批量更新需求类型的排序顺序")
     public Result<List<RequirementTypeConfig>> sortTypes(@Valid @RequestBody List<SortRequest> sortRequests) {
         return configService.sortTypes(sortRequests);
     }
 
     @GetMapping("/priorities")
+    @PreAuthorize("isAuthenticated()")
     @Operation(summary = "获取优先级列表")
     public Result<List<PriorityConfig>> listPriorities() {
         return configService.listPriorities();
     }
 
     @PostMapping("/priorities")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:requirement-config:create')")
     @Operation(summary = "创建优先级")
     public Result<Void> createPriority(@Valid @RequestBody PriorityConfig priority) {
         return configService.createPriority(priority);
     }
 
     @PutMapping("/priorities/{id}")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:requirement-config:update')")
     @Operation(summary = "更新优先级")
     public Result<Void> updatePriority(@PathVariable Long id, @Valid @RequestBody PriorityConfig priority) {
         priority.setId(id);
@@ -81,12 +91,14 @@ public class RequirementConfigController {
     }
 
     @DeleteMapping("/priorities/{id}")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:requirement-config:delete')")
     @Operation(summary = "删除优先级")
     public Result<Void> deletePriority(@PathVariable Long id) {
         return configService.deletePriority(id);
     }
 
     @PostMapping("/priorities/sort")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:requirement-config:update')")
     @Operation(summary = "优先级排序", description = "批量更新优先级的排序顺序")
     public Result<List<PriorityConfig>> sortPriorities(@Valid @RequestBody List<SortRequest> sortRequests) {
         return configService.sortPriorities(sortRequests);

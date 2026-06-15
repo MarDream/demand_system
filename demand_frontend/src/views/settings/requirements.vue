@@ -40,9 +40,10 @@
                 <span v-else>-</span>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="100" fixed="right">
+            <el-table-column label="操作" width="150" fixed="right">
               <template #default="{ row }">
                 <AppButton link type="primary" permission="button:requirement-config:update" @click="openTypeDialog(row)"><el-icon><EditPen /></el-icon></AppButton>
+                <AppButton link type="success" @click="goToTemplateDesign(row)"><el-icon><Document /></el-icon></AppButton>
                 <AppButton link type="danger" permission="button:requirement-config:delete" @click="deleteType(row.id!)"><el-icon><Delete /></el-icon></AppButton>
               </template>
             </el-table-column>
@@ -139,6 +140,12 @@
           </el-table>
         </div>
       </el-tab-pane>
+
+      <el-tab-pane label="需求模板" name="templates">
+        <div class="tab-content">
+          <RequirementTemplateManager :preselected-type-code="selectedTypeCodeForTemplate" />
+        </div>
+      </el-tab-pane>
     </el-tabs>
 
     <!-- 类型对话框 -->
@@ -162,7 +169,7 @@
       </el-form>
       <template #footer>
         <el-button @click="typeDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveType">保存</el-button>
+        <el-button v-permission="'button:requirement-config:create'" type="primary" @click="saveType">保存</el-button>
       </template>
     </el-dialog>
 
@@ -191,7 +198,7 @@
       </el-form>
       <template #footer>
         <el-button @click="priorityDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="savePriority">保存</el-button>
+        <el-button v-permission="'button:requirement-config:create'" type="primary" @click="savePriority">保存</el-button>
       </template>
     </el-dialog>
 
@@ -210,15 +217,17 @@
         <el-form-item label="排序">
           <el-input-number v-model="nodeStatusForm.sortOrder" :min="0" />
         </el-form-item>
-        <el-form-item label="特殊标记">
-          <el-checkbox v-model="nodeStatusForm.isStart">开始状态</el-checkbox>
-          <el-checkbox v-model="nodeStatusForm.isEnd" style="margin-left: 16px">结束状态</el-checkbox>
-          <el-checkbox v-model="nodeStatusForm.isCancel" style="margin-left: 16px">取消状态</el-checkbox>
+        <el-form-item label="特殊标记" class="node-status-flags-item">
+          <div class="node-status-flags">
+            <el-checkbox v-model="nodeStatusForm.isStart" class="node-status-flags__option">开始状态</el-checkbox>
+            <el-checkbox v-model="nodeStatusForm.isEnd" class="node-status-flags__option">结束状态</el-checkbox>
+            <el-checkbox v-model="nodeStatusForm.isCancel" class="node-status-flags__option">取消状态</el-checkbox>
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="nodeStatusDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveNodeStatus">保存</el-button>
+        <el-button v-permission="'button:requirement-config:create'" type="primary" @click="saveNodeStatus">保存</el-button>
       </template>
     </el-dialog>
   </div>
@@ -228,14 +237,22 @@
 import { ref, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { Plus, Rank, Operation, EditPen, Delete } from '@element-plus/icons-vue'
+import { Plus, Rank, Operation, EditPen, Delete, Document } from '@element-plus/icons-vue'
 import { requirementConfigApi, type RequirementType, type Priority, type SortItem } from '@/api/modules/requirementConfig'
 import { nodeStatusApi, type NodeStatus, type SortItem as NodeStatusSortItem } from '@/api/modules/workflow-engine'
 import { normalizeText } from '@/utils/format'
 import Sortable, { type SortableEvent } from 'sortablejs'
 import AppButton from '@/components/common/AppButton.vue'
+import RequirementTemplateManager from '@/views/settings/requirement-templates/index.vue'
+
+const selectedTypeCodeForTemplate = ref('')
 
 const activeTab = ref('types')
+
+function goToTemplateDesign(row: RequirementType) {
+  selectedTypeCodeForTemplate.value = row.code
+  activeTab.value = 'templates'
+}
 const types = ref<RequirementType[]>([])
 const priorities = ref<Priority[]>([])
 
@@ -665,6 +682,23 @@ onMounted(() => {
   margin-left: 8px;
   color: var(--color-muted-text);
   font-size: 12px;
+}
+
+.node-status-flags {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 140px));
+  column-gap: 28px;
+  row-gap: 14px;
+  width: 100%;
+  padding-top: 4px;
+}
+
+.node-status-flags__option {
+  margin-right: 0;
+}
+
+:deep(.node-status-flags__option .el-checkbox__label) {
+  white-space: nowrap;
 }
 
 .drag-handle {

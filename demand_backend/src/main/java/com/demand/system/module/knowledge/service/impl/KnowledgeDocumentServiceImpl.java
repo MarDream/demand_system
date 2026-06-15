@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.ErrorCode;
 import com.demand.system.common.result.PageResult;
+import com.demand.system.common.security.PermissionGuard;
 import com.demand.system.module.auth.entity.SysUser;
 import com.demand.system.module.auth.mapper.SysUserMapper;
 import com.demand.system.module.knowledge.config.KnowledgeConfig;
@@ -300,6 +301,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     @Override
     @Transactional
     public void delete(Long knowledgeBaseId, Long documentId) {
+        assertCanModifyKnowledgeBase(knowledgeBaseId);
         KnowledgeDocument doc = documentMapper.selectById(documentId);
         if (doc == null || !doc.getKnowledgeBaseId().equals(knowledgeBaseId)) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "文档不存在");
@@ -334,6 +336,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                                     Boolean requireLogin,
                                     Boolean oneTimeAccess,
                                     Long creatorId) {
+        assertCanModifyKnowledgeBase(knowledgeBaseId);
         KnowledgeDocument doc = documentMapper.selectById(documentId);
         if (doc == null || !doc.getKnowledgeBaseId().equals(knowledgeBaseId)) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "文档不存在");
@@ -1206,6 +1209,15 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         return text.substring(text.length() - overlapChars);
     }
 
+    /**
+     * 行级权限：校验当前用户对知识库有写入权限（超管或创建人）。
+     */
+    private void assertCanModifyKnowledgeBase(Long knowledgeBaseId) {
+        PermissionGuard.requireKnowledgeBaseOwner(knowledgeBaseMapper, knowledgeBaseId,
+                PermissionGuard.requireCurrentUserId(),
+                com.demand.system.module.auth.security.SecurityUtils.isSuperAdmin());
+    }
+
     private void updateKnowledgeBaseCount(Long knowledgeBaseId) {
         Long docCount = documentMapper.selectCount(new LambdaQueryWrapper<KnowledgeDocument>()
                 .eq(KnowledgeDocument::getKnowledgeBaseId, knowledgeBaseId));
@@ -1230,6 +1242,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     @Override
     @Transactional
     public int retryDocuments(Long knowledgeBaseId, List<Long> documentIds) {
+        assertCanModifyKnowledgeBase(knowledgeBaseId);
         int retried = 0;
         for (Long docId : documentIds) {
             KnowledgeDocument doc = documentMapper.selectById(docId);
@@ -1259,6 +1272,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     @Override
     @Transactional
     public int batchDelete(Long knowledgeBaseId, List<Long> documentIds) {
+        assertCanModifyKnowledgeBase(knowledgeBaseId);
         int deleted = 0;
         for (Long docId : documentIds) {
             try {
@@ -1274,6 +1288,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     @Override
     @Transactional
     public void skipIndexing(Long knowledgeBaseId, Long documentId) {
+        assertCanModifyKnowledgeBase(knowledgeBaseId);
         KnowledgeDocument doc = documentMapper.selectById(documentId);
         if (doc == null || !doc.getKnowledgeBaseId().equals(knowledgeBaseId)) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "文档不存在");

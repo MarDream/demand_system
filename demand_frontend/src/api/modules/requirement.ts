@@ -135,6 +135,12 @@ export function getRequirementTemplateByType(typeCode: string) {
   }) as unknown as Promise<RequirementTemplate>
 }
 
+export function getRequirementTemplatesByType(typeCode: string) {
+  return request.get<ApiResponse<RequirementTemplate[]>>('/v1/requirement/templates/by-type-list', {
+    params: { typeCode }
+  }) as unknown as Promise<RequirementTemplate[]>
+}
+
 export function getAllRequirementTemplates() {
   return request.get<ApiResponse<RequirementTemplate[]>>('/v1/requirement/templates/list') as unknown as Promise<RequirementTemplate[]>
 }
@@ -151,6 +157,10 @@ export function toggleRequirementTemplateStatus(id: number, isActive: number) {
   return request.put<ApiResponse>(`/v1/requirement/templates/${id}/status`, null, {
     params: { isActive }
   }) as unknown as Promise<void>
+}
+
+export function setDefaultRequirementTemplate(id: number) {
+  return request.put<ApiResponse>(`/v1/requirement/templates/${id}/default`) as unknown as Promise<void>
 }
 export function getRequirementDetailBatch(id: number) {
   return request.get<ApiResponse<RequirementDetailVO>>(`/v1/requirements/${id}/detail-batch`) as unknown as Promise<RequirementDetailVO>

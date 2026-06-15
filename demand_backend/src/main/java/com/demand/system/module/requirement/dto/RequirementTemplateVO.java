@@ -9,7 +9,10 @@ public class RequirementTemplateVO {
     private String templateName;
     private Map<String, Object> templateContent;
     private Integer isActive;
+    private Integer isDefault;
+    private Integer sortOrder;
     private Integer creatorId;
+    private String requirementTypeName;
 
     public Long getId() {
         return id;
@@ -57,5 +60,29 @@ public class RequirementTemplateVO {
 
     public void setCreatorId(Integer creatorId) {
         this.creatorId = creatorId;
+    }
+
+    public Integer getIsDefault() {
+        return isDefault;
+    }
+
+    public void setIsDefault(Integer isDefault) {
+        this.isDefault = isDefault;
+    }
+
+    public Integer getSortOrder() {
+        return sortOrder;
+    }
+
+    public void setSortOrder(Integer sortOrder) {
+        this.sortOrder = sortOrder;
+    }
+
+    public String getRequirementTypeName() {
+        return requirementTypeName;
+    }
+
+    public void setRequirementTypeName(String requirementTypeName) {
+        this.requirementTypeName = requirementTypeName;
     }
 }

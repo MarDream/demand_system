@@ -401,6 +401,7 @@ CREATE TABLE `requirement_approval_evaluations` (
   `evaluator_id` INT UNSIGNED NOT NULL COMMENT '评价人ID',
   `rating` TINYINT DEFAULT NULL COMMENT '评价星级1-5',
   `content` VARCHAR(1000) DEFAULT NULL COMMENT '评价意见',
+  `attachments` JSON DEFAULT NULL COMMENT '附件列表',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   INDEX `idx_requirement_id` (`requirement_id`),
@@ -1199,6 +1200,35 @@ INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description
 (96, 'button:requirement-template:delete', '删除需求模板', 'BUTTON', '需求模板-删除', 1),
 (97, 'button:requirement-template:toggle', '启停需求模板', 'BUTTON', '需求模板-启停', 1);
 
+-- ====== Sprint 12 增量：全量按钮权限补全（PR-A） ======
+-- 知识库扩展：migrate（前端已用，后端补码）
+-- 用户/角色扩展：批量操作、邀请、导入导出
+-- 项目/通知/组织扩展：补齐未注册的按钮
+INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `status`) VALUES
+(100, 'button:knowledge:migrate', '迁移知识库文档', 'BUTTON', '知识库-迁移文档', 1),
+(101, 'button:user:batch-delete', '批量启停/删除用户', 'BUTTON', '用户管理-批量启停/删除', 1),
+(102, 'button:user:invite', '邀请成员', 'BUTTON', '用户管理-邀请成员', 1),
+(103, 'button:user:export', '导出花名册', 'BUTTON', '用户管理-导出花名册', 1),
+(104, 'button:user:import', '导入花名册', 'BUTTON', '用户管理-导入花名册', 1),
+(105, 'button:role:import', '批量导入角色', 'BUTTON', '角色管理-批量导入', 1),
+(106, 'button:role:export', '导出角色', 'BUTTON', '角色管理-导出', 1),
+(107, 'button:notification:manage', '通知管理', 'BUTTON', '通知中心-全部已读', 1),
+(108, 'button:project:template', '下载导入模板', 'BUTTON', '项目管理-下载模板', 1),
+(112, 'button:org:create', '新增组织/部门', 'BUTTON', '组织管理-新增', 1),
+(113, 'button:org:update', '编辑组织/部门', 'BUTTON', '组织管理-编辑', 1),
+(114, 'button:org:delete', '删除组织/部门', 'BUTTON', '组织管理-删除', 1),
+(115, 'button:org:batch-create', '批量创建部门', 'BUTTON', '组织管理-批量创建', 1);
+
+-- ====== Sprint 12 增量 2：补全会签/草稿/关系/查看类按钮 ======
+INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `status`) VALUES
+(116, 'button:requirement:countersign-approve', '会签通过', 'BUTTON', '需求-会签通过', 1),
+(117, 'button:requirement:countersign-reject', '会签驳回', 'BUTTON', '需求-会签驳回', 1),
+(118, 'button:requirement:draft', '保存需求草稿', 'BUTTON', '需求-保存草稿', 1),
+(119, 'button:review:view', '查看评审详情', 'BUTTON', '评审-查看详情', 1),
+(120, 'button:iteration:view', '查看迭代/燃尽图', 'BUTTON', '迭代-查看详情', 1),
+(121, 'button:relation:create', '创建需求关联', 'BUTTON', '需求-创建关联', 1),
+(122, 'button:relation:delete', '删除需求关联', 'BUTTON', '需求-删除关联', 1);
+
 -- 需求配置权限
 INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `status`) VALUES
 (67, 'button:requirement-config:create', '新增配置项', 'BUTTON', '需求配置-新增', 1),
@@ -1303,6 +1333,18 @@ INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, 
 (77, 16, '删除提供商', 'BUTTON', NULL, NULL, NULL, NULL, 3, 'button:llm-provider:delete', 1, 1, 0),
 (78, 16, '测试提供商', 'BUTTON', NULL, NULL, NULL, NULL, 4, 'button:llm-provider:test', 1, 1, 0);
 
+-- ====== Sprint 12 增量：补全遗漏的按钮菜单（PR-A） ======
+-- 知识库下的"迁移"按钮菜单（id 89）
+-- 项目下的"下载模板"按钮菜单（id 90）
+-- 用户管理下的组织管理 4 条（id 95-98，跳过 93/94 已被历史占用）
+INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
+(89, 8, '迁移知识库文档', 'BUTTON', NULL, NULL, NULL, NULL, 7, 'button:knowledge:migrate', 1, 1, 0),
+(90, 10, '下载导入模板', 'BUTTON', NULL, NULL, NULL, NULL, 4, 'button:project:template', 1, 1, 0),
+(95, 11, '新增组织/部门', 'BUTTON', NULL, NULL, NULL, NULL, 1, 'button:org:create', 1, 1, 0),
+(96, 11, '编辑组织/部门', 'BUTTON', NULL, NULL, NULL, NULL, 2, 'button:org:update', 1, 1, 0),
+(97, 11, '删除组织/部门', 'BUTTON', NULL, NULL, NULL, NULL, 3, 'button:org:delete', 1, 1, 0),
+(98, 11, '批量创建部门', 'BUTTON', NULL, NULL, NULL, NULL, 4, 'button:org:batch-create', 1, 1, 0);
+
 -- SUPER_ADMIN 授权全部新增权限
 INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_by`) VALUES
 (1, 40, 1), (1, 41, 1), (1, 42, 1), (1, 43, 1), (1, 44, 1),
@@ -1313,8 +1355,19 @@ INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_
 (1, 61, 1), (1, 62, 1), (1, 63, 1), (1, 64, 1), (1, 65, 1), (1, 66, 1),
 (1, 67, 1), (1, 68, 1), (1, 69, 1),
 (1, 70, 1), (1, 71, 1), (1, 72, 1), (1, 73, 1), (1, 74, 1),
-(1, 78, 1), (1, 79, 1), (1, 80, 1), (1, 81, 1), (1, 82, 1), (1, 83, 1), (1, 84, 1);
+(1, 78, 1), (1, 79, 1), (1, 80, 1), (1, 81, 1), (1, 82, 1), (1, 83, 1),
+(1, 93, 1);  -- 修复悬空引用 (1, 84, 1) → (1, 93, 1) = menu:requirement:view:follow
 
+-- ====== Sprint 12 增量：SUPER_ADMIN 授权 13 条新权限（PR-A） ======
+INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_by`) VALUES
+(1, 100, 1), (1, 101, 1), (1, 102, 1), (1, 103, 1), (1, 104, 1),
+(1, 105, 1), (1, 106, 1), (1, 107, 1), (1, 108, 1),
+(1, 112, 1), (1, 113, 1), (1, 114, 1), (1, 115, 1),
+(1, 116, 1), (1, 117, 1), (1, 118, 1),
+(1, 119, 1), (1, 120, 1),
+(1, 121, 1), (1, 122, 1);
+
+-- 修复：补齐 SUPER_ADMIN 对需求模板 4 条权限的授权（id 94-97）
 INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_by`)
 SELECT 1, `id`, 1 FROM `sys_permissions`
 WHERE `code` IN (
@@ -1322,7 +1375,8 @@ WHERE `code` IN (
   'button:requirement-template:update',
   'button:requirement-template:delete',
   'button:requirement-template:toggle'
-);
+)
+ON DUPLICATE KEY UPDATE granted_by = 1;
 
 -- 业务角色授权需求管理视图权限
 INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`) VALUES
@@ -1825,6 +1879,7 @@ BEGIN
       `evaluator_id` INT UNSIGNED NOT NULL COMMENT '评价人ID',
       `rating` TINYINT DEFAULT NULL COMMENT '评价星级1-5',
       `content` VARCHAR(1000) DEFAULT NULL COMMENT '评价意见',
+      `attachments` JSON DEFAULT NULL COMMENT '附件列表',
       `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (`id`),
       INDEX `idx_requirement_id` (`requirement_id`),
@@ -1899,12 +1954,15 @@ CREATE TABLE IF NOT EXISTS `requirement_templates` (
   `template_name` VARCHAR(200) NOT NULL COMMENT '模板名称',
   `template_content` JSON NOT NULL COMMENT '模板内容（结构化字段）',
   `is_active` TINYINT DEFAULT 1 COMMENT '是否启用',
+  `is_default` TINYINT DEFAULT 0 COMMENT '是否该类型下的默认模板',
+  `sort_order` INT DEFAULT 0 COMMENT '排序',
   `creator_id` INT UNSIGNED NOT NULL COMMENT '创建人ID',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
   PRIMARY KEY (`id`),
-  UNIQUE INDEX `uk_type_code` (`requirement_type_code`, `deleted_at`),
+  UNIQUE INDEX `uk_type_name` (`requirement_type_code`, `template_name`, `deleted_at`),
+  INDEX `idx_type_code` (`requirement_type_code`),
   INDEX `idx_is_active` (`is_active`),
   INDEX `idx_deleted_at` (`deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='需求模板表';

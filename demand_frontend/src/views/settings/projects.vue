@@ -22,9 +22,9 @@
           </template>
           <template #right>
             <input ref="importInputRef" type="file" accept=".xlsx,.xls" style="display: none" @change="handleImportFileChange" />
-            <el-button @click="handleDownloadTemplate">
+            <AppButton permission="button:project:template" @click="handleDownloadTemplate">
               <el-icon><Download /></el-icon> 模板
-            </el-button>
+            </AppButton>
             <AppButton permission="button:project:import" @click="triggerImport">
               <el-icon><Plus /></el-icon> 导入
             </AppButton>
@@ -153,7 +153,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleSubmit">确定</el-button>
+        <el-button v-permission="isEdit ? 'button:project:update' : 'button:project:create'" type="primary" :loading="submitting" @click="handleSubmit">确定</el-button>
       </template>
     </el-dialog>
   </PageContainer>

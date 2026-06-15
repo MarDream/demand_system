@@ -8,6 +8,7 @@ import com.demand.system.module.user.dto.UserUpdateDTO;
 import com.demand.system.module.user.dto.UserVO;
 import com.demand.system.module.user.service.UserService;
 import jakarta.validation.Valid;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -23,22 +24,26 @@ public class UserController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:create', 'button:user:update', 'button:user:delete', 'button:user:batch-delete', 'button:user:export', 'button:user:import', 'button:user:invite')")
     public Result<PageResult<UserVO>> list(UserQueryDTO query) {
         return Result.success(userService.list(query));
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
     public Result<UserVO> getById(@PathVariable Long id) {
         return Result.success(userService.getById(id));
     }
 
     @PostMapping
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:create')")
     public Result<Void> create(@Valid @RequestBody UserCreateDTO dto) {
         userService.create(dto);
         return Result.success();
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:update')")
     public Result<Void> update(@PathVariable Long id, @Valid @RequestBody UserUpdateDTO dto) {
         dto.setId(id);
         userService.update(dto);
@@ -46,12 +51,14 @@ public class UserController {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:delete')")
     public Result<Void> delete(@PathVariable Long id) {
         userService.delete(id);
         return Result.success();
     }
 
     @PostMapping("/{id}/send-init-password")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:update')")
     public Result<String> sendInitialPassword(@PathVariable Long id) {
         boolean emailSent = userService.resetInitialPassword(id);
         if (emailSent) {
@@ -61,12 +68,14 @@ public class UserController {
     }
 
     @PutMapping("/{id}/roles")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:update')")
     public Result<Void> assignRoles(@PathVariable Long id, @RequestBody List<Long> roleIds) {
         userService.assignRoles(id, roleIds);
         return Result.success();
     }
 
     @GetMapping("/{id}/roles")
+    @PreAuthorize("isAuthenticated()")
     public Result<List<Long>> getUserRoles(@PathVariable Long id) {
         return Result.success(userService.getUserRoleIds(id));
     }

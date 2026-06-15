@@ -10,6 +10,7 @@ import com.demand.system.module.file.service.FileService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -29,6 +30,7 @@ public class FileController {
     }
 
     @PostMapping("/upload")
+    @PreAuthorize("isAuthenticated()")
     public Result<FileUploadDTO> upload(@RequestParam("file") MultipartFile file) {
         Long uploaderId = SecurityUtils.getCurrentUserId();
         if (uploaderId == null) {
@@ -38,11 +40,13 @@ public class FileController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<byte[]> download(@PathVariable Long id) {
         return buildFileResponse(id, "attachment");
     }
 
     @GetMapping("/{id}/preview")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<byte[]> preview(@PathVariable Long id) {
         return buildFileResponse(id, "inline");
     }
@@ -69,6 +73,7 @@ public class FileController {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
     public Result<Void> delete(@PathVariable Long id) {
         fileService.delete(id);
         return Result.success();

@@ -3,6 +3,7 @@ package com.demand.system.module.requirement.service.impl;
 import com.demand.system.common.exception.BusinessException;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.requirement.dto.RequirementApprovalEvaluationVO;
+import com.demand.system.module.requirement.dto.RequirementAttachmentDTO;
 import com.demand.system.module.requirement.entity.RequirementApprovalEvaluation;
 import com.demand.system.module.requirement.entity.Requirement;
 import com.demand.system.module.requirement.mapper.RequirementApprovalEvaluationMapper;
@@ -104,18 +105,37 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
     @Override
     public void saveOnTransition(WorkflowInstance instance, WorkflowNode actionNode, Long transitionId,
                                  Long evaluatorId, String content) {
-        saveTransitionRecord(instance, actionNode, transitionId, evaluatorId, null, content);
+        saveTransitionRecord(instance, actionNode, transitionId, evaluatorId, null, content, null);
+    }
+
+    @Override
+    public void saveOnTransition(WorkflowInstance instance, WorkflowNode actionNode, Long transitionId,
+                                 Long evaluatorId, String content, List<RequirementAttachmentDTO> attachments) {
+        saveTransitionRecord(instance, actionNode, transitionId, evaluatorId, null, content, attachments);
     }
 
     @Override
     public void saveOnApprovalTransition(WorkflowInstance instance, WorkflowNode approvalNode, Long transitionId,
                                          Long evaluatorId, Integer rating, String content) {
         validateRating(rating);
-        saveTransitionRecord(instance, approvalNode, transitionId, evaluatorId, rating, content);
+        saveTransitionRecord(instance, approvalNode, transitionId, evaluatorId, rating, content, null);
+    }
+
+    @Override
+    public void saveOnApprovalTransition(WorkflowInstance instance, WorkflowNode approvalNode, Long transitionId,
+                                         Long evaluatorId, Integer rating, String content, List<RequirementAttachmentDTO> attachments) {
+        validateRating(rating);
+        saveTransitionRecord(instance, approvalNode, transitionId, evaluatorId, rating, content, attachments);
     }
 
     @Override
     public void addSupplement(Long requirementId, Long parentEvaluationId, Long operatorId, String content) {
+        addSupplement(requirementId, parentEvaluationId, operatorId, content, null);
+    }
+
+    @Override
+    public void addSupplement(Long requirementId, Long parentEvaluationId, Long operatorId, String content,
+                              List<RequirementAttachmentDTO> attachments) {
         Requirement requirement = requirementMapper.selectById(requirementId);
         if (requirement == null) {
             throw new BusinessException(404, "需求不存在");
@@ -143,6 +163,7 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
         supplement.setEvaluatorId(operatorId);
         supplement.setRating(null);
         supplement.setContent(normalizeContent(content));
+        supplement.setAttachments(attachments);
         evaluationMapper.insert(supplement);
     }
 
@@ -172,7 +193,7 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
     }
 
     private void saveTransitionRecord(WorkflowInstance instance, WorkflowNode actionNode, Long transitionId,
-                                      Long evaluatorId, Integer rating, String content) {
+                                      Long evaluatorId, Integer rating, String content, List<RequirementAttachmentDTO> attachments) {
         if (instance == null || transitionId == null || evaluatorId == null) {
             return;
         }
@@ -201,6 +222,7 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
         evaluation.setEvaluatorId(evaluatorId);
         evaluation.setRating(rating);
         evaluation.setContent(normalizeOptionalContent(content));
+        evaluation.setAttachments(attachments);
         evaluationMapper.insert(evaluation);
     }
 
@@ -229,6 +251,7 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
         vo.setResultLabel(resolveResultLabel(transition, action));
         vo.setRating(evaluation != null ? evaluation.getRating() : null);
         vo.setContent(comment);
+        vo.setAttachments(evaluation != null ? evaluation.getAttachments() : null);
         vo.setCreatedAt(transition.getCreatedAt());
         vo.setSupplements(new ArrayList<>());
         return vo;

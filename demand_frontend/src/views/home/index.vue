@@ -7,9 +7,9 @@
         <span class="dashboard-subtitle">{{ getGreeting() }}，{{ userStore.userInfo?.realName || '用户' }}</span>
       </div>
       <div class="dashboard-header__actions">
-        <el-button type="primary" @click="router.push('/requirements/create')">
+        <AppButton type="primary" permission="button:requirement:create" @click="router.push('/requirements/create')">
           <el-icon><Document /></el-icon>新建需求
-        </el-button>
+        </AppButton>
         <el-button @click="router.push('/requirements?view=pending')">
           <el-icon><List /></el-icon>我的待办
         </el-button>
@@ -205,6 +205,7 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { Document, Loading, CircleCheck, Warning, ArrowRight, List } from '@element-plus/icons-vue'
 import StatCardPro from '@/components/common/StatCardPro.vue'
+import AppButton from '@/components/common/AppButton.vue'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { SVGRenderer } from 'echarts/renderers'

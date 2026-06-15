@@ -1,4 +1,5 @@
 import request from '@/api/request'
+import type { RequirementAttachment } from '@/types/requirement'
 
 export interface FlowTransitionRequest {
   requirementId: number
@@ -8,6 +9,7 @@ export interface FlowTransitionRequest {
   comment?: string
   rating?: number | null
   lockVersion?: number | null
+  attachments?: RequirementAttachment[]
 }
 
 export interface TransitionAssigneeCandidate {

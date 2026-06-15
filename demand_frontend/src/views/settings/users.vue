@@ -107,33 +107,37 @@
               <el-icon><Plus /></el-icon>
               添加成员
             </AppButton>
-            <el-dropdown @command="showTodo">
-              <el-button>
-                邀请成员
-                <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-              </el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="通过链接邀请">通过链接邀请</el-dropdown-item>
-                  <el-dropdown-item command="批量邀请">批量邀请</el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-            <el-button @click="showTodo('添加/申请记录')">添加/申请记录</el-button>
-            <el-dropdown @command="showTodo">
-              <el-button>
-                批量管理
-                <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-              </el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="批量启用">批量启用</el-dropdown-item>
-                  <el-dropdown-item command="批量停用">批量停用</el-dropdown-item>
-                  <el-dropdown-item command="批量删除">批量删除</el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-            <el-button @click="showTodo('调整排序')">调整排序</el-button>
+            <AppButton permission="button:user:invite">
+              <el-dropdown @command="showTodo">
+                <span>
+                  邀请成员
+                  <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                </span>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="通过链接邀请">通过链接邀请</el-dropdown-item>
+                    <el-dropdown-item command="批量邀请">批量邀请</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </AppButton>
+            <AppButton permission="button:user:update" @click="showTodo('添加/申请记录')">添加/申请记录</AppButton>
+            <AppButton permission="button:user:batch-delete">
+              <el-dropdown @command="showTodo">
+                <span>
+                  批量管理
+                  <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                </span>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item v-permission="'button:user:batch-delete'" command="批量启用">批量启用</el-dropdown-item>
+                    <el-dropdown-item v-permission="'button:user:batch-delete'" command="批量停用">批量停用</el-dropdown-item>
+                    <el-dropdown-item v-permission="'button:user:batch-delete'" command="批量删除">批量删除</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </AppButton>
+            <AppButton permission="button:user:update" @click="showTodo('调整排序')">调整排序</AppButton>
           </div>
 
           <el-table :data="userList" border class="member-table" @selection-change="selectedUsers = $event">
@@ -214,17 +218,17 @@
           </div>
 
           <div class="department-actions">
-            <el-button type="primary" @click="openCreateDepartment">
+            <AppButton type="primary" permission="button:org:create" @click="openCreateDepartment">
               <el-icon><Plus /></el-icon>
               添加{{ allowedNewTypes.length === 1 ? ORG_TYPE_LABELS[allowedNewTypes[0]] : '子组织' }}
-            </el-button>
-            <el-button @click="showTodo('批量创建部门')">批量创建部门</el-button>
-            <el-button :disabled="selectedDepartments.length !== 1" @click="openEditDepartment">
+            </AppButton>
+            <AppButton permission="button:org:batch-create" @click="showTodo('批量创建部门')">批量创建部门</AppButton>
+            <AppButton permission="button:org:update" :disabled="selectedDepartments.length !== 1" @click="openEditDepartment">
               编辑选中部门
-            </el-button>
-            <el-button type="danger" plain :disabled="selectedDepartments.length === 0" @click="handleDeleteDepartments">
+            </AppButton>
+            <AppButton permission="button:org:delete" type="danger" plain :disabled="selectedDepartments.length === 0" @click="handleDeleteDepartments">
               删除选中部门
-            </el-button>
+            </AppButton>
           </div>
 
           <el-table
@@ -500,7 +504,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleSubmit">确定</el-button>
+        <el-button v-permission="isEdit ? 'button:user:update' : 'button:user:create'" type="primary" :loading="submitting" @click="handleSubmit">确定</el-button>
       </template>
     </el-dialog>
 
@@ -562,7 +566,7 @@
       <template #footer>
         <div class="drawer-footer">
           <el-button @click="departmentDrawerVisible = false">取消</el-button>
-          <el-button type="primary" :loading="departmentSubmitting" @click="handleSubmitDepartment">确定</el-button>
+          <el-button v-permission="departmentEditingId ? 'button:org:update' : 'button:org:create'" type="primary" :loading="departmentSubmitting" @click="handleSubmitDepartment">确定</el-button>
         </div>
       </template>
     </el-drawer>

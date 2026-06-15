@@ -179,6 +179,10 @@
                 </div>
                 <p v-if="item.content" class="approval-evaluation-content">{{ item.content }}</p>
                 <p v-else class="approval-evaluation-content approval-evaluation-content--empty">未填写审核意见</p>
+                <div v-if="item.attachments?.length" class="approval-evaluation-attachments">
+                  <span class="approval-evaluation-attachments__label">附件：</span>
+                  <a v-for="(att, idx) in item.attachments" :key="idx" class="approval-evaluation-attachments__link" @click="downloadAttachmentFile(att)">{{ att.name }}</a>
+                </div>
                 <div v-if="item.canSupplement" class="approval-evaluation-actions">
                   <el-button link type="primary" @click="openSupplementDialog(item)">补充意见</el-button>
                 </div>
@@ -190,6 +194,10 @@
                       <span class="approval-supplement-item__time">{{ formatDate(supplement.createdAt) }}</span>
                     </div>
                     <p class="approval-supplement-item__content">{{ supplement.content || '未填写补充意见' }}</p>
+                    <div v-if="supplement.attachments?.length" class="approval-evaluation-attachments">
+                      <span class="approval-evaluation-attachments__label">附件：</span>
+                      <a v-for="(att, idx) in supplement.attachments" :key="idx" class="approval-evaluation-attachments__link" @click="downloadAttachmentFile(att)">{{ att.name }}</a>
+                    </div>
                   </div>
                 </div>
               </el-card>
@@ -429,14 +437,15 @@
                 </div>
 
                 <div class="workflow-action-panel__submit-actions">
-                  <el-button
+                  <AppButton
                     type="primary"
+                    permission="button:requirement:submit"
                     :loading="transitionLoading"
                     :disabled="transitionSubmitDisabled"
                     @click="handleStatusTransition"
                   >
                     提交
-                  </el-button>
+                  </AppButton>
                 </div>
               </div>
             </div>
@@ -449,6 +458,7 @@
           width="480px"
           :close-on-click-modal="false"
           @closed="resetSupplementDialog"
+          @paste.capture="handleSupplementPaste"
         >
           <p class="approval-dialog-tip">补充内容会追加在原审核记录下方，不会覆盖原始意见。</p>
           <el-input
@@ -459,6 +469,36 @@
             maxlength="1000"
             show-word-limit
           />
+          <div class="approval-attachment-section" style="margin-top: 12px;">
+            <div class="approval-attachment-header">
+              <span>附件材料</span>
+              <el-button link type="primary" @click="triggerSupplementAttachmentUpload">上传附件</el-button>
+            </div>
+            <input
+              ref="supplementAttachmentInputRef"
+              type="file"
+              multiple
+              style="display: none;"
+              @change="handleSupplementFileSelect"
+            />
+            <div
+              class="approval-attachment-dropzone" :class="{ 'is-dragover': supplementDragActive }"
+              @dragover.prevent="onSupplementDragOver"
+              @dragleave="onSupplementDragLeave"
+              @drop.prevent="handleSupplementAttachmentDrop"
+            >
+              <div v-if="supplementAttachments.length === 0" class="approval-attachment-placeholder">
+                拖拽文件到此处，或点击"上传附件"按钮
+              </div>
+              <div v-else class="approval-attachment-list">
+                <div v-for="(file, index) in supplementAttachments" :key="index" class="approval-attachment-item">
+                  <span class="approval-attachment-name" @click="downloadAttachmentFile(file)">{{ file.name }}</span>
+                  <span class="approval-attachment-size">{{ formatFileSize(file.size) }}</span>
+                  <el-button link type="danger" size="small" @click="removeSupplementAttachment(index)">删除</el-button>
+                </div>
+              </div>
+            </div>
+          </div>
           <template #footer>
             <el-button @click="supplementDialogVisible = false">取消</el-button>
             <el-button type="primary" :loading="supplementSubmitting" @click="submitSupplement">
@@ -473,6 +513,7 @@
           width="480px"
           :close-on-click-modal="false"
           @closed="resetApprovalDialog"
+          @paste.capture="handleApprovalPaste"
         >
           <p class="approval-dialog-tip">提交到下一节点前，请补充审核信息。</p>
           <div class="approval-dialog-rate">
@@ -494,6 +535,36 @@
               show-word-limit
             />
           </el-form-item>
+          <div class="approval-attachment-section">
+            <div class="approval-attachment-header">
+              <span>附件材料</span>
+              <el-button link type="primary" @click="triggerApprovalAttachmentUpload">上传附件</el-button>
+            </div>
+            <input
+              ref="approvalAttachmentInputRef"
+              type="file"
+              multiple
+              style="display: none;"
+              @change="handleApprovalFileSelect"
+            />
+            <div
+              class="approval-attachment-dropzone" :class="{ 'is-dragover': approvalDragActive }"
+              @dragover.prevent="onApprovalDragOver"
+              @dragleave="onApprovalDragLeave"
+              @drop.prevent="handleApprovalAttachmentDrop"
+            >
+              <div v-if="approvalAttachments.length === 0" class="approval-attachment-placeholder">
+                拖拽文件到此处，或点击"上传附件"按钮
+              </div>
+              <div v-else class="approval-attachment-list">
+                <div v-for="(file, index) in approvalAttachments" :key="index" class="approval-attachment-item">
+                  <span class="approval-attachment-name" @click="downloadAttachmentFile(file)">{{ file.name }}</span>
+                  <span class="approval-attachment-size">{{ formatFileSize(file.size) }}</span>
+                  <el-button link type="danger" size="small" @click="removeApprovalAttachment(index)">删除</el-button>
+                </div>
+              </div>
+            </div>
+          </div>
           <template #footer>
             <el-button @click="approvalDialogVisible = false">取消</el-button>
             <el-button type="primary" :loading="transitionLoading" @click="confirmApprovalTransition">
@@ -548,8 +619,8 @@
           </div>
           <template #footer>
             <el-button @click="countersignDialogVisible = false">关闭</el-button>
-            <el-button v-if="canCountersign" type="success" @click="handleCountersignApprove">通过</el-button>
-            <el-button v-if="canCountersign" type="danger" @click="handleCountersignReject">驳回</el-button>
+            <el-button v-if="canCountersign" v-permission="'button:requirement:countersign-approve'" type="success" @click="handleCountersignApprove">通过</el-button>
+            <el-button v-if="canCountersign" v-permission="'button:requirement:countersign-reject'" type="danger" @click="handleCountersignReject">驳回</el-button>
           </template>
         </el-dialog>
       </template>
@@ -558,7 +629,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, watch } from 'vue'
+import { computed, ref, onMounted, watch, type Ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeftBold, ArrowRightBold, Picture } from '@element-plus/icons-vue'
@@ -686,9 +757,15 @@ const approvalEvaluations = ref<RequirementApprovalEvaluation[]>([])
 const approvalDialogVisible = ref(false)
 const approvalRating = ref(0)
 const approvalComment = ref('')
+const approvalAttachments = ref<RequirementAttachment[]>([])
+const approvalAttachmentInputRef = ref<HTMLInputElement | null>(null)
+const approvalDragActive = ref(false)
 const supplementDialogVisible = ref(false)
 const supplementSubmitting = ref(false)
 const supplementContent = ref('')
+const supplementAttachments = ref<RequirementAttachment[]>([])
+const supplementAttachmentInputRef = ref<HTMLInputElement | null>(null)
+const supplementDragActive = ref(false)
 const supplementTarget = ref<RequirementApprovalEvaluation | null>(null)
 const children = ref<any[]>([])
 const activeTab = ref('basic')
@@ -1040,14 +1117,138 @@ async function fetchApprovalEvaluations() {
 function resetApprovalDialog() {
   approvalRating.value = 0
   approvalComment.value = ''
+  approvalAttachments.value = []
 }
 
 function resetSupplementDialog() {
   supplementTarget.value = null
   supplementContent.value = ''
+  supplementAttachments.value = []
 }
 
-async function executeTransition(extra?: { rating?: number; comment?: string }) {
+async function uploadApprovalFile(file: File, targetList: Ref<RequirementAttachment[]>) {
+  let processedFile = file
+  if (!file.name || file.name === 'image' || !file.name.includes('.')) {
+    const ext = file.type.split('/')[1] || 'png'
+    processedFile = new File([file], `approval_${Date.now()}.${ext}`, { type: file.type })
+  }
+  try {
+    ElMessage.info(`上传附件中: ${processedFile.name}`)
+    const attachment = await uploadRequirementAttachment(processedFile)
+    targetList.value.push(attachment)
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '附件上传失败'))
+  }
+}
+
+function triggerApprovalAttachmentUpload() {
+  approvalAttachmentInputRef.value?.click()
+}
+
+async function handleApprovalFileSelect(event: Event) {
+  const input = event.target as HTMLInputElement
+  if (!input.files?.length) return
+  for (const file of Array.from(input.files)) {
+    await uploadApprovalFile(file, approvalAttachments)
+  }
+  input.value = ''
+}
+
+async function handleApprovalAttachmentDrop(event: DragEvent) {
+  if (!event.dataTransfer?.files?.length) return
+  approvalDragActive.value = false
+  for (const file of Array.from(event.dataTransfer.files)) {
+    await uploadApprovalFile(file, approvalAttachments)
+  }
+}
+
+function onApprovalDragOver() {
+  approvalDragActive.value = true
+}
+
+function onApprovalDragLeave() {
+  approvalDragActive.value = false
+}
+
+function removeApprovalAttachment(index: number) {
+  approvalAttachments.value.splice(index, 1)
+}
+
+function triggerSupplementAttachmentUpload() {
+  supplementAttachmentInputRef.value?.click()
+}
+
+async function handleSupplementFileSelect(event: Event) {
+  const input = event.target as HTMLInputElement
+  if (!input.files?.length) return
+  for (const file of Array.from(input.files)) {
+    await uploadApprovalFile(file, supplementAttachments)
+  }
+  input.value = ''
+}
+
+async function handleSupplementAttachmentDrop(event: DragEvent) {
+  if (!event.dataTransfer?.files?.length) return
+  supplementDragActive.value = false
+  for (const file of Array.from(event.dataTransfer.files)) {
+    await uploadApprovalFile(file, supplementAttachments)
+  }
+}
+
+function onSupplementDragOver() {
+  supplementDragActive.value = true
+}
+
+function onSupplementDragLeave() {
+  supplementDragActive.value = false
+}
+
+function removeSupplementAttachment(index: number) {
+  supplementAttachments.value.splice(index, 1)
+}
+
+function formatFileSize(size: number | undefined | null): string {
+  if (!size) return ''
+  if (size < 1024) return size + ' B'
+  if (size < 1024 * 1024) return (size / 1024).toFixed(1) + ' KB'
+  return (size / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
+function downloadAttachmentFile(file: RequirementAttachment) {
+  downloadRequirementAttachment(file)
+}
+
+function handleApprovalPaste(event: ClipboardEvent) {
+  const items = event.clipboardData?.items
+  if (!items) return
+  for (const item of Array.from(items)) {
+    if (item.type.startsWith('image/')) {
+      const file = item.getAsFile()
+      if (file) {
+        event.preventDefault()
+        uploadApprovalFile(file, approvalAttachments)
+      }
+      return
+    }
+  }
+}
+
+function handleSupplementPaste(event: ClipboardEvent) {
+  const items = event.clipboardData?.items
+  if (!items) return
+  for (const item of Array.from(items)) {
+    if (item.type.startsWith('image/')) {
+      const file = item.getAsFile()
+      if (file) {
+        event.preventDefault()
+        uploadApprovalFile(file, supplementAttachments)
+      }
+      return
+    }
+  }
+}
+
+async function executeTransition(extra?: { rating?: number; comment?: string; attachments?: RequirementAttachment[] }) {
   transitionLoading.value = true
   try {
     await workflowEngineApi.transition({
@@ -1057,6 +1258,7 @@ async function executeTransition(extra?: { rating?: number; comment?: string }) 
       action: 'submit',
       comment: extra?.comment,
       rating: extra?.rating,
+      attachments: extra?.attachments,
       lockVersion: workflowRuntime.value.lockVersion ?? undefined,
     })
     ElMessage.success('提交审核成功')
@@ -1480,6 +1682,7 @@ async function confirmApprovalTransition() {
   await executeTransition({
     rating: approvalRating.value,
     comment: approvalComment.value.trim() || undefined,
+    attachments: approvalAttachments.value.length > 0 ? approvalAttachments.value : undefined,
   })
 }
 
@@ -1496,7 +1699,10 @@ async function submitSupplement() {
 
   supplementSubmitting.value = true
   try {
-    await requirementApi.createApprovalEvaluationSupplement(id, supplementTarget.value.id, { content })
+    await requirementApi.createApprovalEvaluationSupplement(id, supplementTarget.value.id, {
+      content,
+      attachments: supplementAttachments.value.length > 0 ? supplementAttachments.value : undefined,
+    })
     ElMessage.success('补充意见已提交')
     supplementDialogVisible.value = false
     resetSupplementDialog()
@@ -2275,5 +2481,101 @@ onMounted(() => {
 
 .countersign-empty {
   padding: 20px 0;
+}
+
+/* ===== 审批附件上传 ===== */
+.approval-attachment-section {
+  margin-top: 16px;
+}
+
+.approval-attachment-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.approval-attachment-header span {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+}
+
+.approval-attachment-dropzone {
+  border: 1px dashed var(--color-border);
+  border-radius: 6px;
+  padding: 12px;
+  min-height: 60px;
+  transition: border-color 0.2s, background-color 0.2s;
+  cursor: default;
+}
+
+.approval-attachment-dropzone.is-dragover {
+  border-color: var(--color-primary);
+  background-color: var(--color-primary-bg, rgba(64, 158, 255, 0.06));
+}
+
+.approval-attachment-placeholder {
+  text-align: center;
+  color: var(--color-text-placeholder);
+  font-size: 13px;
+  padding: 8px 0;
+}
+
+.approval-attachment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.approval-attachment-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--color-fill-light, #f5f7fa);
+}
+
+.approval-attachment-name {
+  font-size: 13px;
+  color: var(--color-primary);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.approval-attachment-name:hover {
+  text-decoration: underline;
+}
+
+.approval-attachment-size {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+/* 审批评价中的附件展示 */
+.approval-evaluation-attachments {
+  margin-top: 6px;
+  padding-left: 4px;
+}
+
+.approval-evaluation-attachments__label {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-right: 4px;
+}
+
+.approval-evaluation-attachments__link {
+  font-size: 12px;
+  color: var(--color-primary);
+  cursor: pointer;
+  margin-right: 8px;
+}
+
+.approval-evaluation-attachments__link:hover {
+  text-decoration: underline;
 }
 </style>

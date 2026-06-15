@@ -13,7 +13,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1")
-@PreAuthorize("hasAnyAuthority('admin', 'workflow:config')")
+@PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
 public class WorkflowConfigController {
 
     private final WorkflowService workflowService;

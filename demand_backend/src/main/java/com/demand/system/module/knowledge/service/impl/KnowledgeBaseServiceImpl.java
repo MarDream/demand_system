@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.ErrorCode;
 import com.demand.system.common.result.PageResult;
+import com.demand.system.common.security.PermissionGuard;
 import com.demand.system.module.auth.entity.SysUser;
 import com.demand.system.module.auth.mapper.SysUserMapper;
 import com.demand.system.module.knowledge.dto.KnowledgeBaseCreateDTO;
@@ -103,6 +104,9 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     @Override
     @Transactional
     public KnowledgeBaseVO update(Long id, KnowledgeBaseUpdateDTO dto) {
+        PermissionGuard.requireKnowledgeBaseOwner(knowledgeBaseMapper, id,
+                PermissionGuard.requireCurrentUserId(),
+                com.demand.system.module.auth.security.SecurityUtils.isSuperAdmin());
         KnowledgeBase kb = findOrThrow(id);
         if (dto.getName() != null) {
             kb.setName(dto.getName());
@@ -117,6 +121,9 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     @Override
     @Transactional
     public void delete(Long id) {
+        PermissionGuard.requireKnowledgeBaseOwner(knowledgeBaseMapper, id,
+                PermissionGuard.requireCurrentUserId(),
+                com.demand.system.module.auth.security.SecurityUtils.isSuperAdmin());
         findOrThrow(id);
 
         List<KnowledgeDocument> documents = knowledgeDocumentMapper.selectList(new LambdaQueryWrapper<KnowledgeDocument>()
@@ -158,6 +165,11 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         if (sourceId.equals(dto.getTargetKnowledgeBaseId())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "源与目标知识库不能相同");
         }
+
+        // 行级权限：只有源知识库的创建人（或者超管）可以发起迁移
+        PermissionGuard.requireKnowledgeBaseOwner(knowledgeBaseMapper, sourceId,
+                PermissionGuard.requireCurrentUserId(),
+                com.demand.system.module.auth.security.SecurityUtils.isSuperAdmin());
 
         KnowledgeBase source = findOrThrow(sourceId);
         KnowledgeBase target = findOrThrow(dto.getTargetKnowledgeBaseId());

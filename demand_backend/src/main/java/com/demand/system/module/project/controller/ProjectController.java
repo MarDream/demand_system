@@ -16,6 +16,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -37,6 +38,7 @@ public class ProjectController {
     }
 
     @GetMapping
+    @PreAuthorize("isAuthenticated()")
     public Result<PageResult<Project>> list(
             @RequestParam(required = false) String name,
             @RequestParam(required = false) String status,
@@ -47,12 +49,14 @@ public class ProjectController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
     public Result<Project> getById(@PathVariable Long id) {
         Project project = projectService.getById(id);
         return Result.success(project);
     }
 
     @PostMapping
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:project:create')")
     public Result<Void> create(@Valid @RequestBody ProjectCreateDTO dto) {
         Long creatorId = SecurityUtils.getCurrentUserId();
         if (creatorId == null) {
@@ -63,6 +67,7 @@ public class ProjectController {
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:project:update')")
     public Result<Void> update(@PathVariable Long id, @Valid @RequestBody ProjectUpdateDTO dto) {
         dto.setId(id);
         projectService.update(dto);
@@ -70,30 +75,35 @@ public class ProjectController {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:project:delete')")
     public Result<Void> delete(@PathVariable Long id) {
         projectService.delete(id);
         return Result.success();
     }
 
     @GetMapping("/{id}/members")
+    @PreAuthorize("isAuthenticated()")
     public Result<List<ProjectMember>> getMembers(@PathVariable Long id) {
         List<ProjectMember> members = projectService.getMembers(id);
         return Result.success(members);
     }
 
     @PostMapping("/{id}/members")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:project:update')")
     public Result<Void> addMember(@PathVariable Long id, @Valid @RequestBody ProjectMemberAddDTO dto) {
         projectService.addMember(id, dto);
         return Result.success();
     }
 
     @DeleteMapping("/{id}/members/{userId}")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:project:update')")
     public Result<Void> removeMember(@PathVariable Long id, @PathVariable Long userId) {
         projectService.removeMember(id, userId);
         return Result.success();
     }
 
     @GetMapping("/template")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:project:template', 'button:project:import')")
     public void downloadTemplate(HttpServletResponse response) throws IOException {
         try (Workbook workbook = new XSSFWorkbook()) {
             Sheet sheet = workbook.createSheet("项目导入模板");
@@ -129,6 +139,7 @@ public class ProjectController {
     }
 
     @PostMapping("/import")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:project:import')")
     public Result<ProjectImportResultDTO> importProjects(@RequestParam("file") MultipartFile file) throws IOException {
         Long creatorId = SecurityUtils.getCurrentUserId();
         if (creatorId == null) {

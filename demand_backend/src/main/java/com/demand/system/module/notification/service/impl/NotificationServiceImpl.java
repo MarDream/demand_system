@@ -2,6 +2,8 @@ package com.demand.system.module.notification.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.demand.system.common.exception.BusinessException;
+import com.demand.system.common.result.ErrorCode;
 import com.demand.system.module.notification.entity.Notification;
 import com.demand.system.module.notification.mapper.NotificationMapper;
 import com.demand.system.module.notification.sender.NotificationSender;
@@ -9,6 +11,7 @@ import com.demand.system.module.notification.service.NotificationService;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Objects;
 
 @Service
 public class NotificationServiceImpl implements NotificationService {
@@ -42,6 +45,25 @@ public class NotificationServiceImpl implements NotificationService {
             notification.setIsRead(1);
             notificationMapper.updateById(notification);
         }
+    }
+
+    @Override
+    public void markAsRead(Long notificationId, Long currentUserId) {
+        if (notificationId == null || currentUserId == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "参数缺失");
+        }
+        Notification notification = notificationMapper.selectById(notificationId);
+        if (notification == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "通知不存在");
+        }
+        if (!Objects.equals(notification.getUserId(), currentUserId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "无权操作该通知");
+        }
+        if (notification.getIsRead() != null && notification.getIsRead() == 1) {
+            return; // 已读幂等
+        }
+        notification.setIsRead(1);
+        notificationMapper.updateById(notification);
     }
 
     @Override

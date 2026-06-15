@@ -23,6 +23,7 @@ public class RequirementApprovalEvaluationVO {
     private String resultLabel;
     private Integer rating;
     private String content;
+    private java.util.List<RequirementAttachmentDTO> attachments;
     private LocalDateTime createdAt;
     private java.util.List<RequirementApprovalEvaluationVO> supplements;
 
@@ -176,6 +177,14 @@ public class RequirementApprovalEvaluationVO {
 
     public void setContent(String content) {
         this.content = content;
+    }
+
+    public java.util.List<RequirementAttachmentDTO> getAttachments() {
+        return attachments;
+    }
+
+    public void setAttachments(java.util.List<RequirementAttachmentDTO> attachments) {
+        this.attachments = attachments;
     }
 
     public LocalDateTime getCreatedAt() {

@@ -4,6 +4,7 @@ import com.demand.system.module.llm.constant.LlmModelRole;
 import com.demand.system.module.llm.dto.*;
 import com.demand.system.module.llm.service.LlmProviderService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -12,6 +13,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/llm-providers")
+@PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN')")
 public class LlmProviderController {
     private final LlmProviderService providerService;
 
@@ -32,22 +34,26 @@ public class LlmProviderController {
     }
 
     @PostMapping
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:llm-provider:create')")
     public ResponseEntity<Map<String, Object>> create(@Validated @RequestBody LlmProviderDTO dto) {
         return ResponseEntity.ok(Map.of("code", 200, "message", "创建成功", "data", providerService.create(dto)));
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:llm-provider:update')")
     public ResponseEntity<Map<String, Object>> update(@PathVariable Long id, @Validated @RequestBody LlmProviderDTO dto) {
         return ResponseEntity.ok(Map.of("code", 200, "message", "更新成功", "data", providerService.update(id, dto)));
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:llm-provider:delete')")
     public ResponseEntity<Map<String, Object>> delete(@PathVariable Long id) {
         providerService.delete(id);
         return ResponseEntity.ok(Map.of("code", 200, "message", "删除成功"));
     }
 
     @PatchMapping("/{id}/toggle")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:llm-provider:update')")
     public ResponseEntity<Map<String, Object>> toggleEnabled(@PathVariable Long id) {
         providerService.toggleEnabled(id);
         return ResponseEntity.ok(Map.of("code", 200, "message", "操作成功"));
@@ -61,6 +67,7 @@ public class LlmProviderController {
     // ==================== Model ====================
 
     @PostMapping("/{id}/models")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:llm-provider:create')")
     public ResponseEntity<Map<String, Object>> addModel(
             @PathVariable Long id,
             @Validated @RequestBody LlmModelDTO dto) {
@@ -68,6 +75,7 @@ public class LlmProviderController {
     }
 
     @PutMapping("/{id}/models/{modelId}")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:llm-provider:update')")
     public ResponseEntity<Map<String, Object>> updateModel(
             @PathVariable Long id,
             @PathVariable Long modelId,
@@ -76,6 +84,7 @@ public class LlmProviderController {
     }
 
     @DeleteMapping("/{id}/models/{modelId}")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:llm-provider:delete')")
     public ResponseEntity<Map<String, Object>> deleteModel(
             @PathVariable Long id,
             @PathVariable Long modelId) {
@@ -84,6 +93,7 @@ public class LlmProviderController {
     }
 
     @PatchMapping("/{id}/models/{modelId}/toggle")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:llm-provider:update')")
     public ResponseEntity<Map<String, Object>> toggleModelEnabled(
             @PathVariable Long id,
             @PathVariable Long modelId) {
@@ -92,6 +102,7 @@ public class LlmProviderController {
     }
 
     @PostMapping("/{id}/models/{modelId}/test")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:llm-provider:test')")
     public ResponseEntity<Map<String, Object>> testModel(
             @PathVariable Long id,
             @PathVariable Long modelId,
@@ -110,6 +121,7 @@ public class LlmProviderController {
     // ==================== Sniff ====================
 
     @PostMapping("/{id}/sniff-models")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:llm-provider:test')")
     public ResponseEntity<Map<String, Object>> sniffModels(@PathVariable Long id) {
         return ResponseEntity.ok(Map.of("code", 200, "message", "操作成功", "data", providerService.sniffModels(id)));
     }

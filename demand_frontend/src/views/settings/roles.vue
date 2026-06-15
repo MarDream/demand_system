@@ -157,8 +157,8 @@
                     <el-icon><Search /></el-icon>
                   </template>
                 </el-input>
-                <el-button :disabled="!canGrantSelectedRole" @click="selectAllVisiblePermissions">全选当前</el-button>
-                <el-button :disabled="!canGrantSelectedRole" @click="clearVisiblePermissions">清空当前</el-button>
+                <AppButton :disabled="!canGrantSelectedRole" permission="button:role:grant" @click="selectAllVisiblePermissions">全选当前</AppButton>
+                <AppButton :disabled="!canGrantSelectedRole" permission="button:role:grant" @click="clearVisiblePermissions">清空当前</AppButton>
               </div>
 
               <el-alert
@@ -348,7 +348,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+        <el-button v-permission="editingRole ? 'button:role:update' : 'button:role:create'" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
       </template>
     </el-dialog>
 
@@ -393,7 +393,7 @@
       </el-form>
       <template #footer>
         <el-button @click="roleGroupDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="roleGroupSubmitting" @click="handleSubmitRoleGroup">保存</el-button>
+        <el-button v-permission="'button:role:create'" type="primary" :loading="roleGroupSubmitting" @click="handleSubmitRoleGroup">保存</el-button>
       </template>
     </el-dialog>
   </PageContainer>

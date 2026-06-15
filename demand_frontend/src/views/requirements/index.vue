@@ -101,7 +101,7 @@
             <el-button v-if="hasPermission('button:requirement:export')" @click="handleExport">导出Excel</el-button>
           </template>
           <template #right>
-            <el-button :icon="Setting" circle @click="showColumnConfig = true" title="列设置" />
+            <el-button :icon="Setting" circle @click="openColumnConfig" title="列设置" />
             <el-button v-if="hasPermission('button:requirement:batch-delete')" type="danger" :disabled="selectedIds.length === 0" @click="handleBatchDelete">
               批量删除
             </el-button>
@@ -190,8 +190,8 @@
                   </el-tooltip>
                   <!-- 我的待办/已办视图根据operationType显示不同按钮 -->
                   <template v-if="isPendingView || isDoneView || isFollowView">
-                    <el-button v-if="row.operationType === 'edit'" link type="primary" @click="handleEdit(row)">编辑</el-button>
-                    <el-button v-if="row.operationType === 'approve'" link type="warning" @click="handleOpen(row)">待办</el-button>
+                    <el-button v-if="row.operationType === 'edit' && hasPermission('button:requirement:update')" link type="primary" @click="handleEdit(row)">编辑</el-button>
+                    <el-button v-if="row.operationType === 'approve' && hasPermission('button:requirement:submit')" link type="warning" @click="handleOpen(row)">待办</el-button>
                     <el-button v-if="row.operationType === 'view'" link type="primary" @click="handleOpen(row)">查看</el-button>
                   </template>
                   <!-- 全部需求/草稿视图显示原有操作按钮 -->
@@ -241,32 +241,80 @@
     </TableCard>
 
     <!-- 列配置弹窗 -->
-    <el-dialog v-model="showColumnConfig" title="列显示设置" width="400px">
+    <el-dialog
+      v-model="showColumnConfig"
+      title="列表字段设置"
+      width="860px"
+      class="column-config-dialog"
+      @opened="initSelectedColumnSortable"
+      @close="handleColumnConfigClose"
+    >
       <div class="column-config">
-        <el-checkbox v-model="checkAll" :indeterminate="isIndeterminate" @change="handleCheckAll">
-          全选
-        </el-checkbox>
-        <el-divider />
-        <el-checkbox-group v-model="selectedColumnKeys">
-          <div v-for="col in allColumns.filter(c => c.key !== 'operations')" :key="col.key" class="column-item">
-            <el-checkbox :label="col.key">{{ col.label }}</el-checkbox>
+        <section class="column-config__panel column-config__panel--available">
+          <div class="column-config__panel-title">备选字段</div>
+          <div class="column-config__panel-body">
+            <div
+              v-for="group in columnGroups"
+              :key="group.title"
+              class="column-config__group"
+            >
+              <div class="column-config__group-title">{{ group.title }}</div>
+              <el-checkbox-group v-model="draftColumnKeys" class="column-config__checkbox-grid">
+                <el-checkbox
+                  v-for="col in group.columns"
+                  :key="col.key"
+                  :label="col.key"
+                  class="column-config__checkbox"
+                >
+                  {{ col.label }}
+                </el-checkbox>
+              </el-checkbox-group>
+            </div>
           </div>
-        </el-checkbox-group>
+        </section>
+        <section class="column-config__panel column-config__panel--selected">
+          <div class="column-config__panel-title">当前选定字段</div>
+          <div ref="selectedColumnListRef" class="column-config__selected-list">
+            <div
+              v-for="col in draftSelectedColumns"
+              :key="col.key"
+              class="column-config__selected-item"
+              :data-key="col.key"
+            >
+              <el-icon class="column-config__drag-handle"><Rank /></el-icon>
+              <span class="column-config__selected-label">{{ col.label }}</span>
+              <el-button
+                link
+                :icon="Close"
+                class="column-config__remove"
+                :aria-label="`移除${col.label}`"
+                @click="removeDraftColumn(col.key)"
+              />
+            </div>
+            <el-empty
+              v-if="draftSelectedColumns.length === 0"
+              description="暂无选定字段"
+              :image-size="72"
+              class="column-config__empty"
+            />
+          </div>
+        </section>
       </div>
       <template #footer>
-        <el-button @click="showColumnConfig = false">取消</el-button>
-        <el-button type="primary" @click="saveColumns">保存</el-button>
+        <el-button @click="handleCancelColumnConfig">取消</el-button>
+        <el-button type="primary" @click="saveColumns">确定</el-button>
       </template>
     </el-dialog>
   </PageContainer>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { TableInstance } from 'element-plus'
-import { Setting, View, Edit, Delete, ArrowDown, ArrowRight, Star, StarFilled } from '@element-plus/icons-vue'
+import { Setting, View, Edit, Delete, ArrowDown, ArrowRight, Star, StarFilled, Rank, Close } from '@element-plus/icons-vue'
+import Sortable, { type SortableEvent } from 'sortablejs'
 import { exportToExcel } from '@/utils/excel'
 import { requirementApi, userApi } from '@/api'
 import { getMyRequirementPending, getMyRequirementDone, getMyRequirementFollows } from '@/api/modules/requirement'
@@ -318,6 +366,7 @@ const DEFAULT_PROJECT_ID = 1
 interface ColumnDef {
   key: string
   label: string
+  group?: string
   width?: number
   minWidth?: number
   align?: string
@@ -326,20 +375,20 @@ interface ColumnDef {
 
 // 所有可用列定义
 const allColumns: ColumnDef[] = [
-  { key: 'title', label: '需求标题', minWidth: 220, fixed: false },
-  { key: 'requirementNo', label: '需求编号', width: 190 },
-  { key: 'type', label: '类型', width: 100 },
-  { key: 'priority', label: '优先级', width: 90 },
-  { key: 'status', label: '状态', width: 100 },
-  { key: 'creatorName', label: '提出人', width: 100 },
-  { key: 'assigneeName', label: '负责人', width: 100 },
-  { key: 'opsFollowName', label: '运营跟进人', width: 110 },
-  { key: 'maintFollowName', label: '运维跟进人', width: 110 },
-  { key: 'departmentName', label: '归属部门', width: 120 },
-  { key: 'createdAt', label: '创建时间', width: 170 },
-  { key: 'analysisCompletedAt', label: '分析完成时间', width: 160 },
-  { key: 'confirmAt', label: '需求确认时间', width: 160 },
-  { key: 'developmentCompletedAt', label: '开发完成时间', width: 160 },
+  { key: 'title', label: '需求标题', group: '基础字段', minWidth: 220, fixed: false },
+  { key: 'requirementNo', label: '需求编号', group: '基础字段', width: 190 },
+  { key: 'type', label: '类型', group: '基础字段', width: 100 },
+  { key: 'priority', label: '优先级', group: '基础字段', width: 90 },
+  { key: 'status', label: '状态', group: '基础字段', width: 100 },
+  { key: 'creatorName', label: '提出人', group: '人员与时间', width: 100 },
+  { key: 'assigneeName', label: '负责人', group: '人员与时间', width: 100 },
+  { key: 'opsFollowName', label: '运营跟进人', group: '人员与时间', width: 110 },
+  { key: 'maintFollowName', label: '运维跟进人', group: '人员与时间', width: 110 },
+  { key: 'departmentName', label: '归属部门', group: '基础字段', width: 120 },
+  { key: 'createdAt', label: '创建时间', group: '人员与时间', width: 170 },
+  { key: 'analysisCompletedAt', label: '分析完成时间', group: '人员与时间', width: 160 },
+  { key: 'confirmAt', label: '需求确认时间', group: '人员与时间', width: 160 },
+  { key: 'developmentCompletedAt', label: '开发完成时间', group: '人员与时间', width: 160 },
   { key: 'operations', label: '操作', width: 120, fixed: 'right' },
 ]
 
@@ -347,31 +396,90 @@ const allColumns: ColumnDef[] = [
 const defaultColumnKeys = ['title', 'requirementNo', 'type', 'priority', 'status', 'creatorName', 'assigneeName', 'createdAt', 'operations']
 
 const selectedColumnKeys = ref<string[]>([...defaultColumnKeys])
+const draftColumnKeys = ref<string[]>([])
 const showColumnConfig = ref(false)
+const selectedColumnListRef = ref<HTMLElement>()
+let selectedColumnSortable: Sortable | null = null
 
-const checkAll = computed(() => {
-  const optional = allColumns.filter(c => c.key !== 'operations')
-  return optional.every(c => selectedColumnKeys.value.includes(c.key))
+const configurableColumns = computed(() => allColumns.filter(c => c.key !== 'operations'))
+
+const columnGroups = computed(() => {
+  const groupOrder = ['人员与时间', '基础字段', '自定义字段']
+  const grouped = new Map<string, ColumnDef[]>()
+  configurableColumns.value.forEach((column) => {
+    const groupName = column.group || '自定义字段'
+    if (!grouped.has(groupName)) {
+      grouped.set(groupName, [])
+    }
+    grouped.get(groupName)!.push(column)
+  })
+  return groupOrder
+    .filter(groupName => grouped.has(groupName))
+    .map(groupName => ({
+      title: groupName,
+      columns: grouped.get(groupName)!,
+    }))
 })
 
-const isIndeterminate = computed(() => {
-  const optional = allColumns.filter(c => c.key !== 'operations')
-  const checked = optional.filter(c => selectedColumnKeys.value.includes(c.key)).length
-  return checked > 0 && checked < optional.length
+const draftSelectedColumns = computed(() => {
+  const columnMap = new Map(configurableColumns.value.map(column => [column.key, column]))
+  return draftColumnKeys.value
+    .map(key => columnMap.get(key))
+    .filter((column): column is ColumnDef => Boolean(column))
 })
-
-function handleCheckAll(val: boolean) {
-  const optional = allColumns.filter(c => c.key !== 'operations')
-  selectedColumnKeys.value = val ? optional.map(c => c.key) : []
-}
 
 const visibleColumns = computed(() => {
-  const cols = allColumns.filter(c => selectedColumnKeys.value.includes(c.key))
+  const columnMap = new Map(allColumns.map(column => [column.key, column]))
+  const cols = selectedColumnKeys.value
+    .map(key => columnMap.get(key))
+    .filter((column): column is ColumnDef => Boolean(column))
   if (!cols.find(c => c.key === 'operations')) {
     cols.push(allColumns.find(c => c.key === 'operations')!)
   }
   return cols
 })
+
+function openColumnConfig() {
+  draftColumnKeys.value = selectedColumnKeys.value.filter(key => key !== 'operations')
+  showColumnConfig.value = true
+}
+
+async function initSelectedColumnSortable() {
+  await nextTick()
+  selectedColumnSortable?.destroy()
+  if (!selectedColumnListRef.value) return
+  selectedColumnSortable = Sortable.create(selectedColumnListRef.value, {
+    animation: 150,
+    handle: '.column-config__drag-handle',
+    draggable: '.column-config__selected-item',
+    ghostClass: 'column-config__selected-item--ghost',
+    onEnd: handleColumnSortEnd,
+  })
+}
+
+function handleColumnSortEnd(evt: SortableEvent) {
+  const { oldIndex, newIndex } = evt
+  if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return
+
+  const keys = [...draftColumnKeys.value]
+  const [moved] = keys.splice(oldIndex, 1)
+  if (!moved) return
+  keys.splice(newIndex, 0, moved)
+  draftColumnKeys.value = keys
+}
+
+function removeDraftColumn(key: string) {
+  draftColumnKeys.value = draftColumnKeys.value.filter(columnKey => columnKey !== key)
+}
+
+function handleCancelColumnConfig() {
+  showColumnConfig.value = false
+}
+
+function handleColumnConfigClose() {
+  selectedColumnSortable?.destroy()
+  selectedColumnSortable = null
+}
 
 async function loadColumnConfig() {
   try {
@@ -386,8 +494,9 @@ async function loadColumnConfig() {
 
 async function saveColumns() {
   try {
-    const keys = selectedColumnKeys.value.filter(k => k !== 'operations')
+    const keys = normalizeColumnKeys(draftColumnKeys.value)
     await saveColumnConfig('requirement_list', keys)
+    selectedColumnKeys.value = [...keys, 'operations']
     ElMessage.success('列配置已保存')
     showColumnConfig.value = false
   } catch {
@@ -427,16 +536,8 @@ function priorityLabel(code: string) {
 }
 
 function normalizeColumnKeys(keys: string[]) {
-  const normalized = keys.filter(key => key !== 'operations')
-  if (!normalized.includes('requirementNo')) {
-    const typeIndex = normalized.indexOf('type')
-    if (typeIndex >= 0) {
-      normalized.splice(typeIndex, 0, 'requirementNo')
-    } else {
-      normalized.unshift('requirementNo')
-    }
-  }
-  return normalized
+  const allowedKeys = new Set(configurableColumns.value.map(column => column.key))
+  return Array.from(new Set(keys.filter(key => key !== 'operations' && allowedKeys.has(key))))
 }
 
 // Filter user list
@@ -778,6 +879,11 @@ onMounted(() => {
   refreshViewCounts()
 })
 
+onBeforeUnmount(() => {
+  selectedColumnSortable?.destroy()
+  selectedColumnSortable = null
+})
+
 watch(tableData, (rows) => {
   const validRowIds = new Set(
     rows
@@ -842,9 +948,118 @@ watch(tableData, (rows) => {
 }
 
 .column-config {
-  .column-item {
-    margin-bottom: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 262px;
+  gap: 12px;
+  min-height: 520px;
+}
+
+.column-config__panel {
+  overflow: hidden;
+  border: 1px solid var(--el-border-color);
+  border-radius: 2px;
+  background: var(--el-bg-color);
+}
+
+.column-config__panel-title {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 16px;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+}
+
+.column-config__panel-body {
+  height: 478px;
+  overflow-y: auto;
+  padding: 14px 20px 20px;
+}
+
+.column-config__group + .column-config__group {
+  margin-top: 14px;
+}
+
+.column-config__group-title {
+  margin-bottom: 8px;
+  color: var(--el-text-color-secondary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.column-config__checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+  column-gap: 44px;
+  row-gap: 10px;
+}
+
+.column-config__checkbox {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  margin-right: 0;
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+}
+
+.column-config__selected-list {
+  height: 478px;
+  overflow-y: auto;
+  padding: 22px 18px;
+}
+
+.column-config__selected-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+}
+
+.column-config__selected-item--ghost {
+  opacity: 0.55;
+  background: var(--el-color-primary-light-9);
+}
+
+.column-config__drag-handle {
+  color: var(--el-text-color-placeholder);
+  cursor: grab;
+
+  &:active {
+    cursor: grabbing;
   }
+}
+
+.column-config__selected-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.column-config__remove {
+  color: var(--el-text-color-placeholder);
+
+  &:hover {
+    color: var(--el-color-danger);
+  }
+}
+
+.column-config__empty {
+  height: 100%;
+  justify-content: center;
+}
+
+:deep(.column-config-dialog .el-dialog__body) {
+  padding: 20px 22px;
+}
+
+:deep(.column-config-dialog .el-dialog__footer) {
+  padding: 16px 22px;
+  border-top: 1px solid var(--el-border-color-lighter);
 }
 
 .view-switch {

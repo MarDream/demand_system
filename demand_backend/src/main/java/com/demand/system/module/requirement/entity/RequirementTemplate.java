@@ -25,6 +25,10 @@ public class RequirementTemplate {
 
     private Integer isActive;
 
+    private Integer isDefault;
+
+    private Integer sortOrder;
+
     private Integer creatorId;
 
     private LocalDateTime createdAt;
@@ -71,6 +75,22 @@ public class RequirementTemplate {
 
     public void setIsActive(Integer isActive) {
         this.isActive = isActive;
+    }
+
+    public Integer getIsDefault() {
+        return isDefault;
+    }
+
+    public void setIsDefault(Integer isDefault) {
+        this.isDefault = isDefault;
+    }
+
+    public Integer getSortOrder() {
+        return sortOrder;
+    }
+
+    public void setSortOrder(Integer sortOrder) {
+        this.sortOrder = sortOrder;
     }
 
     public Integer getCreatorId() {

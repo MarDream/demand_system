@@ -6,11 +6,14 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
+import com.demand.system.module.requirement.dto.RequirementAttachmentDTO;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Objects;
 
-@TableName("requirement_approval_evaluations")
+@TableName(value = "requirement_approval_evaluations", autoResultMap = true)
 public class RequirementApprovalEvaluation {
 
     @TableId(type = IdType.AUTO)
@@ -38,6 +41,9 @@ public class RequirementApprovalEvaluation {
     private Integer rating;
 
     private String content;
+
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private List<RequirementAttachmentDTO> attachments;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
@@ -136,6 +142,14 @@ public class RequirementApprovalEvaluation {
 
     public void setContent(String content) {
         this.content = content;
+    }
+
+    public List<RequirementAttachmentDTO> getAttachments() {
+        return attachments;
+    }
+
+    public void setAttachments(List<RequirementAttachmentDTO> attachments) {
+        this.attachments = attachments;
     }
 
     public LocalDateTime getCreatedAt() {

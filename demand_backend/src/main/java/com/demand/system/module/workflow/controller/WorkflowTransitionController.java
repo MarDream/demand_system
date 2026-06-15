@@ -8,6 +8,7 @@ import com.demand.system.module.workflow.dto.TransitionRequest;
 import com.demand.system.module.workflow.dto.TransitionResponse;
 import com.demand.system.module.workflow.entity.WorkflowTransition;
 import com.demand.system.module.workflow.service.WorkflowService;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -23,6 +24,7 @@ public class WorkflowTransitionController {
     }
 
     @GetMapping("/{id}/available-transitions")
+    @PreAuthorize("isAuthenticated()")
     public Result<List<WorkflowTransition>> available(@PathVariable("id") Long requirementId) {
         Long userId = SecurityUtils.getCurrentUserId();
         if (userId == null) {
@@ -32,6 +34,7 @@ public class WorkflowTransitionController {
     }
 
     @PostMapping("/{id}/transition")
+    @PreAuthorize("isAuthenticated()")
     public Result<TransitionResponse> transition(@PathVariable("id") Long requirementId,
                                                  @RequestBody TransitionRequest request) {
         Long userId = SecurityUtils.getCurrentUserId();

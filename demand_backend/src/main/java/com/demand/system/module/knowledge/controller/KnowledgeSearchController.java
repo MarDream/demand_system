@@ -5,6 +5,7 @@ import com.demand.system.module.knowledge.dto.KnowledgeSearchRequest;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse;
 import com.demand.system.module.knowledge.service.KnowledgeSearchService;
 import jakarta.validation.Valid;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -20,12 +21,14 @@ public class KnowledgeSearchController {
     }
 
     @PostMapping("/search")
+    @PreAuthorize("isAuthenticated()")
     public Result<KnowledgeSearchResponse> search(@Valid @RequestBody KnowledgeSearchRequest request) {
         KnowledgeSearchResponse response = searchService.search(request);
         return Result.success(response);
     }
 
     @GetMapping("/stats")
+    @PreAuthorize("isAuthenticated()")
     public Result<Map<String, Object>> stats() {
         Map<String, Object> stats = new HashMap<>();
         stats.put("module", "knowledge-rag");

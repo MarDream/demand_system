@@ -1,9 +1,15 @@
 <template>
   <PageContainer title="通知中心">
     <template #headerActions>
-      <el-button type="primary" size="small" @click="handleMarkAllRead" :disabled="list.every(n => n.isRead === 1)">
+      <AppButton
+        permission="button:notification:manage"
+        type="primary"
+        size="small"
+        :disabled="list.every(n => n.isRead === 1)"
+        @click="handleMarkAllRead"
+      >
         全部已读
-      </el-button>
+      </AppButton>
     </template>
 
     <TableCard>
@@ -57,6 +63,7 @@ import { ElMessage } from 'element-plus'
 import { getNotificationList, markAsRead, markAllAsRead } from '@/api/modules/notification'
 import PageContainer from '@/components/common/PageContainer.vue'
 import TableCard from '@/components/common/TableCard.vue'
+import AppButton from '@/components/common/AppButton.vue'
 import { formatDate } from '@/utils/format'
 
 const router = useRouter()

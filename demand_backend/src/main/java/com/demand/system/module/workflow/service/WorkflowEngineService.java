@@ -294,10 +294,10 @@ public class WorkflowEngineService {
 
         if (approvalEvaluationRequired && currentNode != null) {
             approvalEvaluationService.saveOnApprovalTransition(
-                    instance, currentNode, newTransition.getId(), operatorId, request.getRating(), request.getComment());
+                    instance, currentNode, newTransition.getId(), operatorId, request.getRating(), request.getComment(), request.getAttachments());
         } else {
             approvalEvaluationService.saveOnTransition(
-                    instance, currentNode != null ? currentNode : targetNode, newTransition.getId(), operatorId, request.getComment());
+                    instance, currentNode != null ? currentNode : targetNode, newTransition.getId(), operatorId, request.getComment(), request.getAttachments());
         }
 
         String newStatus = "running";

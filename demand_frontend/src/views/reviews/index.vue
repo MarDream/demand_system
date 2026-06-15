@@ -52,7 +52,7 @@
         <el-table-column label="操作" width="100">
           <template #default="{ row }">
             <el-tooltip content="查看详情">
-              <el-button link type="primary" @click="viewDetail(row)"><el-icon><View /></el-icon></el-button>
+              <el-button v-permission="'button:review:view'" link type="primary" @click="viewDetail(row)"><el-icon><View /></el-icon></el-button>
             </el-tooltip>
             <AppButton link type="primary" permission="button:review:update" @click="editReview(row)"><el-icon><EditPen /></el-icon></AppButton>
           </template>

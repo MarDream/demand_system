@@ -5,6 +5,7 @@ import com.demand.system.common.result.Result;
 import com.demand.system.module.preview.PreviewService;
 import com.demand.system.module.preview.dto.AsyncPreviewVO;
 import com.demand.system.module.preview.dto.PreviewUrlVO;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -31,6 +32,7 @@ public class PreviewController {
      * 两种模式二选一；同时传或都不传都会 400。</p>
      */
     @GetMapping("/office")
+    @PreAuthorize("isAuthenticated()")
     public Result<PreviewUrlVO> buildOfficePreviewUrl(@RequestParam(value = "knowledgeBaseId", required = false) Long knowledgeBaseId,
                                                       @RequestParam(value = "documentId", required = false) Long documentId,
                                                       @RequestParam(value = "fileUrl", required = false) String fileUrl,
@@ -56,6 +58,7 @@ public class PreviewController {
      * 单次 HTTP 调用都在 1s 量级，不会被前端 cancel。</p>
      */
     @GetMapping("/office-submit")
+    @PreAuthorize("isAuthenticated()")
     public Result<AsyncPreviewVO> submitOfficePreview(@RequestParam(value = "knowledgeBaseId", required = false) Long knowledgeBaseId,
                                                      @RequestParam(value = "documentId", required = false) Long documentId,
                                                      @RequestParam(value = "fileUrl", required = false) String fileUrl,
@@ -84,6 +87,7 @@ public class PreviewController {
      * 返回 {@code status=completed} 时 {@code previewUrl} 可直接嵌入 iframe。</p>
      */
     @GetMapping("/office-status")
+    @PreAuthorize("isAuthenticated()")
     public Result<AsyncPreviewVO> pollOfficeStatus(@RequestParam("taskId") String taskId,
                                                    @RequestParam(value = "previewUrl", required = false) String previewUrl) {
         try {
@@ -103,6 +107,7 @@ public class PreviewController {
      * {@code /office-submit} + {@code /office-status}。</p>
      */
     @GetMapping("/office-async")
+    @PreAuthorize("isAuthenticated()")
     public Result<AsyncPreviewVO> buildOfficePreviewUrlAsync(@RequestParam(value = "knowledgeBaseId", required = false) Long knowledgeBaseId,
                                                              @RequestParam(value = "documentId", required = false) Long documentId,
                                                              @RequestParam(value = "fileUrl", required = false) String fileUrl,

@@ -6,8 +6,8 @@
     </div>
 
     <el-table :data="templates" border v-loading="loading">
-      <el-table-column prop="requirementTypeCode" label="需求类型" width="150" />
-      <el-table-column prop="templateName" label="模板名称" />
+      <el-table-column prop="requirementTypeName" label="需求类型" width="150" />
+      <el-table-column prop="templateName" label="模板名称" min-width="200" />
       <el-table-column prop="isActive" label="状态" width="100">
         <template #default="{ row }">
           <el-tag :type="row.isActive === 1 ? 'success' : 'info'">
@@ -15,9 +15,23 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="250">
+      <el-table-column prop="isDefault" label="默认" width="80" align="center">
+        <template #default="{ row }">
+          <el-tag v-if="row.isDefault === 1" type="warning" size="small">默认</el-tag>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="280">
         <template #default="{ row }">
           <AppButton size="small" permission="button:requirement-template:update" @click="handleEdit(row)">编辑</AppButton>
+          <AppButton
+            size="small"
+            :type="row.isDefault === 1 ? '' : 'warning'"
+            permission="button:requirement-template:toggle"
+            @click="handleSetDefault(row)"
+          >
+            {{ row.isDefault === 1 ? '已是默认' : '设为默认' }}
+          </AppButton>
           <AppButton
             size="small"
             :type="row.isActive === 1 ? 'warning' : 'success'"
@@ -34,68 +48,42 @@
     <el-dialog
       v-model="dialogVisible"
       :title="dialogTitle"
-      width="800px"
+      width="920px"
       :close-on-click-modal="false"
+      class="template-dialog"
+      @closed="onDialogClosed"
     >
       <el-form :model="form" label-width="120px" v-loading="saving">
         <el-form-item label="需求类型">
-          <el-input v-model="form.requirementTypeCode" placeholder="如: FEATURE, BUG" />
+          <el-select
+            v-model="form.requirementTypeCode"
+            :disabled="isEditMode"
+            placeholder="请选择需求类型"
+          >
+            <el-option
+              v-for="type in configTypes"
+              :key="type.code"
+              :label="type.name"
+              :value="type.code"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="模板名称">
           <el-input v-model="form.templateName" placeholder="如: 功能需求模板" />
         </el-form-item>
-        <el-form-item label="模板字段">
-          <div class="template-sections">
-            <div
-              v-for="(section, index) in form.templateContent.sections"
-              :key="index"
-              class="section-item"
-            >
-              <el-card>
-                <div class="section-header">
-                  <span>字段 {{ index + 1 }}</span>
-                  <el-button
-                    size="small"
-                    type="danger"
-                    text
-                    @click="removeSection(index)"
-                  >
-                    删除
-                  </el-button>
-                </div>
-                <el-form-item label="字段ID">
-                  <el-input v-model="section.sectionId" placeholder="如: background" />
-                </el-form-item>
-                <el-form-item label="字段名称">
-                  <el-input v-model="section.sectionName" placeholder="如: 历史背景" />
-                </el-form-item>
-                <el-form-item label="字段类型">
-                  <el-select v-model="section.fieldType">
-                    <el-option label="单行文本" value="text" />
-                    <el-option label="多行文本" value="textarea" />
-                    <el-option label="富文本" value="richtext" />
-                  </el-select>
-                </el-form-item>
-                <el-form-item label="是否必填">
-                  <el-switch v-model="section.required" />
-                </el-form-item>
-                <el-form-item label="占位提示">
-                  <el-input v-model="section.placeholder" />
-                </el-form-item>
-                <el-form-item v-if="section.fieldType === 'text'" label="最大长度">
-                  <el-input-number v-model="section.maxLength" :min="1" />
-                </el-form-item>
-                <el-form-item v-if="section.fieldType === 'richtext'" label="默认内容">
-                  <el-input
-                    v-model="section.defaultContent"
-                    type="textarea"
-                    :rows="3"
-                    placeholder="HTML格式"
-                  />
-                </el-form-item>
-              </el-card>
-            </div>
-            <el-button @click="addSection">添加字段</el-button>
+        <el-form-item label="设为默认">
+          <el-switch v-model="isDefaultSwitch" />
+          <span class="form-tip">同一类型下只能有一个默认模板</span>
+        </el-form-item>
+        <el-form-item label="模板内容">
+          <div class="template-editor">
+            <IsleEditorToolbar v-if="templateEditorInstance" :editor="templateEditorInstance" />
+            <IsleEditor
+              v-model="form.templateContent.contentHtml"
+              :extensions="editorExtensions"
+              locale="zh"
+              @create="onTemplateEditorCreate"
+            />
           </div>
         </el-form-item>
       </el-form>
@@ -108,33 +96,88 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onBeforeUnmount, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getAllRequirementTemplates,
   saveRequirementTemplate,
   deleteRequirementTemplate,
-  toggleRequirementTemplateStatus
+  toggleRequirementTemplateStatus,
+  setDefaultRequirementTemplate
 } from '@/api/modules/requirement'
-import type { RequirementTemplate, TemplateSection } from '@/types/requirement'
+import { requirementConfigApi, type RequirementType } from '@/api/modules/requirementConfig'
+import type { RequirementTemplate, RequirementTemplateSave, TemplateSection } from '@/types/requirement'
+import AppButton from '@/components/common/AppButton.vue'
+import { IsleEditor, IsleEditorToolbar, RichTextKit } from '@isle-editor/vue3'
+import Image from '@tiptap/extension-image'
+import '@isle-editor/vue3/dist/style.css'
+
+const props = defineProps<{
+  preselectedTypeCode?: string
+}>()
 
 const templates = ref<RequirementTemplate[]>([])
 const loading = ref(false)
 const saving = ref(false)
 const dialogVisible = ref(false)
 const dialogTitle = ref('新建模板')
-const savePermission = computed(() => form.value.id ? 'button:requirement-template:update' : 'button:requirement-template:create')
-const form = ref<RequirementTemplate>({
+const isEditMode = ref(false)
+const configTypes = ref<RequirementType[]>([])
+const templateEditorInstance = ref<any>(null)
+
+const savePermission = computed(() => isEditMode.value ? 'button:requirement-template:update' : 'button:requirement-template:create')
+
+const form = ref<RequirementTemplateSave>({
   requirementTypeCode: '',
   templateName: '',
   templateContent: {
-    sections: []
-  }
+    contentHtml: '',
+  },
+  isDefault: 0,
+})
+
+const editorExtensions = [
+  RichTextKit.configure({
+    placeholder: { placeholder: '请输入模板富文本内容...' },
+  }),
+  Image.configure({
+    inline: false,
+    allowBase64: true,
+  }),
+]
+
+const isDefaultSwitch = computed({
+  get: () => form.value.isDefault === 1,
+  set: (val: boolean) => { form.value.isDefault = val ? 1 : 0 }
 })
 
 onMounted(() => {
   loadTemplates()
+  loadConfigTypes()
 })
+
+onBeforeUnmount(() => {
+  templateEditorInstance.value?.destroy?.()
+  templateEditorInstance.value = null
+})
+
+watch(dialogVisible, (visible) => {
+  if (!visible) return
+  const html = form.value.templateContent.contentHtml || ''
+  if (templateEditorInstance.value && templateEditorInstance.value.getHTML?.() !== html) {
+    templateEditorInstance.value.commands?.setContent?.(html)
+  }
+})
+
+async function loadConfigTypes() {
+  try {
+    const res = await requirementConfigApi.listTypes() as any
+    const list = Array.isArray(res) ? res : res?.data || []
+    configTypes.value = list
+  } catch (error) {
+    console.error('加载需求类型列表失败', error)
+  }
+}
 
 async function loadTemplates() {
   loading.value = true
@@ -147,41 +190,100 @@ async function loadTemplates() {
   }
 }
 
+function buildLegacyTemplateContent(sections: TemplateSection[] = []) {
+  return sections.map((section) => {
+    if (section.fieldType === 'richtext' && section.defaultContent) {
+      return section.defaultContent
+    }
+    return `<h3>${section.sectionName || '未命名段落'}</h3><p>${section.placeholder || '请填写...'}</p>`
+  }).filter(Boolean).join('')
+}
+
+function normalizeTemplateContent(template?: RequirementTemplate | null) {
+  const directContent = template?.templateContent?.contentHtml?.trim()
+  if (directContent) return directContent
+  const sections = template?.templateContent?.sections || []
+  return buildLegacyTemplateContent(sections)
+}
+
 function handleCreate() {
   dialogTitle.value = '新建模板'
+  isEditMode.value = false
   form.value = {
-    requirementTypeCode: '',
+    requirementTypeCode: props.preselectedTypeCode || '',
     templateName: '',
     templateContent: {
-      sections: []
-    }
+      contentHtml: '',
+    },
+    isDefault: 0,
   }
   dialogVisible.value = true
 }
 
 function handleEdit(row: RequirementTemplate) {
   dialogTitle.value = '编辑模板'
-  form.value = JSON.parse(JSON.stringify(row))
+  isEditMode.value = true
+  form.value = {
+    id: row.id,
+    requirementTypeCode: row.requirementTypeCode,
+    templateName: row.templateName,
+    templateContent: {
+      contentHtml: normalizeTemplateContent(row),
+    },
+    isDefault: row.isDefault || 0,
+    sortOrder: row.sortOrder,
+  }
   dialogVisible.value = true
+}
+
+function onTemplateEditorCreate({ editor }: { editor: any }) {
+  templateEditorInstance.value = editor
+  const html = form.value.templateContent.contentHtml || ''
+  if (html) {
+    editor.commands?.setContent?.(html)
+  }
+}
+
+function onDialogClosed() {
+  if (templateEditorInstance.value) {
+    templateEditorInstance.value.commands?.clearContent?.()
+  }
+}
+
+function isMeaningfulHtml(html: string) {
+  const text = html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim()
+  return text.length > 0
 }
 
 async function handleSave() {
   if (!form.value.requirementTypeCode) {
-    ElMessage.warning('请输入需求类型')
+    ElMessage.warning('请选择需求类型')
     return
   }
   if (!form.value.templateName) {
     ElMessage.warning('请输入模板名称')
     return
   }
-  if (form.value.templateContent.sections.length === 0) {
-    ElMessage.warning('请至少添加一个字段')
+
+  const html = templateEditorInstance.value?.getHTML?.() || form.value.templateContent.contentHtml || ''
+  if (!isMeaningfulHtml(html)) {
+    ElMessage.warning('请输入模板内容')
     return
   }
 
   saving.value = true
   try {
-    await saveRequirementTemplate(form.value)
+    const payload: RequirementTemplateSave = {
+      id: isEditMode.value ? form.value.id : undefined,
+      requirementTypeCode: form.value.requirementTypeCode,
+      templateName: form.value.templateName,
+      templateContent: {
+        contentHtml: html,
+      },
+      isDefault: form.value.isDefault,
+      sortOrder: form.value.sortOrder,
+    }
+    await saveRequirementTemplate(payload)
     ElMessage.success('保存成功')
     dialogVisible.value = false
     loadTemplates()
@@ -189,6 +291,20 @@ async function handleSave() {
     ElMessage.error('保存失败')
   } finally {
     saving.value = false
+  }
+}
+
+async function handleSetDefault(row: RequirementTemplate) {
+  if (row.isDefault === 1) {
+    ElMessage.info('该模板已是默认模板')
+    return
+  }
+  try {
+    await setDefaultRequirementTemplate(row.id!)
+    ElMessage.success('已设为默认模板')
+    loadTemplates()
+  } catch (error) {
+    ElMessage.error('操作失败')
   }
 }
 
@@ -217,20 +333,6 @@ async function handleDelete(row: RequirementTemplate) {
     }
   }
 }
-
-function addSection() {
-  form.value.templateContent.sections.push({
-    sectionId: '',
-    sectionName: '',
-    fieldType: 'text',
-    required: false,
-    placeholder: ''
-  })
-}
-
-function removeSection(index: number) {
-  form.value.templateContent.sections.splice(index, 1)
-}
 </script>
 
 <style scoped lang="scss">
@@ -248,20 +350,27 @@ function removeSection(index: number) {
     }
   }
 
-  .template-sections {
-    width: 100%;
-
-    .section-item {
-      margin-bottom: 16px;
-
-      .section-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 12px;
-        font-weight: bold;
-      }
-    }
+  .form-tip {
+    margin-left: 8px;
+    color: var(--color-muted-text);
+    font-size: 12px;
   }
+}
+
+.template-editor {
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--el-border-color);
+  border-radius: 6px;
+  background: var(--el-bg-color);
+}
+
+:deep(.template-editor .isle-editor) {
+  min-height: 320px;
+}
+
+:deep(.template-editor .ProseMirror) {
+  min-height: 260px;
+  padding: 16px;
 }
 </style>

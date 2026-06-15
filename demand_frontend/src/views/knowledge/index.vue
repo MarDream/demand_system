@@ -191,6 +191,7 @@
       <template #footer>
         <el-button @click="showMigrateDialog = false">取消</el-button>
         <el-button
+          v-permission="'button:knowledge:migrate'"
           type="primary"
           :loading="migrating"
           :disabled="!migrateForm.targetId"

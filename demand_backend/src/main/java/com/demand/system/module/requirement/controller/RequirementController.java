@@ -217,7 +217,7 @@ public class RequirementController {
         if (userId == null) {
             return Result.fail(401, "未登录或登录已过期");
         }
-        approvalEvaluationService.addSupplement(id, evaluationId, userId, dto.getContent());
+        approvalEvaluationService.addSupplement(id, evaluationId, userId, dto.getContent(), dto.getAttachments());
         return Result.success();
     }
 

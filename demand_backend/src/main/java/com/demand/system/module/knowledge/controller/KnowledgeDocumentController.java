@@ -7,6 +7,7 @@ import com.demand.system.module.knowledge.dto.KnowledgeDocumentVO;
 import com.demand.system.module.knowledge.service.KnowledgeDocumentService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -25,6 +26,7 @@ public class KnowledgeDocumentController {
     }
 
     @PostMapping("/upload")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:knowledge:upload')")
     public Result<KnowledgeDocumentVO> upload(
             @PathVariable Long knowledgeBaseId,
             @RequestParam("file") MultipartFile file) {
@@ -34,6 +36,7 @@ public class KnowledgeDocumentController {
     }
 
     @GetMapping
+    @PreAuthorize("isAuthenticated()")
     public Result<PageResult<KnowledgeDocumentVO>> list(
             @PathVariable Long knowledgeBaseId,
             @RequestParam(defaultValue = "1") int pageNum,
@@ -59,6 +62,7 @@ public class KnowledgeDocumentController {
     }
 
     @DeleteMapping("/{documentId}")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:knowledge:delete')")
     public Result<Void> delete(
             @PathVariable Long knowledgeBaseId,
             @PathVariable Long documentId) {
@@ -67,6 +71,7 @@ public class KnowledgeDocumentController {
     }
 
     @PostMapping("/{documentId}/share")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:knowledge:share')")
     public Result<String> generateShareLink(
             @PathVariable Long knowledgeBaseId,
             @PathVariable Long documentId,
@@ -85,6 +90,7 @@ public class KnowledgeDocumentController {
     }
 
     @PostMapping("/retry")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:knowledge:upload')")
     public Result<Map<String, Object>> retryDocuments(
             @PathVariable Long knowledgeBaseId,
             @RequestBody Map<String, List<Long>> body) {
@@ -97,6 +103,7 @@ public class KnowledgeDocumentController {
     }
 
     @PostMapping("/batch-delete")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:knowledge:delete')")
     public Result<Map<String, Object>> batchDelete(
             @PathVariable Long knowledgeBaseId,
             @RequestBody Map<String, List<Long>> body) {
@@ -115,6 +122,7 @@ public class KnowledgeDocumentController {
      * 保留预览和下载能力。失败/卡死/pending/indexing 状态均可调用。</p>
      */
     @PostMapping("/{documentId}/skip-indexing")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:knowledge:upload')")
     public Result<Void> skipIndexing(
             @PathVariable Long knowledgeBaseId,
             @PathVariable Long documentId) {
@@ -123,6 +131,7 @@ public class KnowledgeDocumentController {
     }
 
     @GetMapping("/{documentId}/preview")
+    @PreAuthorize("isAuthenticated()")
     public Result<String> preview(
             @PathVariable Long knowledgeBaseId,
             @PathVariable Long documentId) {
@@ -131,6 +140,7 @@ public class KnowledgeDocumentController {
     }
 
     @GetMapping("/{documentId}/download")
+    @PreAuthorize("isAuthenticated()")
     public void download(
             @PathVariable Long knowledgeBaseId,
             @PathVariable Long documentId,
@@ -139,6 +149,7 @@ public class KnowledgeDocumentController {
     }
 
     @PostMapping("/batch-download")
+    @PreAuthorize("isAuthenticated()")
     public void batchDownload(
             @PathVariable Long knowledgeBaseId,
             @RequestBody Map<String, List<Long>> body,
