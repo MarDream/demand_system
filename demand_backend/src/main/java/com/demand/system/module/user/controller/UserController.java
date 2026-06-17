@@ -12,6 +12,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/users")
@@ -27,6 +28,15 @@ public class UserController {
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:create', 'button:user:update', 'button:user:delete', 'button:user:batch-delete', 'button:user:export', 'button:user:import', 'button:user:invite')")
     public Result<PageResult<UserVO>> list(UserQueryDTO query) {
         return Result.success(userService.list(query));
+    }
+
+    /**
+     * 获取活跃用户列表（仅 id/username/realName），供前端筛选框使用
+     */
+    @GetMapping("/active")
+    @PreAuthorize("isAuthenticated()")
+    public Result<List<Map<String, Object>>> listActiveUsers() {
+        return Result.success(userService.listActiveUsers());
     }
 
     @GetMapping("/{id}")

@@ -143,7 +143,7 @@
       <div v-if="permissionEditing" style="margin-top: 20px;">
         <div style="margin-bottom: 10px; font-weight: bold;">权限选择</div>
         <el-checkbox-group v-model="selectedPermissions" v-loading="permissionLoading">
-          <el-checkbox v-for="code in grantablePermissions" :key="code" :label="code" />
+          <el-checkbox v-for="code in grantablePermissions" :key="code" :value="code">{{ code }}</el-checkbox>
         </el-checkbox-group>
         <div style="margin-top: 16px; text-align: right;">
           <el-button @click="permissionEditing = false">取消</el-button>

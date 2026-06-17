@@ -81,6 +81,23 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    public List<Map<String, Object>> listActiveUsers() {
+        LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(User::getStatus, User.STATUS_ACTIVE)
+                .select(User::getId, User::getUsername, User::getRealName)
+                .orderByAsc(User::getUsername);
+        return userMapper.selectList(wrapper).stream()
+                .map(u -> {
+                    Map<String, Object> m = new HashMap<>();
+                    m.put("id", u.getId());
+                    m.put("username", u.getUsername());
+                    m.put("realName", u.getRealName());
+                    return m;
+                })
+                .toList();
+    }
+
+    @Override
     public UserVO getById(Long id) {
         User user = userMapper.selectById(id);
         if (user == null) {

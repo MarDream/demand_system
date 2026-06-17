@@ -102,9 +102,6 @@
           </template>
           <template #right>
             <el-button :icon="Setting" circle @click="openColumnConfig" title="列设置" />
-            <el-button v-if="hasPermission('button:requirement:batch-delete')" type="danger" :disabled="selectedIds.length === 0" @click="handleBatchDelete">
-              批量删除
-            </el-button>
           </template>
         </Toolbar>
       </template>
@@ -118,9 +115,25 @@
           :expand-row-keys="expandedRowKeys"
           border
           stripe
-          @selection-change="handleSelectionChange"
         >
-          <el-table-column type="selection" width="50" />
+          <el-table-column
+            key="follow"
+            label=""
+            width="48"
+            align="center"
+          >
+            <template #default="{ row }">
+              <el-tooltip :content="row.followed ? '取消关注' : '添加关注'" placement="top">
+                <el-button
+                  link
+                  :type="row.followed ? 'warning' : 'info'"
+                  :icon="row.followed ? StarFilled : Star"
+                  class="requirement-follow-btn"
+                  @click="handleToggleFollow(row)"
+                />
+              </el-tooltip>
+            </template>
+          </el-table-column>
           <el-table-column
             type="expand"
             width="1"
@@ -180,43 +193,37 @@
                   {{ formatDate(row[col.key]) }}
                 </template>
                 <template v-else-if="col.key === 'operations'">
-                  <el-tooltip :content="row.followed ? '取消关注' : '添加关注'" placement="top">
-                    <el-button
-                      link
-                      :type="row.followed ? 'warning' : 'info'"
-                      :icon="row.followed ? StarFilled : Star"
-                      @click="handleToggleFollow(row)"
-                    />
-                  </el-tooltip>
-                  <!-- 我的待办/已办视图根据operationType显示不同按钮 -->
-                  <template v-if="isPendingView || isDoneView || isFollowView">
-                    <el-button v-if="row.operationType === 'edit' && hasPermission('button:requirement:update')" link type="primary" @click="handleEdit(row)">编辑</el-button>
-                    <el-button v-if="row.operationType === 'approve' && hasPermission('button:requirement:submit')" link type="warning" @click="handleOpen(row)">待办</el-button>
-                    <el-button v-if="row.operationType === 'view'" link type="primary" @click="handleOpen(row)">查看</el-button>
-                  </template>
-                  <!-- 全部需求/草稿视图显示原有操作按钮 -->
-                  <template v-else>
-                    <el-tooltip content="查看详情" placement="top">
-                      <el-button link type="primary" :icon="View" @click="handleOpen(row)" />
-                    </el-tooltip>
-                    <el-tooltip v-if="hasPermission('button:requirement:update')" content="编辑" placement="top">
-                      <el-button
-                        link
-                        type="primary"
-                        :icon="Edit"
-                        @click="handleEdit(row)"
-                      />
-                    </el-tooltip>
-                    <el-popconfirm
-                      v-if="hasPermission('button:requirement:delete')"
-                      title="确定删除该需求吗？"
-                      @confirm="handleDelete(row.id)"
-                    >
-                      <template #reference>
-                        <el-button link type="danger" :icon="Delete" title="删除" />
-                      </template>
-                    </el-popconfirm>
-                  </template>
+                  <div class="requirement-operation-cell">
+                    <!-- 我的待办/已办视图根据operationType显示不同按钮 -->
+                    <template v-if="isPendingView || isDoneView || isFollowView">
+                      <el-button v-if="row.operationType === 'edit' && hasPermission('button:requirement:update')" link type="primary" @click="handleEdit(row)">编辑</el-button>
+                      <el-button v-if="row.operationType === 'approve' && hasPermission('button:requirement:submit')" link type="warning" @click="handleOpen(row)">待办</el-button>
+                      <el-button v-if="row.operationType === 'view'" link type="primary" @click="handleOpen(row)">查看</el-button>
+                    </template>
+                    <!-- 全部需求/草稿视图显示原有操作按钮 -->
+                    <template v-else>
+                      <el-tooltip content="查看详情" placement="top">
+                        <el-button link type="primary" :icon="View" @click="handleOpen(row)" />
+                      </el-tooltip>
+                      <el-tooltip v-if="hasPermission('button:requirement:update')" content="编辑" placement="top">
+                        <el-button
+                          link
+                          type="primary"
+                          :icon="Edit"
+                          @click="handleEdit(row)"
+                        />
+                      </el-tooltip>
+                      <el-popconfirm
+                        v-if="hasPermission('button:requirement:delete')"
+                        title="确定删除该需求吗？"
+                        @confirm="handleDelete(row.id)"
+                      >
+                        <template #reference>
+                          <el-button link type="danger" :icon="Delete" title="删除" />
+                        </template>
+                      </el-popconfirm>
+                    </template>
+                  </div>
                 </template>
                 <template v-else>
                   {{ row[col.key as keyof Requirement] ?? '-' }}
@@ -263,7 +270,7 @@
                 <el-checkbox
                   v-for="col in group.columns"
                   :key="col.key"
-                  :label="col.key"
+                  :value="col.key"
                   class="column-config__checkbox"
                 >
                   {{ col.label }}
@@ -389,7 +396,7 @@ const allColumns: ColumnDef[] = [
   { key: 'analysisCompletedAt', label: '分析完成时间', group: '人员与时间', width: 160 },
   { key: 'confirmAt', label: '需求确认时间', group: '人员与时间', width: 160 },
   { key: 'developmentCompletedAt', label: '开发完成时间', group: '人员与时间', width: 160 },
-  { key: 'operations', label: '操作', width: 120, fixed: 'right' },
+  { key: 'operations', label: '操作', width: 130, fixed: 'right' },
 ]
 
 // 默认显示的列
@@ -545,8 +552,8 @@ const filterUserList = ref<User[]>([])
 
 async function loadFilterUsers() {
   try {
-    const res = await userApi.getUserList({ pageNum: 1, pageSize: 100 }) as any
-    filterUserList.value = res.list
+    const res = await userApi.getFilterUsers() as any
+    filterUserList.value = res || []
   } catch (error) {
     console.error('加载用户列表失败', error)
   }
@@ -569,7 +576,6 @@ const defaultTime = [new Date(2000, 0, 1, 0, 0, 0), new Date(2000, 0, 1, 23, 59,
 // Table data
 const loading = ref(false)
 const tableData = ref<Requirement[]>([])
-const selectedIds = ref<number[]>([])
 const tableRef = ref<TableInstance>()
 const expandedRowKeys = ref<number[]>([])
 
@@ -705,7 +711,6 @@ function handleReset() {
 function handleViewModeChange(value: RequirementViewMode) {
   viewMode.value = value
   pagination.pageNum = 1
-  selectedIds.value = []
   const query: Record<string, string> = {}
   if (value === 'drafts') query.view = 'drafts'
   else if (value === 'pending') query.view = 'pending'
@@ -935,6 +940,63 @@ watch(tableData, (rows) => {
   &.is-expanded {
     transform: rotate(90deg);
   }
+}
+
+.requirement-operation-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+
+  :deep(.el-button.is-link) {
+    padding: 4px 6px;
+    font-size: 14px;
+    border-radius: 4px;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+
+  :deep(.el-button.is-link.is-circle) {
+    padding: 4px;
+  }
+
+  :deep(.el-button.is-link:hover) {
+    background-color: var(--el-color-primary-light-9);
+  }
+
+  :deep(.el-button.is-link.is-danger:hover) {
+    background-color: var(--el-color-danger-light-9);
+  }
+
+  :deep(.el-button.is-link.is-warning:hover) {
+    background-color: var(--el-color-warning-light-9);
+  }
+}
+
+:deep(.requirement-follow-btn) {
+  padding: 4px;
+  font-size: 14px;
+  border-radius: 4px;
+  transition: background-color 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    background-color: var(--el-color-primary-light-9);
+  }
+
+  &.is-warning:hover {
+    background-color: var(--el-color-warning-light-9);
+  }
+}
+
+// 合并复选框列与关注列：去掉中间 cell 边框
+:deep(.el-table__row > td:nth-child(1)),
+:deep(.el-table__header-wrapper th:nth-child(1)) {
+  border-right: none !important;
+}
+
+:deep(.el-table__row > td:nth-child(2)),
+:deep(.el-table__header-wrapper th:nth-child(2)) {
+  border-left: none !important;
+  padding-left: 0 !important;
 }
 
 :deep(.requirement-expand-column) {

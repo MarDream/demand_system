@@ -6,6 +6,11 @@ export function getUserList(params: UserQuery) {
   return request.get<PageResult<User>>('/v1/users', { params })
 }
 
+/** 获取活跃用户列表（仅 id/username/realName），供前端筛选框使用 */
+export function getFilterUsers() {
+  return request.get<Array<{ id: number; username: string; realName: string }>>('/v1/users/active')
+}
+
 export function getUserById(id: number) {
   return request.get<User>('/v1/users/' + id)
 }

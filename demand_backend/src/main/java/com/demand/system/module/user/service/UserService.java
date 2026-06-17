@@ -7,10 +7,13 @@ import com.demand.system.module.user.dto.UserUpdateDTO;
 import com.demand.system.module.user.dto.UserVO;
 
 import java.util.List;
+import java.util.Map;
 
 public interface UserService {
 
     PageResult<UserVO> list(UserQueryDTO query);
+
+    List<Map<String, Object>> listActiveUsers();
 
     UserVO getById(Long id);
 

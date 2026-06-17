@@ -1,7 +1,7 @@
 package com.demand.system.module.knowledge.vectorstore;
 
-import com.alibaba.fastjson.JSONObject;
 import com.demand.system.module.knowledge.config.MilvusConfig;
+import com.google.gson.JsonObject;
 import io.milvus.v2.client.MilvusClientV2;
 import io.milvus.v2.client.ConnectConfig;
 import io.milvus.v2.common.DataType;
@@ -14,6 +14,7 @@ import io.milvus.v2.service.collection.response.GetCollectionStatsResp;
 import io.milvus.v2.service.vector.request.DeleteReq;
 import io.milvus.v2.service.vector.request.InsertReq;
 import io.milvus.v2.service.vector.request.SearchReq;
+import io.milvus.v2.service.vector.request.data.FloatVec;
 import io.milvus.v2.service.vector.response.SearchResp;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -116,23 +117,23 @@ public class MilvusVectorStore {
         if (documents.isEmpty()) return;
         String collectionName = milvusConfig.getCollectionName();
 
-        List<JSONObject> data = new ArrayList<>();
+        List<JsonObject> data = new ArrayList<>();
         for (VectorDocument doc : documents) {
-            JSONObject row = new JSONObject();
-            row.put("id", doc.getId());
+            JsonObject row = new JsonObject();
+            row.addProperty("id", doc.getId());
             List<Float> vectorList = new ArrayList<>(doc.getVector().length);
             for (float v : doc.getVector()) {
                 vectorList.add(v);
             }
-            row.put("dense_vector", vectorList);
-            row.put("knowledge_base_id", String.valueOf(doc.getKnowledgeBaseId()));
-            row.put("document_id", String.valueOf(doc.getDocumentId()));
-            row.put("chunk_index", doc.getChunkIndex());
-            row.put("text", doc.getText());
-            row.put("section_title", doc.getSectionTitle() != null ? doc.getSectionTitle() : "");
-            row.put("page_num", doc.getPageNum() != null ? doc.getPageNum() : 0);
-            row.put("file_name", doc.getFileName() != null ? doc.getFileName() : "");
-            row.put("file_type", doc.getFileType() != null ? doc.getFileType() : "");
+            row.add("dense_vector", com.google.gson.JsonParser.parseString(new com.google.gson.Gson().toJson(vectorList)));
+            row.addProperty("knowledge_base_id", String.valueOf(doc.getKnowledgeBaseId()));
+            row.addProperty("document_id", String.valueOf(doc.getDocumentId()));
+            row.addProperty("chunk_index", doc.getChunkIndex());
+            row.addProperty("text", doc.getText());
+            row.addProperty("section_title", doc.getSectionTitle() != null ? doc.getSectionTitle() : "");
+            row.addProperty("page_num", doc.getPageNum() != null ? doc.getPageNum() : 0);
+            row.addProperty("file_name", doc.getFileName() != null ? doc.getFileName() : "");
+            row.addProperty("file_type", doc.getFileType() != null ? doc.getFileType() : "");
             data.add(row);
         }
 
@@ -162,7 +163,7 @@ public class MilvusVectorStore {
 
         SearchReq searchReq = SearchReq.builder()
                 .collectionName(collectionName)
-                .data(Collections.singletonList(queryList))
+                .data(Collections.singletonList(new FloatVec(queryList)))
                 .topK(topK)
                 .filter(filter)
                 .outputFields(List.of("id", "knowledge_base_id", "document_id", "chunk_index",
@@ -176,7 +177,7 @@ public class MilvusVectorStore {
         for (List<SearchResp.SearchResult> searchResults : searchResp.getSearchResults()) {
             for (SearchResp.SearchResult hit : searchResults) {
                 SearchResult sr = new SearchResult();
-                sr.setScore(hit.getDistance() != null ? hit.getDistance() : 0.0f);
+                sr.setScore(hit.getScore() != null ? hit.getScore() : 0.0f);
                 sr.setEntity(hit.getEntity());
                 results.add(sr);
             }

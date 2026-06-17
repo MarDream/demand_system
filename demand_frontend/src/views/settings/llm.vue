@@ -162,7 +162,7 @@
       <el-divider style="margin: 8px 0" />
       <el-checkbox-group v-model="selectedColumnKeys">
         <div v-for="col in allColumns.filter(c => c.key !== 'operations')" :key="col.key" style="margin-bottom: 4px">
-          <el-checkbox :label="col.key">{{ col.label }}</el-checkbox>
+          <el-checkbox :value="col.key">{{ col.label }}</el-checkbox>
         </div>
       </el-checkbox-group>
       <template #footer>
@@ -288,7 +288,7 @@
         <el-empty v-if="!sniffing && sniffedModels.length === 0" description="未发现可用模型" />
         <el-checkbox-group v-model="sniffSelectedModelIds">
           <div v-for="model in sniffedModels" :key="model.modelId" style="margin-bottom: 6px;">
-            <el-checkbox :label="model.modelId" :disabled="model.alreadyExists">
+            <el-checkbox :value="model.modelId" :disabled="model.alreadyExists">
               <span :style="{ color: model.alreadyExists ? '#c0c4cc' : '' }">
                 {{ model.modelId }}
                 <el-tag v-if="model.alreadyExists" size="small" type="info" style="margin-left: 6px;">已导入</el-tag>
