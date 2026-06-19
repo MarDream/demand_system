@@ -27,6 +27,7 @@ export interface Requirement {
   confirmAt: string | null
   developmentCompletedAt: string | null
   attachments?: RequirementAttachment[]
+  transitionAttachments?: TransitionAttachmentGroup[]
   ccUserIds?: number[]
   orderNum: number
   version: number
@@ -56,6 +57,22 @@ export interface RequirementAttachment {
   contentType?: string | null
   bucketName?: string | null
   objectName?: string | null
+  uploadedAt?: string | null
+  uploaderId?: number | null
+  uploaderName?: string | null
+}
+
+/**
+ * 需求详情中流转节点上传的附件分组。
+ * 每个节点上传的附件归为一组，便于前端按节点统一展示。
+ */
+export interface TransitionAttachmentGroup {
+  transitionId?: number | null
+  nodeName?: string | null
+  action?: string | null
+  operatorName?: string | null
+  operatedAt?: string | null
+  attachments?: RequirementAttachment[]
 }
 
 export interface RequirementCreate {

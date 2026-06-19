@@ -10,6 +10,30 @@ import 'remixicon/fonts/remixicon.css'
 import { permission } from '@/directives/permission'
 import { setupDialogEnhancer } from '@/utils/dialogEnhancer'
 
+// 过滤浏览器扩展引起的"Could not establish connection. Receiving end does not exist."
+// 这些错误来自 chrome.runtime.sendMessage（Vue Devtools / Pinia 等扩展），
+// 与应用代码无关，控制台高频输出影响排查体验。
+function isIgnorableExtensionError(message: string | undefined): boolean {
+  if (!message) return false
+  return /Could not establish connection\. Receiving end does not exist/i.test(message)
+}
+
+window.addEventListener('error', (event) => {
+  if (isIgnorableExtensionError(event.message)) {
+    event.preventDefault()
+  }
+})
+
+window.addEventListener('unhandledrejection', (event) => {
+  const reason = event.reason as { message?: string } | string | undefined
+  const message = typeof reason === 'string'
+    ? reason
+    : reason?.message
+  if (isIgnorableExtensionError(message)) {
+    event.preventDefault()
+  }
+})
+
 const app = createApp(App)
 app.use(createPinia())
 app.use(router)

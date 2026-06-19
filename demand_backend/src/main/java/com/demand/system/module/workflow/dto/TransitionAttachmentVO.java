@@ -1,28 +1,21 @@
-package com.demand.system.module.requirement.dto;
+package com.demand.system.module.workflow.dto;
 
-public class RequirementAttachmentDTO {
+import java.time.LocalDateTime;
+
+/**
+ * 流转历史中携带的附件元信息（来自 file_records）。
+ */
+public class TransitionAttachmentVO {
 
     private Long fileId;
-
     private String name;
-
     private String url;
-
     private Long size;
-
     private String contentType;
-
     private String bucketName;
-
     private String objectName;
-
-    /** 上传时间（UTC）。 */
-    private java.time.LocalDateTime uploadedAt;
-
-    /** 上传人 ID。 */
+    private LocalDateTime uploadedAt;
     private Long uploaderId;
-
-    /** 上传人姓名（冗余字段，便于前端直接展示）。 */
     private String uploaderName;
 
     public Long getFileId() {
@@ -81,11 +74,11 @@ public class RequirementAttachmentDTO {
         this.objectName = objectName;
     }
 
-    public java.time.LocalDateTime getUploadedAt() {
+    public LocalDateTime getUploadedAt() {
         return uploadedAt;
     }
 
-    public void setUploadedAt(java.time.LocalDateTime uploadedAt) {
+    public void setUploadedAt(LocalDateTime uploadedAt) {
         this.uploadedAt = uploadedAt;
     }
 

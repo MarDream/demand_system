@@ -16,6 +16,8 @@ public class FileUploadDTO {
 
     private String objectName;
 
+    private Long uploaderId;
+
     public Long getFileId() {
         return fileId;
     }
@@ -70,5 +72,13 @@ public class FileUploadDTO {
 
     public void setObjectName(String objectName) {
         this.objectName = objectName;
+    }
+
+    public Long getUploaderId() {
+        return uploaderId;
+    }
+
+    public void setUploaderId(Long uploaderId) {
+        this.uploaderId = uploaderId;
     }
 }

@@ -23,6 +23,8 @@ export async function uploadRequirementAttachment(file: File): Promise<Requireme
     contentType: uploadResult?.contentType || file.type || undefined,
     bucketName: uploadResult?.bucketName,
     objectName: uploadResult?.objectName,
+    uploadedAt: new Date().toISOString(),
+    uploaderId: uploadResult?.uploaderId,
   }
 }
 

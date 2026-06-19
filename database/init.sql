@@ -1487,6 +1487,7 @@ CREATE TABLE IF NOT EXISTS `workflow_instance_transitions` (
   `started_at` DATETIME NOT NULL COMMENT '进入该节点时间',
   `completed_at` DATETIME DEFAULT NULL COMMENT '离开该节点时间',
   `duration_seconds` BIGINT DEFAULT NULL COMMENT '停留秒数',
+  `attachments_json` JSON DEFAULT NULL COMMENT '附件ID列表(关联 file_records.id)',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   INDEX `idx_instance_id` (`instance_id`),

@@ -67,6 +67,11 @@ public class RequirementVO {
 
     private List<RequirementAttachmentDTO> attachments;
 
+    /**
+     * 流转历史中各节点上传的附件（按节点分组），用于在需求详情"附件"区统一展示。
+     */
+    private List<TransitionAttachmentGroupDTO> transitionAttachments;
+
     private Integer orderNum;
 
     private Integer version;
@@ -342,6 +347,14 @@ public class RequirementVO {
 
     public void setAttachments(List<RequirementAttachmentDTO> attachments) {
         this.attachments = attachments;
+    }
+
+    public List<TransitionAttachmentGroupDTO> getTransitionAttachments() {
+        return transitionAttachments;
+    }
+
+    public void setTransitionAttachments(List<TransitionAttachmentGroupDTO> transitionAttachments) {
+        this.transitionAttachments = transitionAttachments;
     }
 
     public Integer getOrderNum() {

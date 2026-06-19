@@ -39,9 +39,10 @@ E:\Project\mygit\kkFileView  # kkFileView服务源代码，可直接修改适配
 
 | 调用 | 用途 |
 |------|------|
-| `start-all.bat` | 一键启动前后端 + 全部 Docker 容器（含 kkfileview） |
+| `start-all.bat` | 一键启动前后端（**隐藏窗口后台运行**，日志写入 `logs/backend.log`、`logs/frontend.log`，PID 写入 `logs/*.pid`） + 全部 Docker 容器（含 kkfileview） |
 | `start-all.bat check` | 仅健康检查（不启动应用） |
-| `start-all.bat down` | 停止所有 Docker 容器 |
+| `start-all.bat down` | 停止前后端进程（按 PID/端口杀进程树） + 所有 Docker 容器 |
+| `start-all.bat logs <backend\|frontend>` | 实时 tail 后/前端日志（`Ctrl+C` 退出） |
 | `start-all.bat e2e` | 跑全链路 E2E（依赖 + 后端 + 前端 + Playwright） |
 | `start-all.bat contract` | 导出后端 OpenAPI 契约到 `contracts/openapi/` |
 
@@ -49,12 +50,17 @@ E:\Project\mygit\kkFileView  # kkFileView服务源代码，可直接修改适配
 
 ```bash
 # 一键全量启动 (前端5170 + 后端8081 + kkfileview8012 + 全部基础设施)
+# 前后端隐藏窗口后台运行，日志在 logs/ 目录
 start-all.bat
+
+# 实时查看日志（Ctrl+C 退出）
+start-all.bat logs backend
+start-all.bat logs frontend
 
 # 健康检查
 start-all.bat check
 
-# 停止所有容器
+# 停止前后端 + 所有容器
 start-all.bat down
 ```
 

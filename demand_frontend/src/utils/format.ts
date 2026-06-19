@@ -5,6 +5,24 @@ export function formatDate(date: string | Date | null | undefined, format = 'YYY
   return dayjs(date).format(format)
 }
 
+/**
+ * 从文件名中提取小写扩展名。空值/无扩展名返回 ''。
+ * 使用 lastIndexOf('.') 而非 split('.') 避免临时数组分配。
+ */
+export function getFileExt(filename: string | null | undefined): string {
+  if (!filename) return ''
+  const dot = filename.lastIndexOf('.')
+  return dot >= 0 ? filename.slice(dot + 1).toLowerCase() : ''
+}
+
+/** 把字节数格式化为可读字符串（B / KB / MB）。 */
+export function formatFileSize(size: number | null | undefined): string {
+  if (!size) return ''
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 / 1024).toFixed(1)} MB`
+}
+
 export function formatLabel(value: string, map?: Record<string, string>): string {
   const normalizedValue = normalizeText(value)
   if (!map) return normalizedValue

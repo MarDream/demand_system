@@ -36,6 +36,13 @@ public class WorkflowInstanceTransition {
 
     private Long durationSeconds;
 
+    /**
+     * 附件ID列表（JSON 数组字符串），关联 file_records.id。
+     * 复用 file_records，不新建关联表。
+     */
+    @TableField(value = "attachments_json", typeHandler = JacksonTypeHandler.class)
+    private java.util.List<Long> attachmentIds;
+
     private LocalDateTime createdAt;
 
     public Long getId() {
@@ -140,6 +147,14 @@ public class WorkflowInstanceTransition {
 
     public void setDurationSeconds(Long durationSeconds) {
         this.durationSeconds = durationSeconds;
+    }
+
+    public java.util.List<Long> getAttachmentIds() {
+        return attachmentIds;
+    }
+
+    public void setAttachmentIds(java.util.List<Long> attachmentIds) {
+        this.attachmentIds = attachmentIds;
     }
 
     public LocalDateTime getCreatedAt() {

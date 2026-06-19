@@ -94,8 +94,10 @@ import { ElMessage } from 'element-plus'
 import { Download, Document, FullScreen, ZoomIn, ZoomOut, RefreshLeft, CircleCloseFilled } from '@element-plus/icons-vue'
 import AppDialog from '@/components/common/AppDialog.vue'
 import PreviewLoadingCard from '@/components/document/PreviewLoadingCard.vue'
+import request from '@/api/request'
 import { downloadDocumentBlob, getDocumentPreviewUrl } from '@/api/modules/knowledge'
 import { getOfficePreviewUrl } from '@/api/modules/preview'
+import { downloadFile } from '@/api/modules/file'
 import { PREVIEW_IMAGE_SET, PREVIEW_SUPPORTED_EXTENSION_SET, PREVIEW_TEXT_SET, normalizeFileExtension } from '@/constants/knowledgeDocument'
 import { useUserStore } from '@/stores/modules/user'
 import { clampProgress, computeOfficePreviewProgress, fetchBlobWithProgress, fetchTextWithProgress } from '@/utils/previewLoading'
@@ -103,13 +105,22 @@ import { clampProgress, computeOfficePreviewProgress, fetchBlobWithProgress, fet
 const PREVIEW_LOADING_MIN_DURATION = 500
 const PREVIEW_SLOW_THRESHOLD_SECONDS = 15
 
+/**
+ * 文件预览弹窗，支持两种来源：
+ * <ul>
+ *   <li>知识库文档：{@code knowledgeBaseId + documentId}</li>
+ *   <li>需求附件等通用文件：{@code fileId}（走 {@code /api/v1/files/{id}/preview}）</li>
+ * </ul>
+ * 两种来源互斥，不可同时传入。
+ */
 const props = defineProps<{
   modelValue: boolean
   fileName: string
   fileType: string
-  knowledgeBaseId: number
-  documentId: number
-  downloadUrl: string
+  knowledgeBaseId?: number
+  documentId?: number
+  fileId?: number
+  downloadUrl?: string
 }>()
 
 const emit = defineEmits<{
@@ -119,6 +130,14 @@ const emit = defineEmits<{
 }>()
 
 const userStore = useUserStore()
+
+/**
+ * 是否为通用 fileId 模式（与知识库模式互斥）。
+ * 当同时传入 knowledgeBaseId 与 fileId 时优先走知识库模式，避免误用。
+ */
+const isFileIdMode = computed(() =>
+  !!props.fileId && (props.knowledgeBaseId == null || props.documentId == null),
+)
 
 const visible = computed({
   get: () => props.modelValue,
@@ -174,11 +193,14 @@ watch(() => props.modelValue, async (open) => {
   if (previewType.value === 'office') {
     try {
       const watermark = buildWatermark()
-      const previewRes = await getOfficePreviewUrl({
-        knowledgeBaseId: props.knowledgeBaseId,
-        documentId: props.documentId,
-        watermarkTxt: watermark || undefined,
-      }, {
+      const officeParams = isFileIdMode.value
+        ? await buildOfficeParamsForFileId(watermark)
+        : {
+            knowledgeBaseId: props.knowledgeBaseId!,
+            documentId: props.documentId!,
+            watermarkTxt: watermark || undefined,
+          }
+      const previewRes = await getOfficePreviewUrl(officeParams, {
         onProgress: event => {
           if (event.message) {
             loadingMessage.value = event.message
@@ -202,8 +224,13 @@ watch(() => props.modelValue, async (open) => {
   }
 
   try {
-    const res = await getDocumentPreviewUrl(props.knowledgeBaseId, props.documentId) as any
-    const url = res.data ?? res
+    let url: string
+    if (isFileIdMode.value) {
+      url = `/api/v1/files/${props.fileId}/preview`
+    } else {
+      const res = await getDocumentPreviewUrl(props.knowledgeBaseId!, props.documentId!) as any
+      url = res.data ?? res
+    }
 
     if (previewType.value === 'text') {
       textContent.value = await fetchTextWithProgress(url, setPreviewProgress)
@@ -222,6 +249,28 @@ watch(() => props.modelValue, async (open) => {
     endPreviewLoading()
   }
 })
+
+/**
+ * 通用 fileId 模式：先拿 MinIO 24h 预签名 URL，再喂给 kkFileView。
+ *
+ * <p>kkFileView 在容器内部反向拉取文件，必须用 <strong>外网可达</strong> 的 URL，
+ * 因此不能直接传 {@code /api/v1/files/{id}}（带 JWT header 且仅前端可达）。</p>
+ */
+async function buildOfficeParamsForFileId(watermark: string) {
+  if (!props.fileId) {
+    throw new Error('fileId 不能为空')
+  }
+  // request.get 已经解包了 Result 信封，直接返回 { url: string }
+  const res = await request.get<{ url: string }>(`/v1/files/${props.fileId}/preview-url`)
+  const presignedUrl = (res as { url?: string })?.url
+  if (!presignedUrl) {
+    throw new Error('获取文件预览地址失败')
+  }
+  return {
+    fileUrl: presignedUrl,
+    watermarkTxt: watermark || undefined,
+  }
+}
 
 function getLoadingMessage(type: string) {
   if (type === 'office') {
@@ -387,7 +436,9 @@ async function handleDownload() {
   if (downloading.value) return
   downloading.value = true
   try {
-    const blob = await downloadDocumentBlob(props.knowledgeBaseId, props.documentId)
+    const blob = isFileIdMode.value
+      ? await downloadFile(props.fileId!) as unknown as Blob
+      : await downloadDocumentBlob(props.knowledgeBaseId!, props.documentId!)
     const url = window.URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = url

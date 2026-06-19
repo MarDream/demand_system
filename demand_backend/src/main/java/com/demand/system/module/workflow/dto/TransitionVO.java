@@ -34,6 +34,12 @@ public class TransitionVO {
 
     private String durationDisplay;
 
+    /** 流转时携带的附件ID列表（来自 file_records.id）。 */
+    private java.util.List<Long> attachmentIds;
+
+    /** 流转时携带的附件元信息（按 file_records 补齐）。 */
+    private java.util.List<TransitionAttachmentVO> attachments;
+
     private LocalDateTime createdAt;
 
     public Long getId() {
@@ -154,6 +160,22 @@ public class TransitionVO {
 
     public void setDurationDisplay(String durationDisplay) {
         this.durationDisplay = durationDisplay;
+    }
+
+    public java.util.List<Long> getAttachmentIds() {
+        return attachmentIds;
+    }
+
+    public void setAttachmentIds(java.util.List<Long> attachmentIds) {
+        this.attachmentIds = attachmentIds;
+    }
+
+    public java.util.List<TransitionAttachmentVO> getAttachments() {
+        return attachments;
+    }
+
+    public void setAttachments(java.util.List<TransitionAttachmentVO> attachments) {
+        this.attachments = attachments;
     }
 
     public LocalDateTime getCreatedAt() {

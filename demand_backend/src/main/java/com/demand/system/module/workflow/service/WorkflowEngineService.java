@@ -7,11 +7,14 @@ import com.demand.system.common.result.ErrorCode;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.organization.entity.SysOrg;
 import com.demand.system.module.organization.mapper.SysOrgMapper;
+import com.demand.system.module.requirement.dto.RequirementAttachmentDTO;
 import com.demand.system.module.requirement.entity.Requirement;
 import com.demand.system.module.requirement.entity.RequirementHistory;
 import com.demand.system.module.requirement.mapper.RequirementHistoryMapper;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
 import com.demand.system.module.requirement.service.RequirementApprovalEvaluationService;
+import com.demand.system.module.file.entity.FileRecord;
+import com.demand.system.module.file.mapper.FileRecordMapper;
 import com.demand.system.module.project.entity.Project;
 import com.demand.system.module.project.mapper.ProjectMapper;
 import com.demand.system.module.user.entity.User;
@@ -85,6 +88,7 @@ public class WorkflowEngineService {
     private final RequirementApprovalEvaluationService approvalEvaluationService;
     private final WorkflowCountersignService countersignService;
     private final WorkflowParallelBranchService parallelBranchService;
+    private final FileRecordMapper fileRecordMapper;
 
     public WorkflowEngineService(WorkflowInstanceMapper instanceMapper, WorkflowInstanceTransitionMapper transitionMapper,
                                WorkflowNodeMapper nodeMapper, WorkflowEdgeMapper edgeMapper,
@@ -99,7 +103,8 @@ public class WorkflowEngineService {
                                WorkflowNotificationService notificationService,
                                RequirementApprovalEvaluationService approvalEvaluationService,
                                @Lazy WorkflowCountersignService countersignService,
-                               WorkflowParallelBranchService parallelBranchService) {
+                               WorkflowParallelBranchService parallelBranchService,
+                               FileRecordMapper fileRecordMapper) {
         this.instanceMapper = instanceMapper;
         this.transitionMapper = transitionMapper;
         this.nodeMapper = nodeMapper;
@@ -122,6 +127,25 @@ public class WorkflowEngineService {
         this.approvalEvaluationService = approvalEvaluationService;
         this.countersignService = countersignService;
         this.parallelBranchService = parallelBranchService;
+        this.fileRecordMapper = fileRecordMapper;
+    }
+
+    /**
+     * 提取审批会话中的附件 ID 列表。
+     * 入参是 FlowTransitionRequest.attachments（每个项至少有 fileId）。
+     * 兼容空值/重复，自动去重并保持顺序。
+     */
+    private List<Long> extractAttachmentIds(List<RequirementAttachmentDTO> attachments) {
+        if (attachments == null || attachments.isEmpty()) {
+            return Collections.emptyList();
+        }
+        LinkedHashSet<Long> ids = new LinkedHashSet<>();
+        for (RequirementAttachmentDTO att : attachments) {
+            if (att != null && att.getFileId() != null) {
+                ids.add(att.getFileId());
+            }
+        }
+        return new ArrayList<>(ids);
     }
 
     /**
@@ -290,6 +314,7 @@ public class WorkflowEngineService {
         newTransition.setAction(resolvedAction);
         newTransition.setComment(request.getComment());
         newTransition.setStartedAt(LocalDateTime.now());
+        newTransition.setAttachmentIds(extractAttachmentIds(request.getAttachments()));
         transitionMapper.insert(newTransition);
 
         if (approvalEvaluationRequired && currentNode != null) {
@@ -782,6 +807,50 @@ public class WorkflowEngineService {
                 .orderByAsc(WorkflowInstanceTransition::getCreatedAt)
         );
 
+        // 收集所有需要补全的字段：操作人姓名、附件元信息
+        Set<Long> operatorIds = new LinkedHashSet<>();
+        Set<Long> fileIds = new LinkedHashSet<>();
+        for (WorkflowInstanceTransition t : transitions) {
+            if (t.getOperatorId() != null) {
+                operatorIds.add(t.getOperatorId());
+            }
+            if (t.getAttachmentIds() != null) {
+                fileIds.addAll(t.getAttachmentIds());
+            }
+        }
+
+        Map<Long, FileRecord> fileRecordMap = new HashMap<>();
+        Set<Long> fileUploaderIds = new LinkedHashSet<>();
+        if (!fileIds.isEmpty()) {
+            for (FileRecord r : fileRecordMapper.selectBatchIds(fileIds)) {
+                if (r != null && r.getId() != null) {
+                    fileRecordMap.put(r.getId(), r);
+                    if (r.getUploaderId() != null) {
+                        fileUploaderIds.add(r.getUploaderId());
+                    }
+                }
+            }
+        }
+
+        // 合并：操作人 + 文件上传人共用一次 sys_user 批量查询，结果分别归类
+        Map<Long, String> operatorNameMap = new HashMap<>();
+        Map<Long, String> fileUploaderNameMap = new HashMap<>();
+        Set<Long> allUserIds = new LinkedHashSet<>();
+        allUserIds.addAll(operatorIds);
+        allUserIds.addAll(fileUploaderIds);
+        if (!allUserIds.isEmpty()) {
+            for (User u : userMapper.selectBatchIds(allUserIds)) {
+                if (u == null) continue;
+                String name = StringUtils.hasText(u.getRealName()) ? u.getRealName() : u.getUsername();
+                if (operatorIds.contains(u.getId())) {
+                    operatorNameMap.put(u.getId(), name);
+                }
+                if (fileUploaderIds.contains(u.getId())) {
+                    fileUploaderNameMap.put(u.getId(), name);
+                }
+            }
+        }
+
         return transitions.stream().map(t -> {
             TransitionVO vo = new TransitionVO();
             vo.setId(t.getId());
@@ -801,10 +870,33 @@ public class WorkflowEngineService {
             vo.setCreatedAt(t.getCreatedAt());
 
             if (t.getOperatorId() != null) {
-                User user = userMapper.selectById(t.getOperatorId());
-                if (user != null) {
-                    vo.setOperatorName(user.getRealName());
+                vo.setOperatorName(operatorNameMap.get(t.getOperatorId()));
+            }
+
+            if (t.getAttachmentIds() != null && !t.getAttachmentIds().isEmpty()) {
+                vo.setAttachmentIds(new ArrayList<>(t.getAttachmentIds()));
+                List<com.demand.system.module.workflow.dto.TransitionAttachmentVO> atts = new ArrayList<>();
+                for (Long fid : t.getAttachmentIds()) {
+                    FileRecord r = fileRecordMap.get(fid);
+                    if (r == null) {
+                        continue;
+                    }
+                    com.demand.system.module.workflow.dto.TransitionAttachmentVO a =
+                            new com.demand.system.module.workflow.dto.TransitionAttachmentVO();
+                    a.setFileId(r.getId());
+                    a.setName(r.getOriginalName());
+                    a.setSize(r.getFileSize());
+                    a.setContentType(r.getContentType());
+                    a.setBucketName(r.getBucketName());
+                    a.setObjectName(r.getStorageName());
+                    a.setUploadedAt(r.getCreatedAt());
+                    a.setUploaderId(r.getUploaderId());
+                    if (r.getUploaderId() != null) {
+                        a.setUploaderName(fileUploaderNameMap.get(r.getUploaderId()));
+                    }
+                    atts.add(a);
                 }
+                vo.setAttachments(atts);
             }
             return vo;
         }).collect(Collectors.toList());

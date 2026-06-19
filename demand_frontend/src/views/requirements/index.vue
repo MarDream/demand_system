@@ -3,34 +3,73 @@
     <!-- Filter -->
     <FilterCard>
       <div class="view-switch">
-        <el-radio-group v-model="viewMode" size="small" @change="handleViewModeChange">
-          <el-radio-button v-if="hasPermission('menu:requirement:view:all')" value="all">全部需求</el-radio-button>
-          <el-radio-button v-if="hasPermission('menu:requirement:view:pending')" value="pending">
-            <el-badge :value="viewCounts.pending" :hidden="viewCounts.pending === 0">我的待办</el-badge>
-          </el-radio-button>
-          <el-radio-button v-if="hasPermission('menu:requirement:view:done')" value="done">我的已办</el-radio-button>
-          <el-radio-button v-if="hasPermission('menu:requirement:view:follow')" value="follows">我的关注</el-radio-button>
-          <el-radio-button v-if="hasPermission('menu:requirement:view:draft')" value="drafts">
-            <el-badge :value="viewCounts.drafts" :hidden="viewCounts.drafts === 0">我的草稿</el-badge>
-          </el-radio-button>
-          <!-- 兜底：保证 el-radio-group 至少有一个有效子节点，避免 [ElOnlyChild] 警告 -->
-          <el-radio-button v-if="visibleViewOptions === 0" value="all" disabled>暂无可见视图</el-radio-button>
-        </el-radio-group>
+        <el-tabs v-model="viewMode" class="view-switch-tabs" @tab-change="handleViewModeChange">
+          <el-tab-pane v-if="hasPermission('menu:requirement:view:all')" name="all">
+            <template #label>
+              <span class="view-switch__tab-label">
+                <el-icon><Document /></el-icon>
+                <span class="view-switch__tab-text">全部需求</span>
+              </span>
+            </template>
+          </el-tab-pane>
+          <el-tab-pane v-if="hasPermission('menu:requirement:view:pending')" name="pending">
+            <template #label>
+              <span class="view-switch__tab-label">
+                <el-icon><Bell /></el-icon>
+                <span class="view-switch__tab-text">我的待办</span>
+                <el-badge
+                  v-if="viewCounts.pending > 0"
+                  :value="viewCounts.pending"
+                  class="view-switch__badge"
+                />
+              </span>
+            </template>
+          </el-tab-pane>
+          <el-tab-pane v-if="hasPermission('menu:requirement:view:done')" name="done">
+            <template #label>
+              <span class="view-switch__tab-label">
+                <el-icon><CircleCheck /></el-icon>
+                <span class="view-switch__tab-text">我的已办</span>
+              </span>
+            </template>
+          </el-tab-pane>
+          <el-tab-pane v-if="hasPermission('menu:requirement:view:follow')" name="follows">
+            <template #label>
+              <span class="view-switch__tab-label">
+                <el-icon><Star /></el-icon>
+                <span class="view-switch__tab-text">我的关注</span>
+              </span>
+            </template>
+          </el-tab-pane>
+          <el-tab-pane v-if="hasPermission('menu:requirement:view:draft')" name="drafts">
+            <template #label>
+              <span class="view-switch__tab-label">
+                <el-icon><EditPen /></el-icon>
+                <span class="view-switch__tab-text">我的草稿</span>
+                <el-badge
+                  v-if="viewCounts.drafts > 0"
+                  :value="viewCounts.drafts"
+                  class="view-switch__badge"
+                />
+              </span>
+            </template>
+          </el-tab-pane>
+        </el-tabs>
       </div>
-      <el-form :model="filterForm" inline>
+      <el-form :model="filterForm" inline class="filter-form">
         <div class="filter-main">
-          <el-form-item label="需求类型">
-            <el-select v-model="filterForm.type" placeholder="全部" clearable style="width: 140px">
+          <el-form-item label="需求类型" class="filter-item">
+            <el-select v-model="filterForm.type" placeholder="全部" clearable class="filter-select--type">
               <el-option v-for="t in configTypes" :key="t.code" :label="t.name" :value="t.code" />
             </el-select>
           </el-form-item>
-          <el-form-item label="优先级">
-            <el-select v-model="filterForm.priority" placeholder="全部" clearable style="width: 100px">
+          <el-form-item label="优先级" class="filter-item">
+            <el-select v-model="filterForm.priority" placeholder="全部" clearable class="filter-select--priority">
               <el-option v-for="p in configPriorities" :key="p.code" :label="p.name" :value="p.code" />
             </el-select>
           </el-form-item>
-          <el-form-item label="状态">
-            <el-select v-model="filterForm.status" placeholder="全部" clearable style="width: 120px">
+          <el-form-item label="状态" class="filter-item">
+            <el-select v-model="filterForm.status" placeholder="全部" clearable class="filter-select--status">
               <el-option label="新建" value="新建" />
               <el-option label="待分析" value="待分析" />
               <el-option label="待确认" value="待确认" />
@@ -48,26 +87,43 @@
               <el-option label="验收不通过" value="验收不通过" />
             </el-select>
           </el-form-item>
-          <el-form-item label="负责人">
-            <el-select v-model="filterForm.assigneeId" placeholder="请选择" clearable style="width: 140px">
+          <el-form-item label="负责人" class="filter-item">
+            <el-select v-model="filterForm.assigneeId" placeholder="请选择" clearable class="filter-select--assignee">
               <el-option v-for="user in filterUserList" :key="user.id" :label="user.realName || user.username" :value="user.id" />
             </el-select>
           </el-form-item>
-          <el-form-item>
-            <el-input v-model="filterForm.keyword" placeholder="关键词搜索" clearable style="width: 220px" @keyup.enter="handleSearch" />
+          <el-form-item class="filter-item filter-item--search">
+            <el-input
+              v-model="filterForm.keyword"
+              placeholder="关键词搜索（回车搜索）"
+              clearable
+              class="filter-input--keyword"
+              @keyup.enter="handleSearch"
+            >
+              <template #append>
+                <el-button
+                  class="filter-search-append"
+                  aria-label="执行搜索"
+                  @click="handleSearch"
+                >
+                  <el-icon><Search /></el-icon>
+                  <span>搜索</span>
+                </el-button>
+              </template>
+            </el-input>
           </el-form-item>
         </div>
         <el-collapse-transition>
           <div v-show="filterExpanded && isAllView" class="filter-extra">
-            <el-form-item label="时间维度">
-              <el-select v-model="timeDimension" placeholder="选择时间维度" style="width: 140px">
+            <el-form-item label="时间维度" class="filter-item">
+              <el-select v-model="timeDimension" placeholder="选择时间维度" class="filter-select--dimension">
                 <el-option label="创建时间" value="createdAt" />
                 <el-option label="分析完成" value="analysisCompletedAt" />
                 <el-option label="需求确认" value="confirmAt" />
                 <el-option label="开发完成" value="developmentCompletedAt" />
               </el-select>
             </el-form-item>
-            <el-form-item label="日期范围">
+            <el-form-item label="日期范围" class="filter-item filter-item--date">
               <el-date-picker
                 v-model="timeRange"
                 type="daterange"
@@ -76,20 +132,24 @@
                 end-placeholder="结束日期"
                 value-format="YYYY-MM-DD HH:mm:ss"
                 :default-time="defaultTime"
-                style="width: 300px"
+                class="filter-date-range"
               />
             </el-form-item>
           </div>
         </el-collapse-transition>
-        <el-link type="primary" underline="never" class="filter-toggle" @click="filterExpanded = !filterExpanded">
-          {{ filterExpanded ? '收起' : '展开' }}
-          <el-icon class="filter-toggle__icon" :class="{ 'is-expanded': filterExpanded }"><ArrowDown /></el-icon>
-        </el-link>
+        <div class="filter-meta-actions">
+          <el-link type="primary" underline="never" class="filter-toggle" @click="filterExpanded = !filterExpanded">
+            {{ filterExpanded ? '收起' : '展开' }}
+            <el-icon class="filter-toggle__icon" :class="{ 'is-expanded': filterExpanded }"><ArrowDown /></el-icon>
+          </el-link>
+          <span class="filter-meta-divider" aria-hidden="true">·</span>
+          <el-button
+            class="filter-reset-btn"
+            aria-label="重置筛选条件"
+            @click="handleReset"
+          >重置筛选</el-button>
+        </div>
       </el-form>
-      <template #actions>
-        <el-button type="primary" @click="handleSearch">搜索</el-button>
-        <el-button @click="handleReset">重置</el-button>
-      </template>
     </FilterCard>
 
     <!-- Table -->
@@ -98,10 +158,10 @@
         <Toolbar>
           <template #left>
             <el-button v-if="hasPermission('button:requirement:create')" type="primary" @click="handleCreate">新建需求</el-button>
-            <el-button v-if="hasPermission('button:requirement:export')" @click="handleExport">导出Excel</el-button>
+            <el-button v-if="hasPermission('button:requirement:export')" text @click="handleExport">导出Excel</el-button>
           </template>
           <template #right>
-            <el-button :icon="Setting" circle @click="openColumnConfig" title="列设置" />
+            <el-button :icon="Setting" circle aria-label="列表字段设置" title="列表字段设置" @click="openColumnConfig" />
           </template>
         </Toolbar>
       </template>
@@ -116,6 +176,11 @@
           border
           stripe
         >
+          <template #empty>
+            <el-empty description="暂无需求数据" :image-size="80">
+              <el-button type="primary" @click="handleCreate">立即创建</el-button>
+            </el-empty>
+          </template>
           <el-table-column
             key="follow"
             label=""
@@ -129,6 +194,7 @@
                   :type="row.followed ? 'warning' : 'info'"
                   :icon="row.followed ? StarFilled : Star"
                   class="requirement-follow-btn"
+                  :aria-label="row.followed ? '取消关注' : '添加关注'"
                   @click="handleToggleFollow(row)"
                 />
               </el-tooltip>
@@ -160,7 +226,7 @@
               <template #default="{ row }">
                 <template v-if="col.key === 'title'">
                   <div class="requirement-title">
-                    <el-link type="primary" @click="handleOpen(row)">{{ row.title }}</el-link>
+                    <el-link type="primary" class="requirement-title__link" @click="handleOpen(row)">{{ row.title }}</el-link>
                     <button
                       v-if="hasChildRequirements(row)"
                       type="button"
@@ -203,13 +269,14 @@
                     <!-- 全部需求/草稿视图显示原有操作按钮 -->
                     <template v-else>
                       <el-tooltip content="查看详情" placement="top">
-                        <el-button link type="primary" :icon="View" @click="handleOpen(row)" />
+                        <el-button link type="primary" :icon="View" aria-label="查看详情" @click="handleOpen(row)" />
                       </el-tooltip>
                       <el-tooltip v-if="hasPermission('button:requirement:update')" content="编辑" placement="top">
                         <el-button
                           link
                           type="primary"
                           :icon="Edit"
+                          aria-label="编辑"
                           @click="handleEdit(row)"
                         />
                       </el-tooltip>
@@ -219,7 +286,7 @@
                         @confirm="handleDelete(row.id)"
                       >
                         <template #reference>
-                          <el-button link type="danger" :icon="Delete" title="删除" />
+                          <el-button link type="danger" :icon="Delete" title="删除" aria-label="删除" />
                         </template>
                       </el-popconfirm>
                     </template>
@@ -320,7 +387,7 @@ import { ref, reactive, computed, nextTick, onBeforeUnmount, onMounted, watch } 
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { TableInstance } from 'element-plus'
-import { Setting, View, Edit, Delete, ArrowDown, ArrowRight, Star, StarFilled, Rank, Close } from '@element-plus/icons-vue'
+import { Setting, View, Edit, Delete, ArrowDown, ArrowRight, Star, StarFilled, Rank, Close, Document, Bell, CircleCheck, EditPen, Search } from '@element-plus/icons-vue'
 import Sortable, { type SortableEvent } from 'sortablejs'
 import { exportToExcel } from '@/utils/excel'
 import { requirementApi, userApi } from '@/api'
@@ -411,7 +478,7 @@ let selectedColumnSortable: Sortable | null = null
 const configurableColumns = computed(() => allColumns.filter(c => c.key !== 'operations'))
 
 const columnGroups = computed(() => {
-  const groupOrder = ['人员与时间', '基础字段', '自定义字段']
+  const groupOrder = ['基础字段', '人员与时间', '自定义字段']
   const grouped = new Map<string, ColumnDef[]>()
   configurableColumns.value.forEach((column) => {
     const groupName = column.group || '自定义字段'
@@ -577,6 +644,7 @@ const defaultTime = [new Date(2000, 0, 1, 0, 0, 0), new Date(2000, 0, 1, 23, 59,
 const loading = ref(false)
 const tableData = ref<Requirement[]>([])
 const tableRef = ref<TableInstance>()
+const selectedIds = ref<number[]>([])
 const expandedRowKeys = ref<number[]>([])
 
 // Pagination
@@ -708,7 +776,8 @@ function handleReset() {
   fetchData()
 }
 
-function handleViewModeChange(value: RequirementViewMode) {
+function handleViewModeChange(name: string | number) {
+  const value = name as RequirementViewMode
   viewMode.value = value
   pagination.pageNum = 1
   const query: Record<string, string> = {}
@@ -900,6 +969,326 @@ watch(tableData, (rows) => {
 </script>
 
 <style scoped lang="scss">
+/* ============================================
+   响应式设计令牌系统
+   ============================================ */
+:root {
+  --filter-gap-sm: 8px;
+  --filter-gap-md: 16px;
+  --filter-gap-lg: 24px;
+  --filter-item-min-width: 180px;
+  --filter-search-min-width: 200px;
+}
+
+/* ============================================
+   视图切换区域
+   ============================================ */
+.view-switch {
+  margin-bottom: clamp(12px, 1.5vw, 20px);
+  overflow-x: auto;
+
+  // 隐藏滚动条但保留功能
+  &::-webkit-scrollbar {
+    height: 0;
+    display: none;
+  }
+
+  :deep(.el-tabs__header) {
+    margin-bottom: 0;
+  }
+
+  :deep(.el-tabs__nav-wrap)::after {
+    height: 1px;
+  }
+
+  :deep(.el-tabs__item) {
+    padding: 0 14px;
+    height: 40px;
+    line-height: 40px;
+  }
+}
+
+.view-switch__tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.view-switch__tab-text {
+  font-size: 14px;
+}
+
+.view-switch__badge {
+  margin-left: 2px;
+}
+
+.view-switch__empty {
+  display: inline-block;
+  padding: 4px 12px;
+  color: var(--color-text-secondary, #909399);
+  font-size: 14px;
+}
+
+/* ============================================
+   筛选表单主体 - 响应式网格布局
+   ============================================ */
+.filter-form {
+  :deep(.el-form-item) {
+    margin-right: 0;
+    margin-bottom: 12px;
+  }
+}
+
+.filter-main,
+.filter-extra {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--filter-item-min-width), 1fr));
+  gap: var(--filter-gap-md);
+  align-items: end;
+
+  // 响应式断点：≥1280px 显示更多列
+  @media (min-width: 1280px) {
+    grid-template-columns: repeat(6, 1fr);
+
+    .filter-item--search {
+      grid-column: span 1;
+    }
+  }
+
+  // 响应式断点：1024px - 1279px
+  @media (min-width: 1024px) and (max-width: 1279px) {
+    grid-template-columns: repeat(4, 1fr);
+
+    .filter-item--search {
+      grid-column: span 2;
+    }
+  }
+
+  // 响应式断点：768px - 1023px（平板）
+  @media (min-width: 768px) and (max-width: 1023px) {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--filter-gap-md);
+
+    .filter-item--search {
+      grid-column: span 2;
+    }
+  }
+
+  // 响应式断点：<768px（手机）
+  @media (max-width: 767px) {
+    grid-template-columns: 1fr;
+    gap: var(--filter-gap-sm);
+
+    .filter-item--search,
+    .filter-item--date {
+      grid-column: span 1;
+      width: 100%;
+
+      > * {
+        width: 100% !important;
+      }
+    }
+  }
+}
+
+.filter-extra {
+  margin-top: calc(var(--filter-gap-md) + 4px);
+  padding-top: var(--filter-gap-md);
+  border-top: 1px solid var(--el-border-color-lighter);
+
+  // 小屏时隐藏边框
+  @media (max-width: 767px) {
+    border-top: none;
+    margin-top: var(--filter-gap-sm);
+    padding-top: 0;
+  }
+}
+
+/* ============================================
+   筛选项样式 - 流式宽度
+   ============================================ */
+.filter-item {
+  min-width: 0; // 允许grid子项收缩
+  
+  :deep(.el-form-item__label) {
+    font-weight: 500;
+    font-size: clamp(13px, 0.85vw, 14px);
+    color: var(--el-text-color-regular);
+    white-space: nowrap;
+    padding-right: 8px;
+  }
+  
+  :deep(.el-select),
+  :deep(.el-input) {
+    width: 100%;
+  }
+}
+
+// 各字段的特定最小宽度约束
+.filter-select--type {
+  :deep(.el-select__wrapper) {
+    min-width: 120px;
+  }
+}
+
+.filter-select--priority {
+  :deep(.el-select__wrapper) {
+    min-width: 90px;
+  }
+}
+
+.filter-select--status {
+  :deep(.el-select__wrapper) {
+    min-width: 110px;
+  }
+}
+
+.filter-select--assignee {
+  :deep(.el-select__wrapper) {
+    min-width: 120px;
+  }
+}
+
+.filter-select--dimension {
+  :deep(.el-select__wrapper) {
+    min-width: 130px;
+  }
+}
+
+/* ============================================
+   关键词搜索（搜索按钮嵌入 input append）
+   ============================================ */
+.filter-input--keyword {
+  :deep(.el-input__wrapper) {
+    min-width: var(--filter-search-min-width);
+  }
+
+  // 搜索框在宽屏时可以更宽
+  @media (min-width: 1280px) {
+    :deep(.el-input__wrapper) {
+      min-width: 240px;
+    }
+  }
+
+  // append 区域内的搜索按钮：主色填充 + 紧凑布局
+  :deep(.el-input-group__append) {
+    padding: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+  }
+}
+
+.filter-search-append {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  padding: 0 14px;
+  border: none !important;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0 !important;
+  background: var(--el-color-primary) !important;
+  color: #fff !important;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+
+  &:hover:not(:disabled) {
+    background: var(--el-color-primary-light-3) !important;
+  }
+
+  &:active:not(:disabled) {
+    background: var(--el-color-primary-dark-2) !important;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--el-color-primary);
+    outline-offset: 2px;
+  }
+
+  :deep(.el-icon) {
+    font-size: 14px;
+  }
+}
+
+/* ============================================
+   重置按钮（弱化为 text，紧跟 filter-toggle）
+   ============================================ */
+.filter-meta-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+}
+
+.filter-meta-divider {
+  color: var(--color-text-placeholder);
+  font-size: 13px;
+  user-select: none;
+}
+
+.filter-reset-btn {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  transition: color var(--duration-fast) var(--ease-standard),
+              background-color var(--duration-fast) var(--ease-standard);
+
+  &:hover {
+    color: var(--el-color-primary);
+    background: var(--el-color-primary-light-9);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--el-color-primary);
+    outline-offset: 2px;
+  }
+}
+
+.filter-date-range {
+  width: 100% !important;
+  
+  :deep(.el-date-editor) {
+    width: 100% !important;
+  }
+}
+
+/* ============================================
+   展开/收起切换按钮
+   ============================================ */
+.filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: clamp(10px, 1.5vw, 16px);
+  margin-left: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    opacity: 0.8;
+  }
+  
+  &:focus-visible {
+    outline: 2px solid var(--el-color-primary);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  &__icon {
+    font-size: 12px;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+    &.is-expanded {
+      transform: rotate(180deg);
+    }
+  }
+}
 .expand-row {
   padding: 10px 40px;
 }
@@ -912,6 +1301,17 @@ watch(tableData, (rows) => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.requirement-title__link {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 
 .requirement-title__toggle {
@@ -1122,30 +1522,5 @@ watch(tableData, (rows) => {
 :deep(.column-config-dialog .el-dialog__footer) {
   padding: 16px 22px;
   border-top: 1px solid var(--el-border-color-lighter);
-}
-
-.view-switch {
-  margin-bottom: 12px;
-}
-
-.view-switch__empty {
-  display: inline-block;
-  padding: 4px 12px;
-  color: var(--color-text-secondary, #909399);
-  font-size: 14px;
-}
-
-.filter-toggle {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 8px;
-
-  &__icon {
-    transition: transform 0.3s;
-
-    &.is-expanded {
-      transform: rotate(180deg);
-    }
-  }
 }
 </style>

@@ -103,32 +103,32 @@
                   <span v-if="relatedRequirements.length > 0" class="relation-count">已关联 {{ relatedRequirements.length }} 个</span>
                 </div>
               </div>
-              <el-table v-if="relatedRequirements.length > 0" :data="relatedRequirements" size="small" class="relation-table">
-                <el-table-column prop="title" label="标题" min-width="200" />
-                <el-table-column v-if="isEditMode" prop="type" label="类型" width="100">
-                  <template #default="{ row }">
-                    <el-tag size="small">{{ row.type }}</el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column prop="relationType" label="关联类型" width="120">
-                  <template #default="{ row }">
-                    <el-select v-model="row.relationType" size="small" style="width: 100%">
-                      <el-option label="阻塞" value="blocks" />
-                      <el-option label="被阻塞" value="blocked_by" />
-                      <el-option label="包含" value="contains" />
-                      <el-option label="被包含" value="contained_by" />
-                      <el-option label="相关" value="relates_to" />
-                    </el-select>
-                  </template>
-                </el-table-column>
-                <el-table-column label="操作" width="60" align="center">
-                  <template #default="{ row }">
-                    <el-button type="danger" link size="small" @click="removeRelation(row)">
-                      <el-icon><Delete /></el-icon>
-                    </el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
+              <div v-if="relatedRequirements.length > 0" class="relation-chips">
+                <div v-for="r in relatedRequirements" :key="r.id" class="relation-chip">
+                  <el-select
+                    v-model="r.relationType"
+                    size="small"
+                    class="relation-chip__type"
+                  >
+                    <el-option label="阻塞" value="blocks" />
+                    <el-option label="被阻塞" value="blocked_by" />
+                    <el-option label="包含" value="contains" />
+                    <el-option label="被包含" value="contained_by" />
+                    <el-option label="相关" value="relates_to" />
+                  </el-select>
+                  <el-tooltip v-if="r.title" :content="r.title" placement="top" :show-after="300">
+                    <span class="relation-chip__title">{{ r.title }}</span>
+                  </el-tooltip>
+                  <el-button
+                    link
+                    type="danger"
+                    :icon="Delete"
+                    class="relation-chip__remove"
+                    aria-label="移除关联"
+                    @click="removeRelation(r)"
+                  />
+                </div>
+              </div>
               <el-empty v-else-if="currentRequirement?.isDraft === true" description="暂无关联需求" :image-size="40" />
 
               <!-- 附件上传区 -->
@@ -151,11 +151,28 @@
               <div v-if="attachmentUploading" class="attachment-uploading">附件上传中...</div>
               <div v-if="formData.attachments.length > 0" class="attachment-list">
                 <div v-for="(file, index) in formData.attachments" :key="`${file.fileId || file.objectName || file.url}-${index}`" class="attachment-item">
-                  <div class="attachment-meta">
-                    <el-button link type="primary" @click="handleAttachmentDownload(file)">{{ file.name }}</el-button>
-                    <span v-if="file.size" class="attachment-size">{{ formatFileSize(file.size) }}</span>
+                  <el-icon :size="18" class="attachment-icon">
+                    <Document v-if="getFileExt(file.name) === 'pdf'" />
+                    <DocumentCopy v-else-if="['doc','docx','wps','xls','xlsx','csv'].includes(getFileExt(file.name))" />
+                    <Picture v-else-if="['jpg','jpeg','png','gif','svg','webp','bmp'].includes(getFileExt(file.name))" />
+                    <VideoCamera v-else-if="['mp4','mov','avi','mkv','webm'].includes(getFileExt(file.name))" />
+                    <Folder v-else-if="['zip','rar','7z','tar','gz'].includes(getFileExt(file.name))" />
+                    <Document v-else />
+                  </el-icon>
+                  <div class="attachment-main">
+                    <el-button link type="primary" class="attachment-name" @click="handleAttachmentDownload(file)">{{ file.name }}</el-button>
+                    <div class="attachment-meta">
+                      <span v-if="file.size" class="attachment-size">{{ formatFileSize(file.size) }}</span>
+                      <span v-if="file.uploadedAt" class="attachment-dot">·</span>
+                      <span v-if="file.uploadedAt" class="attachment-time">{{ formatAttachmentTime(file.uploadedAt) }}</span>
+                    </div>
                   </div>
-                  <el-button link type="danger" @click="removeAttachment(index)">移除</el-button>
+                  <el-button link class="attachment-preview" aria-label="预览附件" @click="handleAttachmentPreview(file)">
+                    <el-icon><View /></el-icon>
+                  </el-button>
+                  <el-button link type="danger" aria-label="删除附件" @click="removeAttachment(index)" class="attachment-remove">
+                    <el-icon><Delete /></el-icon>
+                  </el-button>
                 </div>
               </div>
             </div>
@@ -313,6 +330,16 @@
       </el-button>
     </div>
 
+    <!-- Attachment Preview Dialog (与知识库管理共用 FilePreviewDialog，支持 image / text / office 统一处理) -->
+    <FilePreviewDialog
+      v-if="previewFile"
+      v-model="previewVisible"
+      :file-name="previewFile.name"
+      :file-type="getFileExt(previewFile.name)"
+      :file-id="previewFile.fileId || undefined"
+      :download-url="previewFile.url"
+    />
+
     <!-- Relation Dialog -->
     <el-dialog v-model="showRelationDialog" title="添加关联需求" width="600px">
       <div class="relation-search">
@@ -354,7 +381,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UploadRequestOptions } from 'element-plus'
 import {
-  Plus, Delete, Search, Upload
+  Plus, Delete, Search, Upload, Document, DocumentCopy, Picture, VideoCamera, Folder, View
 } from '@element-plus/icons-vue'
 import { IsleEditor, IsleEditorToolbar, RichTextKit } from '@isle-editor/vue3'
 import { addLocale } from '@isle-editor/core'
@@ -455,8 +482,9 @@ import { downloadRequirementAttachment, uploadRequirementAttachment } from '@/ap
 import { usePermission } from '@/composables/usePermission'
 import type { RelationItem } from '@/api/modules/relation'
 import { buildRichTextImagePreviewUrl, hydrateRichTextImageHtml, serializeRichTextImageHtml } from '@/utils/richTextFileImage'
-import { formatDate, normalizeText, stripPriorityPrefix } from '@/utils/format'
+import { formatDate, formatFileSize, getFileExt, normalizeText, stripPriorityPrefix } from '@/utils/format'
 import PageContainer from '@/components/common/PageContainer.vue'
+import FilePreviewDialog from '@/components/document/FilePreviewDialog.vue'
 import { useUserStore } from '@/stores'
 import type { NextNodeOption, Requirement, RequirementAttachment, RequirementTemplate, TemplateSection } from '@/types/requirement'
 import type { OrgNode, User } from '@/types/user'
@@ -1059,11 +1087,17 @@ function shouldShowField(field: string) {
   return createFormVisibleFields.value.some((item) => normalizeFieldName(item) === field)
 }
 
-function formatFileSize(size?: number | null) {
-  if (!size) return ''
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-  return `${(size / 1024 / 1024).toFixed(1)} MB`
+function formatAttachmentTime(time: string | number | Date) {
+  if (!time) return ''
+  const d = new Date(time)
+  if (isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const y = d.getFullYear()
+  const m = pad(d.getMonth() + 1)
+  const day = pad(d.getDate())
+  const h = pad(d.getHours())
+  const min = pad(d.getMinutes())
+  return `${y}-${m}-${day} ${h}:${min}`
 }
 
 function beforeAttachmentUpload(rawFile: File) {
@@ -1227,6 +1261,18 @@ async function handleAttachmentDownload(file: RequirementAttachment) {
   } catch {
     ElMessage.error('附件下载失败')
   }
+}
+
+const previewVisible = ref(false)
+const previewFile = ref<RequirementAttachment | null>(null)
+
+function handleAttachmentPreview(file: RequirementAttachment) {
+  if (!file.fileId && !file.url) {
+    ElMessage.warning('该附件暂不支持预览')
+    return
+  }
+  previewFile.value = file
+  previewVisible.value = true
 }
 
 function normalizeFieldName(field: string) {
@@ -1632,13 +1678,13 @@ watch(() => formData.type, (typeCode) => {
 }
 
 .card-title {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text-primary);
 }
 
 .card-subtitle {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
 }
 
@@ -1698,7 +1744,8 @@ watch(() => formData.type, (typeCode) => {
   background: #fff;
   display: flex;
   flex-direction: column;
-  height: clamp(360px, calc(100vh - 520px), 760px);
+  height: clamp(400px, calc(100vh - 480px), 800px);
+  max-height: 80vh;
   position: relative;
 }
 
@@ -1822,7 +1869,7 @@ watch(() => formData.type, (typeCode) => {
 }
 
 .card-header {
-  font-weight: 500;
+  font-weight: var(--font-weight-semibold);
 }
 
 .info-card :deep(.el-form-item) {
@@ -1865,7 +1912,7 @@ watch(() => formData.type, (typeCode) => {
 
 /* Upload Zone */
 .upload-zone {
-  border: 1px dashed #d9d9d9;
+  border: 1px dashed var(--el-border-color);
   border-radius: 6px;
   padding: 16px;
   text-align: center;
@@ -1910,12 +1957,56 @@ watch(() => formData.type, (typeCode) => {
   color: var(--el-color-primary);
 }
 
-.relation-table {
-  margin-bottom: 4px;
+.relation-chips {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) 0;
 }
 
-.relation-table :deep(.el-table__header-wrapper th) {
-  background: #fafafa;
+.relation-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 6px 8px 6px 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--el-fill-color-light);
+  transition: border-color var(--duration-fast) var(--ease-standard),
+              background-color var(--duration-fast) var(--ease-standard);
+
+  &:hover {
+    border-color: var(--el-color-primary-light-7);
+    background: var(--el-color-primary-light-9);
+  }
+}
+
+.relation-chip__type {
+  width: 110px;
+  flex-shrink: 0;
+}
+
+.relation-chip__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
+
+.relation-chip__remove {
+  flex-shrink: 0;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  opacity: 0.6;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+
+  &:hover {
+    opacity: 1;
+    background: var(--el-color-danger-light-9);
+  }
 }
 
 .attachment-uploading {
@@ -1924,11 +2015,138 @@ watch(() => formData.type, (typeCode) => {
   padding: 8px 0;
 }
 
-.attachment-meta .el-button {
-  max-width: 300px;
+.attachment-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--el-fill-color-blank);
+}
+
+.attachment-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 44px;
+  padding: 0 12px;
+  font-size: 14px;
+  border-bottom: 1px solid var(--el-border-color-extra-light);
+  transition: background-color 0.15s ease;
+}
+
+.attachment-item:last-child {
+  border-bottom: none;
+}
+
+.attachment-item:hover {
+  background: var(--el-fill-color-light);
+}
+
+.attachment-icon {
+  flex-shrink: 0;
+  color: var(--el-color-primary);
+}
+
+.attachment-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+
+.attachment-name {
+  height: 20px;
+  line-height: 20px;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 500;
+  justify-content: flex-start;
+  text-align: left;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.attachment-name :deep(span) {
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.attachment-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-wrap: nowrap;
+}
+
+.attachment-dot {
+  color: var(--el-text-color-placeholder);
+  flex-shrink: 0;
+}
+
+.attachment-time {
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.attachment-size {
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.attachment-remove {
+  line-height: 1;
+  padding: 6px;
+  flex-shrink: 0;
+  opacity: 0.55;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+  border-radius: var(--radius-sm);
+}
+
+.attachment-remove:hover {
+  opacity: 1;
+  background: var(--el-color-danger-light-9);
+}
+
+.attachment-remove .el-icon {
+  font-size: 16px;
+}
+
+.attachment-preview {
+  line-height: 1;
+  padding: 6px;
+  flex-shrink: 0;
+  opacity: 0.55;
+  transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+  border-radius: var(--radius-sm);
+  color: var(--el-color-primary);
+}
+
+.attachment-preview:hover {
+  opacity: 1;
+  background: var(--el-color-primary-light-9);
+}
+
+.attachment-preview .el-icon {
+  font-size: 16px;
+}
+
+.preview-iframe {
+  width: 100%;
+  height: 70vh;
+  border: none;
 }
 
 /* Action Bar */
@@ -1941,7 +2159,7 @@ watch(() => formData.type, (typeCode) => {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  z-index: 100;
+  z-index: 50;
 }
 
 :global(.next-node-selector) {

@@ -21,7 +21,13 @@
         <!-- Tabs -->
         <el-tabs v-model="activeTab" class="detail-tabs">
         <!-- 基本信息 -->
-        <el-tab-pane label="基本信息" name="basic">
+        <el-tab-pane name="basic">
+          <template #label>
+            <span class="detail-tab-label">
+              <el-icon><Document /></el-icon>
+              <span>基本信息</span>
+            </span>
+          </template>
           <el-descriptions :column="2" border>
             <el-descriptions-item label="所属项目">{{ projectLabel(detail.projectId) }}</el-descriptions-item>
             <el-descriptions-item label="需求编号">{{ detail.requirementNo || '-' }}</el-descriptions-item>
@@ -39,25 +45,97 @@
             <el-descriptions-item label="期望上线时间">{{ detail.dueDate || '-' }}</el-descriptions-item>
             <el-descriptions-item label="估算工时">{{ detail.estimatedHours ? detail.estimatedHours + ' 小时' : '-' }}</el-descriptions-item>
             <el-descriptions-item label="实际工时">{{ detail.actualHours ? detail.actualHours + ' 小时' : '-' }}</el-descriptions-item>
-            <el-descriptions-item label="附件" :span="2">
-              <div v-if="detail.attachments?.length" class="attachment-list">
-                <div v-for="attachment in detail.attachments" :key="attachment.fileId || attachment.url" class="attachment-item">
-                  <el-button link type="primary" @click="handleAttachmentDownload(attachment)">{{ attachment.name }}</el-button>
-                  <span class="attachment-meta">
-                    {{ formatAttachmentMeta(attachment) }}
-                  </span>
-                </div>
-              </div>
-              <span v-else>-</span>
-            </el-descriptions-item>
             <el-descriptions-item label="描述" :span="2">
               <div v-if="detail.description" class="rich-content" v-html="richDescription"></div>
               <span v-else>-</span>
             </el-descriptions-item>
           </el-descriptions>
+        </el-tab-pane>
 
-          <!-- 子需求列表 -->
-          <div v-if="children.length > 0" class="children-section">
+        <!-- 附件 -->
+        <el-tab-pane name="attachments">
+          <template #label>
+            <span class="detail-tab-label">
+              <el-icon><Picture /></el-icon>
+              <span>附件</span>
+            </span>
+          </template>
+          <div class="attachments-tab">
+            <div class="section-header">
+              <h3>需求附件</h3>
+              <span class="section-hint">支持下载与在线预览</span>
+            </div>
+            <div v-if="detail.attachments?.length" class="attachment-list">
+              <div v-for="attachment in detail.attachments" :key="attachment.fileId || attachment.url" class="attachment-item">
+                <el-button link type="primary" class="attachment-name" @click="handleAttachmentDownload(attachment)">{{ attachment.name }}</el-button>
+                <span class="attachment-meta">{{ formatAttachmentMeta(attachment) }}</span>
+                <el-button
+                  v-if="canPreviewAttachment(attachment)"
+                  link
+                  class="attachment-preview"
+                  title="预览"
+                  aria-label="预览附件"
+                  @click="handleAttachmentPreview(attachment)"
+                >
+                  <el-icon><View /></el-icon>
+                </el-button>
+              </div>
+            </div>
+            <el-empty v-else description="暂无附件" :image-size="60" />
+
+            <div v-if="detail.transitionAttachments?.length" class="attachment-transition-list">
+              <div class="section-header">
+                <h3>流转附件</h3>
+              </div>
+              <div
+                v-for="group in detail.transitionAttachments"
+                :key="group.transitionId ?? group.nodeName ?? ''"
+                class="attachment-transition-group"
+              >
+                <div class="attachment-transition-header">
+                  <span class="attachment-transition-node">
+                    <i class="ri-node-tree" />
+                    <strong>{{ group.nodeName || '流转节点' }}</strong>
+                  </span>
+                  <span class="attachment-transition-meta">
+                    <span v-if="group.operatorName">{{ group.operatorName }}</span>
+                    <span v-if="group.operatedAt">{{ group.operatedAt ? formatDateTime(group.operatedAt) : '' }}</span>
+                  </span>
+                </div>
+                <div class="attachment-list">
+                  <div
+                    v-for="attachment in group.attachments"
+                    :key="attachment.fileId || attachment.url"
+                    class="attachment-item"
+                  >
+                    <el-button link type="primary" class="attachment-name" @click="handleAttachmentDownload(attachment)">{{ attachment.name }}</el-button>
+                    <span class="attachment-meta">{{ formatAttachmentMeta(attachment) }}</span>
+                    <el-button
+                      v-if="canPreviewAttachment(attachment)"
+                      link
+                      class="attachment-preview"
+                      title="预览"
+                      aria-label="预览附件"
+                      @click="handleAttachmentPreview(attachment)"
+                    >
+                      <el-icon><View /></el-icon>
+                    </el-button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </el-tab-pane>
+
+        <!-- 子需求 -->
+        <el-tab-pane v-if="children.length > 0" name="children">
+          <template #label>
+            <span class="detail-tab-label">
+              <el-icon><List /></el-icon>
+              <span>子需求 ({{ children.length }})</span>
+            </span>
+          </template>
+          <div class="children-section">
             <div class="section-header">
               <h3>子需求（{{ children.length }} 个）</h3>
               <el-button v-if="canSplitRequirement" type="primary" size="small" @click="handleSplit">+ 拆分子需求</el-button>
@@ -93,7 +171,14 @@
           </div>
         </el-tab-pane>
 
-        <el-tab-pane label="流转历史" name="history">
+        <!-- 流转历史 -->
+        <el-tab-pane name="history">
+          <template #label>
+            <span class="detail-tab-label">
+              <el-icon><Histogram /></el-icon>
+              <span>流转历史 ({{ history.length }})</span>
+            </span>
+          </template>
           <el-empty v-if="history.length === 0" description="暂无流转历史" :image-size="60" />
           <el-timeline v-else class="requirement-history-timeline">
             <el-timeline-item
@@ -117,160 +202,145 @@
           </el-timeline>
         </el-tab-pane>
 
-        <el-tab-pane label="关联需求" name="relations">
-          <el-empty v-if="relatedRequirements.length === 0" description="暂无关联需求" :image-size="60" />
-          <el-table v-else :data="relatedRequirements" border size="small">
-            <el-table-column label="标题" min-width="220">
-              <template #default="{ row }">
-                <el-link type="primary" @click="router.push({ name: 'RequirementDetail', params: { id: row.id } })">
-                  {{ row.title || '-' }}
-                </el-link>
-              </template>
-            </el-table-column>
-            <el-table-column label="关系" prop="relationType" width="120" align="center" />
-            <el-table-column label="类型" width="100" align="center">
-              <template #default="{ row }">{{ typeLabel(row.type) }}</template>
-            </el-table-column>
-            <el-table-column label="优先级" width="100" align="center">
-              <template #default="{ row }">
-                <el-tag :type="priorityTagType(row.priority)" size="small">{{ priorityLabel(row.priority) }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="状态" width="110" align="center">
-              <template #default="{ row }">
-                <el-tag :type="statusTagType(row.status)" size="small">{{ row.status || '-' }}</el-tag>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
-
-        <el-tab-pane label="审核记录" name="approvals">
-        <div class="approval-evaluations-section">
-          <div class="section-header">
-            <h3>审核记录</h3>
-            <span class="section-hint">按时间倒序展示提交、通过、驳回与取消意见</span>
-          </div>
-          <el-empty v-if="sortedApprovalEvaluations.length === 0" description="暂无审核记录" :image-size="60" />
-          <el-timeline v-else class="approval-evaluation-timeline">
-            <el-timeline-item
-              v-for="item in sortedApprovalEvaluations"
-              :key="item.id"
-              :timestamp="formatDate(item.createdAt)"
-              placement="top"
-              :type="approvalTimelineItemType(item.result)"
-            >
-              <el-card shadow="never" class="approval-evaluation-card">
-                <div class="approval-evaluation-header">
-                  <el-avatar :size="32">{{ item.evaluatorName?.charAt(0) || '审' }}</el-avatar>
-                  <div class="approval-evaluation-meta">
-                    <div class="approval-evaluation-title">
-                      <strong>{{ item.evaluatorName || '处理人' }}</strong>
-                      <el-tag size="small" effect="dark" :type="approvalResultTagType(item.result)">
-                        {{ item.resultLabel || item.actionLabel || '审核' }}
-                      </el-tag>
-                      <el-tag size="small" effect="plain" type="info">{{ item.nodeName }}</el-tag>
-                      <el-tag v-if="item.nodeStatusName" size="small" effect="plain">{{ item.nodeStatusName }}</el-tag>
-                    </div>
-                    <div v-if="item.rating" class="approval-evaluation-rating">
-                      <span class="approval-evaluation-rating__label">评分</span>
-                      <el-rate :model-value="item.rating" disabled />
-                    </div>
-                  </div>
-                </div>
-                <p v-if="item.content" class="approval-evaluation-content">{{ item.content }}</p>
-                <p v-else class="approval-evaluation-content approval-evaluation-content--empty">未填写审核意见</p>
-                <div v-if="item.attachments?.length" class="approval-evaluation-attachments">
-                  <span class="approval-evaluation-attachments__label">附件：</span>
-                  <a v-for="(att, idx) in item.attachments" :key="idx" class="approval-evaluation-attachments__link" @click="downloadAttachmentFile(att)">{{ att.name }}</a>
-                </div>
-                <div v-if="item.canSupplement" class="approval-evaluation-actions">
-                  <el-button link type="primary" @click="openSupplementDialog(item)">补充意见</el-button>
-                </div>
-                <div v-if="item.supplements?.length" class="approval-supplement-list">
-                  <div v-for="supplement in item.supplements" :key="supplement.id" class="approval-supplement-item">
-                    <div class="approval-supplement-item__header">
-                      <span class="approval-supplement-item__tag">补充</span>
-                      <strong>{{ supplement.evaluatorName || '处理人' }}</strong>
-                      <span class="approval-supplement-item__time">{{ formatDate(supplement.createdAt) }}</span>
-                    </div>
-                    <p class="approval-supplement-item__content">{{ supplement.content || '未填写补充意见' }}</p>
-                    <div v-if="supplement.attachments?.length" class="approval-evaluation-attachments">
-                      <span class="approval-evaluation-attachments__label">附件：</span>
-                      <a v-for="(att, idx) in supplement.attachments" :key="idx" class="approval-evaluation-attachments__link" @click="downloadAttachmentFile(att)">{{ att.name }}</a>
-                    </div>
-                  </div>
-                </div>
-              </el-card>
-            </el-timeline-item>
-          </el-timeline>
-        </div>
-
-        </el-tab-pane>
-
-        <el-tab-pane label="评论" name="comments">
-        <!-- 评论区 -->
-        <div class="comment-section-block">
-          <div class="section-header">
-            <h3>评论</h3>
-          </div>
-          <template v-if="canEditComment">
-            <div class="comment-editor-wrapper">
-              <IsleEditorToolbar v-if="commentEditorInstance" :editor="commentEditorInstance" />
-              <div class="comment-editor-toolbar">
-                <el-button
-                  link
-                  type="primary"
-                  size="small"
-                  :loading="commentImageUploading"
-                  @click="triggerCommentFileInput"
-                >
-                  <el-icon style="margin-right: 4px"><Picture /></el-icon>插入图片
-                </el-button>
-                <span class="comment-editor-hint">支持点击选图 / 拖拽 / Ctrl+V 粘贴</span>
-                <input
-                  ref="commentFileInputRef"
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  style="display: none"
-                  @change="handleCommentFileInput"
-                />
-              </div>
-              <div
-                class="comment-editor-dropzone"
-                :class="{ 'is-dragover': commentIsDragOver }"
-                @dragenter.prevent.stop="handleCommentDragEnter"
-                @dragover.prevent.stop="handleCommentDragOver"
-                @dragleave.prevent.stop="handleCommentDragLeave"
-                @drop.prevent.stop="handleCommentDrop"
-              >
-                <IsleEditor v-model="commentRichText" :extensions="commentEditorExtensions" locale="zh" @create="onCommentEditorCreate" />
-              </div>
-            </div>
-            <div class="comment-editor-actions">
-              <template v-if="commentDraftDirty">
-                <el-button :disabled="commentSubmitting" @click="cancelCommentDraft">
-                  取消
-                </el-button>
-                <el-button type="primary" :loading="commentSubmitting" @click="submitCommentRich">
-                  保存
-                </el-button>
-              </template>
-            </div>
+        <!-- 审核记录 -->
+        <el-tab-pane name="approvals">
+          <template #label>
+            <span class="detail-tab-label">
+              <el-icon><ChatLineRound /></el-icon>
+              <span>审核记录 ({{ approvalEvaluations.length }})</span>
+            </span>
           </template>
-          <el-empty v-if="comments.length === 0" description="暂无评论" :image-size="40" />
-          <div v-for="comment in comments" :key="comment.id" class="comment-item">
-            <el-avatar :size="32">{{ comment.userName?.charAt(0) || 'U' }}</el-avatar>
-            <div class="comment-content">
-              <div class="comment-header">
-                <strong>{{ comment.userName || '用户' }}</strong>
-                <span class="comment-time">{{ formatDate(comment.createdAt) }}</span>
+          <div class="approval-evaluations-section">
+            <div class="section-header">
+              <h3>审核记录</h3>
+              <span class="section-hint">按时间倒序展示提交、通过、驳回与取消意见</span>
+            </div>
+            <el-empty v-if="sortedApprovalEvaluations.length === 0" description="暂无审核记录" :image-size="60" />
+            <el-timeline v-else class="approval-evaluation-timeline">
+              <el-timeline-item
+                v-for="item in sortedApprovalEvaluations"
+                :key="item.id"
+                :timestamp="formatDate(item.createdAt)"
+                placement="top"
+                :type="approvalTimelineItemType(item.result)"
+              >
+                <el-card shadow="never" class="approval-evaluation-card">
+                  <div class="approval-evaluation-header">
+                    <el-avatar :size="32">{{ item.evaluatorName?.charAt(0) || '审' }}</el-avatar>
+                    <div class="approval-evaluation-meta">
+                      <div class="approval-evaluation-title">
+                        <strong>{{ item.evaluatorName || '处理人' }}</strong>
+                        <el-tag v-if="item.id !== -1" size="small" effect="dark" :type="approvalResultTagType(item.result)">
+                          {{ item.resultLabel || item.actionLabel || '审核' }}
+                        </el-tag>
+                        <el-tag size="small" effect="plain" type="info">{{ item.nodeName }}</el-tag>
+                        <el-tag v-if="item.nodeStatusName && item.nodeStatusName !== item.nodeName" size="small" effect="plain">{{ item.nodeStatusName }}</el-tag>
+                      </div>
+                      <div v-if="item.rating" class="approval-evaluation-rating">
+                        <span class="approval-evaluation-rating__label">评分</span>
+                        <el-rate :model-value="item.rating" disabled />
+                      </div>
+                    </div>
+                  </div>
+                  <p v-if="item.content" class="approval-evaluation-content">{{ item.content }}</p>
+                  <p v-else class="approval-evaluation-content approval-evaluation-content--empty">未填写审核意见</p>
+                  <div v-if="item.attachments?.length" class="approval-evaluation-attachments">
+                    <span class="approval-evaluation-attachments__label">附件：</span>
+                    <a v-for="(att, idx) in item.attachments" :key="idx" class="approval-evaluation-attachments__link" @click="downloadAttachmentFile(att)">{{ att.name }}</a>
+                  </div>
+                  <div v-if="item.canSupplement" class="approval-evaluation-actions">
+                    <el-button link type="primary" aria-label="补充意见" @click="openSupplementDialog(item)">补充意见</el-button>
+                  </div>
+                  <div v-if="item.supplements?.length" class="approval-supplement-list">
+                    <div v-for="supplement in item.supplements" :key="supplement.id" class="approval-supplement-item">
+                      <div class="approval-supplement-item__header">
+                        <span class="approval-supplement-item__tag">补充</span>
+                        <strong>{{ supplement.evaluatorName || '处理人' }}</strong>
+                        <span class="approval-supplement-item__time">{{ formatDate(supplement.createdAt) }}</span>
+                      </div>
+                      <p class="approval-supplement-item__content">{{ supplement.content || '未填写补充意见' }}</p>
+                      <div v-if="supplement.attachments?.length" class="approval-evaluation-attachments">
+                        <span class="approval-evaluation-attachments__label">附件：</span>
+                        <a v-for="(att, idx) in supplement.attachments" :key="idx" class="approval-evaluation-attachments__link" @click="downloadAttachmentFile(att)">{{ att.name }}</a>
+                      </div>
+                    </div>
+                  </div>
+                </el-card>
+              </el-timeline-item>
+            </el-timeline>
+          </div>
+        </el-tab-pane>
+
+        <!-- 评论 -->
+        <el-tab-pane name="comments">
+          <template #label>
+            <span class="detail-tab-label">
+              <el-icon><ChatDotRound /></el-icon>
+              <span>评论 ({{ comments.length }})</span>
+            </span>
+          </template>
+          <!-- 评论区 -->
+          <div class="comment-section-block">
+            <div class="section-header">
+              <h3>评论</h3>
+            </div>
+            <template v-if="canEditComment">
+              <div class="comment-editor-wrapper">
+                <IsleEditorToolbar v-if="commentEditorInstance" :editor="commentEditorInstance" />
+                <div class="comment-editor-toolbar">
+                  <el-button
+                    link
+                    type="primary"
+                    size="small"
+                    :loading="commentImageUploading"
+                    @click="triggerCommentFileInput"
+                  >
+                    <el-icon style="margin-right: 4px"><Picture /></el-icon>插入图片
+                  </el-button>
+                  <span class="comment-editor-hint">支持点击选图 / 拖拽 / Ctrl+V 粘贴</span>
+                  <input
+                    ref="commentFileInputRef"
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    style="display: none"
+                    @change="handleCommentFileInput"
+                  />
+                </div>
+                <div
+                  class="comment-editor-dropzone"
+                  :class="{ 'is-dragover': commentIsDragOver }"
+                  @dragenter.prevent.stop="handleCommentDragEnter"
+                  @dragover.prevent.stop="handleCommentDragOver"
+                  @dragleave.prevent.stop="handleCommentDragLeave"
+                  @drop.prevent.stop="handleCommentDrop"
+                >
+                  <IsleEditor v-model="commentRichText" :extensions="commentEditorExtensions" locale="zh" @create="onCommentEditorCreate" />
+                </div>
               </div>
-              <div class="rich-content comment-body" v-html="hydrateRichTextImageHtml(comment.content || '')"></div>
+              <div class="comment-editor-actions">
+                <template v-if="commentDraftDirty">
+                  <el-button :disabled="commentSubmitting" @click="cancelCommentDraft">
+                    取消
+                  </el-button>
+                  <el-button type="primary" :loading="commentSubmitting" @click="submitCommentRich">
+                    保存
+                  </el-button>
+                </template>
+              </div>
+            </template>
+            <el-empty v-if="comments.length === 0" description="暂无评论" :image-size="40" />
+            <div v-for="comment in comments" :key="comment.id" class="comment-item">
+              <el-avatar :size="32">{{ comment.userName?.charAt(0) || 'U' }}</el-avatar>
+              <div class="comment-content">
+                <div class="comment-header">
+                  <strong>{{ comment.userName || '用户' }}</strong>
+                  <span class="comment-time">{{ formatDate(comment.createdAt) }}</span>
+                </div>
+                <div class="rich-content comment-body" v-html="hydrateRichTextImageHtml(comment.content || '')"></div>
+              </div>
             </div>
           </div>
-        </div>
-
         </el-tab-pane>
 
         </el-tabs>
@@ -286,6 +356,8 @@
                 class="workflow-sidebar__toggle-button"
                 text
                 circle
+                :aria-label="workflowPanelCollapsed ? '展开审批面板' : '折叠审批面板'"
+                :aria-expanded="!workflowPanelCollapsed"
                 @click="workflowPanelCollapsed = !workflowPanelCollapsed"
               >
                 <el-icon>
@@ -469,7 +541,7 @@
             maxlength="1000"
             show-word-limit
           />
-          <div class="approval-attachment-section" style="margin-top: 12px;">
+          <div v-if="canSubmitApproval" class="approval-attachment-section" style="margin-top: 12px;">
             <div class="approval-attachment-header">
               <span>附件材料</span>
               <el-button link type="primary" @click="triggerSupplementAttachmentUpload">上传附件</el-button>
@@ -494,7 +566,14 @@
                 <div v-for="(file, index) in supplementAttachments" :key="index" class="approval-attachment-item">
                   <span class="approval-attachment-name" @click="downloadAttachmentFile(file)">{{ file.name }}</span>
                   <span class="approval-attachment-size">{{ formatFileSize(file.size) }}</span>
-                  <el-button link type="danger" size="small" @click="removeSupplementAttachment(index)">删除</el-button>
+                  <el-button
+                    v-if="canRemoveApprovalAttachment(file)"
+                    link
+                    type="danger"
+                    size="small"
+                    @click="removeSupplementAttachment(index)"
+                  >删除</el-button>
+                  <span v-else class="approval-attachment-readonly">仅本人可删</span>
                 </div>
               </div>
             </div>
@@ -535,7 +614,7 @@
               show-word-limit
             />
           </el-form-item>
-          <div class="approval-attachment-section">
+          <div v-if="canSubmitApproval" class="approval-attachment-section">
             <div class="approval-attachment-header">
               <span>附件材料</span>
               <el-button link type="primary" @click="triggerApprovalAttachmentUpload">上传附件</el-button>
@@ -625,6 +704,16 @@
         </el-dialog>
       </template>
     </div>
+
+    <!-- 附件预览弹窗（与知识库管理共用 FilePreviewDialog） -->
+    <FilePreviewDialog
+      v-if="previewFile"
+      v-model="previewVisible"
+      :file-name="previewFile.name"
+      :file-type="getFileExt(previewFile.name)"
+      :file-id="previewFile.fileId || undefined"
+      :download-url="previewFile.url"
+    />
   </PageContainer>
 </template>
 
@@ -632,7 +721,7 @@
 import { computed, ref, onMounted, watch, type Ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeftBold, ArrowRightBold, Picture } from '@element-plus/icons-vue'
+import { ArrowLeftBold, ArrowRightBold, Document, Picture, List, Histogram, ChatLineRound, ChatDotRound, View, Download } from '@element-plus/icons-vue'
 import { requirementApi, projectApi, relationApi } from '@/api'
 import { downloadRequirementAttachment, uploadRequirementAttachment } from '@/api/modules/file'
 import type { RelationItem } from '@/api/modules/relation'
@@ -647,15 +736,18 @@ import type {
   RequirementHistory,
   RequirementUpdate, RequirementDetailVO,
 } from '@/types/requirement'
-import { normalizeText, formatDate, stripPriorityPrefix } from '@/utils/format'
+import { normalizeText, formatDate, formatFileSize, getFileExt, stripPriorityPrefix } from '@/utils/format'
 import AppButton from '@/components/common/AppButton.vue'
 import { usePermission } from '@/composables/usePermission'
+import { useRequirementTag } from '@/composables/useRequirementTag'
+import { useUserStore } from '@/stores/modules/user'
 import { hydrateRichTextImageHtml, buildRichTextImagePreviewUrl } from '@/utils/richTextFileImage'
 import { IsleEditor, IsleEditorToolbar, RichTextKit } from '@isle-editor/vue3'
 import { addLocale } from '@isle-editor/core'
 import Image from '@tiptap/extension-image'
 import '@isle-editor/vue3/dist/style.css'
 import PageContainer from '@/components/common/PageContainer.vue'
+import FilePreviewDialog from '@/components/document/FilePreviewDialog.vue'
 
 addLocale('zh', {
   isleEditor: '岛屿编辑器',
@@ -746,6 +838,18 @@ addLocale('zh', {
 const route = useRoute()
 const router = useRouter()
 const { hasAnyPermission, hasPermission } = usePermission()
+const {
+  statusTagType,
+  priorityTagType,
+  approvalResultTagType,
+  approvalTimelineItemType,
+} = useRequirementTag()
+const canSubmitApproval = computed(() => hasPermission('button:requirement:submit'))
+const userStore = useUserStore()
+const currentUserId = computed(() => {
+  const info: any = userStore.userInfo
+  return info?.id ?? null
+})
 
 const id = Number(route.params.id)
 const loading = ref(false)
@@ -815,15 +919,41 @@ const showCurrentNodeStatus = computed(() => {
 })
 
 const sortedApprovalEvaluations = computed(() => {
-  return [...approvalEvaluations.value].sort((a, b) => {
-    const timeA = new Date(a.createdAt).getTime()
-    const timeB = new Date(b.createdAt).getTime()
-    if (timeA !== timeB) return timeB - timeA
-    return b.id - a.id
+  // ISO 8601 字符串可直接字符串比较，无需 new Date() 分配
+  const sorted = [...approvalEvaluations.value].sort((a, b) => {
+    const cmp = (b.createdAt || '').localeCompare(a.createdAt || '')
+    return cmp !== 0 ? cmp : b.id - a.id
   })
-})
 
-// Comment rich text editor
+  // 创建人起始节点：如果后端尚未记录"新建"动作，在时间线最前面补一条虚拟记录
+  if (detail.value && detail.value.creatorName && detail.value.createdAt) {
+    const hasCreateRecord = sorted.some(
+      (item) => item.nodeName === '新建' || item.action === 'create',
+    )
+    if (!hasCreateRecord) {
+      const createRecord: RequirementApprovalEvaluation = {
+        id: -1,
+        requirementId: detail.value.id,
+        instanceId: 0,
+        nodeId: '',
+        nodeName: '新建',
+        nodeStatusName: '新建',
+        evaluatorId: detail.value.creatorId ?? 0,
+        evaluatorName: detail.value.creatorName,
+        action: 'create',
+        actionLabel: '新建',
+        result: 'SUBMIT',
+        resultLabel: '新建',
+        content: '创建需求',
+        createdAt: detail.value.createdAt,
+        supplements: [],
+        canSupplement: false,
+      }
+      return [createRecord, ...sorted]
+    }
+  }
+  return sorted
+})
 const commentRichText = ref('')
 const commentSubmitting = ref(false)
 const commentEditorInstance = ref<any>(null)
@@ -1170,7 +1300,23 @@ function onApprovalDragLeave() {
   approvalDragActive.value = false
 }
 
+function canRemoveApprovalAttachment(file: RequirementAttachment) {
+  if (!file) return false
+  if (userStore.isSuperAdmin) return true
+  const uploaderId = file.uploaderId
+  if (uploaderId == null) {
+    // 没有 uploaderId 视为当前用户上传（兼容旧数据）
+    return true
+  }
+  return uploaderId === currentUserId.value
+}
+
 function removeApprovalAttachment(index: number) {
+  const target = approvalAttachments.value[index]
+  if (target && !canRemoveApprovalAttachment(target)) {
+    ElMessage.warning('仅上传人可删除此附件')
+    return
+  }
   approvalAttachments.value.splice(index, 1)
 }
 
@@ -1204,14 +1350,12 @@ function onSupplementDragLeave() {
 }
 
 function removeSupplementAttachment(index: number) {
+  const target = supplementAttachments.value[index]
+  if (target && !canRemoveApprovalAttachment(target)) {
+    ElMessage.warning('仅上传人可删除此附件')
+    return
+  }
   supplementAttachments.value.splice(index, 1)
-}
-
-function formatFileSize(size: number | undefined | null): string {
-  if (!size) return ''
-  if (size < 1024) return size + ' B'
-  if (size < 1024 * 1024) return (size / 1024).toFixed(1) + ' KB'
-  return (size / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
 function downloadAttachmentFile(file: RequirementAttachment) {
@@ -1273,38 +1417,8 @@ async function executeTransition(extra?: { rating?: number; comment?: string; at
   }
 }
 
-// Tag type helpers
-function priorityTagType(priority: string): string {
-  const map: Record<string, string> = { P0: 'danger', P1: 'warning', P2: 'info', P3: 'success' }
-  return map[priority] || 'info'
-}
-
-function statusTagType(status: string): string {
-  const map: Record<string, string> = {
-    '新建': 'info', '待分析': 'warning', '待确认': 'warning', '待评审': 'warning',
-    '评审中': 'warning', '已通过': 'success', '开发中': 'primary', '测试中': 'info',
-    '已上线': 'success', '已验收': 'success', '已取消': 'info', '已拒绝': 'danger',
-    '打回': 'danger', '测试不通过': 'danger', '验收不通过': 'danger',
-    PENDING_REVIEW: 'warning', REJECTED: 'danger', SENT_BACK: 'danger',
-    TEST_FAILED: 'danger', ACCEPT_FAILED: 'danger',
-  }
-  return map[status] || 'info'
-}
-
-function approvalResultTagType(result?: string | null): string {
-  const map: Record<string, string> = {
-    SUBMIT: 'primary',
-    PASS: 'success',
-    REJECT: 'danger',
-    CANCEL: 'warning',
-  }
-  return result ? (map[result] || 'info') : 'info'
-}
-
-function approvalTimelineItemType(result?: string | null): 'primary' | 'success' | 'warning' | 'danger' | 'info' {
-  const type = approvalResultTagType(result)
-  return ['primary', 'success', 'warning', 'danger', 'info'].includes(type) ? type as any : 'info'
-}
+// Tag 颜色映射已抽取到 useRequirementTag composable
+// 见 src/composables/useRequirementTag.ts
 
 function openSupplementDialog(item: RequirementApprovalEvaluation) {
   supplementTarget.value = item
@@ -1335,6 +1449,17 @@ function projectOptionLabel(project: { name: string }) {
   return project.name
 }
 
+function pad2(n: number) {
+  return n < 10 ? `0${n}` : String(n)
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`
+}
+
 function formatAttachmentMeta(attachment: RequirementAttachment) {
   const parts: string[] = []
   if (attachment.size) {
@@ -1346,8 +1471,11 @@ function formatAttachmentMeta(attachment: RequirementAttachment) {
       parts.push(`${(attachment.size / 1024 / 1024).toFixed(1)} MB`)
     }
   }
-  if (attachment.contentType) {
-    parts.push(attachment.contentType)
+  if (attachment.uploadedAt) {
+    parts.push(formatDateTime(attachment.uploadedAt))
+  }
+  if (attachment.uploaderName) {
+    parts.push(attachment.uploaderName)
   }
   return parts.join(' / ')
 }
@@ -1358,6 +1486,27 @@ async function handleAttachmentDownload(attachment: RequirementAttachment) {
   } catch {
     ElMessage.error('附件下载失败')
   }
+}
+
+const previewVisible = ref(false)
+const previewFile = ref<RequirementAttachment | null>(null)
+
+/**
+ * 是否允许预览：必须存在 fileId（用于走 /api/v1/files/{id}/preview-url 链路）
+ * 或者有可访问的 url（兼容历史数据）。注意：url 模式不会经过 MinIO 预签名，
+ * 仅作为兜底，主要场景是 fileId。
+ */
+function canPreviewAttachment(attachment: RequirementAttachment) {
+  return !!(attachment.fileId || attachment.url)
+}
+
+function handleAttachmentPreview(attachment: RequirementAttachment) {
+  if (!canPreviewAttachment(attachment)) {
+    ElMessage.warning('该附件暂不支持预览')
+    return
+  }
+  previewFile.value = attachment
+  previewVisible.value = true
 }
 
 type TransitionOption = AvailableTransition
@@ -1891,35 +2040,44 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: var(--spacing-sm);
   width: 40px;
-  padding: 8px 4px;
-  border: 1px solid #d9ecff;
-  border-radius: 12px;
-  background: #f9fcff;
-  box-shadow: 0 8px 24px rgba(31, 35, 41, 0.04);
+  padding: 12px 4px;
+  border: 1px solid var(--el-color-primary-light-9);
+  border-radius: var(--radius-lg);
+  background: var(--color-accent-tint-light);
+  box-shadow: var(--shadow-md);
 }
 
 .workflow-sidebar__toggle-button {
   color: var(--color-accent);
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  transition: background-color var(--duration-fast) var(--ease-standard);
+
+  &:hover {
+    background: var(--el-color-primary-light-9);
+  }
 }
 
 .workflow-sidebar__collapsed-title {
+  margin-top: 4px;
   color: var(--color-text-secondary);
-  font-size: 12px;
-  line-height: 1.2;
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
   writing-mode: vertical-rl;
   letter-spacing: 2px;
+  user-select: none;
 }
 
 .workflow-action-panel {
   flex: 1;
   min-width: 0;
   padding: 14px;
-  border: 1px solid #d9ecff;
-  border-radius: 16px;
-  background: linear-gradient(180deg, #f9fcff 0%, #ffffff 100%);
-  box-shadow: 0 12px 32px rgba(31, 35, 41, 0.08);
+  border: 1px solid var(--el-color-primary-light-9);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
 }
 
 .workflow-action-panel__header {
@@ -1928,7 +2086,7 @@ onMounted(() => {
   justify-content: space-between;
   padding-bottom: 14px;
   margin-bottom: 14px;
-  border-bottom: 1px solid #eaf3ff;
+  border-bottom: 1px solid var(--el-color-primary-light-9);
 }
 
 .workflow-action-panel__title {
@@ -2031,9 +2189,9 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border: 1px solid #d9ecff;
-  border-radius: 6px;
-  background: #f4faff;
+  border: 1px solid var(--el-color-primary-light-9);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-tint-light);
 }
 
 .current-node-status__label {
@@ -2048,10 +2206,10 @@ onMounted(() => {
 }
 
 .current-node-status__divider {
-  color: #c0c4cc;
+  color: var(--color-text-placeholder);
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1200px) {
   .detail-layout {
     flex-direction: column;
   }
@@ -2070,21 +2228,17 @@ onMounted(() => {
 
   .workflow-sidebar.is-collapsed {
     flex-basis: auto;
+    width: 100%;
   }
 
+  /* <1200px 时隐藏 rail，仅显示 action panel，无需手动折叠 */
   .workflow-sidebar__rail {
-    flex-direction: row;
-    width: auto;
-    writing-mode: initial;
-  }
-
-  .workflow-sidebar__collapsed-title {
-    writing-mode: initial;
-    letter-spacing: 0;
+    display: none;
   }
 
   .workflow-action-panel {
     min-width: 0;
+    width: 100%;
   }
 
   .workflow-action-panel__field {
@@ -2102,13 +2256,64 @@ onMounted(() => {
   margin-top: 16px;
 }
 
-.rich-content :deep(img) {
-  max-width: 100%;
-  height: auto;
+.detail-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.rich-content :deep(p) {
-  margin: 0 0 8px 0;
+.detail-tab-label .el-icon {
+  font-size: 14px;
+}
+
+.rich-content {
+  line-height: var(--line-height-relaxed);
+  color: var(--el-text-color-regular);
+
+  :deep(p) {
+    margin: 0 0 12px;
+  }
+
+  :deep(h1),
+  :deep(h2),
+  :deep(h3) {
+    margin: 16px 0 8px;
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-primary);
+  }
+
+  :deep(ul),
+  :deep(ol) {
+    padding-left: 24px;
+    margin: 8px 0;
+  }
+
+  :deep(code) {
+    background: var(--el-fill-color-light);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: var(--font-family-mono);
+    font-size: 0.9em;
+  }
+
+  :deep(blockquote) {
+    border-left: 3px solid var(--el-color-primary);
+    padding: 4px 12px;
+    margin: 8px 0;
+    color: var(--el-text-color-secondary);
+    background: var(--el-fill-color-light);
+  }
+
+  :deep(img) {
+    max-width: 100%;
+    height: auto;
+  }
+}
+
+.attachments-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
 .old-value {
@@ -2282,19 +2487,82 @@ onMounted(() => {
 .attachment-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .attachment-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 10px;
+  min-height: 28px;
+  flex-wrap: nowrap;
+}
+
+.attachment-item .attachment-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .attachment-meta {
   color: var(--color-muted-text);
   font-size: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.attachment-preview {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 4px;
+  line-height: 1;
+  opacity: 0.6;
+  color: var(--color-accent);
+  border-radius: 4px;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.attachment-preview:hover {
+  opacity: 1;
+  background: var(--el-color-primary-light-9);
+}
+
+.attachment-transition-list {
+  margin-top: 12px;
+  border-top: 1px dashed var(--el-border-color-lighter, #ebeef5);
+  padding-top: 8px;
+}
+
+.attachment-transition-group + .attachment-transition-group {
+  margin-top: 8px;
+}
+
+.attachment-transition-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: var(--color-text-secondary, #909399);
+  margin-bottom: 4px;
+}
+
+.attachment-transition-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--el-color-primary);
+}
+
+.attachment-transition-meta {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.attachment-transition-meta span:empty {
+  display: none;
 }
 
 .section-header {
@@ -2316,9 +2584,7 @@ onMounted(() => {
 }
 
 .approval-evaluations-section {
-  margin-top: 32px;
-  padding-top: 24px;
-  border-top: 1px solid var(--color-border);
+  margin-top: 8px;
 }
 
 .approval-evaluation-timeline {
@@ -2328,7 +2594,7 @@ onMounted(() => {
 
 .approval-evaluation-card {
   border: 1px solid var(--color-border);
-  background: #fafafa;
+  background: var(--color-surface-alt);
 }
 
 .approval-evaluation-card :deep(.el-card__body) {
@@ -2387,8 +2653,8 @@ onMounted(() => {
 .approval-supplement-item {
   padding: 10px 12px;
   border-radius: 8px;
-  background: #eef6ff;
-  border: 1px solid #d6e8ff;
+  background: var(--el-color-primary-light-9);
+  border: 1px solid var(--el-color-primary-light-7);
 }
 
 .approval-supplement-item__header {
@@ -2553,6 +2819,12 @@ onMounted(() => {
 .approval-attachment-size {
   font-size: 12px;
   color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.approval-attachment-readonly {
+  font-size: 12px;
+  color: var(--color-text-placeholder, #c0c4cc);
   flex-shrink: 0;
 }
 

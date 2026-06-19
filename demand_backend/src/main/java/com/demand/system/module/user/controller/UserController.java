@@ -25,7 +25,7 @@ public class UserController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:create', 'button:user:update', 'button:user:delete', 'button:user:batch-delete', 'button:user:export', 'button:user:import', 'button:user:invite')")
+    @PreAuthorize("isAuthenticated()")
     public Result<PageResult<UserVO>> list(UserQueryDTO query) {
         return Result.success(userService.list(query));
     }

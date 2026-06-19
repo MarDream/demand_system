@@ -9,6 +9,7 @@ import com.demand.system.common.result.ErrorCode;
 import com.demand.system.common.result.PageResult;
 import com.demand.system.common.result.Result;
 import com.demand.system.module.requirement.dto.RequirementCreateDTO;
+import com.demand.system.module.requirement.dto.RequirementAttachmentDTO;
 import com.demand.system.module.requirement.dto.RequirementApprovalEvaluationVO;
 import com.demand.system.module.requirement.dto.RequirementCommentCreateDTO;
 import com.demand.system.module.requirement.dto.RequirementCommentVO;
@@ -31,6 +32,8 @@ import com.demand.system.module.requirement.mapper.RequirementCommentMapper;
 import com.demand.system.module.requirement.mapper.RequirementFollowMapper;
 import com.demand.system.module.requirement.mapper.RequirementHistoryMapper;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
+import com.demand.system.module.file.entity.FileRecord;
+import com.demand.system.module.file.mapper.FileRecordMapper;
 import com.demand.system.module.requirement.service.RequirementApprovalEvaluationService;
 import com.demand.system.module.requirement.service.RequirementConfigService;
 import com.demand.system.module.requirement.service.RequirementService;
@@ -137,9 +140,10 @@ public class RequirementServiceImpl implements RequirementService {
     private final ProjectMapper projectMapper;
     private final RoleMapper roleMapper;
     private final RoleGroupMapper roleGroupMapper;
+    private final FileRecordMapper fileRecordMapper;
     private final ObjectMapper objectMapper;
 
-    public RequirementServiceImpl(RequirementMapper requirementMapper, RequirementFollowMapper requirementFollowMapper, RequirementHistoryMapper historyMapper, RequirementCommentMapper requirementCommentMapper, CustomFieldValueMapper customFieldValueMapper, UserMapper userMapper, UserOrganizationMapper userOrganizationMapper, SysOrgService sysOrgService, NotificationService notificationService, RelationService relationService, WorkflowService workflowService, WorkflowEngineService workflowEngineService, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowGraphNavigator workflowGraphNavigator, WorkflowRuntimeLoader workflowRuntimeLoader, WorkflowRuntimeMigrationService workflowRuntimeMigrationService, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, WorkflowInstanceMapper workflowInstanceMapper, WorkflowInstanceTransitionMapper workflowInstanceTransitionMapper, WorkflowTransitionRecordMapper workflowTransitionRecordMapper, WorkflowDefinitionEngine workflowDefinitionEngine, RequirementApprovalEvaluationService approvalEvaluationService, RequirementConfigService requirementConfigService, KnowledgeDocumentService knowledgeDocumentService, NodeStatusMapper nodeStatusMapper, ProjectMapper projectMapper, RoleMapper roleMapper, RoleGroupMapper roleGroupMapper, ObjectMapper objectMapper) {
+    public RequirementServiceImpl(RequirementMapper requirementMapper, RequirementFollowMapper requirementFollowMapper, RequirementHistoryMapper historyMapper, RequirementCommentMapper requirementCommentMapper, CustomFieldValueMapper customFieldValueMapper, UserMapper userMapper, UserOrganizationMapper userOrganizationMapper, SysOrgService sysOrgService, NotificationService notificationService, RelationService relationService, WorkflowService workflowService, WorkflowEngineService workflowEngineService, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowGraphNavigator workflowGraphNavigator, WorkflowRuntimeLoader workflowRuntimeLoader, WorkflowRuntimeMigrationService workflowRuntimeMigrationService, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, WorkflowInstanceMapper workflowInstanceMapper, WorkflowInstanceTransitionMapper workflowInstanceTransitionMapper, WorkflowTransitionRecordMapper workflowTransitionRecordMapper, WorkflowDefinitionEngine workflowDefinitionEngine, RequirementApprovalEvaluationService approvalEvaluationService, RequirementConfigService requirementConfigService, KnowledgeDocumentService knowledgeDocumentService, NodeStatusMapper nodeStatusMapper, ProjectMapper projectMapper, RoleMapper roleMapper, RoleGroupMapper roleGroupMapper, FileRecordMapper fileRecordMapper, ObjectMapper objectMapper) {
         this.requirementMapper = requirementMapper;
         this.requirementFollowMapper = requirementFollowMapper;
         this.historyMapper = historyMapper;
@@ -170,6 +174,7 @@ public class RequirementServiceImpl implements RequirementService {
         this.projectMapper = projectMapper;
         this.roleMapper = roleMapper;
         this.roleGroupMapper = roleGroupMapper;
+        this.fileRecordMapper = fileRecordMapper;
         this.objectMapper = objectMapper;
     }
 
@@ -257,9 +262,14 @@ public class RequirementServiceImpl implements RequirementService {
 
         Page<Requirement> resultPage = requirementMapper.selectPage(page, wrapper);
 
+        List<Requirement> records = resultPage.getRecords();
         List<RequirementVO> voList = new ArrayList<>();
-        for (Requirement r : resultPage.getRecords()) {
-            voList.add(toRequirementVO(r, currentUserId, false));
+        if (!records.isEmpty()) {
+            // 一次性收集整页附件 fileIds 并批量回填，避免 2N 次查询
+            batchEnrichAttachmentMeta(records);
+            for (Requirement r : records) {
+                voList.add(toRequirementVO(r, currentUserId, false));
+            }
         }
 
         return new PageResult<>(voList, resultPage.getTotal(), query.getPageNum(), query.getPageSize());
@@ -275,6 +285,9 @@ public class RequirementServiceImpl implements RequirementService {
         RequirementVO vo = new RequirementVO();
         BeanUtils.copyProperties(r, vo);
         fillUserNames(vo, r);
+        // 合并：原本 enrichAttachmentMeta + fillTransitionAttachments 各跑 2~3 次查询，
+        // 改为统一收集 fileIds/userIds 后单次批量回填，DB roundtrip 5→2。
+        enrichAttachmentsAndTransitions(vo, r.getId());
         Long userId = SecurityUtils.getCurrentUserId();
         if (userId != null) {
             fillPermissionFields(vo, r, userId);
@@ -1369,6 +1382,8 @@ public class RequirementServiceImpl implements RequirementService {
         RequirementVO vo = new RequirementVO();
         BeanUtils.copyProperties(requirement, vo);
         fillUserNames(vo, requirement);
+        // 分页场景下由 pageQuery 提前批量化回填，单行 detail 场景走 enrichAttachmentsAndTransitions
+        // —— 这里不再单独调用，避免单行回填带来的 2 次额外查询。
         if (userId != null) {
             if (fillPermission) {
                 fillPermissionFields(vo, requirement, userId);
@@ -1376,6 +1391,189 @@ public class RequirementServiceImpl implements RequirementService {
             fillFollowed(vo, requirement.getId(), userId);
         }
         return vo;
+    }
+
+    /**
+     * 批量补全一页 Requirement 记录的附件元信息。
+     *
+     * <p>原实现按行调用 {@link #enrichAttachmentsAndTransitions}（在分页场景），
+     * 每行触发 2 次 batch select（2N 次）。改为先收集整页 fileIds / uploaderIds，
+     * 单次批量回填到每行的 attachments 列表。</p>
+     */
+    private void batchEnrichAttachmentMeta(List<Requirement> requirements) {
+        if (requirements == null || requirements.isEmpty()) {
+            return;
+        }
+        java.util.Set<Long> allFileIds = new java.util.HashSet<>();
+        for (Requirement r : requirements) {
+            if (r == null || r.getAttachments() == null) continue;
+            for (RequirementAttachmentDTO att : r.getAttachments()) {
+                if (att != null && att.getFileId() != null) {
+                    allFileIds.add(att.getFileId());
+                }
+            }
+        }
+        if (allFileIds.isEmpty()) {
+            return;
+        }
+
+        java.util.Map<Long, FileRecord> recordMap = new java.util.HashMap<>();
+        java.util.Set<Long> uploaderIds = new java.util.HashSet<>();
+        for (FileRecord record : fileRecordMapper.selectBatchIds(allFileIds)) {
+            if (record == null || record.getId() == null) continue;
+            recordMap.put(record.getId(), record);
+            if (record.getUploaderId() != null) {
+                uploaderIds.add(record.getUploaderId());
+            }
+        }
+
+        java.util.Map<Long, String> uploaderNameMap = new java.util.HashMap<>();
+        if (!uploaderIds.isEmpty()) {
+            for (User u : userMapper.selectBatchIds(uploaderIds)) {
+                if (u == null) continue;
+                uploaderNameMap.put(u.getId(),
+                        StringUtils.hasText(u.getRealName()) ? u.getRealName() : u.getUsername());
+            }
+        }
+
+        for (Requirement r : requirements) {
+            if (r == null || r.getAttachments() == null) continue;
+            for (RequirementAttachmentDTO att : r.getAttachments()) {
+                if (att == null || att.getFileId() == null) continue;
+                FileRecord record = recordMap.get(att.getFileId());
+                if (record == null) continue;
+                att.setUploadedAt(record.getCreatedAt());
+                att.setUploaderId(record.getUploaderId());
+                if (record.getUploaderId() != null) {
+                    att.setUploaderName(uploaderNameMap.get(record.getUploaderId()));
+                }
+            }
+        }
+    }
+
+    /**
+     * 补全附件元信息 + 流转节点附件。
+     *
+     * <p>需求详情页统一收集所有 fileIds / userIds 后批量回填，避免循环查询。
+     * 合并前：enrichAttachmentMeta + fillTransitionAttachments 共触发 2 次 file_records、
+     * 3 次 sys_user 查表（5 roundtrip）；合并后：1 次 file_records + 1 次 sys_user
+     * （2 roundtrip）。</p>
+     */
+    private void enrichAttachmentsAndTransitions(RequirementVO vo, Long requirementId) {
+        // 1) 补全主附件元信息
+        List<RequirementAttachmentDTO> mainAttachments = vo.getAttachments();
+        java.util.Set<Long> allFileIds = new java.util.HashSet<>();
+        if (mainAttachments != null) {
+            for (RequirementAttachmentDTO att : mainAttachments) {
+                if (att != null && att.getFileId() != null) {
+                    allFileIds.add(att.getFileId());
+                }
+            }
+        }
+
+        // 2) 加载流转历史 + 收集流转节点附件 fileIds / operatorIds
+        List<com.demand.system.module.workflow.entity.WorkflowInstanceTransition> transitions = null;
+        if (requirementId != null) {
+            transitions = workflowInstanceTransitionMapper.selectList(
+                    new LambdaQueryWrapper<com.demand.system.module.workflow.entity.WorkflowInstanceTransition>()
+                            .eq(com.demand.system.module.workflow.entity.WorkflowInstanceTransition::getRequirementId, requirementId)
+                            .orderByAsc(com.demand.system.module.workflow.entity.WorkflowInstanceTransition::getCreatedAt));
+        }
+        java.util.Set<Long> operatorIds = new java.util.HashSet<>();
+        if (transitions != null) {
+            for (var t : transitions) {
+                if (t == null) continue;
+                if (t.getOperatorId() != null) {
+                    operatorIds.add(t.getOperatorId());
+                }
+                if (t.getAttachmentIds() != null) {
+                    allFileIds.addAll(t.getAttachmentIds());
+                }
+            }
+        }
+
+        if (allFileIds.isEmpty() && operatorIds.isEmpty() && (transitions == null || transitions.isEmpty())) {
+            return;
+        }
+
+        // 3) 单次批量查 file_records
+        java.util.Map<Long, FileRecord> recordMap = new java.util.HashMap<>();
+        java.util.Set<Long> uploaderIds = new java.util.HashSet<>();
+        if (!allFileIds.isEmpty()) {
+            for (FileRecord record : fileRecordMapper.selectBatchIds(allFileIds)) {
+                if (record == null || record.getId() == null) continue;
+                recordMap.put(record.getId(), record);
+                if (record.getUploaderId() != null) {
+                    uploaderIds.add(record.getUploaderId());
+                }
+            }
+        }
+
+        // 4) 单次批量查 sys_user（覆盖上传人 + 操作人）
+        java.util.Map<Long, String> userNameMap = new java.util.HashMap<>();
+        java.util.Set<Long> allUserIds = new java.util.HashSet<>();
+        allUserIds.addAll(uploaderIds);
+        allUserIds.addAll(operatorIds);
+        if (!allUserIds.isEmpty()) {
+            for (User u : userMapper.selectBatchIds(allUserIds)) {
+                if (u == null) continue;
+                userNameMap.put(u.getId(), StringUtils.hasText(u.getRealName()) ? u.getRealName() : u.getUsername());
+            }
+        }
+
+        // 5) 回填主附件
+        if (mainAttachments != null) {
+            for (RequirementAttachmentDTO att : mainAttachments) {
+                if (att == null || att.getFileId() == null) continue;
+                FileRecord record = recordMap.get(att.getFileId());
+                if (record == null) continue;
+                att.setUploadedAt(record.getCreatedAt());
+                att.setUploaderId(record.getUploaderId());
+                if (record.getUploaderId() != null) {
+                    att.setUploaderName(userNameMap.get(record.getUploaderId()));
+                }
+            }
+        }
+
+        // 6) 回填流转节点附件
+        if (transitions != null && !transitions.isEmpty()) {
+            List<com.demand.system.module.requirement.dto.TransitionAttachmentGroupDTO> groups = new ArrayList<>();
+            for (var t : transitions) {
+                if (t == null || t.getAttachmentIds() == null || t.getAttachmentIds().isEmpty()) {
+                    continue;
+                }
+                List<RequirementAttachmentDTO> atts = new ArrayList<>();
+                for (Long fid : t.getAttachmentIds()) {
+                    FileRecord rec = recordMap.get(fid);
+                    if (rec == null) continue;
+                    RequirementAttachmentDTO a = new RequirementAttachmentDTO();
+                    a.setFileId(rec.getId());
+                    a.setName(rec.getOriginalName());
+                    a.setSize(rec.getFileSize());
+                    a.setContentType(rec.getContentType());
+                    a.setBucketName(rec.getBucketName());
+                    a.setObjectName(rec.getStorageName());
+                    a.setUploadedAt(rec.getCreatedAt());
+                    a.setUploaderId(rec.getUploaderId());
+                    if (rec.getUploaderId() != null) {
+                        a.setUploaderName(userNameMap.get(rec.getUploaderId()));
+                    }
+                    atts.add(a);
+                }
+                if (atts.isEmpty()) continue;
+
+                com.demand.system.module.requirement.dto.TransitionAttachmentGroupDTO g =
+                        new com.demand.system.module.requirement.dto.TransitionAttachmentGroupDTO();
+                g.setTransitionId(t.getId());
+                g.setNodeName(StringUtils.hasText(t.getFromNodeName()) ? t.getFromNodeName() : t.getToNodeName());
+                g.setAction(t.getAction());
+                g.setOperatorName(t.getOperatorId() != null ? userNameMap.get(t.getOperatorId()) : null);
+                g.setOperatedAt(t.getCompletedAt() != null ? t.getCompletedAt() : t.getStartedAt());
+                g.setAttachments(atts);
+                groups.add(g);
+            }
+            vo.setTransitionAttachments(groups);
+        }
     }
 
     private void fillFollowed(RequirementVO vo, Long requirementId, Long userId) {

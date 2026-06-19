@@ -5,9 +5,15 @@ import com.baomidou.mybatisplus.autoconfigure.MybatisPlusProperties;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.config.GlobalConfig;
 import com.baomidou.mybatisplus.core.handlers.MetaObjectHandler;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import jakarta.annotation.PostConstruct;
 import org.apache.ibatis.io.VFS;
 import org.apache.ibatis.mapping.ResultSetType;
 import org.apache.ibatis.reflection.MetaObject;
@@ -34,6 +40,25 @@ import java.util.Properties;
 @Configuration
 @EnableConfigurationProperties(MybatisPlusProperties.class)
 public class MyBatisPlusConfig {
+
+    /**
+     * 给 mybatis-plus 的 {@link JacksonTypeHandler} 注入一个注册了 JSR310 模块的全局 ObjectMapper。
+     *
+     * <p>否则 {@code @TableField(typeHandler = JacksonTypeHandler.class)} 字段里若包含
+     * {@link java.time.LocalDateTime} / {@link java.time.LocalDate} 等 Java 8 时间类型，
+     * 序列化时会抛 {@code InvalidDefinitionException: Java 8 date/time type ... not supported by default}。
+     *
+     * <p>典型触发场景：{@code WorkflowInstanceTransition.attachments_json} 存
+     * {@code List<RequirementAttachmentDTO>}，DTO 里有 {@code LocalDateTime uploadedAt} 字段。
+     */
+    @PostConstruct
+    void configureJacksonTypeHandler() {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.registerModule(new JavaTimeModule());
+        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        mapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+        JacksonTypeHandler.setObjectMapper(mapper);
+    }
 
     @Bean
     public MybatisPlusInterceptor mybatisPlusInterceptor() {

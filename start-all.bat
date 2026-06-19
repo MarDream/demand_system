@@ -5,11 +5,12 @@ chcp 65001 >nul
 :: ============================================================
 ::   需求管理系统 - 唯一启动入口
 ::   用法:
-::     start-all.bat            一键启动全部服务（默认）
-::     start-all.bat check      仅健康检查（不启动应用）
-::     start-all.bat down       停止所有 Docker 容器
-::     start-all.bat e2e        跑全链路 E2E（依赖 + 后端 + 前端 + 测试）
-::     start-all.bat contract   导出后端 OpenAPI 契约
+::     start-all.bat                     一键启动全部服务（默认，前后端隐藏窗口后台运行）
+::     start-all.bat check               仅健康检查（不启动应用）
+::     start-all.bat down                停止前后端进程 + 所有 Docker 容器
+::     start-all.bat logs <backend|frontend>   实时查看后/前端日志
+::     start-all.bat e2e                 跑全链路 E2E（依赖 + 后端 + 前端 + 测试）
+::     start-all.bat contract            导出后端 OpenAPI 契约
 :: ============================================================
 
 set "ROOT_DIR=%~dp0"
@@ -18,10 +19,21 @@ set "FRONTEND_PORT=5170"
 set "BACKEND_PORT=8081"
 set "KKFILEVIEW_PORT=8012"
 
+set "LOG_DIR=%ROOT_DIR%logs"
+set "BACKEND_LOG=%LOG_DIR%\backend.log"
+set "BACKEND_ERR=%LOG_DIR%\backend.err.log"
+set "FRONTEND_LOG=%LOG_DIR%\frontend.log"
+set "FRONTEND_ERR=%LOG_DIR%\frontend.err.log"
+set "BACKEND_PID=%LOG_DIR%\backend.pid"
+set "FRONTEND_PID=%LOG_DIR%\frontend.pid"
+
+if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
+
 if /i "%1"=="check" goto :do_check
 if /i "%1"=="down"  goto :do_down
 if /i "%1"=="e2e"   goto :do_e2e
 if /i "%1"=="contract" goto :do_contract
+if /i "%1"=="logs" goto :do_logs
 goto :do_start
 
 :: ============================================================
@@ -64,7 +76,9 @@ if not "%PORT_LISTENING%"=="1" goto start_backend
 echo   后端端口 %BACKEND_PORT% 已监听，复用现有服务
 goto after_backend
 :start_backend
-start "DemandBackend" cmd /k "cd /d %ROOT_DIR%demand_backend && mvn spring-boot:run -Dspring-boot.run.profiles=dev"
+echo   后台启动后端 ^(隐藏窗口^), 日志: logs\backend.log
+del /q "%BACKEND_PID%" >nul 2>&1
+powershell -NoProfile -Command "$p=Start-Process cmd -ArgumentList @('/c','chcp 65001>nul && set JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 && cd /d %ROOT_DIR%demand_backend && mvn spring-boot:run -Dspring-boot.run.profiles=dev') -WindowStyle Hidden -RedirectStandardOutput '%BACKEND_LOG%' -RedirectStandardError '%BACKEND_ERR%' -PassThru; Set-Content -Path '%BACKEND_PID%' -Value $p.Id -Encoding ascii"
 :after_backend
 
 :: 4) 启动前端
@@ -75,7 +89,9 @@ if not "%PORT_LISTENING%"=="1" goto start_frontend
 echo   前端端口 %FRONTEND_PORT% 已监听，复用现有服务
 goto after_frontend
 :start_frontend
-start "DemandFrontend" cmd /k "cd /d %ROOT_DIR%demand_frontend && npm run dev"
+echo   后台启动前端 ^(隐藏窗口^), 日志: logs\frontend.log
+del /q "%FRONTEND_PID%" >nul 2>&1
+powershell -NoProfile -Command "$p=Start-Process cmd -ArgumentList @('/c','chcp 65001>nul && cd /d %ROOT_DIR%demand_frontend && npm run dev') -WindowStyle Hidden -RedirectStandardOutput '%FRONTEND_LOG%' -RedirectStandardError '%FRONTEND_ERR%' -PassThru; Set-Content -Path '%FRONTEND_PID%' -Value $p.Id -Encoding ascii"
 :after_frontend
 
 echo.
@@ -90,9 +106,13 @@ echo     - kkFileView:  http://localhost:%KKFILEVIEW_PORT%
 echo     - MinIO 控制台: http://localhost:9001
 echo     - RabbitMQ:    http://localhost:15672
 echo.
+echo   日志查看（实时 tail，Ctrl+C 退出）：
+echo     start-all.bat logs backend
+echo     start-all.bat logs frontend
+echo.
 echo   其它命令：
 echo     start-all.bat check      健康检查
-echo     start-all.bat down       停止所有容器
+echo     start-all.bat down       停止前后端 + 所有容器
 echo     start-all.bat e2e        跑全链路 E2E
 echo     start-all.bat contract   导出 OpenAPI 契约
 echo.
@@ -127,12 +147,43 @@ if "%FAILED%"=="0" (
 :do_down
 echo.
 echo ============================================
-echo   停止所有 Docker 容器
+echo   停止前后端进程 + 所有 Docker 容器
 echo ============================================
 echo.
+echo [1/3] 停止后端...
+call :kill_by_pid_file "%BACKEND_PID%" 后端
+call :kill_by_port %BACKEND_PORT% 后端
+echo [2/3] 停止前端...
+call :kill_by_pid_file "%FRONTEND_PID%" 前端
+call :kill_by_port %FRONTEND_PORT% 前端
+echo [3/3] 停止 Docker 容器...
 docker compose -f "%COMPOSE_FILE%" down
 echo.
 echo   已停止
+exit /b 0
+
+:: ============================================================
+:do_logs
+set "WHICH=%~2"
+if /i "%WHICH%"=="backend" (
+    set "TARGET=%BACKEND_LOG%"
+    goto tail_log
+)
+if /i "%WHICH%"=="frontend" (
+    set "TARGET=%FRONTEND_LOG%"
+    goto tail_log
+)
+echo 用法: start-all.bat logs backend^|frontend
+exit /b 1
+:tail_log
+if not exist "%TARGET%" (
+    echo 日志文件不存在: %TARGET%
+    echo 服务可能尚未启动，先执行 start-all.bat
+    exit /b 1
+)
+echo 实时查看 %TARGET% ^(Ctrl+C 退出^)
+echo --------------------------------------------
+powershell -NoProfile -Command "Get-Content -Path '%TARGET%' -Wait -Tail 100"
 exit /b 0
 
 :: ============================================================
@@ -153,12 +204,9 @@ call :wait_healthy minio 9000 "MinIO"
 :: 启动后端
 echo.
 echo [2/4] 启动后端...
-for /f "tokens=*" %%i in ('powershell -NoProfile -Command "(Get-NetTCPConnection -LocalPort %BACKEND_PORT% -ErrorAction SilentlyContinue).OwningProcess"') do set "EXIST_PID=%%i"
-if defined EXIST_PID (
-    echo   后端端口 %BACKEND_PORT% 已被 PID %EXIST_PID% 占用，先杀掉...
-    taskkill /F /PID %EXIST_PID% >nul 2>&1
-)
-start "DemandBackend-E2E" cmd /k "cd /d %ROOT_DIR%demand_backend && mvn spring-boot:run -Dspring-boot.run.profiles=dev"
+call :kill_by_port %BACKEND_PORT% 后端
+del /q "%BACKEND_PID%" >nul 2>&1
+powershell -NoProfile -Command "$p=Start-Process cmd -ArgumentList @('/c','chcp 65001>nul && set JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 && cd /d %ROOT_DIR%demand_backend && mvn spring-boot:run -Dspring-boot.run.profiles=dev') -WindowStyle Hidden -RedirectStandardOutput '%BACKEND_LOG%' -RedirectStandardError '%BACKEND_ERR%' -PassThru; Set-Content -Path '%BACKEND_PID%' -Value $p.Id -Encoding ascii"
 
 :: 等待后端就绪
 echo   等待后端就绪...
@@ -180,7 +228,8 @@ echo   后端已就绪 ✓
 echo.
 echo [3/4] 启动前端（端口5176）...
 set "E2E_PORT=5176"
-start "DemandFrontend-E2E" cmd /k "cd /d %ROOT_DIR%demand_frontend && npm run dev -- --port %E2E_PORT% --host 0.0.0.0"
+del /q "%FRONTEND_PID%" >nul 2>&1
+powershell -NoProfile -Command "$p=Start-Process cmd -ArgumentList @('/c','chcp 65001>nul && cd /d %ROOT_DIR%demand_frontend && npm run dev -- --port %E2E_PORT% --host 0.0.0.0') -WindowStyle Hidden -RedirectStandardOutput '%FRONTEND_LOG%' -RedirectStandardError '%FRONTEND_ERR%' -PassThru; Set-Content -Path '%FRONTEND_PID%' -Value $p.Id -Encoding ascii"
 
 :: 等待前端就绪
 echo   等待前端就绪...
@@ -217,8 +266,10 @@ if %E2E_RC%==0 (
 :: 清理 E2E 启动的进程
 echo.
 echo 清理 E2E 启动的进程...
-taskkill /FI "WINDOWTITLE eq DemandBackend-E2E*" /T /F >nul 2>&1
-taskkill /FI "WINDOWTITLE eq DemandFrontend-E2E*" /T /F >nul 2>&1
+call :kill_by_pid_file "%BACKEND_PID%" 后端
+call :kill_by_port %BACKEND_PORT% 后端
+call :kill_by_pid_file "%FRONTEND_PID%" 前端
+call :kill_by_port %E2E_PORT% 前端
 docker compose -f "%COMPOSE_FILE%" down >nul 2>&1
 
 exit /b %E2E_RC%
@@ -243,6 +294,28 @@ exit /b 0
 :: ============================================================
 ::  工具函数
 :: ============================================================
+
+:kill_by_pid_file
+set "PID_FILE=%~1"
+set "LABEL=%~2"
+if not exist "%PID_FILE%" goto :eof
+set "TARGET_PID="
+set /p TARGET_PID=<"%PID_FILE%"
+if defined TARGET_PID (
+    taskkill /F /T /PID %TARGET_PID% >nul 2>&1
+    if not errorlevel 1 echo   已停止 %LABEL% PID %TARGET_PID%
+)
+del /q "%PID_FILE%" >nul 2>&1
+goto :eof
+
+:kill_by_port
+set "PORT=%~1"
+set "LABEL=%~2"
+for /f "tokens=*" %%i in ('powershell -NoProfile -Command "(Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue).OwningProcess | Select-Object -Unique"') do (
+    taskkill /F /T /PID %%i >nul 2>&1
+    if not errorlevel 1 echo   已停止 %LABEL% 端口 %PORT% PID %%i
+)
+goto :eof
 
 :is_port_listening
 set "PORT=%~1"

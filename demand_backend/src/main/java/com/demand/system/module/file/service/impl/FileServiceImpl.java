@@ -23,7 +23,7 @@ public class FileServiceImpl implements FileService {
     private static final Logger log = LoggerFactory.getLogger(FileServiceImpl.class);
     private static final long MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
     private static final List<String> ALLOWED_TYPES = List.of(
-            "jpg", "png", "gif", "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "zip", "rar"
+            "jpg", "png", "gif", "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "zip", "rar", "csv"
     );
 
     private final MinioStorageService minioStorageService;
@@ -80,6 +80,7 @@ public class FileServiceImpl implements FileService {
             result.setContentType(file.getContentType());
             result.setBucketName(fileRecord.getBucketName());
             result.setObjectName(storageName);
+            result.setUploaderId(uploaderId);
             return result;
         } catch (Exception e) {
             log.error("文件上传失败", e);
@@ -104,6 +105,14 @@ public class FileServiceImpl implements FileService {
             log.error("文件下载失败", e);
             throw new BusinessException("文件下载失败: " + e.getMessage());
         }
+    }
+
+    @Override
+    public FileRecord findRecord(Long fileId) {
+        if (fileId == null) {
+            return null;
+        }
+        return fileRecordMapper.selectById(fileId);
     }
 
     @Override
