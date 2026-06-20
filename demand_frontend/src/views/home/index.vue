@@ -133,7 +133,7 @@
                 <div class="recent-title">{{ item.title }}</div>
                 <div class="recent-meta">
                   <el-tag :type="getStatusType(item.status)" size="small">{{ item.status }}</el-tag>
-                  <el-tag :type="getPriorityType(item.priority)" size="small">{{ item.priority }}</el-tag>
+                  <el-tag :type="getPriorityType(item.priority)" size="small">{{ getPriorityLabel(item.priority) }}</el-tag>
                   <span class="recent-date">{{ formatDate(item.createdAt) }}</span>
                 </div>
               </div>
@@ -336,9 +336,28 @@ function getStatusType(status: string) {
   return (map[status] || 'info') as any
 }
 
+// 紧急程度英文转中文映射
+function getPriorityLabel(priority: string) {
+  if (!priority) return '未知'
+  const map: Record<string, string> = {
+    'urgent': '紧急',
+    'high': '高',
+    'medium': '中',
+    'middle': '中',
+    'low': '低'
+  }
+  return map[priority.toLowerCase()] || priority
+}
+
 function getPriorityType(priority: string) {
-  const map: Record<string, string> = { '紧急': 'danger', '高': 'warning', '中': '', '低': 'info' }
-  return (map[priority] || 'info') as any
+  const label = getPriorityLabel(priority)
+  const colorMap: Record<string, string> = {
+    '紧急': 'danger',
+    '高': 'warning',
+    '中': '',
+    '低': 'info'
+  }
+  return (colorMap[label] || 'info') as any
 }
 
 async function loadDashboardData() {

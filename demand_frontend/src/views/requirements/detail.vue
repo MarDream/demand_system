@@ -42,7 +42,7 @@
             <el-descriptions-item label="负责人">{{ detail.currentHandlerName || detail.assigneeName || '-' }}</el-descriptions-item>
             <el-descriptions-item label="创建时间">{{ formatDate(detail.createdAt) }}</el-descriptions-item>
             <el-descriptions-item label="所属迭代">{{ detail.iterationId || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="期望上线时间">{{ detail.dueDate || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="期望上线日期">{{ formatDate(detail.dueDate, 'YYYY-MM-DD HH:mm:ss') }}</el-descriptions-item>
             <el-descriptions-item label="估算工时">{{ detail.estimatedHours ? detail.estimatedHours + ' 小时' : '-' }}</el-descriptions-item>
             <el-descriptions-item label="实际工时">{{ detail.actualHours ? detail.actualHours + ' 小时' : '-' }}</el-descriptions-item>
             <el-descriptions-item label="描述" :span="2">
@@ -530,7 +530,6 @@
           width="480px"
           :close-on-click-modal="false"
           @closed="resetSupplementDialog"
-          @paste.capture="handleSupplementPaste"
         >
           <p class="approval-dialog-tip">补充内容会追加在原审核记录下方，不会覆盖原始意见。</p>
           <el-input
@@ -544,39 +543,11 @@
           <div v-if="canSubmitApproval" class="approval-attachment-section" style="margin-top: 12px;">
             <div class="approval-attachment-header">
               <span>附件材料</span>
-              <el-button link type="primary" @click="triggerSupplementAttachmentUpload">上传附件</el-button>
             </div>
-            <input
-              ref="supplementAttachmentInputRef"
-              type="file"
-              multiple
-              style="display: none;"
-              @change="handleSupplementFileSelect"
+            <AttachmentUploader
+              v-model="supplementAttachments"
+              :show-preview="false"
             />
-            <div
-              class="approval-attachment-dropzone" :class="{ 'is-dragover': supplementDragActive }"
-              @dragover.prevent="onSupplementDragOver"
-              @dragleave="onSupplementDragLeave"
-              @drop.prevent="handleSupplementAttachmentDrop"
-            >
-              <div v-if="supplementAttachments.length === 0" class="approval-attachment-placeholder">
-                拖拽文件到此处，或点击"上传附件"按钮
-              </div>
-              <div v-else class="approval-attachment-list">
-                <div v-for="(file, index) in supplementAttachments" :key="index" class="approval-attachment-item">
-                  <span class="approval-attachment-name" @click="downloadAttachmentFile(file)">{{ file.name }}</span>
-                  <span class="approval-attachment-size">{{ formatFileSize(file.size) }}</span>
-                  <el-button
-                    v-if="canRemoveApprovalAttachment(file)"
-                    link
-                    type="danger"
-                    size="small"
-                    @click="removeSupplementAttachment(index)"
-                  >删除</el-button>
-                  <span v-else class="approval-attachment-readonly">仅本人可删</span>
-                </div>
-              </div>
-            </div>
           </div>
           <template #footer>
             <el-button @click="supplementDialogVisible = false">取消</el-button>
@@ -592,7 +563,6 @@
           width="480px"
           :close-on-click-modal="false"
           @closed="resetApprovalDialog"
-          @paste.capture="handleApprovalPaste"
         >
           <p class="approval-dialog-tip">提交到下一节点前，请补充审核信息。</p>
           <div class="approval-dialog-rate">
@@ -617,32 +587,11 @@
           <div v-if="canSubmitApproval" class="approval-attachment-section">
             <div class="approval-attachment-header">
               <span>附件材料</span>
-              <el-button link type="primary" @click="triggerApprovalAttachmentUpload">上传附件</el-button>
             </div>
-            <input
-              ref="approvalAttachmentInputRef"
-              type="file"
-              multiple
-              style="display: none;"
-              @change="handleApprovalFileSelect"
+            <AttachmentUploader
+              v-model="approvalAttachments"
+              :show-preview="false"
             />
-            <div
-              class="approval-attachment-dropzone" :class="{ 'is-dragover': approvalDragActive }"
-              @dragover.prevent="onApprovalDragOver"
-              @dragleave="onApprovalDragLeave"
-              @drop.prevent="handleApprovalAttachmentDrop"
-            >
-              <div v-if="approvalAttachments.length === 0" class="approval-attachment-placeholder">
-                拖拽文件到此处，或点击"上传附件"按钮
-              </div>
-              <div v-else class="approval-attachment-list">
-                <div v-for="(file, index) in approvalAttachments" :key="index" class="approval-attachment-item">
-                  <span class="approval-attachment-name" @click="downloadAttachmentFile(file)">{{ file.name }}</span>
-                  <span class="approval-attachment-size">{{ formatFileSize(file.size) }}</span>
-                  <el-button link type="danger" size="small" @click="removeApprovalAttachment(index)">删除</el-button>
-                </div>
-              </div>
-            </div>
           </div>
           <template #footer>
             <el-button @click="approvalDialogVisible = false">取消</el-button>
@@ -748,6 +697,7 @@ import Image from '@tiptap/extension-image'
 import '@isle-editor/vue3/dist/style.css'
 import PageContainer from '@/components/common/PageContainer.vue'
 import FilePreviewDialog from '@/components/document/FilePreviewDialog.vue'
+import AttachmentUploader from '@/components/AttachmentUploader.vue'
 
 addLocale('zh', {
   isleEditor: '岛屿编辑器',
@@ -862,14 +812,10 @@ const approvalDialogVisible = ref(false)
 const approvalRating = ref(0)
 const approvalComment = ref('')
 const approvalAttachments = ref<RequirementAttachment[]>([])
-const approvalAttachmentInputRef = ref<HTMLInputElement | null>(null)
-const approvalDragActive = ref(false)
 const supplementDialogVisible = ref(false)
 const supplementSubmitting = ref(false)
 const supplementContent = ref('')
 const supplementAttachments = ref<RequirementAttachment[]>([])
-const supplementAttachmentInputRef = ref<HTMLInputElement | null>(null)
-const supplementDragActive = ref(false)
 const supplementTarget = ref<RequirementApprovalEvaluation | null>(null)
 const children = ref<any[]>([])
 const activeTab = ref('basic')
@@ -1256,50 +1202,6 @@ function resetSupplementDialog() {
   supplementAttachments.value = []
 }
 
-async function uploadApprovalFile(file: File, targetList: Ref<RequirementAttachment[]>) {
-  let processedFile = file
-  if (!file.name || file.name === 'image' || !file.name.includes('.')) {
-    const ext = file.type.split('/')[1] || 'png'
-    processedFile = new File([file], `approval_${Date.now()}.${ext}`, { type: file.type })
-  }
-  try {
-    ElMessage.info(`上传附件中: ${processedFile.name}`)
-    const attachment = await uploadRequirementAttachment(processedFile)
-    targetList.value.push(attachment)
-  } catch (error) {
-    ElMessage.error(resolveErrorMessage(error, '附件上传失败'))
-  }
-}
-
-function triggerApprovalAttachmentUpload() {
-  approvalAttachmentInputRef.value?.click()
-}
-
-async function handleApprovalFileSelect(event: Event) {
-  const input = event.target as HTMLInputElement
-  if (!input.files?.length) return
-  for (const file of Array.from(input.files)) {
-    await uploadApprovalFile(file, approvalAttachments)
-  }
-  input.value = ''
-}
-
-async function handleApprovalAttachmentDrop(event: DragEvent) {
-  if (!event.dataTransfer?.files?.length) return
-  approvalDragActive.value = false
-  for (const file of Array.from(event.dataTransfer.files)) {
-    await uploadApprovalFile(file, approvalAttachments)
-  }
-}
-
-function onApprovalDragOver() {
-  approvalDragActive.value = true
-}
-
-function onApprovalDragLeave() {
-  approvalDragActive.value = false
-}
-
 function canRemoveApprovalAttachment(file: RequirementAttachment) {
   if (!file) return false
   if (userStore.isSuperAdmin) return true
@@ -1311,85 +1213,8 @@ function canRemoveApprovalAttachment(file: RequirementAttachment) {
   return uploaderId === currentUserId.value
 }
 
-function removeApprovalAttachment(index: number) {
-  const target = approvalAttachments.value[index]
-  if (target && !canRemoveApprovalAttachment(target)) {
-    ElMessage.warning('仅上传人可删除此附件')
-    return
-  }
-  approvalAttachments.value.splice(index, 1)
-}
-
-function triggerSupplementAttachmentUpload() {
-  supplementAttachmentInputRef.value?.click()
-}
-
-async function handleSupplementFileSelect(event: Event) {
-  const input = event.target as HTMLInputElement
-  if (!input.files?.length) return
-  for (const file of Array.from(input.files)) {
-    await uploadApprovalFile(file, supplementAttachments)
-  }
-  input.value = ''
-}
-
-async function handleSupplementAttachmentDrop(event: DragEvent) {
-  if (!event.dataTransfer?.files?.length) return
-  supplementDragActive.value = false
-  for (const file of Array.from(event.dataTransfer.files)) {
-    await uploadApprovalFile(file, supplementAttachments)
-  }
-}
-
-function onSupplementDragOver() {
-  supplementDragActive.value = true
-}
-
-function onSupplementDragLeave() {
-  supplementDragActive.value = false
-}
-
-function removeSupplementAttachment(index: number) {
-  const target = supplementAttachments.value[index]
-  if (target && !canRemoveApprovalAttachment(target)) {
-    ElMessage.warning('仅上传人可删除此附件')
-    return
-  }
-  supplementAttachments.value.splice(index, 1)
-}
-
 function downloadAttachmentFile(file: RequirementAttachment) {
   downloadRequirementAttachment(file)
-}
-
-function handleApprovalPaste(event: ClipboardEvent) {
-  const items = event.clipboardData?.items
-  if (!items) return
-  for (const item of Array.from(items)) {
-    if (item.type.startsWith('image/')) {
-      const file = item.getAsFile()
-      if (file) {
-        event.preventDefault()
-        uploadApprovalFile(file, approvalAttachments)
-      }
-      return
-    }
-  }
-}
-
-function handleSupplementPaste(event: ClipboardEvent) {
-  const items = event.clipboardData?.items
-  if (!items) return
-  for (const item of Array.from(items)) {
-    if (item.type.startsWith('image/')) {
-      const file = item.getAsFile()
-      if (file) {
-        event.preventDefault()
-        uploadApprovalFile(file, supplementAttachments)
-      }
-      return
-    }
-  }
 }
 
 async function executeTransition(extra?: { rating?: number; comment?: string; attachments?: RequirementAttachment[] }) {
@@ -1431,7 +1256,27 @@ function typeLabel(code: string) {
 }
 
 function priorityLabel(code: string) {
-  return stripPriorityPrefix(priorityMap.value[code] || code || '-')
+  if (!code) return '-'
+
+  // 如果 priorityMap 有映射，使用映射值
+  let label = priorityMap.value[code] || code
+
+  // 处理英文优先级（大小写不敏感）
+  const lowerCode = code.toLowerCase()
+  const englishMap: Record<string, string> = {
+    'urgent': '紧急',
+    'high': '高',
+    'medium': '中',
+    'middle': '中',
+    'low': '低'
+  }
+
+  if (englishMap[lowerCode]) {
+    return englishMap[lowerCode]
+  }
+
+  // 去除 P0-、P1- 等前缀
+  return stripPriorityPrefix(label)
 }
 
 function projectLabel(projectId: number) {
@@ -1599,14 +1444,18 @@ const canSplitRequirement = computed(() => {
   return true
 })
 
-/** 当前用户是否可删除需求（创建人或管理员） */
+/** 当前用户是否可删除需求（草稿：创建人可删除；非草稿：需要权限） */
 const canDeleteRequirement = computed(() => {
+  // 草稿状态：创建人可以删除（无需特殊权限）
+  if (detail.value?.isDraft) {
+    return detail.value?.creatorId === userStore.userInfo?.id
+  }
+
+  // 非草稿状态：需要删除权限
   if (!hasPermission('button:requirement:delete')) {
     return false
   }
-  if (detail.value?.isDraft) {
-    return true // 草稿创建人可删除
-  }
+
   if (usingUnifiedEngine.value) {
     return Boolean(workflowRuntime.value.canDelete)
   }
@@ -1761,7 +1610,6 @@ async function openCountersignDialog(nodeId: string) {
     currentCountersignRecords.value = recordsRes || []
     canCountersign.value = canRes || false
   } catch (error) {
-    console.error('获取会签信息失败', error)
     ElMessage.error('获取会签信息失败')
   } finally {
     countersignDialogLoading.value = false
@@ -2766,67 +2614,7 @@ onMounted(() => {
   color: var(--color-text-secondary);
 }
 
-.approval-attachment-dropzone {
-  border: 1px dashed var(--color-border);
-  border-radius: 6px;
-  padding: 12px;
-  min-height: 60px;
-  transition: border-color 0.2s, background-color 0.2s;
-  cursor: default;
-}
-
-.approval-attachment-dropzone.is-dragover {
-  border-color: var(--color-primary);
-  background-color: var(--color-primary-bg, rgba(64, 158, 255, 0.06));
-}
-
-.approval-attachment-placeholder {
-  text-align: center;
-  color: var(--color-text-placeholder);
-  font-size: 13px;
-  padding: 8px 0;
-}
-
-.approval-attachment-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.approval-attachment-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  background: var(--color-fill-light, #f5f7fa);
-}
-
-.approval-attachment-name {
-  font-size: 13px;
-  color: var(--color-primary);
-  cursor: pointer;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-}
-
-.approval-attachment-name:hover {
-  text-decoration: underline;
-}
-
-.approval-attachment-size {
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  flex-shrink: 0;
-}
-
-.approval-attachment-readonly {
-  font-size: 12px;
-  color: var(--color-text-placeholder, #c0c4cc);
-  flex-shrink: 0;
-}
+/* 附件上传区和附件列表样式已移至 AttachmentUploader 组件 */
 
 /* 审批评价中的附件展示 */
 .approval-evaluation-attachments {

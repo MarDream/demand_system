@@ -19,17 +19,62 @@ public interface StatisticsMapper {
     @Select("SELECT priority, COUNT(*) as count FROM requirements WHERE project_id = #{projectId} AND deleted_at = 0 GROUP BY priority")
     List<Map<String, Object>> getPriorityDistribution(@Param("projectId") Long projectId);
 
-    @Select("SELECT COUNT(*) FROM requirements WHERE project_id = #{projectId} AND deleted_at = 0")
-    int getTotalCount(@Param("projectId") Long projectId);
+    // 总需求数：登录用户可见的全部需求数（排除草稿）
+    @Select("<script>" +
+            "SELECT COUNT(DISTINCT r.id) FROM requirements r " +
+            "WHERE r.deleted_at = 0 AND (r.is_draft = 0 OR r.is_draft IS NULL) " +
+            "AND (" +
+            "  EXISTS (SELECT 1 FROM user_roles ur JOIN roles ro ON ur.role_id = ro.id WHERE ur.user_id = #{userId} AND ro.code = 'SUPER_ADMIN') " +
+            "  OR r.creator_id = #{userId} " +
+            "  OR EXISTS (SELECT 1 FROM workflow_instance_transitions wit WHERE wit.requirement_id = r.id AND wit.operator_id = #{userId}) " +
+            "  OR EXISTS (SELECT 1 FROM workflow_instances wi JOIN workflow_nodes wn ON wi.workflow_version_id = wn.workflow_version_id AND wi.current_node_id = wn.node_id WHERE wi.requirement_id = r.id AND JSON_CONTAINS(wn.assignee_user_ids, CAST(#{userId} AS JSON))) " +
+            "  OR EXISTS (SELECT 1 FROM user_organizations uo WHERE uo.user_id = #{userId} AND uo.org_id = r.org_id) " +
+            ")" +
+            "</script>")
+    int getTotalCount(@Param("userId") Long userId);
 
-    @Select("SELECT COUNT(*) FROM requirements WHERE project_id = #{projectId} AND deleted_at = 0 AND status IN ('开发中','测试中','评审中','待评审')")
-    int getInProgressCount(@Param("projectId") Long projectId);
+    // 进行中需求：处于开发中节点的需求
+    @Select("<script>" +
+            "SELECT COUNT(DISTINCT r.id) FROM requirements r " +
+            "WHERE r.deleted_at = 0 AND (r.is_draft = 0 OR r.is_draft IS NULL) AND r.node_status = 'IN_DEVELOPMENT' " +
+            "AND (" +
+            "  EXISTS (SELECT 1 FROM user_roles ur JOIN roles ro ON ur.role_id = ro.id WHERE ur.user_id = #{userId} AND ro.code = 'SUPER_ADMIN') " +
+            "  OR r.creator_id = #{userId} " +
+            "  OR EXISTS (SELECT 1 FROM workflow_instance_transitions wit WHERE wit.requirement_id = r.id AND wit.operator_id = #{userId}) " +
+            "  OR EXISTS (SELECT 1 FROM workflow_instances wi JOIN workflow_nodes wn ON wi.workflow_version_id = wn.workflow_version_id AND wi.current_node_id = wn.node_id WHERE wi.requirement_id = r.id AND JSON_CONTAINS(wn.assignee_user_ids, CAST(#{userId} AS JSON))) " +
+            "  OR EXISTS (SELECT 1 FROM user_organizations uo WHERE uo.user_id = #{userId} AND uo.org_id = r.org_id) " +
+            ")" +
+            "</script>")
+    int getInProgressCount(@Param("userId") Long userId);
 
-    @Select("SELECT COUNT(*) FROM requirements WHERE project_id = #{projectId} AND deleted_at = 0 AND status IN ('已上线','已验收')")
-    int getCompletedCount(@Param("projectId") Long projectId);
+    // 已完成需求：处于结束节点的需求
+    @Select("<script>" +
+            "SELECT COUNT(DISTINCT r.id) FROM requirements r " +
+            "WHERE r.deleted_at = 0 AND (r.is_draft = 0 OR r.is_draft IS NULL) AND r.node_status = 'ACCEPTED' " +
+            "AND (" +
+            "  EXISTS (SELECT 1 FROM user_roles ur JOIN roles ro ON ur.role_id = ro.id WHERE ur.user_id = #{userId} AND ro.code = 'SUPER_ADMIN') " +
+            "  OR r.creator_id = #{userId} " +
+            "  OR EXISTS (SELECT 1 FROM workflow_instance_transitions wit WHERE wit.requirement_id = r.id AND wit.operator_id = #{userId}) " +
+            "  OR EXISTS (SELECT 1 FROM workflow_instances wi JOIN workflow_nodes wn ON wi.workflow_version_id = wn.workflow_version_id AND wi.current_node_id = wn.node_id WHERE wi.requirement_id = r.id AND JSON_CONTAINS(wn.assignee_user_ids, CAST(#{userId} AS JSON))) " +
+            "  OR EXISTS (SELECT 1 FROM user_organizations uo WHERE uo.user_id = #{userId} AND uo.org_id = r.org_id) " +
+            ")" +
+            "</script>")
+    int getCompletedCount(@Param("userId") Long userId);
 
-    @Select("SELECT COUNT(*) FROM requirements WHERE project_id = #{projectId} AND deleted_at = 0 AND due_date IS NOT NULL AND due_date < CURDATE() AND status NOT IN ('已上线','已验收','已取消')")
-    int getOverdueCount(@Param("projectId") Long projectId);
+    // 已逾期需求：未结束且超过期望完成日期的需求
+    @Select("<script>" +
+            "SELECT COUNT(DISTINCT r.id) FROM requirements r " +
+            "WHERE r.deleted_at = 0 AND (r.is_draft = 0 OR r.is_draft IS NULL) " +
+            "AND r.node_status != 'ACCEPTED' AND r.due_date IS NOT NULL AND r.due_date &lt; CURDATE() " +
+            "AND (" +
+            "  EXISTS (SELECT 1 FROM user_roles ur JOIN roles ro ON ur.role_id = ro.id WHERE ur.user_id = #{userId} AND ro.code = 'SUPER_ADMIN') " +
+            "  OR r.creator_id = #{userId} " +
+            "  OR EXISTS (SELECT 1 FROM workflow_instance_transitions wit WHERE wit.requirement_id = r.id AND wit.operator_id = #{userId}) " +
+            "  OR EXISTS (SELECT 1 FROM workflow_instances wi JOIN workflow_nodes wn ON wi.workflow_version_id = wn.workflow_version_id AND wi.current_node_id = wn.node_id WHERE wi.requirement_id = r.id AND JSON_CONTAINS(wn.assignee_user_ids, CAST(#{userId} AS JSON))) " +
+            "  OR EXISTS (SELECT 1 FROM user_organizations uo WHERE uo.user_id = #{userId} AND uo.org_id = r.org_id) " +
+            ")" +
+            "</script>")
+    int getOverdueCount(@Param("userId") Long userId);
 
     @Select("SELECT COUNT(*) FROM requirements WHERE assignee_id = #{userId} AND deleted_at = 0 AND status NOT IN ('已上线','已验收','已取消')")
     int getMyTodoCount(@Param("userId") Long userId);

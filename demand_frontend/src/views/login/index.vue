@@ -92,7 +92,9 @@ async function handleLogin() {
 
   loading.value = true
   try {
-    await userStore.login(loginForm.username, loginForm.password)
+    const username = loginForm.username.replace(/\s/g, '')
+    const password = loginForm.password.replace(/\s/g, '')
+    await userStore.login(username, password)
     ElMessage.success('登录成功')
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/dashboard'
     router.push(redirect)

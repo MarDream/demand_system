@@ -34,6 +34,18 @@ public class WorkflowVersion {
 
     private LocalDateTime createdAt;
 
+    private LocalDateTime deprecatedAt;
+
+    private String changeLog;
+
+    private LocalDateTime submittedForApprovalAt;
+
+    private LocalDateTime approvedAt;
+
+    private Long approvedBy;
+
+    private String approvalComment;
+
     public Long getId() {
         return id;
     }
@@ -128,6 +140,54 @@ public class WorkflowVersion {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public LocalDateTime getDeprecatedAt() {
+        return deprecatedAt;
+    }
+
+    public void setDeprecatedAt(LocalDateTime deprecatedAt) {
+        this.deprecatedAt = deprecatedAt;
+    }
+
+    public String getChangeLog() {
+        return changeLog;
+    }
+
+    public void setChangeLog(String changeLog) {
+        this.changeLog = changeLog;
+    }
+
+    public LocalDateTime getSubmittedForApprovalAt() {
+        return submittedForApprovalAt;
+    }
+
+    public void setSubmittedForApprovalAt(LocalDateTime submittedForApprovalAt) {
+        this.submittedForApprovalAt = submittedForApprovalAt;
+    }
+
+    public LocalDateTime getApprovedAt() {
+        return approvedAt;
+    }
+
+    public void setApprovedAt(LocalDateTime approvedAt) {
+        this.approvedAt = approvedAt;
+    }
+
+    public Long getApprovedBy() {
+        return approvedBy;
+    }
+
+    public void setApprovedBy(Long approvedBy) {
+        this.approvedBy = approvedBy;
+    }
+
+    public String getApprovalComment() {
+        return approvalComment;
+    }
+
+    public void setApprovalComment(String approvalComment) {
+        this.approvalComment = approvalComment;
     }
 
     @Override

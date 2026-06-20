@@ -716,7 +716,6 @@ async function loadVersions() {
       pagination.page = maxPage
     }
   } catch (error) {
-    console.error('加载工作流版本失败:', error)
     ElMessage.error('加载工作流版本失败')
     versions.value = []
   } finally {
@@ -729,7 +728,6 @@ async function loadApprovals() {
   try {
     approvals.value = await getWorkflowApprovals() || []
   } catch (error) {
-    console.error('加载工作流审核记录失败:', error)
     ElMessage.error('加载工作流审核记录失败')
     approvals.value = []
   } finally {

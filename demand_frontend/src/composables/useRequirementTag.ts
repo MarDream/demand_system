@@ -10,7 +10,9 @@
  *   const { statusTagType, priorityTagType, approvalResultTagType } = useRequirementTag()
  */
 
-export type ElementPlusTagType = '' | 'success' | 'info' | 'warning' | 'danger' | 'primary'
+import { stripPriorityPrefix, normalizeText } from '@/utils/format'
+
+export type ElementPlusTagType = '' | 'success' | 'info' | 'warning' | 'danger' | 'primary' | undefined
 export type TimelineItemType = 'primary' | 'success' | 'warning' | 'danger' | 'info'
 
 /** 状态 → 颜色映射（中文状态 + 后端枚举） */
@@ -45,6 +47,11 @@ const PRIORITY_TAG_MAP: Record<string, ElementPlusTagType> = {
   P1: 'warning',
   P2: 'info',
   P3: 'success',
+  // 支持中文标签
+  '紧急': 'danger',
+  '高': 'warning',
+  '中': undefined,
+  '低': 'info',
 }
 
 /** 审核结果 → 颜色映射 */
@@ -89,7 +96,31 @@ export function useRequirementTag() {
   /** 优先级 → Element Plus tag type */
   function priorityTagType(priority?: string | null): ElementPlusTagType {
     if (!priority) return 'info'
-    return PRIORITY_TAG_MAP[priority] ?? 'info'
+
+    // 先提取中文标签（处理 P0-紧急 格式）
+    const label = stripPriorityPrefix(normalizeText(priority))
+
+    // 尝试用中文标签映射（注意：undefined 也是有效值）
+    if (label in PRIORITY_TAG_MAP) {
+      return PRIORITY_TAG_MAP[label]
+    }
+
+    // 尝试用原始值映射（P0、P1等）
+    if (priority in PRIORITY_TAG_MAP) {
+      return PRIORITY_TAG_MAP[priority]
+    }
+
+    // 处理英文优先级（High、low等）
+    const lowerPriority = priority.toLowerCase()
+    if (lowerPriority === 'urgent' || lowerPriority === 'high') {
+      return 'warning'
+    } else if (lowerPriority === 'medium' || lowerPriority === 'middle') {
+      return undefined
+    } else if (lowerPriority === 'low') {
+      return 'info'
+    }
+
+    return 'info'
   }
 
   /** 审核结果 → Element Plus tag type */
@@ -102,7 +133,7 @@ export function useRequirementTag() {
   function approvalTimelineItemType(result?: string | null): TimelineItemType {
     const type = approvalResultTagType(result)
     const allowed: TimelineItemType[] = ['primary', 'success', 'warning', 'danger', 'info']
-    return (allowed as string[]).includes(type) ? (type as TimelineItemType) : 'info'
+    return allowed.includes(type as TimelineItemType) ? (type as TimelineItemType) : 'info'
   }
 
   /** 状态码 → 可读中文（无则回退原文） */

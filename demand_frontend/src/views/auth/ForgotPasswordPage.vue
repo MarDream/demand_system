@@ -70,7 +70,7 @@ const handleSendReset = async () => {
     if (valid) {
       loading.value = true
       try {
-        const identifier = forgotForm.identifier.trim()
+        const identifier = forgotForm.identifier.replace(/\s/g, '')
         const isEmail = identifier.includes('@')
 
         const payload = isEmail

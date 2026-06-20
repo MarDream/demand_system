@@ -141,7 +141,6 @@ async function loadUsers() {
     const res = await userApi.getUserList({ pageNum: 1, pageSize: 100 }) as any
     userList.value = res.list
   } catch (error) {
-    console.error('加载用户列表失败', error)
   }
 }
 
@@ -151,7 +150,6 @@ async function loadIterations() {
     const res = await iterationApi.getIterationList(props.projectId) as any
     iterationList.value = res
   } catch (error) {
-    console.error('加载迭代列表失败', error)
   }
 }
 
@@ -172,7 +170,6 @@ async function loadConfigOptions() {
       name: stripPriorityPrefix(normalizeText(priority.name)),
     }))
   } catch (error) {
-    console.error('加载需求配置失败', error)
   }
 }
 

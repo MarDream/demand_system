@@ -350,7 +350,6 @@ async function loadOrgData() {
   } catch (error) {
     orgTree.value = []
     companyOptions.value = []
-    console.error('加载公司数据失败:', error)
   }
 
   try {
@@ -358,7 +357,6 @@ async function loadOrgData() {
     userList.value = ((users as any)?.list ?? [])
   } catch (error) {
     userList.value = []
-    console.error('加载负责人数据失败:', error)
   }
 }
 

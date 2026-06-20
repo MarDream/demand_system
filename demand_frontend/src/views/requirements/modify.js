@@ -55,4 +55,3 @@ content = content.replace(
 );
 
 fs.writeFileSync(path, content, 'utf8');
-console.log('File modified successfully');

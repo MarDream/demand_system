@@ -172,7 +172,6 @@ public class RequirementController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('button:requirement:delete')")
     public Result<Void> delete(@PathVariable Long id) {
         Long userId = SecurityUtils.getCurrentUserId();
         if (userId == null) {

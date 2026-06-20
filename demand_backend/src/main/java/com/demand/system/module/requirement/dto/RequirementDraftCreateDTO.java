@@ -14,6 +14,8 @@ public class RequirementDraftCreateDTO {
 
     private String description;
 
+    private String type;
+
     private String priority;
 
     private Long assigneeId;
@@ -60,6 +62,14 @@ public class RequirementDraftCreateDTO {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public String getType() {
+        return type;
+    }
+
+    public void setType(String type) {
+        this.type = type;
     }
 
     public String getPriority() {

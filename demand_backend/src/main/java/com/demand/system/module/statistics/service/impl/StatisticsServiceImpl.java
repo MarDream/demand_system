@@ -24,10 +24,11 @@ public class StatisticsServiceImpl implements StatisticsService {
 
     @Override
     public Map<String, Object> getDashboardData(Long projectId, Long userId) {
-        int totalReqs = statisticsMapper.getTotalCount(projectId);
-        int inProgressReqs = statisticsMapper.getInProgressCount(projectId);
-        int completedReqs = statisticsMapper.getCompletedCount(projectId);
-        int overdueReqs = statisticsMapper.getOverdueCount(projectId);
+        // 统计登录用户可见的所有需求（不限于项目）
+        int totalReqs = statisticsMapper.getTotalCount(userId);
+        int inProgressReqs = statisticsMapper.getInProgressCount(userId);
+        int completedReqs = statisticsMapper.getCompletedCount(userId);
+        int overdueReqs = statisticsMapper.getOverdueCount(userId);
         int myTodoCount = statisticsMapper.getMyTodoCount(userId);
 
         DashboardData data = DashboardData.builder()

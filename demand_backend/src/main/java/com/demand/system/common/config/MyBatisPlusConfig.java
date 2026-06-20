@@ -101,6 +101,7 @@ public class MyBatisPlusConfig {
     public SqlSessionFactory sqlSessionFactory(DataSource dataSource,
                                                MybatisPlusProperties properties,
                                                MybatisPlusInterceptor mybatisPlusInterceptor,
+                                               MetaObjectHandler metaObjectHandler,
                                                ObjectProvider<GlobalConfig> globalConfigProvider) throws Exception {
         MybatisSqlSessionFactoryBean factoryBean = new MybatisSqlSessionFactoryBean();
         factoryBean.setDataSource(dataSource);
@@ -118,10 +119,15 @@ public class MyBatisPlusConfig {
             mybatisConfiguration.setVariables(properties.getConfigurationProperties());
         }
         factoryBean.setConfiguration(mybatisConfiguration);
+
+        // 确保 GlobalConfig 包含 MetaObjectHandler
         GlobalConfig globalConfig = globalConfigProvider.getIfAvailable();
-        if (globalConfig != null) {
-            factoryBean.setGlobalConfig(globalConfig);
+        if (globalConfig == null) {
+            globalConfig = new GlobalConfig();
         }
+        globalConfig.setMetaObjectHandler(metaObjectHandler);
+        factoryBean.setGlobalConfig(globalConfig);
+
         factoryBean.setPlugins(mybatisPlusInterceptor);
         return factoryBean.getObject();
     }

@@ -8,6 +8,7 @@ import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.ErrorCode;
 import com.demand.system.common.result.PageResult;
 import com.demand.system.common.result.Result;
+import com.demand.system.common.service.DistributedIdGenerator;
 import com.demand.system.module.requirement.dto.RequirementCreateDTO;
 import com.demand.system.module.requirement.dto.RequirementAttachmentDTO;
 import com.demand.system.module.requirement.dto.RequirementApprovalEvaluationVO;
@@ -142,8 +143,9 @@ public class RequirementServiceImpl implements RequirementService {
     private final RoleGroupMapper roleGroupMapper;
     private final FileRecordMapper fileRecordMapper;
     private final ObjectMapper objectMapper;
+    private final DistributedIdGenerator distributedIdGenerator;
 
-    public RequirementServiceImpl(RequirementMapper requirementMapper, RequirementFollowMapper requirementFollowMapper, RequirementHistoryMapper historyMapper, RequirementCommentMapper requirementCommentMapper, CustomFieldValueMapper customFieldValueMapper, UserMapper userMapper, UserOrganizationMapper userOrganizationMapper, SysOrgService sysOrgService, NotificationService notificationService, RelationService relationService, WorkflowService workflowService, WorkflowEngineService workflowEngineService, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowGraphNavigator workflowGraphNavigator, WorkflowRuntimeLoader workflowRuntimeLoader, WorkflowRuntimeMigrationService workflowRuntimeMigrationService, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, WorkflowInstanceMapper workflowInstanceMapper, WorkflowInstanceTransitionMapper workflowInstanceTransitionMapper, WorkflowTransitionRecordMapper workflowTransitionRecordMapper, WorkflowDefinitionEngine workflowDefinitionEngine, RequirementApprovalEvaluationService approvalEvaluationService, RequirementConfigService requirementConfigService, KnowledgeDocumentService knowledgeDocumentService, NodeStatusMapper nodeStatusMapper, ProjectMapper projectMapper, RoleMapper roleMapper, RoleGroupMapper roleGroupMapper, FileRecordMapper fileRecordMapper, ObjectMapper objectMapper) {
+    public RequirementServiceImpl(RequirementMapper requirementMapper, RequirementFollowMapper requirementFollowMapper, RequirementHistoryMapper historyMapper, RequirementCommentMapper requirementCommentMapper, CustomFieldValueMapper customFieldValueMapper, UserMapper userMapper, UserOrganizationMapper userOrganizationMapper, SysOrgService sysOrgService, NotificationService notificationService, RelationService relationService, WorkflowService workflowService, WorkflowEngineService workflowEngineService, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowGraphNavigator workflowGraphNavigator, WorkflowRuntimeLoader workflowRuntimeLoader, WorkflowRuntimeMigrationService workflowRuntimeMigrationService, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, WorkflowInstanceMapper workflowInstanceMapper, WorkflowInstanceTransitionMapper workflowInstanceTransitionMapper, WorkflowTransitionRecordMapper workflowTransitionRecordMapper, WorkflowDefinitionEngine workflowDefinitionEngine, RequirementApprovalEvaluationService approvalEvaluationService, RequirementConfigService requirementConfigService, KnowledgeDocumentService knowledgeDocumentService, NodeStatusMapper nodeStatusMapper, ProjectMapper projectMapper, RoleMapper roleMapper, RoleGroupMapper roleGroupMapper, FileRecordMapper fileRecordMapper, ObjectMapper objectMapper, DistributedIdGenerator distributedIdGenerator) {
         this.requirementMapper = requirementMapper;
         this.requirementFollowMapper = requirementFollowMapper;
         this.historyMapper = historyMapper;
@@ -176,6 +178,7 @@ public class RequirementServiceImpl implements RequirementService {
         this.roleGroupMapper = roleGroupMapper;
         this.fileRecordMapper = fileRecordMapper;
         this.objectMapper = objectMapper;
+        this.distributedIdGenerator = distributedIdGenerator;
     }
 
     @Override
@@ -193,7 +196,8 @@ public class RequirementServiceImpl implements RequirementService {
         if (!isSuperAdmin) {
             List<Long> visibleOrgIds = resolveVisibleOrgIds(currentUserId, false);
             if (visibleOrgIds.isEmpty()) {
-                wrapper.eq(Requirement::getCreatorId, currentUserId == null ? -1L : currentUserId);
+                // 方案A：用户未关联任何组织时，提示完善信息而非降级为只看自己创建的
+                throw new BusinessException(400, "您尚未关联组织，请联系管理员配置您的组织信息后再查看需求");
             } else {
                 wrapper.in(Requirement::getOrgId, visibleOrgIds);
             }
@@ -441,11 +445,15 @@ public class RequirementServiceImpl implements RequirementService {
         BeanUtils.copyProperties(dto, requirement);
         requirement.setProjectId(normalizeProjectId(dto.getProjectId()));
         ensureProjectCanBeBound(requirement.getProjectId());
-        RequirementTypeConfig defaultType = requirementConfigService.getDefaultType();
-        if (defaultType == null || !StringUtils.hasText(defaultType.getCode())) {
-            throw new BusinessException("请先配置至少一个需求类型");
+
+        // 如果前端未传递type，使用默认类型；否则使用前端传递的值
+        if (!StringUtils.hasText(requirement.getType())) {
+            RequirementTypeConfig defaultType = requirementConfigService.getDefaultType();
+            if (defaultType == null || !StringUtils.hasText(defaultType.getCode())) {
+                throw new BusinessException("请先配置至少一个需求类型");
+            }
+            requirement.setType(defaultType.getCode());
         }
-        requirement.setType(defaultType.getCode());
         requirement.setIterationId(null);
         requirement.setCreatorId(creatorId);
         requirement.setStatus(resolveNodeStatusName("DRAFT"));
@@ -746,13 +754,32 @@ public class RequirementServiceImpl implements RequirementService {
             throw new BusinessException("需求不存在");
         }
 
-        // 检查权限：只有创建者或admin角色可以删除
+        // 草稿状态：仅创建人可以删除
+        if (Boolean.TRUE.equals(requirement.getIsDraft())) {
+            boolean isCreator = requirement.getCreatorId() != null
+                    && requirement.getCreatorId().equals(userId);
+            if (!isCreator) {
+                throw new BusinessException("只有创建者可以删除草稿");
+            }
+            // 草稿可以直接删除，无需检查流转记录
+            requirementMapper.deleteById(id);
+            return;
+        }
+
+        // 非草稿状态：需要检查权限和流转状态
         boolean isCreator = requirement.getCreatorId() != null
                 && requirement.getCreatorId().equals(userId);
         boolean isAdmin = SecurityUtils.getCurrentUserRoles().contains("admin");
 
         if (!isCreator && !isAdmin) {
             throw new BusinessException("只有创建者或管理员可以删除需求");
+        }
+
+        // 检查是否有删除权限
+        boolean hasDeletePermission = SecurityUtils.hasAnyPermission("button:requirement:delete");
+
+        if (!hasDeletePermission && !isAdmin) {
+            throw new BusinessException("您没有删除需求的权限");
         }
 
         Long instanceTransitionCount = workflowInstanceTransitionMapper.selectCount(
@@ -962,21 +989,27 @@ public class RequirementServiceImpl implements RequirementService {
         }
     }
 
+    /**
+     * 插入需求并生成全局唯一编号
+     * 使用Redis+Lua实现分布式ID生成，避免高并发场景下的编号冲突
+     */
     private void insertRequirementWithGeneratedNo(Requirement requirement) {
-        for (int attempt = 0; attempt < REQUIREMENT_NO_MAX_RETRY; attempt++) {
-            requirement.setRequirementNo(generateRequirementNo(LocalDateTime.now()));
-            try {
-                requirementMapper.insert(requirement);
-                return;
-            } catch (DuplicateKeyException ex) {
-                if (!isRequirementNoDuplicate(ex) || attempt == REQUIREMENT_NO_MAX_RETRY - 1) {
-                    throw ex;
-                }
-            }
+        try {
+            // 使用Redis分布式ID生成器，无需重试
+            String requirementNo = distributedIdGenerator.generateRequirementNo();
+            requirement.setRequirementNo(requirementNo);
+            requirementMapper.insert(requirement);
+        } catch (Exception ex) {
+            log.error("Failed to generate requirement number", ex);
+            throw new BusinessException("生成需求编号失败，请稍后重试");
         }
-        throw new BusinessException("生成需求编号失败，请稍后重试");
     }
 
+    /**
+     * 生成需求编号（已废弃，使用Redis分布式生成器替代）
+     * @deprecated 使用 {@link DistributedIdGenerator#generateRequirementNo()} 替代
+     */
+    @Deprecated
     private String generateRequirementNo(LocalDateTime now) {
         String datePrefix = REQUIREMENT_NO_PREFIX + now.format(REQUIREMENT_NO_DATE_FORMATTER);
         Integer maxDailySequence = requirementMapper.selectMaxDailySequence(datePrefix);
@@ -1228,6 +1261,18 @@ public class RequirementServiceImpl implements RequirementService {
             User creator = userMapper.selectById(r.getCreatorId());
             if (creator != null) {
                 vo.setCreatorName(resolveUserDisplayName(creator));
+                // 归属部门显示为提出人所在的组织机构名称
+                if (creator.getOrgId() != null) {
+                    SysOrgVO org = sysOrgService.getDetail(creator.getOrgId());
+                    if (org != null) {
+                        vo.setDepartmentName(org.getName());
+                    }
+                } else if (creator.getDepartmentId() != null) {
+                    SysOrgVO dept = sysOrgService.getDetail(creator.getDepartmentId());
+                    if (dept != null) {
+                        vo.setDepartmentName(dept.getName());
+                    }
+                }
             }
         }
         if (r.getAssigneeId() != null) {
@@ -1246,12 +1291,6 @@ public class RequirementServiceImpl implements RequirementService {
             User maintFollow = userMapper.selectById(r.getMaintFollowId());
             if (maintFollow != null) {
                 vo.setMaintFollowName(resolveUserDisplayName(maintFollow));
-            }
-        }
-        if (r.getDepartmentId() != null) {
-            SysOrgVO dept = sysOrgService.getDetail(r.getDepartmentId());
-            if (dept != null) {
-                vo.setDepartmentName(dept.getName());
             }
         }
         vo.setCurrentHandlerName(resolveCurrentHandlerName(r, vo));
@@ -1603,14 +1642,28 @@ public class RequirementServiceImpl implements RequirementService {
         if (isSuperAdmin || userId == null) {
             return List.of();
         }
-        User currentUser = userMapper.selectById(userId);
-        if (currentUser == null || currentUser.getOrgId() == null) {
+        // 复用已有的健壮逻辑：从 orgId + departmentId + regionId + user_organizations 多源融合
+        List<Long> directOrgIds = resolveDirectOrgIds(userId);
+        if (directOrgIds.isEmpty()) {
             return List.of();
         }
-        List<Long> visibleOrgIds = sysOrgService.getDescendantIds(currentUser.getOrgId());
-        LinkedHashSet<Long> orgIdSet = new LinkedHashSet<>(visibleOrgIds);
-        orgIdSet.add(currentUser.getOrgId());
-        return new ArrayList<>(orgIdSet);
+        // 对每个直接组织ID，获取其所有子孙组织ID
+        LinkedHashSet<Long> allOrgIds = new LinkedHashSet<>(directOrgIds);
+        for (Long orgId : directOrgIds) {
+            if (orgId == null) {
+                continue;
+            }
+            try {
+                List<Long> descendants = sysOrgService.getDescendantIds(orgId);
+                if (descendants != null) {
+                    allOrgIds.addAll(descendants);
+                }
+            } catch (Exception ex) {
+                // 如果获取子组织失败，至少保留当前组织ID
+                log.warn("获取组织{}的子组织失败: {}", orgId, ex.getMessage());
+            }
+        }
+        return new ArrayList<>(allOrgIds);
     }
 
     private boolean canViewRequirement(Requirement requirement, Long userId) {
@@ -1753,8 +1806,17 @@ public class RequirementServiceImpl implements RequirementService {
             try {
                 WorkflowAvailableActionsDTO actions = workflowEngineService.getAvailableActions(r.getId());
                 canApprove = Boolean.TRUE.equals(actions.getCanTransition());
+
+                // 添加详细日志用于诊断
+                log.debug("Permission check for requirement: id={}, userId={}, workflowInstanceId={}, " +
+                         "canTransition={}, currentNodeId={}, currentNodeName={}, currentNodeType={}",
+                         r.getId(), userId, r.getWorkflowInstanceId(),
+                         canApprove, actions.getCurrentNodeId(), actions.getCurrentNodeName(),
+                         actions.getCurrentNodeType());
             } catch (Exception e) {
                 // 工作流异常时默认无审批权限
+                log.warn("Failed to get available actions for requirement: id={}, userId={}, error={}",
+                        r.getId(), userId, e.getMessage());
                 canApprove = false;
             }
         }
@@ -1765,11 +1827,14 @@ public class RequirementServiceImpl implements RequirementService {
             vo.setCanView(true);
             vo.setCanApprove(true);
             vo.setOperationType("approve");
+            log.debug("Set operationType=approve for requirement: id={}, userId={}", r.getId(), userId);
         } else {
             vo.setCanEdit(false);
             vo.setCanView(true);
             vo.setCanApprove(false);
             vo.setOperationType("view");
+            log.debug("Set operationType=view for requirement: id={}, userId={}, reason=no approve permission",
+                     r.getId(), userId);
         }
     }
 

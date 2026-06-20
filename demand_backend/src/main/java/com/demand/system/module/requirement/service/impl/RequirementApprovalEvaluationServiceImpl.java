@@ -343,17 +343,19 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
     }
 
     private String resolveNodeName(WorkflowInstanceTransition transition, String action, RequirementApprovalEvaluation evaluation) {
-        if (evaluation != null && StringUtils.hasText(evaluation.getNodeName())) {
-            return evaluation.getNodeName();
-        }
         if (transition == null) {
             return null;
         }
+        // 审核记录应显示操作发生的节点（来源节点），而不是流转到的目标节点
         if ("submit".equals(action) && isStartNode(transition)) {
-            return "提交";
+            return "新建";
         }
         if (StringUtils.hasText(transition.getFromNodeName())) {
             return transition.getFromNodeName();
+        }
+        // 降级：如果没有来源节点，则使用evaluation或目标节点
+        if (evaluation != null && StringUtils.hasText(evaluation.getNodeName())) {
+            return evaluation.getNodeName();
         }
         return transition.getToNodeName();
     }

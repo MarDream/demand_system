@@ -304,7 +304,6 @@ const loadTypes = async () => {
     const list = Array.isArray(res) ? res : res?.data || []
     types.value = list.map((t: RequirementType) => ({ ...t, name: normalizeText(t.name) }))
   } catch (error) {
-    console.error('加载需求类型失败', error)
   }
 }
 
@@ -314,7 +313,6 @@ const loadPriorities = async () => {
     const list = Array.isArray(res) ? res : res?.data || []
     priorities.value = list.map((p: Priority) => ({ ...p, name: normalizeText(p.name) }))
   } catch (error) {
-    console.error('加载优先级失败', error)
   }
 }
 
@@ -561,7 +559,6 @@ const loadNodeStatuses = async () => {
     const res = await nodeStatusApi.list() as any
     nodeStatuses.value = Array.isArray(res) ? res : res?.data || []
   } catch (error) {
-    console.error('加载节点状态失败', error)
   }
 }
 

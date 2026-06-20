@@ -988,7 +988,6 @@ async function loadOrgData() {
       expandedKeys.value = new Set(orgTree.value.map(n => `org-${n.id}`))
     }
   } catch (error) {
-    console.error('加载组织架构数据失败:', error)
   }
 }
 

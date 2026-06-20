@@ -175,6 +175,7 @@
           :expand-row-keys="expandedRowKeys"
           border
           stripe
+          fit
         >
           <template #empty>
             <el-empty description="暂无需求数据" :image-size="80">
@@ -222,6 +223,7 @@
               :min-width="col.minWidth"
               :align="col.align || 'center'"
               :fixed="col.fixed"
+              show-overflow-tooltip
             >
               <template #default="{ row }">
                 <template v-if="col.key === 'title'">
@@ -258,6 +260,9 @@
                 <template v-else-if="col.key.endsWith('At') || col.key === 'createdAt'">
                   {{ formatDate(row[col.key]) }}
                 </template>
+                <template v-else-if="col.key === 'dueDate'">
+                  {{ formatDate(row[col.key], 'YYYY-MM-DD HH:mm:ss') }}
+                </template>
                 <template v-else-if="col.key === 'operations'">
                   <div class="requirement-operation-cell">
                     <!-- 我的待办/已办视图根据operationType显示不同按钮 -->
@@ -266,12 +271,12 @@
                       <el-button v-if="row.operationType === 'approve' && hasPermission('button:requirement:submit')" link type="warning" @click="handleOpen(row)">待办</el-button>
                       <el-button v-if="row.operationType === 'view'" link type="primary" @click="handleOpen(row)">查看</el-button>
                     </template>
-                    <!-- 全部需求/草稿视图显示原有操作按钮 -->
+                    <!-- 全部需求/草稿视图：根据 canEdit 和权限双重判断 -->
                     <template v-else>
                       <el-tooltip content="查看详情" placement="top">
                         <el-button link type="primary" :icon="View" aria-label="查看详情" @click="handleOpen(row)" />
                       </el-tooltip>
-                      <el-tooltip v-if="hasPermission('button:requirement:update')" content="编辑" placement="top">
+                      <el-tooltip v-if="row.canEdit && hasPermission('button:requirement:update')" content="编辑" placement="top">
                         <el-button
                           link
                           type="primary"
@@ -281,7 +286,7 @@
                         />
                       </el-tooltip>
                       <el-popconfirm
-                        v-if="hasPermission('button:requirement:delete')"
+                        v-if="canDeleteRequirement(row)"
                         title="确定删除该需求吗？"
                         @confirm="handleDelete(row.id)"
                       >
@@ -398,6 +403,7 @@ import type { Requirement, RequirementMyListQuery, RequirementQuery } from '@/ty
 import type { User } from '@/types/user'
 import { normalizeText, formatDate, stripPriorityPrefix } from '@/utils/format'
 import { usePermission } from '@/composables/usePermission'
+import { useUserStore } from '@/stores/modules/user'
 import PageContainer from '@/components/common/PageContainer.vue'
 import FilterCard from '@/components/common/FilterCard.vue'
 import TableCard from '@/components/common/TableCard.vue'
@@ -406,6 +412,7 @@ import Toolbar from '@/components/common/Toolbar.vue'
 const route = useRoute()
 const router = useRouter()
 const { hasPermission } = usePermission()
+const userStore = useUserStore()
 
 const filterExpanded = ref(true)
 type RequirementViewMode = 'all' | 'drafts' | 'pending' | 'done' | 'follows'
@@ -450,19 +457,18 @@ interface ColumnDef {
 // 所有可用列定义
 const allColumns: ColumnDef[] = [
   { key: 'title', label: '需求标题', group: '基础字段', minWidth: 220, fixed: false },
-  { key: 'requirementNo', label: '需求编号', group: '基础字段', width: 190 },
-  { key: 'type', label: '类型', group: '基础字段', width: 100 },
-  { key: 'priority', label: '优先级', group: '基础字段', width: 90 },
-  { key: 'status', label: '状态', group: '基础字段', width: 100 },
-  { key: 'creatorName', label: '提出人', group: '人员与时间', width: 100 },
-  { key: 'assigneeName', label: '负责人', group: '人员与时间', width: 100 },
-  { key: 'opsFollowName', label: '运营跟进人', group: '人员与时间', width: 110 },
-  { key: 'maintFollowName', label: '运维跟进人', group: '人员与时间', width: 110 },
-  { key: 'departmentName', label: '归属部门', group: '基础字段', width: 120 },
-  { key: 'createdAt', label: '创建时间', group: '人员与时间', width: 170 },
-  { key: 'analysisCompletedAt', label: '分析完成时间', group: '人员与时间', width: 160 },
-  { key: 'confirmAt', label: '需求确认时间', group: '人员与时间', width: 160 },
-  { key: 'developmentCompletedAt', label: '开发完成时间', group: '人员与时间', width: 160 },
+  { key: 'requirementNo', label: '需求编号', group: '基础字段', minWidth: 190 },
+  { key: 'type', label: '类型', group: '基础字段', minWidth: 100 },
+  { key: 'priority', label: '优先级', group: '基础字段', minWidth: 90 },
+  { key: 'status', label: '状态', group: '基础字段', minWidth: 100 },
+  { key: 'creatorName', label: '提出人', group: '人员与时间', minWidth: 100 },
+  { key: 'assigneeName', label: '负责人', group: '人员与时间', minWidth: 100 },
+  { key: 'departmentName', label: '归属部门', group: '基础字段', minWidth: 120 },
+  { key: 'createdAt', label: '创建时间', group: '人员与时间', minWidth: 170 },
+  { key: 'dueDate', label: '期望上线日期', group: '人员与时间', minWidth: 160 },
+  { key: 'analysisCompletedAt', label: '分析完成时间', group: '人员与时间', minWidth: 160 },
+  { key: 'confirmAt', label: '需求确认时间', group: '人员与时间', minWidth: 160 },
+  { key: 'developmentCompletedAt', label: '开发完成时间', group: '人员与时间', minWidth: 160 },
   { key: 'operations', label: '操作', width: 130, fixed: 'right' },
 ]
 
@@ -606,7 +612,39 @@ function typeLabel(code: string) {
 }
 
 function priorityLabel(code: string) {
-  return stripPriorityPrefix(priorityMap.value[code] || code || '-')
+  if (!code) return '-'
+
+  // 如果 priorityMap 有映射，使用映射值
+  let label = priorityMap.value[code] || code
+
+  // 处理 P0-P3 代码（旧格式数据的 fallback）
+  const pCodeMap: Record<string, string> = {
+    'P0': '紧急',
+    'P1': '高',
+    'P2': '中',
+    'P3': '低'
+  }
+
+  if (pCodeMap[code.toUpperCase()]) {
+    return pCodeMap[code.toUpperCase()]
+  }
+
+  // 处理英文优先级（大小写不敏感）
+  const lowerCode = code.toLowerCase()
+  const englishMap: Record<string, string> = {
+    'urgent': '紧急',
+    'high': '高',
+    'medium': '中',
+    'middle': '中',
+    'low': '低'
+  }
+
+  if (englishMap[lowerCode]) {
+    return englishMap[lowerCode]
+  }
+
+  // 去除 P0-、P1- 等前缀
+  return stripPriorityPrefix(label)
 }
 
 function normalizeColumnKeys(keys: string[]) {
@@ -622,7 +660,7 @@ async function loadFilterUsers() {
     const res = await userApi.getFilterUsers() as any
     filterUserList.value = res || []
   } catch (error) {
-    console.error('加载用户列表失败', error)
+    // ignore
   }
 }
 
@@ -824,6 +862,16 @@ async function handleDelete(id: number) {
   }
 }
 
+/** 判断是否可以删除需求（草稿：创建人可删除；非草稿：需要权限） */
+function canDeleteRequirement(row: Requirement) {
+  // 草稿状态：创建人可以删除（无需特殊权限）
+  if (row.isDraft) {
+    return row.creatorId === userStore.userInfo?.id
+  }
+  // 非草稿状态：需要删除权限
+  return hasPermission('button:requirement:delete')
+}
+
 async function handleToggleFollow(row: Requirement) {
   const nextFollowed = !row.followed
   try {
@@ -904,8 +952,6 @@ async function handleExport() {
       '状态': row.status || '',
       '提出人': row.creatorName || '-',
       '负责人': row.currentHandlerName || row.assigneeName || '-',
-      '运营跟进人': row.opsFollowName || '-',
-      '运维跟进人': row.maintFollowName || '-',
       '归属部门': row.departmentName || '-',
       '创建时间': formatDate(row.createdAt),
       '分析完成时间': formatDate(row.analysisCompletedAt),
@@ -916,7 +962,7 @@ async function handleExport() {
 
     const columnWidths = [
       { wch: 30 }, { wch: 22 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
-      { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
+      { wch: 12 }, { wch: 12 }, { wch: 12 },
       { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 40 },
     ]
 
@@ -928,9 +974,18 @@ async function handleExport() {
 }
 
 // Tag type helpers
-function priorityTagType(priority: string): string {
-  const map: Record<string, string> = { P0: 'danger', P1: 'warning', P2: 'info', P3: 'success' }
-  return map[priority] || 'info'
+function priorityTagType(priority: string): string | undefined {
+  // 先转换为中文标签
+  const label = priorityLabel(priority)
+  // 根据中文标签映射颜色
+  const colorMap: Record<string, string | undefined> = {
+    '紧急': 'danger',
+    '高': 'warning',
+    '中': undefined,
+    '低': 'info'
+  }
+  // 使用 in 运算符检查键是否存在，而不是检查值是否为真
+  return label in colorMap ? colorMap[label] : 'info'
 }
 
 function statusTagType(status: string): string {

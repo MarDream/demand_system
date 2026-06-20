@@ -50,10 +50,11 @@
       :title="dialogTitle"
       width="920px"
       :close-on-click-modal="false"
+      :close-on-press-escape="false"
       class="template-dialog"
       @closed="onDialogClosed"
     >
-      <el-form :model="form" label-width="120px" v-loading="saving">
+      <el-form :model="form" label-width="120px" @submit.prevent>
         <el-form-item label="需求类型">
           <el-select
             v-model="form.requirementTypeCode"
@@ -76,10 +77,10 @@
           <span class="form-tip">同一类型下只能有一个默认模板</span>
         </el-form-item>
         <el-form-item label="模板内容">
-          <div class="template-editor">
+          <div class="template-editor" v-loading="saving">
             <IsleEditorToolbar v-if="templateEditorInstance" :editor="templateEditorInstance" />
             <IsleEditor
-              v-model="form.templateContent.contentHtml"
+              v-if="dialogVisible"
               :extensions="editorExtensions"
               locale="zh"
               @create="onTemplateEditorCreate"
@@ -162,10 +163,14 @@ onBeforeUnmount(() => {
 })
 
 watch(dialogVisible, (visible) => {
-  if (!visible) return
-  const html = form.value.templateContent.contentHtml || ''
-  if (templateEditorInstance.value && templateEditorInstance.value.getHTML?.() !== html) {
-    templateEditorInstance.value.commands?.setContent?.(html)
+  if (visible) {
+    // 对话框打开时，等待编辑器创建完成后设置内容
+    setTimeout(() => {
+      const html = form.value.templateContent.contentHtml || ''
+      if (templateEditorInstance.value && html) {
+        templateEditorInstance.value.commands?.setContent?.(html)
+      }
+    }, 100)
   }
 })
 
@@ -175,7 +180,6 @@ async function loadConfigTypes() {
     const list = Array.isArray(res) ? res : res?.data || []
     configTypes.value = list
   } catch (error) {
-    console.error('加载需求类型列表失败', error)
   }
 }
 
@@ -238,13 +242,10 @@ function handleEdit(row: RequirementTemplate) {
 
 function onTemplateEditorCreate({ editor }: { editor: any }) {
   templateEditorInstance.value = editor
-  const html = form.value.templateContent.contentHtml || ''
-  if (html) {
-    editor.commands?.setContent?.(html)
-  }
 }
 
 function onDialogClosed() {
+  // 不销毁编辑器实例，只清空内容
   if (templateEditorInstance.value) {
     templateEditorInstance.value.commands?.clearContent?.()
   }

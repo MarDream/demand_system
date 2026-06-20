@@ -1001,7 +1001,6 @@ async function fetchRolePermissions(roleId: number) {
     expandedMenuKeys.value = defaultExpandedKeys(menuPermissionTree.value)
   } catch (err) {
     // 错误已由 request 拦截器弹 ElMessage 提示，这里只兜底避免错误向上冒泡触发 Vue 警告
-    console.error('加载角色权限失败:', err)
   } finally {
     permissionLoading.value = false
   }
@@ -1078,7 +1077,6 @@ async function handleSavePermissions() {
     await fetchRolePermissions(selectedRole.value.id)
   } catch (err) {
     // 错误已由 request 拦截器弹 ElMessage 提示，这里只兜底避免错误向上冒泡触发 Vue 警告
-    console.error('保存权限失败:', err)
   } finally {
     permissionSaving.value = false
   }

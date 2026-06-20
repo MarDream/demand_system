@@ -214,7 +214,6 @@ const loadRegionsAndDepartments = async () => {
     regions.value = flat.filter(n => n.orgType === 'region' || n.orgType === 'company' || n.orgType === 'bureau')
     departments.value = flat.filter(n => n.orgType === 'department')
   } catch (error) {
-    console.error('加载组织架构失败:', error)
   }
 }
 
@@ -224,7 +223,6 @@ const loadPositions = async () => {
     const data = res?.data ?? res as Position[]
     positions.value = data || []
   } catch (error) {
-    console.error('加载岗位列表失败:', error)
   }
 }
 
@@ -236,10 +234,10 @@ const handleRegister = async () => {
       loading.value = true
       try {
         await register({
-          username: registerForm.username,
+          username: registerForm.username.replace(/\s/g, ''),
           realName: registerForm.realName,
           email: registerForm.email,
-          password: registerForm.password,
+          password: registerForm.password.replace(/\s/g, ''),
           regionId: registerForm.regionId,
           departmentId: registerForm.departmentId,
           positionId: registerForm.positionId

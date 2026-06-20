@@ -74,19 +74,9 @@
 
             <!-- 需求描述 -->
             <el-form-item label="需求描述" prop="description" class="description-item">
-              <div
-                class="editor-wrapper"
-                :class="{ 'editor-wrapper--dragover': attachmentDragover }"
-                @dragover.prevent="attachmentDragover = true"
-                @dragleave.prevent="attachmentDragover = false"
-                @drop.prevent="handleAttachmentDrop"
-              >
+              <div class="editor-wrapper">
                 <IsleEditorToolbar v-if="editorInstance" :editor="editorInstance" />
                 <IsleEditor v-model="formData.description" :extensions="editorExtensions" locale="zh" @create="onEditorCreate" />
-                <div v-if="attachmentDragover" class="editor-drop-overlay">
-                  <el-icon :size="32"><Upload /></el-icon>
-                  <span>拖放文件到此处上传</span>
-                </div>
               </div>
             </el-form-item>
 
@@ -129,52 +119,12 @@
                   />
                 </div>
               </div>
-              <el-empty v-else-if="currentRequirement?.isDraft === true" description="暂无关联需求" :image-size="40" />
 
               <!-- 附件上传区 -->
-              <input ref="fileInputRef" type="file" multiple style="display: none" @change="handleFileSelect" />
-              <div
-                class="upload-zone"
-                :class="{ 'upload-zone--active': attachmentDragover }"
-                @click="triggerAttachmentUpload"
-                @dragover.prevent="attachmentDragover = true"
-                @dragleave.prevent="attachmentDragover = false"
-                @drop.prevent="handleAttachmentDrop"
-                @paste.prevent="handleAttachmentPaste"
-                tabindex="0"
-              >
-                <div class="upload-zone__content">
-                  <el-icon :size="24" class="upload-zone__icon"><Upload /></el-icon>
-                  <span class="upload-zone__text">点击上传、拖拽文件或粘贴截图至此处</span>
-                </div>
-              </div>
-              <div v-if="attachmentUploading" class="attachment-uploading">附件上传中...</div>
-              <div v-if="formData.attachments.length > 0" class="attachment-list">
-                <div v-for="(file, index) in formData.attachments" :key="`${file.fileId || file.objectName || file.url}-${index}`" class="attachment-item">
-                  <el-icon :size="18" class="attachment-icon">
-                    <Document v-if="getFileExt(file.name) === 'pdf'" />
-                    <DocumentCopy v-else-if="['doc','docx','wps','xls','xlsx','csv'].includes(getFileExt(file.name))" />
-                    <Picture v-else-if="['jpg','jpeg','png','gif','svg','webp','bmp'].includes(getFileExt(file.name))" />
-                    <VideoCamera v-else-if="['mp4','mov','avi','mkv','webm'].includes(getFileExt(file.name))" />
-                    <Folder v-else-if="['zip','rar','7z','tar','gz'].includes(getFileExt(file.name))" />
-                    <Document v-else />
-                  </el-icon>
-                  <div class="attachment-main">
-                    <el-button link type="primary" class="attachment-name" @click="handleAttachmentDownload(file)">{{ file.name }}</el-button>
-                    <div class="attachment-meta">
-                      <span v-if="file.size" class="attachment-size">{{ formatFileSize(file.size) }}</span>
-                      <span v-if="file.uploadedAt" class="attachment-dot">·</span>
-                      <span v-if="file.uploadedAt" class="attachment-time">{{ formatAttachmentTime(file.uploadedAt) }}</span>
-                    </div>
-                  </div>
-                  <el-button link class="attachment-preview" aria-label="预览附件" @click="handleAttachmentPreview(file)">
-                    <el-icon><View /></el-icon>
-                  </el-button>
-                  <el-button link type="danger" aria-label="删除附件" @click="removeAttachment(index)" class="attachment-remove">
-                    <el-icon><Delete /></el-icon>
-                  </el-button>
-                </div>
-              </div>
+              <AttachmentUploader
+                v-model="formData.attachments"
+                @preview="handleAttachmentPreview"
+              />
             </div>
           </el-form>
         </el-card>
@@ -251,7 +201,7 @@
               </el-select>
             </el-form-item>
 
-            <el-form-item v-if="isEditMode" label="所属迭代">
+            <el-form-item v-if="showCurrentStatusField" label="所属迭代">
               <el-select v-model="formData.iterationId" placeholder="请选择" clearable style="width: 100%">
                 <el-option
                   v-for="iteration in iterations"
@@ -286,7 +236,7 @@
               />
             </el-form-item>
 
-            <el-form-item v-if="shouldShowField('dueDate')" label="期望上线时间">
+            <el-form-item v-if="shouldShowField('dueDate')" label="期望上线日期">
               <el-input v-if="isDueDateReadOnly" :model-value="formData.dueDate || '-'" readonly />
               <el-date-picker
                 v-else
@@ -308,7 +258,7 @@
               />
             </el-form-item>
 
-            <el-form-item v-if="isEditMode" label="创建时间">
+            <el-form-item v-if="showCurrentStatusField" label="创建时间">
               <el-input :model-value="formatDate(currentRequirement?.createdAt)" readonly />
             </el-form-item>
           </el-form>
@@ -484,6 +434,7 @@ import type { RelationItem } from '@/api/modules/relation'
 import { buildRichTextImagePreviewUrl, hydrateRichTextImageHtml, serializeRichTextImageHtml } from '@/utils/richTextFileImage'
 import { formatDate, formatFileSize, getFileExt, normalizeText, stripPriorityPrefix } from '@/utils/format'
 import PageContainer from '@/components/common/PageContainer.vue'
+import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import FilePreviewDialog from '@/components/document/FilePreviewDialog.vue'
 import { useUserStore } from '@/stores'
 import type { NextNodeOption, Requirement, RequirementAttachment, RequirementTemplate, TemplateSection } from '@/types/requirement'
@@ -500,8 +451,6 @@ const submitting = ref(false)
 const showRelationDialog = ref(false)
 const relationSearchText = ref('')
 const selectedRelations = ref<any[]>([])
-const attachmentUploading = ref(false)
-const attachmentDragover = ref(false)
 const createFormVisibleFields = ref<string[]>([])
 const createFormRequiredFields = ref<string[]>([])
 const currentRequirement = ref<Requirement | null>(null)
@@ -647,7 +596,11 @@ async function applyRequirementTemplate(typeCode?: string, force = false) {
       }
     }
     formData.description = nextDescription
-  } catch {
+    // 强制更新编辑器内容
+    if (editorInstance.value) {
+      editorInstance.value.commands.setContent(nextDescription)
+    }
+  } catch (error) {
     // 无模板或加载失败时使用默认空白描述
   } finally {
     templateApplying.value = false
@@ -789,9 +742,7 @@ function onEditorCreate({ editor }: { editor: any }) {
   if (formData.description && isEditMode.value) {
     editor.commands.setContent(hydrateRichTextImageHtml(formData.description))
   }
-  // 绑定粘贴事件到编辑器 DOM，支持粘贴文件/截图上传
-  const editorEl = editor.view.dom as HTMLElement
-  editorEl.addEventListener('paste', handleAttachmentPaste as unknown as EventListener)
+  // 编辑器粘贴功能由 AttachmentUploader 组件统一处理
 }
 
 watch(
@@ -965,7 +916,6 @@ async function loadProjects() {
     }
   } catch {
     projects.value = []
-    console.error('Failed to load projects')
   }
 }
 
@@ -975,7 +925,7 @@ async function loadOrgTree() {
     orgTree.value = Array.isArray(res) ? res : []
   } catch {
     orgTree.value = []
-    console.error('Failed to load org tree')
+    // ignore
   }
 }
 
@@ -988,7 +938,7 @@ async function loadUsers() {
     }
   } catch {
     users.value = []
-    console.error('Failed to load users')
+    // ignore
   }
 }
 
@@ -1006,7 +956,7 @@ async function loadIterations(projectId = formData.projectId) {
     }
   } catch {
     iterations.value = []
-    console.error('Failed to load iterations')
+    // ignore
   }
 }
 
@@ -1020,7 +970,7 @@ async function loadRequirements(projectId = formData.projectId) {
     allRequirements.value = res?.list || []
   } catch {
     allRequirements.value = []
-    console.error('Failed to load requirements')
+    // ignore
   }
 }
 
@@ -1080,7 +1030,8 @@ async function loadEditData(targetId = editId.value) {
 }
 
 function shouldShowField(field: string) {
-  if (isEditMode.value) return true
+  // 编辑已提交的需求时显示所有字段，草稿箱编辑时遵循模板配置
+  if (showCurrentStatusField.value) return true
   if (field === 'startDate' || field === 'estimatedHours') return false
   if (field === 'dueDate') return true
   if (createFormVisibleFields.value.length === 0) return false
@@ -1098,169 +1049,6 @@ function formatAttachmentTime(time: string | number | Date) {
   const h = pad(d.getHours())
   const min = pad(d.getMinutes())
   return `${y}-${m}-${day} ${h}:${min}`
-}
-
-function beforeAttachmentUpload(rawFile: File) {
-  const isValid = rawFile.size <= 50 * 1024 * 1024
-  if (!isValid) {
-    ElMessage.error('单个附件不能超过 50MB')
-  }
-  return isValid
-}
-
-async function handleAttachmentUpload(options: UploadRequestOptions) {
-  attachmentUploading.value = true
-  try {
-    const attachment = await uploadRequirementAttachment(options.file as File)
-    formData.attachments.push(attachment)
-    ElMessage.success('附件上传成功')
-    options.onSuccess?.(attachment as any)
-  } catch (error) {
-    ElMessage.error('附件上传失败')
-    options.onError?.(error as any)
-  } finally {
-    attachmentUploading.value = false
-  }
-}
-
-const fileInputRef = ref<HTMLInputElement>()
-
-function triggerAttachmentUpload() {
-  fileInputRef.value?.click()
-}
-
-async function handleFileSelect(event: Event) {
-  const input = event.target as HTMLInputElement
-  const files = input.files
-  if (!files || files.length === 0) return
-  for (const file of Array.from(files)) {
-    if (!beforeAttachmentUpload(file)) continue
-    try {
-      attachmentUploading.value = true
-      const attachment = await uploadRequirementAttachment(file)
-      formData.attachments.push(attachment)
-    } catch {
-      ElMessage.error('附件上传失败')
-    } finally {
-      attachmentUploading.value = false
-    }
-  }
-  input.value = ''
-}
-
-async function handleAttachmentDrop(event: DragEvent) {
-  attachmentDragover.value = false
-  const files = event.dataTransfer?.files
-  if (!files || files.length === 0) return
-  for (const file of Array.from(files)) {
-    if (!beforeAttachmentUpload(file)) continue
-    try {
-      attachmentUploading.value = true
-      const attachment = await uploadRequirementAttachment(file)
-      formData.attachments.push(attachment)
-    } catch {
-      ElMessage.error('附件上传失败')
-    } finally {
-      attachmentUploading.value = false
-    }
-  }
-  ElMessage.success('附件上传成功')
-}
-
-function getFileExtension(mimeType: string): string {
-  const mimeToExt: Record<string, string> = {
-    'image/jpeg': 'jpg',
-    'image/png': 'png',
-    'image/gif': 'gif',
-    'image/webp': 'webp',
-    'image/bmp': 'bmp',
-    'image/svg+xml': 'svg',
-    'application/pdf': 'pdf',
-    'application/msword': 'doc',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
-    'application/vnd.ms-excel': 'xls',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
-    'application/vnd.ms-powerpoint': 'ppt',
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
-    'text/plain': 'txt',
-    'application/zip': 'zip',
-    'application/x-rar-compressed': 'rar',
-  }
-  return mimeToExt[mimeType] || 'bin'
-}
-
-function createFileWithName(file: File, filename: string): File {
-  return new File([file], filename, { type: file.type })
-}
-
-async function handleAttachmentPaste(event: ClipboardEvent) {
-  const files = event.clipboardData?.files
-  if (!files || files.length === 0) return
-  // 有文件时阻止默认粘贴行为，避免编辑器重复处理
-  event.preventDefault()
-
-  for (const file of Array.from(files)) {
-    const isImage = file.type.startsWith('image/')
-
-    // 为剪贴板文件生成正确的文件名（如果没有的话）
-    let processedFile = file
-    if (!file.name || file.name === 'image' || !file.name.includes('.')) {
-      const ext = getFileExtension(file.type)
-      const timestamp = Date.now()
-      const newName = `clipboard_${timestamp}.${ext}`
-      processedFile = createFileWithName(file, newName)
-    }
-
-    if (isImage) {
-      // 图片直接插入编辑器
-      try {
-        attachmentUploading.value = true
-        ElMessage.info(`上传图片中: ${processedFile.name}`)
-        const attachment = await uploadRequirementAttachment(processedFile)
-        if (attachment.fileId && editorInstance.value) {
-          editorInstance.value
-            .chain()
-            .focus()
-            .setImage({ src: buildRichTextImagePreviewUrl(attachment.fileId), alt: processedFile.name })
-            .run()
-          ElMessage.success(`图片 ${processedFile.name} 已插入`)
-        } else if (attachment.url && editorInstance.value) {
-          editorInstance.value.chain().focus().setImage({ src: attachment.url, alt: processedFile.name }).run()
-          ElMessage.success(`图片 ${processedFile.name} 已插入`)
-        }
-      } catch (error) {
-        ElMessage.error(`图片 ${processedFile.name} 插入失败`)
-      } finally {
-        attachmentUploading.value = false
-      }
-    } else {
-      // 非图片作为附件上传
-      if (!beforeAttachmentUpload(processedFile)) continue
-      try {
-        attachmentUploading.value = true
-        ElMessage.info(`上传附件中: ${processedFile.name}`)
-        const attachment = await uploadRequirementAttachment(processedFile)
-        formData.attachments.push(attachment)
-        ElMessage.success(`附件 ${processedFile.name} 已添加`)
-      } catch (error) {
-        ElMessage.error(`附件 ${processedFile.name} 上传失败`)
-      } finally {
-        attachmentUploading.value = false
-      }
-    }
-  }
-}
-
-function removeAttachment(index: number) {
-  formData.attachments.splice(index, 1)
-}
-
-async function handleAttachmentDownload(file: RequirementAttachment) {
-  try {
-    await downloadRequirementAttachment(file)
-  } catch {
-    ElMessage.error('附件下载失败')
-  }
 }
 
 const previewVisible = ref(false)
@@ -1421,6 +1209,7 @@ function buildDraftPayload() {
     projectId: formData.projectId,
     title: formData.title,
     description: serializeRichTextImageHtml(formData.description),
+    type: formData.type,
     priority: formData.priority,
     assigneeId: formData.assigneeId,
     ccUserIds,
@@ -1434,7 +1223,7 @@ function buildDraftPayload() {
   return payload
 }
 
-async function persistDraft(showSuccess = true) {
+async function persistDraft(showSuccess = true, skipRouterUpdate = false) {
   const payload = buildDraftPayload()
 
   if (isEditMode.value && currentRequirement.value?.isDraft) {
@@ -1454,7 +1243,10 @@ async function persistDraft(showSuccess = true) {
   const draftId = await requirementApi.createRequirementDraft(payload)
   const latest = await requirementApi.getRequirementById(draftId) as Requirement
   applyRequirementToForm(latest)
-  await router.replace({ name: 'RequirementCreate', query: { id: draftId } })
+  // 只有在非跳过路由更新的情况下才更新 URL
+  if (!skipRouterUpdate) {
+    await router.replace({ name: 'RequirementCreate', query: { id: draftId } })
+  }
   if (showSuccess) {
     ElMessage.success('草稿已保存')
   }
@@ -1544,7 +1336,7 @@ async function handleSubmit() {
       return
     }
 
-    const draft = await persistDraft(false)
+    const draft = await persistDraft(false, true)
     if (hadExistingRequirement || relatedRequirements.value.length > 0) {
       await syncRelations(draft.id)
     }
@@ -1600,12 +1392,20 @@ async function loadConfig() {
     const priorityList = Array.isArray(prioritiesRes) ? prioritiesRes : (prioritiesRes as any).data || []
     configTypes.value = typeList.map((t: any) => ({ ...t, name: normalizeText(t.name) }))
     configPriorities.value = priorityList.map((p: any) => ({ ...p, name: stripPriorityPrefix(normalizeText(p.name)) }))
-    if (!isEditMode.value && configTypes.value.length > 0) {
-      formData.type = configTypes.value[0].code
-      await applyRequirementTemplate(formData.type, true)
+    if (!isEditMode.value) {
+      // 设置默认需求类型
+      if (configTypes.value.length > 0) {
+        formData.type = configTypes.value[0].code
+        await applyRequirementTemplate(formData.type, true)
+      }
+      // 设置默认优先级
+      if (configPriorities.value.length > 0) {
+        const defaultPriority = configPriorities.value.find((p: any) => p.isDefault === true)
+        formData.priority = defaultPriority ? defaultPriority.code : configPriorities.value[0].code
+      }
     }
   } catch {
-    console.error('Failed to load requirement config')
+    // ignore
   }
 }
 
@@ -1630,7 +1430,8 @@ async function loadCreateFormConfig(projectId = formData.projectId) {
         .filter((item: string) => item === 'dueDate' || item === 'ccUserIds')
       : []
 
-    if (res?.defaultTypeCode) {
+    // 仅在用户尚未选择需求类型时，才应用项目默认类型
+    if (res?.defaultTypeCode && !formData.type) {
       formData.type = res.defaultTypeCode
       await applyRequirementTemplate(formData.type, true)
     }
@@ -1657,7 +1458,7 @@ onMounted(async () => {
 })
 
 watch(() => formData.type, (typeCode) => {
-  void applyRequirementTemplate(typeCode)
+  void applyRequirementTemplate(typeCode, true)
 })
 </script>
 
@@ -1910,52 +1711,7 @@ watch(() => formData.type, (typeCode) => {
   color: var(--color-text-secondary);
 }
 
-/* Upload Zone */
-.upload-zone {
-  border: 1px dashed var(--el-border-color);
-  border-radius: 6px;
-  padding: 16px;
-  text-align: center;
-  cursor: pointer;
-  transition: border-color 0.2s, background-color 0.2s;
-  outline: none;
-}
-
-.upload-zone:hover,
-.upload-zone:focus {
-  border-color: var(--el-color-primary);
-}
-
-.upload-zone--active {
-  border-color: var(--el-color-primary);
-  background: rgba(64, 158, 255, 0.04);
-}
-
-.upload-zone__content {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-
-.upload-zone__icon {
-  color: var(--el-text-color-placeholder);
-}
-
-.upload-zone:hover .upload-zone__icon,
-.upload-zone--active .upload-zone__icon {
-  color: var(--el-color-primary);
-}
-
-.upload-zone__text {
-  font-size: 13px;
-  color: var(--el-text-color-placeholder);
-}
-
-.upload-zone:hover .upload-zone__text,
-.upload-zone--active .upload-zone__text {
-  color: var(--el-color-primary);
-}
+/* Upload Zone - 已移至 AttachmentUploader 组件 */
 
 .relation-chips {
   display: flex;
@@ -2009,139 +1765,7 @@ watch(() => formData.type, (typeCode) => {
   }
 }
 
-.attachment-uploading {
-  color: var(--color-text-secondary);
-  font-size: 13px;
-  padding: 8px 0;
-}
-
-.attachment-list {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
-  overflow: hidden;
-  background: var(--el-fill-color-blank);
-}
-
-.attachment-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  height: 44px;
-  padding: 0 12px;
-  font-size: 14px;
-  border-bottom: 1px solid var(--el-border-color-extra-light);
-  transition: background-color 0.15s ease;
-}
-
-.attachment-item:last-child {
-  border-bottom: none;
-}
-
-.attachment-item:hover {
-  background: var(--el-fill-color-light);
-}
-
-.attachment-icon {
-  flex-shrink: 0;
-  color: var(--el-color-primary);
-}
-
-.attachment-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 2px;
-}
-
-.attachment-name {
-  height: 20px;
-  line-height: 20px;
-  padding: 0;
-  font-size: 14px;
-  font-weight: 500;
-  justify-content: flex-start;
-  text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.attachment-name :deep(span) {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: block;
-}
-
-.attachment-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  line-height: 16px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  flex-wrap: nowrap;
-}
-
-.attachment-dot {
-  color: var(--el-text-color-placeholder);
-  flex-shrink: 0;
-}
-
-.attachment-time {
-  color: var(--el-text-color-secondary);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.attachment-size {
-  color: var(--el-text-color-secondary);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.attachment-remove {
-  line-height: 1;
-  padding: 6px;
-  flex-shrink: 0;
-  opacity: 0.55;
-  transition: opacity 0.15s ease, background-color 0.15s ease;
-  border-radius: var(--radius-sm);
-}
-
-.attachment-remove:hover {
-  opacity: 1;
-  background: var(--el-color-danger-light-9);
-}
-
-.attachment-remove .el-icon {
-  font-size: 16px;
-}
-
-.attachment-preview {
-  line-height: 1;
-  padding: 6px;
-  flex-shrink: 0;
-  opacity: 0.55;
-  transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
-  border-radius: var(--radius-sm);
-  color: var(--el-color-primary);
-}
-
-.attachment-preview:hover {
-  opacity: 1;
-  background: var(--el-color-primary-light-9);
-}
-
-.attachment-preview .el-icon {
-  font-size: 16px;
-}
+/* Attachment styles - 已移至 AttachmentUploader 组件 */
 
 .preview-iframe {
   width: 100%;

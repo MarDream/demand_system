@@ -1,5 +1,7 @@
 package com.demand.system.common.exception;
 
+import com.demand.system.common.result.ErrorCode;
+
 public class BusinessException extends RuntimeException {
 
     private final int errorCode;
@@ -8,7 +10,7 @@ public class BusinessException extends RuntimeException {
 
     public BusinessException(String message) {
         super(message);
-        this.errorCode = 500;
+        this.errorCode = ErrorCode.BUSINESS_ERROR;
         this.message = message;
         this.data = null;
     }

@@ -154,7 +154,6 @@ async function loadConfigOptions() {
       name: stripPriorityPrefix(normalizeText(priority.name)),
     }))
   } catch (error) {
-    console.error('加载需求配置失败', error)
   }
 }
 

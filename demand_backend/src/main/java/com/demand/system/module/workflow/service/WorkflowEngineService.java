@@ -44,6 +44,8 @@ import com.demand.system.module.workflow.mapper.WorkflowNodeMapper;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.demand.system.module.workflow.mapper.NodeStatusMapper;
 import com.demand.system.module.workflow.support.WorkflowNodeUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -65,6 +67,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class WorkflowEngineService {
+
+    private static final Logger log = LoggerFactory.getLogger(WorkflowEngineService.class);
 
     private final WorkflowInstanceMapper instanceMapper;
     private final WorkflowInstanceTransitionMapper transitionMapper;
@@ -346,11 +350,13 @@ public class WorkflowEngineService {
         }
 
         String nodeStatusCode = resolveNodeStatusCode(targetNode);
-        requirementMapper.update(null, new LambdaUpdateWrapper<Requirement>()
+        LambdaUpdateWrapper<Requirement> requirementUpdate = new LambdaUpdateWrapper<Requirement>()
             .eq(Requirement::getId, request.getRequirementId())
             .set(Requirement::getStatus, resolveNodeStatusName(nodeStatusCode))
-            .set(Requirement::getNodeStatus, nodeStatusCode)
-        );
+            .set(Requirement::getNodeStatus, nodeStatusCode);
+        // 记录离开"待分析/待确认/开发中"节点的结束时间
+        stampNodeEndTime(requirementUpdate, currentNode);
+        requirementMapper.update(null, requirementUpdate);
 
         notificationService.notifyNodeEntered(requirement, targetNode, operatorId);
 
@@ -507,11 +513,13 @@ public class WorkflowEngineService {
         );
 
         String nodeStatusCode = resolveNodeStatusCode(previousNode);
-        requirementMapper.update(null, new LambdaUpdateWrapper<Requirement>()
+        LambdaUpdateWrapper<Requirement> rollbackUpdate = new LambdaUpdateWrapper<Requirement>()
             .eq(Requirement::getId, requirementId)
             .set(Requirement::getStatus, resolveNodeStatusName(nodeStatusCode))
-            .set(Requirement::getNodeStatus, nodeStatusCode)
-        );
+            .set(Requirement::getNodeStatus, nodeStatusCode);
+        // 回退：当前节点结束，记录对应时间戳
+        stampNodeEndTime(rollbackUpdate, currentNode);
+        requirementMapper.update(null, rollbackUpdate);
     }
 
     @Transactional
@@ -557,11 +565,13 @@ public class WorkflowEngineService {
             .set(WorkflowInstance::getStatus, "cancelled")
         );
 
-        requirementMapper.update(null, new LambdaUpdateWrapper<Requirement>()
+        LambdaUpdateWrapper<Requirement> cancelUpdate = new LambdaUpdateWrapper<Requirement>()
             .eq(Requirement::getId, requirementId)
             .set(Requirement::getStatus, resolveNodeStatusName("CANCELLED"))
-            .set(Requirement::getNodeStatus, "CANCELLED")
-        );
+            .set(Requirement::getNodeStatus, "CANCELLED");
+        // 取消：当前节点结束，记录对应时间戳
+        stampNodeEndTime(cancelUpdate, currentNode);
+        requirementMapper.update(null, cancelUpdate);
     }
 
     public void saveDraft(Long requirementId) {
@@ -935,22 +945,31 @@ public class WorkflowEngineService {
 
     private void validatePermission(WorkflowInstance instance, Requirement requirement, WorkflowNode node, Long operatorId) {
         if (hasAdminBypassPermission()) {
+            log.debug("Admin bypass: userId={}, requirementId={}", operatorId, requirement.getId());
             return;
         }
         if (node == null) {
+            log.warn("Node is null for requirement: requirementId={}, userId={}", requirement.getId(), operatorId);
             throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
         }
         if ("approval".equalsIgnoreCase(node.getNodeType()) && !WorkflowNodeUtils.hasValidAssignee(node)) {
+            log.warn("Node has no valid assignee: requirementId={}, nodeId={}, nodeName={}",
+                    requirement.getId(), node.getNodeId(), node.getNodeName());
             throw new BusinessException(ErrorCode.BAD_REQUEST, "当前节点未配置处理人，请联系管理员修复流程");
         }
 
         String assigneeType = node.getAssigneeType();
         if (!StringUtils.hasText(assigneeType)) {
             if ("approval".equalsIgnoreCase(node.getNodeType())) {
+                log.warn("Approval node has no assigneeType: requirementId={}, nodeId={}, nodeName={}",
+                        requirement.getId(), node.getNodeId(), node.getNodeName());
                 throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
             }
             return;
         }
+
+        log.debug("Validating permission: userId={}, requirementId={}, nodeId={}, nodeName={}, assigneeType={}",
+                 operatorId, requirement.getId(), node.getNodeId(), node.getNodeName(), assigneeType);
 
         // 动态权限验证：根据处理人类型检查对应权限
         switch (assigneeType) {
@@ -987,13 +1006,23 @@ public class WorkflowEngineService {
     private void validateSpecifiedRolePermission(WorkflowNode node) {
         Integer roleId = node.getAssigneeRoleId();
         if (roleId == null) {
+            log.warn("Node has no assigneeRoleId: nodeId={}, nodeName={}", node.getNodeId(), node.getNodeName());
             throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
         }
         Role role = roleMapper.selectById(roleId.longValue());
         if (role == null || (!StringUtils.hasText(role.getCode()) && !StringUtils.hasText(role.getName()))) {
+            log.warn("Role not found or invalid: nodeId={}, nodeName={}, roleId={}",
+                    node.getNodeId(), node.getNodeName(), roleId);
             throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
         }
+
+        List<String> userRoles = SecurityUtils.getCurrentUserRoles();
+        log.debug("Checking role permission: nodeId={}, nodeName={}, requiredRole={}/{}, userRoles={}",
+                 node.getNodeId(), node.getNodeName(), role.getCode(), role.getName(), userRoles);
+
         if (!currentUserMatchesRole(role)) {
+            log.debug("Role mismatch: nodeId={}, nodeName={}, requiredRole={}/{}, userRoles={}",
+                     node.getNodeId(), node.getNodeName(), role.getCode(), role.getName(), userRoles);
             throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
         }
     }
@@ -1124,9 +1153,13 @@ public class WorkflowEngineService {
     private boolean hasOperatePermission(WorkflowInstance instance, Requirement requirement, WorkflowNode node, Long operatorId) {
         try {
             validatePermission(instance, requirement, node, operatorId);
+            log.debug("Permission granted for user: userId={}, requirementId={}, nodeId={}, nodeName={}",
+                     operatorId, requirement.getId(), node.getNodeId(), node.getNodeName());
             return true;
         } catch (BusinessException ex) {
             if (ex.getErrorCode() == ErrorCode.FORBIDDEN) {
+                log.debug("Permission denied for user: userId={}, requirementId={}, nodeId={}, nodeName={}, reason={}",
+                         operatorId, requirement.getId(), node.getNodeId(), node.getNodeName(), ex.getMessage());
                 return false;
             }
             throw ex;
@@ -1284,6 +1317,33 @@ public class WorkflowEngineService {
 
     private String resolveNodeStatusCode(WorkflowNode node) {
         return WorkflowNodeUtils.resolveNodeStatusCode(node, true);
+    }
+
+    /**
+     * 根据离开节点的节点状态码，给需求打上对应节点结束时间戳：
+     * <ul>
+     *   <li>PENDING_ANALYSIS  → analysisCompletedAt</li>
+     *   <li>PENDING_CONFIRM   → confirmAt</li>
+     *   <li>IN_DEVELOPMENT    → developmentCompletedAt</li>
+     * </ul>
+     * 其它节点不写入，避免污染。
+     */
+    private void stampNodeEndTime(LambdaUpdateWrapper<Requirement> updateWrapper, WorkflowNode leavingNode) {
+        if (leavingNode == null) {
+            return;
+        }
+        String code = WorkflowNodeUtils.resolveNodeStatusCode(leavingNode, false);
+        if (!StringUtils.hasText(code)) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        if ("PENDING_ANALYSIS".equals(code)) {
+            updateWrapper.set(Requirement::getAnalysisCompletedAt, now);
+        } else if ("PENDING_CONFIRM".equals(code)) {
+            updateWrapper.set(Requirement::getConfirmAt, now);
+        } else if ("IN_DEVELOPMENT".equals(code)) {
+            updateWrapper.set(Requirement::getDevelopmentCompletedAt, now);
+        }
     }
 
     private String resolveNodeStatusName(String nodeStatusCode) {

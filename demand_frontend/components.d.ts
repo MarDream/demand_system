@@ -9,6 +9,7 @@ declare module 'vue' {
   export interface GlobalComponents {
     AppButton: typeof import('./src/components/common/AppButton.vue')['default']
     AppDialog: typeof import('./src/components/common/AppDialog.vue')['default']
+    AttachmentUploader: typeof import('./src/components/AttachmentUploader.vue')['default']
     Breadcrumb: typeof import('./src/components/layout/Breadcrumb.vue')['default']
     DocumentCenter: typeof import('./src/components/document/DocumentCenter.vue')['default']
     DocumentTable: typeof import('./src/components/document/DocumentTable.vue')['default']
