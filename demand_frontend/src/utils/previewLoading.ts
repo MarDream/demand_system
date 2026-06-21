@@ -1,3 +1,5 @@
+import { getToken } from '@/utils/auth'
+
 export function clampProgress(progress: number, min = 0, max = 100): number {
   if (Number.isNaN(progress)) return min
   return Math.min(max, Math.max(min, Math.round(progress)))
@@ -65,7 +67,7 @@ export async function fetchTextWithProgress(
   url: string,
   onProgress?: (progress: number) => void,
 ): Promise<string> {
-  const response = await fetch(url)
+  const response = await fetch(url, { headers: buildAuthHeaders() })
   if (!response.ok) {
     throw new Error(`请求失败: ${response.status}`)
   }
@@ -77,10 +79,20 @@ export async function fetchBlobWithProgress(
   url: string,
   onProgress?: (progress: number) => void,
 ): Promise<Blob> {
-  const response = await fetch(url)
+  const response = await fetch(url, { headers: buildAuthHeaders() })
   if (!response.ok) {
     throw new Error(`请求失败: ${response.status}`)
   }
   const buffer = await readResponseBuffer(response, onProgress)
   return new Blob([buffer], { type: response.headers.get('content-type') || 'application/octet-stream' })
+}
+
+/** 为 fetch 请求构建认证 header，携带 JWT token 以通过后端鉴权 */
+function buildAuthHeaders(): HeadersInit {
+  const headers: HeadersInit = {}
+  const token = getToken()
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+  return headers
 }
