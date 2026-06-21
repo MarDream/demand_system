@@ -385,6 +385,8 @@ function getTypeLabel(type: string): string {
     'research': '研究',
     'test': '测试',
     'document': '文档',
+    'order': '工单',
+    'requirement': '需求',
     'other': '其他'
   }
   return typeMap[type.toLowerCase()] || type
