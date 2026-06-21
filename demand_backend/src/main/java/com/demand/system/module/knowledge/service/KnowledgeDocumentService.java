@@ -35,6 +35,27 @@ public interface KnowledgeDocumentService {
 
     void syncRequirementAttachments(Long projectId, Long requirementId, List<RequirementAttachmentDTO> attachments, Long uploaderId);
 
+    /**
+     * 同步需求附件到知识库（包含需求上下文信息）
+     *
+     * @param projectId 项目ID
+     * @param requirementId 需求ID
+     * @param requirementCode 需求编号
+     * @param requirementTitle 需求标题
+     * @param attachments 附件列表
+     * @param uploaderId 上传人ID
+     */
+    void syncRequirementAttachmentsWithContext(Long projectId, Long requirementId, String requirementCode,
+                                               String requirementTitle, List<RequirementAttachmentDTO> attachments, Long uploaderId);
+
+    /**
+     * 获取文档的需求引用列表
+     *
+     * @param documentId 文档ID
+     * @return 需求引用列表
+     */
+    List<com.demand.system.module.knowledge.entity.KnowledgeDocumentRequirementRef> getDocumentRequirementRefs(Long documentId);
+
     void processDocument(Long documentId);
 
     String resolveShareAccessUrl(String token);

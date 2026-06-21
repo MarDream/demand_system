@@ -13,6 +13,7 @@ export interface KnowledgeBase {
   docCount: number
   chunkCount: number
   status: string
+  isDefaultForRequirements: boolean
   createdAt: string
   updatedAt: string
 }
@@ -75,6 +76,15 @@ export interface SearchResponse {
 
 export type SearchMode = 'hybrid' | 'semantic' | 'keyword'
 
+export interface DocumentRequirementRef {
+  id: number
+  documentId: number
+  requirementId: number
+  requirementCode: string
+  requirementTitle: string
+  createdAt: string
+}
+
 // ===== API 函数 =====
 
 // 知识库管理
@@ -118,6 +128,15 @@ export interface KnowledgeMigrateResult {
 
 export function migrateKnowledgeBaseDocuments(id: number, data: KnowledgeMigrateParams) {
   return request.post<KnowledgeMigrateResult>(`/v1/knowledge/bases/${id}/migrate`, data)
+}
+
+// 设置/取消默认知识库
+export function setAsDefaultKnowledgeBase(id: number) {
+  return request.patch<void>(`/v1/knowledge/bases/${id}/set-default`)
+}
+
+export function unsetDefaultKnowledgeBase(id: number) {
+  return request.patch<void>(`/v1/knowledge/bases/${id}/unset-default`)
 }
 
 // 文档管理
@@ -183,6 +202,11 @@ export function generateDocumentShareLink(
   return request.post<string>(
     `/v1/knowledge/bases/${knowledgeBaseId}/documents/${documentId}/share?expireHours=${expireHours}&requireLogin=${requireLogin}&oneTimeAccess=${oneTimeAccess}`
   )
+}
+
+// 获取文档的需求引用
+export function getDocumentRequirementRefs(knowledgeBaseId: number, documentId: number) {
+  return request.get<DocumentRequirementRef[]>(`/v1/knowledge/bases/${knowledgeBaseId}/documents/${documentId}/requirement-refs`)
 }
 
 // 语义检索

@@ -17,7 +17,7 @@ public interface UserService {
 
     UserVO getById(Long id);
 
-    void create(UserCreateDTO dto);
+    Long create(UserCreateDTO dto);
 
     void update(UserUpdateDTO dto);
 

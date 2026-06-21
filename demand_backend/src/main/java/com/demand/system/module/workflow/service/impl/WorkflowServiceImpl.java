@@ -13,6 +13,7 @@ import com.demand.system.module.workflow.dto.EdgeDTO;
 import com.demand.system.module.workflow.dto.NodeConfigDTO;
 import com.demand.system.module.workflow.dto.TransitionResponse;
 import com.demand.system.module.workflow.dto.WorkflowDefinitionDTO;
+import com.demand.system.module.workflow.dto.WorkflowNodeDTO;
 import com.demand.system.module.workflow.engine.PermissionEngine;
 import com.demand.system.module.workflow.engine.WorkflowVersionResolver;
 import com.demand.system.module.workflow.engine.StateMachine;
@@ -30,6 +31,7 @@ import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.demand.system.module.workflow.service.WorkflowActivationService;
 import com.demand.system.module.workflow.service.WorkflowService;
 import com.demand.system.module.workflow.support.WorkflowVersionUtils;
+import com.demand.system.module.workflow.validator.WorkflowPermissionValidator;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
@@ -78,6 +80,7 @@ public class WorkflowServiceImpl implements WorkflowService {
     private final RequirementHistoryMapper requirementHistoryMapper;
     private final NotificationService notificationService;
     private final ObjectMapper objectMapper;
+    private final WorkflowPermissionValidator permissionValidator;
 
     public WorkflowServiceImpl(WorkflowStateMapper stateMapper, WorkflowTransitionMapper transitionMapper,
                             WorkflowVersionMapper versionMapper, WorkflowNodeMapper workflowNodeMapper,
@@ -86,7 +89,8 @@ public class WorkflowServiceImpl implements WorkflowService {
                             StateMachine stateMachine, PermissionEngine permissionEngine,
                             WorkflowVersionResolver workflowVersionResolver, WorkflowDefinitionEngine workflowDefinitionEngine,
                             RequirementMapper requirementMapper, RequirementHistoryMapper requirementHistoryMapper,
-                            NotificationService notificationService, ObjectMapper objectMapper) {
+                            NotificationService notificationService, ObjectMapper objectMapper,
+                            WorkflowPermissionValidator permissionValidator) {
         this.stateMapper = stateMapper;
         this.transitionMapper = transitionMapper;
         this.versionMapper = versionMapper;
@@ -96,6 +100,7 @@ public class WorkflowServiceImpl implements WorkflowService {
         this.stateMachine = stateMachine;
         this.permissionEngine = permissionEngine;
         this.workflowVersionResolver = workflowVersionResolver;
+        this.permissionValidator = permissionValidator;
         this.workflowDefinitionEngine = workflowDefinitionEngine;
         this.requirementMapper = requirementMapper;
         this.requirementHistoryMapper = requirementHistoryMapper;
@@ -298,12 +303,29 @@ public class WorkflowServiceImpl implements WorkflowService {
         long visualNodeCount = workflowNodeMapper.selectCount(new LambdaQueryWrapper<WorkflowNode>()
                 .eq(WorkflowNode::getWorkflowVersionId, id));
         if (visualNodeCount > 0) {
+            // 可视化工作流：在激活前验证RBAC权限配置
+            List<WorkflowNode> nodes = workflowNodeMapper.selectList(
+                new LambdaQueryWrapper<WorkflowNode>()
+                    .eq(WorkflowNode::getWorkflowVersionId, id)
+            );
+
+            List<WorkflowNodeDTO> nodeDTOs = nodes.stream()
+                .map(this::convertToNodeDTO)
+                .collect(java.util.stream.Collectors.toList());
+
+            // 验证权限配置（如果缺少权限会抛出异常）
+            permissionValidator.validateNodesPermissions(nodeDTOs);
+
             workflowActivationService.activate(id);
             return;
         }
 
         validateDefinitionOrThrow(version.getDefinition());
         syncNodePermissionsFromDefinition(version.getId(), version.getDefinition());
+
+        // TODO: JSON定义工作流的权限验证需要额外的DTO转换逻辑
+        // 目前JSON定义工作流较少使用，可视化工作流已经有完整的权限验证
+
         publishVersionToRuntime(projectId, version.getDefinition());
 
         versionMapper.update(null, new UpdateWrapper<WorkflowVersion>()
@@ -576,5 +598,24 @@ public class WorkflowServiceImpl implements WorkflowService {
         } catch (Exception e) {
             throw new BusinessException("工作流配置序列化失败");
         }
+    }
+
+    /**
+     * 转换 WorkflowNode 实体为 DTO
+     */
+    private WorkflowNodeDTO convertToNodeDTO(WorkflowNode node) {
+        WorkflowNodeDTO dto = new WorkflowNodeDTO();
+        dto.setNodeId(node.getNodeId());
+        dto.setNodeName(node.getNodeName());
+        dto.setNodeType(node.getNodeType());
+        dto.setAssigneeType(node.getAssigneeType());
+        dto.setAssigneeRoleId(node.getAssigneeRoleId());
+        dto.setAssigneeRoleGroupId(node.getAssigneeRoleGroupId());
+        dto.setAssigneeOrgId(node.getAssigneeOrgId());
+
+        // 复制 assignee_user_ids
+        dto.setAssigneeUserIds(node.getAssigneeUserIds());
+
+        return dto;
     }
 }

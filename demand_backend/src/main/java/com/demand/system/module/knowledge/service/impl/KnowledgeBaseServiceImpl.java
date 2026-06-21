@@ -284,6 +284,56 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         return knowledgeBaseMapper.selectList(wrapper).stream().map(this::toVO).collect(Collectors.toList());
     }
 
+    @Override
+    @Transactional
+    public void setAsDefaultForRequirements(Long knowledgeBaseId, Long operatorId) {
+        KnowledgeBase kb = findOrThrow(knowledgeBaseId);
+
+        // 检查是否已经是默认知识库
+        if (Integer.valueOf(1).equals(kb.getIsDefaultForRequirements())) {
+            return; // 已经是默认知识库，无需操作
+        }
+
+        // 1. 将所有知识库的默认标识设为0（全局唯一性保证）
+        knowledgeBaseMapper.update(null, new LambdaUpdateWrapper<KnowledgeBase>()
+                .set(KnowledgeBase::getIsDefaultForRequirements, 0)
+                .eq(KnowledgeBase::getIsDefaultForRequirements, 1));
+
+        // 2. 将目标知识库设为默认
+        knowledgeBaseMapper.update(null, new LambdaUpdateWrapper<KnowledgeBase>()
+                .set(KnowledgeBase::getIsDefaultForRequirements, 1)
+                .eq(KnowledgeBase::getId, knowledgeBaseId));
+
+        log.info("设置默认知识库成功: knowledgeBaseId={}, operatorId={}", knowledgeBaseId, operatorId);
+    }
+
+    @Override
+    @Transactional
+    public void unsetDefaultForRequirements(Long knowledgeBaseId, Long operatorId) {
+        KnowledgeBase kb = findOrThrow(knowledgeBaseId);
+
+        // 检查是否是默认知识库
+        if (!Integer.valueOf(1).equals(kb.getIsDefaultForRequirements())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "该知识库不是默认存储库");
+        }
+
+        // 取消默认设置
+        knowledgeBaseMapper.update(null, new LambdaUpdateWrapper<KnowledgeBase>()
+                .set(KnowledgeBase::getIsDefaultForRequirements, 0)
+                .eq(KnowledgeBase::getId, knowledgeBaseId));
+
+        log.info("取消默认知识库成功: knowledgeBaseId={}, operatorId={}", knowledgeBaseId, operatorId);
+    }
+
+    @Override
+    public Long getDefaultKnowledgeBaseIdForRequirements() {
+        KnowledgeBase kb = knowledgeBaseMapper.selectOne(new LambdaQueryWrapper<KnowledgeBase>()
+                .eq(KnowledgeBase::getIsDefaultForRequirements, 1)
+                .eq(KnowledgeBase::getStatus, "active")
+                .last("LIMIT 1"));
+        return kb != null ? kb.getId() : null;
+    }
+
     private KnowledgeBase findOrThrow(Long id) {
         KnowledgeBase kb = knowledgeBaseMapper.selectById(id);
         if (kb == null) {
@@ -318,6 +368,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
                 .docCount(kb.getDocCount())
                 .chunkCount(kb.getChunkCount())
                 .status(kb.getStatus())
+                .isDefaultForRequirements(Integer.valueOf(1).equals(kb.getIsDefaultForRequirements()))
                 .createdAt(kb.getCreatedAt())
                 .updatedAt(kb.getUpdatedAt())
                 .build();

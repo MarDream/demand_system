@@ -38,4 +38,27 @@ public interface KnowledgeBaseService {
      * @return 迁移结果（迁移文档数、chunks 数）
      */
     KnowledgeMigrateResultVO migrateDocuments(Long sourceId, KnowledgeBaseMigrateDTO dto);
+
+    /**
+     * 设置为需求文件默认存储库
+     *
+     * @param knowledgeBaseId 知识库ID
+     * @param operatorId 操作人ID
+     */
+    void setAsDefaultForRequirements(Long knowledgeBaseId, Long operatorId);
+
+    /**
+     * 取消需求文件默认存储库设置
+     *
+     * @param knowledgeBaseId 知识库ID
+     * @param operatorId 操作人ID
+     */
+    void unsetDefaultForRequirements(Long knowledgeBaseId, Long operatorId);
+
+    /**
+     * 获取需求文件默认存储库ID（如果存在）
+     *
+     * @return 默认知识库ID，不存在返回null
+     */
+    Long getDefaultKnowledgeBaseIdForRequirements();
 }

@@ -177,6 +177,8 @@ export interface RequirementHistory {
   operatorName?: string
   /** 修复 P1：后端 transition action（submit/rollback/cancel/proxy_approve 等） */
   action?: string
+  /** 流转时的评审意见 */
+  comment?: string
 }
 
 export interface RequirementComment {

@@ -86,6 +86,25 @@
               <AppButton :icon="Plus" size="small" type="primary" permission="button:llm-provider:create" @click="openCreateModel(selectedProvider)">新增模型</AppButton>
             </div>
             <div class="panel-header-right">
+              <el-tooltip content="列表字段设置" placement="top">
+                <el-button
+                  :icon="Setting"
+                  circle
+                  size="small"
+                  @click="openColumnConfig"
+                />
+              </el-tooltip>
+              <el-tooltip content="批量测试所有模型连通性" placement="top">
+                <AppButton
+                  size="small"
+                  :icon="Connection"
+                  :loading="batchTesting"
+                  permission="button:llm-provider:test"
+                  @click="handleBatchTest"
+                >
+                  批量测试
+                </AppButton>
+              </el-tooltip>
               <el-tooltip content="嗅探可用模型" placement="top">
                 <AppButton size="small" :icon="Search" permission="button:llm-provider:test" @click="handleSniff(selectedProvider)">嗅探</AppButton>
               </el-tooltip>
@@ -93,62 +112,82 @@
           </div>
 
           <el-table :data="selectedProviderModels" border style="width: 100%" size="small" row-key="id">
-            <el-table-column prop="name" label="名称" min-width="120" />
-            <el-table-column prop="modelId" label="模型ID" min-width="140" show-overflow-tooltip />
-            <el-table-column prop="modelType" label="类型" width="100" align="center">
-              <template #default="{ row }">
-                <el-tag :type="typeTagType(row.modelType)" size="small">{{ row.modelType || 'general' }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="temperature" label="温度" width="60" align="center" />
-            <el-table-column prop="maxTokens" label="Max Tokens" width="90" align="center" />
-            <el-table-column label="默认" width="55" align="center">
-              <template #default="{ row }">
-                <el-tag v-if="row.isDefault" type="success" size="small">是</el-tag>
-                <span v-else>-</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="状态" width="60" align="center">
-              <template #default="{ row }">
-                <span v-permission="'button:llm-provider:update'">
-                  <el-switch :model-value="row.enabled" size="small" @change="handleToggleModel(selectedProvider, row)" />
-                </span>
-              </template>
-            </el-table-column>
-            <el-table-column label="连通性" width="90" align="center">
-              <template #default="{ row }">
-                <div class="conn-status">
-                  <template v-if="testingModels[row.id!]">
-                    <span class="testing-text"><el-icon class="is-loading"><Loading /></el-icon> 测试中</span>
+            <template v-for="col in visibleColumns" :key="col.key">
+              <el-table-column
+                :prop="col.prop"
+                :label="col.label"
+                :width="col.width"
+                :min-width="col.minWidth"
+                :align="col.align || 'left'"
+                :fixed="col.fixed"
+                :show-overflow-tooltip="col.showOverflowTooltip"
+              >
+                <template #default="{ row }">
+                  <template v-if="col.key === 'name'">
+                    {{ row.name }}
                   </template>
-                  <template v-else-if="row.testSuccess != null">
-                    <el-tooltip :content="connTooltip(row)" placement="top">
-                      <span class="conn-light" :class="connLightClass(row)"></span>
+                  <template v-else-if="col.key === 'modelId'">
+                    {{ row.modelId }}
+                  </template>
+                  <template v-else-if="col.key === 'modelType'">
+                    <el-tag :type="typeTagType(row.modelType)" size="small">{{ row.modelType || 'general' }}</el-tag>
+                  </template>
+                  <template v-else-if="col.key === 'temperature'">
+                    {{ row.temperature }}
+                  </template>
+                  <template v-else-if="col.key === 'maxTokens'">
+                    {{ row.maxTokens }}
+                  </template>
+                  <template v-else-if="col.key === 'isDefault'">
+                    <el-tag v-if="row.isDefault" type="success" size="small">是</el-tag>
+                    <span v-else>-</span>
+                  </template>
+                  <template v-else-if="col.key === 'enabled'">
+                    <span v-permission="'button:llm-provider:update'">
+                      <el-switch :model-value="row.enabled" size="small" @change="handleToggleModel(selectedProvider, row)" />
+                    </span>
+                  </template>
+                  <template v-else-if="col.key === 'connectivity'">
+                    <div class="conn-status">
+                      <template v-if="testingModels[row.id!]">
+                        <span class="testing-text"><el-icon class="is-loading"><Loading /></el-icon> 测试中</span>
+                      </template>
+                      <template v-else-if="row.testSuccess != null">
+                        <el-tooltip :content="connTooltip(row)" placement="top">
+                          <span class="conn-light" :class="connLightClass(row)"></span>
+                        </el-tooltip>
+                      </template>
+                      <span v-else class="conn-pending">-</span>
+                    </div>
+                  </template>
+                  <template v-else-if="col.key === 'testDuration'">
+                    <template v-if="row.testDuration != null">
+                      <span :style="{ color: durationColor(row.testDuration) }">
+                        {{ formatDuration(row.testDuration) }}
+                      </span>
+                    </template>
+                    <span v-else class="conn-pending">-</span>
+                  </template>
+                  <template v-else-if="col.key === 'operations'">
+                    <el-tooltip content="测试连通性" placement="top">
+                      <span v-permission="'button:llm-provider:test'">
+                        <el-icon class="action-icon" @click="handleTestModel(row)"><Connection /></el-icon>
+                      </span>
+                    </el-tooltip>
+                    <el-tooltip content="编辑" placement="top">
+                      <span v-permission="'button:llm-provider:update'">
+                        <el-icon class="action-icon primary" @click="openEditModel(row)"><EditPen /></el-icon>
+                      </span>
+                    </el-tooltip>
+                    <el-tooltip content="删除" placement="top">
+                      <span v-permission="'button:llm-provider:delete'">
+                        <el-icon class="action-icon danger" @click="handleDeleteModel(row)"><Delete /></el-icon>
+                      </span>
                     </el-tooltip>
                   </template>
-                  <span v-else class="conn-pending">-</span>
-                </div>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="110" align="center">
-              <template #default="{ row }">
-                <el-tooltip content="测试连通性" placement="top">
-                  <span v-permission="'button:llm-provider:test'">
-                    <el-icon class="action-icon" @click="handleTestModel(row)"><Connection /></el-icon>
-                  </span>
-                </el-tooltip>
-                <el-tooltip content="编辑" placement="top">
-                  <span v-permission="'button:llm-provider:update'">
-                    <el-icon class="action-icon primary" @click="openEditModel(row)"><EditPen /></el-icon>
-                  </span>
-                </el-tooltip>
-                <el-tooltip content="删除" placement="top">
-                  <span v-permission="'button:llm-provider:delete'">
-                    <el-icon class="action-icon danger" @click="handleDeleteModel(row)"><Delete /></el-icon>
-                  </span>
-                </el-tooltip>
-              </template>
-            </el-table-column>
+                </template>
+              </el-table-column>
+            </template>
           </el-table>
 
           <el-empty v-if="selectedProviderModels.length === 0" description="暂无模型，请新增或嗅探" />
@@ -156,18 +195,69 @@
       </div>
     </div>
 
-    <!-- 列设置对话框 -->
-    <el-dialog v-model="showColumnConfig" title="列设置" width="360px">
-      <el-checkbox v-model="columnCheckAll" :indeterminate="columnIndeterminate" @change="handleCheckAll">全选</el-checkbox>
-      <el-divider style="margin: 8px 0" />
-      <el-checkbox-group v-model="selectedColumnKeys">
-        <div v-for="col in allColumns.filter(c => c.key !== 'operations')" :key="col.key" style="margin-bottom: 4px">
-          <el-checkbox :value="col.key">{{ col.label }}</el-checkbox>
-        </div>
-      </el-checkbox-group>
+    <!-- 列配置弹窗 -->
+    <el-dialog
+      v-model="showColumnConfig"
+      title="列表字段设置"
+      width="860px"
+      class="column-config-dialog"
+      @opened="initSelectedColumnSortable"
+      @close="handleColumnConfigClose"
+    >
+      <div class="column-config">
+        <section class="column-config__panel column-config__panel--available">
+          <div class="column-config__panel-title">备选字段</div>
+          <div class="column-config__panel-body">
+            <div
+              v-for="group in columnGroups"
+              :key="group.title"
+              class="column-config__group"
+            >
+              <div class="column-config__group-title">{{ group.title }}</div>
+              <el-checkbox-group v-model="draftColumnKeys" class="column-config__checkbox-grid">
+                <el-checkbox
+                  v-for="col in group.columns"
+                  :key="col.key"
+                  :value="col.key"
+                  class="column-config__checkbox"
+                >
+                  {{ col.label }}
+                </el-checkbox>
+              </el-checkbox-group>
+            </div>
+          </div>
+        </section>
+        <section class="column-config__panel column-config__panel--selected">
+          <div class="column-config__panel-title">当前选定字段</div>
+          <div ref="selectedColumnListRef" class="column-config__selected-list">
+            <div
+              v-for="col in draftSelectedColumns"
+              :key="col.key"
+              class="column-config__selected-item"
+              :data-key="col.key"
+            >
+              <el-icon class="column-config__drag-handle"><Rank /></el-icon>
+              <span class="column-config__selected-label">{{ col.label }}</span>
+              <el-button
+                link
+                :icon="Close"
+                class="column-config__remove"
+                :aria-label="`移除${col.label}`"
+                @click="removeDraftColumn(col.key)"
+              />
+            </div>
+            <el-empty
+              v-if="draftSelectedColumns.length === 0"
+              description="暂无选定字段"
+              :image-size="72"
+              class="column-config__empty"
+            />
+          </div>
+        </section>
+      </div>
       <template #footer>
-        <el-button @click="showColumnConfig = false">取消</el-button>
-        <el-button type="primary" @click="saveColumns">保存</el-button>
+        <el-button @click="handleCancelColumnConfig">取消</el-button>
+        <el-button type="primary" @click="saveColumns">确定</el-button>
       </template>
     </el-dialog>
 
@@ -309,10 +399,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Loading, View, Hide, Setting, EditPen, Delete, Connection, Search } from '@element-plus/icons-vue'
+import { Plus, Loading, View, Hide, Setting, EditPen, Delete, Connection, Search, Rank, Close } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
+import Sortable, { type SortableEvent } from 'sortablejs'
 import {
   llmProviderApi,
   getColumnConfig,
@@ -327,45 +418,153 @@ import AppButton from '@/components/common/AppButton.vue'
 
 // ==================== State ====================
 
-const loading = ref(false)
-const submitting = ref(false)
-const providers = ref<LlmProvider[]>([])
-const selectedProviderId = ref<number | null>(null)
-
-// Column config
-const showColumnConfig = ref(false)
-const allColumns = [
-  { key: 'name', label: '名称' },
-  { key: 'protocol', label: '协议' },
-  { key: 'baseUrl', label: 'API Base URL' },
-  { key: 'apiKey', label: 'API Key' },
-  { key: 'modelCount', label: '模型数' },
-  { key: 'enabled', label: '状态' },
-  { key: 'operations', label: '操作' },
-]
-const defaultColumnKeys = ['name', 'protocol', 'baseUrl', 'modelCount', 'enabled', 'operations']
-const selectedColumnKeys = ref<string[]>([...defaultColumnKeys])
-
-const columnCheckAll = computed({
-  get: () => selectedColumnKeys.value.length >= allColumns.filter(c => c.key !== 'operations').length,
-  set: () => {},
-})
-const columnIndeterminate = computed(() => {
-  const ops = allColumns.filter(c => c.key !== 'operations')
-  return selectedColumnKeys.value.length > 0 && selectedColumnKeys.value.length < ops.length
-})
-function handleCheckAll(val: boolean) {
-  const ops = allColumns.filter(c => c.key !== 'operations').map(c => c.key)
-  selectedColumnKeys.value = val ? [...ops, 'operations'] : ['operations']
+interface ColumnDef {
+  key: string
+  label: string
+  group?: string
+  prop?: string
+  width?: number
+  minWidth?: number
+  align?: string
+  fixed?: string | false
+  showOverflowTooltip?: boolean
 }
 
+// 所有可用列定义
+const allColumns: ColumnDef[] = [
+  { key: 'name', label: '名称', group: '基础字段', prop: 'name', minWidth: 120 },
+  { key: 'modelId', label: '模型ID', group: '基础字段', prop: 'modelId', minWidth: 140, showOverflowTooltip: true },
+  { key: 'modelType', label: '类型', group: '基础字段', prop: 'modelType', width: 100, align: 'center' },
+  { key: 'temperature', label: '温度', group: '参数配置', prop: 'temperature', width: 60, align: 'center' },
+  { key: 'maxTokens', label: 'Max Tokens', group: '参数配置', prop: 'maxTokens', width: 90, align: 'center' },
+  { key: 'isDefault', label: '默认', group: '状态信息', width: 55, align: 'center' },
+  { key: 'enabled', label: '状态', group: '状态信息', width: 60, align: 'center' },
+  { key: 'connectivity', label: '连通性', group: '测试信息', width: 90, align: 'center' },
+  { key: 'testDuration', label: '最近耗时', group: '测试信息', width: 100, align: 'center' },
+  { key: 'operations', label: '操作', width: 110, align: 'center', fixed: false },
+]
+
+// 默认显示的列
+const defaultColumnKeys = ['name', 'modelId', 'modelType', 'temperature', 'maxTokens', 'isDefault', 'enabled', 'connectivity', 'testDuration', 'operations']
+
+const selectedColumnKeys = ref<string[]>([...defaultColumnKeys])
+const draftColumnKeys = ref<string[]>([])
+const showColumnConfig = ref(false)
+const selectedColumnListRef = ref<HTMLElement>()
+let selectedColumnSortable: Sortable | null = null
+
+const configurableColumns = computed(() => allColumns.filter(c => c.key !== 'operations'))
+
+const columnGroups = computed(() => {
+  const groupOrder = ['基础字段', '参数配置', '状态信息', '测试信息']
+  const grouped = new Map<string, ColumnDef[]>()
+  configurableColumns.value.forEach((column) => {
+    const groupName = column.group || '其他字段'
+    if (!grouped.has(groupName)) {
+      grouped.set(groupName, [])
+    }
+    grouped.get(groupName)!.push(column)
+  })
+  return groupOrder
+    .filter(groupName => grouped.has(groupName))
+    .map(groupName => ({
+      title: groupName,
+      columns: grouped.get(groupName)!,
+    }))
+})
+
+const draftSelectedColumns = computed(() => {
+  const columnMap = new Map(configurableColumns.value.map(column => [column.key, column]))
+  return draftColumnKeys.value
+    .map(key => columnMap.get(key))
+    .filter((column): column is ColumnDef => Boolean(column))
+})
+
 const visibleColumns = computed(() => {
-  const cols = allColumns.filter(c => selectedColumnKeys.value.includes(c.key))
+  const columnMap = new Map(allColumns.map(column => [column.key, column]))
+  const cols = selectedColumnKeys.value
+    .map(key => columnMap.get(key))
+    .filter((column): column is ColumnDef => Boolean(column))
   if (!cols.find(c => c.key === 'operations')) {
     cols.push(allColumns.find(c => c.key === 'operations')!)
   }
   return cols
 })
+
+function openColumnConfig() {
+  draftColumnKeys.value = selectedColumnKeys.value.filter(key => key !== 'operations')
+  showColumnConfig.value = true
+}
+
+async function initSelectedColumnSortable() {
+  await nextTick()
+  selectedColumnSortable?.destroy()
+  if (!selectedColumnListRef.value) return
+  selectedColumnSortable = Sortable.create(selectedColumnListRef.value, {
+    animation: 150,
+    handle: '.column-config__drag-handle',
+    draggable: '.column-config__selected-item',
+    ghostClass: 'column-config__selected-item--ghost',
+    onEnd: handleColumnSortEnd,
+  })
+}
+
+function handleColumnSortEnd(evt: SortableEvent) {
+  const { oldIndex, newIndex } = evt
+  if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return
+
+  const keys = [...draftColumnKeys.value]
+  const [moved] = keys.splice(oldIndex, 1)
+  if (!moved) return
+  keys.splice(newIndex, 0, moved)
+  draftColumnKeys.value = keys
+}
+
+function removeDraftColumn(key: string) {
+  draftColumnKeys.value = draftColumnKeys.value.filter(columnKey => columnKey !== key)
+}
+
+function handleCancelColumnConfig() {
+  showColumnConfig.value = false
+}
+
+function handleColumnConfigClose() {
+  selectedColumnSortable?.destroy()
+  selectedColumnSortable = null
+}
+
+async function loadColumnConfig() {
+  try {
+    const res = await getColumnConfig('llm_model_list') as any
+    if (res && Array.isArray(res)) {
+      selectedColumnKeys.value = [...normalizeColumnKeys(res), 'operations']
+    }
+  } catch {
+    // 使用默认配置
+  }
+}
+
+async function saveColumns() {
+  try {
+    const keys = normalizeColumnKeys(draftColumnKeys.value)
+    await saveColumnConfig('llm_model_list', keys)
+    selectedColumnKeys.value = [...keys, 'operations']
+    ElMessage.success('列配置已保存')
+    showColumnConfig.value = false
+  } catch {
+    ElMessage.error('保存列配置失败')
+  }
+}
+
+function normalizeColumnKeys(keys: string[]) {
+  const allowedKeys = new Set(configurableColumns.value.map(column => column.key))
+  return Array.from(new Set(keys.filter(key => key !== 'operations' && allowedKeys.has(key))))
+}
+
+const loading = ref(false)
+const submitting = ref(false)
+const providers = ref<LlmProvider[]>([])
+const selectedProviderId = ref<number | null>(null)
 
 // Computed
 const selectedProvider = computed(() =>
@@ -380,26 +579,6 @@ const providerSavePermission = computed(() =>
 const modelSavePermission = computed(() =>
   editingModelId.value ? 'button:llm-provider:update' : 'button:llm-provider:create'
 )
-
-async function loadColumnConfig() {
-  try {
-    const res = await getColumnConfig('llm_provider_list') as any
-    if (res && Array.isArray(res)) {
-      selectedColumnKeys.value = [...res, 'operations']
-    }
-  } catch { /* use defaults */ }
-}
-
-async function saveColumns() {
-  try {
-    const keys = selectedColumnKeys.value.filter(k => k !== 'operations')
-    await saveColumnConfig('llm_provider_list', keys)
-    ElMessage.success('列配置已保存')
-    showColumnConfig.value = false
-  } catch {
-    ElMessage.error('保存列配置失败')
-  }
-}
 
 // Provider dialog
 const providerDialogVisible = ref(false)
@@ -441,6 +620,7 @@ const modelRules = reactive<FormRules>({
 
 // Testing state
 const testingModels = reactive<Record<number, boolean>>({})
+const batchTesting = ref(false)
 
 // Sniff state
 const sniffDialogVisible = ref(false)
@@ -455,6 +635,11 @@ onMounted(() => {
   loadProviders()
   loadColumnConfig()
   loadRoles()
+})
+
+onBeforeUnmount(() => {
+  selectedColumnSortable?.destroy()
+  selectedColumnSortable = null
 })
 
 // ==================== Data ====================
@@ -679,9 +864,17 @@ function connTooltip(model: LlmModel): string {
 
 async function handleTestModel(model: LlmModel) {
   testingModels[model.id!] = true
+
   try {
-    const res = await llmProviderApi.testModel(model.providerId, model.id!, { userMessage: '你好' }) as any
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('timeout')), 30000)
+    })
+
+    const testPromise = llmProviderApi.testModel(model.providerId, model.id!, { userMessage: '你好' })
+
+    const res = await Promise.race([testPromise, timeoutPromise]) as any
     const result = res?.data ?? res
+
     if (result.success) {
       if (result.durationMs > 5000) {
         ElMessage.warning(`${model.name} 响应较慢 (${result.durationMs}ms)`)
@@ -692,11 +885,117 @@ async function handleTestModel(model: LlmModel) {
       ElMessage.error(`${model.name} 连接失败: ${result.errorMessage}`)
     }
     await loadProviders()
-  } catch {
-    ElMessage.error(`${model.name} 请求失败`)
+  } catch (error: any) {
+    if (error?.message === 'timeout') {
+      ElMessage.error(`${model.name} 测试超时 (>30s)`)
+    } else {
+      ElMessage.error(`${model.name} 请求失败`)
+    }
   } finally {
     delete testingModels[model.id!]
   }
+}
+
+async function handleBatchTest() {
+  if (!selectedProvider.value || selectedProviderModels.value.length === 0) {
+    ElMessage.warning('当前接入组没有可测试的模型')
+    return
+  }
+
+  batchTesting.value = true
+  const models = selectedProviderModels.value.filter(m => m.enabled)
+
+  if (models.length === 0) {
+    ElMessage.warning('没有启用的模型可测试')
+    batchTesting.value = false
+    return
+  }
+
+  ElMessage.info(`开始并行测试 ${models.length} 个模型...`)
+
+  let completedCount = 0
+  let successCount = 0
+  let failCount = 0
+  let timeoutCount = 0
+
+  // 并行启动所有测试，每个测试完成后立即更新UI
+  const testPromises = models.map(async (model) => {
+    const result = await testModelWithTimeout(model, 30000)
+
+    // 立即刷新当前模型的数据
+    await loadProviders()
+
+    // 更新计数
+    completedCount++
+    if (result.success) {
+      successCount++
+    } else if (result.timeout) {
+      timeoutCount++
+      failCount++
+    } else {
+      failCount++
+    }
+
+    return result
+  })
+
+  // 等待所有测试完成
+  await Promise.all(testPromises)
+
+  batchTesting.value = false
+
+  // 显示最终统计结果
+  if (failCount === 0 && timeoutCount === 0) {
+    ElMessage.success(`批量测试完成：全部 ${successCount} 个模型连通正常`)
+  } else {
+    const parts = [`${successCount} 个成功`]
+    if (failCount - timeoutCount > 0) parts.push(`${failCount - timeoutCount} 个失败`)
+    if (timeoutCount > 0) parts.push(`${timeoutCount} 个超时`)
+    ElMessage.warning(`批量测试完成：${parts.join('，')}`)
+  }
+}
+
+async function testModelWithTimeout(model: LlmModel, timeout: number = 30000): Promise<{ success: boolean; timeout: boolean; duration?: number }> {
+  testingModels[model.id!] = true
+
+  try {
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('timeout')), timeout)
+    })
+
+    const testPromise = llmProviderApi.testModel(model.providerId, model.id!, { userMessage: '你好' })
+
+    const res = await Promise.race([testPromise, timeoutPromise]) as any
+    const result = res?.data ?? res
+
+    delete testingModels[model.id!]
+
+    if (result.success) {
+      return { success: true, timeout: false, duration: result.durationMs }
+    } else {
+      return { success: false, timeout: false }
+    }
+  } catch (error: any) {
+    delete testingModels[model.id!]
+
+    if (error?.message === 'timeout') {
+      return { success: false, timeout: true }
+    }
+    return { success: false, timeout: false }
+  }
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) {
+    return `${ms}ms`
+  }
+  return `${(ms / 1000).toFixed(2)}s`
+}
+
+function durationColor(ms: number): string {
+  if (ms > 5000) return '#f59e0b' // 黄色
+  if (ms > 3000) return '#fb923c' // 橙色
+  return '#22c55e' // 绿色
 }
 
 // ==================== Role ====================
@@ -707,11 +1006,11 @@ function typeTagType(modelType: string): string {
     haiku: 'info',
     sonnet: 'success',
     opus: 'warning',
-    embedding: '',
-    rerank: '',
-    general: '',
+    embedding: 'info',
+    rerank: 'info',
+    general: 'info',
   }
-  return map[modelType] ?? ''
+  return map[modelType] ?? 'info'
 }
 
 // ==================== Sniff ====================
@@ -1098,5 +1397,121 @@ async function handleSniffImport() {
   :deep(.el-dialog__footer) {
     padding: 8px 24px 24px;
   }
+}
+
+// ==================== 列配置弹窗 ====================
+.column-config {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 262px;
+  gap: 12px;
+  min-height: 520px;
+}
+
+.column-config__panel {
+  overflow: hidden;
+  border: 1px solid var(--el-border-color);
+  border-radius: 2px;
+  background: var(--el-bg-color);
+}
+
+.column-config__panel-title {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 16px;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+}
+
+.column-config__panel-body {
+  height: 478px;
+  overflow-y: auto;
+  padding: 14px 20px 20px;
+}
+
+.column-config__group + .column-config__group {
+  margin-top: 14px;
+}
+
+.column-config__group-title {
+  margin-bottom: 8px;
+  color: var(--el-text-color-secondary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.column-config__checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+  column-gap: 44px;
+  row-gap: 10px;
+}
+
+.column-config__checkbox {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  margin-right: 0;
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+}
+
+.column-config__selected-list {
+  height: 478px;
+  overflow-y: auto;
+  padding: 22px 18px;
+}
+
+.column-config__selected-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+}
+
+.column-config__selected-item--ghost {
+  opacity: 0.55;
+  background: var(--el-color-primary-light-9);
+}
+
+.column-config__drag-handle {
+  color: var(--el-text-color-placeholder);
+  cursor: grab;
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+.column-config__selected-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.column-config__remove {
+  color: var(--el-text-color-placeholder);
+
+  &:hover {
+    color: var(--el-color-danger);
+  }
+}
+
+.column-config__empty {
+  height: 100%;
+  justify-content: center;
+}
+
+:deep(.column-config-dialog .el-dialog__body) {
+  padding: 20px 22px;
+}
+
+:deep(.column-config-dialog .el-dialog__footer) {
+  padding: 16px 22px;
+  border-top: 1px solid var(--el-border-color-lighter);
 }
 </style>

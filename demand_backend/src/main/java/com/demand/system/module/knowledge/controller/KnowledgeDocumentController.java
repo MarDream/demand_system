@@ -158,6 +158,19 @@ public class KnowledgeDocumentController {
         documentService.batchDownloadDocuments(knowledgeBaseId, documentIds, response);
     }
 
+    /**
+     * 获取文档的需求引用列表
+     */
+    @GetMapping("/{documentId}/requirement-refs")
+    @PreAuthorize("isAuthenticated()")
+    public Result<List<com.demand.system.module.knowledge.entity.KnowledgeDocumentRequirementRef>> getRequirementRefs(
+            @PathVariable Long knowledgeBaseId,
+            @PathVariable Long documentId) {
+        List<com.demand.system.module.knowledge.entity.KnowledgeDocumentRequirementRef> refs =
+                documentService.getDocumentRequirementRefs(documentId);
+        return Result.success(refs);
+    }
+
     private String resolvePublicBaseUrl(HttpServletRequest request) {
         for (String headerName : List.of("Origin", "Referer")) {
             String headerValue = request.getHeader(headerName);

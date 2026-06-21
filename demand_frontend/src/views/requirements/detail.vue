@@ -197,6 +197,10 @@
                   <span class="history-item__arrow">-&gt;</span>
                   <span>{{ item.newValue || '-' }}</span>
                 </div>
+                <div v-if="item.comment" class="history-item__comment">
+                  <el-icon class="comment-icon"><ChatDotRound /></el-icon>
+                  <span class="comment-text">{{ item.comment }}</span>
+                </div>
               </div>
             </el-timeline-item>
           </el-timeline>
@@ -1120,6 +1124,7 @@ async function fetchHistory() {
               fieldName,
               oldValue: item.fromNodeName || item.fromNodeId || '开始',
               newValue: item.toNodeName || item.toNodeId || (item.durationDisplay ? `已处理（${item.durationDisplay}）` : '完成'),
+              comment: item.comment,
               createdAt: item.createdAt,
             }
           })
@@ -1234,11 +1239,34 @@ async function executeTransition(extra?: { rating?: number; comment?: string; at
     selectedTransitionTargetId.value = null
     approvalDialogVisible.value = false
     resetApprovalDialog()
-    await Promise.all([fetchDetail(), fetchHistory(), fetchApprovalEvaluations()])
+
+    // 智能跳转：检查待办数量决定跳转目标
+    await navigateAfterSubmit()
   } catch (error) {
     ElMessage.error(resolveErrorMessage(error, '状态流转失败'))
   } finally {
     transitionLoading.value = false
+  }
+}
+
+// 提交审核后智能跳转
+async function navigateAfterSubmit() {
+  try {
+    // 检查当前用户还有多少待办
+    const pendingResult = await requirementApi.getMyRequirementPending({ pageNum: 1, pageSize: 1 })
+    const hasPending = pendingResult.total > 0
+
+    if (hasPending) {
+      // 还有待办，跳转到"我的待办"列表
+      router.push({ path: '/requirements', query: { view: 'pending' } })
+    } else {
+      // 没有待办了，跳转到"全部需求"列表
+      router.push({ path: '/requirements', query: { view: 'all' } })
+    }
+  } catch (error) {
+    // 如果查询失败，默认跳转到"我的待办"
+    console.error('查询待办数量失败:', error)
+    router.push({ path: '/requirements', query: { view: 'pending' } })
   }
 }
 
@@ -2637,5 +2665,31 @@ onMounted(() => {
 
 .approval-evaluation-attachments__link:hover {
   text-decoration: underline;
+}
+
+/* 流转历史评审意见样式 */
+.history-item__comment {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background-color: var(--el-fill-color-light);
+  border-radius: 4px;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.history-item__comment .comment-icon {
+  color: var(--el-color-primary);
+  font-size: 14px;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.history-item__comment .comment-text {
+  flex: 1;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+  line-height: 1.6;
+  word-break: break-word;
 }
 </style>

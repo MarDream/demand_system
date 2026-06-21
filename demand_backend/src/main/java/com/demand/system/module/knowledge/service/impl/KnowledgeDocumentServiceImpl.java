@@ -120,6 +120,8 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     private final KnowledgeDocumentShareLogMapper shareLogMapper;
     private final com.demand.system.module.project.mapper.ProjectMapper projectMapper;
     private final PreviewWarmupService previewWarmupService;
+    private final com.demand.system.module.knowledge.mapper.KnowledgeDocumentRequirementRefMapper refMapper;
+    private final com.demand.system.module.knowledge.service.KnowledgeBaseService knowledgeBaseService;
 
     @Value("${jwt.secret}")
     private String jwtSecret;
@@ -137,7 +139,9 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                                         KnowledgeDocumentShareMapper shareMapper,
                                         KnowledgeDocumentShareLogMapper shareLogMapper,
                                         com.demand.system.module.project.mapper.ProjectMapper projectMapper,
-                                        PreviewWarmupService previewWarmupService) {
+                                        PreviewWarmupService previewWarmupService,
+                                        com.demand.system.module.knowledge.mapper.KnowledgeDocumentRequirementRefMapper refMapper,
+                                        com.demand.system.module.knowledge.service.KnowledgeBaseService knowledgeBaseService) {
         this.documentMapper = documentMapper;
         this.chunkMapper = chunkMapper;
         this.knowledgeBaseMapper = knowledgeBaseMapper;
@@ -152,6 +156,8 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         this.shareLogMapper = shareLogMapper;
         this.projectMapper = projectMapper;
         this.previewWarmupService = previewWarmupService;
+        this.refMapper = refMapper;
+        this.knowledgeBaseService = knowledgeBaseService;
     }
 
     @Override
@@ -250,6 +256,138 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             }
         }
         updateKnowledgeBaseCount(kbId);
+    }
+
+    @Override
+    @Transactional
+    public void syncRequirementAttachmentsWithContext(Long projectId, Long requirementId, String requirementCode,
+                                                     String requirementTitle, List<RequirementAttachmentDTO> attachments, Long uploaderId) {
+        if (attachments == null || attachments.isEmpty()) {
+            return;
+        }
+
+        // 1. 确定目标知识库（优先使用默认知识库）
+        Long targetKbId = getTargetKnowledgeBaseForRequirements(projectId, uploaderId);
+
+        // 2. 遍历附件，判重并建立引用
+        for (RequirementAttachmentDTO attachment : attachments) {
+            if (attachment == null) {
+                continue;
+            }
+
+            String fileType = extractFileType(attachment.getName());
+
+            // 3. 判重：查询是否已存在相同文件名+大小的文档
+            KnowledgeDocument existingDoc = findDocumentByFileNameAndSize(
+                    targetKbId,
+                    attachment.getName(),
+                    attachment.getSize()
+            );
+
+            if (existingDoc != null) {
+                // 4. 文件已存在，仅添加引用关系
+                addRequirementReference(
+                        existingDoc.getId(),
+                        requirementId,
+                        requirementCode,
+                        requirementTitle
+                );
+                log.info("文件已存在知识库，添加需求引用: docId={}, reqId={}, fileName={}",
+                        existingDoc.getId(), requirementId, attachment.getName());
+            } else {
+                // 5. 文件不存在，新增文档并建立引用
+                KnowledgeDocument doc = new KnowledgeDocument();
+                doc.setKnowledgeBaseId(targetKbId);
+                doc.setProjectId(projectId);
+                doc.setRequirementId(requirementId);
+                doc.setFileName(attachment.getName());
+                doc.setFileType(fileType);
+                doc.setFileSize(attachment.getSize());
+                doc.setChunkCount(0);
+                doc.setStatus(KnowledgeDocumentSupport.isSupported(fileType)
+                        ? (KnowledgeDocumentSupport.isVectorizable(fileType) ? "pending" : "stored")
+                        : "failed");
+                doc.setErrorMessage(KnowledgeDocumentSupport.isSupported(fileType) ? null : "该文件格式暂不支持在线预览");
+                doc.setMinioKey(attachment.getObjectName());
+                doc.setSourceType("requirement");
+                doc.setSourceId(requirementId);
+                doc.setUploaderId(uploaderId);
+                doc.setDownloadCount(0);
+                documentMapper.insert(doc);
+
+                // 建立需求引用
+                addRequirementReference(
+                        doc.getId(),
+                        requirementId,
+                        requirementCode,
+                        requirementTitle
+                );
+
+                // 6. 触发预览预热和文档解析
+                enqueuePreviewWarmup(doc);
+                if ("pending".equals(doc.getStatus())) {
+                    enqueueDocumentProcessing(doc.getId());
+                }
+
+                log.info("新文档入库: docId={}, reqId={}, fileName={}", doc.getId(), requirementId, attachment.getName());
+            }
+        }
+
+        // 7. 更新知识库统计
+        updateKnowledgeBaseCount(targetKbId);
+    }
+
+    @Override
+    public List<com.demand.system.module.knowledge.entity.KnowledgeDocumentRequirementRef> getDocumentRequirementRefs(Long documentId) {
+        return refMapper.selectList(new LambdaQueryWrapper<com.demand.system.module.knowledge.entity.KnowledgeDocumentRequirementRef>()
+                .eq(com.demand.system.module.knowledge.entity.KnowledgeDocumentRequirementRef::getDocumentId, documentId)
+                .orderByDesc(com.demand.system.module.knowledge.entity.KnowledgeDocumentRequirementRef::getCreatedAt));
+    }
+
+    /**
+     * 确定需求文件的目标知识库（优先使用默认知识库）
+     */
+    private Long getTargetKnowledgeBaseForRequirements(Long projectId, Long creatorId) {
+        // 优先查找默认知识库
+        Long defaultKbId = knowledgeBaseService.getDefaultKnowledgeBaseIdForRequirements();
+        if (defaultKbId != null) {
+            return defaultKbId;
+        }
+        // 否则使用原有的项目知识库逻辑
+        return ensureProjectAttachmentKnowledgeBase(projectId, creatorId);
+    }
+
+    /**
+     * 根据文件名和大小查找文档（判重）
+     */
+    private KnowledgeDocument findDocumentByFileNameAndSize(Long knowledgeBaseId, String fileName, Long fileSize) {
+        return documentMapper.selectOne(new LambdaQueryWrapper<KnowledgeDocument>()
+                .eq(KnowledgeDocument::getKnowledgeBaseId, knowledgeBaseId)
+                .eq(KnowledgeDocument::getFileName, fileName)
+                .eq(KnowledgeDocument::getFileSize, fileSize)
+                .last("LIMIT 1"));
+    }
+
+    /**
+     * 添加文档与需求的引用关系
+     */
+    private void addRequirementReference(Long documentId, Long requirementId, String requirementCode, String requirementTitle) {
+        // 检查是否已存在引用
+        Long count = refMapper.selectCount(new LambdaQueryWrapper<com.demand.system.module.knowledge.entity.KnowledgeDocumentRequirementRef>()
+                .eq(com.demand.system.module.knowledge.entity.KnowledgeDocumentRequirementRef::getDocumentId, documentId)
+                .eq(com.demand.system.module.knowledge.entity.KnowledgeDocumentRequirementRef::getRequirementId, requirementId));
+
+        if (count > 0) {
+            return; // 引用已存在，跳过
+        }
+
+        com.demand.system.module.knowledge.entity.KnowledgeDocumentRequirementRef ref =
+                new com.demand.system.module.knowledge.entity.KnowledgeDocumentRequirementRef();
+        ref.setDocumentId(documentId);
+        ref.setRequirementId(requirementId);
+        ref.setRequirementCode(requirementCode);
+        ref.setRequirementTitle(requirementTitle);
+        refMapper.insert(ref);
     }
 
     @Override

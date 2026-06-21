@@ -81,4 +81,26 @@ public class KnowledgeBaseController {
             @Valid @RequestBody KnowledgeBaseMigrateDTO dto) {
         return Result.success(knowledgeBaseService.migrateDocuments(id, dto));
     }
+
+    /**
+     * 设置为需求文件默认存储库
+     */
+    @PatchMapping("/{id}/set-default")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:knowledge:manage')")
+    public Result<Void> setAsDefault(@PathVariable Long id) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        knowledgeBaseService.setAsDefaultForRequirements(id, userId);
+        return Result.success();
+    }
+
+    /**
+     * 取消需求文件默认存储库设置
+     */
+    @PatchMapping("/{id}/unset-default")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:knowledge:manage')")
+    public Result<Void> unsetDefault(@PathVariable Long id) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        knowledgeBaseService.unsetDefaultForRequirements(id, userId);
+        return Result.success();
+    }
 }

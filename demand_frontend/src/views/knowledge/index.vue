@@ -40,6 +40,10 @@
                 <div class="kb-header">
                   <div class="kb-header__main">
                     <span class="kb-name">{{ kb.name }}</span>
+                    <!-- 默认知识库标识 -->
+                    <el-tag v-if="kb.isDefaultForRequirements" type="warning" size="small">
+                      <el-icon><Star /></el-icon> 默认存储库
+                    </el-tag>
                     <el-tag size="small" :type="kb.status === 'active' ? 'success' : 'info'">
                       {{ kb.status === 'active' ? '活跃' : '已归档' }}
                     </el-tag>
@@ -49,6 +53,21 @@
                     <template #dropdown>
                       <el-dropdown-menu>
                         <el-dropdown-item v-if="hasPermission('button:knowledge:update')" command="edit" :disabled="deletingId === kb.id">编辑</el-dropdown-item>
+                        <!-- 设置/取消默认 -->
+                        <el-dropdown-item
+                          v-if="hasPermission('button:knowledge:manage') && !kb.isDefaultForRequirements"
+                          command="setDefault"
+                          divided
+                        >
+                          设为需求文件默认存储库
+                        </el-dropdown-item>
+                        <el-dropdown-item
+                          v-if="hasPermission('button:knowledge:manage') && kb.isDefaultForRequirements"
+                          command="unsetDefault"
+                          divided
+                        >
+                          取消默认存储库
+                        </el-dropdown-item>
                         <el-dropdown-item v-if="hasPermission('button:knowledge:migrate')" command="migrate" :disabled="!kb.docCount || deletingId === kb.id" divided>
                           迁移文档
                         </el-dropdown-item>
@@ -208,12 +227,13 @@
 import { onMounted, ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { MoreFilled } from '@element-plus/icons-vue'
+import { MoreFilled, Star } from '@element-plus/icons-vue'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppDialog from '@/components/common/AppDialog.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import { useKnowledgeStore } from '@/stores/knowledge'
 import { usePermission } from '@/composables/usePermission'
+import { setAsDefaultKnowledgeBase, unsetDefaultKnowledgeBase } from '@/api/modules/knowledge'
 import type { KnowledgeBase } from '@/api/modules/knowledge'
 
 const router = useRouter()
@@ -348,6 +368,44 @@ async function handleCommand(cmd: string, kb: KnowledgeBase) {
     openMigrateDialog(kb)
   } else if (cmd === 'delete') {
     await handleDelete(kb)
+  } else if (cmd === 'setDefault') {
+    await handleSetDefault(kb)
+  } else if (cmd === 'unsetDefault') {
+    await handleUnsetDefault(kb)
+  }
+}
+
+async function handleSetDefault(kb: KnowledgeBase) {
+  try {
+    await ElMessageBox.confirm(
+      '设置为默认存储库后，需求工单流转中上传的所有文件将自动存储到此知识库。系统全局只允许一个默认存储库，确认设置？',
+      '确认操作',
+      { type: 'warning' }
+    )
+    await setAsDefaultKnowledgeBase(kb.id)
+    ElMessage.success('设置成功')
+    store.fetchAllBases()
+  } catch (err: any) {
+    if (err !== 'cancel') {
+      ElMessage.error(err?.message || '设置失败')
+    }
+  }
+}
+
+async function handleUnsetDefault(kb: KnowledgeBase) {
+  try {
+    await ElMessageBox.confirm(
+      '取消后，需求文件将存储到各项目的专属知识库中，确认取消？',
+      '确认操作',
+      { type: 'warning' }
+    )
+    await unsetDefaultKnowledgeBase(kb.id)
+    ElMessage.success('取消成功')
+    store.fetchAllBases()
+  } catch (err: any) {
+    if (err !== 'cancel') {
+      ElMessage.error(err?.message || '取消失败')
+    }
   }
 }
 

@@ -263,7 +263,7 @@
                   v-model:visible="modelPopoverVisible"
                   trigger="click"
                   placement="top-end"
-                  width="320"
+                  width="520"
                   popper-class="rag-composer-popover"
                 >
                   <template #reference>
@@ -277,28 +277,45 @@
                     </button>
                   </template>
 
-                  <div class="composer-menu">
-                    <div class="composer-menu__title">模型</div>
-                    <div
-                      v-for="group in groupedChatModels"
-                      :key="group.providerName"
-                      class="composer-menu__group"
-                    >
-                      <div class="composer-menu__group-label">{{ group.providerName }}</div>
-                      <button
-                        v-for="model in group.items"
-                        :key="model.id"
-                        type="button"
-                        class="composer-menu__item"
-                        :class="{ 'composer-menu__item--active': selectedLlmModelId === model.id }"
-                        @click="handleModelSelect(model.id)"
-                      >
-                        <div>
-                          <div class="composer-menu__label">{{ model.name }}</div>
-                          <div class="composer-menu__hint">{{ model.modelId }}</div>
-                        </div>
-                        <span class="composer-menu__check">{{ selectedLlmModelId === model.id ? '✓' : '' }}</span>
-                      </button>
+                  <div class="composer-menu composer-menu--two-level">
+                    <div class="composer-menu__title">选择模型</div>
+                    <div class="composer-menu__two-level">
+                      <div class="composer-menu__provider-list">
+                        <div class="composer-menu__section-title">接入组</div>
+                        <button
+                          v-for="group in groupedChatModels"
+                          :key="group.providerName"
+                          type="button"
+                          class="composer-menu__provider-item"
+                          :class="{ 'composer-menu__provider-item--active': selectedProvider === group.providerName }"
+                          @click="selectedProvider = group.providerName"
+                        >
+                          <div class="composer-menu__provider-name">{{ group.providerName }}</div>
+                          <div class="composer-menu__provider-count">{{ group.items.length }} 个</div>
+                        </button>
+                      </div>
+                      <div class="composer-menu__model-list">
+                        <div class="composer-menu__section-title">模型列表</div>
+                        <button
+                          v-for="model in currentProviderModels"
+                          :key="model.id"
+                          type="button"
+                          class="composer-menu__item"
+                          :class="{ 'composer-menu__item--active': selectedLlmModelId === model.id }"
+                          @click="handleModelSelect(model.id)"
+                        >
+                          <div>
+                            <div class="composer-menu__label">{{ model.name }}</div>
+                            <div class="composer-menu__hint">{{ model.modelId }}</div>
+                          </div>
+                          <span class="composer-menu__check">{{ selectedLlmModelId === model.id ? '✓' : '' }}</span>
+                        </button>
+                        <el-empty
+                          v-if="!currentProviderModels.length"
+                          description="该接入组暂无可用模型"
+                          :image-size="60"
+                        />
+                      </div>
                     </div>
                   </div>
                 </el-popover>
@@ -545,6 +562,7 @@ const selectedChatModel = computed<RagModelOption | null>(() => {
 
 const contextPopoverVisible = ref(false)
 const modelPopoverVisible = ref(false)
+const selectedProvider = ref<string>('')
 
 const contextOptions = [
   { value: 'off', label: '单轮检索', hint: '不携带历史上下文，适合独立问题' },
@@ -567,6 +585,18 @@ const groupedChatModels = computed(() => {
     providerName,
     items
   }))
+})
+
+const currentProviderModels = computed(() => {
+  if (!selectedProvider.value) {
+    // 默认选择第一个接入组
+    if (groupedChatModels.value.length > 0) {
+      selectedProvider.value = groupedChatModels.value[0].providerName
+    }
+    return []
+  }
+  const group = groupedChatModels.value.find(g => g.providerName === selectedProvider.value)
+  return group ? group.items : []
 })
 
 const contextDisplayLabel = computed(() => {
@@ -1954,6 +1984,79 @@ function formatDateTime(timestamp: number) {
   text-align: right;
   font-size: 18px;
   color: var(--color-accent);
+}
+
+.composer-menu--two-level {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.composer-menu__two-level {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 12px;
+  min-height: 320px;
+  max-height: 420px;
+}
+
+.composer-menu__provider-list,
+.composer-menu__model-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+}
+
+.composer-menu__section-title {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  margin-bottom: 4px;
+  padding: 0 4px;
+}
+
+.composer-menu__provider-item {
+  width: 100%;
+  border: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.18s ease;
+  border: 1px solid transparent;
+}
+
+.composer-menu__provider-item:hover {
+  background: rgba(64, 158, 255, 0.08);
+  border-color: rgba(64, 158, 255, 0.2);
+}
+
+.composer-menu__provider-item--active {
+  background: rgba(64, 158, 255, 0.12);
+  border-color: var(--color-accent);
+}
+
+.composer-menu__provider-name {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-menu__provider-count {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.composer-menu__model-list {
+  border-left: 1px solid var(--color-border);
+  padding-left: 12px;
 }
 
 .rag-insights {

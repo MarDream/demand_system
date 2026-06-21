@@ -279,6 +279,9 @@ CREATE TABLE `requirements` (
   INDEX `idx_creator_id` (`creator_id`),
   INDEX `idx_type` (`type`),
   INDEX `idx_priority` (`priority`),
+  INDEX `idx_deleted_draft_updated` (`deleted_at`, `is_draft`, `updated_at` DESC) COMMENT '性能优化：按删除状态+草稿状态+更新时间查询',
+  INDEX `idx_deleted_draft_orgid` (`deleted_at`, `is_draft`, `org_id`) COMMENT '性能优化：按删除状态+草稿状态+组织过滤',
+  INDEX `idx_workflow_instance` (`workflow_instance_id`) COMMENT '性能优化：通过工作流实例反查需求',
   UNIQUE INDEX `uk_requirement_no` (`requirement_no`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='需求表';
 
@@ -294,7 +297,8 @@ CREATE TABLE `requirement_follows` (
   PRIMARY KEY (`id`),
   UNIQUE INDEX `uk_requirement_user` (`requirement_id`, `user_id`),
   INDEX `idx_user_id` (`user_id`),
-  INDEX `idx_requirement_id` (`requirement_id`)
+  INDEX `idx_requirement_id` (`requirement_id`),
+  INDEX `idx_user_requirement` (`user_id`, `requirement_id`) COMMENT '性能优化：批量查询用户关注状态的覆盖索引'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='需求关注表';
 
 -- -----------------------------------------------------
@@ -741,6 +745,7 @@ CREATE TABLE `workflow_nodes` (
   PRIMARY KEY (`id`),
   INDEX `idx_workflow_version_id` (`workflow_version_id`),
   INDEX `idx_node_id` (`node_id`),
+  INDEX `idx_version_node_assignee` (`workflow_version_id`, `node_id`, `assignee_type`) COMMENT '性能优化：待办/已办查询中的节点权限匹配',
   UNIQUE INDEX `uk_version_node` (`workflow_version_id`, `node_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工作流节点表';
 
@@ -1467,7 +1472,8 @@ CREATE TABLE IF NOT EXISTS `workflow_instances` (
   PRIMARY KEY (`id`),
   UNIQUE INDEX `uk_requirement_id` (`requirement_id`),
   INDEX `idx_status` (`status`),
-  INDEX `idx_workflow_version_id` (`workflow_version_id`)
+  INDEX `idx_workflow_version_id` (`workflow_version_id`),
+  INDEX `idx_requirement_status` (`requirement_id`, `status`) COMMENT '性能优化：通过工作流实例查询需求'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工作流实例';
 
 -- -----------------------------------------------------
@@ -1493,8 +1499,55 @@ CREATE TABLE IF NOT EXISTS `workflow_instance_transitions` (
   INDEX `idx_instance_id` (`instance_id`),
   INDEX `idx_requirement_id` (`requirement_id`),
   INDEX `idx_operator_id` (`operator_id`),
+  INDEX `idx_requirement_operator` (`requirement_id`, `operator_id`) COMMENT '性能优化：查询"我审批过的需求"',
+  INDEX `idx_instance_to_node` (`instance_id`, `to_node_id`) COMMENT '性能优化：PREV_APPROVER类型的待办匹配',
   INDEX `idx_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工作流流转记录';
+
+-- -----------------------------------------------------
+-- 需求待办任务物化表（性能优化）
+-- -----------------------------------------------------
+DROP TABLE IF EXISTS `requirement_pending_tasks`;
+CREATE TABLE `requirement_pending_tasks` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `requirement_id` INT UNSIGNED NOT NULL COMMENT '需求ID',
+  `user_id` INT UNSIGNED NOT NULL COMMENT '待办用户ID',
+  `assignee_type` VARCHAR(50) NOT NULL COMMENT '待办来源类型(SPECIFIED_USER/SPECIFIED_ROLE/SPECIFIED_ROLE_GROUP/SPECIFIED_ORG/PREV_APPROVER/CREATOR)',
+  `workflow_instance_id` BIGINT UNSIGNED NOT NULL COMMENT '工作流实例ID',
+  `current_node_id` VARCHAR(100) NOT NULL COMMENT '当前节点ID',
+  `current_node_name` VARCHAR(100) NOT NULL COMMENT '当前节点名称',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '待办创建时间',
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `uk_requirement_user` (`requirement_id`, `user_id`) COMMENT '同一需求同一用户只有一条待办',
+  INDEX `idx_user_updated` (`user_id`, `updated_at` DESC) COMMENT '按用户查询待办列表（核心索引）',
+  INDEX `idx_requirement` (`requirement_id`) COMMENT '反查需求的待办人',
+  INDEX `idx_workflow_instance` (`workflow_instance_id`) COMMENT '关联工作流实例',
+  INDEX `idx_created_at` (`created_at`) COMMENT '按创建时间排序'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='需求待办任务表（物化视图-性能优化）';
+
+-- -----------------------------------------------------
+-- 需求待办任务历史表（用于审计和统计）
+-- -----------------------------------------------------
+DROP TABLE IF EXISTS `requirement_pending_task_history`;
+CREATE TABLE `requirement_pending_task_history` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `requirement_id` INT UNSIGNED NOT NULL COMMENT '需求ID',
+  `user_id` INT UNSIGNED NOT NULL COMMENT '用户ID',
+  `assignee_type` VARCHAR(50) NOT NULL COMMENT '待办来源类型',
+  `workflow_instance_id` BIGINT UNSIGNED NOT NULL COMMENT '工作流实例ID',
+  `current_node_id` VARCHAR(100) NOT NULL COMMENT '节点ID',
+  `current_node_name` VARCHAR(100) NOT NULL COMMENT '节点名称',
+  `assigned_at` DATETIME NOT NULL COMMENT '分配时间',
+  `completed_at` DATETIME DEFAULT NULL COMMENT '完成时间',
+  `action` VARCHAR(50) DEFAULT NULL COMMENT '处理动作(approve/reject/cancel)',
+  `duration_seconds` BIGINT DEFAULT NULL COMMENT '处理耗时（秒）',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `idx_requirement` (`requirement_id`),
+  INDEX `idx_user_assigned` (`user_id`, `assigned_at` DESC) COMMENT '用户的历史待办',
+  INDEX `idx_completed` (`completed_at`) COMMENT '已完成待办'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='待办任务历史表';
 
 -- -----------------------------------------------------
 -- 知识库文档表字段补全
@@ -2031,3 +2084,92 @@ END$$
 DELIMITER ;
 CALL `apply_workflow_parallel_schema`();
 DROP PROCEDURE IF EXISTS `apply_workflow_parallel_schema`;
+
+-- =====================================================
+-- 性能优化：初始化待办任务物化表数据
+-- =====================================================
+-- 说明：根据现有工作流状态生成所有待办任务
+-- 首次运行可能需要 30-60 秒（取决于数据量）
+-- =====================================================
+
+INSERT IGNORE INTO requirement_pending_tasks (
+  requirement_id,
+  user_id,
+  assignee_type,
+  workflow_instance_id,
+  current_node_id,
+  current_node_name,
+  created_at,
+  updated_at
+)
+SELECT DISTINCT
+  r.id AS requirement_id,
+  u.user_id AS user_id,
+  wn.assignee_type,
+  wi.id AS workflow_instance_id,
+  wi.current_node_id,
+  wn.node_name AS current_node_name,
+  wi.updated_at AS created_at,
+  wi.updated_at AS updated_at
+FROM requirements r
+JOIN workflow_instances wi ON wi.requirement_id = r.id
+JOIN workflow_nodes wn ON wn.workflow_version_id = wi.workflow_version_id
+                       AND wn.node_id = wi.current_node_id
+CROSS JOIN (
+  -- 子查询：展开所有可能的待办用户
+  SELECT DISTINCT
+    wi2.id AS instance_id,
+    CASE
+      -- SPECIFIED_USER: 从 JSON 数组中提取用户ID
+      WHEN wn2.assignee_type = 'SPECIFIED_USER' THEN user_ids.user_id
+      -- SPECIFIED_ROLE: 查询拥有该角色的用户
+      WHEN wn2.assignee_type = 'SPECIFIED_ROLE' THEN ru.user_id
+      -- SPECIFIED_ROLE_GROUP: 查询角色组内所有角色的用户
+      WHEN wn2.assignee_type = 'SPECIFIED_ROLE_GROUP' THEN rgu.user_id
+      -- SPECIFIED_ORG: 查询该组织的用户
+      WHEN wn2.assignee_type = 'SPECIFIED_ORG' THEN ou.user_id
+      -- CREATOR: 需求创建人
+      WHEN wn2.assignee_type = 'CREATOR' THEN r2.creator_id
+      -- PREV_APPROVER: 上一个审批人
+      WHEN wn2.assignee_type = 'PREV_APPROVER' THEN prev_op.operator_id
+    END AS user_id
+  FROM workflow_instances wi2
+  JOIN workflow_nodes wn2 ON wn2.workflow_version_id = wi2.workflow_version_id
+                          AND wn2.node_id = wi2.current_node_id
+  JOIN requirements r2 ON r2.id = wi2.requirement_id
+  -- SPECIFIED_USER: 解析 JSON 数组
+  LEFT JOIN JSON_TABLE(
+    wn2.assignee_user_ids,
+    '$[*]' COLUMNS (user_id INT PATH '$')
+  ) AS user_ids ON wn2.assignee_type = 'SPECIFIED_USER'
+  -- SPECIFIED_ROLE: 关联角色和用户
+  LEFT JOIN role_user ru ON wn2.assignee_type = 'SPECIFIED_ROLE'
+                         AND ru.role_id = wn2.assignee_role_id
+  -- SPECIFIED_ROLE_GROUP: 关联角色组、角色和用户
+  LEFT JOIN roles rg ON wn2.assignee_type = 'SPECIFIED_ROLE_GROUP'
+                     AND rg.role_group_id = wn2.assignee_role_group_id
+                     AND rg.deleted_at = 0
+  LEFT JOIN role_user rgu ON rgu.role_id = rg.id
+  -- SPECIFIED_ORG: 关联组织和用户
+  LEFT JOIN user_organizations ou ON wn2.assignee_type = 'SPECIFIED_ORG'
+                                   AND ou.org_id = wn2.assignee_org_id
+  -- PREV_APPROVER: 查询上一个操作人
+  LEFT JOIN (
+    SELECT
+      wit.instance_id,
+      wit.operator_id,
+      wit.to_node_id,
+      ROW_NUMBER() OVER (PARTITION BY wit.instance_id, wit.to_node_id ORDER BY wit.id DESC) AS rn
+    FROM workflow_instance_transitions wit
+  ) AS prev_op ON wn2.assignee_type = 'PREV_APPROVER'
+               AND prev_op.instance_id = wi2.id
+               AND prev_op.to_node_id = wi2.current_node_id
+               AND prev_op.rn = 1
+  WHERE wi2.status = 'running'
+) AS u ON u.instance_id = wi.id
+WHERE r.deleted_at = 0
+  AND r.is_draft = 0
+  AND wi.status = 'running'
+  AND wn.assignee_type IS NOT NULL
+  AND wn.assignee_type != ''
+  AND u.user_id IS NOT NULL;

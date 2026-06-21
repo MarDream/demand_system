@@ -47,9 +47,9 @@ public class UserController {
 
     @PostMapping
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:create')")
-    public Result<Void> create(@Valid @RequestBody UserCreateDTO dto) {
-        userService.create(dto);
-        return Result.success();
+    public Result<Long> create(@Valid @RequestBody UserCreateDTO dto) {
+        Long userId = userService.create(dto);
+        return Result.success(userId);
     }
 
     @PutMapping("/{id}")

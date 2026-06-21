@@ -313,4 +313,157 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                     @Param("status") String status,
                                     @Param("assigneeId") Long assigneeId,
                                     @Param("keyword") String keyword);
+
+    /**
+     * 我的待办 - 使用物化表优化（新版本）
+     * @param userId 当前用户ID
+     * @param keyword 关键词搜索（可选）
+     */
+    @Select({
+            "<script>",
+            "SELECT DISTINCT r.*",
+            "FROM requirements r",
+            "JOIN requirement_pending_tasks pt ON pt.requirement_id = r.id",
+            "WHERE pt.user_id = #{userId}",
+            "  AND r.deleted_at = 0",
+            "  AND r.is_draft = 0",
+            "  <if test='projectId != null'> AND r.project_id = #{projectId} </if>",
+            "  <if test='type != null and type != \"\"'> AND r.type = #{type} </if>",
+            "  <if test='priority != null and priority != \"\"'> AND r.priority = #{priority} </if>",
+            "  <if test='status != null and status != \"\"'> AND r.status = #{status} </if>",
+            "  <if test='assigneeId != null'> AND r.assignee_id = #{assigneeId} </if>",
+            "  <if test='keyword != null and keyword != \"\"'>",
+            "    AND (r.title LIKE CONCAT('%', #{keyword}, '%') OR r.description LIKE CONCAT('%', #{keyword}, '%'))",
+            "  </if>",
+            " ORDER BY pt.updated_at DESC, r.id DESC",
+            "</script>"
+    })
+    IPage<Requirement> selectMyPendingOptimized(IPage<Requirement> page,
+                                                @Param("userId") Long userId,
+                                                @Param("projectId") Long projectId,
+                                                @Param("type") String type,
+                                                @Param("priority") String priority,
+                                                @Param("status") String status,
+                                                @Param("assigneeId") Long assigneeId,
+                                                @Param("keyword") String keyword);
+
+    /**
+     * 我的待办 - V2架构重构版（使用workflow_node_assignees关联表）
+     * 性能提升：消除JSON_CONTAINS，使用索引JOIN
+     */
+    @Select({
+            "<script>",
+            "SELECT DISTINCT r.*",
+            "FROM requirements r",
+            "INNER JOIN workflow_instances wi ON r.workflow_instance_id = wi.id",
+            "INNER JOIN workflow_node_assignees wna ON",
+            "    wna.workflow_version_id = wi.workflow_version_id",
+            "    AND wna.node_id = wi.current_node_id",
+            "WHERE r.deleted_at = 0",
+            "  AND r.is_draft = 0",
+            "  AND wi.status = 'running'",
+            "  AND (",
+            "    (wna.assignee_type = 'USER' AND wna.assignee_id = #{userId})",
+            "    <if test='roleIds != null and roleIds.size() &gt; 0'>",
+            "      OR (wna.assignee_type = 'ROLE' AND wna.assignee_id IN",
+            "      <foreach collection='roleIds' item='roleId' open='(' separator=',' close=')'>",
+            "        #{roleId}",
+            "      </foreach>",
+            "      )",
+            "    </if>",
+            "    <if test='orgIds != null and orgIds.size() &gt; 0'>",
+            "      OR (wna.assignee_type = 'ORG' AND wna.assignee_id IN",
+            "      <foreach collection='orgIds' item='orgId' open='(' separator=',' close=')'>",
+            "        #{orgId}",
+            "      </foreach>",
+            "      )",
+            "    </if>",
+            "  )",
+            "  <if test='projectId != null'> AND r.project_id = #{projectId} </if>",
+            "  <if test='type != null and type != \"\"'> AND r.type = #{type} </if>",
+            "  <if test='priority != null and priority != \"\"'> AND r.priority = #{priority} </if>",
+            "  <if test='status != null and status != \"\"'> AND r.status = #{status} </if>",
+            "  <if test='assigneeId != null'> AND r.assignee_id = #{assigneeId} </if>",
+            "  <if test='keyword != null and keyword != \"\"'>",
+            "    AND (r.title LIKE CONCAT('%', #{keyword}, '%') OR r.description LIKE CONCAT('%', #{keyword}, '%'))",
+            "  </if>",
+            "ORDER BY r.updated_at DESC",
+            "</script>"
+    })
+    IPage<Requirement> selectMyPendingV2(IPage<Requirement> page,
+                                         @Param("userId") Long userId,
+                                         @Param("roleIds") List<Long> roleIds,
+                                         @Param("orgIds") List<Long> orgIds,
+                                         @Param("projectId") Long projectId,
+                                         @Param("type") String type,
+                                         @Param("priority") String priority,
+                                         @Param("status") String status,
+                                         @Param("assigneeId") Long assigneeId,
+                                         @Param("keyword") String keyword);
+
+    /**
+     * 我的已办 - V2架构重构版（使用workflow_node_assignees关联表）
+     * 性能提升：排除当前待办时使用索引JOIN而非JSON_CONTAINS
+     */
+    @Select({
+            "<script>",
+            "SELECT DISTINCT r.*",
+            "FROM requirements r",
+            "WHERE r.deleted_at = 0",
+            "  AND r.is_draft = 0",
+            "  AND (",
+            "    r.creator_id = #{userId}",
+            "    OR EXISTS (",
+            "      SELECT 1 FROM workflow_instance_transitions wit",
+            "      WHERE wit.requirement_id = r.id",
+            "        AND wit.operator_id = #{userId}",
+            "    )",
+            "  )",
+            "  AND NOT EXISTS (",
+            "    SELECT 1",
+            "    FROM workflow_instances wi2",
+            "    INNER JOIN workflow_node_assignees wna2 ON",
+            "        wna2.workflow_version_id = wi2.workflow_version_id",
+            "        AND wna2.node_id = wi2.current_node_id",
+            "    WHERE wi2.id = r.workflow_instance_id",
+            "      AND wi2.status = 'running'",
+            "      AND (",
+            "        (wna2.assignee_type = 'USER' AND wna2.assignee_id = #{userId})",
+            "        <if test='roleIds != null and roleIds.size() &gt; 0'>",
+            "          OR (wna2.assignee_type = 'ROLE' AND wna2.assignee_id IN",
+            "          <foreach collection='roleIds' item='roleId' open='(' separator=',' close=')'>",
+            "            #{roleId}",
+            "          </foreach>",
+            "          )",
+            "        </if>",
+            "        <if test='orgIds != null and orgIds.size() &gt; 0'>",
+            "          OR (wna2.assignee_type = 'ORG' AND wna2.assignee_id IN",
+            "          <foreach collection='orgIds' item='orgId' open='(' separator=',' close=')'>",
+            "            #{orgId}",
+            "          </foreach>",
+            "          )",
+            "        </if>",
+            "      )",
+            "  )",
+            "  <if test='projectId != null'> AND r.project_id = #{projectId} </if>",
+            "  <if test='type != null and type != \"\"'> AND r.type = #{type} </if>",
+            "  <if test='priority != null and priority != \"\"'> AND r.priority = #{priority} </if>",
+            "  <if test='status != null and status != \"\"'> AND r.status = #{status} </if>",
+            "  <if test='assigneeId != null'> AND r.assignee_id = #{assigneeId} </if>",
+            "  <if test='keyword != null and keyword != \"\"'>",
+            "    AND (r.title LIKE CONCAT('%', #{keyword}, '%') OR r.description LIKE CONCAT('%', #{keyword}, '%'))",
+            "  </if>",
+            "ORDER BY r.updated_at DESC",
+            "</script>"
+    })
+    IPage<Requirement> selectMyDoneV2(IPage<Requirement> page,
+                                      @Param("userId") Long userId,
+                                      @Param("roleIds") List<Long> roleIds,
+                                      @Param("orgIds") List<Long> orgIds,
+                                      @Param("projectId") Long projectId,
+                                      @Param("type") String type,
+                                      @Param("priority") String priority,
+                                      @Param("status") String status,
+                                      @Param("assigneeId") Long assigneeId,
+                                      @Param("keyword") String keyword);
 }

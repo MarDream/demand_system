@@ -26,6 +26,8 @@ public class KnowledgeBase {
 
     private String status;
 
+    private Integer isDefaultForRequirements;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
@@ -95,6 +97,14 @@ public class KnowledgeBase {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public Integer getIsDefaultForRequirements() {
+        return isDefaultForRequirements;
+    }
+
+    public void setIsDefaultForRequirements(Integer isDefaultForRequirements) {
+        this.isDefaultForRequirements = isDefaultForRequirements;
     }
 
     public LocalDateTime getCreatedAt() {

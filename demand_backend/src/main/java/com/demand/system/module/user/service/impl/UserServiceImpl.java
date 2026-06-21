@@ -107,7 +107,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public void create(UserCreateDTO dto) {
+    public Long create(UserCreateDTO dto) {
         LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(User::getUsername, dto.getUsername());
         if (userMapper.selectCount(wrapper) > 0) {
@@ -134,6 +134,8 @@ public class UserServiceImpl implements UserService {
         userMapper.insert(user);
 
         emailService.sendInitialPasswordEmail(user.getEmail(), user.getUsername(), initialPassword);
+
+        return user.getId();
     }
 
     @Override
