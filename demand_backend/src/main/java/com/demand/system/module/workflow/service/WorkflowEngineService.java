@@ -1533,13 +1533,11 @@ public class WorkflowEngineService {
         Map<Long, User> userMap = users == null ? Collections.emptyMap() : users.stream()
                 .filter(Objects::nonNull)
                 .filter(user -> user.getId() != null)
-                // 过滤掉已软删除的用户，避免历史脏数据进入候选列表
-                .filter(user -> user.getDeletedAt() == null || user.getDeletedAt() == 0L)
                 .collect(Collectors.toMap(User::getId, user -> user, (left, right) -> left));
 
         List<AssigneeCandidateDTO> candidates = new ArrayList<>();
         for (Long userId : normalizedIds) {
-            // 过滤孤儿引用：userMap 中查不到（用户不存在或已软删除）的不进入候选
+            // 过滤孤儿引用：userMap 中查不到（用户不存在或已删除）的不进入候选
             User user = userMap.get(userId);
             if (user == null) {
                 continue;

@@ -224,7 +224,6 @@ public class AuthServiceImpl implements AuthService {
         user.setStatus("inactive");
         user.setCreatedAt(LocalDateTime.now());
         user.setUpdatedAt(LocalDateTime.now());
-        user.setDeletedAt(0);
 
         sysUserMapper.insert(user);
 

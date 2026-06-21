@@ -24,11 +24,9 @@ CREATE TABLE `users` (
   `status` ENUM('active', 'inactive') DEFAULT 'active' COMMENT '状态',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
   PRIMARY KEY (`id`),
   UNIQUE INDEX `uk_username` (`username`),
   INDEX `idx_status` (`status`),
-  INDEX `idx_deleted_at` (`deleted_at`),
   INDEX `idx_region_id` (`region_id`),
   INDEX `idx_department_id` (`department_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';

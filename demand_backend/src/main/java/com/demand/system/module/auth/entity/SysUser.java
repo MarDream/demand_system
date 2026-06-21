@@ -1,6 +1,5 @@
 package com.demand.system.module.auth.entity;
 
-import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 
 import java.time.LocalDateTime;
@@ -22,15 +21,13 @@ public class SysUser {
     private String status;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
-    @TableLogic
-    private Integer deletedAt;
 
     public SysUser() {
     }
 
     public SysUser(Long id, String username, String password, String realName, String email,
                    String phone, String avatar, String status, LocalDateTime createdAt,
-                   LocalDateTime updatedAt, Integer deletedAt) {
+                   LocalDateTime updatedAt) {
         this.id = id;
         this.username = username;
         this.password = password;
@@ -41,7 +38,6 @@ public class SysUser {
         this.status = status;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
-        this.deletedAt = deletedAt;
     }
 
     public Long getId() {
@@ -122,14 +118,6 @@ public class SysUser {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
-    }
-
-    public Integer getDeletedAt() {
-        return deletedAt;
-    }
-
-    public void setDeletedAt(Integer deletedAt) {
-        this.deletedAt = deletedAt;
     }
 
     @Override

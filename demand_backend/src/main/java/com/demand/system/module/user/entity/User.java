@@ -46,9 +46,6 @@ public class User {
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
 
-    @TableLogic
-    private Integer deletedAt;
-
     public Long getId() {
         return id;
     }
@@ -159,14 +156,6 @@ public class User {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
-    }
-
-    public Integer getDeletedAt() {
-        return deletedAt;
-    }
-
-    public void setDeletedAt(Integer deletedAt) {
-        this.deletedAt = deletedAt;
     }
 
     @Override
