@@ -2,6 +2,8 @@
   <div class="attachment-uploader">
     <!-- 文件输入框 -->
     <input ref="fileInputRef" type="file" multiple style="display: none" @change="handleFileSelect" />
+    <!-- 文件夹输入框 -->
+    <input ref="folderInputRef" type="file" webkitdirectory multiple style="display: none" @change="handleFileSelect" />
 
     <!-- 上传区域 -->
     <div
@@ -16,12 +18,14 @@
     >
       <div class="upload-zone__content">
         <el-icon :size="24" class="upload-zone__icon"><Upload /></el-icon>
-        <span class="upload-zone__text">点击上传、拖拽文件或粘贴截图至此处</span>
+        <span class="upload-zone__text">点击上传、拖拽文件/文件夹或粘贴截图至此处</span>
       </div>
     </div>
 
     <!-- 上传中提示 -->
-    <div v-if="uploading" class="attachment-uploading">附件上传中...</div>
+    <div v-if="uploading" class="attachment-uploading">
+      附件上传中{{ uploadProgress.total > 1 ? ` (${uploadProgress.done}/${uploadProgress.total})` : '' }}...
+    </div>
 
     <!-- 附件列表 -->
     <div v-if="attachments.length > 0" class="attachment-list">
@@ -98,8 +102,10 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<Emits>()
 
 const fileInputRef = ref<HTMLInputElement>()
+const folderInputRef = ref<HTMLInputElement>()
 const dragover = ref(false)
 const uploading = ref(false)
+const uploadProgress = ref({ done: 0, total: 0 })
 
 const attachments = computed({
   get: () => props.modelValue,
@@ -124,27 +130,109 @@ async function handleFileSelect(event: Event) {
   const files = input.files
   if (!files || files.length === 0) return
 
-  for (const file of Array.from(files)) {
-    if (!beforeUpload(file)) continue
-    await uploadFile(file)
-  }
+  await uploadFiles(Array.from(files))
   input.value = ''
 }
 
 async function handleDrop(event: DragEvent) {
   dragover.value = false
-  const files = event.dataTransfer?.files
-  if (!files || files.length === 0) return
+  const dataTransfer = event.dataTransfer
+  if (!dataTransfer) return
 
-  for (const file of Array.from(files)) {
-    if (!beforeUpload(file)) continue
-    await uploadFile(file)
+  // 优先使用 webkitGetAsEntry 递归遍历文件夹内容
+  const items = dataTransfer.items
+  if (items && items.length > 0) {
+    const entries: FileSystemEntry[] = []
+    for (const item of Array.from(items)) {
+      const entry = (item as DataTransferItem).webkitGetAsEntry?.()
+      if (entry) entries.push(entry)
+    }
+    if (entries.length > 0) {
+      const files = await collectFilesFromEntries(entries)
+      if (files.length > 0) {
+        await uploadFiles(files)
+      }
+      return
+    }
+  }
+
+  // 降级：直接使用 files（不支持文件夹展开）
+  const files = dataTransfer.files
+  if (!files || files.length === 0) return
+  await uploadFiles(Array.from(files))
+}
+
+/** 递归遍历 FileSystemEntry，收集所有文件（含子文件夹中的文件） */
+async function collectFilesFromEntries(entries: FileSystemEntry[]): Promise<File[]> {
+  const files: File[] = []
+  for (const entry of entries) {
+    if (entry.isFile) {
+      const file = await entryToFile(entry as FileSystemFileEntry)
+      if (file) files.push(file)
+    } else if (entry.isDirectory) {
+      const dirReader = (entry as FileSystemDirectoryEntry).createReader()
+      const childEntries = await readDirectoryEntries(dirReader)
+      files.push(...await collectFilesFromEntries(childEntries))
+    }
+  }
+  return files
+}
+
+/** FileSystemFileEntry 转 File */
+function entryToFile(entry: FileSystemFileEntry): Promise<File | null> {
+  return new Promise(resolve => {
+    entry.file(file => resolve(file), () => resolve(null))
+  })
+}
+
+/** 读取目录下所有条目（createReader 一次最多读 100 条，需循环读取） */
+function readDirectoryEntries(reader: FileSystemDirectoryReader): Promise<FileSystemEntry[]> {
+  return new Promise(resolve => {
+    const allEntries: FileSystemEntry[] = []
+    function readBatch() {
+      reader.readEntries(entries => {
+        if (entries.length === 0) {
+          resolve(allEntries)
+          return
+        }
+        allEntries.push(...entries)
+        readBatch()
+      }, () => resolve(allEntries))
+    }
+    readBatch()
+  })
+}
+
+/** 批量上传文件，带进度计数 */
+async function uploadFiles(files: File[]) {
+  const validFiles = files.filter(beforeUpload)
+  if (validFiles.length === 0) return
+
+  uploadProgress.value = { done: 0, total: validFiles.length }
+  uploading.value = true
+
+  for (const file of validFiles) {
+    try {
+      const attachment = await uploadRequirementAttachment(file)
+      attachments.value = [...attachments.value, attachment]
+    } catch {
+      ElMessage.error(`附件上传失败: ${file.name}`)
+    } finally {
+      uploadProgress.value.done++
+    }
+  }
+
+  uploading.value = false
+  if (uploadProgress.value.done > 0) {
+    ElMessage.success(`已上传 ${uploadProgress.value.done} 个附件`)
   }
 }
 
 async function handlePaste(event: ClipboardEvent) {
   const items = event.clipboardData?.items
   if (!items) return
+
+  const filesToUpload: File[] = []
 
   for (const item of Array.from(items)) {
     if (item.type.startsWith('image/')) {
@@ -155,40 +243,41 @@ async function handlePaste(event: ClipboardEvent) {
         const ext = getFileExtension(file.type)
         const filename = `screenshot_${Date.now()}.${ext}`
         const processedFile = new File([file], filename, { type: file.type })
-
-        if (beforeUpload(processedFile)) {
-          await uploadFile(processedFile)
-        }
+        filesToUpload.push(processedFile)
       }
-      return
+      break
     }
   }
 
-  // 处理粘贴的文件
-  const files = event.clipboardData?.files
-  if (files && files.length > 0) {
-    for (const file of Array.from(files)) {
-      let processedFile = file
-      // 如果文件名缺失或无扩展名，尝试生成
-      if (!file.name || file.name === 'image' || !file.name.includes('.')) {
-        const ext = getFileExtension(file.type)
-        processedFile = new File([file], `file_${Date.now()}.${ext}`, { type: file.type })
-      }
-
-      if (beforeUpload(processedFile)) {
-        await uploadFile(processedFile)
+  // 处理粘贴的文件（非图片）
+  if (filesToUpload.length === 0) {
+    const files = event.clipboardData?.files
+    if (files && files.length > 0) {
+      for (const file of Array.from(files)) {
+        let processedFile = file
+        if (!file.name || file.name === 'image' || !file.name.includes('.')) {
+          const ext = getFileExtension(file.type)
+          processedFile = new File([file], `file_${Date.now()}.${ext}`, { type: file.type })
+        }
+        filesToUpload.push(processedFile)
       }
     }
+  }
+
+  if (filesToUpload.length > 0) {
+    await uploadFiles(filesToUpload)
   }
 }
 
 async function uploadFile(file: File) {
   try {
     uploading.value = true
+    uploadProgress.value = { done: 0, total: 1 }
     const attachment = await uploadRequirementAttachment(file)
     attachments.value = [...attachments.value, attachment]
+    uploadProgress.value.done++
     ElMessage.success('附件上传成功')
-  } catch (error) {
+  } catch {
     ElMessage.error('附件上传失败')
   } finally {
     uploading.value = false

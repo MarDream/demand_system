@@ -13,23 +13,45 @@ import { setupDialogEnhancer } from '@/utils/dialogEnhancer'
 // 过滤浏览器扩展引起的"Could not establish connection. Receiving end does not exist."
 // 这些错误来自 chrome.runtime.sendMessage（Vue Devtools / Pinia 等扩展），
 // 与应用代码无关，控制台高频输出影响排查体验。
-function isIgnorableExtensionError(message: string | undefined): boolean {
-  if (!message) return false
-  return /Could not establish connection\. Receiving end does not exist/i.test(message)
+const EXTENSION_ERROR_PATTERNS = [
+  /Could not establish connection\. Receiving end does not exist/i,
+  /Extension context invalidated/i,
+  /A listener indicated an asynchronous response by returning true/i,
+]
+
+function isIgnorableExtensionError(reason: unknown): boolean {
+  if (!reason) return false
+  // Error 对象：检查 message
+  if (reason instanceof Error) {
+    return EXTENSION_ERROR_PATTERNS.some(p => p.test(reason.message))
+  }
+  // 字符串：直接匹配
+  if (typeof reason === 'string') {
+    return EXTENSION_ERROR_PATTERNS.some(p => p.test(reason))
+  }
+  // 其他对象：尝试取 message 属性
+  const message = (reason as { message?: string })?.message
+  if (message) {
+    return EXTENSION_ERROR_PATTERNS.some(p => p.test(message))
+  }
+  // ErrorEvent：检查 message
+  if (reason instanceof Event) {
+    const eventMessage = (reason as ErrorEvent).message
+    if (eventMessage) {
+      return EXTENSION_ERROR_PATTERNS.some(p => p.test(eventMessage))
+    }
+  }
+  return false
 }
 
 window.addEventListener('error', (event) => {
-  if (isIgnorableExtensionError(event.message)) {
+  if (isIgnorableExtensionError(event) || isIgnorableExtensionError(event.message)) {
     event.preventDefault()
   }
 })
 
 window.addEventListener('unhandledrejection', (event) => {
-  const reason = event.reason as { message?: string } | string | undefined
-  const message = typeof reason === 'string'
-    ? reason
-    : reason?.message
-  if (isIgnorableExtensionError(message)) {
+  if (isIgnorableExtensionError(event.reason)) {
     event.preventDefault()
   }
 })
