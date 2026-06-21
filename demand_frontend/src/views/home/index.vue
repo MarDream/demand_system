@@ -373,6 +373,23 @@ async function loadDashboardData() {
   }
 }
 
+// 需求类型英文转中文映射
+function getTypeLabel(type: string): string {
+  const typeMap: Record<string, string> = {
+    'feature': '功能需求',
+    'bug': '缺陷',
+    'improvement': '优化改进',
+    'enhancement': '功能增强',
+    'task': '任务',
+    'story': '用户故事',
+    'research': '研究',
+    'test': '测试',
+    'document': '文档',
+    'other': '其他'
+  }
+  return typeMap[type.toLowerCase()] || type
+}
+
 async function loadDistributionData() {
   distLoading.value = true
   try {
@@ -384,7 +401,7 @@ async function loadDistributionData() {
     pieOption.value.series[0].data = Object.entries(statusDist).map(([name, value]) => ({ name, value }))
     pieLoaded.value = true
 
-    barOption.value.xAxis.data = Object.keys(typeDist)
+    barOption.value.xAxis.data = Object.keys(typeDist).map(type => getTypeLabel(type))
     barOption.value.series[0].data = Object.values(typeDist)
     barLoaded.value = true
   } catch {
