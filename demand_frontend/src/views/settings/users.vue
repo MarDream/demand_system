@@ -171,6 +171,9 @@
             <el-table-column label="工号" width="120">
               <template #default="{ row }">{{ row.jobNumber || '-' }}</template>
             </el-table-column>
+            <el-table-column label="手机号" width="140">
+              <template #default="{ row }">{{ maskPhone(row.phone) }}</template>
+            </el-table-column>
             <el-table-column prop="email" label="邮箱" min-width="190" show-overflow-tooltip />
             <el-table-column label="员工UserID" min-width="150">
               <template #default="{ row }">{{ row.username }}</template>
