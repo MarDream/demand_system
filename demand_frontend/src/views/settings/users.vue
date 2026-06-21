@@ -1207,7 +1207,7 @@ async function handleSubmit() {
         await userApi.assignRoles(editId.value, [form.roleId])
       }
     } else {
-      await userApi.createUser({
+      const createResult: any = await userApi.createUser({
         username: form.username,
         realName: form.realName,
         email: form.email || null,
@@ -1215,8 +1215,14 @@ async function handleSubmit() {
         orgId: form.orgId,
         regionId: form.regionId,
         departmentId: form.departmentId,
-        
+
       })
+      // 获取新创建用户的ID（响应拦截器已解包 data 字段，createResult 直接就是 userId）
+      const newUserId = createResult
+      // 新建用户后立即分配角色
+      if (form.roleId && newUserId) {
+        await userApi.assignRoles(newUserId, [form.roleId])
+      }
       ElMessage.success('创建成功，系统已按默认规则生成初始密码并尝试发送邮件')
     }
     dialogVisible.value = false
