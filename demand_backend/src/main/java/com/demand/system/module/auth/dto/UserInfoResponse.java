@@ -19,6 +19,9 @@ public class UserInfoResponse {
     private Boolean isSuperAdmin;
     private Long regionId;
     private Long departmentId;
+    private Long orgId;
+    /** 无组织用户首次登录需强制选择组织 */
+    private Boolean needOrgBind;
 
     public UserInfoResponse() {
     }
@@ -136,6 +139,22 @@ public class UserInfoResponse {
         this.departmentId = departmentId;
     }
 
+    public Long getOrgId() {
+        return orgId;
+    }
+
+    public void setOrgId(Long orgId) {
+        this.orgId = orgId;
+    }
+
+    public Boolean getNeedOrgBind() {
+        return needOrgBind;
+    }
+
+    public void setNeedOrgBind(Boolean needOrgBind) {
+        this.needOrgBind = needOrgBind;
+    }
+
     public static UserInfoResponseBuilder builder() {
         return new UserInfoResponseBuilder();
     }
@@ -153,6 +172,8 @@ public class UserInfoResponse {
         private Boolean isSuperAdmin;
         private Long regionId;
         private Long departmentId;
+        private Long orgId;
+        private Boolean needOrgBind;
 
         public UserInfoResponseBuilder id(Long id) {
             this.id = id;
@@ -214,9 +235,22 @@ public class UserInfoResponse {
             return this;
         }
 
+        public UserInfoResponseBuilder orgId(Long orgId) {
+            this.orgId = orgId;
+            return this;
+        }
+
+        public UserInfoResponseBuilder needOrgBind(Boolean needOrgBind) {
+            this.needOrgBind = needOrgBind;
+            return this;
+        }
+
         public UserInfoResponse build() {
-            return new UserInfoResponse(id, username, realName, email, phone, avatar, roles, roleNames,
+            UserInfoResponse response = new UserInfoResponse(id, username, realName, email, phone, avatar, roles, roleNames,
                     permissions, isSuperAdmin, regionId, departmentId);
+            response.setOrgId(orgId);
+            response.setNeedOrgBind(needOrgBind);
+            return response;
         }
     }
 }

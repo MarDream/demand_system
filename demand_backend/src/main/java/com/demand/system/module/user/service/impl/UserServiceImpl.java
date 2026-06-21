@@ -82,11 +82,21 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public List<Map<String, Object>> listActiveUsers() {
-        LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(User::getStatus, User.STATUS_ACTIVE)
+        // 第一步：拉取所有有组织或超级管理员角色的活跃用户
+        LambdaQueryWrapper<User> orgBound = new LambdaQueryWrapper<User>()
+                .eq(User::getStatus, User.STATUS_ACTIVE)
+                .and(w -> w.isNotNull(User::getOrgId)
+                        .or().isNotNull(User::getRegionId)
+                        .or().isNotNull(User::getDepartmentId))
                 .select(User::getId, User::getUsername, User::getRealName)
                 .orderByAsc(User::getUsername);
-        return userMapper.selectList(wrapper).stream()
+
+        Set<Long> superAdminIds = collectSuperAdminUserIds();
+        if (!superAdminIds.isEmpty()) {
+            orgBound.or().in(User::getId, superAdminIds);
+        }
+
+        return userMapper.selectList(orgBound).stream()
                 .map(u -> {
                     Map<String, Object> m = new HashMap<>();
                     m.put("id", u.getId());
@@ -95,6 +105,35 @@ public class UserServiceImpl implements UserService {
                     return m;
                 })
                 .toList();
+    }
+
+    /** 收集所有 SUPER_ADMIN 角色关联的用户ID */
+    private Set<Long> collectSuperAdminUserIds() {
+        try {
+            List<Role> superRoles = roleMapper.selectList(
+                    new LambdaQueryWrapper<Role>().eq(Role::getCode, "SUPER_ADMIN"));
+            if (superRoles == null || superRoles.isEmpty()) {
+                return Set.of();
+            }
+            List<Long> roleIds = superRoles.stream()
+                    .map(Role::getId)
+                    .filter(Objects::nonNull)
+                    .toList();
+            if (roleIds.isEmpty()) {
+                return Set.of();
+            }
+            List<UserRole> userRoles = userRoleMapper.selectList(
+                    new LambdaQueryWrapper<UserRole>().in(UserRole::getRoleId, roleIds));
+            if (userRoles == null) {
+                return Set.of();
+            }
+            return userRoles.stream()
+                    .map(UserRole::getUserId)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toSet());
+        } catch (Exception e) {
+            return Set.of();
+        }
     }
 
     @Override

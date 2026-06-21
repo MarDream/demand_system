@@ -13,11 +13,19 @@ export interface AuthUserInfo {
   isSuperAdmin: boolean
   regionId?: number
   departmentId?: number
+  orgId?: number
+  /** 无组织用户首次登录需强制选择组织 */
+  needOrgBind?: boolean
   positionId?: number
 }
 
 export function login(username: string, password: string) {
-  return request.post<{ accessToken: string; refreshToken: string; expiresIn: number }>('/v1/auth/login', { username, password })
+  return request.post<{
+    accessToken: string
+    refreshToken: string
+    expiresIn: number
+    needOrgBind?: boolean
+  }>('/v1/auth/login', { username, password })
 }
 
 export function logout() {
@@ -30,6 +38,10 @@ export function refreshToken(refreshToken: string) {
 
 export function getMe() {
   return request.get<AuthUserInfo>('/v1/auth/me')
+}
+
+export function bindOrg(orgId: number) {
+  return request.post<void>('/v1/auth/bind-org', { orgId })
 }
 
 export function register(data: {

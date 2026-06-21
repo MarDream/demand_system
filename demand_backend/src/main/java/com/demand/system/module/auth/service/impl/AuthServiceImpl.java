@@ -1,13 +1,18 @@
 package com.demand.system.module.auth.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.demand.system.common.constant.RedisConstants;
 import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.utils.JwtUtils;
 import com.demand.system.module.auth.dto.*;
 import com.demand.system.module.auth.entity.SysUser;
+import com.demand.system.module.organization.dto.SysOrgVO;
+import com.demand.system.module.organization.service.SysOrgService;
+import com.demand.system.module.user.entity.User;
 import com.demand.system.module.user.entity.UserOrganization;
 import com.demand.system.module.auth.mapper.SysUserMapper;
+import com.demand.system.module.user.mapper.UserMapper;
 import com.demand.system.module.user.mapper.UserOrganizationMapper;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.auth.service.AuthService;
@@ -21,6 +26,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -35,6 +41,8 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
     private final VerificationCodeService verificationCodeService;
     private final RbacPermissionResolver rbacPermissionResolver;
+    private final UserMapper userMapper;
+    private final SysOrgService sysOrgService;
 
     @Value("${jwt.secret}")
     private String jwtSecret;
@@ -45,13 +53,27 @@ public class AuthServiceImpl implements AuthService {
     @Value("${jwt.refresh-token-expiration}")
     private long refreshTokenExpiration;
 
-    public AuthServiceImpl(SysUserMapper sysUserMapper, UserOrganizationMapper userOrganizationMapper, StringRedisTemplate stringRedisTemplate, PasswordEncoder passwordEncoder, VerificationCodeService verificationCodeService, RbacPermissionResolver rbacPermissionResolver) {
+    public AuthServiceImpl(SysUserMapper sysUserMapper, UserOrganizationMapper userOrganizationMapper, StringRedisTemplate stringRedisTemplate, PasswordEncoder passwordEncoder, VerificationCodeService verificationCodeService, RbacPermissionResolver rbacPermissionResolver, UserMapper userMapper, SysOrgService sysOrgService) {
         this.sysUserMapper = sysUserMapper;
         this.userOrganizationMapper = userOrganizationMapper;
         this.stringRedisTemplate = stringRedisTemplate;
         this.passwordEncoder = passwordEncoder;
         this.verificationCodeService = verificationCodeService;
         this.rbacPermissionResolver = rbacPermissionResolver;
+        this.userMapper = userMapper;
+        this.sysOrgService = sysOrgService;
+    }
+
+    /** 判断用户是否无组织（既不属于任何区域，也不属于任何部门） */
+    private boolean isOrphan(Long userId) {
+        if (userId == null) {
+            return true;
+        }
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            return true;
+        }
+        return user.getOrgId() == null && user.getRegionId() == null && user.getDepartmentId() == null;
     }
 
     @Override
@@ -97,6 +119,7 @@ public class AuthServiceImpl implements AuthService {
                 .refreshToken(refreshToken)
                 .expiresIn(accessTokenExpiration / 1000)
                 .tokenType("Bearer")
+                .needOrgBind(isOrphan(user.getId()))
                 .build();
     }
 
@@ -168,9 +191,15 @@ public class AuthServiceImpl implements AuthService {
                         .last("LIMIT 1")
         );
 
+        // 同步读取 users 表上的组织字段，确保前后端一致
+        User userEntity = userMapper.selectById(userId);
+
         List<String> roles = rbacPermissionResolver.resolveRoles(userId);
         List<String> roleNames = rbacPermissionResolver.resolveRoleDisplayNames(userId);
         List<String> permissions = rbacPermissionResolver.resolvePermissions(userId, roles);
+
+        boolean orphan = userEntity == null
+                || (userEntity.getOrgId() == null && userEntity.getRegionId() == null && userEntity.getDepartmentId() == null);
 
         UserInfoResponse.UserInfoResponseBuilder builder = UserInfoResponse.builder()
                 .id(user.getId())
@@ -182,7 +211,9 @@ public class AuthServiceImpl implements AuthService {
                 .roles(roles)
                 .roleNames(roleNames)
                 .permissions(permissions)
-                .isSuperAdmin(rbacPermissionResolver.isSuperAdmin(roles));
+                .isSuperAdmin(rbacPermissionResolver.isSuperAdmin(roles))
+                .orgId(userEntity == null ? null : userEntity.getOrgId())
+                .needOrgBind(orphan);
 
         if (org != null) {
             builder.regionId(org.getRegionId())
@@ -190,6 +221,82 @@ public class AuthServiceImpl implements AuthService {
         }
 
         return builder.build();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void bindOrg(Long orgId) {
+        if (orgId == null) {
+            throw new BusinessException("组织ID不能为空");
+        }
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) {
+            throw new BusinessException("未获取到用户信息");
+        }
+
+        SysOrgVO org = sysOrgService.getDetail(orgId);
+        if (org == null) {
+            throw new BusinessException("所选组织不存在");
+        }
+
+        // 1) 更新 users 表：根据组织类型回填 orgId / regionId / departmentId
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException("用户不存在");
+        }
+        user.setOrgId(orgId);
+        String orgType = org.getOrgType();
+        if ("region".equals(orgType) || "company".equals(orgType) || "bureau".equals(orgType)) {
+            user.setRegionId(orgId);
+            user.setDepartmentId(null);
+        } else if ("department".equals(orgType) || "group".equals(orgType)) {
+            user.setDepartmentId(orgId);
+            // 沿路径向上找最近的 region/company/bureau
+            Long regionId = null;
+            if (org.getPath() != null) {
+                String[] ids = org.getPath().split("/");
+                for (String idStr : ids) {
+                    if (idStr.isBlank()) continue;
+                    SysOrgVO ancestor = sysOrgService.getDetail(Long.parseLong(idStr));
+                    if (ancestor != null && ("region".equals(ancestor.getOrgType())
+                            || "company".equals(ancestor.getOrgType())
+                            || "bureau".equals(ancestor.getOrgType()))) {
+                        regionId = ancestor.getId();
+                        break;
+                    }
+                }
+            }
+            user.setRegionId(regionId);
+        }
+        userMapper.updateById(user);
+
+        // 2) 同步更新 user_organizations 表，确保登录/审批等查询能命中
+        UserOrganization existing = userOrganizationMapper.selectOne(
+                new LambdaQueryWrapper<UserOrganization>()
+                        .eq(UserOrganization::getUserId, userId)
+                        .last("LIMIT 1")
+        );
+        if (existing == null) {
+            UserOrganization relation = new UserOrganization();
+            relation.setUserId(userId);
+            relation.setOrgId(orgId);
+            relation.setRegionId(user.getRegionId());
+            relation.setDepartmentId(user.getDepartmentId());
+            relation.setSystemRole("USER");
+            relation.setEffectiveDate(LocalDate.now());
+            userOrganizationMapper.insert(relation);
+        } else {
+            existing.setOrgId(orgId);
+            existing.setRegionId(user.getRegionId());
+            existing.setDepartmentId(user.getDepartmentId());
+            if (existing.getSystemRole() == null || existing.getSystemRole().isBlank()) {
+                existing.setSystemRole("USER");
+            }
+            if (existing.getEffectiveDate() == null) {
+                existing.setEffectiveDate(LocalDate.now());
+            }
+            userOrganizationMapper.updateById(existing);
+        }
     }
 
     @Override

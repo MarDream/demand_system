@@ -1235,6 +1235,50 @@ public class WorkflowEngineService {
         return SecurityUtils.hasAnyRole("admin", "super_admin", "SUPER_ADMIN");
     }
 
+    /**
+     * 用户是否已归属任何组织（orgId / regionId / departmentId 任一非空即视为有组织）
+     */
+    private boolean hasAnyOrg(User user) {
+        if (user == null) {
+            return false;
+        }
+        return user.getOrgId() != null || user.getRegionId() != null || user.getDepartmentId() != null;
+    }
+
+    /**
+     * 候选用户是否为超级管理员：通过 user_role 关联查询判断，命中 SUPER_ADMIN 即放行
+     */
+    private boolean isUserSuperAdmin(User user) {
+        if (user == null || user.getId() == null) {
+            return false;
+        }
+        try {
+            List<UserRole> relations = userRoleMapper.selectList(
+                    new LambdaQueryWrapper<UserRole>().eq(UserRole::getUserId, user.getId()));
+            if (relations == null || relations.isEmpty()) {
+                return false;
+            }
+            List<Long> roleIds = relations.stream()
+                    .map(UserRole::getRoleId)
+                    .filter(Objects::nonNull)
+                    .toList();
+            if (roleIds.isEmpty()) {
+                return false;
+            }
+            List<Role> roles = roleMapper.selectBatchIds(roleIds);
+            if (roles == null) {
+                return false;
+            }
+            return roles.stream()
+                    .filter(Objects::nonNull)
+                    .anyMatch(r -> "SUPER_ADMIN".equalsIgnoreCase(r.getCode())
+                            || "super_admin".equalsIgnoreCase(r.getCode())
+                            || "超级管理员".equals(r.getName()));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private void ensureProjectCanBeBound(Long projectId) {
         if (projectId == null || projectId <= 0) {
             return;
@@ -1537,9 +1581,12 @@ public class WorkflowEngineService {
 
         List<AssigneeCandidateDTO> candidates = new ArrayList<>();
         for (Long userId : normalizedIds) {
-            // 过滤孤儿引用：userMap 中查不到（用户不存在或已删除）的不进入候选
             User user = userMap.get(userId);
             if (user == null) {
+                continue;
+            }
+            // 排除无组织用户：orgId/regionId/departmentId 全为 null 的非超级管理员不出现在候选人中
+            if (!hasAnyOrg(user) && !isUserSuperAdmin(user)) {
                 continue;
             }
             AssigneeCandidateDTO candidate = new AssigneeCandidateDTO();

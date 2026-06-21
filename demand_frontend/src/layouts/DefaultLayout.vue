@@ -110,6 +110,7 @@
       </div>
     </div>
   </div>
+  <OrgBindDialog v-if="userStore.needOrgBind" />
 </template>
 
 <script setup lang="ts">
@@ -123,6 +124,7 @@ import * as ElementPlusIcons from '@element-plus/icons-vue'
 import { Fold, Expand, Bell } from '@element-plus/icons-vue'
 import { isRemixIcon } from '@/components/common/RemixIconData'
 import Breadcrumb from '@/components/layout/Breadcrumb.vue'
+import OrgBindDialog from '@/components/OrgBindDialog.vue'
 import { formatDate } from '@/utils/format'
 import { resolveActiveMenuPath } from '@/utils/menuNavigation'
 import { getNotificationList, markAsRead } from '@/api/modules/notification'

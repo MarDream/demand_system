@@ -76,6 +76,7 @@ declare module 'vue' {
     FilterCard: typeof import('./src/components/common/FilterCard.vue')['default']
     HighlightText: typeof import('./src/components/common/HighlightText.vue')['default']
     IconPicker: typeof import('./src/components/common/IconPicker.vue')['default']
+    OrgBindDialog: typeof import('./src/components/OrgBindDialog.vue')['default']
     PageContainer: typeof import('./src/components/common/PageContainer.vue')['default']
     PreviewLoadingCard: typeof import('./src/components/document/PreviewLoadingCard.vue')['default']
     RAGSearchResult: typeof import('./src/components/document/RAGSearchResult.vue')['default']

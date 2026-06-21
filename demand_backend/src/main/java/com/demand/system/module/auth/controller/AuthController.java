@@ -75,4 +75,11 @@ public class AuthController {
         authService.confirmPasswordReset(request);
         return Result.success();
     }
+
+    @Operation(summary = "绑定组织", description = "无组织用户首次登录强制选择组织后调用，更新 users 与 user_organizations")
+    @PostMapping("/bind-org")
+    public Result<Void> bindOrg(@Valid @RequestBody BindOrgRequest request) {
+        authService.bindOrg(request.getOrgId());
+        return Result.success();
+    }
 }

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { login as loginApi, logout as logoutApi, getMe, type AuthUserInfo } from '@/api/modules/auth'
+import { login as loginApi, logout as logoutApi, getMe, bindOrg as bindOrgApi, type AuthUserInfo } from '@/api/modules/auth'
 import { setToken, removeToken, setRefreshToken, removeRefreshToken } from '@/utils/auth'
 
 export const useUserStore = defineStore('user', () => {
@@ -9,6 +9,8 @@ export const useUserStore = defineStore('user', () => {
   const roles = ref<string[]>([])
   const permissions = ref<string[]>([])
   const isSuperAdmin = ref(false)
+  /** 是否需要强制选择组织（无组织用户首次登录） */
+  const needOrgBind = ref(false)
 
   const hasAdminRole = computed(() => roles.value.includes('admin'))
 
@@ -17,7 +19,10 @@ export const useUserStore = defineStore('user', () => {
     setToken(data.accessToken)
     setRefreshToken(data.refreshToken)
     token.value = data.accessToken
+    needOrgBind.value = !!data.needOrgBind
     await getUserInfo()
+    // getUserInfo 拿到的是最新 needOrgBind，覆盖一次以保持一致
+    needOrgBind.value = !!userInfo.value?.needOrgBind
   }
 
   async function getUserInfo() {
@@ -26,6 +31,12 @@ export const useUserStore = defineStore('user', () => {
     roles.value = data.roles || []
     permissions.value = data.permissions || []
     isSuperAdmin.value = !!data.isSuperAdmin
+  }
+
+  async function bindOrg(orgId: number) {
+    await bindOrgApi(orgId)
+    needOrgBind.value = false
+    await getUserInfo()
   }
 
   async function logout() {
@@ -39,6 +50,7 @@ export const useUserStore = defineStore('user', () => {
       roles.value = []
       permissions.value = []
       isSuperAdmin.value = false
+      needOrgBind.value = false
     }
   }
 
@@ -48,9 +60,11 @@ export const useUserStore = defineStore('user', () => {
     roles,
     permissions,
     isSuperAdmin,
+    needOrgBind,
     hasAdminRole,
     login,
     logout,
     getUserInfo,
+    bindOrg,
   }
 })

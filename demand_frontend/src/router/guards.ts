@@ -54,6 +54,12 @@ export function setupGuards(router: Router) {
       }
     }
 
+    // 无组织用户首次登录：必须先绑定组织，全局拦截去往非绑定页的导航
+    if (userStore.needOrgBind && to.path !== '/org-bind-placeholder') {
+      next('/dashboard')
+      return
+    }
+
     const { hasAnyRole, hasAnyPermission } = usePermission()
     const requiredRoles = Array.isArray(to.meta.requiredRoles)
       ? (to.meta.requiredRoles as string[])

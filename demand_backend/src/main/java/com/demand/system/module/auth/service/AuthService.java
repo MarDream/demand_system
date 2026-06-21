@@ -40,4 +40,11 @@ public interface AuthService {
      * @param request 确认密码重置请求
      */
     void confirmPasswordReset(ConfirmResetPasswordRequest request);
+
+    /**
+     * 用户自助绑定组织（无组织用户首次登录强制使用）
+     *
+     * @param orgId 组织节点ID
+     */
+    void bindOrg(Long orgId);
 }

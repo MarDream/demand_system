@@ -9,6 +9,8 @@ public class TokenResponse {
     private String refreshToken;
     private Long expiresIn;
     private String tokenType;
+    /** 首次登录或无组织用户需强制选择组织 */
+    private Boolean needOrgBind;
 
     public TokenResponse() {
     }
@@ -52,6 +54,14 @@ public class TokenResponse {
         this.tokenType = tokenType;
     }
 
+    public Boolean getNeedOrgBind() {
+        return needOrgBind;
+    }
+
+    public void setNeedOrgBind(Boolean needOrgBind) {
+        this.needOrgBind = needOrgBind;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -61,6 +71,7 @@ public class TokenResponse {
         private String refreshToken;
         private Long expiresIn;
         private String tokenType;
+        private Boolean needOrgBind;
 
         public Builder accessToken(String accessToken) {
             this.accessToken = accessToken;
@@ -82,8 +93,15 @@ public class TokenResponse {
             return this;
         }
 
+        public Builder needOrgBind(Boolean needOrgBind) {
+            this.needOrgBind = needOrgBind;
+            return this;
+        }
+
         public TokenResponse build() {
-            return new TokenResponse(accessToken, refreshToken, expiresIn, tokenType);
+            TokenResponse response = new TokenResponse(accessToken, refreshToken, expiresIn, tokenType);
+            response.setNeedOrgBind(needOrgBind);
+            return response;
         }
     }
 }
