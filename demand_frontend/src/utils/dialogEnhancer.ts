@@ -9,8 +9,15 @@ export function setupDialogEnhancer() {
 
   enhanceExistingDialogs()
 
+  // 使用 requestAnimationFrame 合并同一帧内的多次 DOM 变更通知，
+  // 避免 Vue 初始化时大量 DOM 节点挂载导致回调频繁触发阻塞主线程
+  let rafId = 0
   const observer = new MutationObserver(() => {
-    enhanceExistingDialogs()
+    if (rafId) return
+    rafId = requestAnimationFrame(() => {
+      rafId = 0
+      enhanceExistingDialogs()
+    })
   })
 
   observer.observe(document.body, {

@@ -5,7 +5,10 @@ import { getToken, buildLoginPath } from '@/utils/auth'
 import { useUserStore } from '@/stores/modules/user'
 import { usePermission } from '@/composables/usePermission'
 
-NProgress.configure({ showSpinner: false })
+// 禁用 trickle（自动递增定时器），避免其内部 setTimeout 循环
+// 在路由切换时与 DOM 渲染竞争主线程，触发 Chrome Violation 警告
+// 进度条仍会显示，由 afterEach 的 done() 结束
+NProgress.configure({ showSpinner: false, trickle: false })
 
 export function setupGuards(router: Router) {
   router.beforeEach(async (to, _from, next) => {
