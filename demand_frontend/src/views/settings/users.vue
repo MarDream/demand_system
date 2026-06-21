@@ -130,9 +130,9 @@
                 </span>
                 <template #dropdown>
                   <el-dropdown-menu>
-                    <el-dropdown-item v-permission="'button:user:batch-delete'" command="批量启用">批量启用</el-dropdown-item>
-                    <el-dropdown-item v-permission="'button:user:batch-delete'" command="批量停用">批量停用</el-dropdown-item>
-                    <el-dropdown-item v-permission="'button:user:batch-delete'" command="批量删除">批量删除</el-dropdown-item>
+                    <el-dropdown-item command="批量启用">批量启用</el-dropdown-item>
+                    <el-dropdown-item command="批量停用">批量停用</el-dropdown-item>
+                    <el-dropdown-item command="批量删除">批量删除</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
