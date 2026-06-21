@@ -138,6 +138,21 @@
               </el-dropdown>
             </AppButton>
             <AppButton permission="button:user:update" @click="showTodo('调整排序')">调整排序</AppButton>
+            <el-dropdown @command="handleColumnVisibilityChange" trigger="click">
+              <AppButton>
+                <el-icon><Setting /></el-icon>
+                列设置
+              </AppButton>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item v-for="col in columnConfig" :key="col.key" :command="col.key">
+                    <el-checkbox :model-value="col.visible" @click.prevent>
+                      {{ col.label }}
+                    </el-checkbox>
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </div>
 
           <el-table :data="userList" border class="member-table" @selection-change="selectedUsers = $event">
@@ -156,23 +171,26 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="所属组织" min-width="140">
+            <el-table-column v-if="getColumnVisible('org')" label="所属组织" min-width="140">
               <template #default="{ row }">{{ orgName(row.orgId) || '-' }}</template>
             </el-table-column>
-            <el-table-column label="账号状态" width="140">
+            <el-table-column v-if="getColumnVisible('status')" label="账号状态" width="140">
               <template #default="{ row }">
                 <span class="status-dot" :class="{ 'is-disabled': row.status !== 'active' }" />
                 {{ row.status === 'active' ? '正常' : '停用' }}
               </template>
             </el-table-column>
-            <el-table-column label="角色" min-width="140">
+            <el-table-column v-if="getColumnVisible('role')" label="角色" min-width="140">
               <template #default="{ row }">{{ row.systemRole || '-' }}</template>
             </el-table-column>
-            <el-table-column label="工号" width="120">
+            <el-table-column v-if="getColumnVisible('jobNumber')" label="工号" width="120">
               <template #default="{ row }">{{ row.jobNumber || '-' }}</template>
             </el-table-column>
-            <el-table-column prop="email" label="邮箱" min-width="190" show-overflow-tooltip />
-            <el-table-column label="员工UserID" min-width="150">
+            <el-table-column v-if="getColumnVisible('phone')" label="手机号" width="140">
+              <template #default="{ row }">{{ maskPhone(row.phone) }}</template>
+            </el-table-column>
+            <el-table-column v-if="getColumnVisible('email')" prop="email" label="邮箱" min-width="190" show-overflow-tooltip />
+            <el-table-column v-if="getColumnVisible('userId')" label="员工UserID" min-width="150">
               <template #default="{ row }">{{ row.username }}</template>
             </el-table-column>
             <el-table-column label="操作" width="112" fixed="right">
@@ -657,6 +675,28 @@ const pageSize = ref(10)
 const total = ref(0)
 const managementMode = ref<'basic' | 'hr'>('basic')
 const memberView = ref<'members' | 'departments'>('members')
+
+// 列配置
+const columnConfig = ref([
+  { key: 'org', label: '所属组织', visible: true },
+  { key: 'status', label: '账号状态', visible: true },
+  { key: 'role', label: '角色', visible: true },
+  { key: 'jobNumber', label: '工号', visible: true },
+  { key: 'phone', label: '手机号', visible: true },
+  { key: 'email', label: '邮箱', visible: true },
+  { key: 'userId', label: '员工UserID', visible: true },
+])
+
+function getColumnVisible(key: string): boolean {
+  return columnConfig.value.find(col => col.key === key)?.visible ?? true
+}
+
+function handleColumnVisibilityChange(key: string) {
+  const col = columnConfig.value.find(c => c.key === key)
+  if (col) {
+    col.visible = !col.visible
+  }
+}
 const orgKeyword = ref('')
 const activeOrgKey = ref('')
 const selectedDepartments = ref<DepartmentRow[]>([])
@@ -936,6 +976,15 @@ const departmentRules: FormRules = {
   parentId: [
     { required: true, message: '请选择上级部门', trigger: 'change' },
   ],
+}
+
+// 手机号脱敏显示
+function maskPhone(phone: string | null | undefined): string {
+  if (!phone) return '-'
+  if (phone.length === 11) {
+    return phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')
+  }
+  return phone
 }
 
 function normalizeArray<T>(value: unknown): T[] {
