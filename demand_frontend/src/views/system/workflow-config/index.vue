@@ -79,6 +79,14 @@
                 <template #default="{ row }">V{{ row.version }}</template>
               </el-table-column>
               <el-table-column prop="name" label="版本名称" min-width="220" />
+              <el-table-column label="适用工单类型" min-width="160">
+                <template #default="{ row }">
+                  <template v-if="boundTypeNames[row.id]?.length">
+                    <el-tag v-for="name in boundTypeNames[row.id]" :key="name" size="small" style="margin: 2px">{{ name }}</el-tag>
+                  </template>
+                  <span v-else style="color: var(--el-text-color-placeholder)">未绑定</span>
+                </template>
+              </el-table-column>
               <el-table-column label="适用范围" width="120">
                 <template #default="{ row }">
                   <el-tag :type="row.projectId === GLOBAL_WORKFLOW_PROJECT_ID ? 'primary' : 'info'" effect="light">
@@ -496,9 +504,28 @@ import type {
   WorkflowVersionMetaUpdateDTO,
 } from '@/types/workflow-visual'
 
+import { requirementConfigApi, type RequirementType } from '@/api/modules/requirementConfig'
+
 const route = useRoute()
 const router = useRouter()
 const { hasPermission } = usePermission()
+
+// 需求类型列表（用于"适用工单类型"列展示）
+const requirementTypes = ref<RequirementType[]>([])
+
+// 工作流版本 → 绑定的类型名称映射
+const boundTypeNames = computed<Record<number, string[]>>(() => {
+  const map: Record<number, string[]> = {}
+  for (const type of requirementTypes.value) {
+    if (type.workflowVersionId) {
+      if (!map[type.workflowVersionId]) {
+        map[type.workflowVersionId] = []
+      }
+      map[type.workflowVersionId].push(type.name)
+    }
+  }
+  return map
+})
 
 const versionLoading = ref(false)
 const approvalLoading = ref(false)
@@ -735,8 +762,17 @@ async function loadApprovals() {
   }
 }
 
+async function loadRequirementTypes() {
+  try {
+    const res = await requirementConfigApi.listTypes()
+    requirementTypes.value = Array.isArray(res) ? res : []
+  } catch {
+    requirementTypes.value = []
+  }
+}
+
 async function reloadAllData() {
-  await Promise.all([loadVersions(), loadApprovals()])
+  await Promise.all([loadVersions(), loadApprovals(), loadRequirementTypes()])
 }
 
 function createNewWorkflow() {

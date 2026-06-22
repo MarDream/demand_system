@@ -40,6 +40,25 @@
                 <span v-else>-</span>
               </template>
             </el-table-column>
+            <el-table-column label="绑定工作流" min-width="180">
+              <template #default="{ row }">
+                <el-select
+                  v-model="row.workflowVersionId"
+                  placeholder="未绑定"
+                  clearable
+                  size="small"
+                  style="width: 100%"
+                  @change="(val: number | null) => onBindWorkflow(row.code, val)"
+                >
+                  <el-option
+                    v-for="v in activeWorkflowVersions"
+                    :key="v.id"
+                    :label="`${v.name} (v${v.version})`"
+                    :value="v.id"
+                  />
+                </el-select>
+              </template>
+            </el-table-column>
             <el-table-column label="操作" width="150" fixed="right">
               <template #default="{ row }">
                 <AppButton link type="primary" permission="button:requirement-config:update" @click="openTypeDialog(row)"><el-icon><EditPen /></el-icon></AppButton>
@@ -240,6 +259,8 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { Plus, Rank, Operation, EditPen, Delete, Document } from '@element-plus/icons-vue'
 import { requirementConfigApi, type RequirementType, type Priority, type SortItem } from '@/api/modules/requirementConfig'
 import { nodeStatusApi, type NodeStatus, type SortItem as NodeStatusSortItem } from '@/api/modules/workflow-engine'
+import { getVersionHistory } from '@/api/modules/workflow-visual'
+import type { WorkflowVersionDTO } from '@/types/workflow-visual'
 import { normalizeText } from '@/utils/format'
 import Sortable, { type SortableEvent } from 'sortablejs'
 import AppButton from '@/components/common/AppButton.vue'
@@ -255,6 +276,31 @@ function goToTemplateDesign(row: RequirementType) {
 }
 const types = ref<RequirementType[]>([])
 const priorities = ref<Priority[]>([])
+
+// 活跃工作流版本列表（用于类型绑定下拉）
+const activeWorkflowVersions = ref<WorkflowVersionDTO[]>([])
+
+const loadActiveWorkflowVersions = async () => {
+  try {
+    // 使用 project_id=0 查全局版本列表，筛选 active 的
+    const res = await getVersionHistory(0) as any
+    const list = Array.isArray(res) ? res : res?.data || []
+    activeWorkflowVersions.value = list.filter((v: WorkflowVersionDTO) => v.activationStatus === 'active' && v.isActive === 1)
+  } catch (error) {
+    // 静默处理
+  }
+}
+
+const onBindWorkflow = async (typeCode: string, workflowVersionId: number | null) => {
+  try {
+    await requirementConfigApi.bindWorkflow(typeCode, workflowVersionId)
+    ElMessage.success(workflowVersionId ? '绑定工作流成功' : '已解绑工作流')
+  } catch (error: any) {
+    ElMessage.error(error?.message || '绑定工作流失败')
+    // 回滚 UI：重新加载 types
+    await loadTypes()
+  }
+}
 
 // 表格ref
 const typeTableRef = ref()
@@ -616,7 +662,8 @@ const initializePage = async () => {
   await Promise.all([
     loadTypes(),
     loadPriorities(),
-    loadNodeStatuses()
+    loadNodeStatuses(),
+    loadActiveWorkflowVersions(),
   ])
   initTypeSortable()
   initPrioritySortable()

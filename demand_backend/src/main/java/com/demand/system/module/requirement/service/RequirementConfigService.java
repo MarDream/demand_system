@@ -75,13 +75,65 @@ public class RequirementConfigService {
         return Result.success(types);
     }
 
-    public Result<RequirementFormConfigDTO> getCreateFormConfig(Long projectId) {
-        RequirementTypeConfig defaultType = typeMapper.selectOne(
+    /**
+     * 仅返回已绑定活跃工作流版本的需求类型。
+     * <p>用于创建需求时的类型下拉：未绑定或绑定版本不可用的类型不出现在选项中。
+     */
+    public Result<List<RequirementTypeConfig>> listAvailableTypes() {
+        List<RequirementTypeConfig> allTypes = typeMapper.selectList(
                 new LambdaQueryWrapper<RequirementTypeConfig>()
                         .orderByAsc(RequirementTypeConfig::getSortOrder)
-                        .orderByDesc(RequirementTypeConfig::getIsDefault)
-                        .last("LIMIT 1")
         );
+        List<RequirementTypeConfig> available = allTypes.stream()
+                .filter(type -> workflowVersionResolver.findActiveVersionForType(type.getCode()).isPresent())
+                .collect(Collectors.toList());
+        return Result.success(available);
+    }
+
+    /**
+     * 绑定/解绑需求类型到工作流版本。
+     *
+     * @param typeCode          需求类型编码
+     * @param workflowVersionId 工作流版本ID；传 null 表示解绑
+     */
+    @Transactional
+    public Result<Void> bindWorkflow(String typeCode, Long workflowVersionId) {
+        RequirementTypeConfig typeConfig = typeMapper.selectByCode(typeCode);
+        if (typeConfig == null) {
+            return Result.fail("需求类型不存在: " + typeCode);
+        }
+        if (workflowVersionId != null) {
+            WorkflowVersion version = workflowVersionMapper.selectById(workflowVersionId);
+            if (version == null) {
+                return Result.fail("工作流版本不存在: " + workflowVersionId);
+            }
+            if (version.getIsActive() == null || version.getIsActive() != 1 || !"active".equals(version.getActivationStatus())) {
+                return Result.fail("只能绑定启用中的工作流版本");
+            }
+        }
+        typeConfig.setWorkflowVersionId(workflowVersionId);
+        typeMapper.updateById(typeConfig);
+        return Result.success();
+    }
+
+    public Result<RequirementFormConfigDTO> getCreateFormConfig(Long projectId) {
+        // 优先取已绑定活跃工作流的默认 type
+        List<RequirementTypeConfig> allTypes = typeMapper.selectList(
+                new LambdaQueryWrapper<RequirementTypeConfig>()
+                        .orderByAsc(RequirementTypeConfig::getSortOrder)
+        );
+        RequirementTypeConfig defaultType = allTypes.stream()
+                .filter(type -> Boolean.TRUE.equals(type.getIsDefault()))
+                .filter(type -> workflowVersionResolver.findActiveVersionForType(type.getCode()).isPresent())
+                .findFirst()
+                .orElse(null);
+        // 如果默认 type 不可用，取第一个可用的
+        if (defaultType == null) {
+            defaultType = allTypes.stream()
+                    .filter(type -> workflowVersionResolver.findActiveVersionForType(type.getCode()).isPresent())
+                    .findFirst()
+                    .orElse(null);
+        }
 
         RequirementFormConfigDTO config = new RequirementFormConfigDTO();
         if (defaultType != null) {
@@ -90,7 +142,10 @@ public class RequirementConfigService {
             config.setDefaultTypeColor(defaultType.getColor());
         }
 
-        WorkflowVersion activeVersion = workflowVersionResolver.findActiveVersion(projectId).orElse(null);
+        // 按 type 维度解析工作流版本
+        WorkflowVersion activeVersion = defaultType != null
+                ? workflowVersionResolver.findActiveVersionForType(defaultType.getCode()).orElse(null)
+                : null;
 
         if (activeVersion == null) {
             config.setVisibleFields(Collections.emptyList());

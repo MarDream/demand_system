@@ -32,6 +32,21 @@ public class RequirementConfigController {
         return configService.listTypes();
     }
 
+    @GetMapping("/types/available")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "获取可用需求类型列表（仅已绑定活跃工作流的类型）")
+    public Result<List<RequirementTypeConfig>> listAvailableTypes() {
+        return configService.listAvailableTypes();
+    }
+
+    @PutMapping("/types/{typeCode}/workflow")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:requirement-config:update')")
+    @Operation(summary = "绑定/解绑需求类型的工作流版本", description = "传入 workflowVersionId 绑定，传 null 解绑")
+    public Result<Void> bindWorkflow(@PathVariable String typeCode,
+                                     @RequestParam(required = false) Long workflowVersionId) {
+        return configService.bindWorkflow(typeCode, workflowVersionId);
+    }
+
     @GetMapping("/projects/{projectId}/create-form")
     @PreAuthorize("isAuthenticated()")
     @Operation(summary = "获取新建需求表单配置")

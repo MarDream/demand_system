@@ -7,6 +7,8 @@ export interface RequirementType {
   color?: string
   sortOrder?: number
   isDefault?: boolean
+  /** 绑定的工作流版本ID（NULL=未绑定，该类型不可用于新建需求） */
+  workflowVersionId?: number | null
   createdAt?: string
   updatedAt?: string
 }
@@ -40,6 +42,9 @@ export const requirementConfigApi = {
   // 需求类型
   listTypes: () => request.get<RequirementType[]>('/v1/requirement-config/types'),
 
+  /** 仅返回已绑定活跃工作流版本的需求类型（创建需求下拉用） */
+  listAvailableTypes: () => request.get<RequirementType[]>('/v1/requirement-config/types/available'),
+
   getCreateFormConfig: (projectId: number) =>
     request.get<RequirementCreateFormConfig>(`/v1/requirement-config/projects/${projectId}/create-form`),
 
@@ -50,6 +55,12 @@ export const requirementConfigApi = {
   deleteType: (id: number) => request.delete(`/v1/requirement-config/types/${id}`),
 
   sortTypes: (items: SortItem[]) => request.post('/v1/requirement-config/types/sort', items),
+
+  /** 绑定/解绑需求类型的工作流版本。workflowVersionId 传 null 解绑 */
+  bindWorkflow: (typeCode: string, workflowVersionId: number | null) =>
+    request.put(`/v1/requirement-config/types/${typeCode}/workflow`, null, {
+      params: workflowVersionId != null ? { workflowVersionId } : undefined,
+    }),
 
   // 优先级
   listPriorities: () => request.get<Priority[]>('/v1/requirement-config/priorities'),

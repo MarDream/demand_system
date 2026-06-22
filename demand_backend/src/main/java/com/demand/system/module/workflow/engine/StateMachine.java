@@ -65,7 +65,9 @@ public class StateMachine {
             return false;
         }
 
-        boolean definitionDriven = workflowDefinitionEngine.hasActiveDefinition(requirement.getProjectId());
+        boolean definitionDriven = StringUtils.hasText(requirement.getType())
+                ? workflowDefinitionEngine.hasActiveDefinition(requirement.getType())
+                : workflowDefinitionEngine.hasActiveDefinition(requirement.getProjectId());
         Optional<WorkflowDefinitionEngine.ResolvedTransitionSpec> resolvedSpec = definitionDriven
                 ? workflowDefinitionEngine.resolveTransition(requirement, fromState.getName(), targetState.getName())
                 : Optional.empty();

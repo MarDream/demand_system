@@ -82,7 +82,9 @@ public class PermissionEngine {
                 .eq(WorkflowTransition::getToStateId, toStateId)
                 .last("LIMIT 1"));
 
-        boolean definitionDriven = workflowDefinitionEngine.hasActiveDefinition(requirement.getProjectId());
+        boolean definitionDriven = StringUtils.hasText(requirement.getType())
+                ? workflowDefinitionEngine.hasActiveDefinition(requirement.getType())
+                : workflowDefinitionEngine.hasActiveDefinition(requirement.getProjectId());
         Optional<WorkflowDefinitionEngine.ResolvedTransitionSpec> resolvedSpec = definitionDriven
                 ? workflowDefinitionEngine.resolveTransition(requirement, fromState.getName(), targetState.getName())
                 : Optional.empty();
@@ -124,7 +126,13 @@ public class PermissionEngine {
             return true;
         }
 
-        WorkflowVersion activeVersion = workflowVersionResolver.findActiveVersion(projectId).orElse(null);
+        // 优先按 type 维度解析工作流版本，回退到 projectId 维度
+        WorkflowVersion activeVersion;
+        if (requirement != null && StringUtils.hasText(requirement.getType())) {
+            activeVersion = workflowVersionResolver.findActiveVersionForType(requirement.getType()).orElse(null);
+        } else {
+            activeVersion = workflowVersionResolver.findActiveVersion(projectId).orElse(null);
+        }
         if (activeVersion == null) {
             return true;
         }

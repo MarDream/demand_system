@@ -1385,7 +1385,7 @@ function handleCancel() {
 async function loadConfig() {
   try {
     const [typesRes, prioritiesRes] = await Promise.all([
-      requirementConfigApi.listTypes(),
+      requirementConfigApi.listAvailableTypes(),
       requirementConfigApi.listPriorities(),
     ])
     const typeList = Array.isArray(typesRes) ? typesRes : (typesRes as any).data || []

@@ -60,7 +60,27 @@ public class WorkflowDefinitionEngine {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * 判断指定需求类型是否已绑定活跃工作流定义。
+     * <p>新引擎 + 旧引擎（StateMachine）双轨共用。
+     *
+     * @param typeCode 需求类型编码
+     * @return true 表示该类型有可用的 BPMN 工作流
+     */
+    public boolean hasActiveDefinition(String typeCode) {
+        return workflowVersionResolver.findActiveVersionForType(typeCode)
+                .map(version -> workflowNodeMapper.selectCount(new LambdaQueryWrapper<WorkflowNode>()
+                        .eq(WorkflowNode::getWorkflowVersionId, version.getId())) > 0)
+                .orElse(false);
+    }
+
+    /**
+     * @deprecated 保留 projectId 签名兼容旧调用方，内部委托 type 维度。
+     *             新代码请使用 {@link #hasActiveDefinition(String)}。
+     */
+    @Deprecated
     public boolean hasActiveDefinition(Long projectId) {
+        // 兼容旧入口：找不到 type 信息时回退到 projectId 维度
         return workflowVersionResolver.findActiveVersion(projectId)
                 .map(version -> workflowNodeMapper.selectCount(new LambdaQueryWrapper<WorkflowNode>()
                         .eq(WorkflowNode::getWorkflowVersionId, version.getId())) > 0)
@@ -174,7 +194,53 @@ public class WorkflowDefinitionEngine {
         return errors.stream().distinct().toList();
     }
 
+    /**
+     * 按需求类型解析初始状态名。
+     * <p>从 requirement.getType() 取 typeCode → 通过 WorkflowVersionResolver.resolveForType 查工作流版本。
+     *
+     * @param typeCode    需求类型编码（如 Requirement / Order / Bug / FEATURE）
+     * @param requirement 需求实体（用于条件表达式求值）
+     * @return 初始状态名；未配置工作流时返回 empty
+     */
+    public Optional<String> resolveInitialStateName(String typeCode, Requirement requirement) {
+        Optional<WorkflowGraph> graphOptional = loadActiveGraphByType(typeCode);
+        if (graphOptional.isEmpty()) {
+            return Optional.empty();
+        }
+
+        WorkflowGraph graph = graphOptional.get();
+        List<String> entryNodeIds = determineEntryNodeIds(graph);
+        if (entryNodeIds.isEmpty()) {
+            return Optional.empty();
+        }
+
+        for (String entryNodeId : entryNodeIds) {
+            List<ResolvedTransitionSpec> resolved = resolveNextWaitStates(
+                    graph,
+                    requirement,
+                    entryNodeId,
+                    null,
+                    null,
+                    new ArrayList<>(),
+                    new LinkedHashSet<>(),
+                    true
+            );
+            if (!resolved.isEmpty()) {
+                return Optional.ofNullable(resolved.get(0).targetStateName());
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * @deprecated 保留 projectId 签名兼容旧调用方。新代码请使用 {@link #resolveInitialStateName(String, Requirement)}。
+     */
+    @Deprecated
     public Optional<String> resolveInitialStateName(Long projectId, Requirement requirement) {
+        // 兼容旧入口：如果 requirement 有 type，优先走 type 维度
+        if (requirement != null && StringUtils.hasText(requirement.getType())) {
+            return resolveInitialStateName(requirement.getType(), requirement);
+        }
         Optional<WorkflowGraph> graphOptional = loadActiveGraph(projectId);
         if (graphOptional.isEmpty()) {
             return Optional.empty();
@@ -205,11 +271,17 @@ public class WorkflowDefinitionEngine {
     }
 
     public List<ResolvedTransitionSpec> resolveAvailableTransitions(Requirement requirement) {
-        if (requirement == null || requirement.getProjectId() == null || !StringUtils.hasText(requirement.getStatus())) {
+        if (requirement == null || !StringUtils.hasText(requirement.getStatus())) {
             return List.of();
         }
 
-        Optional<WorkflowGraph> graphOptional = loadActiveGraph(requirement.getProjectId());
+        // 优先按 type 维度加载工作流图，回退到 projectId 维度
+        Optional<WorkflowGraph> graphOptional;
+        if (StringUtils.hasText(requirement.getType())) {
+            graphOptional = loadActiveGraphByType(requirement.getType());
+        } else {
+            graphOptional = loadActiveGraph(requirement.getProjectId());
+        }
         if (graphOptional.isEmpty()) {
             return List.of();
         }
@@ -288,6 +360,18 @@ public class WorkflowDefinitionEngine {
 
     private Optional<WorkflowGraph> loadActiveGraph(Long projectId) {
         return workflowVersionResolver.findActiveVersion(projectId)
+                .map(WorkflowVersion::getDefinition)
+                .filter(StringUtils::hasText)
+                .map(definition -> parseGraph(definition, new ArrayList<>()))
+                .filter(Objects::nonNull);
+    }
+
+    /**
+     * 按需求类型编码加载活跃工作流图。
+     * <p>核心入口，新引擎所有公开方法均委托此方法按 type 查找工作流定义。
+     */
+    private Optional<WorkflowGraph> loadActiveGraphByType(String typeCode) {
+        return workflowVersionResolver.findActiveVersionForType(typeCode)
                 .map(WorkflowVersion::getDefinition)
                 .filter(StringUtils::hasText)
                 .map(definition -> parseGraph(definition, new ArrayList<>()))

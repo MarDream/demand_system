@@ -21,6 +21,14 @@ public class RequirementTypeConfig {
 
     private Boolean isDefault;
 
+    /**
+     * 绑定的工作流版本ID。
+     * <p>取值来源：{@code workflow_versions.id}。运行时由 {@code WorkflowVersionResolver.resolveForType(code)}
+     * 通过该字段解析工作流，必须指向 {@code is_active=1 AND activation_status='active'} 的版本。
+     * <p>NULL 表示该需求类型未配置工作流，新建需求时该类型不出现，详情页不渲染"待办"操作按钮。
+     */
+    private Long workflowVersionId;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 
@@ -73,6 +81,14 @@ public class RequirementTypeConfig {
 
     public void setIsDefault(Boolean isDefault) {
         this.isDefault = isDefault;
+    }
+
+    public Long getWorkflowVersionId() {
+        return workflowVersionId;
+    }
+
+    public void setWorkflowVersionId(Long workflowVersionId) {
+        this.workflowVersionId = workflowVersionId;
     }
 
     public LocalDateTime getCreatedAt() {

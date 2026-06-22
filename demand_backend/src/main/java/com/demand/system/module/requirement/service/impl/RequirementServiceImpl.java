@@ -601,9 +601,12 @@ public class RequirementServiceImpl implements RequirementService {
             throw new BusinessException(403, "只有创建人可以操作草稿");
         }
 
-        WorkflowVersion active = findActiveWorkflowVersion(requirement.getProjectId());
+        if (!StringUtils.hasText(requirement.getType())) {
+            throw new BusinessException(400, "需求类型未设置，无法查询下一环节");
+        }
+        WorkflowVersion active = workflowVersionResolver.findActiveVersionForType(requirement.getType()).orElse(null);
         if (active == null || active.getIsActive() == null || active.getIsActive() != 1) {
-            throw new BusinessException(400, "当前工作流正调整中，请保存草稿，稍后再提交");
+            throw new BusinessException(400, "当前需求类型未绑定已启用的工作流，请保存草稿，稍后再提交");
         }
         WorkflowGraphContext context = workflowRuntimeLoader.loadContext(active.getId());
         WorkflowNode startNode = context.nodesById().values().stream()
@@ -646,9 +649,12 @@ public class RequirementServiceImpl implements RequirementService {
             throw new BusinessException(400, "缺少版本号");
         }
 
-        WorkflowVersion active = findActiveWorkflowVersion(requirement.getProjectId());
+        if (!StringUtils.hasText(requirement.getType())) {
+            throw new BusinessException(400, "需求类型未设置，无法提交");
+        }
+        WorkflowVersion active = workflowVersionResolver.findActiveVersionForType(requirement.getType()).orElse(null);
         if (active == null || active.getIsActive() == null || active.getIsActive() != 1) {
-            throw new BusinessException(400, "当前工作流正调整中，请保存草稿，稍后再提交");
+            throw new BusinessException(400, "当前需求类型未绑定已启用的工作流，请保存草稿，稍后再提交");
         }
 
         WorkflowGraphContext context = workflowRuntimeLoader.loadContext(active.getId());
