@@ -111,8 +111,15 @@ public class RequirementConfigService {
                 return Result.fail("只能绑定启用中的工作流版本");
             }
         }
-        typeConfig.setWorkflowVersionId(workflowVersionId);
-        typeMapper.updateById(typeConfig);
+        if (workflowVersionId != null) {
+            typeConfig.setWorkflowVersionId(workflowVersionId);
+            typeMapper.updateById(typeConfig);
+        } else {
+            // 解绑：显式设置 null（MyBatis-Plus updateById 默认跳过 null 字段）
+            typeMapper.update(null, new LambdaUpdateWrapper<RequirementTypeConfig>()
+                    .eq(RequirementTypeConfig::getId, typeConfig.getId())
+                    .set(RequirementTypeConfig::getWorkflowVersionId, null));
+        }
         return Result.success();
     }
 
