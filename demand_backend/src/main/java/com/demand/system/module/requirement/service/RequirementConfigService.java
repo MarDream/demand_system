@@ -131,7 +131,7 @@ public class RequirementConfigService {
             if (version == null) {
                 return Result.fail("工作流版本不存在: " + workflowVersionId);
             }
-            if (!Boolean.TRUE.equals(version.getIsActive()) || !"active".equals(version.getActivationStatus())) {
+            if (version.getIsActive() == null || version.getIsActive() != 1 || !"active".equals(version.getActivationStatus())) {
                 return Result.fail("只能绑定启用中的工作流版本");
             }
             typeConfig.setWorkflowVersionId(workflowVersionId);

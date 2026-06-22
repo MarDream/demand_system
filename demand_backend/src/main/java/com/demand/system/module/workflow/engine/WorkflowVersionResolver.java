@@ -46,7 +46,7 @@ public class WorkflowVersionResolver {
             return Optional.empty();
         }
         WorkflowVersion version = workflowVersionMapper.selectById(typeConfig.getWorkflowVersionId());
-        if (version == null || !Boolean.TRUE.equals(version.getIsActive()) || !"active".equals(version.getActivationStatus())) {
+        if (version == null || version.getIsActive() == null || version.getIsActive() != 1 || !"active".equals(version.getActivationStatus())) {
             return Optional.empty();
         }
         return Optional.of(version);
