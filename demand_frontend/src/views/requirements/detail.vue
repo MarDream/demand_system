@@ -57,7 +57,7 @@
           <template #label>
             <span class="detail-tab-label">
               <el-icon><Picture /></el-icon>
-              <span>附件</span>
+              <span>附件 ({{ attachmentCount }})</span>
             </span>
           </template>
           <div class="attachments-tab">
@@ -81,7 +81,7 @@
                 </el-button>
               </div>
             </div>
-            <el-empty v-else description="暂无附件" :image-size="60" />
+            <div v-else class="attachment-empty">暂无附件</div>
 
             <div v-if="detail.transitionAttachments?.length" class="attachment-transition-list">
               <div class="section-header">
@@ -240,20 +240,33 @@
                         <el-tag size="small" effect="plain" type="info">{{ item.nodeName }}</el-tag>
                         <el-tag v-if="item.nodeStatusName && item.nodeStatusName !== item.nodeName" size="small" effect="plain">{{ item.nodeStatusName }}</el-tag>
                       </div>
+                    </div>
+                    <div v-if="item.rating || item.canSupplement" class="approval-evaluation-side">
                       <div v-if="item.rating" class="approval-evaluation-rating">
                         <span class="approval-evaluation-rating__label">评分</span>
                         <el-rate :model-value="item.rating" disabled />
                       </div>
+                      <el-button
+                        v-if="item.canSupplement"
+                        link
+                        type="primary"
+                        class="approval-evaluation-supplement-button"
+                        title="补充意见"
+                        aria-label="补充意见"
+                        @click="openSupplementDialog(item)"
+                      >
+                        <el-icon><ChatDotRound /></el-icon>
+                      </el-button>
                     </div>
                   </div>
                   <p v-if="item.content" class="approval-evaluation-content">{{ item.content }}</p>
-                  <p v-else class="approval-evaluation-content approval-evaluation-content--empty">未填写审核意见</p>
-                  <div v-if="item.attachments?.length" class="approval-evaluation-attachments">
+                  <div v-if="item.attachments?.length" class="approval-evaluation-attachments approval-evaluation-attachments--main">
                     <span class="approval-evaluation-attachments__label">附件：</span>
-                    <a v-for="(att, idx) in item.attachments" :key="idx" class="approval-evaluation-attachments__link" @click="downloadAttachmentFile(att)">{{ att.name }}</a>
-                  </div>
-                  <div v-if="item.canSupplement" class="approval-evaluation-actions">
-                    <el-button link type="primary" aria-label="补充意见" @click="openSupplementDialog(item)">补充意见</el-button>
+                    <ul class="approval-evaluation-attachments__list">
+                      <li v-for="(att, idx) in item.attachments" :key="idx">
+                        <a class="approval-evaluation-attachments__link" @click="downloadAttachmentFile(att)">{{ att.name }}</a>
+                      </li>
+                    </ul>
                   </div>
                   <div v-if="item.supplements?.length" class="approval-supplement-list">
                     <div v-for="supplement in item.supplements" :key="supplement.id" class="approval-supplement-item">
@@ -265,7 +278,11 @@
                       <p class="approval-supplement-item__content">{{ supplement.content || '未填写补充意见' }}</p>
                       <div v-if="supplement.attachments?.length" class="approval-evaluation-attachments">
                         <span class="approval-evaluation-attachments__label">附件：</span>
-                        <a v-for="(att, idx) in supplement.attachments" :key="idx" class="approval-evaluation-attachments__link" @click="downloadAttachmentFile(att)">{{ att.name }}</a>
+                        <ul class="approval-evaluation-attachments__list">
+                          <li v-for="(att, idx) in supplement.attachments" :key="idx">
+                            <a class="approval-evaluation-attachments__link" @click="downloadAttachmentFile(att)">{{ att.name }}</a>
+                          </li>
+                        </ul>
                       </div>
                     </div>
                   </div>
@@ -595,6 +612,7 @@
             <AttachmentUploader
               v-model="approvalAttachments"
               :show-preview="false"
+              :required="isAttachmentRequired"
             />
           </div>
           <template #footer>
@@ -832,6 +850,7 @@ const workflowRuntime = ref<WorkflowAvailableActions>({
   canRollback: false,
   canCancel: false,
   transitions: [],
+  currentNodeRequireAttachment: false,
 })
 const usingUnifiedEngine = ref(false)
 const selectedTransitionTargetId = ref<string | number | null>(null)
@@ -857,6 +876,7 @@ const currentNodeDisplayName = computed(() => {
 })
 // 修复 P2：当前节点是否必填意见（来自后端 currentNodeRequireComment）
 const isCommentRequired = computed(() => Boolean(workflowRuntime.value.currentNodeRequireComment))
+const isAttachmentRequired = computed(() => Boolean(workflowRuntime.value.currentNodeRequireAttachment))
 const approvalCommentError = computed(() => {
   if (!isCommentRequired.value) return ''
   return approvalComment.value.trim() ? '' : '当前节点要求必须填写意见'
@@ -866,6 +886,12 @@ const showCurrentNodeStatus = computed(() => {
     && Boolean(detail.value?.workflowInstanceId)
     && workflowRuntime.value.currentNodeType !== 'start'
     && Boolean(currentNodeStatusName.value)
+})
+const attachmentCount = computed(() => {
+  const requirementAttachmentCount = detail.value?.attachments?.length || 0
+  const transitionAttachmentCount = (detail.value?.transitionAttachments || [])
+    .reduce((total, group) => total + (group.attachments?.length || 0), 0)
+  return requirementAttachmentCount + transitionAttachmentCount
 })
 
 const sortedApprovalEvaluations = computed(() => {
@@ -1263,9 +1289,8 @@ async function navigateAfterSubmit() {
       // 没有待办了，跳转到"全部需求"列表
       router.push({ path: '/requirements', query: { view: 'all' } })
     }
-  } catch (error) {
+  } catch {
     // 如果查询失败，默认跳转到"我的待办"
-    console.error('查询待办数量失败:', error)
     router.push({ path: '/requirements', query: { view: 'pending' } })
   }
 }
@@ -1702,6 +1727,10 @@ async function confirmApprovalTransition() {
   // 修复 P2：节点要求必填意见时，前端先校验
   if (isCommentRequired.value && !approvalComment.value.trim()) {
     ElMessage.warning('当前节点要求必须填写意见')
+    return
+  }
+  if (isAttachmentRequired.value && approvalAttachments.value.length === 0) {
+    ElMessage.warning('当前节点要求必须上传附件')
     return
   }
   await executeTransition({
@@ -2189,7 +2218,13 @@ onMounted(() => {
 .attachments-tab {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 12px;
+}
+
+.attachment-empty {
+  line-height: 22px;
+  font-size: 13px;
+  color: var(--color-muted-text);
 }
 
 .old-value {
@@ -2480,6 +2515,7 @@ onMounted(() => {
 .approval-evaluation-header {
   display: flex;
   gap: 12px;
+  align-items: flex-start;
 }
 
 .approval-evaluation-meta {
@@ -2492,13 +2528,24 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  margin-bottom: 8px;
+}
+
+.approval-evaluation-side {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  flex: 0 0 auto;
+  min-height: 32px;
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 .approval-evaluation-rating {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  line-height: 1;
 }
 
 .approval-evaluation-rating__label {
@@ -2506,17 +2553,49 @@ onMounted(() => {
   font-size: 12px;
 }
 
+.approval-evaluation-rating :deep(.el-rate) {
+  height: 18px;
+}
+
+.approval-evaluation-rating :deep(.el-rate__item) {
+  padding-right: 2px;
+}
+
+.approval-evaluation-rating :deep(.el-rate__icon) {
+  margin-right: 0;
+  font-size: 16px;
+}
+
 .approval-evaluation-content {
-  margin: 12px 0 0 44px;
+  margin: 10px 0 0 44px;
   color: var(--color-text-primary);
   line-height: 1.6;
   white-space: pre-wrap;
 }
 
-.approval-evaluation-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 8px;
+.approval-evaluation-supplement-button {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: 16px;
+  border-radius: 4px;
+}
+
+.approval-evaluation-supplement-button:hover {
+  background: var(--el-color-primary-light-9);
+}
+
+@media (max-width: 768px) {
+  .approval-evaluation-header {
+    flex-wrap: wrap;
+  }
+
+  .approval-evaluation-side {
+    width: calc(100% - 44px);
+    margin-left: 44px;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
 }
 
 .approval-supplement-list {
@@ -2561,11 +2640,6 @@ onMounted(() => {
   color: var(--color-text-primary);
   line-height: 1.6;
   white-space: pre-wrap;
-}
-
-.approval-evaluation-content--empty {
-  color: #c0c4cc;
-  font-style: italic;
 }
 
 .approval-dialog-tip {
@@ -2646,21 +2720,46 @@ onMounted(() => {
 
 /* 审批评价中的附件展示 */
 .approval-evaluation-attachments {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
   margin-top: 6px;
-  padding-left: 4px;
+  min-width: 0;
+}
+
+.approval-evaluation-attachments--main {
+  margin-left: 44px;
 }
 
 .approval-evaluation-attachments__label {
+  flex: 0 0 auto;
+  line-height: 20px;
   font-size: 12px;
   color: var(--color-text-secondary);
-  margin-right: 4px;
+}
+
+.approval-evaluation-attachments__list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.approval-evaluation-attachments__list li {
+  min-width: 0;
+  line-height: 20px;
 }
 
 .approval-evaluation-attachments__link {
   font-size: 12px;
   color: var(--color-primary);
   cursor: pointer;
-  margin-right: 8px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .approval-evaluation-attachments__link:hover {

@@ -57,8 +57,9 @@ export function setupGuards(router: Router) {
       }
     }
 
-    // 无组织用户首次登录：必须先绑定组织，全局拦截去往非绑定页的导航
-    if (userStore.needOrgBind && to.path !== '/org-bind-placeholder') {
+    // 无组织用户首次登录：必须先绑定组织，拦截去往非 dashboard 页的导航
+    // dashboard 页面挂载了 OrgBindDialog，放行让弹窗展示即可，避免 next('/dashboard') 死循环
+    if (userStore.needOrgBind && to.path !== '/dashboard') {
       next('/dashboard')
       return
     }

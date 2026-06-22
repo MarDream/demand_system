@@ -19,10 +19,18 @@ const visible = computed({
   },
 })
 
+function normalizeArray<T>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[]
+  const data = (value as any)?.data
+  if (Array.isArray(data)) return data as T[]
+  if (Array.isArray(data?.data)) return data.data as T[]
+  return []
+}
+
 async function loadTree() {
   loading.value = true
   try {
-    orgTree.value = (await getOrgTree()) as OrgNode[]
+    orgTree.value = normalizeArray<OrgNode>(await getOrgTree())
   } catch (e) {
     // ignore, request interceptor already toasts
   } finally {

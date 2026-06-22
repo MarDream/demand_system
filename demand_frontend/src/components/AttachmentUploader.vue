@@ -18,7 +18,10 @@
     >
       <div class="upload-zone__content">
         <el-icon :size="24" class="upload-zone__icon"><Upload /></el-icon>
-        <span class="upload-zone__text">点击上传、拖拽文件/文件夹或粘贴截图至此处</span>
+        <span class="upload-zone__text">
+          <span v-if="required" class="upload-zone__required">*</span>
+          点击上传、拖拽文件/文件夹或粘贴截图至此处
+        </span>
       </div>
     </div>
 
@@ -87,6 +90,7 @@ interface Props {
   modelValue: RequirementAttachment[]
   maxSize?: number // MB
   showPreview?: boolean
+  required?: boolean
 }
 
 interface Emits {
@@ -97,6 +101,7 @@ interface Emits {
 const props = withDefaults(defineProps<Props>(), {
   maxSize: 50,
   showPreview: true,
+  required: false,
 })
 
 const emit = defineEmits<Emits>()
@@ -379,6 +384,11 @@ function formatAttachmentTime(time: string): string {
 .upload-zone__text {
   font-size: 14px;
   color: var(--el-text-color-secondary);
+}
+
+.upload-zone__required {
+  margin-right: 4px;
+  color: var(--el-color-danger);
 }
 
 .attachment-uploading {

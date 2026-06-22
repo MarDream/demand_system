@@ -138,76 +138,72 @@
               </el-dropdown>
             </AppButton>
             <AppButton permission="button:user:update" @click="showTodo('调整排序')">调整排序</AppButton>
+            <el-button :icon="Setting" circle aria-label="列表字段设置" title="列表字段设置" @click="openColumnConfig" />
           </div>
 
           <el-table :data="userList" border class="member-table" @selection-change="selectedUsers = $event">
             <el-table-column type="selection" width="48" />
-            <el-table-column label="姓名" min-width="220">
-              <template #default="{ row }">
-                <div class="member-cell">
-                  <el-avatar :size="34" :src="row.avatar || undefined">{{ avatarText(row) }}</el-avatar>
-                  <div>
-                    <div class="member-name">
-                      {{ row.realName || row.username }}
-                      <el-tag v-if="row.id === 1" size="small" type="primary">主管理员</el-tag>
+            <template v-for="col in visibleColumns" :key="col.key">
+              <el-table-column
+                :label="col.label"
+                :width="col.width"
+                :min-width="col.minWidth"
+                :align="col.align || 'center'"
+                :fixed="col.fixed"
+                :prop="col.key === 'email' ? 'email' : undefined"
+                :show-overflow-tooltip="col.key === 'email'"
+              >
+                <template v-if="col.key === 'realName'" #default="{ row }">
+                  <div class="member-cell">
+                    <el-avatar :size="34" :src="row.avatar || undefined">{{ avatarText(row) }}</el-avatar>
+                    <div>
+                      <div class="member-name">
+                        {{ row.realName || row.username }}
+                        <el-tag v-if="row.id === 1" size="small" type="primary">主管理员</el-tag>
+                      </div>
+                      <div class="member-sub">{{ row.username }}</div>
                     </div>
-                    <div class="member-sub">{{ row.username }}</div>
                   </div>
-                </div>
-              </template>
-            </el-table-column>
-            <el-table-column label="所属组织" min-width="140">
-              <template #default="{ row }">{{ orgName(row.orgId) || '-' }}</template>
-            </el-table-column>
-            <el-table-column label="账号状态" width="140">
-              <template #default="{ row }">
-                <span class="status-dot" :class="{ 'is-disabled': row.status !== 'active' }" />
-                {{ row.status === 'active' ? '正常' : '停用' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="角色" min-width="140">
-              <template #default="{ row }">{{ row.systemRole || '-' }}</template>
-            </el-table-column>
-            <el-table-column label="工号" width="120">
-              <template #default="{ row }">{{ row.jobNumber || '-' }}</template>
-            </el-table-column>
-            <el-table-column label="手机号" width="140">
-              <template #default="{ row }">{{ maskPhone(row.phone) }}</template>
-            </el-table-column>
-            <el-table-column prop="email" label="邮箱" min-width="190" show-overflow-tooltip />
-            <el-table-column label="员工UserID" min-width="150">
-              <template #default="{ row }">{{ row.username }}</template>
-            </el-table-column>
-            <el-table-column label="操作" width="112" fixed="right">
-              <template #default="{ row }">
-                <div class="table-action-icons">
-                  <AppButton link type="primary" size="small" permission="button:user:update" @click="handleEdit(row)">
-                    <el-icon><Edit /></el-icon>
-                  </AppButton>
-                <el-dropdown @command="(command: string) => handleUserCommand(command, row)">
-                      <el-button link type="primary" size="small" title="更多操作">
-                        <el-icon><MoreFilled /></el-icon>
-                      </el-button>
-                  <template #dropdown>
-                    <el-dropdown-menu>
-                      <el-dropdown-item v-if="hasPermission('button:user:update')" command="reset">
-                        <el-icon><Key /></el-icon>
-                        重置密码
-                      </el-dropdown-item>
-                      <el-dropdown-item v-if="hasPermission('button:user:update')" command="toggle">
-                        <el-icon><SwitchButton /></el-icon>
-                        {{ row.status === 'active' ? '停用' : '启用' }}
-                      </el-dropdown-item>
-                      <el-dropdown-item v-if="hasPermission('button:user:delete')" command="delete" divided>
-                        <el-icon><Delete /></el-icon>
-                        删除
-                      </el-dropdown-item>
-                    </el-dropdown-menu>
-                  </template>
-                </el-dropdown>
-                </div>
-              </template>
-            </el-table-column>
+                </template>
+                <template v-else-if="col.key === 'orgName'" #default="{ row }">{{ orgName(row.orgId) || '-' }}</template>
+                <template v-else-if="col.key === 'status'" #default="{ row }">
+                  <span class="status-dot" :class="{ 'is-disabled': row.status !== 'active' }" />
+                  {{ row.status === 'active' ? '正常' : '停用' }}
+                </template>
+                <template v-else-if="col.key === 'systemRole'" #default="{ row }">{{ row.systemRole || '-' }}</template>
+                <template v-else-if="col.key === 'jobNumber'" #default="{ row }">{{ row.jobNumber || '-' }}</template>
+                <template v-else-if="col.key === 'phone'" #default="{ row }">{{ maskPhone(row.phone) }}</template>
+                <template v-else-if="col.key === 'username'" #default="{ row }">{{ row.username }}</template>
+                <template v-else-if="col.key === 'operations'" #default="{ row }">
+                  <div class="table-action-icons">
+                    <AppButton link type="primary" size="small" permission="button:user:update" @click="handleEdit(row)">
+                      <el-icon><Edit /></el-icon>
+                    </AppButton>
+                  <el-dropdown @command="(command: string) => handleUserCommand(command, row)">
+                        <el-button link type="primary" size="small" title="更多操作">
+                          <el-icon><MoreFilled /></el-icon>
+                        </el-button>
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item v-if="hasPermission('button:user:update')" command="reset">
+                          <el-icon><Key /></el-icon>
+                          重置密码
+                        </el-dropdown-item>
+                        <el-dropdown-item v-if="hasPermission('button:user:update')" command="toggle">
+                          <el-icon><SwitchButton /></el-icon>
+                          {{ row.status === 'active' ? '停用' : '启用' }}
+                        </el-dropdown-item>
+                        <el-dropdown-item v-if="hasPermission('button:user:delete')" command="delete" divided>
+                          <el-icon><Delete /></el-icon>
+                          删除
+                        </el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
+                  </div>
+                </template>
+              </el-table-column>
+            </template>
           </el-table>
           </template>
 
@@ -573,16 +569,84 @@
         </div>
       </template>
     </el-drawer>
+
+    <!-- 列配置弹窗 -->
+    <el-dialog
+      v-model="showColumnConfig"
+      title="列表字段设置"
+      width="860px"
+      class="column-config-dialog"
+      @opened="initSelectedColumnSortable"
+      @close="handleColumnConfigClose"
+    >
+      <div class="column-config">
+        <section class="column-config__panel column-config__panel--available">
+          <div class="column-config__panel-title">备选字段</div>
+          <div class="column-config__panel-body">
+            <div
+              v-for="group in columnGroups"
+              :key="group.title"
+              class="column-config__group"
+            >
+              <div class="column-config__group-title">{{ group.title }}</div>
+              <el-checkbox-group v-model="draftColumnKeys" class="column-config__checkbox-grid">
+                <el-checkbox
+                  v-for="col in group.columns"
+                  :key="col.key"
+                  :value="col.key"
+                  class="column-config__checkbox"
+                >
+                  {{ col.label }}
+                </el-checkbox>
+              </el-checkbox-group>
+            </div>
+          </div>
+        </section>
+        <section class="column-config__panel column-config__panel--selected">
+          <div class="column-config__panel-title">当前选定字段</div>
+          <div ref="selectedColumnListRef" class="column-config__selected-list">
+            <div
+              v-for="col in draftSelectedColumns"
+              :key="col.key"
+              class="column-config__selected-item"
+              :data-key="col.key"
+            >
+              <el-icon class="column-config__drag-handle"><Rank /></el-icon>
+              <span class="column-config__selected-label">{{ col.label }}</span>
+              <el-button
+                link
+                :icon="Close"
+                class="column-config__remove"
+                :aria-label="`移除${col.label}`"
+                @click="removeDraftColumn(col.key)"
+              />
+            </div>
+            <el-empty
+              v-if="draftSelectedColumns.length === 0"
+              description="暂无选定字段"
+              :image-size="72"
+              class="column-config__empty"
+            />
+          </div>
+        </section>
+      </div>
+      <template #footer>
+        <el-button @click="handleCancelColumnConfig">取消</el-button>
+        <el-button type="primary" @click="saveColumns">确定</el-button>
+      </template>
+    </el-dialog>
   </PageContainer>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, type Component } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, type Component } from 'vue'
+import Sortable, { type SortableEvent } from 'sortablejs'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeft,
   ArrowDown,
   ArrowRight,
+  Close,
   Clock,
   Connection,
   Delete,
@@ -595,6 +659,7 @@ import {
   OfficeBuilding,
   Operation,
   Plus,
+  Rank,
   Search,
   Setting,
   Stamp,
@@ -614,6 +679,7 @@ import type { RoleItem } from '@/api/modules/menu'
 import { useUserStore } from '@/stores/modules/user'
 import { useCollapsibleSidebar } from '@/composables/useCollapsibleSidebar'
 import { usePermission } from '@/composables/usePermission'
+import { getColumnConfig, saveColumnConfig } from '@/api/modules/requirement'
 
 interface FlatOrgNode {
   key: string
@@ -647,6 +713,140 @@ interface UserForm {
   roleId: number | null
   status: string
 }
+
+// ── 列表字段设置 ──
+interface ColumnDef {
+  key: string
+  label: string
+  group?: string
+  width?: number
+  minWidth?: number
+  align?: string
+  fixed?: string | false
+}
+
+const allColumns: ColumnDef[] = [
+  { key: 'realName', label: '姓名', group: '基础字段', minWidth: 220, fixed: false },
+  { key: 'orgName', label: '所属组织', group: '基础字段', minWidth: 140 },
+  { key: 'status', label: '账号状态', group: '基础字段', width: 140 },
+  { key: 'systemRole', label: '角色', group: '基础字段', minWidth: 140 },
+  { key: 'jobNumber', label: '工号', group: '基础字段', width: 120 },
+  { key: 'phone', label: '手机号', group: '联系信息', width: 140 },
+  { key: 'email', label: '邮箱', group: '联系信息', minWidth: 190 },
+  { key: 'username', label: '员工UserID', group: '联系信息', minWidth: 150 },
+  { key: 'operations', label: '操作', width: 112, fixed: 'right' },
+]
+
+const defaultColumnKeys = ['realName', 'orgName', 'status', 'systemRole', 'jobNumber', 'phone', 'email', 'username', 'operations']
+
+const selectedColumnKeys = ref<string[]>([...defaultColumnKeys])
+const draftColumnKeys = ref<string[]>([])
+const showColumnConfig = ref(false)
+const selectedColumnListRef = ref<HTMLElement>()
+let selectedColumnSortable: Sortable | null = null
+
+const configurableColumns = computed(() => allColumns.filter(c => c.key !== 'operations'))
+
+const columnGroups = computed(() => {
+  const groupOrder = ['基础字段', '联系信息']
+  const grouped = new Map<string, ColumnDef[]>()
+  configurableColumns.value.forEach((column) => {
+    const groupName = column.group || '其他'
+    if (!grouped.has(groupName)) grouped.set(groupName, [])
+    grouped.get(groupName)!.push(column)
+  })
+  return groupOrder
+    .filter(g => grouped.has(g))
+    .map(g => ({ title: g, columns: grouped.get(g)! }))
+})
+
+const draftSelectedColumns = computed(() => {
+  const columnMap = new Map(configurableColumns.value.map(c => [c.key, c]))
+  return draftColumnKeys.value
+    .map(key => columnMap.get(key))
+    .filter((c): c is ColumnDef => Boolean(c))
+})
+
+const visibleColumns = computed(() => {
+  const columnMap = new Map(allColumns.map(c => [c.key, c]))
+  const cols = selectedColumnKeys.value
+    .map(key => columnMap.get(key))
+    .filter((c): c is ColumnDef => Boolean(c))
+  if (!cols.find(c => c.key === 'operations')) {
+    cols.push(allColumns.find(c => c.key === 'operations')!)
+  }
+  return cols
+})
+
+function openColumnConfig() {
+  draftColumnKeys.value = selectedColumnKeys.value.filter(key => key !== 'operations')
+  showColumnConfig.value = true
+}
+
+async function initSelectedColumnSortable() {
+  await nextTick()
+  selectedColumnSortable?.destroy()
+  if (!selectedColumnListRef.value) return
+  selectedColumnSortable = Sortable.create(selectedColumnListRef.value, {
+    animation: 150,
+    handle: '.column-config__drag-handle',
+    draggable: '.column-config__selected-item',
+    ghostClass: 'column-config__selected-item--ghost',
+    onEnd: handleColumnSortEnd,
+  })
+}
+
+function handleColumnSortEnd(evt: SortableEvent) {
+  const { oldIndex, newIndex } = evt
+  if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return
+  const keys = [...draftColumnKeys.value]
+  const [moved] = keys.splice(oldIndex, 1)
+  if (!moved) return
+  keys.splice(newIndex, 0, moved)
+  draftColumnKeys.value = keys
+}
+
+function removeDraftColumn(key: string) {
+  draftColumnKeys.value = draftColumnKeys.value.filter(k => k !== key)
+}
+
+function handleCancelColumnConfig() {
+  showColumnConfig.value = false
+}
+
+function handleColumnConfigClose() {
+  selectedColumnSortable?.destroy()
+  selectedColumnSortable = null
+}
+
+function normalizeColumnKeys(keys: string[]) {
+  const allowedKeys = new Set(configurableColumns.value.map(c => c.key))
+  return Array.from(new Set(keys.filter(key => key !== 'operations' && allowedKeys.has(key))))
+}
+
+async function loadColumnConfig() {
+  try {
+    const res = await getColumnConfig('user_list')
+    if (res && Array.isArray(res)) {
+      selectedColumnKeys.value = [...normalizeColumnKeys(res), 'operations']
+    }
+  } catch {
+    // 使用默认配置
+  }
+}
+
+async function saveColumns() {
+  try {
+    const keys = normalizeColumnKeys(draftColumnKeys.value)
+    await saveColumnConfig('user_list', keys)
+    selectedColumnKeys.value = [...keys, 'operations']
+    ElMessage.success('列配置已保存')
+    showColumnConfig.value = false
+  } catch {
+    ElMessage.error('保存列配置失败')
+  }
+}
+// ── 列表字段设置 END ──
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -1230,11 +1430,10 @@ async function handleSubmit() {
     }
     dialogVisible.value = false
     await refreshUserManagement(shouldResetPage)
-  } catch (error: any) {
+  } catch {
     // 响应拦截器已显示错误消息，这里处理用户体验：
     // - 不关闭对话框，让用户可以修改后重新提交
     // - 对于用户名重复（code 50001）等场景，用户可以修改用户名后再试
-    console.error('提交失败:', error)
     // 对话框保持打开状态，用户可以修改表单重新提交
   } finally {
     submitting.value = false
@@ -1498,6 +1697,7 @@ function findOrgChildren(parentId: number) {
 }
 
 onMounted(async () => {
+  loadColumnConfig()
   await loadOrgData()
   const node = activeOrgNode.value
   if (node) {
@@ -1505,6 +1705,11 @@ onMounted(async () => {
   } else {
     await fetchList()
   }
+})
+
+onBeforeUnmount(() => {
+  selectedColumnSortable?.destroy()
+  selectedColumnSortable = null
 })
 
 function resolveInitialOrgKey() {
@@ -2077,5 +2282,121 @@ function resolveInitialOrgKey() {
   .filter-spacer {
     display: none;
   }
+}
+
+// ── 列表字段设置弹窗样式 ──
+.column-config {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 262px;
+  gap: 12px;
+  min-height: 520px;
+}
+
+.column-config__panel {
+  overflow: hidden;
+  border: 1px solid var(--el-border-color);
+  border-radius: 2px;
+  background: var(--el-bg-color);
+}
+
+.column-config__panel-title {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 16px;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+}
+
+.column-config__panel-body {
+  height: 478px;
+  overflow-y: auto;
+  padding: 14px 20px 20px;
+}
+
+.column-config__group + .column-config__group {
+  margin-top: 14px;
+}
+
+.column-config__group-title {
+  margin-bottom: 8px;
+  color: var(--el-text-color-secondary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.column-config__checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+  column-gap: 44px;
+  row-gap: 10px;
+}
+
+.column-config__checkbox {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  margin-right: 0;
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+}
+
+.column-config__selected-list {
+  height: 478px;
+  overflow-y: auto;
+  padding: 22px 18px;
+}
+
+.column-config__selected-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+}
+
+.column-config__selected-item--ghost {
+  opacity: 0.55;
+  background: var(--el-color-primary-light-9);
+}
+
+.column-config__drag-handle {
+  color: var(--el-text-color-placeholder);
+  cursor: grab;
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+.column-config__selected-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.column-config__remove {
+  color: var(--el-text-color-placeholder);
+
+  &:hover {
+    color: var(--el-color-danger);
+  }
+}
+
+.column-config__empty {
+  height: 100%;
+  justify-content: center;
+}
+
+:deep(.column-config-dialog .el-dialog__body) {
+  padding: 20px 22px;
+}
+
+:deep(.column-config-dialog .el-dialog__footer) {
+  padding: 16px 22px;
+  border-top: 1px solid var(--el-border-color-lighter);
 }
 </style>

@@ -170,10 +170,15 @@
               </el-form-item>
 
               <el-form-item v-if="nodeForm.nodeType !== 'end'" label="节点规则">
-                <el-checkbox v-model="nodeForm.allowCancel">允许取消</el-checkbox>
-                <el-checkbox v-if="showProjectRequiredCheckbox" v-model="nodeForm.projectRequired" style="margin-left: 16px">
-                  项目必选
-                </el-checkbox>
+                <div class="node-rule-grid">
+                  <el-checkbox v-model="nodeForm.allowCancel">允许取消</el-checkbox>
+                  <el-checkbox v-if="showProjectRequiredCheckbox" v-model="nodeForm.projectRequired">
+                    项目必选
+                  </el-checkbox>
+                  <el-checkbox v-model="nodeForm.requireAttachment">
+                    必须上传附件
+                  </el-checkbox>
+                </div>
               </el-form-item>
 
               <!-- 审批节点和抄送节点的配置 -->
@@ -476,6 +481,7 @@ const nodeForm = reactive<Partial<WorkflowNodeDTO> & {
   nodeStatusCode?: string
   allowCancel?: boolean
   projectRequired?: boolean
+  requireAttachment?: boolean
   assigneeRoleGroupId?: number
   assigneeOrgId?: number
   orgScopeType?: 'current' | 'include_children'
@@ -502,6 +508,7 @@ const nodeForm = reactive<Partial<WorkflowNodeDTO> & {
   nodeStatusCode: undefined,
   allowCancel: true,
   projectRequired: false,
+  requireAttachment: false,
   properties: {},
   countersignEnabled: false,
   countersignStrategy: 'ALL',
@@ -1592,7 +1599,9 @@ const applyEditorEditConfig = () => {
     edgeTextEdit: editable,
     edgeSelectedOutline: true,
     nodeSelectedOutline: true,
-    hideAnchors: false
+    hideAnchors: false,
+    stopScrollGraph: true,
+    stopZoomGraph: true
   })
 }
 
@@ -1624,6 +1633,8 @@ const initLogicFlow = () => {
     keyboard: {
       enabled: true
     },
+    stopScrollGraph: true,
+    stopZoomGraph: true,
     style: {
       rect: {
         rx: 5,
@@ -1723,6 +1734,7 @@ const handleNodeClick = (data: any) => {
     nodeStatusCode: data.properties?.nodeStatusCode ?? data.properties?.properties?.nodeStatusCode,
     allowCancel: data.properties?.allowCancel ?? data.properties?.properties?.allowCancel ?? true,
     projectRequired: data.properties?.projectRequired ?? data.properties?.properties?.projectRequired ?? false,
+    requireAttachment: data.properties?.requireAttachment ?? data.properties?.properties?.requireAttachment ?? false,
     // 会签配置
     countersignEnabled: data.properties?.countersignEnabled ?? false,
     countersignStrategy: data.properties?.countersignStrategy ?? 'ALL',
@@ -1825,6 +1837,7 @@ const handleSaveNodeConfig = () => {
       nodeStatusCode: nodeForm.nodeStatusCode,
       allowCancel: nodeForm.allowCancel,
       projectRequired: showProjectRequiredCheckbox.value ? nodeForm.projectRequired : false,
+      requireAttachment: nodeForm.requireAttachment,
       [SELECTED_NEXT_NODE_PROPERTY]: validNextNode,
       // 会签配置
       countersignEnabled: nodeForm.countersignEnabled,
@@ -2022,6 +2035,8 @@ const handleSave = async () => {
         positionY: node.y!,
         assigneeType: node.properties?.assigneeType,
         assigneeRoleId: node.properties?.assigneeRoleId,
+        assigneeRoleGroupId: node.properties?.assigneeRoleGroupId,
+        assigneeOrgId: node.properties?.assigneeOrgId,
         assigneeUserIds: node.properties?.assigneeUserIds,
         timeoutHours: node.properties?.timeoutHours,
         timeoutAction: node.properties?.timeoutAction,
@@ -2127,7 +2142,8 @@ const loadWorkflowConfig = async () => {
                 assigneeUserIds: node.assigneeUserIds,
                 timeoutHours: node.timeoutHours,
                 timeoutAction: node.timeoutAction,
-                nodeStatusCode: node.properties?.nodeStatusCode ?? (node.properties as any)?.properties?.nodeStatusCode
+                nodeStatusCode: node.properties?.nodeStatusCode ?? (node.properties as any)?.properties?.nodeStatusCode,
+                requireAttachment: node.properties?.requireAttachment ?? (node.properties as any)?.properties?.requireAttachment ?? false
               }
             })),
             edges: version.config.edges.map(edge => ({
@@ -2460,6 +2476,25 @@ onBeforeUnmount(() => {
   .node-config-panel,
   .edge-config-panel {
     padding: 16px;
+  }
+
+  .node-rule-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 24px;
+    row-gap: 8px;
+    width: 100%;
+
+    :deep(.el-checkbox) {
+      align-items: center;
+      height: 24px;
+      margin-right: 0;
+      margin-left: 0;
+    }
+
+    :deep(.el-checkbox__label) {
+      line-height: 24px;
+    }
   }
 }
 </style>

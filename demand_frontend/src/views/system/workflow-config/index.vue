@@ -230,7 +230,7 @@
               </el-table-column>
               <el-table-column label="停留时间" width="120">
                 <template #default="{ row }">
-                  {{ row.status === 'PENDING' ? getStayDuration(row.submittedAt) : '-' }}
+                  {{ getStayDuration(row.submittedAt, row.approvedAt) }}
                 </template>
               </el-table-column>
               <el-table-column label="结束时间" width="180">
@@ -705,18 +705,38 @@ function approvalTagType(status: string) {
   return map[status] || 'info'
 }
 
-function getStayDuration(submittedAt: string): string {
-  if (!submittedAt) return '-'
-  const start = new Date(submittedAt).getTime()
-  const now = Date.now()
-  const diff = now - start
-  const hours = Math.floor(diff / (1000 * 60 * 60))
-  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-  if (hours > 24) {
-    const days = Math.floor(hours / 24)
-    return `${days}天${hours % 24}小时`
+function getStayDuration(submittedAt?: string, approvedAt?: string): string {
+  const start = parseDateTime(submittedAt)
+  if (!start) return '-'
+  const end = parseDateTime(approvedAt) || Date.now()
+  const diffSeconds = Math.floor((end - start) / 1000)
+  if (!Number.isFinite(diffSeconds) || diffSeconds < 0) return '-'
+  return formatStayDuration(diffSeconds)
+}
+
+function parseDateTime(value?: string): number | null {
+  if (!value) return null
+  const timestamp = new Date(value.replace(' ', 'T')).getTime()
+  return Number.isFinite(timestamp) ? timestamp : null
+}
+
+function formatStayDuration(seconds: number): string {
+  if (seconds < 60) {
+    return `${seconds}秒`
   }
-  return `${hours}小时${minutes}分钟`
+
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) {
+    return `${minutes}分钟`
+  }
+
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) {
+    return `${hours}小时${minutes % 60}分钟`
+  }
+
+  const days = Math.floor(hours / 24)
+  return `${days}天${hours % 24}小时`
 }
 
 function getNodeTypeLabel(type?: string) {

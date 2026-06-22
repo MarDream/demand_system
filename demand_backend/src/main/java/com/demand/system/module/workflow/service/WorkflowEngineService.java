@@ -297,6 +297,10 @@ public class WorkflowEngineService {
                 && (request.getComment() == null || request.getComment().trim().isEmpty())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "当前节点要求必须填写意见");
         }
+        if (isAttachmentRequired(currentNode)
+                && (request.getAttachments() == null || request.getAttachments().isEmpty())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "当前节点要求必须上传附件");
+        }
 
         closeCurrentTransition(instance.getId());
 
@@ -624,6 +628,7 @@ public class WorkflowEngineService {
         actions.setLockVersion(instance.getLockVersion());
         // 修复 P2：返回当前节点是否必填意见，前端按此显示必填提示
         actions.setCurrentNodeRequireComment(isCommentRequired(currentNode));
+        actions.setCurrentNodeRequireAttachment(isAttachmentRequired(currentNode));
 
         Long operatorId = SecurityUtils.getCurrentUserId();
         boolean canOperate = hasOperatePermission(instance, requirement, currentNode, operatorId);
@@ -801,6 +806,18 @@ public class WorkflowEngineService {
             return false;
         }
         Object value = currentNode.getProperties().get("requireComment");
+        return Boolean.TRUE.equals(value);
+    }
+
+    /**
+     * 判断当前节点是否要求流转时必须上传附件。
+     * 读取节点 properties.requireAttachment。
+     */
+    private boolean isAttachmentRequired(WorkflowNode currentNode) {
+        if (currentNode == null || currentNode.getProperties() == null) {
+            return false;
+        }
+        Object value = currentNode.getProperties().get("requireAttachment");
         return Boolean.TRUE.equals(value);
     }
 

@@ -43,6 +43,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -247,8 +248,103 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             if (StringUtils.hasText(node.getNodeId()) && !node.getNodeId().startsWith(prefix)) {
                 node.setNodeId(prefix + node.getNodeId());
             }
+            normalizeNodeAssigneeFields(node);
             workflowNodeMapper.insert(node);
         }
+    }
+
+    private void normalizeNodeAssigneeFields(WorkflowNode node) {
+        if (node == null) {
+            return;
+        }
+        Map<String, Object> properties = node.getProperties();
+        if (properties != null) {
+            if (!StringUtils.hasText(node.getAssigneeType())) {
+                Object assigneeType = properties.get("assigneeType");
+                if (assigneeType != null) {
+                    node.setAssigneeType(String.valueOf(assigneeType));
+                }
+            }
+            if (node.getAssigneeRoleId() == null) {
+                node.setAssigneeRoleId(toInteger(properties.get("assigneeRoleId")));
+            }
+            if (node.getAssigneeRoleGroupId() == null) {
+                node.setAssigneeRoleGroupId(toLong(properties.get("assigneeRoleGroupId")));
+            }
+            if (node.getAssigneeOrgId() == null) {
+                node.setAssigneeOrgId(toLong(properties.get("assigneeOrgId")));
+            }
+            if (node.getAssigneeUserIds() == null) {
+                node.setAssigneeUserIds(toLongList(properties.get("assigneeUserIds")));
+            }
+        }
+
+        String assigneeType = node.getAssigneeType();
+        if (!StringUtils.hasText(assigneeType)) {
+            return;
+        }
+        if ("CREATOR".equals(assigneeType) || "PREV_APPROVER".equals(assigneeType)) {
+            node.setAssigneeRoleId(null);
+            node.setAssigneeRoleGroupId(null);
+            node.setAssigneeOrgId(null);
+            node.setAssigneeUserIds(null);
+        } else if ("SPECIFIED_USER".equals(assigneeType)) {
+            node.setAssigneeRoleId(null);
+            node.setAssigneeRoleGroupId(null);
+            node.setAssigneeOrgId(null);
+        } else if ("SPECIFIED_ROLE".equals(assigneeType)) {
+            node.setAssigneeRoleGroupId(null);
+            node.setAssigneeOrgId(null);
+            node.setAssigneeUserIds(null);
+        } else if ("SPECIFIED_ROLE_GROUP".equals(assigneeType)) {
+            node.setAssigneeRoleId(null);
+            node.setAssigneeOrgId(null);
+            node.setAssigneeUserIds(null);
+        } else if ("SPECIFIED_ORG".equals(assigneeType)) {
+            node.setAssigneeRoleId(null);
+            node.setAssigneeRoleGroupId(null);
+            node.setAssigneeUserIds(null);
+        }
+    }
+
+    private Integer toInteger(Object value) {
+        Long longValue = toLong(value);
+        if (longValue == null) {
+            return null;
+        }
+        return longValue.intValue();
+    }
+
+    private Long toLong(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        String text = String.valueOf(value).trim();
+        if (!StringUtils.hasText(text)) {
+            return null;
+        }
+        try {
+            return Long.parseLong(text);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private List<Long> toLongList(Object value) {
+        if (!(value instanceof List<?> rawList)) {
+            return null;
+        }
+        List<Long> ids = new ArrayList<>();
+        for (Object item : rawList) {
+            Long id = toLong(item);
+            if (id != null) {
+                ids.add(id);
+            }
+        }
+        return ids;
     }
 
     /**
