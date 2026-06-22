@@ -15,6 +15,10 @@ demand_frontend/node_modules/
 data/
 contracts/openapi/
 
+# Auto-generated type declarations (unplugin-auto-import / unplugin-vue-components)
+demand_frontend/auto-imports.d.ts
+demand_frontend/components.d.ts
+
 # IDE
 .idea/
 *.iml
