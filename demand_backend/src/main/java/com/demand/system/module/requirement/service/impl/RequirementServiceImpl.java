@@ -1147,10 +1147,6 @@ public class RequirementServiceImpl implements RequirementService {
                 && (message.contains("uk_requirement_no") || message.contains("requirement_no"));
     }
 
-    private WorkflowVersion findActiveWorkflowVersion(Long projectId) {
-        return workflowVersionResolver.findActiveVersion(normalizeProjectId(projectId)).orElse(null);
-    }
-
     private String resolveNodeStatusCode(WorkflowNode node) {
         if (node == null) return null;
         if (node.getProperties() != null) {

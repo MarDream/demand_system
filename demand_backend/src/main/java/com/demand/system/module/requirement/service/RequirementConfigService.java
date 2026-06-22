@@ -78,14 +78,37 @@ public class RequirementConfigService {
     /**
      * 仅返回已绑定活跃工作流版本的需求类型。
      * <p>用于创建需求时的类型下拉：未绑定或绑定版本不可用的类型不出现在选项中。
+     * <p>批量查询活跃版本集合，避免 N+1 问题。
      */
     public Result<List<RequirementTypeConfig>> listAvailableTypes() {
         List<RequirementTypeConfig> allTypes = typeMapper.selectList(
                 new LambdaQueryWrapper<RequirementTypeConfig>()
                         .orderByAsc(RequirementTypeConfig::getSortOrder)
         );
+        if (allTypes.isEmpty()) {
+            return Result.success(Collections.emptyList());
+        }
+
+        // 收集所有非空的 workflowVersionId，批量查询活跃版本
+        List<Long> versionIds = allTypes.stream()
+                .map(RequirementTypeConfig::getWorkflowVersionId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (versionIds.isEmpty()) {
+            return Result.success(Collections.emptyList());
+        }
+
+        // 一次查询所有活跃的工作流版本
+        java.util.Set<Long> activeVersionIds = workflowVersionMapper.selectList(
+                new LambdaQueryWrapper<WorkflowVersion>()
+                        .in(WorkflowVersion::getId, versionIds)
+                        .eq(WorkflowVersion::getIsActive, 1)
+                        .eq(WorkflowVersion::getActivationStatus, "active")
+        ).stream().map(WorkflowVersion::getId).collect(Collectors.toSet());
+
         List<RequirementTypeConfig> available = allTypes.stream()
-                .filter(type -> workflowVersionResolver.findActiveVersionForType(type.getCode()).isPresent())
+                .filter(t -> t.getWorkflowVersionId() != null && activeVersionIds.contains(t.getWorkflowVersionId()))
                 .collect(Collectors.toList());
         return Result.success(available);
     }
@@ -103,15 +126,14 @@ public class RequirementConfigService {
             return Result.fail("需求类型不存在: " + typeCode);
         }
         if (workflowVersionId != null) {
+            // 复用 Resolver 的活跃版本校验逻辑，避免重复 isActive/activationStatus 判断
             WorkflowVersion version = workflowVersionMapper.selectById(workflowVersionId);
             if (version == null) {
                 return Result.fail("工作流版本不存在: " + workflowVersionId);
             }
-            if (version.getIsActive() == null || version.getIsActive() != 1 || !"active".equals(version.getActivationStatus())) {
+            if (!Boolean.TRUE.equals(version.getIsActive()) || !"active".equals(version.getActivationStatus())) {
                 return Result.fail("只能绑定启用中的工作流版本");
             }
-        }
-        if (workflowVersionId != null) {
             typeConfig.setWorkflowVersionId(workflowVersionId);
             typeMapper.updateById(typeConfig);
         } else {
@@ -129,17 +151,19 @@ public class RequirementConfigService {
                 new LambdaQueryWrapper<RequirementTypeConfig>()
                         .orderByAsc(RequirementTypeConfig::getSortOrder)
         );
-        RequirementTypeConfig defaultType = allTypes.stream()
-                .filter(type -> Boolean.TRUE.equals(type.getIsDefault()))
-                .filter(type -> workflowVersionResolver.findActiveVersionForType(type.getCode()).isPresent())
-                .findFirst()
-                .orElse(null);
-        // 如果默认 type 不可用，取第一个可用的
-        if (defaultType == null) {
-            defaultType = allTypes.stream()
-                    .filter(type -> workflowVersionResolver.findActiveVersionForType(type.getCode()).isPresent())
-                    .findFirst()
-                    .orElse(null);
+        // 一次遍历：先找 isDefault 且有活跃工作流的，否则取第一个有活跃工作流的
+        RequirementTypeConfig defaultType = null;
+        for (RequirementTypeConfig type : allTypes) {
+            if (type.getWorkflowVersionId() == null) {
+                continue;
+            }
+            if (defaultType == null) {
+                defaultType = type;
+            }
+            if (Boolean.TRUE.equals(type.getIsDefault())) {
+                defaultType = type;
+                break;
+            }
         }
 
         RequirementFormConfigDTO config = new RequirementFormConfigDTO();

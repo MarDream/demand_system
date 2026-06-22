@@ -33,55 +33,32 @@ public class WorkflowVersionResolver {
     }
 
     /**
-     * 按需求类型编码解析活跃工作流版本 —— 新旧引擎共用的唯一入口。
-     * <p>解析链路：
-     * <ol>
-     *   <li>通过 {@code requirement_types.code} 查到 {@code workflow_version_id}</li>
-     *   <li>校验该版本行存在且 {@code is_active=1 AND activation_status='active'}</li>
-     *   <li>校验失败则抛 {@link WorkflowNotConfiguredException}</li>
-     * </ol>
-     *
-     * @param typeCode 需求类型编码（如 {@code Requirement} / {@code Order} / {@code Bug} / {@code FEATURE}）
-     * @return 活跃的工作流版本
-     * @throws WorkflowNotConfiguredException 未绑定或绑定版本不可用时抛出
+     * 按需求类型解析活跃工作流版本（不抛异常，返回 Optional）。
+     * <p>用于前端下拉选项过滤、getAvailableActions 等场景：未配置时返回 empty 而非异常。
+     * <p>避免 try-catch 异常控制流开销——直接做 null/状态判断。
      */
-    public WorkflowVersion resolveForType(String typeCode) {
+    public Optional<WorkflowVersion> findActiveVersionForType(String typeCode) {
         if (typeCode == null || typeCode.isBlank()) {
-            throw new WorkflowNotConfiguredException("(空)", "需求类型编码不能为空");
+            return Optional.empty();
         }
-
         RequirementTypeConfig typeConfig = requirementTypeMapper.selectByCode(typeCode);
-        if (typeConfig == null) {
-            throw new WorkflowNotConfiguredException(typeCode, "需求类型不存在");
+        if (typeConfig == null || typeConfig.getWorkflowVersionId() == null) {
+            return Optional.empty();
         }
-        if (typeConfig.getWorkflowVersionId() == null) {
-            throw new WorkflowNotConfiguredException(typeCode);
-        }
-
         WorkflowVersion version = workflowVersionMapper.selectById(typeConfig.getWorkflowVersionId());
-        if (version == null) {
-            throw new WorkflowNotConfiguredException(typeCode, "绑定的工作流版本不存在（ID=" + typeConfig.getWorkflowVersionId() + "）");
+        if (version == null || !Boolean.TRUE.equals(version.getIsActive()) || !"active".equals(version.getActivationStatus())) {
+            return Optional.empty();
         }
-        if (version.getIsActive() == null || version.getIsActive() != 1) {
-            throw new WorkflowNotConfiguredException(typeCode, "工作流版本已停用");
-        }
-        if (!"active".equals(version.getActivationStatus())) {
-            throw new WorkflowNotConfiguredException(typeCode, "工作流版本状态为 " + version.getActivationStatus() + "，需处于 active 状态");
-        }
-
-        return version;
+        return Optional.of(version);
     }
 
     /**
-     * 静默版 resolveForType —— 不抛异常，返回 Optional。
-     * <p>用于前端下拉选项过滤、getAvailableActions 等场景：未配置时返回 empty 而非异常。
+     * 按需求类型解析活跃工作流版本（抛异常版，用于必须存在工作流的业务场景）。
+     * 内部委托 {@link #findActiveVersionForType}，仅在结果为空时抛异常。
      */
-    public Optional<WorkflowVersion> findActiveVersionForType(String typeCode) {
-        try {
-            return Optional.of(resolveForType(typeCode));
-        } catch (WorkflowNotConfiguredException e) {
-            return Optional.empty();
-        }
+    public WorkflowVersion resolveForType(String typeCode) {
+        return findActiveVersionForType(typeCode)
+                .orElseThrow(() -> new WorkflowNotConfiguredException(typeCode));
     }
 
     /**
