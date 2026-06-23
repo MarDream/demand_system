@@ -14,15 +14,14 @@ import com.demand.system.module.requirement.mapper.RequirementMapper;
 import com.demand.system.module.requirement.mapper.RequirementTypeMapper;
 import com.demand.system.module.workflow.entity.WorkflowNode;
 import com.demand.system.module.workflow.entity.WorkflowNodePermission;
-import com.demand.system.module.workflow.entity.WorkflowState;
-import com.demand.system.module.workflow.entity.WorkflowTransition;
 import com.demand.system.module.workflow.engine.WorkflowVersionResolver;
+import com.demand.system.module.workflow.entity.WorkflowEdge;
 import com.demand.system.module.workflow.entity.WorkflowVersion;
+import com.demand.system.module.workflow.mapper.WorkflowEdgeMapper;
 import com.demand.system.module.workflow.mapper.WorkflowNodeMapper;
 import com.demand.system.module.workflow.mapper.WorkflowNodePermissionMapper;
-import com.demand.system.module.workflow.mapper.WorkflowStateMapper;
-import com.demand.system.module.workflow.mapper.WorkflowTransitionMapper;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
+import com.demand.system.module.workflow.support.WorkflowNodeUtils;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
@@ -30,11 +29,16 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayDeque;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -47,23 +51,21 @@ public class RequirementConfigService {
     private final PriorityMapper priorityMapper;
     private final RequirementMapper requirementMapper;
     private final WorkflowVersionMapper workflowVersionMapper;
-    private final WorkflowStateMapper workflowStateMapper;
     private final WorkflowVersionResolver workflowVersionResolver;
-    private final WorkflowTransitionMapper workflowTransitionMapper;
     private final WorkflowNodePermissionMapper workflowNodePermissionMapper;
     private final WorkflowNodeMapper workflowNodeMapper;
+    private final WorkflowEdgeMapper workflowEdgeMapper;
     private final ObjectMapper objectMapper;
 
-    public RequirementConfigService(RequirementTypeMapper typeMapper, PriorityMapper priorityMapper, RequirementMapper requirementMapper, WorkflowVersionMapper workflowVersionMapper, WorkflowStateMapper workflowStateMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowTransitionMapper workflowTransitionMapper, WorkflowNodePermissionMapper workflowNodePermissionMapper, WorkflowNodeMapper workflowNodeMapper, ObjectMapper objectMapper) {
+    public RequirementConfigService(RequirementTypeMapper typeMapper, PriorityMapper priorityMapper, RequirementMapper requirementMapper, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowNodePermissionMapper workflowNodePermissionMapper, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, ObjectMapper objectMapper) {
         this.typeMapper = typeMapper;
         this.priorityMapper = priorityMapper;
         this.requirementMapper = requirementMapper;
         this.workflowVersionMapper = workflowVersionMapper;
-        this.workflowStateMapper = workflowStateMapper;
         this.workflowVersionResolver = workflowVersionResolver;
-        this.workflowTransitionMapper = workflowTransitionMapper;
         this.workflowNodePermissionMapper = workflowNodePermissionMapper;
         this.workflowNodeMapper = workflowNodeMapper;
+        this.workflowEdgeMapper = workflowEdgeMapper;
         this.objectMapper = objectMapper;
     }
 
@@ -151,10 +153,27 @@ public class RequirementConfigService {
                 new LambdaQueryWrapper<RequirementTypeConfig>()
                         .orderByAsc(RequirementTypeConfig::getSortOrder)
         );
+        Set<Long> activeVersionIds = allTypes.stream()
+                .map(RequirementTypeConfig::getWorkflowVersionId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.collectingAndThen(Collectors.toList(), ids -> {
+                    if (ids.isEmpty()) {
+                        return Collections.<Long>emptySet();
+                    }
+                    return workflowVersionMapper.selectList(new LambdaQueryWrapper<WorkflowVersion>()
+                                    .in(WorkflowVersion::getId, ids)
+                                    .eq(WorkflowVersion::getIsActive, 1)
+                                    .eq(WorkflowVersion::getActivationStatus, "active"))
+                            .stream()
+                            .map(WorkflowVersion::getId)
+                            .collect(Collectors.toSet());
+                }));
+
         // 一次遍历：先找 isDefault 且有活跃工作流的，否则取第一个有活跃工作流的
         RequirementTypeConfig defaultType = null;
         for (RequirementTypeConfig type : allTypes) {
-            if (type.getWorkflowVersionId() == null) {
+            if (type.getWorkflowVersionId() == null || !activeVersionIds.contains(type.getWorkflowVersionId())) {
                 continue;
             }
             if (defaultType == null) {
@@ -184,8 +203,8 @@ public class RequirementConfigService {
             return Result.success(config);
         }
 
-        WorkflowState initialState = findInitialState(projectId);
-        if (initialState == null || !StringUtils.hasText(initialState.getName())) {
+        WorkflowNode initialNode = findInitialWaitNode(activeVersion.getId());
+        if (initialNode == null || !StringUtils.hasText(initialNode.getNodeId())) {
             config.setVisibleFields(Collections.emptyList());
             config.setRequiredFields(Collections.emptyList());
             return Result.success(config);
@@ -194,7 +213,7 @@ public class RequirementConfigService {
         WorkflowNodePermission permission = workflowNodePermissionMapper.selectOne(
                 new LambdaQueryWrapper<WorkflowNodePermission>()
                         .eq(WorkflowNodePermission::getWorkflowVersionId, activeVersion.getId())
-                        .eq(WorkflowNodePermission::getNodeId, initialState.getName().trim())
+                        .eq(WorkflowNodePermission::getNodeId, initialNode.getNodeId().trim())
                         .last("LIMIT 1")
         );
 
@@ -380,30 +399,57 @@ public class RequirementConfigService {
         return listPriorities();
     }
 
-    private WorkflowState findInitialState(Long projectId) {
-        Long runtimeProjectId = workflowVersionResolver.resolveRuntimeProjectId(projectId);
-        List<WorkflowState> states = workflowStateMapper.selectList(
-                new LambdaQueryWrapper<WorkflowState>()
-                        .eq(WorkflowState::getProjectId, runtimeProjectId)
-                        .orderByAsc(WorkflowState::getSortOrder)
-                        .orderByAsc(WorkflowState::getId)
-        );
-        if (states.isEmpty()) {
+    private WorkflowNode findInitialWaitNode(Long workflowVersionId) {
+        List<WorkflowNode> nodes = workflowNodeMapper.selectList(new LambdaQueryWrapper<WorkflowNode>()
+                .eq(WorkflowNode::getWorkflowVersionId, workflowVersionId)
+                .orderByAsc(WorkflowNode::getId));
+        if (nodes.isEmpty()) {
             return null;
         }
 
-        List<Long> targetStateIds = workflowTransitionMapper.selectList(
-                new LambdaQueryWrapper<WorkflowTransition>()
-                        .eq(WorkflowTransition::getProjectId, runtimeProjectId)
-        ).stream()
-                .map(WorkflowTransition::getToStateId)
-                .filter(Objects::nonNull)
-                .toList();
+        Map<String, WorkflowNode> nodeById = new HashMap<>();
+        for (WorkflowNode node : nodes) {
+            if (node != null && StringUtils.hasText(node.getNodeId())) {
+                nodeById.put(node.getNodeId(), node);
+            }
+        }
 
-        return states.stream()
-                .filter(state -> !targetStateIds.contains(state.getId()))
+        WorkflowNode startNode = nodes.stream()
+                .filter(node -> "start".equalsIgnoreCase(node.getNodeType()))
                 .findFirst()
-                .orElse(states.get(0));
+                .orElse(null);
+        if (startNode == null || !StringUtils.hasText(startNode.getNodeId())) {
+            return null;
+        }
+
+        List<WorkflowEdge> edges = workflowEdgeMapper.selectList(new LambdaQueryWrapper<WorkflowEdge>()
+                .eq(WorkflowEdge::getWorkflowVersionId, workflowVersionId)
+                .orderByAsc(WorkflowEdge::getId));
+        Map<String, List<WorkflowEdge>> outgoing = edges.stream()
+                .filter(edge -> StringUtils.hasText(edge.getSourceNodeId()) && StringUtils.hasText(edge.getTargetNodeId()))
+                .sorted(Comparator.comparing(WorkflowEdge::getId, Comparator.nullsLast(Long::compareTo)))
+                .collect(Collectors.groupingBy(WorkflowEdge::getSourceNodeId));
+
+        ArrayDeque<String> queue = new ArrayDeque<>();
+        Set<String> visited = new HashSet<>();
+        queue.add(startNode.getNodeId());
+        while (!queue.isEmpty()) {
+            String currentNodeId = queue.removeFirst();
+            if (!visited.add(currentNodeId)) {
+                continue;
+            }
+            for (WorkflowEdge edge : outgoing.getOrDefault(currentNodeId, Collections.emptyList())) {
+                WorkflowNode target = nodeById.get(edge.getTargetNodeId());
+                if (target == null) {
+                    continue;
+                }
+                if (WorkflowNodeUtils.isWaitNode(target.getNodeType()) && !"start".equalsIgnoreCase(target.getNodeType())) {
+                    return target;
+                }
+                queue.addLast(target.getNodeId());
+            }
+        }
+        return null;
     }
 
 

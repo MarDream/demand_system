@@ -40,23 +40,17 @@
                 <span v-else>-</span>
               </template>
             </el-table-column>
-            <el-table-column label="绑定工作流" min-width="180">
+            <el-table-column label="绑定工作流" min-width="160">
               <template #default="{ row }">
-                <el-select
-                  v-model="row.workflowVersionId"
-                  placeholder="未绑定"
-                  clearable
-                  size="small"
-                  style="width: 100%"
-                  @change="(val: number | null) => onBindWorkflow(row.code, val)"
-                >
-                  <el-option
-                    v-for="v in activeWorkflowVersions"
+                <template v-if="row.workflowVersionId">
+                  <el-tag
+                    v-for="v in activeWorkflowVersions.filter(wv => wv.id === row.workflowVersionId)"
                     :key="v.id"
-                    :label="`${v.name} (v${v.version})`"
-                    :value="v.id"
-                  />
-                </el-select>
+                    size="small"
+                    type="success"
+                  >{{ v.name }}</el-tag>
+                </template>
+                <span v-else style="color: var(--el-text-color-placeholder)">未绑定</span>
               </template>
             </el-table-column>
             <el-table-column label="操作" width="150" fixed="right">
@@ -185,6 +179,21 @@
         <el-form-item label="默认">
           <el-switch v-model="typeForm.isDefault" />
         </el-form-item>
+        <el-form-item label="绑定工作流">
+          <el-select
+            v-model="typeForm.workflowVersionId"
+            placeholder="未绑定"
+            clearable
+            style="width: 100%"
+          >
+            <el-option
+              v-for="v in activeWorkflowVersions"
+              :key="v.id"
+              :label="v.name"
+              :value="v.id"
+            />
+          </el-select>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="typeDialogVisible = false">取消</el-button>
@@ -259,7 +268,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { Plus, Rank, Operation, EditPen, Delete, Document } from '@element-plus/icons-vue'
 import { requirementConfigApi, type RequirementType, type Priority, type SortItem } from '@/api/modules/requirementConfig'
 import { nodeStatusApi, type NodeStatus, type SortItem as NodeStatusSortItem } from '@/api/modules/workflow-engine'
-import { getVersionHistory } from '@/api/modules/workflow-visual'
+import { listActiveWorkflowVersions } from '@/api/modules/workflow-visual'
 import type { WorkflowVersionDTO } from '@/types/workflow-visual'
 import { normalizeText } from '@/utils/format'
 import Sortable, { type SortableEvent } from 'sortablejs'
@@ -282,23 +291,12 @@ const activeWorkflowVersions = ref<WorkflowVersionDTO[]>([])
 
 const loadActiveWorkflowVersions = async () => {
   try {
-    // 使用 project_id=0 查全局版本列表，筛选 active 的
-    const res = await getVersionHistory(0) as any
+    const res = await listActiveWorkflowVersions() as any
     const list = Array.isArray(res) ? res : res?.data || []
     activeWorkflowVersions.value = list.filter((v: WorkflowVersionDTO) => v.activationStatus === 'active' && v.isActive === 1)
   } catch (error) {
-    // 静默处理
-  }
-}
-
-const onBindWorkflow = async (typeCode: string, workflowVersionId: number | null) => {
-  try {
-    await requirementConfigApi.bindWorkflow(typeCode, workflowVersionId)
-    ElMessage.success(workflowVersionId ? '绑定工作流成功' : '已解绑工作流')
-  } catch (error: any) {
-    ElMessage.error(error?.message || '绑定工作流失败')
-    // 回滚 UI：重新加载 types
-    await loadTypes()
+    ElMessage.warning('加载可绑定工作流失败，请稍后刷新重试')
+    activeWorkflowVersions.value = []
   }
 }
 
@@ -317,7 +315,8 @@ const typeForm = ref({
   code: '',
   color: 'var(--color-accent)',
   sortOrder: 0,
-  isDefault: false
+  isDefault: false,
+  workflowVersionId: null as number | null
 })
 
 const typeRules: FormRules = {
@@ -370,7 +369,8 @@ const openTypeDialog = (type?: RequirementType) => {
       code: type.code,
       color: type.color || 'var(--color-accent)',
       sortOrder: type.sortOrder || 0,
-      isDefault: type.isDefault || false
+      isDefault: type.isDefault || false,
+      workflowVersionId: type.workflowVersionId ?? null
     }
   } else {
     typeForm.value = {
@@ -378,7 +378,8 @@ const openTypeDialog = (type?: RequirementType) => {
       code: '',
       color: 'var(--color-accent)',
       sortOrder: 0,
-      isDefault: false
+      isDefault: false,
+      workflowVersionId: null
     }
   }
   typeDialogVisible.value = true
@@ -391,6 +392,8 @@ const saveType = async () => {
       try {
         if (editingType.value?.id) {
           await requirementConfigApi.updateType(editingType.value.id, typeForm.value as RequirementType)
+          // 同步绑定工作流
+          await requirementConfigApi.bindWorkflow(editingType.value.code, typeForm.value.workflowVersionId)
           ElMessage.success('更新成功')
         } else {
           await requirementConfigApi.createType(typeForm.value as RequirementType)

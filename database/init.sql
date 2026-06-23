@@ -575,9 +575,11 @@ CREATE TABLE `requirement_types` (
   `color` VARCHAR(20) DEFAULT NULL COMMENT '颜色',
   `sort_order` INT DEFAULT 0 COMMENT '排序',
   `is_default` TINYINT DEFAULT 0 COMMENT '是否默认',
+  `workflow_version_id` INT UNSIGNED DEFAULT NULL COMMENT '绑定的工作流版本ID',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  INDEX `idx_workflow_version_id` (`workflow_version_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='需求类型表';
 
 -- 31. 优先级表 priorities

@@ -434,6 +434,17 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
     }
 
     @Override
+    public List<WorkflowVersionDTO> listActiveVersions() {
+        return workflowVersionMapper.selectList(new LambdaQueryWrapper<WorkflowVersion>()
+                        .eq(WorkflowVersion::getIsActive, 1)
+                        .eq(WorkflowVersion::getActivationStatus, "active"))
+                .stream()
+                .sorted(WorkflowVersionUtils.byVersionDesc())
+                .map(this::toVersionDTO)
+                .collect(Collectors.toList());
+    }
+
+    @Override
     public WorkflowVersionDTO getVersionConfig(Long versionId) {
         WorkflowVersion version = workflowVersionMapper.selectById(versionId);
         if (version == null) {

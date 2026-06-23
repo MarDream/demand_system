@@ -329,11 +329,10 @@ public class WorkflowServiceImpl implements WorkflowService {
         publishVersionToRuntime(projectId, version.getDefinition());
 
         versionMapper.update(null, new UpdateWrapper<WorkflowVersion>()
-                .eq("project_id", projectId)
-                .set("is_active", 0));
-        versionMapper.update(null, new UpdateWrapper<WorkflowVersion>()
                 .eq("id", id)
-                .set("is_active", 1));
+                .set("is_active", 1)
+                .set("activation_status", "active")
+                .set("activated_at", LocalDateTime.now()));
     }
 
     @Override

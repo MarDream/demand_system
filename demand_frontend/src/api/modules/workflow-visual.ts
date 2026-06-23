@@ -41,6 +41,13 @@ export function getVersionHistory(projectId: number) {
 }
 
 /**
+ * 获取全部已启用工作流版本（需求类型绑定用）
+ */
+export function listActiveWorkflowVersions() {
+  return request.get<WorkflowVersionDTO[]>('/v1/workflows/versions/active') as unknown as Promise<WorkflowVersionDTO[]>
+}
+
+/**
  * 获取指定版本配置
  */
 export function getVersionConfig(versionId: number) {

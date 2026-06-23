@@ -35,7 +35,7 @@ public class WorkflowVersionController {
 
     @PostMapping("/publish")
     @Operation(summary = "发布工作流新版本", description = "提交工作流定义并进入审批流程")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'WORKFLOW_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
     public Result<Map<String, Object>> publishWorkflow(@RequestBody @Valid PublishWorkflowRequest request) {
         Long versionId = workflowVersionService.publishWorkflow(
                 request.getProjectId(),
@@ -46,13 +46,13 @@ public class WorkflowVersionController {
 
         Map<String, Object> result = new HashMap<>();
         result.put("versionId", versionId);
-        result.put("message", "工作流已提交审批，审批通过后将自动启用");
+        result.put("message", "工作流已提交审批，审批通过后可启用并绑定需求类型");
         return Result.success(result);
     }
 
     @PostMapping("/approve")
-    @Operation(summary = "审批工作流版本", description = "审批通过后自动启用，旧版本自动废弃")
-    @PreAuthorize("hasAuthority('workflow:approve') or hasRole('SUPER_ADMIN')")
+    @Operation(summary = "审批工作流版本", description = "审批通过后启用该版本，具体使用关系由需求类型绑定决定")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN')")
     public Result<Void> approveWorkflow(@RequestBody @Valid ApproveWorkflowRequest request) {
         workflowVersionService.approveWorkflow(
                 request.getVersionId(),
@@ -84,7 +84,7 @@ public class WorkflowVersionController {
 
     @PostMapping("/migrate")
     @Operation(summary = "批量迁移工作流版本", description = "将存量工单从旧版本迁移到新版本")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'WORKFLOW_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN')")
     public Result<WorkflowMigrationService.MigrationResult> migrateVersion(
             @RequestParam Long fromVersionId,
             @RequestParam Long toVersionId

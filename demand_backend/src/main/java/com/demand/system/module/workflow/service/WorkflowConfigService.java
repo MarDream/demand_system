@@ -31,6 +31,11 @@ public interface WorkflowConfigService {
     List<WorkflowVersionDTO> getVersionHistory(Long projectId);
 
     /**
+     * 获取全部已启用工作流版本
+     */
+    List<WorkflowVersionDTO> listActiveVersions();
+
+    /**
      * 获取指定版本配置
      */
     WorkflowVersionDTO getVersionConfig(Long versionId);

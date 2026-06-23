@@ -18,13 +18,13 @@ public class WorkflowRequirementType {
 
     private String name;
 
-    private Long projectId;
+    private String color;
 
     private Long workflowVersionId;
 
     private Integer sortOrder;
 
-    private Integer isEnabled;
+    private Integer isDefault;
 
     private LocalDateTime createdAt;
 
@@ -54,12 +54,12 @@ public class WorkflowRequirementType {
         this.name = name;
     }
 
-    public Long getProjectId() {
-        return projectId;
+    public String getColor() {
+        return color;
     }
 
-    public void setProjectId(Long projectId) {
-        this.projectId = projectId;
+    public void setColor(String color) {
+        this.color = color;
     }
 
     public Long getWorkflowVersionId() {
@@ -78,12 +78,12 @@ public class WorkflowRequirementType {
         this.sortOrder = sortOrder;
     }
 
-    public Integer getIsEnabled() {
-        return isEnabled;
+    public Integer getIsDefault() {
+        return isDefault;
     }
 
-    public void setIsEnabled(Integer isEnabled) {
-        this.isEnabled = isEnabled;
+    public void setIsDefault(Integer isDefault) {
+        this.isDefault = isDefault;
     }
 
     public LocalDateTime getCreatedAt() {

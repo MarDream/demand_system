@@ -6,9 +6,11 @@ import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.ErrorCode;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.workflow.dto.WorkflowVersionVO;
+import com.demand.system.module.workflow.entity.WorkflowApproval;
 import com.demand.system.module.workflow.entity.WorkflowRequirementType;
 import com.demand.system.module.workflow.entity.WorkflowInstance;
 import com.demand.system.module.workflow.entity.WorkflowVersion;
+import com.demand.system.module.workflow.mapper.WorkflowApprovalMapper;
 import com.demand.system.module.workflow.mapper.WorkflowRequirementTypeMapper;
 import com.demand.system.module.workflow.mapper.WorkflowInstanceMapper;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
@@ -37,6 +39,8 @@ public class WorkflowVersionService {
     private final WorkflowVersionMapper workflowVersionMapper;
     private final WorkflowRequirementTypeMapper requirementTypeMapper;
     private final WorkflowInstanceMapper workflowInstanceMapper;
+    private final WorkflowApprovalMapper workflowApprovalMapper;
+    private final WorkflowActivationService workflowActivationService;
     private final ProjectMapper projectMapper;
     private final UserMapper userMapper;
     private final ObjectMapper objectMapper;
@@ -44,12 +48,16 @@ public class WorkflowVersionService {
     public WorkflowVersionService(WorkflowVersionMapper workflowVersionMapper,
                                   WorkflowRequirementTypeMapper requirementTypeMapper,
                                   WorkflowInstanceMapper workflowInstanceMapper,
+                                  WorkflowApprovalMapper workflowApprovalMapper,
+                                  WorkflowActivationService workflowActivationService,
                                   ProjectMapper projectMapper,
                                   UserMapper userMapper,
                                   ObjectMapper objectMapper) {
         this.workflowVersionMapper = workflowVersionMapper;
         this.requirementTypeMapper = requirementTypeMapper;
         this.workflowInstanceMapper = workflowInstanceMapper;
+        this.workflowApprovalMapper = workflowApprovalMapper;
+        this.workflowActivationService = workflowActivationService;
         this.projectMapper = projectMapper;
         this.userMapper = userMapper;
         this.objectMapper = objectMapper;
@@ -71,7 +79,7 @@ public class WorkflowVersionService {
         String newConfigHash = computeConfigHash(definition);
 
         // 2. 查询当前活跃版本
-        WorkflowVersion currentActive = getActiveVersionByType(projectId, requirementTypeId);
+        WorkflowVersion currentActive = getActiveVersionByType(requirementTypeId);
 
         // 3. 检查是否实质性变更（configHash 包含：节点、边、执行顺序，不包含名称、描述）
         if (currentActive != null && currentActive.getConfigHash() != null
@@ -143,26 +151,27 @@ public class WorkflowVersionService {
             return;
         }
 
-        // 4. 审批通过：停用旧版本，启用新版本
+        // 4. 审批通过：先创建审批记录，再走完整激活管道（编译+权限写入+状态投射），保证运行时数据完整。
+        //    工作流允许多个版本同时启用，具体使用关系由需求类型绑定决定。
         WorkflowRequirementType requirementType = findRequirementTypeByVersion(versionId);
-        Long requirementTypeId = requirementType != null ? requirementType.getId() : null;
-        WorkflowVersion currentActive = requirementTypeId != null
-                ? getActiveVersionByType(version.getProjectId(), requirementTypeId)
-                : null;
 
-        if (currentActive != null) {
-            workflowVersionMapper.update(null, new LambdaUpdateWrapper<WorkflowVersion>()
-                    .eq(WorkflowVersion::getId, currentActive.getId())
-                    .set(WorkflowVersion::getIsActive, 0)
-                    .set(WorkflowVersion::getActivationStatus, "deprecated")
-                    .set(WorkflowVersion::getDeprecatedAt, LocalDateTime.now()));
-        }
+        // 4a. 创建审批记录（activate() 会校验最新审批记录必须为 approved）
+        WorkflowApproval approval = new WorkflowApproval();
+        approval.setWorkflowVersionId(versionId);
+        approval.setSubmitterId(version.getCreatorId());
+        approval.setApproverId(operatorId);
+        approval.setStatus("approved");
+        approval.setComment(comment);
+        approval.setSubmittedAt(version.getSubmittedForApprovalAt());
+        approval.setApprovedAt(LocalDateTime.now());
+        workflowApprovalMapper.insert(approval);
 
+        // 4b. 走完整激活管道：编译 definitionJson、写入节点权限、投射 workflow_states
+        workflowActivationService.activate(versionId);
+
+        // 4c. 补充审批信息到版本记录（activate() 已设置 isActive/activationStatus/activatedAt 等）
         workflowVersionMapper.update(null, new LambdaUpdateWrapper<WorkflowVersion>()
                 .eq(WorkflowVersion::getId, versionId)
-                .set(WorkflowVersion::getIsActive, 1)
-                .set(WorkflowVersion::getActivationStatus, "active")
-                .set(WorkflowVersion::getActivatedAt, LocalDateTime.now())
                 .set(WorkflowVersion::getApprovedBy, operatorId)
                 .set(WorkflowVersion::getApprovedAt, LocalDateTime.now())
                 .set(WorkflowVersion::getApprovalComment, comment));
@@ -227,11 +236,10 @@ public class WorkflowVersionService {
     /**
      * 获取当前活跃版本（根据工单类型）
      */
-    public WorkflowVersion getActiveVersionByType(Long projectId, Long requirementTypeId) {
+    public WorkflowVersion getActiveVersionByType(Long requirementTypeId) {
         WorkflowRequirementType requirementType = requirementTypeMapper.selectOne(
                 new LambdaQueryWrapper<WorkflowRequirementType>()
-                        .eq(WorkflowRequirementType::getId, requirementTypeId)
-                        .eq(WorkflowRequirementType::getProjectId, projectId));
+                        .eq(WorkflowRequirementType::getId, requirementTypeId));
 
         if (requirementType == null || requirementType.getWorkflowVersionId() == null) {
             return null;

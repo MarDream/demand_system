@@ -119,37 +119,40 @@
                   {{ row.latestSubmittedAt ? formatDateTime(row.latestSubmittedAt) : '-' }}
                 </template>
               </el-table-column>
-              <el-table-column label="操作" min-width="360" fixed="right">
+              <el-table-column label="操作" width="160" fixed="right">
                 <template #default="{ row }">
-                  <el-button link type="primary" @click="viewWorkflow(row)">查看</el-button>
-                  <el-button link type="primary" @click="editWorkflow(row)" v-permission="'button:workflow:update'" :disabled="versionApprovalStatus(row) === 'PENDING' || row.isActive === 1">编辑</el-button>
-                  <el-button link type="info" @click="focusApprovalHistory(row)">审核记录</el-button>
-                  <el-button
-                    link
-                    :type="row.isActive === 1 ? 'warning' : 'success'"
-                    @click="handleToggleActivation(row)"
-                    v-permission="'button:workflow:activate'"
-                  >
-                    {{ row.isActive === 1 ? '停用' : '启用' }}
-                  </el-button>
-                  <el-button
-                    link
-                    type="warning"
-                    :disabled="versionApprovalStatus(row) === 'PENDING'"
-                    @click="openVersionMetaDialog(row)"
-                    v-permission="'button:workflow:update'"
-                  >
-                    版本信息
-                  </el-button>
-                  <el-button
-                    link
-                    type="danger"
-                    :disabled="row.isActive === 1"
-                    @click="handleDeleteVersion(row)"
-                    v-permission="'button:workflow:delete'"
-                  >
-                    删除
-                  </el-button>
+                  <el-tooltip content="查看" placement="top">
+                    <el-button link type="primary" :icon="View" @click="viewWorkflow(row)" />
+                  </el-tooltip>
+                  <el-tooltip content="编辑" placement="top">
+                    <el-button
+                      link
+                      type="primary"
+                      :icon="EditPen"
+                      @click="editWorkflow(row)"
+                      v-permission="'button:workflow:update'"
+                      :disabled="versionApprovalStatus(row) === 'PENDING' || row.isActive === 1"
+                    />
+                  </el-tooltip>
+                  <el-tooltip :content="row.isActive === 1 ? '停用' : '启用'" placement="top">
+                    <el-button
+                      link
+                      :type="row.isActive === 1 ? 'warning' : 'success'"
+                      :icon="row.isActive === 1 ? SwitchButton : VideoPlay"
+                      @click="handleToggleActivation(row)"
+                      v-permission="'button:workflow:activate'"
+                    />
+                  </el-tooltip>
+                  <el-tooltip content="删除" placement="top">
+                    <el-button
+                      link
+                      type="danger"
+                      :icon="Delete"
+                      :disabled="row.isActive === 1"
+                      @click="handleDeleteVersion(row)"
+                      v-permission="'button:workflow:delete'"
+                    />
+                  </el-tooltip>
                 </template>
               </el-table-column>
             </el-table>
@@ -475,7 +478,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh, Setting, CircleCheck, CircleClose, Document, Delete } from '@element-plus/icons-vue'
+import { Plus, Refresh, Setting, CircleCheck, CircleClose, Document, Delete, View, EditPen, SwitchButton, VideoPlay } from '@element-plus/icons-vue'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import { formatDate as formatDateTime } from '@/utils/format'
@@ -918,7 +921,7 @@ async function handleToggleActivation(row: WorkflowVersionDTO) {
   try {
     await updateWorkflowVersionActivation(row.id, { active: targetActive })
     ElMessage.success(`工作流已${actionLabel}`)
-    await loadVersions()
+    await reloadAllData()
   } catch (error: unknown) {
     const issues = (error as { data?: WorkflowValidationIssue[] })?.data
     if (Array.isArray(issues) && issues.length > 0) {

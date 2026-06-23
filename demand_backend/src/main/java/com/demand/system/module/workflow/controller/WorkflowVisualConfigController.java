@@ -63,6 +63,15 @@ public class WorkflowVisualConfigController {
     }
 
     /**
+     * 获取全部已启用工作流版本（用于需求类型绑定）
+     */
+    @GetMapping("/workflows/versions/active")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config', 'button:requirement-config:update')")
+    public Result<List<WorkflowVersionDTO>> listActiveVersions() {
+        return Result.success(workflowConfigService.listActiveVersions());
+    }
+
+    /**
      * 获取指定版本配置
      */
     @GetMapping("/workflows/versions/{versionId}")

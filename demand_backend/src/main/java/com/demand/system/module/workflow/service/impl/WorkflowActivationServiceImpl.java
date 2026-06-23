@@ -3,6 +3,8 @@ package com.demand.system.module.workflow.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.demand.system.common.exception.BusinessException;
+import com.demand.system.module.requirement.entity.RequirementTypeConfig;
+import com.demand.system.module.requirement.mapper.RequirementTypeMapper;
 import com.demand.system.module.workflow.dto.WorkflowValidationIssue;
 import com.demand.system.module.workflow.dto.WorkflowVersionDTO;
 import com.demand.system.module.workflow.engine.WorkflowGraphCompiler;
@@ -34,6 +36,7 @@ public class WorkflowActivationServiceImpl implements WorkflowActivationService 
     private final WorkflowEdgeMapper workflowEdgeMapper;
     private final WorkflowNodePermissionMapper workflowNodePermissionMapper;
     private final WorkflowApprovalMapper workflowApprovalMapper;
+    private final RequirementTypeMapper requirementTypeMapper;
     private final WorkflowGraphValidator workflowGraphValidator;
     private final WorkflowGraphCompiler workflowGraphCompiler;
     private final WorkflowStateProjector workflowStateProjector;
@@ -43,6 +46,7 @@ public class WorkflowActivationServiceImpl implements WorkflowActivationService 
                                          WorkflowEdgeMapper workflowEdgeMapper,
                                          WorkflowNodePermissionMapper workflowNodePermissionMapper,
                                          WorkflowApprovalMapper workflowApprovalMapper,
+                                         RequirementTypeMapper requirementTypeMapper,
                                          WorkflowGraphValidator workflowGraphValidator,
                                          WorkflowGraphCompiler workflowGraphCompiler,
                                          WorkflowStateProjector workflowStateProjector) {
@@ -51,6 +55,7 @@ public class WorkflowActivationServiceImpl implements WorkflowActivationService 
         this.workflowEdgeMapper = workflowEdgeMapper;
         this.workflowNodePermissionMapper = workflowNodePermissionMapper;
         this.workflowApprovalMapper = workflowApprovalMapper;
+        this.requirementTypeMapper = requirementTypeMapper;
         this.workflowGraphValidator = workflowGraphValidator;
         this.workflowGraphCompiler = workflowGraphCompiler;
         this.workflowStateProjector = workflowStateProjector;
@@ -70,10 +75,6 @@ public class WorkflowActivationServiceImpl implements WorkflowActivationService 
         workflowGraphValidator.validateForActivationOrThrow(nodes, edges, version.getProjectId());
 
         WorkflowGraphCompiler.CompiledWorkflow compiled = workflowGraphCompiler.compile(versionId, nodes, edges);
-        workflowVersionMapper.update(null, new LambdaUpdateWrapper<WorkflowVersion>()
-                .eq(WorkflowVersion::getProjectId, version.getProjectId())
-                .set(WorkflowVersion::getIsActive, 0)
-                .set(WorkflowVersion::getActivationStatus, "inactive"));
 
         workflowNodePermissionMapper.delete(new LambdaQueryWrapper<WorkflowNodePermission>()
                 .eq(WorkflowNodePermission::getWorkflowVersionId, versionId));
@@ -104,6 +105,9 @@ public class WorkflowActivationServiceImpl implements WorkflowActivationService 
         version.setIsActive(0);
         version.setActivationStatus("inactive");
         workflowVersionMapper.updateById(version);
+        requirementTypeMapper.update(null, new LambdaUpdateWrapper<RequirementTypeConfig>()
+                .eq(RequirementTypeConfig::getWorkflowVersionId, versionId)
+                .set(RequirementTypeConfig::getWorkflowVersionId, null));
         return toVersionDTO(version);
     }
 

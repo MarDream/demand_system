@@ -156,7 +156,7 @@ async function loadIterations() {
 async function loadConfigOptions() {
   try {
     const [typesRes, prioritiesRes] = await Promise.all([
-      requirementConfigApi.listTypes(),
+      props.isEdit ? requirementConfigApi.listTypes() : requirementConfigApi.listAvailableTypes(),
       requirementConfigApi.listPriorities(),
     ])
     const typeList = Array.isArray(typesRes) ? typesRes : (typesRes as any)?.data || []
