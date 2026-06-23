@@ -292,21 +292,20 @@
 
               <!-- 条件节点配置 -->
               <template v-if="nodeForm.nodeType === 'condition'">
-                <el-form-item label="条件说明">
-                  <el-input
-                    v-model="nodeForm.properties!.conditionDesc"
-                    type="textarea"
-                    :rows="3"
-                    placeholder="请描述分支条件"
-                  />
-                </el-form-item>
+                <ConditionBranchConfig
+                  :condition-desc="nodeForm.properties?.conditionDesc || ''"
+                  :branches="nodeForm.conditionBranches || []"
+                  :disabled="isViewMode"
+                  @update:condition-desc="nodeForm.properties = { ...nodeForm.properties, conditionDesc: $event }"
+                  @update:branches="nodeForm.conditionBranches = $event"
+                />
               </template>
-
-              <el-form-item v-if="!isViewMode">
-                <AppButton type="primary" permission="button:workflow:update" @click="handleSaveNodeConfig">保存配置</AppButton>
-                <AppButton permission="button:workflow:update" @click="handleDeleteNode" type="danger">删除节点</AppButton>
-              </el-form-item>
             </el-form>
+
+            <div v-if="!isViewMode" class="node-config-footer">
+              <AppButton type="primary" :icon="Check" permission="button:workflow:update" @click="handleSaveNodeConfig">保存</AppButton>
+              <AppButton type="danger" :icon="Delete" permission="button:workflow:update" @click="handleDeleteNode">删除</AppButton>
+            </div>
           </div>
 
           <div v-else-if="selectedEdge" class="edge-config-panel">
@@ -330,12 +329,12 @@
                   placeholder="例如：priority == 'P0'"
                 />
               </el-form-item>
-
-              <el-form-item v-if="!isViewMode">
-                <AppButton type="primary" permission="button:workflow:update" @click="handleSaveEdgeConfig">保存配置</AppButton>
-                <AppButton permission="button:workflow:update" @click="handleDeleteEdge" type="danger">删除连线</AppButton>
-              </el-form-item>
             </el-form>
+
+            <div v-if="!isViewMode" class="node-config-footer">
+              <AppButton type="primary" :icon="Check" permission="button:workflow:update" @click="handleSaveEdgeConfig">保存</AppButton>
+              <AppButton type="danger" :icon="Delete" permission="button:workflow:update" @click="handleDeleteEdge">删除连线</AppButton>
+            </div>
           </div>
         </el-drawer>
       </div>
@@ -351,6 +350,7 @@ import AppButton from '@/components/common/AppButton.vue'
 import CountersignConfig from './components/CountersignConfig.vue'
 import ParallelConfig from './components/ParallelConfig.vue'
 import ConditionConfig from './components/ConditionConfig.vue'
+import ConditionBranchConfig from './components/ConditionBranchConfig.vue'
 import {
   ArrowLeft,
   DocumentCopy,
@@ -388,7 +388,10 @@ import type {
   WorkflowVersionMetaUpdateDTO,
   WorkflowNodeDTO,
   WorkflowEdgeDTO,
-  WorkflowConfigDTO
+  WorkflowConfigDTO,
+  ConditionBranch,
+  ConditionConfig as ConditionConfigType,
+  ConditionRule
 } from '@/types/workflow-visual'
 
 const router = useRouter()
@@ -491,6 +494,7 @@ const nodeForm = reactive<Partial<WorkflowNodeDTO> & {
   countersignApprovers?: number[]
   parallelType?: 'AND' | 'OR'
   parallelBranches?: Array<{ branchId: string; branchName: string; condition: { field?: string; operator?: string; value?: string } }>
+  conditionBranches?: ConditionBranch[]
 }>({
   nodeId: '',
   nodeType: 'approval',
@@ -515,7 +519,8 @@ const nodeForm = reactive<Partial<WorkflowNodeDTO> & {
   countersignMode: 'FIXED',
   countersignApprovers: [],
   parallelType: 'AND',
-  parallelBranches: []
+  parallelBranches: [],
+  conditionBranches: []
 })
 
 // 会签配置：需求提出人占位 ID（与 CountersignConfig 中保持一致）
@@ -554,13 +559,14 @@ const edgeForm = reactive({
   conditionExpr: ''
 })
 
-const edgeConditionModel = ref<{ logic: string; rules: Array<{ field: string; operator: string; value: string }> }>({
+const edgeConditionModel = ref<{ logic: 'AND' | 'OR'; rules: ConditionRule[] }>({
   logic: 'AND',
   rules: [{ field: 'type', operator: 'eq', value: '' }],
 })
 
-function onEdgeConditionModelUpdate(val: { logic: string; rules: Array<{ field: string; operator: string; value: string }> }) {
-  edgeConditionModel.value = val
+function onEdgeConditionModelUpdate(val: { logic: string; rules: ConditionRule[]; expr: string }) {
+  edgeConditionModel.value = { logic: (val.logic === 'OR' ? 'OR' : 'AND'), rules: val.rules }
+  edgeForm.conditionExpr = val.expr || ''
 }
 
 const NODE_LAYOUT_SIZE: Record<string, { width: number; height: number }> = {
@@ -1744,6 +1750,25 @@ const handleNodeClick = (data: any) => {
     parallelBranches: data.properties?.branches || [],
     properties: data.properties || {}
   })
+
+  // 条件节点：收集所有出边构建 conditionBranches
+  if (data.type === 'condition' && lf) {
+    const graphData = lf.getGraphData() as any
+    const nodeNameMap = new Map<string, string>()
+    ;(graphData.nodes || []).forEach((n: any) => {
+      if (n.id) nodeNameMap.set(n.id, n.text?.value || n.id)
+    })
+    const outEdges = (graphData.edges || []).filter((e: any) => e.sourceNodeId === data.id)
+    nodeForm.conditionBranches = outEdges.map((edge: any) => ({
+      edgeId: edge.id,
+      targetNodeId: edge.targetNodeId,
+      targetNodeName: nodeNameMap.get(edge.targetNodeId) || edge.targetNodeId,
+      label: edge.text?.value || '',
+      condition: edge.properties?.condition || { logic: 'AND', rules: [] }
+    }))
+  } else {
+    nodeForm.conditionBranches = []
+  }
   normalizeCurrentNodeProjectRequired()
 }
 
@@ -1757,6 +1782,16 @@ const handleEdgeClick = (data: any) => {
   // 填充表单
   edgeForm.label = data.text?.value || ''
   edgeForm.conditionExpr = data.properties?.condition?.expr || ''
+  // 从边数据还原结构化条件（修复 edgeConditionModel 不持久化 bug）
+  const savedCondition = data.properties?.condition
+  if (savedCondition?.rules?.length) {
+    edgeConditionModel.value = {
+      logic: savedCondition.logic === 'OR' ? 'OR' : 'AND',
+      rules: savedCondition.rules as ConditionRule[]
+    }
+  } else {
+    edgeConditionModel.value = { logic: 'AND', rules: [{ field: 'type', operator: 'eq', value: '' }] }
+  }
 }
 
 // 保存节点配置
@@ -1852,6 +1887,20 @@ const handleSaveNodeConfig = () => {
   lf.setProperties(nodeForm.nodeId!, nodeData.properties)
   lf.updateText(nodeForm.nodeId!, nodeForm.nodeName || '')
 
+  // 条件节点：将 conditionBranches 中的条件同步写回各边
+  if (nodeForm.nodeType === 'condition' && nodeForm.conditionBranches && lf) {
+    for (const branch of nodeForm.conditionBranches) {
+      const existingProps = lf.getProperties(branch.edgeId) || {}
+      lf.setProperties(branch.edgeId, {
+        ...existingProps,
+        condition: branch.condition
+      })
+      if (branch.label) {
+        lf.updateText(branch.edgeId, branch.label)
+      }
+    }
+  }
+
   ElMessage.success('节点配置已保存')
   configDirty.value = true
   drawerVisible.value = false
@@ -1864,6 +1913,8 @@ const handleSaveEdgeConfig = () => {
   const edgeProperties = {
     label: edgeForm.label,
     condition: {
+      logic: edgeConditionModel.value.logic || 'AND',
+      rules: edgeConditionModel.value.rules || [],
       expr: edgeForm.conditionExpr
     }
   }
@@ -2494,6 +2545,24 @@ onBeforeUnmount(() => {
 
     :deep(.el-checkbox__label) {
       line-height: 24px;
+    }
+  }
+
+  .node-config-footer {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 10px 16px;
+    margin: 16px -16px -16px;
+    background: var(--el-bg-color);
+    border-top: 1px solid var(--el-border-color-lighter);
+
+    :deep(.el-button) {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
     }
   }
 }

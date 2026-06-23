@@ -1,3 +1,26 @@
+// 条件规则
+export interface ConditionRule {
+  field: string
+  operator: 'eq' | 'ne' | 'in' | 'notIn' | 'isEmpty' | 'notEmpty' | 'matches'
+  value: string | string[]
+}
+
+// 条件配置（边上的条件数据）
+export interface ConditionConfig {
+  logic: 'AND' | 'OR'
+  rules: ConditionRule[]
+  expr?: string  // 只读预览，向后兼容
+}
+
+// 条件分支（条件节点面板使用）
+export interface ConditionBranch {
+  edgeId: string
+  targetNodeId: string
+  targetNodeName: string
+  label: string
+  condition: ConditionConfig
+}
+
 // LogicFlow 工作流可视化配置类型定义
 
 export interface WorkflowNodeDTO {
@@ -22,7 +45,7 @@ export interface WorkflowEdgeDTO {
   sourceNodeId: string
   targetNodeId: string
   label?: string
-  condition?: Record<string, any>
+  condition?: ConditionConfig | Record<string, any>
   properties?: Record<string, any>
 }
 
