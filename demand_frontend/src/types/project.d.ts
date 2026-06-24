@@ -7,6 +7,7 @@ export interface Project {
   leaderId?: number | null
   startDate?: string | null
   endDate?: string | null
+  contactPhone?: string | null
   creatorId: number
   status: string
   createdAt: string

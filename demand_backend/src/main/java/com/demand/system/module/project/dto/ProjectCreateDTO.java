@@ -21,6 +21,8 @@ public class ProjectCreateDTO {
 
     private LocalDate endDate;
 
+    private String contactPhone;
+
     public String getName() {
         return name;
     }
@@ -75,5 +77,13 @@ public class ProjectCreateDTO {
 
     public void setEndDate(LocalDate endDate) {
         this.endDate = endDate;
+    }
+
+    public String getContactPhone() {
+        return contactPhone;
+    }
+
+    public void setContactPhone(String contactPhone) {
+        this.contactPhone = contactPhone;
     }
 }

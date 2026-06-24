@@ -119,14 +119,8 @@ export function getRequirementChildren(parentId: number) {
   return request.get<ApiResponse<Requirement[]>>(`/v1/requirements/${parentId}/children`) as unknown as Promise<Requirement[]>
 }
 
-// 列配置 API
-export function getColumnConfig(pageKey: string) {
-  return request.get<ApiResponse<string[]>>(`/v1/column-config/${pageKey}`) as unknown as Promise<string[] | null>
-}
-
-export function saveColumnConfig(pageKey: string, columns: string[]) {
-  return request.put<ApiResponse>(`/v1/column-config/${pageKey}`, { columns }) as unknown as Promise<void>
-}
+// 列配置 API - 已抽取至 @/api/modules/columnConfig，下方保留转发兼容旧引用
+export { getColumnConfig, saveColumnConfig } from './columnConfig'
 
 // 需求模板 API
 export function getRequirementTemplateByType(typeCode: string) {

@@ -28,28 +28,31 @@
           <el-option label="需修改" value="需修改" />
         </el-select>
         <el-button type="primary" style="margin-left: 12px" @click="loadReviews">搜索</el-button>
+        <el-tooltip content="列表字段设置" style="margin-left: auto">
+          <el-button link :icon="Setting" @click="openColumnConfig" />
+        </el-tooltip>
       </div>
 
       <!-- 评审列表 -->
       <el-table v-loading="loading" :data="reviews" border style="width: 100%; margin-top: 16px">
-        <el-table-column label="需求ID" width="90">
+        <el-table-column v-if="isColumnVisible('requirementId')" label="需求ID" width="90">
           <template #default="{ row }">{{ row.requirementId }}</template>
         </el-table-column>
-        <el-table-column prop="requirementTitle" label="需求标题" min-width="200" />
-        <el-table-column label="评审结果" width="100">
+        <el-table-column v-if="isColumnVisible('requirementTitle')" prop="requirementTitle" label="需求标题" min-width="200" />
+        <el-table-column v-if="isColumnVisible('result')" label="评审结果" width="100">
           <template #default="{ row }">
             <el-tag :type="getResultType(row.result)">
               {{ row.result || '未评审' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="reviewerName" label="评审人" width="120" />
-        <el-table-column label="评审时间" width="180">
+        <el-table-column v-if="isColumnVisible('reviewerName')" prop="reviewerName" label="评审人" width="120" />
+        <el-table-column v-if="isColumnVisible('reviewedAt')" label="评审时间" width="180">
           <template #default="{ row }">
             {{ row.reviewedAt || '-' }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="100">
+        <el-table-column v-if="isColumnVisible('operations')" label="操作" width="100">
           <template #default="{ row }">
             <el-tooltip content="查看详情">
               <el-button v-permission="'button:review:view'" link type="primary" @click="viewDetail(row)"><el-icon><View /></el-icon></el-button>
@@ -126,20 +129,60 @@
         <AppButton type="primary" permission="button:review:submit" @click="submitReview">提交</AppButton>
       </template>
     </el-dialog>
+
+    <ColumnConfigDialog
+      v-model="showColumnConfig"
+      :column-groups="columnGroups"
+      :draft-selected-columns="draftSelectedColumns"
+      :draft-column-keys="draftColumnKeys"
+      @update:draft-column-keys="draftColumnKeys = $event"
+      @remove="removeDraftColumn"
+      @save="saveColumns"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { View, EditPen } from '@element-plus/icons-vue'
+import { View, EditPen, Setting } from '@element-plus/icons-vue'
 import { getReviews, updateReview } from '@/api/modules/review'
 import AppButton from '@/components/common/AppButton.vue'
+import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
+import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import type { Review } from '@/types/review'
 
-type ReviewRecord = Review
+const reviewAllColumns: ColumnDef[] = [
+  { key: 'requirementId', label: '需求ID', group: '基础字段', width: 90 },
+  { key: 'requirementTitle', label: '需求标题', group: '基础字段', minWidth: 200 },
+  { key: 'result', label: '评审结果', group: '状态信息', width: 100 },
+  { key: 'reviewerName', label: '评审人', group: '人员与时间', width: 120 },
+  { key: 'reviewedAt', label: '评审时间', group: '人员与时间', width: 180 },
+  { key: 'operations', label: '操作', width: 100 },
+]
+const reviewDefaultKeys = ['requirementId', 'requirementTitle', 'result', 'reviewerName', 'reviewedAt', 'operations']
 
-const reviews = ref<ReviewRecord[]>([])
+const {
+  showColumnConfig,
+  openColumnConfig,
+  saveColumns,
+  loadColumnConfig,
+  columnGroups,
+  draftSelectedColumns,
+  draftColumnKeys,
+  visibleColumns,
+  removeDraftColumn,
+} = useColumnConfig({
+  pageKey: 'review_list',
+  columns: reviewAllColumns,
+  defaultKeys: reviewDefaultKeys,
+})
+
+function isColumnVisible(key: string) {
+  return visibleColumns.value.some((c) => c.key === key)
+}
+
+const reviews = ref<Review[]>([])
 const filterRequirementId = ref('')
 const filterResult = ref('')
 const loading = ref(false)
@@ -150,7 +193,7 @@ const pagination = reactive({
 })
 const detailVisible = ref(false)
 const detailMode = ref<'view' | 'edit'>('view')
-const currentReview = ref<ReviewRecord | null>(null)
+const currentReview = ref<Review | null>(null)
 const reviewForm = ref({
   result: '',
   comment: '',
@@ -187,7 +230,7 @@ const loadReviews = async () => {
   }
 }
 
-const viewDetail = (row: ReviewRecord) => {
+const viewDetail = (row: Review) => {
   currentReview.value = { ...row }
   reviewForm.value = {
     result: row.result,
@@ -198,7 +241,7 @@ const viewDetail = (row: ReviewRecord) => {
   detailVisible.value = true
 }
 
-const editReview = (row: ReviewRecord) => {
+const editReview = (row: Review) => {
   currentReview.value = { ...row }
   reviewForm.value = {
     result: row.result,
@@ -231,6 +274,7 @@ function resolveErrorMessage(error: unknown, fallback: string) {
 
 onMounted(() => {
   loadReviews()
+  loadColumnConfig()
 })
 </script>
 

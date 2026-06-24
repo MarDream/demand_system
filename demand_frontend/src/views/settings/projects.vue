@@ -21,6 +21,9 @@
             </el-form>
           </template>
           <template #right>
+            <el-tooltip content="列表字段设置">
+              <el-button link :icon="Setting" @click="openColumnConfig" />
+            </el-tooltip>
             <input ref="importInputRef" type="file" accept=".xlsx,.xls" style="display: none" @change="handleImportFileChange" />
             <AppButton permission="button:project:template" @click="handleDownloadTemplate">
               <el-icon><Download /></el-icon> 模板
@@ -40,28 +43,29 @@
 
       <template #table>
         <el-table :data="projectList" v-loading="loading" border>
-        <el-table-column prop="name" label="项目名称" min-width="180" />
-        <el-table-column prop="team" label="归属团队" width="140">
+        <el-table-column v-if="isColumnVisible('name')" prop="name" label="项目名称" min-width="200" show-overflow-tooltip />
+        <el-table-column v-if="isColumnVisible('team')" prop="team" label="归属团队" min-width="120">
           <template #default="{ row }">{{ row.team || '-' }}</template>
         </el-table-column>
-        <el-table-column label="负责人" width="100">
+        <el-table-column v-if="isColumnVisible('leaderId')" label="负责人" min-width="100">
           <template #default="{ row }">{{ getLeaderName(row.leaderId) }}</template>
         </el-table-column>
-        <el-table-column label="起止时间" width="200">
-          <template #default="{ row }">
-            <span v-if="row.startDate">{{ row.startDate }} ~ {{ row.endDate || '无截止' }}</span>
-            <span v-else>-</span>
-          </template>
+        <el-table-column v-if="isColumnVisible('contactPhone')" prop="contactPhone" label="联系电话" min-width="130" />
+        <el-table-column v-if="isColumnVisible('startDate')" label="开始时间" min-width="120">
+          <template #default="{ row }">{{ row.startDate || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" width="100">
+        <el-table-column v-if="isColumnVisible('endDate')" label="结束时间" min-width="120">
+          <template #default="{ row }">{{ row.endDate || '-' }}</template>
+        </el-table-column>
+        <el-table-column v-if="isColumnVisible('status')" prop="status" label="状态" min-width="90">
           <template #default="{ row }">
             <el-tag :type="getStatusType(row)">{{ getStatusLabel(row) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="创建时间" width="180">
+        <el-table-column v-if="isColumnVisible('createdAt')" label="创建时间" min-width="160">
           <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="100" fixed="right">
+        <el-table-column v-if="isColumnVisible('operations')" label="操作" min-width="100" fixed="right">
           <template #default="{ row }">
             <AppButton type="primary" link size="small" permission="button:project:update" @click="handleEdit(row)">
               <el-icon><EditPen /></el-icon>
@@ -136,16 +140,26 @@
             <el-option v-for="u in userList" :key="u.id" :label="u.realName || u.username" :value="u.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="起止时间" prop="dateRange">
+        <el-form-item label="开始时间" prop="startDate">
           <el-date-picker
-            v-model="form.dateRange"
-            type="daterange"
-            range-separator="至"
-            start-placeholder="开始日期"
-            end-placeholder="截止日期"
+            v-model="form.startDate"
+            type="date"
+            placeholder="请选择开始日期"
             style="width: 100%"
             value-format="YYYY-MM-DD"
           />
+        </el-form-item>
+        <el-form-item label="结束时间" prop="endDate">
+          <el-date-picker
+            v-model="form.endDate"
+            type="date"
+            placeholder="请选择截止日期"
+            style="width: 100%"
+            value-format="YYYY-MM-DD"
+          />
+        </el-form-item>
+        <el-form-item label="联系电话" prop="contactPhone">
+          <el-input v-model="form.contactPhone" placeholder="请输入联系电话" />
         </el-form-item>
         <el-form-item label="描述">
           <el-input v-model="form.description" type="textarea" :rows="4" placeholder="请输入项目描述" />
@@ -156,13 +170,23 @@
         <el-button v-permission="isEdit ? 'button:project:update' : 'button:project:create'" type="primary" :loading="submitting" @click="handleSubmit">确定</el-button>
       </template>
     </el-dialog>
+
+    <ColumnConfigDialog
+      v-model="showColumnConfig"
+      :column-groups="columnGroups"
+      :draft-selected-columns="draftSelectedColumns"
+      :draft-column-keys="draftColumnKeys"
+      @update:draft-column-keys="draftColumnKeys = $event"
+      @remove="removeDraftColumn"
+      @save="saveColumns"
+    />
   </PageContainer>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Download, EditPen, Delete } from '@element-plus/icons-vue'
+import { Plus, Download, EditPen, Delete, Setting } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { saveAs } from 'file-saver'
 import { exportToExcel } from '@/utils/excel'
@@ -175,7 +199,43 @@ import PageContainer from '@/components/common/PageContainer.vue'
 import TableCard from '@/components/common/TableCard.vue'
 import Toolbar from '@/components/common/Toolbar.vue'
 import AppButton from '@/components/common/AppButton.vue'
+import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
+import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import { formatDate } from '@/utils/format'
+
+// ── 列表字段设置 ──
+const projectAllColumns: ColumnDef[] = [
+  { key: 'name', label: '项目名称', group: '基础字段', minWidth: 200 },
+  { key: 'team', label: '归属团队', group: '基础字段', minWidth: 120 },
+  { key: 'leaderId', label: '负责人', group: '人员', minWidth: 100 },
+  { key: 'contactPhone', label: '联系电话', group: '基础字段', minWidth: 130 },
+  { key: 'startDate', label: '开始时间', group: '基础字段', minWidth: 120 },
+  { key: 'endDate', label: '结束时间', group: '基础字段', minWidth: 120 },
+  { key: 'status', label: '状态', group: '状态信息', minWidth: 90 },
+  { key: 'createdAt', label: '创建时间', group: '人员', minWidth: 160 },
+  { key: 'operations', label: '操作', minWidth: 100 },
+]
+const projectDefaultKeys = ['name', 'team', 'leaderId', 'contactPhone', 'startDate', 'endDate', 'status', 'createdAt', 'operations']
+
+const {
+  showColumnConfig,
+  openColumnConfig,
+  saveColumns,
+  loadColumnConfig,
+  columnGroups,
+  draftSelectedColumns,
+  draftColumnKeys,
+  visibleColumns,
+  removeDraftColumn,
+} = useColumnConfig({
+  pageKey: 'project_list',
+  columns: projectAllColumns,
+  defaultKeys: projectDefaultKeys,
+})
+
+function isColumnVisible(key: string) {
+  return visibleColumns.value.some((c) => c.key === key)
+}
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -230,7 +290,9 @@ const form = reactive({
   companyId: null as number | null,
   team: '',
   leaderId: null as number | null,
-  dateRange: null as string[] | null,
+  startDate: null as string | null,
+  endDate: null as string | null,
+  contactPhone: '',
 })
 
 const rules: FormRules = {
@@ -380,6 +442,7 @@ function handleExport() {
     项目名称: item.name,
     归属团队: item.team || '',
     负责人: getLeaderName(item.leaderId),
+    联系电话: item.contactPhone || '',
     开始日期: item.startDate || '',
     截止日期: item.endDate || '',
     状态: getStatusLabel(item),
@@ -468,7 +531,9 @@ function handleEdit(row: any) {
   form.team = row.team || ''
   syncTeamWithCompany(true)
   form.leaderId = row.leaderId || null
-  form.dateRange = (row.startDate && row.endDate) ? [row.startDate, row.endDate] : null
+  form.startDate = row.startDate || null
+  form.endDate = row.endDate || null
+  form.contactPhone = row.contactPhone || ''
   dialogVisible.value = true
 }
 
@@ -499,8 +564,9 @@ async function handleSubmit() {
       companyId: form.companyId,
       team: resolvedTeam || null,
       leaderId: form.leaderId,
-      startDate: form.dateRange?.[0] || null,
-      endDate: form.dateRange?.[1] || null,
+      startDate: form.startDate || null,
+      endDate: form.endDate || null,
+      contactPhone: form.contactPhone || null,
       status: 'active',
     }
     if (isEdit.value && editId.value) {
@@ -525,13 +591,16 @@ function resetForm() {
   form.companyId = null
   form.team = ''
   form.leaderId = null
-  form.dateRange = null
+  form.startDate = null
+  form.endDate = null
+  form.contactPhone = ''
   formRef.value?.resetFields()
 }
 
 onMounted(() => {
   fetchList()
   loadOrgData()
+  loadColumnConfig()
 })
 </script>
 

@@ -2,26 +2,31 @@
   <div class="requirement-templates-page">
     <div class="page-header">
       <h2>需求模板管理</h2>
-      <AppButton type="primary" permission="button:requirement-template:create" @click="handleCreate">新建模板</AppButton>
+      <div class="page-header__actions">
+        <el-tooltip content="列表字段设置">
+          <el-button link :icon="Setting" @click="openColumnConfig" />
+        </el-tooltip>
+        <AppButton type="primary" permission="button:requirement-template:create" @click="handleCreate">新建模板</AppButton>
+      </div>
     </div>
 
     <el-table :data="templates" border v-loading="loading">
-      <el-table-column prop="requirementTypeName" label="需求类型" width="150" />
-      <el-table-column prop="templateName" label="模板名称" min-width="200" />
-      <el-table-column prop="isActive" label="状态" width="100">
+      <el-table-column v-if="isColumnVisible('requirementTypeName')" prop="requirementTypeName" label="需求类型" width="150" />
+      <el-table-column v-if="isColumnVisible('templateName')" prop="templateName" label="模板名称" min-width="200" />
+      <el-table-column v-if="isColumnVisible('isActive')" prop="isActive" label="状态" width="100">
         <template #default="{ row }">
           <el-tag :type="row.isActive === 1 ? 'success' : 'info'">
             {{ row.isActive === 1 ? '启用' : '禁用' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="isDefault" label="默认" width="80" align="center">
+      <el-table-column v-if="isColumnVisible('isDefault')" prop="isDefault" label="默认" width="80" align="center">
         <template #default="{ row }">
           <el-tag v-if="row.isDefault === 1" type="warning" size="small">默认</el-tag>
           <span v-else>-</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="280">
+      <el-table-column v-if="isColumnVisible('operations')" label="操作" width="280">
         <template #default="{ row }">
           <AppButton size="small" permission="button:requirement-template:update" @click="handleEdit(row)">编辑</AppButton>
           <AppButton
@@ -97,6 +102,7 @@
 </template>
 
 <script setup lang="ts">
+import { Setting } from '@element-plus/icons-vue'
 import { computed, ref, onBeforeUnmount, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -109,6 +115,8 @@ import {
 import { requirementConfigApi, type RequirementType } from '@/api/modules/requirementConfig'
 import type { RequirementTemplate, RequirementTemplateSave, TemplateSection } from '@/types/requirement'
 import AppButton from '@/components/common/AppButton.vue'
+import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
+import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import { IsleEditor, IsleEditorToolbar, RichTextKit } from '@isle-editor/vue3'
 import Image from '@tiptap/extension-image'
 import '@isle-editor/vue3/dist/style.css'
@@ -125,6 +133,36 @@ const dialogTitle = ref('新建模板')
 const isEditMode = ref(false)
 const configTypes = ref<RequirementType[]>([])
 const templateEditorInstance = ref<any>(null)
+
+// ── 列表字段设置 ──
+const templateAllColumns: ColumnDef[] = [
+  { key: 'requirementTypeName', label: '需求类型', group: '基础字段', width: 150 },
+  { key: 'templateName', label: '模板名称', group: '基础字段', minWidth: 200 },
+  { key: 'isActive', label: '状态', group: '状态信息', width: 100 },
+  { key: 'isDefault', label: '默认', group: '状态信息', width: 80 },
+  { key: 'operations', label: '操作', width: 280 },
+]
+const templateDefaultKeys = ['requirementTypeName', 'templateName', 'isActive', 'isDefault', 'operations']
+
+const {
+  showColumnConfig,
+  openColumnConfig,
+  saveColumns,
+  loadColumnConfig,
+  columnGroups,
+  draftSelectedColumns,
+  draftColumnKeys,
+  visibleColumns,
+  removeDraftColumn,
+} = useColumnConfig({
+  pageKey: 'requirement_template_list',
+  columns: templateAllColumns,
+  defaultKeys: templateDefaultKeys,
+})
+
+function isColumnVisible(key: string) {
+  return visibleColumns.value.some((c) => c.key === key)
+}
 
 const savePermission = computed(() => isEditMode.value ? 'button:requirement-template:update' : 'button:requirement-template:create')
 
@@ -155,6 +193,7 @@ const isDefaultSwitch = computed({
 onMounted(() => {
   loadTemplates()
   loadConfigTypes()
+  loadColumnConfig()
 })
 
 onBeforeUnmount(() => {

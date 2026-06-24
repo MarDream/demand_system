@@ -65,6 +65,9 @@
                 </el-select>
               </div>
               <div class="toolbar-right">
+                <el-tooltip content="列表字段设置">
+                  <el-button link :icon="Setting" @click="openVersionColumnConfig" />
+                </el-tooltip>
                 <el-input
                   v-model="versionKeyword"
                   clearable
@@ -74,12 +77,12 @@
               </div>
             </div>
 
-            <el-table :data="pagedVersions" border v-loading="versionLoading">
-              <el-table-column prop="version" label="版本号" width="110">
+            <el-table :data="pagedVersions" border v-loading="versionLoading" :cell-style="{ textAlign: 'center' }" :header-cell-style="{ textAlign: 'center' }">
+              <el-table-column v-if="isVersionColumnVisible('version')" prop="version" label="版本号" width="110">
                 <template #default="{ row }">V{{ row.version }}</template>
               </el-table-column>
-              <el-table-column prop="name" label="版本名称" min-width="220" />
-              <el-table-column label="适用工单类型" min-width="160">
+              <el-table-column v-if="isVersionColumnVisible('name')" prop="name" label="版本名称" min-width="220" />
+              <el-table-column v-if="isVersionColumnVisible('boundTypes')" label="适用工单类型" min-width="160">
                 <template #default="{ row }">
                   <template v-if="boundTypeNames[row.id]?.length">
                     <el-tag v-for="name in boundTypeNames[row.id]" :key="name" size="small" style="margin: 2px">{{ name }}</el-tag>
@@ -87,39 +90,44 @@
                   <span v-else style="color: var(--el-text-color-placeholder)">未绑定</span>
                 </template>
               </el-table-column>
-              <el-table-column label="适用范围" width="120">
+              <el-table-column v-if="isVersionColumnVisible('projectId')" label="适用范围" width="120">
                 <template #default="{ row }">
                   <el-tag :type="row.projectId === GLOBAL_WORKFLOW_PROJECT_ID ? 'primary' : 'info'" effect="light">
                     {{ row.projectId === GLOBAL_WORKFLOW_PROJECT_ID ? '全局流程' : `项目 ${row.projectId}` }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="启停状态" width="120">
+              <el-table-column v-if="isVersionColumnVisible('isActive')" label="启停状态" width="120">
                 <template #default="{ row }">
                   <el-tag :type="row.isActive === 1 ? 'success' : 'info'">
                     {{ row.isActive === 1 ? '已启用' : '未启用' }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="审核状态" width="140">
+              <el-table-column v-if="isVersionColumnVisible('approvalStatus')" label="审核状态" width="140">
                 <template #default="{ row }">
                   <el-tag :type="approvalTagType(versionApprovalStatus(row))">
                     {{ approvalStatusLabel(versionApprovalStatus(row)) }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column prop="creatorName" label="创建人" width="140" />
-              <el-table-column label="创建时间" width="180">
+              <el-table-column v-if="isVersionColumnVisible('creatorName')" prop="creatorName" label="创建人" width="140" />
+              <el-table-column v-if="isVersionColumnVisible('createdAt')" label="创建时间" width="180">
                 <template #default="{ row }">
                   {{ formatDateTime(row.createdAt) }}
                 </template>
               </el-table-column>
-              <el-table-column label="最近提交" width="180">
+              <el-table-column v-if="isVersionColumnVisible('latestSubmittedAt')" label="最近提交" width="180">
                 <template #default="{ row }">
                   {{ row.latestSubmittedAt ? formatDateTime(row.latestSubmittedAt) : '-' }}
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="160" fixed="right">
+              <el-table-column v-if="isVersionColumnVisible('activatedAt')" label="启用时间" width="180">
+                <template #default="{ row }">
+                  {{ row.isActive === 1 && row.activatedAt ? formatDateTime(row.activatedAt) : '-' }}
+                </template>
+              </el-table-column>
+              <el-table-column v-if="isVersionColumnVisible('operations')" label="操作" width="160" fixed="right">
                 <template #default="{ row }">
                   <el-tooltip content="查看" placement="top">
                     <el-button link type="primary" :icon="View" @click="viewWorkflow(row)" />
@@ -206,11 +214,14 @@
                   <el-option label="已通过" value="APPROVED" />
                   <el-option label="已拒绝" value="REJECTED" />
                 </el-select>
+                <el-tooltip content="列表字段设置">
+                  <el-button link :icon="Tools" @click="openApprovalColumnConfig" />
+                </el-tooltip>
               </div>
             </div>
 
             <el-table v-loading="approvalLoading" :data="pagedApprovals" border class="approval-table">
-              <el-table-column label="任务名称" min-width="240">
+              <el-table-column v-if="isApprovalColumnVisible('task')" label="任务名称" min-width="240">
                 <template #default="{ row }">
                   <div class="task-name-cell">
                     <span class="task-name">{{ row.versionName || `V${row.version}` }}</span>
@@ -218,35 +229,35 @@
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="任务状态" width="120">
+              <el-table-column v-if="isApprovalColumnVisible('status')" label="任务状态" width="120">
                 <template #default="{ row }">
                   <el-tag :type="approvalTagType(row.status)" size="small">
                     {{ approvalStatusLabel(row.status) }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="提交人" width="120">
+              <el-table-column v-if="isApprovalColumnVisible('submitter')" label="提交人" width="120">
                 <template #default="{ row }">{{ row.submitterName || '-' }}</template>
               </el-table-column>
-              <el-table-column label="提交时间" width="180">
+              <el-table-column v-if="isApprovalColumnVisible('submittedAt')" label="提交时间" width="180">
                 <template #default="{ row }">{{ formatDateTime(row.submittedAt) }}</template>
               </el-table-column>
-              <el-table-column label="停留时间" width="120">
+              <el-table-column v-if="isApprovalColumnVisible('stayDuration')" label="停留时间" width="120">
                 <template #default="{ row }">
                   {{ getStayDuration(row.submittedAt, row.approvedAt) }}
                 </template>
               </el-table-column>
-              <el-table-column label="结束时间" width="180">
+              <el-table-column v-if="isApprovalColumnVisible('approvedAt')" label="结束时间" width="180">
                 <template #default="{ row }">
                   {{ row.approvedAt ? formatDateTime(row.approvedAt) : '-' }}
                 </template>
               </el-table-column>
-              <el-table-column label="审核人" width="120">
+              <el-table-column v-if="isApprovalColumnVisible('approver')" label="审核人" width="120">
                 <template #default="{ row }">
                   {{ row.approverName || '-' }}
                 </template>
               </el-table-column>
-              <el-table-column label="审核意见" min-width="180">
+              <el-table-column v-if="isApprovalColumnVisible('comment')" label="审核意见" min-width="180">
                 <template #default="{ row }">
                   <el-tooltip v-if="row.comment" :content="row.comment" placement="top">
                     <span class="comment-text">{{ row.comment }}</span>
@@ -254,7 +265,7 @@
                   <span v-else>-</span>
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="180" fixed="right">
+              <el-table-column v-if="isApprovalColumnVisible('operations')" label="操作" width="180" fixed="right">
                 <template #default="{ row }">
                   <el-tooltip content="详情" placement="top">
                     <el-button link type="primary" :icon="Document" @click="openDetail(row)" />
@@ -335,9 +346,6 @@
           <el-descriptions-item label="工作流版本">
             {{ currentTask.versionName || `V${currentTask.version}` }}
           </el-descriptions-item>
-          <el-descriptions-item label="所属项目">
-            {{ currentTask.projectName }}
-          </el-descriptions-item>
           <el-descriptions-item label="提交人">
             {{ currentTask.submitterName }}
           </el-descriptions-item>
@@ -347,6 +355,16 @@
         </el-descriptions>
 
         <el-form class="comment-form">
+          <el-form-item label="适用范围">
+            <el-select v-model="processScope" style="width: 100%">
+              <el-option
+                v-for="item in processScopeOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
+          </el-form-item>
           <el-form-item label="审核意见" required>
             <el-input
               v-model="processComment"
@@ -371,6 +389,28 @@
         </AppButton>
       </template>
     </el-dialog>
+
+    <!-- 版本管理 列设置 -->
+    <ColumnConfigDialog
+      v-model="showVersionColumnConfig"
+      :column-groups="versionColumnGroups"
+      :draft-selected-columns="versionDraftSelectedColumns"
+      :draft-column-keys="versionDraftColumnKeys"
+      @update:draft-column-keys="versionDraftColumnKeys = $event"
+      @remove="removeVersionDraftColumn"
+      @save="saveVersionColumns"
+    />
+
+    <!-- 审核记录 列设置 -->
+    <ColumnConfigDialog
+      v-model="showApprovalColumnConfig"
+      :column-groups="approvalColumnGroups"
+      :draft-selected-columns="approvalDraftSelectedColumns"
+      :draft-column-keys="approvalDraftColumnKeys"
+      @update:draft-column-keys="approvalDraftColumnKeys = $event"
+      @remove="removeApprovalDraftColumn"
+      @save="saveApprovalColumns"
+    />
 
     <el-drawer
       v-model="detailDrawerVisible"
@@ -478,9 +518,11 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh, Setting, CircleCheck, CircleClose, Document, Delete, View, EditPen, SwitchButton, VideoPlay } from '@element-plus/icons-vue'
+import { Plus, Refresh, Setting, CircleCheck, CircleClose, Document, Delete, View, EditPen, SwitchButton, VideoPlay, Tools } from '@element-plus/icons-vue'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppButton from '@/components/common/AppButton.vue'
+import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
+import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import { formatDate as formatDateTime } from '@/utils/format'
 import { resolveActiveMenuPath } from '@/utils/menuNavigation'
 import { isWorkflowVersion, sameWorkflowVersion } from '@/utils/workflowVersion'
@@ -508,6 +550,76 @@ import type {
 } from '@/types/workflow-visual'
 
 import { requirementConfigApi, type RequirementType } from '@/api/modules/requirementConfig'
+
+// ── 列表字段设置：版本管理表 ──
+const versionAllColumns: ColumnDef[] = [
+  { key: 'version', label: '版本号', group: '基础字段', width: 110 },
+  { key: 'name', label: '版本名称', group: '基础字段', minWidth: 220 },
+  { key: 'boundTypes', label: '适用工单类型', group: '基础字段', minWidth: 160 },
+  { key: 'projectId', label: '适用范围', group: '基础字段', width: 120 },
+  { key: 'isActive', label: '启停状态', group: '状态信息', width: 120 },
+  { key: 'approvalStatus', label: '审核状态', group: '状态信息', width: 140 },
+  { key: 'creatorName', label: '创建人', group: '人员与时间', width: 140 },
+  { key: 'createdAt', label: '创建时间', group: '人员与时间', width: 180 },
+  { key: 'latestSubmittedAt', label: '最近提交', group: '人员与时间', width: 180 },
+  { key: 'activatedAt', label: '启用时间', group: '人员与时间', width: 180 },
+  { key: 'operations', label: '操作', width: 160 },
+]
+const versionDefaultKeys = ['version', 'name', 'boundTypes', 'projectId', 'isActive', 'approvalStatus', 'creatorName', 'createdAt', 'latestSubmittedAt', 'activatedAt', 'operations']
+
+const {
+  showColumnConfig: showVersionColumnConfig,
+  openColumnConfig: openVersionColumnConfig,
+  saveColumns: saveVersionColumns,
+  loadColumnConfig: loadVersionColumnConfig,
+  columnGroups: versionColumnGroups,
+  draftSelectedColumns: versionDraftSelectedColumns,
+  draftColumnKeys: versionDraftColumnKeys,
+  visibleColumns: versionVisibleColumns,
+  removeDraftColumn: removeVersionDraftColumn,
+} = useColumnConfig({
+  pageKey: 'workflow_version_list',
+  columns: versionAllColumns,
+  defaultKeys: versionDefaultKeys,
+})
+
+function isVersionColumnVisible(key: string) {
+  return versionVisibleColumns.value.some((c) => c.key === key)
+}
+
+// ── 列表字段设置：审核记录表 ──
+const approvalAllColumns: ColumnDef[] = [
+  { key: 'task', label: '任务名称', group: '基础字段', minWidth: 240 },
+  { key: 'status', label: '任务状态', group: '状态信息', width: 120 },
+  { key: 'submitter', label: '提交人', group: '人员与时间', width: 120 },
+  { key: 'submittedAt', label: '提交时间', group: '人员与时间', width: 180 },
+  { key: 'stayDuration', label: '停留时间', group: '人员与时间', width: 120 },
+  { key: 'approvedAt', label: '结束时间', group: '人员与时间', width: 180 },
+  { key: 'approver', label: '审核人', group: '人员与时间', width: 120 },
+  { key: 'comment', label: '审核意见', group: '状态信息', minWidth: 180 },
+  { key: 'operations', label: '操作', width: 180 },
+]
+const approvalDefaultKeys = ['task', 'status', 'submitter', 'submittedAt', 'stayDuration', 'approvedAt', 'approver', 'comment', 'operations']
+
+const {
+  showColumnConfig: showApprovalColumnConfig,
+  openColumnConfig: openApprovalColumnConfig,
+  saveColumns: saveApprovalColumns,
+  loadColumnConfig: loadApprovalColumnConfig,
+  columnGroups: approvalColumnGroups,
+  draftSelectedColumns: approvalDraftSelectedColumns,
+  draftColumnKeys: approvalDraftColumnKeys,
+  visibleColumns: approvalVisibleColumns,
+  removeDraftColumn: removeApprovalDraftColumn,
+} = useColumnConfig({
+  pageKey: 'workflow_approval_list',
+  columns: approvalAllColumns,
+  defaultKeys: approvalDefaultKeys,
+})
+
+function isApprovalColumnVisible(key: string) {
+  return approvalVisibleColumns.value.some((c) => c.key === key)
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -549,6 +661,7 @@ const processDialogVisible = ref(false)
 const currentTask = ref<WorkflowApprovalDTO | null>(null)
 const processAction = ref<'approve' | 'reject'>('approve')
 const processComment = ref('')
+const processScope = ref<number>(GLOBAL_WORKFLOW_PROJECT_ID)
 const submitting = ref(false)
 const detailDrawerVisible = ref(false)
 const detailLoading = ref(false)
@@ -585,6 +698,16 @@ const projectOptions = computed(() => {
   return Array.from(projectMap.entries())
     .map(([value, label]) => ({ value, label }))
     .sort((left, right) => left.label.localeCompare(right.label, 'zh-CN'))
+})
+/** 适用范围选项：始终包含“全局工作流”，再合并已有项目 */
+const processScopeOptions = computed(() => {
+  const projectEntries = projectOptions.value
+    .filter((item) => item.value !== GLOBAL_WORKFLOW_PROJECT_ID)
+    .map((item) => ({ value: item.value, label: item.label || `项目 ${item.value}` }))
+  return [
+    { value: GLOBAL_WORKFLOW_PROJECT_ID, label: '全局工作流' },
+    ...projectEntries,
+  ]
 })
 const duplicatedVersion = computed(() => {
   const normalizedVersion = versionDialogForm.version.trim()
@@ -958,6 +1081,7 @@ function handleApprove(row: WorkflowApprovalDTO) {
   currentTask.value = row
   processAction.value = 'approve'
   processComment.value = ''
+  processScope.value = typeof row.projectId === 'number' ? row.projectId : GLOBAL_WORKFLOW_PROJECT_ID
   processDialogVisible.value = true
   detailDrawerVisible.value = false
 }
@@ -966,6 +1090,7 @@ function handleReject(row: WorkflowApprovalDTO) {
   currentTask.value = row
   processAction.value = 'reject'
   processComment.value = ''
+  processScope.value = typeof row.projectId === 'number' ? row.projectId : GLOBAL_WORKFLOW_PROJECT_ID
   processDialogVisible.value = true
   detailDrawerVisible.value = false
 }
@@ -1052,6 +1177,8 @@ async function confirmProcess() {
 
 onMounted(() => {
   reloadAllData()
+  loadVersionColumnConfig()
+  loadApprovalColumnConfig()
 })
 </script>
 

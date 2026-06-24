@@ -76,15 +76,8 @@ export interface SniffedModel {
   alreadyExists: boolean
 }
 
-// ---- Column Config ----
-
-export function getColumnConfig(pageKey: string) {
-  return request.get<string[]>(`/v1/column-config/${pageKey}`)
-}
-
-export function saveColumnConfig(pageKey: string, columns: string[]) {
-  return request.put(`/v1/column-config/${pageKey}`, { columns })
-}
+// ---- Column Config (re-export from common) ----
+export { getColumnConfig, saveColumnConfig } from './columnConfig'
 
 // ---- API ----
 

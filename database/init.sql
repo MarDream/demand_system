@@ -223,6 +223,7 @@ CREATE TABLE `projects` (
   `leader_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '负责人ID',
   `start_date` DATE DEFAULT NULL COMMENT '开始日期',
   `end_date` DATE DEFAULT NULL COMMENT '截止日期',
+  `contact_phone` VARCHAR(30) DEFAULT NULL COMMENT '联系电话',
   `creator_id` INT UNSIGNED NOT NULL COMMENT '创建人ID',
   `status` VARCHAR(50) DEFAULT 'active' COMMENT '状态',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,

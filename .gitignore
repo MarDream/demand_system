@@ -60,3 +60,9 @@ demand_frontend/test-results/
 
 # AGENTS.md (local agent config)
 AGENTS.md
+
+# Local Claude Code quick-start script (uses dangerously-skip-permissions, do not ship)
+start-claude.bat
+
+# Local agent runtime state (workbuddy memory, do not ship)
+.workbuddy/

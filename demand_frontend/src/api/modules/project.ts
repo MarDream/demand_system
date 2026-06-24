@@ -10,6 +10,7 @@ export interface ProjectPayload {
   leaderId?: number | null
   startDate?: string | null
   endDate?: string | null
+  contactPhone?: string | null
   status?: string
 }
 

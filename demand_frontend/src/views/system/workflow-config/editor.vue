@@ -128,9 +128,18 @@
           v-model="drawerVisible"
           :title="drawerTitle"
           direction="rtl"
-          size="400px"
+          :size="drawerSize"
           :before-close="handleDrawerClose"
+          class="config-drawer"
         >
+          <!-- 拖拽调整手柄 -->
+          <div
+            class="drawer-resize-handle"
+            :class="{ active: isResizing }"
+            @mousedown="onResizeStart"
+          >
+            <div class="resize-bar"></div>
+          </div>
           <div v-if="selectedNode" class="node-config-panel">
             <el-form :model="nodeForm" label-width="100px" label-position="top" :disabled="isViewMode">
               <el-form-item label="节点名称">
@@ -415,6 +424,12 @@ const assigneeOptionsLoading = ref(false)
 
 const drawerVisible = ref(false)
 const drawerTitle = ref('')
+/** 抽屉宽度：默认 500px，条件节点自适应加宽到 680px */
+const drawerSize = ref('500px')
+/** 拖拽调整宽度 */
+const isResizing = ref(false)
+const MIN_DRAWER_WIDTH = 420
+const MAX_DRAWER_WIDTH_RATIO = 0.85
 const selectedNode = ref<any>(null)
 const selectedEdge = ref<any>(null)
 const selectedNextNode = ref<string>('')
@@ -1721,6 +1736,7 @@ const handleNodeClick = (data: any) => {
   selectedNextNode.value = typeof savedNextNode === 'string' && nextNodeNames.value.includes(savedNextNode) ? savedNextNode : ''
   drawerTitle.value = nodeDrawerTitle.value
   drawerVisible.value = true
+  adjustDrawerSize()
 
   // 填充表单
   Object.assign(nodeForm, {
@@ -1778,6 +1794,7 @@ const handleEdgeClick = (data: any) => {
   selectedNode.value = null
   drawerTitle.value = edgeDrawerTitle.value
   drawerVisible.value = true
+  adjustDrawerSize()
 
   // 填充表单
   edgeForm.label = data.text?.value || ''
@@ -2145,6 +2162,46 @@ const handleDrawerClose = () => {
   drawerVisible.value = false
   selectedNode.value = null
   selectedEdge.value = null
+}
+
+// ========== 抽屉拖拽调整宽度 ==========
+function onResizeStart(e: MouseEvent) {
+  isResizing.value = true
+  const startX = e.clientX
+  const startWidth = parseInt(drawerSize.value) || 500
+  const maxWidth = window.innerWidth * MAX_DRAWER_WIDTH_RATIO
+
+  const onMouseMove = (ev: MouseEvent) => {
+    // RTL drawer: width increases when mouse moves left
+    const delta = startX - ev.clientX
+    const newWidth = Math.min(Math.max(startWidth + delta, MIN_DRAWER_WIDTH), maxWidth)
+    drawerSize.value = `${Math.round(newWidth)}px`
+  }
+
+  const onMouseUp = () => {
+    isResizing.value = false
+    document.removeEventListener('mousemove', onMouseMove)
+    document.removeEventListener('mouseup', onMouseUp)
+  }
+
+  document.addEventListener('mousemove', onMouseMove)
+  document.addEventListener('mouseup', onMouseUp)
+}
+
+// ========== 根据节点/边类型自适应宽度 ==========
+function adjustDrawerSize() {
+  if (selectedNode.value) {
+    const type = selectedNode.value.properties?.nodeType
+    if (type === 'condition') {
+      drawerSize.value = '680px'
+    } else if (type === 'parallel') {
+      drawerSize.value = '580px'
+    } else {
+      drawerSize.value = '500px'
+    }
+  } else if (selectedEdge.value) {
+    drawerSize.value = '520px'
+  }
 }
 
 // 返回
@@ -2564,6 +2621,45 @@ onBeforeUnmount(() => {
       align-items: center;
       gap: 4px;
     }
+  }
+}
+
+/* ===== 抽屉拖拽调整手柄 ===== */
+:deep(.config-drawer .el-drawer__body) {
+  position: relative;
+  overflow-x: hidden;
+}
+
+.drawer-resize-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+
+  &:hover,
+  &.active {
+    background: rgba(64, 158, 255, 0.08);
+  }
+
+  .resize-bar {
+    width: 2px;
+    height: 32px;
+    border-radius: 1px;
+    background: var(--el-border-color, #dcdfe6);
+    transition: background 0.2s;
+  }
+
+  &:hover .resize-bar,
+  &.active .resize-bar {
+    background: var(--el-color-primary, #409eff);
+    height: 48px;
   }
 }
 </style>

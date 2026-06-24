@@ -58,6 +58,7 @@ public class ProjectServiceImpl implements ProjectService {
         project.setLeaderId(dto.getLeaderId());
         project.setStartDate(dto.getStartDate());
         project.setEndDate(dto.getEndDate());
+        project.setContactPhone(dto.getContactPhone());
         project.setCreatorId(creatorId);
         project.setStatus("active");
         projectMapper.insert(project);
@@ -74,6 +75,7 @@ public class ProjectServiceImpl implements ProjectService {
         project.setLeaderId(dto.getLeaderId());
         project.setStartDate(dto.getStartDate());
         project.setEndDate(dto.getEndDate());
+        project.setContactPhone(dto.getContactPhone());
         project.setStatus(dto.getStatus() == null || dto.getStatus().isBlank() ? "active" : dto.getStatus());
         projectMapper.updateById(project);
     }

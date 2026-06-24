@@ -75,21 +75,26 @@
       <el-col :span="24">
         <el-card shadow="never">
           <template #header>
-            <span class="chart-title">需求时长统计</span>
+            <div class="table-header">
+              <span class="chart-title">需求时长统计</span>
+              <el-tooltip content="列表字段设置">
+                <el-button link :icon="Setting" @click="openColumnConfig" />
+              </el-tooltip>
+            </div>
           </template>
           <el-table :data="durationData" border>
-            <el-table-column prop="stateName" label="状态" />
-            <el-table-column label="平均天数" width="150">
+            <el-table-column v-if="isColumnVisible('stateName')" prop="stateName" label="状态" />
+            <el-table-column v-if="isColumnVisible('avgHours')" label="平均天数" width="150">
               <template #default="{ row }">
                 {{ (row.avgHours / 24).toFixed(1) }}
               </template>
             </el-table-column>
-            <el-table-column label="最大天数" width="150">
+            <el-table-column v-if="isColumnVisible('maxHours')" label="最大天数" width="150">
               <template #default="{ row }">
                 {{ (row.maxHours / 24).toFixed(1) }}
               </template>
             </el-table-column>
-            <el-table-column label="最小天数" width="150">
+            <el-table-column v-if="isColumnVisible('minHours')" label="最小天数" width="150">
               <template #default="{ row }">
                 {{ (row.minHours / 24).toFixed(1) }}
               </template>
@@ -120,12 +125,25 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <ColumnConfigDialog
+      v-model="showColumnConfig"
+      :column-groups="columnGroups"
+      :draft-selected-columns="draftSelectedColumns"
+      :draft-column-keys="draftColumnKeys"
+      @update:draft-column-keys="draftColumnKeys = $event"
+      @remove="removeDraftColumn"
+      @save="saveColumns"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
+import { Setting } from '@element-plus/icons-vue'
 import { ref, onMounted } from 'vue'
 import VChart from 'vue-echarts'
+import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
+import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import { use } from 'echarts/core'
 import { SVGRenderer } from 'echarts/renderers'
 import { PieChart, BarChart, LineChart } from 'echarts/charts'
@@ -133,6 +151,35 @@ import { TitleComponent, TooltipComponent, LegendComponent, GridComponent } from
 import { getDistributionData, getDurationData } from '@/api/modules/statistics'
 
 use([SVGRenderer, PieChart, BarChart, LineChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent])
+
+// ── 列表字段设置：需求时长统计 ──
+const statAllColumns: ColumnDef[] = [
+  { key: 'stateName', label: '状态', group: '基础字段', minWidth: 200 },
+  { key: 'avgHours', label: '平均天数', group: '时长', width: 150 },
+  { key: 'maxHours', label: '最大天数', group: '时长', width: 150 },
+  { key: 'minHours', label: '最小天数', group: '时长', width: 150 },
+]
+const statDefaultKeys = ['stateName', 'avgHours', 'maxHours', 'minHours']
+
+const {
+  showColumnConfig,
+  openColumnConfig,
+  saveColumns,
+  loadColumnConfig,
+  columnGroups,
+  draftSelectedColumns,
+  draftColumnKeys,
+  visibleColumns,
+  removeDraftColumn,
+} = useColumnConfig({
+  pageKey: 'stat_duration_list',
+  columns: statAllColumns,
+  defaultKeys: statDefaultKeys,
+})
+
+function isColumnVisible(key: string) {
+  return visibleColumns.value.some((c) => c.key === key)
+}
 
 const chartInitOptions = { renderer: 'svg' as const }
 
@@ -259,6 +306,7 @@ onMounted(() => {
   loadDistributionData()
   loadDurationData()
   loadProjectRates()
+  loadColumnConfig()
 })
 </script>
 

@@ -2,6 +2,9 @@
   <div class="menu-page">
     <PageContainer title="菜单管理">
       <template #headerActions>
+        <el-tooltip content="列表字段设置">
+          <el-button link :icon="Setting" @click="openColumnConfig" />
+        </el-tooltip>
         <AppButton type="primary" permission="button:menu:create" @click="openCreate">新增菜单</AppButton>
       </template>
 
@@ -17,7 +20,7 @@
             :tree-props="{ children: 'children' }"
             class="menu-table"
           >
-            <el-table-column prop="name" label="名称" min-width="220" header-align="center">
+            <el-table-column v-if="isColumnVisible('name')" prop="name" label="名称" min-width="220" header-align="center">
               <template #default="{ row }">
                 <span
                   class="menu-name-content"
@@ -34,28 +37,28 @@
                 </span>
               </template>
             </el-table-column>
-            <el-table-column prop="menuType" label="类型" width="90" align="center">
+            <el-table-column v-if="isColumnVisible('menuType')" prop="menuType" label="类型" width="90" align="center">
               <template #default="{ row }">
                 <el-tag size="small" :type="menuTypeTagType(row.menuType)">
                   {{ typeLabel(row.menuType) }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="path" label="路径" min-width="170" show-overflow-tooltip header-align="center">
+            <el-table-column v-if="isColumnVisible('path')" prop="path" label="路径" min-width="170" show-overflow-tooltip header-align="center">
               <template #default="{ row }">{{ row.path || '-' }}</template>
             </el-table-column>
-            <el-table-column prop="permissionCode" label="权限编码" min-width="190" show-overflow-tooltip header-align="center">
+            <el-table-column v-if="isColumnVisible('permissionCode')" prop="permissionCode" label="权限编码" min-width="190" show-overflow-tooltip header-align="center">
               <template #default="{ row }">{{ row.permissionCode || '-' }}</template>
             </el-table-column>
-            <el-table-column prop="sortOrder" label="排序" width="80" align="center" />
-            <el-table-column prop="enabled" label="状态" width="90">
+            <el-table-column v-if="isColumnVisible('sortOrder')" prop="sortOrder" label="排序" width="80" align="center" />
+            <el-table-column v-if="isColumnVisible('enabled')" prop="enabled" label="状态" width="90">
               <template #default="{ row }">
                 <el-tag size="small" :type="row.enabled === 1 ? 'success' : 'info'">
                   {{ row.enabled === 1 ? '启用' : '停用' }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="160" align="center" header-align="center" fixed="right">
+            <el-table-column v-if="isColumnVisible('operations')" label="操作" width="160" align="center" header-align="center" fixed="right">
               <template #default="{ row }">
                 <el-tooltip content="编辑">
                   <AppButton type="primary" link size="small" permission="button:menu:update" @click="openEdit(row)"><el-icon><EditPen /></el-icon></AppButton>
@@ -151,6 +154,16 @@
         </div>
       </div>
     </el-drawer>
+
+    <ColumnConfigDialog
+      v-model="showColumnConfig"
+      :column-groups="columnGroups"
+      :draft-selected-columns="draftSelectedColumns"
+      :draft-column-keys="draftColumnKeys"
+      @update:draft-column-keys="draftColumnKeys = $event"
+      @remove="removeDraftColumn"
+      @save="saveColumns"
+    />
   </div>
 </template>
 
@@ -162,6 +175,8 @@ import { EditPen, Key, Delete, Setting } from '@element-plus/icons-vue'
 import Sortable, { type MoveEvent, type SortableEvent } from 'sortablejs'
 import { isRemixIcon } from '@/components/common/RemixIconData'
 import AppButton from '@/components/common/AppButton.vue'
+import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
+import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import PageContainer from '@/components/common/PageContainer.vue'
 import TableCard from '@/components/common/TableCard.vue'
 import IconPicker from '@/components/common/IconPicker.vue'
@@ -232,8 +247,41 @@ function menuTypeTagType(type: string) {
   return 'primary'
 }
 
+// ── 列表字段设置 ──
+const menuAllColumns: ColumnDef[] = [
+  { key: 'name', label: '名称', group: '基础字段', minWidth: 220 },
+  { key: 'menuType', label: '类型', group: '基础字段', width: 90 },
+  { key: 'path', label: '路径', group: '基础字段', minWidth: 170, showOverflowTooltip: true },
+  { key: 'permissionCode', label: '权限编码', group: '基础字段', minWidth: 190, showOverflowTooltip: true },
+  { key: 'sortOrder', label: '排序', group: '基础字段', width: 80 },
+  { key: 'enabled', label: '状态', group: '状态信息', width: 90 },
+  { key: 'operations', label: '操作', width: 160 },
+]
+const menuDefaultKeys = ['name', 'menuType', 'path', 'permissionCode', 'sortOrder', 'enabled', 'operations']
+
+const {
+  showColumnConfig,
+  openColumnConfig,
+  saveColumns,
+  loadColumnConfig,
+  columnGroups,
+  draftSelectedColumns,
+  draftColumnKeys,
+  visibleColumns,
+  removeDraftColumn,
+} = useColumnConfig({
+  pageKey: 'menu_list',
+  columns: menuAllColumns,
+  defaultKeys: menuDefaultKeys,
+})
+
+function isColumnVisible(key: string) {
+  return visibleColumns.value.some((c) => c.key === key)
+}
+
 onMounted(() => {
   fetchMenus()
+  loadColumnConfig()
 })
 
 onBeforeUnmount(() => {

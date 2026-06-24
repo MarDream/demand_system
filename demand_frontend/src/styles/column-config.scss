@@ -1,0 +1,117 @@
+/* 全局列设置弹窗样式（ColumnConfigDialog） */
+.column-config-dialog {
+  .el-dialog__body {
+    padding: 16px 24px 0;
+  }
+
+  .el-dialog__footer {
+    padding: 16px 22px;
+    border-top: 1px solid var(--el-border-color-lighter);
+  }
+}
+
+.column-config {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 262px;
+  gap: 12px;
+  min-height: 520px;
+}
+
+.column-config__panel {
+  overflow: hidden;
+  border: 1px solid var(--el-border-color);
+  border-radius: 2px;
+  background: var(--el-bg-color);
+}
+
+.column-config__panel-title {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 16px;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+}
+
+.column-config__panel-body {
+  height: 478px;
+  overflow-y: auto;
+  padding: 14px 20px 20px;
+}
+
+.column-config__group + .column-config__group {
+  margin-top: 14px;
+}
+
+.column-config__group-title {
+  margin-bottom: 8px;
+  color: var(--el-text-color-secondary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.column-config__checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+  column-gap: 44px;
+  row-gap: 10px;
+}
+
+.column-config__checkbox {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  margin-right: 0;
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+}
+
+.column-config__selected-list {
+  height: 478px;
+  overflow-y: auto;
+  padding: 22px 18px;
+}
+
+.column-config__selected-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+}
+
+.column-config__selected-item--ghost {
+  opacity: 0.55;
+  background: var(--el-color-primary-light-9);
+}
+
+.column-config__drag-handle {
+  color: var(--el-text-color-placeholder);
+  cursor: grab;
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+.column-config__selected-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.column-config__remove {
+  color: var(--el-text-color-placeholder);
+
+  &:hover {
+    color: var(--el-color-danger);
+  }
+}
+
+.column-config__empty {
+  height: 100%;
+  justify-content: center;
+}

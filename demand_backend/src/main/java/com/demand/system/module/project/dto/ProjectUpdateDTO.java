@@ -25,6 +25,8 @@ public class ProjectUpdateDTO {
 
     private LocalDate endDate;
 
+    private String contactPhone;
+
     private String status;
 
     public Long getId() {
@@ -89,6 +91,14 @@ public class ProjectUpdateDTO {
 
     public void setEndDate(LocalDate endDate) {
         this.endDate = endDate;
+    }
+
+    public String getContactPhone() {
+        return contactPhone;
+    }
+
+    public void setContactPhone(String contactPhone) {
+        this.contactPhone = contactPhone;
     }
 
     public String getStatus() {

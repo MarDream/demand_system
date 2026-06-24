@@ -3,7 +3,11 @@
     <TableCard>
       <template #toolbar>
         <Toolbar>
-          <template #left />
+          <template #left>
+            <el-tooltip content="列表字段设置">
+              <el-button link :icon="Setting" @click="openColumnConfig" />
+            </el-tooltip>
+          </template>
           <template #right>
             <AppButton type="primary" permission="button:iteration:create" @click="openDialog()">新建迭代</AppButton>
           </template>
@@ -12,27 +16,27 @@
 
       <template #table>
         <el-table :data="iterations" border>
-        <el-table-column prop="name" label="迭代名称" min-width="180" />
-        <el-table-column label="开始日期" width="120">
+        <el-table-column v-if="isColumnVisible('name')" prop="name" label="迭代名称" min-width="180" />
+        <el-table-column v-if="isColumnVisible('startDate')" label="开始日期" width="120">
           <template #default="{ row }">
             {{ formatDate(row.startDate) }}
           </template>
         </el-table-column>
-        <el-table-column label="结束日期" width="120">
+        <el-table-column v-if="isColumnVisible('endDate')" label="结束日期" width="120">
           <template #default="{ row }">
             {{ formatDate(row.endDate) }}
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="100">
+        <el-table-column v-if="isColumnVisible('status')" label="状态" width="100">
           <template #default="{ row }">
             <el-tag :type="getStatusType(row.status)">
               {{ getStatusLabel(row.status) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="capacity" label="容量(人天)" width="110" />
-        <el-table-column prop="requirementCount" label="需求数" width="90" />
-        <el-table-column label="完成进度" width="180">
+        <el-table-column v-if="isColumnVisible('capacity')" prop="capacity" label="容量(人天)" width="110" />
+        <el-table-column v-if="isColumnVisible('requirementCount')" prop="requirementCount" label="需求数" width="90" />
+        <el-table-column v-if="isColumnVisible('progress')" label="完成进度" width="180">
           <template #default="{ row }">
             <el-progress
               :percentage="row.progress || 0"
@@ -40,7 +44,7 @@
             />
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="140">
+        <el-table-column v-if="isColumnVisible('operations')" label="操作" width="140">
           <template #default="{ row }">
             <AppButton link type="primary" permission="button:iteration:update" @click="openDialog(row)"><el-icon><EditPen /></el-icon></AppButton>
             <AppButton link type="danger" permission="button:iteration:delete">
@@ -58,6 +62,16 @@
         </el-table>
       </template>
     </TableCard>
+
+    <ColumnConfigDialog
+      v-model="showColumnConfig"
+      :column-groups="columnGroups"
+      :draft-selected-columns="draftSelectedColumns"
+      :draft-column-keys="draftColumnKeys"
+      @update:draft-column-keys="draftColumnKeys = $event"
+      @remove="removeDraftColumn"
+      @save="saveColumns"
+    />
 
     <!-- 创建/编辑迭代对话框 -->
     <el-dialog
@@ -139,7 +153,7 @@
 import { ref, nextTick, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { EditPen, Delete, TrendCharts } from '@element-plus/icons-vue'
+import { EditPen, Delete, TrendCharts, Setting } from '@element-plus/icons-vue'
 import type { FormInstance } from 'element-plus'
 import * as echarts from 'echarts/core'
 import { SVGRenderer } from 'echarts/renderers'
@@ -154,6 +168,41 @@ import PageContainer from '@/components/common/PageContainer.vue'
 import TableCard from '@/components/common/TableCard.vue'
 import Toolbar from '@/components/common/Toolbar.vue'
 import AppButton from '@/components/common/AppButton.vue'
+import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
+import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
+
+// ── 列表字段设置 ──
+const iterationAllColumns: ColumnDef[] = [
+  { key: 'name', label: '迭代名称', group: '基础字段', minWidth: 180 },
+  { key: 'startDate', label: '开始日期', group: '基础字段', width: 120 },
+  { key: 'endDate', label: '结束日期', group: '基础字段', width: 120 },
+  { key: 'status', label: '状态', group: '基础字段', width: 100 },
+  { key: 'capacity', label: '容量(人天)', group: '基础字段', width: 110 },
+  { key: 'requirementCount', label: '需求数', group: '基础字段', width: 90 },
+  { key: 'progress', label: '完成进度', group: '基础字段', width: 180 },
+  { key: 'operations', label: '操作', width: 140 },
+]
+const iterationDefaultKeys = ['name', 'startDate', 'endDate', 'status', 'capacity', 'requirementCount', 'progress', 'operations']
+
+const {
+  showColumnConfig,
+  openColumnConfig,
+  saveColumns,
+  loadColumnConfig,
+  columnGroups,
+  draftSelectedColumns,
+  draftColumnKeys,
+  visibleColumns,
+  removeDraftColumn,
+} = useColumnConfig({
+  pageKey: 'iteration_list',
+  columns: iterationAllColumns,
+  defaultKeys: iterationDefaultKeys,
+})
+
+function isColumnVisible(key: string) {
+  return visibleColumns.value.some((c) => c.key === key)
+}
 
 const route = useRoute()
 const projectId = computed(() => {
@@ -391,6 +440,7 @@ watch(burndownVisible, (visible) => {
 
 onMounted(() => {
   window.addEventListener('resize', resizeBurndownChart)
+  loadColumnConfig()
 })
 
 onBeforeUnmount(() => {

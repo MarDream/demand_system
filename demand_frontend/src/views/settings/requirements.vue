@@ -9,6 +9,9 @@
       <el-tab-pane label="需求类型" name="types">
         <div class="tab-content">
           <div class="tab-header">
+            <el-tooltip content="列表字段设置" style="margin-left: auto">
+              <el-button link :icon="Setting" @click="openTypeColumnConfig" />
+            </el-tooltip>
             <AppButton type="primary" permission="button:requirement-config:create" @click="openTypeDialog()">
               <el-icon><Plus /></el-icon>
               新增类型
@@ -16,7 +19,7 @@
           </div>
 
           <el-table ref="typeTableRef" :data="types" border style="width: 100%" row-key="id">
-            <el-table-column width="60" align="center">
+            <el-table-column v-if="isTypeColumnVisible('drag')" width="60" align="center">
               <template #default>
                 <el-icon class="drag-handle" :size="18">
                   <Operation />
@@ -67,6 +70,9 @@
       <el-tab-pane label="优先级" name="priorities">
         <div class="tab-content">
           <div class="tab-header">
+            <el-tooltip content="列表字段设置" style="margin-left: auto">
+              <el-button link :icon="Setting" @click="openPriorityColumnConfig" />
+            </el-tooltip>
             <AppButton type="primary" permission="button:requirement-config:create" @click="openPriorityDialog()">
               <el-icon><Plus /></el-icon>
               新增优先级
@@ -74,17 +80,17 @@
           </div>
 
           <el-table ref="priorityTableRef" :data="priorities" border style="width: 100%" row-key="id">
-            <el-table-column width="60" align="center">
+            <el-table-column v-if="isPriorityColumnVisible('drag')" width="60" align="center">
               <template #default>
                 <el-icon class="drag-handle" :size="18">
                   <Operation />
                 </el-icon>
               </template>
             </el-table-column>
-            <el-table-column prop="name" label="名称" min-width="120" />
-            <el-table-column prop="code" label="编码" min-width="100" />
-            <el-table-column prop="level" label="级别" width="80" align="center" />
-            <el-table-column prop="color" label="颜色" min-width="100">
+            <el-table-column v-if="isPriorityColumnVisible('name')" prop="name" label="名称" min-width="120" />
+            <el-table-column v-if="isPriorityColumnVisible('code')" prop="code" label="编码" min-width="100" />
+            <el-table-column v-if="isPriorityColumnVisible('level')" prop="level" label="级别" width="80" align="center" />
+            <el-table-column v-if="isPriorityColumnVisible('color')" prop="color" label="颜色" min-width="100">
               <template #default="{ row }">
                 <div class="color-cell">
                   <span class="color-dot" :style="{ backgroundColor: row.color }"></span>
@@ -92,14 +98,14 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column prop="sortOrder" label="排序" width="80" align="center" />
-            <el-table-column prop="isDefault" label="默认" width="80" align="center">
+            <el-table-column v-if="isPriorityColumnVisible('sortOrder')" prop="sortOrder" label="排序" width="80" align="center" />
+            <el-table-column v-if="isPriorityColumnVisible('isDefault')" prop="isDefault" label="默认" width="80" align="center">
               <template #default="{ row }">
                 <el-tag v-if="row.isDefault" type="success" size="small">是</el-tag>
                 <span v-else>-</span>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="100" fixed="right">
+            <el-table-column v-if="isPriorityColumnVisible('operations')" label="操作" width="100" fixed="right">
               <template #default="{ row }">
                 <AppButton link type="primary" permission="button:requirement-config:update" @click="openPriorityDialog(row)"><el-icon><EditPen /></el-icon></AppButton>
                 <AppButton link type="danger" permission="button:requirement-config:delete" @click="deletePriority(row.id!)"><el-icon><Delete /></el-icon></AppButton>
@@ -112,6 +118,9 @@
       <el-tab-pane label="节点状态" name="nodeStatuses">
         <div class="tab-content">
           <div class="tab-header">
+            <el-tooltip content="列表字段设置" style="margin-left: auto">
+              <el-button link :icon="Setting" @click="openNodeStatusColumnConfig" />
+            </el-tooltip>
             <AppButton type="primary" permission="button:requirement-config:create" @click="openNodeStatusDialog()">
               <el-icon><Plus /></el-icon>
               新增节点状态
@@ -119,16 +128,16 @@
           </div>
 
           <el-table ref="nodeStatusTableRef" :data="nodeStatuses" border style="width: 100%" row-key="id">
-            <el-table-column width="60" align="center">
+            <el-table-column v-if="isNodeStatusColumnVisible('drag')" width="60" align="center">
               <template #default>
                 <el-icon class="drag-handle" :size="18">
                   <Operation />
                 </el-icon>
               </template>
             </el-table-column>
-            <el-table-column prop="name" label="状态名称" min-width="120" />
-            <el-table-column prop="code" label="编码" min-width="150" />
-            <el-table-column prop="color" label="颜色" min-width="100">
+            <el-table-column v-if="isNodeStatusColumnVisible('name')" prop="name" label="状态名称" min-width="120" />
+            <el-table-column v-if="isNodeStatusColumnVisible('code')" prop="code" label="编码" min-width="150" />
+            <el-table-column v-if="isNodeStatusColumnVisible('color')" prop="color" label="颜色" min-width="100">
               <template #default="{ row }">
                 <div class="color-cell">
                   <span class="color-dot" :style="{ backgroundColor: row.color }"></span>
@@ -136,15 +145,15 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="类型标记" min-width="160">
+            <el-table-column v-if="isNodeStatusColumnVisible('flags')" label="类型标记" min-width="160">
               <template #default="{ row }">
                 <el-tag v-if="row.isStart" type="success" size="small" style="margin-right:4px">开始</el-tag>
                 <el-tag v-if="row.isEnd" type="info" size="small" style="margin-right:4px">结束</el-tag>
                 <el-tag v-if="row.isCancel" type="danger" size="small">取消</el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="sortOrder" label="排序" width="80" align="center" />
-            <el-table-column label="操作" width="100" fixed="right">
+            <el-table-column v-if="isNodeStatusColumnVisible('sortOrder')" prop="sortOrder" label="排序" width="80" align="center" />
+            <el-table-column v-if="isNodeStatusColumnVisible('operations')" label="操作" width="100" fixed="right">
               <template #default="{ row }">
                 <AppButton link type="primary" permission="button:requirement-config:update" @click="openNodeStatusDialog(row)"><el-icon><EditPen /></el-icon></AppButton>
                 <AppButton link type="danger" permission="button:requirement-config:delete" @click="deleteNodeStatus(row.id)"><el-icon><Delete /></el-icon></AppButton>
@@ -265,7 +274,7 @@
 import { ref, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { Plus, Rank, Operation, EditPen, Delete, Document } from '@element-plus/icons-vue'
+import { Plus, Rank, Operation, EditPen, Delete, Document, Setting } from '@element-plus/icons-vue'
 import { requirementConfigApi, type RequirementType, type Priority, type SortItem } from '@/api/modules/requirementConfig'
 import { nodeStatusApi, type NodeStatus, type SortItem as NodeStatusSortItem } from '@/api/modules/workflow-engine'
 import { listActiveWorkflowVersions } from '@/api/modules/workflow-visual'
@@ -273,6 +282,106 @@ import type { WorkflowVersionDTO } from '@/types/workflow-visual'
 import { normalizeText } from '@/utils/format'
 import Sortable, { type SortableEvent } from 'sortablejs'
 import AppButton from '@/components/common/AppButton.vue'
+import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
+import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
+
+// ── 列表字段设置：需求类型表 ──
+const typeAllColumns: ColumnDef[] = [
+  { key: 'drag', label: '拖拽', group: '基础字段', width: 60 },
+  { key: 'name', label: '名称', group: '基础字段', minWidth: 120 },
+  { key: 'code', label: '编码', group: '基础字段', minWidth: 100 },
+  { key: 'color', label: '颜色', group: '基础字段', minWidth: 100 },
+  { key: 'sortOrder', label: '排序', group: '基础字段', width: 80 },
+  { key: 'isDefault', label: '默认', group: '状态信息', width: 80 },
+  { key: 'workflow', label: '绑定工作流', group: '状态信息', minWidth: 160 },
+  { key: 'operations', label: '操作', width: 150 },
+]
+const typeDefaultKeys = ['drag', 'name', 'code', 'color', 'sortOrder', 'isDefault', 'workflow', 'operations']
+
+const {
+  showColumnConfig: showTypeColumnConfig,
+  openColumnConfig: openTypeColumnConfig,
+  saveColumns: saveTypeColumns,
+  loadColumnConfig: loadTypeColumnConfig,
+  columnGroups: typeColumnGroups,
+  draftSelectedColumns: typeDraftSelectedColumns,
+  draftColumnKeys: typeDraftColumnKeys,
+  visibleColumns: typeVisibleColumns,
+  removeDraftColumn: removeTypeDraftColumn,
+} = useColumnConfig({
+  pageKey: 'requirement_type_list',
+  columns: typeAllColumns,
+  defaultKeys: typeDefaultKeys,
+})
+
+function isTypeColumnVisible(key: string) {
+  return typeVisibleColumns.value.some((c) => c.key === key)
+}
+
+// ── 列表字段设置：优先级表 ──
+const priorityAllColumns: ColumnDef[] = [
+  { key: 'drag', label: '拖拽', group: '基础字段', width: 60 },
+  { key: 'name', label: '名称', group: '基础字段', minWidth: 120 },
+  { key: 'code', label: '编码', group: '基础字段', minWidth: 100 },
+  { key: 'level', label: '级别', group: '基础字段', width: 80 },
+  { key: 'color', label: '颜色', group: '基础字段', minWidth: 100 },
+  { key: 'sortOrder', label: '排序', group: '基础字段', width: 80 },
+  { key: 'isDefault', label: '默认', group: '状态信息', width: 80 },
+  { key: 'operations', label: '操作', width: 100 },
+]
+const priorityDefaultKeys = ['drag', 'name', 'code', 'level', 'color', 'sortOrder', 'isDefault', 'operations']
+
+const {
+  showColumnConfig: showPriorityColumnConfig,
+  openColumnConfig: openPriorityColumnConfig,
+  saveColumns: savePriorityColumns,
+  loadColumnConfig: loadPriorityColumnConfig,
+  columnGroups: priorityColumnGroups,
+  draftSelectedColumns: priorityDraftSelectedColumns,
+  draftColumnKeys: priorityDraftColumnKeys,
+  visibleColumns: priorityVisibleColumns,
+  removeDraftColumn: removePriorityDraftColumn,
+} = useColumnConfig({
+  pageKey: 'requirement_priority_list',
+  columns: priorityAllColumns,
+  defaultKeys: priorityDefaultKeys,
+})
+
+function isPriorityColumnVisible(key: string) {
+  return priorityVisibleColumns.value.some((c) => c.key === key)
+}
+
+// ── 列表字段设置：节点状态表 ──
+const nodeStatusAllColumns: ColumnDef[] = [
+  { key: 'drag', label: '拖拽', group: '基础字段', width: 60 },
+  { key: 'name', label: '状态名称', group: '基础字段', minWidth: 120 },
+  { key: 'code', label: '编码', group: '基础字段', minWidth: 150 },
+  { key: 'color', label: '颜色', group: '基础字段', minWidth: 100 },
+  { key: 'flags', label: '类型标记', group: '状态信息', minWidth: 160 },
+  { key: 'sortOrder', label: '排序', group: '基础字段', width: 80 },
+  { key: 'operations', label: '操作', width: 100 },
+]
+const nodeStatusDefaultKeys = ['drag', 'name', 'code', 'color', 'flags', 'sortOrder', 'operations']
+
+const {
+  showColumnConfig: showNodeStatusColumnConfig,
+  openColumnConfig: openNodeStatusColumnConfig,
+  saveColumns: saveNodeStatusColumns,
+  loadColumnConfig: loadNodeStatusColumnConfig,
+  columnGroups: nodeStatusColumnGroups,
+  draftSelectedColumns: nodeStatusDraftSelectedColumns,
+  draftColumnKeys: nodeStatusDraftColumnKeys,
+  visibleColumns: nodeStatusVisibleColumns,
+  removeDraftColumn: removeNodeStatusDraftColumn,
+} = useColumnConfig({
+  pageKey: 'requirement_node_status_list',
+  columns: nodeStatusAllColumns,
+  defaultKeys: nodeStatusDefaultKeys,
+})
+
+function isNodeStatusColumnVisible(key: string) {
+  return nodeStatusVisibleColumns.value.some((c) => c.key === key)
+}
 import RequirementTemplateManager from '@/views/settings/requirement-templates/index.vue'
 
 const selectedTypeCodeForTemplate = ref('')
@@ -675,6 +784,9 @@ const initializePage = async () => {
 
 onMounted(() => {
   void initializePage()
+  loadTypeColumnConfig()
+  loadPriorityColumnConfig()
+  loadNodeStatusColumnConfig()
 })
 </script>
 

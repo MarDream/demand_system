@@ -196,70 +196,15 @@
     </div>
 
     <!-- 列配置弹窗 -->
-    <el-dialog
+    <ColumnConfigDialog
       v-model="showColumnConfig"
-      title="列表字段设置"
-      width="860px"
-      class="column-config-dialog"
-      @opened="initSelectedColumnSortable"
-      @close="handleColumnConfigClose"
-    >
-      <div class="column-config">
-        <section class="column-config__panel column-config__panel--available">
-          <div class="column-config__panel-title">备选字段</div>
-          <div class="column-config__panel-body">
-            <div
-              v-for="group in columnGroups"
-              :key="group.title"
-              class="column-config__group"
-            >
-              <div class="column-config__group-title">{{ group.title }}</div>
-              <el-checkbox-group v-model="draftColumnKeys" class="column-config__checkbox-grid">
-                <el-checkbox
-                  v-for="col in group.columns"
-                  :key="col.key"
-                  :value="col.key"
-                  class="column-config__checkbox"
-                >
-                  {{ col.label }}
-                </el-checkbox>
-              </el-checkbox-group>
-            </div>
-          </div>
-        </section>
-        <section class="column-config__panel column-config__panel--selected">
-          <div class="column-config__panel-title">当前选定字段</div>
-          <div ref="selectedColumnListRef" class="column-config__selected-list">
-            <div
-              v-for="col in draftSelectedColumns"
-              :key="col.key"
-              class="column-config__selected-item"
-              :data-key="col.key"
-            >
-              <el-icon class="column-config__drag-handle"><Rank /></el-icon>
-              <span class="column-config__selected-label">{{ col.label }}</span>
-              <el-button
-                link
-                :icon="Close"
-                class="column-config__remove"
-                :aria-label="`移除${col.label}`"
-                @click="removeDraftColumn(col.key)"
-              />
-            </div>
-            <el-empty
-              v-if="draftSelectedColumns.length === 0"
-              description="暂无选定字段"
-              :image-size="72"
-              class="column-config__empty"
-            />
-          </div>
-        </section>
-      </div>
-      <template #footer>
-        <el-button @click="handleCancelColumnConfig">取消</el-button>
-        <el-button type="primary" @click="saveColumns">确定</el-button>
-      </template>
-    </el-dialog>
+      :column-groups="columnGroups"
+      :draft-selected-columns="draftSelectedColumns"
+      :draft-column-keys="draftColumnKeys"
+      @update:draft-column-keys="draftColumnKeys = $event"
+      @remove="removeDraftColumn"
+      @save="saveColumns"
+    />
 
     <!-- Provider 对话框 -->
     <el-dialog
@@ -399,15 +344,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Loading, View, Hide, Setting, EditPen, Delete, Connection, Search, Rank, Close } from '@element-plus/icons-vue'
+import { Plus, Loading, View, Hide, Setting, EditPen, Delete, Connection, Search } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
-import Sortable, { type SortableEvent } from 'sortablejs'
 import {
   llmProviderApi,
-  getColumnConfig,
-  saveColumnConfig,
   type LlmProvider,
   type LlmProviderForm,
   type LlmModel,
@@ -415,23 +357,12 @@ import {
   type SniffedModel,
 } from '@/api/modules/llmProvider'
 import AppButton from '@/components/common/AppButton.vue'
+import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
+import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 
-// ==================== State ====================
+// ==================== 列字段设置 ====================
 
-interface ColumnDef {
-  key: string
-  label: string
-  group?: string
-  prop?: string
-  width?: number
-  minWidth?: number
-  align?: string
-  fixed?: string | false
-  showOverflowTooltip?: boolean
-}
-
-// 所有可用列定义
-const allColumns: ColumnDef[] = [
+const llmModelColumns: ColumnDef[] = [
   { key: 'name', label: '名称', group: '基础字段', prop: 'name', minWidth: 120 },
   { key: 'modelId', label: '模型ID', group: '基础字段', prop: 'modelId', minWidth: 140, showOverflowTooltip: true },
   { key: 'modelType', label: '类型', group: '基础字段', prop: 'modelType', width: 100, align: 'center' },
@@ -444,122 +375,23 @@ const allColumns: ColumnDef[] = [
   { key: 'operations', label: '操作', width: 110, align: 'center', fixed: false },
 ]
 
-// 默认显示的列
-const defaultColumnKeys = ['name', 'modelId', 'modelType', 'temperature', 'maxTokens', 'isDefault', 'enabled', 'connectivity', 'testDuration', 'operations']
+const llmModelDefaultKeys = ['name', 'modelId', 'modelType', 'temperature', 'maxTokens', 'isDefault', 'enabled', 'connectivity', 'testDuration', 'operations']
 
-const selectedColumnKeys = ref<string[]>([...defaultColumnKeys])
-const draftColumnKeys = ref<string[]>([])
-const showColumnConfig = ref(false)
-const selectedColumnListRef = ref<HTMLElement>()
-let selectedColumnSortable: Sortable | null = null
-
-const configurableColumns = computed(() => allColumns.filter(c => c.key !== 'operations'))
-
-const columnGroups = computed(() => {
-  const groupOrder = ['基础字段', '参数配置', '状态信息', '测试信息']
-  const grouped = new Map<string, ColumnDef[]>()
-  configurableColumns.value.forEach((column) => {
-    const groupName = column.group || '其他字段'
-    if (!grouped.has(groupName)) {
-      grouped.set(groupName, [])
-    }
-    grouped.get(groupName)!.push(column)
-  })
-  return groupOrder
-    .filter(groupName => grouped.has(groupName))
-    .map(groupName => ({
-      title: groupName,
-      columns: grouped.get(groupName)!,
-    }))
+const {
+  showColumnConfig,
+  openColumnConfig,
+  saveColumns,
+  loadColumnConfig,
+  columnGroups,
+  draftSelectedColumns,
+  draftColumnKeys,
+  visibleColumns,
+  removeDraftColumn,
+} = useColumnConfig({
+  pageKey: 'llm_model_list',
+  columns: llmModelColumns,
+  defaultKeys: llmModelDefaultKeys,
 })
-
-const draftSelectedColumns = computed(() => {
-  const columnMap = new Map(configurableColumns.value.map(column => [column.key, column]))
-  return draftColumnKeys.value
-    .map(key => columnMap.get(key))
-    .filter((column): column is ColumnDef => Boolean(column))
-})
-
-const visibleColumns = computed(() => {
-  const columnMap = new Map(allColumns.map(column => [column.key, column]))
-  const cols = selectedColumnKeys.value
-    .map(key => columnMap.get(key))
-    .filter((column): column is ColumnDef => Boolean(column))
-  if (!cols.find(c => c.key === 'operations')) {
-    cols.push(allColumns.find(c => c.key === 'operations')!)
-  }
-  return cols
-})
-
-function openColumnConfig() {
-  draftColumnKeys.value = selectedColumnKeys.value.filter(key => key !== 'operations')
-  showColumnConfig.value = true
-}
-
-async function initSelectedColumnSortable() {
-  await nextTick()
-  selectedColumnSortable?.destroy()
-  if (!selectedColumnListRef.value) return
-  selectedColumnSortable = Sortable.create(selectedColumnListRef.value, {
-    animation: 150,
-    handle: '.column-config__drag-handle',
-    draggable: '.column-config__selected-item',
-    ghostClass: 'column-config__selected-item--ghost',
-    onEnd: handleColumnSortEnd,
-  })
-}
-
-function handleColumnSortEnd(evt: SortableEvent) {
-  const { oldIndex, newIndex } = evt
-  if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return
-
-  const keys = [...draftColumnKeys.value]
-  const [moved] = keys.splice(oldIndex, 1)
-  if (!moved) return
-  keys.splice(newIndex, 0, moved)
-  draftColumnKeys.value = keys
-}
-
-function removeDraftColumn(key: string) {
-  draftColumnKeys.value = draftColumnKeys.value.filter(columnKey => columnKey !== key)
-}
-
-function handleCancelColumnConfig() {
-  showColumnConfig.value = false
-}
-
-function handleColumnConfigClose() {
-  selectedColumnSortable?.destroy()
-  selectedColumnSortable = null
-}
-
-async function loadColumnConfig() {
-  try {
-    const res = await getColumnConfig('llm_model_list') as any
-    if (res && Array.isArray(res)) {
-      selectedColumnKeys.value = [...normalizeColumnKeys(res), 'operations']
-    }
-  } catch {
-    // 使用默认配置
-  }
-}
-
-async function saveColumns() {
-  try {
-    const keys = normalizeColumnKeys(draftColumnKeys.value)
-    await saveColumnConfig('llm_model_list', keys)
-    selectedColumnKeys.value = [...keys, 'operations']
-    ElMessage.success('列配置已保存')
-    showColumnConfig.value = false
-  } catch {
-    ElMessage.error('保存列配置失败')
-  }
-}
-
-function normalizeColumnKeys(keys: string[]) {
-  const allowedKeys = new Set(configurableColumns.value.map(column => column.key))
-  return Array.from(new Set(keys.filter(key => key !== 'operations' && allowedKeys.has(key))))
-}
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -635,11 +467,6 @@ onMounted(() => {
   loadProviders()
   loadColumnConfig()
   loadRoles()
-})
-
-onBeforeUnmount(() => {
-  selectedColumnSortable?.destroy()
-  selectedColumnSortable = null
 })
 
 // ==================== Data ====================
@@ -1399,119 +1226,5 @@ async function handleSniffImport() {
   }
 }
 
-// ==================== 列配置弹窗 ====================
-.column-config {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 262px;
-  gap: 12px;
-  min-height: 520px;
-}
-
-.column-config__panel {
-  overflow: hidden;
-  border: 1px solid var(--el-border-color);
-  border-radius: 2px;
-  background: var(--el-bg-color);
-}
-
-.column-config__panel-title {
-  display: flex;
-  align-items: center;
-  height: 40px;
-  padding: 0 16px;
-  background: var(--el-fill-color-light);
-  color: var(--el-text-color-regular);
-  font-size: 14px;
-}
-
-.column-config__panel-body {
-  height: 478px;
-  overflow-y: auto;
-  padding: 14px 20px 20px;
-}
-
-.column-config__group + .column-config__group {
-  margin-top: 14px;
-}
-
-.column-config__group-title {
-  margin-bottom: 8px;
-  color: var(--el-text-color-secondary);
-  font-size: 14px;
-  line-height: 22px;
-}
-
-.column-config__checkbox-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(150px, 1fr));
-  column-gap: 44px;
-  row-gap: 10px;
-}
-
-.column-config__checkbox {
-  display: inline-flex;
-  align-items: center;
-  height: 26px;
-  margin-right: 0;
-  color: var(--el-text-color-primary);
-  font-size: 14px;
-}
-
-.column-config__selected-list {
-  height: 478px;
-  overflow-y: auto;
-  padding: 22px 18px;
-}
-
-.column-config__selected-item {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) 24px;
-  align-items: center;
-  gap: 8px;
-  min-height: 36px;
-  color: var(--el-text-color-primary);
-  font-size: 14px;
-}
-
-.column-config__selected-item--ghost {
-  opacity: 0.55;
-  background: var(--el-color-primary-light-9);
-}
-
-.column-config__drag-handle {
-  color: var(--el-text-color-placeholder);
-  cursor: grab;
-
-  &:active {
-    cursor: grabbing;
-  }
-}
-
-.column-config__selected-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.column-config__remove {
-  color: var(--el-text-color-placeholder);
-
-  &:hover {
-    color: var(--el-color-danger);
-  }
-}
-
-.column-config__empty {
-  height: 100%;
-  justify-content: center;
-}
-
-:deep(.column-config-dialog .el-dialog__body) {
-  padding: 20px 22px;
-}
-
-:deep(.column-config-dialog .el-dialog__footer) {
-  padding: 16px 22px;
-  border-top: 1px solid var(--el-border-color-lighter);
-}
+// 列设置弹窗样式已迁至 src/styles/column-config.scss（全局）
 </style>

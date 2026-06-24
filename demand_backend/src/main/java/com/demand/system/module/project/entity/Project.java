@@ -27,6 +27,8 @@ public class Project {
 
     private LocalDate endDate;
 
+    private String contactPhone;
+
     private Long creatorId;
 
     private String status;
@@ -100,6 +102,14 @@ public class Project {
 
     public void setEndDate(LocalDate endDate) {
         this.endDate = endDate;
+    }
+
+    public String getContactPhone() {
+        return contactPhone;
+    }
+
+    public void setContactPhone(String contactPhone) {
+        this.contactPhone = contactPhone;
     }
 
     public Long getCreatorId() {
