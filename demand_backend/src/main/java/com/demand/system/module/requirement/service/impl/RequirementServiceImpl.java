@@ -29,6 +29,7 @@ import com.demand.system.module.requirement.entity.RequirementComment;
 import com.demand.system.module.requirement.entity.RequirementFollow;
 import com.demand.system.module.requirement.entity.RequirementHistory;
 import com.demand.system.module.requirement.entity.RequirementTypeConfig;
+import com.demand.system.module.requirement.entity.PriorityConfig;
 import com.demand.system.module.requirement.mapper.CustomFieldValueMapper;
 import com.demand.system.module.requirement.mapper.RequirementCommentMapper;
 import com.demand.system.module.requirement.mapper.RequirementFollowMapper;
@@ -474,6 +475,10 @@ public class RequirementServiceImpl implements RequirementService {
         }
         requireProjectSelection(dto.getProjectId());
 
+        // ===== BUG-01 修复: type/priority 字典校验（防止非法值落库）=====
+        validateTypeAgainstDict(dto.getType());
+        validatePriorityAgainstDict(dto.getPriority());
+
         Requirement requirement = new Requirement();
         BeanUtils.copyProperties(dto, requirement);
         requirement.setProjectId(normalizeProjectId(dto.getProjectId()));
@@ -518,6 +523,65 @@ public class RequirementServiceImpl implements RequirementService {
                 creatorId
         );
         return requirement.getId();
+    }
+
+    /**
+     * BUG-01 修复: 校验需求 type 是否在已配置的字典中
+     */
+    private void validateTypeAgainstDict(String type) {
+        if (!StringUtils.hasText(type)) {
+            return; // null/空由调用方走"默认类型"逻辑
+        }
+        Result<List<RequirementTypeConfig>> typesResult = requirementConfigService.listTypes();
+        List<RequirementTypeConfig> types = typesResult != null ? typesResult.getData() : null;
+        if (types == null || types.isEmpty()) {
+            // 字典为空时放行（兼容字典初始化前）
+            return;
+        }
+        boolean valid = types.stream().anyMatch(t -> type.equalsIgnoreCase(t.getCode()) || type.equalsIgnoreCase(t.getName()));
+        if (!valid) {
+            throw new BusinessException(400, "需求类型不合法: " + type);
+        }
+    }
+
+    /**
+     * BUG-01 修复: 校验需求 priority 是否在已配置的字典中
+     */
+    private void validatePriorityAgainstDict(String priority) {
+        if (!StringUtils.hasText(priority)) {
+            return;
+        }
+        Result<List<PriorityConfig>> priResult = requirementConfigService.listPriorities();
+        List<PriorityConfig> priorities = priResult != null ? priResult.getData() : null;
+        if (priorities == null || priorities.isEmpty()) {
+            return;
+        }
+        boolean valid = priorities.stream().anyMatch(p -> priority.equalsIgnoreCase(p.getCode()) || priority.equalsIgnoreCase(p.getName()));
+        if (!valid) {
+            throw new BusinessException(400, "优先级不合法: " + priority);
+        }
+    }
+
+    /**
+     * BUG-02 辅助: 规范化提交 DTO。草稿提交场景允许客户端省略 version（默认为 0）；
+     * 其他场景保留原 version 用于乐观锁。
+     * 注：返回新的 final 引用，避免调用方对原 dto 重新赋值破坏 lambda 的 effectively final 捕获。
+     */
+    private RequirementSubmitDTO normalizeSubmitDto(RequirementSubmitDTO source) {
+        if (source == null) {
+            RequirementSubmitDTO empty = new RequirementSubmitDTO();
+            empty.setVersion(0);
+            return empty;
+        }
+        if (source.getVersion() != null) {
+            return source;
+        }
+        RequirementSubmitDTO copy = new RequirementSubmitDTO();
+        copy.setNextNodeId(source.getNextNodeId());
+        copy.setProjectId(source.getProjectId());
+        copy.setComment(source.getComment());
+        copy.setVersion(0);
+        return copy;
     }
 
     @Override
@@ -645,9 +709,11 @@ public class RequirementServiceImpl implements RequirementService {
         if (!Objects.equals(requirement.getCreatorId(), userId)) {
             throw new BusinessException(403, "只有创建人可以提交草稿");
         }
-        if (dto == null || dto.getVersion() == null) {
-            throw new BusinessException(400, "缺少版本号");
-        }
+        // BUG-02 修复: 草稿场景（version 必为 0）允许客户端省略 version，自动补 0；
+        // 非草稿场景仍要求显式传 version 用于乐观锁。
+        // 注：dto 参数本身不能再赋值（后续 lambda 依赖 effectively final），
+        //     所以必须新建 final 变量，并在所有引用点替换为 effectiveDto。
+        RequirementSubmitDTO effectiveDto = normalizeSubmitDto(dto);
 
         if (!StringUtils.hasText(requirement.getType())) {
             throw new BusinessException(400, "需求类型未设置，无法提交");
@@ -672,30 +738,30 @@ public class RequirementServiceImpl implements RequirementService {
         if (candidates.size() == 1) {
             targetNodeId = candidates.get(0).getNodeId();
         } else {
-            if (!StringUtils.hasText(dto.getNextNodeId())) {
+            if (!StringUtils.hasText(effectiveDto.getNextNodeId())) {
                 throw new BusinessException(400, "请选择下一环节");
             }
-            boolean ok = candidates.stream().anyMatch(node -> dto.getNextNodeId().trim().equals(node.getNodeId()));
+            boolean ok = candidates.stream().anyMatch(node -> effectiveDto.getNextNodeId().trim().equals(node.getNodeId()));
             if (!ok) {
                 throw new BusinessException(400, "下一环节非法");
             }
-            targetNodeId = dto.getNextNodeId().trim();
+            targetNodeId = effectiveDto.getNextNodeId().trim();
         }
 
         UpdateWrapper<Requirement> submitWrapper = new UpdateWrapper<>();
         submitWrapper.eq("id", requirementId)
                 .eq("creator_id", userId)
                 .eq("is_draft", 1)
-                .eq("version", dto.getVersion())
+                .eq("version", effectiveDto.getVersion())
                 .set("is_draft", 0)
-                .set("version", dto.getVersion() + 1);
+                .set("version", effectiveDto.getVersion() + 1);
         int updated = requirementMapper.update(null, submitWrapper);
         if (updated <= 0) {
             throw new BusinessException(ErrorCode.CONFLICT, "需求已被他人处理，请刷新后重试");
         }
 
         workflowEngineService.submitFromDraft(requirementId, active.getId(), targetNodeId,
-                normalizeProjectId(dto.getProjectId()), dto.getComment(), userId);
+                normalizeProjectId(effectiveDto.getProjectId()), effectiveDto.getComment(), userId);
 
         Requirement latest = requirementMapper.selectById(requirementId);
         RequirementVO vo = new RequirementVO();

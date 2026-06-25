@@ -19,6 +19,20 @@ set "FRONTEND_PORT=5170"
 set "BACKEND_PORT=8081"
 set "KKFILEVIEW_PORT=8012"
 
+:: ===== Maven 路径解析 =====
+:: 优先使用项目自带的 Maven (.mvn-tool/maven/)，
+:: 否则回退到 PATH 中的 mvn (系统装在 C:\apache-maven-3.9.x)
+set "PROJECT_MVN=%ROOT_DIR%.mvn-tool\maven\bin\mvn.cmd"
+if exist "%PROJECT_MVN%" (
+    set "MVN_CMD=%PROJECT_MVN%"
+    echo [INFO] 使用项目内嵌 Maven: %PROJECT_MVN%
+) else (
+    set "MVN_CMD=mvn"
+    echo [INFO] 使用系统 PATH 中的 mvn
+)
+:: JDK 17+ 的 jansi 需要原生访问权限，避免启动警告
+set "MAVEN_OPTS=--enable-native-access=ALL-UNNAMED"
+
 set "LOG_DIR=%ROOT_DIR%logs"
 set "BACKEND_LOG=%LOG_DIR%\backend.log"
 set "BACKEND_ERR=%LOG_DIR%\backend.err.log"
@@ -78,7 +92,7 @@ goto after_backend
 :start_backend
 echo   后台启动后端 ^(隐藏窗口^), 日志: logs\backend.log
 del /q "%BACKEND_PID%" >nul 2>&1
-powershell -NoProfile -Command "$p=Start-Process cmd -ArgumentList @('/c','chcp 65001>nul && set JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 && cd /d %ROOT_DIR%demand_backend && mvn spring-boot:run -Dspring-boot.run.profiles=dev') -WindowStyle Hidden -RedirectStandardOutput '%BACKEND_LOG%' -RedirectStandardError '%BACKEND_ERR%' -PassThru; Set-Content -Path '%BACKEND_PID%' -Value $p.Id -Encoding ascii"
+powershell -NoProfile -Command "$p=Start-Process cmd -ArgumentList @('/c','chcp 65001>nul && set JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 && set MAVEN_OPTS=--enable-native-access=ALL-UNNAMED && cd /d %ROOT_DIR%demand_backend && %MVN_CMD% spring-boot:run -Dspring-boot.run.profiles=dev') -WindowStyle Hidden -RedirectStandardOutput '%BACKEND_LOG%' -RedirectStandardError '%BACKEND_ERR%' -PassThru; Set-Content -Path '%BACKEND_PID%' -Value $p.Id -Encoding ascii"
 :after_backend
 
 :: 4) 启动前端
@@ -206,7 +220,7 @@ echo.
 echo [2/4] 启动后端...
 call :kill_by_port %BACKEND_PORT% 后端
 del /q "%BACKEND_PID%" >nul 2>&1
-powershell -NoProfile -Command "$p=Start-Process cmd -ArgumentList @('/c','chcp 65001>nul && set JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 && cd /d %ROOT_DIR%demand_backend && mvn spring-boot:run -Dspring-boot.run.profiles=dev') -WindowStyle Hidden -RedirectStandardOutput '%BACKEND_LOG%' -RedirectStandardError '%BACKEND_ERR%' -PassThru; Set-Content -Path '%BACKEND_PID%' -Value $p.Id -Encoding ascii"
+powershell -NoProfile -Command "$p=Start-Process cmd -ArgumentList @('/c','chcp 65001>nul && set JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 && set MAVEN_OPTS=--enable-native-access=ALL-UNNAMED && cd /d %ROOT_DIR%demand_backend && %MVN_CMD% spring-boot:run -Dspring-boot.run.profiles=dev') -WindowStyle Hidden -RedirectStandardOutput '%BACKEND_LOG%' -RedirectStandardError '%BACKEND_ERR%' -PassThru; Set-Content -Path '%BACKEND_PID%' -Value $p.Id -Encoding ascii"
 
 :: 等待后端就绪
 echo   等待后端就绪...

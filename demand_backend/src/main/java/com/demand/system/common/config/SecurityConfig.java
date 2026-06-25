@@ -1,9 +1,12 @@
 package com.demand.system.common.config;
 
 import com.demand.system.common.filter.RateLimitFilter;
+import com.demand.system.common.result.ErrorCode;
+import com.demand.system.common.result.Result;
 import com.demand.system.common.utils.JwtUtils;
 import com.demand.system.module.auth.security.UserPrincipal;
 import com.demand.system.module.rbac.support.RbacPermissionResolver;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -11,6 +14,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -22,9 +26,12 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -42,8 +49,34 @@ public class SecurityConfig {
         return new JwtAuthenticationFilter(jwtSecret, rbacPermissionResolver);
     }
 
+    // ===== BUG-03 修复: 自定义 Security 异常 EntryPoint/AccessDeniedHandler 返回统一 JSON 而非空 body =====
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAuthenticationFilter jwtAuthenticationFilter, RateLimitFilter rateLimitFilter) throws Exception {
+    public AuthenticationEntryPoint jwtAuthenticationEntryPoint(ObjectMapper objectMapper) {
+        return (request, response, authException) -> writeJson(response, objectMapper,
+                HttpServletResponse.SC_UNAUTHORIZED, ErrorCode.AUTH_FAILED, "未登录或登录已过期，请重新登录");
+    }
+
+    @Bean
+    public AccessDeniedHandler jwtAccessDeniedHandler(ObjectMapper objectMapper) {
+        return (request, response, accessDeniedException) -> writeJson(response, objectMapper,
+                HttpServletResponse.SC_FORBIDDEN, ErrorCode.FORBIDDEN, "没有访问权限");
+    }
+
+    private void writeJson(HttpServletResponse response, ObjectMapper mapper,
+                           int status, int bizCode, String message) throws IOException {
+        response.setStatus(status);
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        Result<Void> body = Result.fail(bizCode, message);
+        mapper.writeValue(response.getOutputStream(), body);
+    }
+
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http,
+                                                   JwtAuthenticationFilter jwtAuthenticationFilter,
+                                                   RateLimitFilter rateLimitFilter,
+                                                   AuthenticationEntryPoint jwtAuthenticationEntryPoint,
+                                                   AccessDeniedHandler jwtAccessDeniedHandler) throws Exception {
         http
             .csrf(csrf -> csrf.disable())
             .cors(cors -> cors.configurationSource(request -> {
@@ -71,6 +104,10 @@ public class SecurityConfig {
                     "/doc.html"
             ).permitAll()
                 .anyRequest().authenticated()
+            )
+            .exceptionHandling(eh -> eh
+                .authenticationEntryPoint(jwtAuthenticationEntryPoint)
+                .accessDeniedHandler(jwtAccessDeniedHandler)
             )
             .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

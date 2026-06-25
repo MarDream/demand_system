@@ -353,7 +353,7 @@
 
 <script setup lang="ts">
 import { computed, ref, onMounted, onBeforeUnmount, reactive, watch } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppButton from '@/components/common/AppButton.vue'
 import CountersignConfig from './components/CountersignConfig.vue'
@@ -2204,10 +2204,66 @@ function adjustDrawerSize() {
   }
 }
 
+// 离开前确认：处理"工作流发生改变，存在有编辑"场景。
+// 返回值约定：
+//   true  -> 允许离开
+//   false -> 留在当前页
+// 弹窗提供三个选项：
+//   - 保存草稿并离开（先 handleSave，成功才离开）
+//   - 不保存直接离开
+//   - 取消（关闭弹窗，留在当前页）
+const confirmLeaveIfDirty = async (): Promise<boolean> => {
+  // 只读模式或没有未保存修改，直接放行
+  if (isViewMode.value || !configDirty.value) return true
+
+  try {
+    await ElMessageBox.confirm(
+      '当前工作流存在未保存的修改，离开前建议先保存草稿。继续离开将丢失这部分修改，是否保存草稿？',
+      '存在未保存的修改',
+      {
+        confirmButtonText: '保存草稿并离开',
+        cancelButtonText: '不保存直接离开',
+        showClose: true,
+        closeOnClickModal: false,
+        closeOnPressEscape: false,
+        distinguishCancelAndClose: true,
+        type: 'warning',
+        buttonSize: 'default'
+      }
+    )
+    // 用户点了"保存草稿并离开"
+    const saved = await handleSave()
+    return saved === true
+  } catch (action: any) {
+    // distinguishCancelAndClose: 'cancel' = "不保存直接离开"，'close' = 关闭弹窗
+    if (action === 'cancel') return true
+    return false
+  }
+}
+
 // 返回
-const goBack = () => {
+const goBack = async () => {
+  const allowed = await confirmLeaveIfDirty()
+  if (!allowed) return
   router.push(returnMenuPath.value)
 }
+
+// 路由切换守卫：用户在侧边栏点击其他菜单、或者编辑 URL 触发路由变化时拦截
+onBeforeRouteLeave(async () => {
+  return await confirmLeaveIfDirty()
+})
+
+// 浏览器刷新 / 关闭标签页 / 关闭浏览器兜底
+const beforeUnloadHandler = (e: BeforeUnloadEvent) => {
+  if (isViewMode.value || !configDirty.value) return
+  e.preventDefault()
+  // 现代浏览器忽略自定义文案，统一显示原生提示
+  e.returnValue = ''
+}
+
+onMounted(() => {
+  window.addEventListener('beforeunload', beforeUnloadHandler)
+})
 
 const loadVersionHistory = async () => {
   try {
@@ -2313,6 +2369,7 @@ async function loadRoleAndUserList() {
 }
 
 onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', beforeUnloadHandler)
   if (lf) {
     lf.destroy()
     lf = null

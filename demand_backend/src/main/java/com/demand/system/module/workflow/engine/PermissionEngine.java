@@ -1,10 +1,12 @@
 package com.demand.system.module.workflow.engine;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.demand.system.module.rbac.entity.Role;
+import com.demand.system.module.rbac.entity.UserRole;
+import com.demand.system.module.rbac.mapper.RoleMapper;
+import com.demand.system.module.rbac.mapper.UserRoleMapper;
 import com.demand.system.module.requirement.entity.Requirement;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
-import com.demand.system.module.user.entity.UserOrganization;
-import com.demand.system.module.user.mapper.UserOrganizationMapper;
 import com.demand.system.module.workflow.entity.WorkflowNodePermission;
 import com.demand.system.module.workflow.entity.WorkflowState;
 import com.demand.system.module.workflow.entity.WorkflowTransition;
@@ -38,7 +40,8 @@ public class PermissionEngine {
     };
 
     private final WorkflowTransitionMapper transitionMapper;
-    private final UserOrganizationMapper userOrganizationMapper;
+    private final UserRoleMapper userRoleMapper;
+    private final RoleMapper roleMapper;
     private final WorkflowVersionMapper workflowVersionMapper;
     private final WorkflowVersionResolver workflowVersionResolver;
     private final WorkflowNodePermissionMapper nodePermissionMapper;
@@ -47,13 +50,15 @@ public class PermissionEngine {
     private final WorkflowDefinitionEngine workflowDefinitionEngine;
     private final ObjectMapper objectMapper;
 
-    public PermissionEngine(WorkflowTransitionMapper transitionMapper, UserOrganizationMapper userOrganizationMapper,
-                           WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver,
+    public PermissionEngine(WorkflowTransitionMapper transitionMapper, UserRoleMapper userRoleMapper,
+                           RoleMapper roleMapper, WorkflowVersionMapper workflowVersionMapper,
+                           WorkflowVersionResolver workflowVersionResolver,
                            WorkflowNodePermissionMapper nodePermissionMapper, WorkflowStateMapper stateMapper,
                            RequirementMapper requirementMapper, WorkflowDefinitionEngine workflowDefinitionEngine,
                            ObjectMapper objectMapper) {
         this.transitionMapper = transitionMapper;
-        this.userOrganizationMapper = userOrganizationMapper;
+        this.userRoleMapper = userRoleMapper;
+        this.roleMapper = roleMapper;
         this.workflowVersionMapper = workflowVersionMapper;
         this.workflowVersionResolver = workflowVersionResolver;
         this.nodePermissionMapper = nodePermissionMapper;
@@ -185,15 +190,24 @@ public class PermissionEngine {
 
 
     private Set<String> getUserRoles(Long userId) {
-        LambdaQueryWrapper<UserOrganization> userRoleWrapper = new LambdaQueryWrapper<>();
-        userRoleWrapper.eq(UserOrganization::getUserId, userId);
-        List<UserOrganization> userOrgs = userOrganizationMapper.selectList(userRoleWrapper);
-        return userOrgs.stream()
-                .map(UserOrganization::getSystemRole)
-                .filter(StringUtils::hasText)
-                .flatMap(raw -> Arrays.stream(raw.split(",")))
-                .map(String::trim)
-                .filter(StringUtils::hasText)
+        // 工作流节点 allowed_roles 统一按 "ROLE_" + role.id 编码（见 WorkflowGraphCompiler），
+        // 故读取 user_roles -> roles，返回 "ROLE_" + role.id 集合以对齐节点配置。
+        LambdaQueryWrapper<UserRole> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(UserRole::getUserId, userId);
+        List<UserRole> userRoles = userRoleMapper.selectList(wrapper);
+        if (userRoles.isEmpty()) {
+            return Set.of();
+        }
+        List<Long> roleIds = userRoles.stream()
+                .map(UserRole::getRoleId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        List<Role> roles = roleMapper.selectBatchIds(roleIds);
+        return roles.stream()
+                .map(Role::getId)
+                .filter(Objects::nonNull)
+                .map(id -> "ROLE_" + id)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
