@@ -73,6 +73,12 @@ export const routes: RouteRecordRaw[] = [
         meta: { title: '统计报表', icon: 'TrendCharts' },
       },
       {
+        path: 'statistics/rating',
+        name: 'RatingStatistics',
+        component: () => import('@/views/statistics/rating.vue'),
+        meta: { title: '评分分析', hidden: true, activeMenu: '/statistics' },
+      },
+      {
         path: 'settings/rag',
         name: 'RagCenter',
         component: () => import('@/views/rag/index.vue'),

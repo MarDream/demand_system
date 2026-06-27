@@ -3,12 +3,10 @@
     <TableCard>
       <template #toolbar>
         <Toolbar>
-          <template #left>
+          <template #right>
             <el-tooltip content="列表字段设置">
               <el-button link :icon="Setting" @click="openColumnConfig" />
             </el-tooltip>
-          </template>
-          <template #right>
             <AppButton type="primary" permission="button:iteration:create" @click="openDialog()">新建迭代</AppButton>
           </template>
         </Toolbar>

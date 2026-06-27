@@ -214,6 +214,8 @@
                   <el-option label="已通过" value="APPROVED" />
                   <el-option label="已拒绝" value="REJECTED" />
                 </el-select>
+              </div>
+              <div class="toolbar-right">
                 <el-tooltip content="列表字段设置">
                   <el-button link :icon="Tools" @click="openApprovalColumnConfig" />
                 </el-tooltip>

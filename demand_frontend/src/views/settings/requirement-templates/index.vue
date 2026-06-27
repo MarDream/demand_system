@@ -1,18 +1,7 @@
 <template>
-  <div class="requirement-templates-page">
-    <div class="page-header">
-      <h2>需求模板管理</h2>
-      <div class="page-header__actions">
-        <el-tooltip content="列表字段设置">
-          <el-button link :icon="Setting" @click="openColumnConfig" />
-        </el-tooltip>
-        <AppButton type="primary" permission="button:requirement-template:create" @click="handleCreate">新建模板</AppButton>
-      </div>
-    </div>
-
-    <el-table :data="templates" border v-loading="loading">
-      <el-table-column v-if="isColumnVisible('requirementTypeName')" prop="requirementTypeName" label="需求类型" width="150" />
-      <el-table-column v-if="isColumnVisible('templateName')" prop="templateName" label="模板名称" min-width="200" />
+  <el-table :data="templates" border v-loading="loading">
+    <el-table-column v-if="isColumnVisible('requirementTypeName')" prop="requirementTypeName" label="需求类型" width="150" />
+    <el-table-column v-if="isColumnVisible('templateName')" prop="templateName" label="模板名称" min-width="200" />
       <el-table-column v-if="isColumnVisible('isActive')" prop="isActive" label="状态" width="100">
         <template #default="{ row }">
           <el-tag :type="row.isActive === 1 ? 'success' : 'info'">
@@ -98,7 +87,6 @@
         <AppButton type="primary" :permission="savePermission" @click="handleSave">保存</AppButton>
       </template>
     </el-dialog>
-  </div>
 </template>
 
 <script setup lang="ts">
@@ -163,6 +151,9 @@ const {
 function isColumnVisible(key: string) {
   return visibleColumns.value.some((c) => c.key === key)
 }
+
+// 暴露给父组件（需求基本配置）调用的方法，必须在 useColumnConfig 解构后
+defineExpose({ openColumnConfig, handleCreate })
 
 const savePermission = computed(() => isEditMode.value ? 'button:requirement-template:update' : 'button:requirement-template:create')
 
@@ -376,25 +367,10 @@ async function handleDelete(row: RequirementTemplate) {
 </script>
 
 <style scoped lang="scss">
-.requirement-templates-page {
-  padding: 20px;
-
-  .page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 20px;
-
-    h2 {
-      margin: 0;
-    }
-  }
-
-  .form-tip {
-    margin-left: 8px;
-    color: var(--color-muted-text);
-    font-size: 12px;
-  }
+.form-tip {
+  margin-left: 8px;
+  color: var(--color-muted-text);
+  font-size: 12px;
 }
 
 .template-editor {

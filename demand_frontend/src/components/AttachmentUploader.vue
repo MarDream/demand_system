@@ -352,7 +352,7 @@ function formatAttachmentTime(time: string): string {
 .upload-zone {
   border: 2px dashed var(--el-border-color);
   border-radius: 6px;
-  padding: 30px;
+  padding: 15px;
   text-align: center;
   cursor: pointer;
   transition: all 0.3s;
@@ -374,7 +374,7 @@ function formatAttachmentTime(time: string): string {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .upload-zone__icon {

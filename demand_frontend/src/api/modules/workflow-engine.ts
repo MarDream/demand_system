@@ -8,6 +8,7 @@ export interface FlowTransitionRequest {
   action?: string
   comment?: string
   rating?: number | null
+  ratingDimensions?: Record<string, number> | null
   lockVersion?: number | null
   attachments?: RequirementAttachment[]
 }
@@ -53,6 +54,7 @@ export interface WorkflowAvailableActions {
   currentNodeRequireComment?: boolean | null
   /** 当前节点是否要求流转时必须上传附件 */
   currentNodeRequireAttachment?: boolean | null
+  currentNodeRatingConfig?: import('@/api/modules/workflow').NodeRatingConfig | null
   /** 当前用户是否可编辑此需求（基于工作流节点权限判断） */
   canEdit?: boolean | null
   /** 当前用户是否可删除此需求（仅创建人或管理员） */

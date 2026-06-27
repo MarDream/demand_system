@@ -14,4 +14,8 @@ export interface PageResult<T> {
   total: number
   pageNum: number
   pageSize: number
+  /** 游标分页时返回下一页游标值，OFFSET 分页时为 null */
+  nextCursor?: string
+  /** 游标分页时指示是否还有更多数据，OFFSET 分页时为 null */
+  hasMore?: boolean
 }

@@ -1248,7 +1248,7 @@ function downloadAttachmentFile(file: RequirementAttachment) {
   downloadRequirementAttachment(file)
 }
 
-async function executeTransition(extra?: { rating?: number; comment?: string; attachments?: RequirementAttachment[] }) {
+async function executeTransition(extra?: { rating?: number; ratingDimensions?: Record<string, number>; comment?: string; attachments?: RequirementAttachment[] }) {
   transitionLoading.value = true
   try {
     await workflowEngineApi.transition({
@@ -1258,6 +1258,7 @@ async function executeTransition(extra?: { rating?: number; comment?: string; at
       action: 'submit',
       comment: extra?.comment,
       rating: extra?.rating,
+      ratingDimensions: extra?.ratingDimensions,
       attachments: extra?.attachments,
       lockVersion: workflowRuntime.value.lockVersion ?? undefined,
     })

@@ -105,6 +105,25 @@ export interface ParallelBranch {
   createdAt?: string
 }
 
+/**
+ * 节点评分配置（对应 ADR-002 工作流节点评分功能）
+ */
+export interface RatingDimension {
+  key: string
+  name: string
+  description?: string
+  minLabel?: string
+  maxLabel?: string
+}
+
+export interface NodeRatingConfig {
+  enabled: boolean
+  required: boolean
+  evaluator?: string
+  showInStatistics?: boolean
+  dimensions: RatingDimension[]
+}
+
 export function getParallelBranches(requirementId: number) {
   return request.get<ApiResponse<ParallelBranch[]>>('/v1/workflow/parallel/branches', {
     params: { requirementId },

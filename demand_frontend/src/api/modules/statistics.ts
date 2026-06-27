@@ -20,3 +20,84 @@ export function getBurndownData(iterationId: number) {
 export function getCfdData(projectId: number) {
   return request.get<ApiResponse>(`/v1/projects/${projectId}/stats/cfd`)
 }
+
+// ==================== 评分统计（对应 ADR-002 Phase 2） ====================
+
+export interface RatingTrendPoint {
+  label: string
+  average: number
+  count: number
+}
+
+export interface LowRatingRequirement {
+  requirementId: number
+  requirementNo: string
+  title: string
+  nodeName: string
+  nodeId?: string
+  rating: number
+  ratingDimensions?: Record<string, number> | null
+  comment?: string
+  evaluatorId?: number
+  evaluatorName?: string
+  createdAt?: string
+}
+
+export interface RatingStatistics {
+  overallAverage: number
+  dimensionAverages: Record<string, number>
+  trends?: RatingTrendPoint[]
+  distribution: Record<number, number>
+  topLowRated: LowRatingRequirement[]
+  nodeAverages: Record<string, number>
+  periodStart?: string
+  periodEnd?: string
+  totalEvaluations: number
+}
+
+export interface RatingQueryParams {
+  projectId?: number
+  iterationId?: number
+  startDate?: string
+  endDate?: string
+  granularity?: 'WEEK' | 'MONTH'
+  threshold?: number
+  limit?: number
+  workflowVersionId?: number
+}
+
+function toParams(params: RatingQueryParams) {
+  return Object.fromEntries(
+    Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')
+  )
+}
+
+/** 评分综合统计 */
+export function getRatingStatistics(params: RatingQueryParams = {}) {
+  return request.get<ApiResponse<RatingStatistics>>('/v1/statistics/rating', { params: toParams(params) })
+}
+
+/** 评分趋势 */
+export function getRatingTrend(params: RatingQueryParams = {}) {
+  return request.get<ApiResponse<RatingTrendPoint[]>>('/v1/statistics/rating/trend', { params: toParams(params) })
+}
+
+/** 评分分布 */
+export function getRatingDistribution(params: RatingQueryParams = {}) {
+  return request.get<ApiResponse<Record<number, number>>>('/v1/statistics/rating/distribution', { params: toParams(params) })
+}
+
+/** 各维度平均分 */
+export function getRatingDimensionAverages(params: RatingQueryParams = {}) {
+  return request.get<ApiResponse<Record<string, number>>>('/v1/statistics/rating/dimensions', { params: toParams(params) })
+}
+
+/** 低分需求列表 */
+export function getLowRatedRequirements(params: RatingQueryParams = {}) {
+  return request.get<ApiResponse<LowRatingRequirement[]>>('/v1/statistics/rating/low-rated', { params: toParams(params) })
+}
+
+/** 各节点平均分 */
+export function getNodeAverageRatings(params: RatingQueryParams = {}) {
+  return request.get<ApiResponse<Record<string, number>>>('/v1/statistics/rating/node-averages', { params: toParams(params) })
+}

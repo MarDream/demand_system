@@ -13,6 +13,7 @@
         ref="menuRef"
         :default-active="activeMenu"
         :default-openeds="openedMenus"
+        :unique-opened="false"
         :collapse="!sidebarOpened"
         background-color="var(--color-sidebar-bg)"
         text-color="var(--color-sidebar-text)"
@@ -22,11 +23,9 @@
         <template v-for="item in visibleMenus" :key="item.index">
           <el-sub-menu v-if="item.children.length" :index="item.index">
             <template #title>
-              <div class="sidebar-submenu-title" @click="handleSubmenuNavigate(item)">
-                <template v-if="item.isRemix"><i :class="item.icon" class="sidebar-remix-icon" /></template>
-                <el-icon v-else><component :is="item.icon" /></el-icon>
-                <span>{{ item.title }}</span>
-              </div>
+              <template v-if="item.isRemix"><i :class="item.icon" class="sidebar-remix-icon" /></template>
+              <el-icon v-else><component :is="item.icon" /></el-icon>
+              <span>{{ item.title }}</span>
             </template>
             <el-menu-item v-for="child in item.children" :key="child.index" :index="child.path">
               <template v-if="child.isRemix"><i :class="child.icon" class="sidebar-remix-icon" /></template>
@@ -234,7 +233,6 @@ function rebuildSidebarMenus() {
   }
 
   visibleMenus.value = builtMenus
-  initOpenedMenus()
 }
 
 onMounted(fetchMenus)
@@ -268,6 +266,10 @@ const sidebarOpened = computed(() => appStore.sidebarOpened)
 const sidebarWidth = computed(() => appStore.sidebarWidth)
 const activeMenu = computed(() => resolveActiveMenuPath(route))
 
+function isCurrentMenu(current: string, path: string) {
+  return path === current || (path && current.startsWith(path + '/'))
+}
+
 const openedMenus = ref<string[]>([])
 
 function computeOpenedMenus(): string[] {
@@ -275,34 +277,19 @@ function computeOpenedMenus(): string[] {
   const opened: string[] = []
   for (const item of visibleMenus.value) {
     if (!item.children.length) continue
-    if (item.children.some(child => child.path === current || (child.path && current.startsWith(child.path + '/')))) {
+    if (isCurrentMenu(current, item.path) || item.children.some(child => isCurrentMenu(current, child.path))) {
       opened.push(item.index)
     }
   }
   return opened
 }
 
-function updateOpenedMenus() {
-  const newOpened = computeOpenedMenus()
-  if (JSON.stringify(newOpened) !== JSON.stringify(openedMenus.value)) {
-    openedMenus.value = newOpened
-  }
-}
-
-watch(() => route.path, updateOpenedMenus)
-
-function initOpenedMenus() {
-  openedMenus.value = computeOpenedMenus()
-}
-
 const menuRef = ref<any>()
 
-function handleSubmenuNavigate(item: SidebarItem) {
-  if (item.path) {
-    router.push(item.path)
-  }
-  menuRef.value?.open?.(item.index)
-}
+watch([() => route.path, visibleMenus], () => {
+  const newOpened = computeOpenedMenus()
+  openedMenus.value = newOpened
+}, { immediate: true })
 
 const isResizing = ref(false)
 
@@ -492,14 +479,6 @@ async function handleLogout() {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-}
-
-.sidebar-submenu-title {
-  display: inline-flex;
-  align-items: center;
-  width: 100%;
-  min-width: 0;
-  cursor: pointer;
 }
 
 // ===== 主内容区 =====

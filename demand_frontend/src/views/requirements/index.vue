@@ -332,11 +332,15 @@
           v-model:current-page="pagination.pageNum"
           v-model:page-size="pagination.pageSize"
           :page-sizes="[10, 20, 50, 100]"
-          :total="pagination.total"
+          :total="pagination.total === -1 ? undefined : pagination.total"
           layout="total, sizes, prev, pager, next, jumper"
           @size-change="fetchData"
           @current-change="fetchData"
-        />
+        >
+          <template #total v-if="pagination.total === -1">
+            <span style="color: var(--el-text-color-secondary); font-size: 13px;">共多条数据</span>
+          </template>
+        </el-pagination>
       </template>
     </TableCard>
 
@@ -382,7 +386,27 @@ const userStore = useUserStore()
 
 // Tab切换缓存
 const CACHE_EXPIRY_MS = 5 * 60 * 1000 // 5分钟缓存有效期
+const MAX_CACHE_SIZE = 50 // 最大缓存条目数，防止内存泄漏
 const tabDataCache = new Map<string, { data: Requirement[], total: number, timestamp: number }>()
+
+// 缓存写入：超限时清理最老条目
+function setCache(key: string, value: { data: Requirement[], total: number, timestamp: number }) {
+  if (tabDataCache.size >= MAX_CACHE_SIZE) {
+    let oldestKey = ''
+    let oldestTime = Infinity
+    tabDataCache.forEach((v, k) => {
+      if (v.timestamp < oldestTime) {
+        oldestTime = v.timestamp
+        oldestKey = k
+      }
+    })
+    if (oldestKey) tabDataCache.delete(oldestKey)
+  }
+  tabDataCache.set(key, value)
+}
+
+// 请求取消控制器：Tab切换或翻页时取消未完成的请求，避免竞态
+let fetchAbortController: AbortController | null = null
 
 const filterExpanded = ref(true)
 type RequirementViewMode = 'all' | 'drafts' | 'pending' | 'done' | 'follows'
@@ -585,10 +609,17 @@ async function refreshViewCounts() {
 
 // Fetch data
 async function fetchData() {
+  // 取消上一个未完成的请求，避免竞态
+  if (fetchAbortController) {
+    fetchAbortController.abort()
+  }
+  fetchAbortController = new AbortController()
+  const currentController = fetchAbortController
+
   // 生成缓存键
   const cacheKey = `${viewMode.value}:${pagination.pageNum}:${pagination.pageSize}:${JSON.stringify(filterForm)}:${timeDimension.value}:${timeRange.value || ''}`
 
-  // 检查缓存（5分钟有效）
+  // 检查缓存（5分钟有效）— 缓存命中时直接展示，不发请求
   const cached = tabDataCache.get(cacheKey)
   if (cached && Date.now() - cached.timestamp < CACHE_EXPIRY_MS) {
     tableData.value = cached.data
@@ -602,6 +633,14 @@ async function fetchData() {
     return
   }
 
+  // Tab切换时：先展示该Tab的旧缓存数据（如有），再后台刷新
+  const staleCacheKey = `${viewMode.value}:1:${pagination.pageSize}:${JSON.stringify(filterForm)}:${timeDimension.value}:${timeRange.value || ''}`
+  const staleCached = tabDataCache.get(staleCacheKey)
+  if (staleCached && tableData.value.length === 0) {
+    tableData.value = staleCached.data
+    pagination.total = staleCached.total
+  }
+
   loading.value = true
   try {
     if (isDraftView.value) {
@@ -609,7 +648,7 @@ async function fetchData() {
       tableData.value = data.list
       pagination.total = data.total
       // 更新缓存
-      tabDataCache.set(cacheKey, { data: data.list, total: data.total, timestamp: Date.now() })
+      setCache(cacheKey, { data: data.list, total: data.total, timestamp: Date.now() })
       return
     }
 
@@ -618,7 +657,7 @@ async function fetchData() {
       tableData.value = data.list
       pagination.total = data.total
       // 更新缓存
-      tabDataCache.set(cacheKey, { data: data.list, total: data.total, timestamp: Date.now() })
+      setCache(cacheKey, { data: data.list, total: data.total, timestamp: Date.now() })
       return
     }
 
@@ -627,7 +666,7 @@ async function fetchData() {
       tableData.value = data.list
       pagination.total = data.total
       // 更新缓存
-      tabDataCache.set(cacheKey, { data: data.list, total: data.total, timestamp: Date.now() })
+      setCache(cacheKey, { data: data.list, total: data.total, timestamp: Date.now() })
       return
     }
 
@@ -636,7 +675,7 @@ async function fetchData() {
       tableData.value = data.list
       pagination.total = data.total
       // 更新缓存
-      tabDataCache.set(cacheKey, { data: data.list, total: data.total, timestamp: Date.now() })
+      setCache(cacheKey, { data: data.list, total: data.total, timestamp: Date.now() })
       return
     }
 
@@ -671,8 +710,12 @@ async function fetchData() {
     tableData.value = data.list
     pagination.total = data.total
     // 更新缓存
-    tabDataCache.set(cacheKey, { data: data.list, total: data.total, timestamp: Date.now() })
-  } catch {
+    setCache(cacheKey, { data: data.list, total: data.total, timestamp: Date.now() })
+  } catch (err: any) {
+    // 请求被取消（Tab切换/翻页），不报错
+    if (err?.name === 'AbortError' || err?.message?.includes('cancel')) {
+      return
+    }
     ElMessage.error('获取需求列表失败')
   } finally {
     loading.value = false
@@ -717,6 +760,7 @@ function handleViewModeChange(name: string | number) {
   else if (value === 'done') query.view = 'done'
   else if (value === 'follows') query.view = 'follows'
   router.replace({ query })
+  // 主数据优先加载，视图计数异步刷新不阻塞
   fetchData()
   refreshViewCounts()
 }

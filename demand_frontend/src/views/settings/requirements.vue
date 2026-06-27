@@ -8,15 +8,17 @@
     <el-tabs v-model="activeTab" class="config-tabs">
       <el-tab-pane label="需求类型" name="types">
         <div class="tab-content">
-          <div class="tab-header">
-            <el-tooltip content="列表字段设置" style="margin-left: auto">
-              <el-button link :icon="Setting" @click="openTypeColumnConfig" />
-            </el-tooltip>
-            <AppButton type="primary" permission="button:requirement-config:create" @click="openTypeDialog()">
-              <el-icon><Plus /></el-icon>
-              新增类型
-            </AppButton>
-          </div>
+          <Toolbar class="tab-header">
+            <template #right>
+              <el-tooltip content="列表字段设置">
+                <el-button link :icon="Setting" @click="openTypeColumnConfig" />
+              </el-tooltip>
+              <AppButton type="primary" permission="button:requirement-config:create" @click="openTypeDialog()">
+                <el-icon><Plus /></el-icon>
+                新增类型
+              </AppButton>
+            </template>
+          </Toolbar>
 
           <el-table ref="typeTableRef" :data="types" border style="width: 100%" row-key="id">
             <el-table-column v-if="isTypeColumnVisible('drag')" width="60" align="center">
@@ -69,15 +71,17 @@
 
       <el-tab-pane label="优先级" name="priorities">
         <div class="tab-content">
-          <div class="tab-header">
-            <el-tooltip content="列表字段设置" style="margin-left: auto">
-              <el-button link :icon="Setting" @click="openPriorityColumnConfig" />
-            </el-tooltip>
-            <AppButton type="primary" permission="button:requirement-config:create" @click="openPriorityDialog()">
-              <el-icon><Plus /></el-icon>
-              新增优先级
-            </AppButton>
-          </div>
+          <Toolbar class="tab-header">
+            <template #right>
+              <el-tooltip content="列表字段设置">
+                <el-button link :icon="Setting" @click="openPriorityColumnConfig" />
+              </el-tooltip>
+              <AppButton type="primary" permission="button:requirement-config:create" @click="openPriorityDialog()">
+                <el-icon><Plus /></el-icon>
+                新增优先级
+              </AppButton>
+            </template>
+          </Toolbar>
 
           <el-table ref="priorityTableRef" :data="priorities" border style="width: 100%" row-key="id">
             <el-table-column v-if="isPriorityColumnVisible('drag')" width="60" align="center">
@@ -117,15 +121,17 @@
 
       <el-tab-pane label="节点状态" name="nodeStatuses">
         <div class="tab-content">
-          <div class="tab-header">
-            <el-tooltip content="列表字段设置" style="margin-left: auto">
-              <el-button link :icon="Setting" @click="openNodeStatusColumnConfig" />
-            </el-tooltip>
-            <AppButton type="primary" permission="button:requirement-config:create" @click="openNodeStatusDialog()">
-              <el-icon><Plus /></el-icon>
-              新增节点状态
-            </AppButton>
-          </div>
+          <Toolbar class="tab-header">
+            <template #right>
+              <el-tooltip content="列表字段设置">
+                <el-button link :icon="Setting" @click="openNodeStatusColumnConfig" />
+              </el-tooltip>
+              <AppButton type="primary" permission="button:requirement-config:create" @click="openNodeStatusDialog()">
+                <el-icon><Plus /></el-icon>
+                新增节点状态
+              </AppButton>
+            </template>
+          </Toolbar>
 
           <el-table ref="nodeStatusTableRef" :data="nodeStatuses" border style="width: 100%" row-key="id">
             <el-table-column v-if="isNodeStatusColumnVisible('drag')" width="60" align="center">
@@ -165,7 +171,18 @@
 
       <el-tab-pane label="需求模板" name="templates">
         <div class="tab-content">
-          <RequirementTemplateManager :preselected-type-code="selectedTypeCodeForTemplate" />
+          <Toolbar class="tab-header">
+            <template #right>
+              <el-tooltip content="列表字段设置">
+                <el-button link :icon="Setting" @click="openTemplateColumnConfig" />
+              </el-tooltip>
+              <AppButton type="primary" permission="button:requirement-template:create" @click="openTemplateCreate">
+                <el-icon><Plus /></el-icon>
+                新建模板
+              </AppButton>
+            </template>
+          </Toolbar>
+          <RequirementTemplateManager ref="templateManagerRef" :preselected-type-code="selectedTypeCodeForTemplate" />
         </div>
       </el-tab-pane>
     </el-tabs>
@@ -282,8 +299,10 @@ import type { WorkflowVersionDTO } from '@/types/workflow-visual'
 import { normalizeText } from '@/utils/format'
 import Sortable, { type SortableEvent } from 'sortablejs'
 import AppButton from '@/components/common/AppButton.vue'
+import Toolbar from '@/components/common/Toolbar.vue'
 import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
 import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
+import RequirementTemplateManager from '@/views/settings/requirement-templates/index.vue'
 
 // ── 列表字段设置：需求类型表 ──
 const typeAllColumns: ColumnDef[] = [
@@ -382,7 +401,15 @@ const {
 function isNodeStatusColumnVisible(key: string) {
   return nodeStatusVisibleColumns.value.some((c) => c.key === key)
 }
-import RequirementTemplateManager from '@/views/settings/requirement-templates/index.vue'
+
+// 需求模板表的操作：委托给 RequirementTemplateManager 内部方法
+const templateManagerRef = ref<InstanceType<typeof RequirementTemplateManager> | null>(null)
+function openTemplateColumnConfig() {
+  templateManagerRef.value?.openColumnConfig?.()
+}
+function openTemplateCreate() {
+  templateManagerRef.value?.handleCreate?.()
+}
 
 const selectedTypeCodeForTemplate = ref('')
 

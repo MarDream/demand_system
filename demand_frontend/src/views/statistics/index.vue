@@ -1,5 +1,10 @@
 <template>
   <div class="statistics-page">
+    <!-- 评分分析入口 -->
+    <div class="rating-entry">
+      <el-button type="primary" plain :icon="Star" @click="goRatingAnalysis">评分分析</el-button>
+    </div>
+
     <!-- 统计卡片 -->
     <el-row :gutter="16" class="stat-cards">
       <el-col :span="6">
@@ -77,9 +82,11 @@
           <template #header>
             <div class="table-header">
               <span class="chart-title">需求时长统计</span>
-              <el-tooltip content="列表字段设置">
-                <el-button link :icon="Setting" @click="openColumnConfig" />
-              </el-tooltip>
+              <div class="table-header__actions">
+                <el-tooltip content="列表字段设置">
+                  <el-button link :icon="Setting" @click="openColumnConfig" />
+                </el-tooltip>
+              </div>
             </div>
           </template>
           <el-table :data="durationData" border>
@@ -139,8 +146,9 @@
 </template>
 
 <script setup lang="ts">
-import { Setting } from '@element-plus/icons-vue'
+import { Setting, Star } from '@element-plus/icons-vue'
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import VChart from 'vue-echarts'
 import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
 import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
@@ -182,6 +190,9 @@ function isColumnVisible(key: string) {
 }
 
 const chartInitOptions = { renderer: 'svg' as const }
+
+const router = useRouter()
+const goRatingAnalysis = () => router.push('/statistics/rating')
 
 // 统计卡片数据
 const total = ref(0)
@@ -312,6 +323,11 @@ onMounted(() => {
 
 <style scoped lang="scss">
 .statistics-page {
+  .rating-entry {
+    margin-bottom: 16px;
+    text-align: right;
+  }
+
   .stat-cards {
     margin-bottom: 16px;
   }
@@ -360,6 +376,19 @@ onMounted(() => {
 
     .chart {
       height: 350px;
+    }
+  }
+
+  .table-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+
+    .table-header__actions {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-xs);
     }
   }
 

@@ -190,6 +190,48 @@
                 </div>
               </el-form-item>
 
+              <!-- 评分配置（仅审批节点） -->
+              <el-form-item v-if="nodeForm.nodeType === 'approval'" label="节点评价">
+                <div class="rating-config-panel">
+                  <div class="rating-toggle-row">
+                    <el-switch v-model="nodeForm.ratingConfig.enabled" />
+                    <span class="rating-toggle-label">启用评分</span>
+                    <el-tooltip content="关闭后此节点不展示评价" placement="top">
+                      <el-icon class="rating-help"><QuestionFilled /></el-icon>
+                    </el-tooltip>
+                  </div>
+                  <template v-if="nodeForm.ratingConfig.enabled">
+                    <div class="rating-required-row">
+                      <el-checkbox v-model="nodeForm.ratingConfig.required">设为必填</el-checkbox>
+                      <el-checkbox v-model="nodeForm.ratingConfig.showInStatistics">纳入统计</el-checkbox>
+                    </div>
+                    <el-divider content-position="left">评分维度</el-divider>
+                    <div v-for="(dim, idx) in nodeForm.ratingConfig.dimensions" :key="idx" class="rating-dimension-item">
+                      <el-input v-model="dim.name" placeholder="维度名称（如：需求质量）" size="small" />
+                      <el-input v-model="dim.description" placeholder="评价说明" type="textarea" :rows="2" size="small" />
+                      <el-row :gutter="8">
+                        <el-col :span="12">
+                          <el-input v-model="dim.minLabel" placeholder="1星标签（如：很差）" size="small" />
+                        </el-col>
+                        <el-col :span="12">
+                          <el-input v-model="dim.maxLabel" placeholder="5星标签（如：非常好）" size="small" />
+                        </el-col>
+                      </el-row>
+                      <el-button type="danger" text size="small" @click="removeRatingDimension(idx)">删除维度</el-button>
+                    </div>
+                    <el-button v-if="nodeForm.ratingConfig.dimensions.length === 0" type="primary" plain size="small" @click="addRatingDimension">
+                      + 添加评分维度
+                    </el-button>
+                    <el-button v-else type="primary" plain size="small" @click="addRatingDimension">
+                      + 再添加一个维度
+                    </el-button>
+                    <div v-if="nodeForm.ratingConfig.dimensions.length === 0" class="rating-tip">
+                      留空则使用单一评分模式（1-5星整体评分）
+                    </div>
+                  </template>
+                </div>
+              </el-form-item>
+
               <!-- 审批节点和抄送节点的配置 -->
               <template v-if="nodeForm.nodeType === 'approval' || nodeForm.nodeType === 'cc'">
                 <el-form-item label="处理人类型">
@@ -500,6 +542,12 @@ const nodeForm = reactive<Partial<WorkflowNodeDTO> & {
   allowCancel?: boolean
   projectRequired?: boolean
   requireAttachment?: boolean
+  ratingConfig?: {
+    enabled: boolean
+    required: boolean
+    showInStatistics: boolean
+    dimensions: Array<{ key: string; name: string; description: string; minLabel: string; maxLabel: string }>
+  }
   assigneeRoleGroupId?: number
   assigneeOrgId?: number
   orgScopeType?: 'current' | 'include_children'
@@ -528,6 +576,12 @@ const nodeForm = reactive<Partial<WorkflowNodeDTO> & {
   allowCancel: true,
   projectRequired: false,
   requireAttachment: false,
+  ratingConfig: {
+    enabled: false,
+    required: false,
+    showInStatistics: true,
+    dimensions: []
+  },
   properties: {},
   countersignEnabled: false,
   countersignStrategy: 'ALL',
@@ -1728,6 +1782,26 @@ const handleNodeDragStart = (node: any) => {
   })
 }
 
+// 评分维度管理
+const addRatingDimension = () => {
+  if (!nodeForm.ratingConfig) {
+    nodeForm.ratingConfig = { enabled: true, required: false, showInStatistics: true, dimensions: [] }
+  }
+  nodeForm.ratingConfig.dimensions.push({
+    key: `dim_${Date.now()}`,
+    name: '',
+    description: '',
+    minLabel: '很差',
+    maxLabel: '非常好'
+  })
+}
+
+const removeRatingDimension = (idx: number) => {
+  if (nodeForm.ratingConfig) {
+    nodeForm.ratingConfig.dimensions.splice(idx, 1)
+  }
+}
+
 // 处理节点点击
 const handleNodeClick = (data: any) => {
   selectedNode.value = data
@@ -1757,6 +1831,12 @@ const handleNodeClick = (data: any) => {
     allowCancel: data.properties?.allowCancel ?? data.properties?.properties?.allowCancel ?? true,
     projectRequired: data.properties?.projectRequired ?? data.properties?.properties?.projectRequired ?? false,
     requireAttachment: data.properties?.requireAttachment ?? data.properties?.properties?.requireAttachment ?? false,
+    ratingConfig: data.properties?.ratingConfig ?? data.properties?.properties?.ratingConfig ?? {
+      enabled: false,
+      required: false,
+      showInStatistics: true,
+      dimensions: []
+    },
     // 会签配置
     countersignEnabled: data.properties?.countersignEnabled ?? false,
     countersignStrategy: data.properties?.countersignStrategy ?? 'ALL',
@@ -1890,6 +1970,7 @@ const handleSaveNodeConfig = () => {
       allowCancel: nodeForm.allowCancel,
       projectRequired: showProjectRequiredCheckbox.value ? nodeForm.projectRequired : false,
       requireAttachment: nodeForm.requireAttachment,
+      ratingConfig: nodeForm.nodeType === 'approval' ? nodeForm.ratingConfig : undefined,
       [SELECTED_NEXT_NODE_PROPERTY]: validNextNode,
       // 会签配置
       countersignEnabled: nodeForm.countersignEnabled,
