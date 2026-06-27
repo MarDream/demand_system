@@ -11,12 +11,15 @@ import com.demand.system.module.requirement.mapper.RequirementMapper;
 import com.demand.system.module.requirement.service.RequirementApprovalEvaluationService;
 import com.demand.system.module.user.entity.User;
 import com.demand.system.module.user.mapper.UserMapper;
+import com.demand.system.module.requirement.service.RatingFeedbackService;
 import com.demand.system.module.workflow.entity.WorkflowInstance;
 import com.demand.system.module.workflow.entity.WorkflowInstanceTransition;
 import com.demand.system.module.workflow.entity.WorkflowNode;
 import com.demand.system.module.workflow.mapper.WorkflowInstanceTransitionMapper;
 import com.demand.system.module.workflow.support.WorkflowNodeUtils;
 import org.springframework.beans.BeanUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -29,19 +32,24 @@ import java.util.Objects;
 @Service
 public class RequirementApprovalEvaluationServiceImpl implements RequirementApprovalEvaluationService {
 
+    private static final Logger log = LoggerFactory.getLogger(RequirementApprovalEvaluationServiceImpl.class);
+
     private final RequirementApprovalEvaluationMapper evaluationMapper;
     private final WorkflowInstanceTransitionMapper transitionMapper;
     private final RequirementMapper requirementMapper;
     private final UserMapper userMapper;
+    private final RatingFeedbackService feedbackService;
 
     public RequirementApprovalEvaluationServiceImpl(RequirementApprovalEvaluationMapper evaluationMapper,
                                                    WorkflowInstanceTransitionMapper transitionMapper,
                                                    RequirementMapper requirementMapper,
-                                                   UserMapper userMapper) {
+                                                   UserMapper userMapper,
+                                                   RatingFeedbackService feedbackService) {
         this.evaluationMapper = evaluationMapper;
         this.transitionMapper = transitionMapper;
         this.requirementMapper = requirementMapper;
         this.userMapper = userMapper;
+        this.feedbackService = feedbackService;
     }
 
     @Override
@@ -118,14 +126,38 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
     public void saveOnApprovalTransition(WorkflowInstance instance, WorkflowNode approvalNode, Long transitionId,
                                          Long evaluatorId, Integer rating, String content) {
         validateRating(rating);
-        saveTransitionRecord(instance, approvalNode, transitionId, evaluatorId, rating, content, null);
+        saveTransitionRecord(instance, approvalNode, transitionId, evaluatorId, rating, null, content, null);
     }
 
     @Override
     public void saveOnApprovalTransition(WorkflowInstance instance, WorkflowNode approvalNode, Long transitionId,
                                          Long evaluatorId, Integer rating, String content, List<RequirementAttachmentDTO> attachments) {
         validateRating(rating);
-        saveTransitionRecord(instance, approvalNode, transitionId, evaluatorId, rating, content, attachments);
+        saveTransitionRecord(instance, approvalNode, transitionId, evaluatorId, rating, null, content, attachments);
+    }
+
+    @Override
+    public void saveOnApprovalTransition(WorkflowInstance instance, WorkflowNode approvalNode, Long transitionId,
+                                         Long evaluatorId, Integer rating, Map<String, Integer> ratingDimensions,
+                                         String content, List<RequirementAttachmentDTO> attachments) {
+        validateRating(rating);
+        if (rating == null && ratingDimensions != null) {
+            int sum = 0;
+            int count = 0;
+            for (Integer v : ratingDimensions.values()) {
+                if (v != null) {
+                    if (v < 1 || v > 5) {
+                        throw new BusinessException(400, "评分必须在 1-5 星之间");
+                    }
+                    sum += v;
+                    count++;
+                }
+            }
+            if (count > 0) {
+                rating = (int) Math.round((double) sum / count);
+            }
+        }
+        saveTransitionRecord(instance, approvalNode, transitionId, evaluatorId, rating, ratingDimensions, content, attachments);
     }
 
     @Override
@@ -168,8 +200,8 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
     }
 
     private void validateRating(Integer rating) {
-        if (rating == null || rating < 1 || rating > 5) {
-            throw new BusinessException(400, "请选择 1-5 星审批评价");
+        if (rating != null && (rating < 1 || rating > 5)) {
+            throw new BusinessException(400, "评分必须在 1-5 星之间");
         }
     }
 
@@ -194,6 +226,12 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
 
     private void saveTransitionRecord(WorkflowInstance instance, WorkflowNode actionNode, Long transitionId,
                                       Long evaluatorId, Integer rating, String content, List<RequirementAttachmentDTO> attachments) {
+        saveTransitionRecord(instance, actionNode, transitionId, evaluatorId, rating, null, content, attachments);
+    }
+
+    private void saveTransitionRecord(WorkflowInstance instance, WorkflowNode actionNode, Long transitionId,
+                                      Long evaluatorId, Integer rating, Map<String, Integer> ratingDimensions,
+                                      String content, List<RequirementAttachmentDTO> attachments) {
         if (instance == null || transitionId == null || evaluatorId == null) {
             return;
         }
@@ -221,9 +259,17 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
         evaluation.setIsSupplement(false);
         evaluation.setEvaluatorId(evaluatorId);
         evaluation.setRating(rating);
+        evaluation.setRatingDimensions(ratingDimensions);
         evaluation.setContent(normalizeOptionalContent(content));
         evaluation.setAttachments(attachments);
         evaluationMapper.insert(evaluation);
+
+        // 反馈回路：低分告警
+        try {
+            feedbackService.onEvaluationCreated(evaluation);
+        } catch (Exception ex) {
+            log.warn("评分反馈触发失败，不影响主流程: {}", ex.getMessage());
+        }
     }
 
     private RequirementApprovalEvaluationVO buildTopLevelRecord(WorkflowInstanceTransition transition,
@@ -250,6 +296,7 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
         vo.setResult(resolveResult(transition, action));
         vo.setResultLabel(resolveResultLabel(transition, action));
         vo.setRating(evaluation != null ? evaluation.getRating() : null);
+        vo.setRatingDimensions(evaluation != null ? evaluation.getRatingDimensions() : null);
         vo.setContent(comment);
         vo.setAttachments(evaluation != null ? evaluation.getAttachments() : null);
         vo.setCreatedAt(transition.getCreatedAt());

@@ -11,6 +11,7 @@ import com.demand.system.module.requirement.dto.RequirementAttachmentDTO;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 @TableName(value = "requirement_approval_evaluations", autoResultMap = true)
@@ -39,6 +40,9 @@ public class RequirementApprovalEvaluation {
 
     @TableField(insertStrategy = FieldStrategy.ALWAYS)
     private Integer rating;
+
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<String, Integer> ratingDimensions;
 
     private String content;
 
@@ -134,6 +138,14 @@ public class RequirementApprovalEvaluation {
 
     public void setRating(Integer rating) {
         this.rating = rating;
+    }
+
+    public Map<String, Integer> getRatingDimensions() {
+        return ratingDimensions;
+    }
+
+    public void setRatingDimensions(Map<String, Integer> ratingDimensions) {
+        this.ratingDimensions = ratingDimensions;
     }
 
     public String getContent() {

@@ -54,6 +54,9 @@ public class RequirementQueryDTO {
 
     private String sortOrder;
 
+    /** 游标分页：上一页最后一条记录的 ID，用于深分页优化 */
+    private String cursor;
+
     public Long getProjectId() {
         return projectId;
     }
@@ -212,5 +215,13 @@ public class RequirementQueryDTO {
 
     public void setSortOrder(String sortOrder) {
         this.sortOrder = sortOrder;
+    }
+
+    public String getCursor() {
+        return cursor;
+    }
+
+    public void setCursor(String cursor) {
+        this.cursor = cursor;
     }
 }

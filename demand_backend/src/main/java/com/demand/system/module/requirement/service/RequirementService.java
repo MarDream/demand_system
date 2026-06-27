@@ -11,6 +11,7 @@ import com.demand.system.module.requirement.dto.RequirementMyListQueryDTO;
 import com.demand.system.module.requirement.dto.RequirementQueryDTO;
 import com.demand.system.module.requirement.dto.RequirementSubmitDTO;
 import com.demand.system.module.requirement.dto.RequirementUpdateDTO;
+import com.demand.system.module.requirement.dto.RequirementListVO;
 import com.demand.system.module.requirement.dto.RequirementVO;
 import com.demand.system.module.requirement.dto.NextNodeOptionDTO;
 import com.demand.system.module.requirement.dto.RequirementDetailVO;
@@ -20,7 +21,7 @@ import java.util.Map;
 
 public interface RequirementService {
 
-    PageResult<RequirementVO> list(RequirementQueryDTO query);
+    PageResult<RequirementListVO> list(RequirementQueryDTO query);
 
     RequirementVO getDetail(Long id);
 

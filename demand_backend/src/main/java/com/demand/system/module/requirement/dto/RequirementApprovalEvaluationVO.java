@@ -1,6 +1,7 @@
 package com.demand.system.module.requirement.dto;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 
 public class RequirementApprovalEvaluationVO {
 
@@ -22,6 +23,7 @@ public class RequirementApprovalEvaluationVO {
     private String result;
     private String resultLabel;
     private Integer rating;
+    private Map<String, Integer> ratingDimensions;
     private String content;
     private java.util.List<RequirementAttachmentDTO> attachments;
     private LocalDateTime createdAt;
@@ -169,6 +171,14 @@ public class RequirementApprovalEvaluationVO {
 
     public void setRating(Integer rating) {
         this.rating = rating;
+    }
+
+    public Map<String, Integer> getRatingDimensions() {
+        return ratingDimensions;
+    }
+
+    public void setRatingDimensions(Map<String, Integer> ratingDimensions) {
+        this.ratingDimensions = ratingDimensions;
     }
 
     public String getContent() {

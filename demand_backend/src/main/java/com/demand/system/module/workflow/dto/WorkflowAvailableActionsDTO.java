@@ -51,6 +51,9 @@ public class WorkflowAvailableActionsDTO {
     /** 当前节点是否要求必须上传附件（来自节点 properties.requireAttachment） */
     private Boolean currentNodeRequireAttachment;
 
+    /** 当前节点的评分配置（来自节点 properties.ratingConfig，对应 ADR-002） */
+    private Object currentNodeRatingConfig;
+
     /** 当前用户是否可编辑此需求（基于工作流节点权限判断） */
     private Boolean canEdit;
 
@@ -215,6 +218,14 @@ public class WorkflowAvailableActionsDTO {
 
     public void setCurrentNodeRequireAttachment(Boolean currentNodeRequireAttachment) {
         this.currentNodeRequireAttachment = currentNodeRequireAttachment;
+    }
+
+    public Object getCurrentNodeRatingConfig() {
+        return currentNodeRatingConfig;
+    }
+
+    public void setCurrentNodeRatingConfig(Object currentNodeRatingConfig) {
+        this.currentNodeRatingConfig = currentNodeRatingConfig;
     }
 
     public Boolean getCanEdit() {

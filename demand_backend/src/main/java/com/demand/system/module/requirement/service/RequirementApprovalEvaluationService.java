@@ -6,6 +6,7 @@ import com.demand.system.module.workflow.entity.WorkflowInstance;
 import com.demand.system.module.workflow.entity.WorkflowNode;
 
 import java.util.List;
+import java.util.Map;
 
 public interface RequirementApprovalEvaluationService {
 
@@ -22,6 +23,10 @@ public interface RequirementApprovalEvaluationService {
 
     void saveOnApprovalTransition(WorkflowInstance instance, WorkflowNode approvalNode, Long transitionId,
                                   Long evaluatorId, Integer rating, String content, List<RequirementAttachmentDTO> attachments);
+
+    void saveOnApprovalTransition(WorkflowInstance instance, WorkflowNode approvalNode, Long transitionId,
+                                  Long evaluatorId, Integer rating, Map<String, Integer> ratingDimensions,
+                                  String content, List<RequirementAttachmentDTO> attachments);
 
     void addSupplement(Long requirementId, Long parentEvaluationId, Long operatorId, String content);
 

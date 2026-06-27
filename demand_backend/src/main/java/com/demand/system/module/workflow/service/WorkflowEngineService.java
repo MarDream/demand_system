@@ -33,6 +33,7 @@ import com.demand.system.module.workflow.dto.AvailableTransitionDTO;
 import com.demand.system.module.workflow.dto.FlowTransitionRequest;
 import com.demand.system.module.workflow.dto.TransitionVO;
 import com.demand.system.module.workflow.dto.WorkflowAvailableActionsDTO;
+import com.demand.system.module.workflow.dto.RatingConfigDTO;
 import com.demand.system.module.workflow.engine.WorkflowGraphContext;
 import com.demand.system.module.workflow.engine.WorkflowGraphNavigator;
 import com.demand.system.module.workflow.engine.WorkflowRuntimeLoader;
@@ -288,9 +289,9 @@ public class WorkflowEngineService {
                 && !countersignService.canProceedAfterCountersign(instance.getId(), instance.getCurrentNodeId(), currentNode)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "会签尚未完成，无法流转");
         }
-        boolean approvalEvaluationRequired = isApprovalEvaluationRequired(currentNode);
-        if (approvalEvaluationRequired) {
-            validateApprovalEvaluation(request.getRating(), request.getComment());
+        boolean approvalEvaluationEnabled = isApprovalEvaluationEnabled(currentNode);
+        if (approvalEvaluationEnabled) {
+            validateApprovalEvaluation(currentNode, request.getRating(), request.getRatingDimensions(), request.getComment());
         }
         // 修复 P2：按节点 properties.requireComment 校验意见必填
         if (isCommentRequired(currentNode)
@@ -325,9 +326,11 @@ public class WorkflowEngineService {
         newTransition.setAttachmentIds(extractAttachmentIds(request.getAttachments()));
         transitionMapper.insert(newTransition);
 
-        if (approvalEvaluationRequired && currentNode != null) {
+        if (approvalEvaluationEnabled && currentNode != null) {
             approvalEvaluationService.saveOnApprovalTransition(
-                    instance, currentNode, newTransition.getId(), operatorId, request.getRating(), request.getComment(), request.getAttachments());
+                    instance, currentNode, newTransition.getId(), operatorId,
+                    request.getRating(), request.getRatingDimensions(),
+                    request.getComment(), request.getAttachments());
         } else {
             approvalEvaluationService.saveOnTransition(
                     instance, currentNode != null ? currentNode : targetNode, newTransition.getId(), operatorId, request.getComment(), request.getAttachments());
@@ -667,6 +670,18 @@ public class WorkflowEngineService {
         actions.setCanRollback(canOperate && instance.getPreviousNodeId() != null && !"end".equals(currentNode.getNodeType()));
         actions.setCanCancel(canCancel);
         actions.setEvaluationRequired(canOperate && isApprovalEvaluationRequired(currentNode));
+        if (currentNode != null && currentNode.getProperties() != null) {
+            Object ratingCfg = currentNode.getProperties().get("ratingConfig");
+            if (ratingCfg instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> cfg = (Map<String, Object>) ratingCfg;
+                Boolean required = (Boolean) cfg.getOrDefault("required", false);
+                actions.setEvaluationRequired(canOperate && Boolean.TRUE.equals(required));
+                if (Boolean.TRUE.equals(cfg.get("enabled"))) {
+                    actions.setCurrentNodeRatingConfig(ratingCfg);
+                }
+            }
+        }
         boolean countersignEnabled = isCountersignEnabled(currentNode);
         actions.setCountersignEnabled(countersignEnabled);
         if (countersignEnabled) {
@@ -798,6 +813,22 @@ public class WorkflowEngineService {
     }
 
     /**
+     * 节点是否启用了评分配置（ratingConfig.enabled == true）
+     */
+    private boolean isApprovalEvaluationEnabled(WorkflowNode currentNode) {
+        if (currentNode == null || currentNode.getProperties() == null) {
+            return false;
+        }
+        Object ratingCfg = currentNode.getProperties().get("ratingConfig");
+        if (!(ratingCfg instanceof Map)) {
+            return false;
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> cfg = (Map<String, Object>) ratingCfg;
+        return Boolean.TRUE.equals(cfg.get("enabled"));
+    }
+
+    /**
      * 修复 P2：判断当前节点是否要求必填审批意见。
      * 读取节点 properties.requireComment。
      */
@@ -821,9 +852,45 @@ public class WorkflowEngineService {
         return Boolean.TRUE.equals(value);
     }
 
-    private void validateApprovalEvaluation(Integer rating, String comment) {
-        if (rating == null || rating < 1 || rating > 5) {
-            throw new BusinessException(400, "审批环节需选择 1-5 星评价");
+    private void validateApprovalEvaluation(WorkflowNode currentNode, Integer rating,
+                                            Map<String, Integer> ratingDimensions, String comment) {
+        if (currentNode == null || currentNode.getProperties() == null) {
+            return;
+        }
+        Object ratingCfg = currentNode.getProperties().get("ratingConfig");
+        if (!(ratingCfg instanceof Map)) {
+            // 节点未配置评分
+            return;
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> cfg = (Map<String, Object>) ratingCfg;
+        Boolean enabled = (Boolean) cfg.get("enabled");
+        if (!Boolean.TRUE.equals(enabled)) {
+            return;
+        }
+        Boolean required = (Boolean) cfg.getOrDefault("required", false);
+        Object dimsObj = cfg.get("dimensions");
+        boolean hasDimensions = dimsObj instanceof List && !((List<?>) dimsObj).isEmpty();
+        if (hasDimensions) {
+            boolean dimensionsEmpty = ratingDimensions == null || ratingDimensions.isEmpty();
+            if (Boolean.TRUE.equals(required) && dimensionsEmpty) {
+                throw new BusinessException(400, "当前节点要求完成多维评价");
+            }
+            if (ratingDimensions != null) {
+                for (Map.Entry<String, Integer> e : ratingDimensions.entrySet()) {
+                    Integer s = e.getValue();
+                    if (s != null && (s < 1 || s > 5)) {
+                        throw new BusinessException(400, "评分必须在 1-5 星之间");
+                    }
+                }
+            }
+        } else {
+            if (Boolean.TRUE.equals(required) && rating == null) {
+                throw new BusinessException(400, "当前节点要求完成评价");
+            }
+            if (rating != null && (rating < 1 || rating > 5)) {
+                throw new BusinessException(400, "评分必须在 1-5 星之间");
+            }
         }
     }
 

@@ -4,6 +4,7 @@ import com.demand.system.module.requirement.dto.RequirementAttachmentDTO;
 import jakarta.validation.constraints.NotNull;
 
 import java.util.List;
+import java.util.Map;
 
 public class FlowTransitionRequest {
 
@@ -19,8 +20,11 @@ public class FlowTransitionRequest {
 
     private String comment;
 
-    /** 审批环节评价星级 1-5 */
+    /** 整体评分 1-5 */
     private Integer rating;
+
+    /** 多维评分 key=维度标识 value=分数 */
+    private Map<String, Integer> ratingDimensions;
 
     private Integer lockVersion;
 
@@ -73,6 +77,14 @@ public class FlowTransitionRequest {
 
     public void setRating(Integer rating) {
         this.rating = rating;
+    }
+
+    public Map<String, Integer> getRatingDimensions() {
+        return ratingDimensions;
+    }
+
+    public void setRatingDimensions(Map<String, Integer> ratingDimensions) {
+        this.ratingDimensions = ratingDimensions;
     }
 
     public Integer getLockVersion() {

@@ -16,6 +16,7 @@ import com.demand.system.module.requirement.dto.RequirementQueryDTO;
 import com.demand.system.module.requirement.dto.RequirementSubmitDTO;
 import com.demand.system.module.requirement.dto.NextNodeOptionDTO;
 import com.demand.system.module.requirement.dto.RequirementUpdateDTO;
+import com.demand.system.module.requirement.dto.RequirementListVO;
 import com.demand.system.module.requirement.dto.RequirementVO;
 import com.demand.system.module.requirement.service.RequirementService;
 import com.demand.system.module.requirement.service.RequirementApprovalEvaluationService;
@@ -40,7 +41,7 @@ public class RequirementController {
     }
 
     @GetMapping
-    public Result<PageResult<RequirementVO>> list(RequirementQueryDTO query) {
+    public Result<PageResult<RequirementListVO>> list(RequirementQueryDTO query) {
         return Result.success(requirementService.list(query));
     }
 
