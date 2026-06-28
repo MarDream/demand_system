@@ -176,7 +176,7 @@
             </div>
           </div>
 
-          <div v-if="asking" class="message-row message-row--assistant">
+          <div v-if="asking && !streamingMessageId" class="message-row message-row--assistant">
             <div class="message-bubble message-bubble--loading">
               <div class="message-bubble__role">检索中</div>
               <div class="thinking-loader">
@@ -455,7 +455,7 @@ import { useKnowledgeStore } from '@/stores/knowledge'
 import { useCollapsibleSidebar } from '@/composables/useCollapsibleSidebar'
 import storage from '@/utils/storage'
 import { formatDate } from '@/utils/format'
-import type { KnowledgeBase, SearchMode, SearchResponse, SearchResultItem } from '@/api/modules/knowledge'
+import { streamSearchKnowledge, type KnowledgeBase, type SearchMode, type SearchResponse, type SearchResultItem } from '@/api/modules/knowledge'
 
 interface RagThinkingStep {
   title: string
@@ -539,6 +539,7 @@ const draftQuestion = ref('')
 const searchMode = ref<SearchMode>('hybrid')
 const topK = ref(10)
 const asking = ref(false)
+const streamingMessageId = ref<string | null>(null)
 const refreshing = ref(false)
 const availableChatModels = ref<RagModelOption[]>([])
 
@@ -910,65 +911,166 @@ async function handleAsk() {
   }
   draftQuestion.value = ''
   asking.value = true
+  streamingMessageId.value = null
+  let streamedAssistantMessage: RagMessage | null = null
 
   try {
-    const response = await store.search(
-      requestQuery,
-      searchMode.value,
-      knowledgeBase.id,
-      topK.value,
-      selectedChatModel.value?.id
-    )
-    const assistantMessage: RagMessage = {
-      id: createId('msg'),
-      role: 'assistant',
-      content: buildAnswerContent(response, question),
-      createdAt: Date.now(),
-      question,
-      processSummary: buildProcessSummary(response, knowledgeBase.name),
-      summaryPoints: extractSummaryPoints(response, question),
-      thinkingSteps: buildThinkingSteps({
-        knowledgeBaseName: knowledgeBase.name,
-        question,
-        session,
+    let assistantMessage: RagMessage | null = null
+    const selectedModel = selectedChatModel.value
+
+    await streamSearchKnowledge(
+      {
+        query: requestQuery,
         mode: searchMode.value,
-        response,
-        llmModelLabel: selectedChatModel.value?.label || null
-      }),
-      citations: buildCitations(response?.results || [], question),
-      retrievedCount: response?.total || response?.results?.length || 0,
-      llmModelId: selectedChatModel.value?.id || null,
-      llmModelLabel: selectedChatModel.value?.label || null
-    }
-    session.messages.push(assistantMessage)
-    session.updatedAt = assistantMessage.createdAt
-    activeInsightMessageId.value = assistantMessage.id
+        knowledgeBaseId: knowledgeBase.id,
+        topK: topK.value,
+        llmModelId: selectedModel?.id
+      },
+      {
+        onResults(response) {
+          assistantMessage = createAssistantMessage({
+            response,
+            question,
+            knowledgeBaseName: knowledgeBase.name,
+            session,
+            streamAnswer: Boolean(selectedModel?.id)
+          })
+          session.messages.push(assistantMessage)
+          session.updatedAt = assistantMessage.createdAt
+          activeInsightMessageId.value = assistantMessage.id
+          streamingMessageId.value = assistantMessage.id
+          streamedAssistantMessage = assistantMessage
+        },
+        onDelta(delta) {
+          if (!assistantMessage) return
+          assistantMessage.content += delta
+          session.updatedAt = Date.now()
+        },
+        onDone(response) {
+          if (!assistantMessage) {
+            assistantMessage = createAssistantMessage({
+              response,
+              question,
+              knowledgeBaseName: knowledgeBase.name,
+              session,
+              streamAnswer: false
+            })
+            session.messages.push(assistantMessage)
+            activeInsightMessageId.value = assistantMessage.id
+          }
+
+          const finalAnswer = response?.answer?.trim()
+          if (finalAnswer) {
+            assistantMessage.content = finalAnswer
+          } else if (!assistantMessage.content.trim()) {
+            assistantMessage.content = buildAnswerContent(response, question)
+          }
+          assistantMessage.processSummary = buildProcessSummary(response, knowledgeBase.name)
+          assistantMessage.summaryPoints = extractSummaryPoints(response, question)
+          assistantMessage.citations = buildCitations(response?.results || [], question)
+          assistantMessage.retrievedCount = response?.total || response?.results?.length || 0
+          assistantMessage.thinkingSteps = buildThinkingSteps({
+            knowledgeBaseName: knowledgeBase.name,
+            question,
+            session,
+            mode: searchMode.value,
+            response,
+            llmModelLabel: selectedModel?.label || null
+          })
+          assistantMessage.createdAt = Date.now()
+          session.updatedAt = assistantMessage.createdAt
+        },
+        onError(message) {
+          throw new Error(message)
+        }
+      }
+    )
   } catch {
-    const errorMessage: RagMessage = {
-      id: createId('msg'),
-      role: 'assistant',
-      content: '本次检索未能完成，请检查模型配置、知识库索引状态或稍后重试。',
-      createdAt: Date.now(),
-      failed: true,
-      question,
-      processSummary: '检索请求失败，当前未返回有效的知识文件证据。',
-      summaryPoints: ['请确认知识库已完成索引。', '请检查大模型与向量检索配置。', '如问题持续，请查看后台日志。'],
-      thinkingSteps: [
-        { title: '请求提交', detail: '已向检索服务提交本轮问题。' },
-        { title: '服务异常', detail: '当前接口未返回有效结果，因此未生成文件证据与回答摘要。' },
-        { title: '建议处理', detail: '优先确认模型、向量库和知识库文档状态是否正常。' }
-      ],
-      citations: [],
-      retrievedCount: 0,
-      llmModelId: selectedChatModel.value?.id || null,
-      llmModelLabel: selectedChatModel.value?.label || null
+    try {
+      if (streamedAssistantMessage) {
+        session.messages = session.messages.filter(message => message.id !== streamedAssistantMessage?.id)
+        if (activeInsightMessageId.value === streamedAssistantMessage.id) {
+          activeInsightMessageId.value = null
+        }
+      }
+      const response = await store.search(
+        requestQuery,
+        searchMode.value,
+        knowledgeBase.id,
+        topK.value,
+        selectedChatModel.value?.id
+      )
+      const assistantMessage = createAssistantMessage({
+        response,
+        question,
+        knowledgeBaseName: knowledgeBase.name,
+        session,
+        streamAnswer: false
+      })
+      session.messages.push(assistantMessage)
+      session.updatedAt = assistantMessage.createdAt
+      activeInsightMessageId.value = assistantMessage.id
+      ElMessage.warning('流式输出不可用，已切换为普通回答')
+    } catch {
+      const errorMessage: RagMessage = {
+        id: createId('msg'),
+        role: 'assistant',
+        content: '本次检索未能完成，请检查模型配置、知识库索引状态或稍后重试。',
+        createdAt: Date.now(),
+        failed: true,
+        question,
+        processSummary: '检索请求失败，当前未返回有效的知识文件证据。',
+        summaryPoints: ['请确认知识库已完成索引。', '请检查大模型与向量检索配置。', '如问题持续，请查看后台日志。'],
+        thinkingSteps: [
+          { title: '请求提交', detail: '已向检索服务提交本轮问题。' },
+          { title: '服务异常', detail: '当前接口未返回有效结果，因此未生成文件证据与回答摘要。' },
+          { title: '建议处理', detail: '优先确认模型、向量库和知识库文档状态是否正常。' }
+        ],
+        citations: [],
+        retrievedCount: 0,
+        llmModelId: selectedChatModel.value?.id || null,
+        llmModelLabel: selectedChatModel.value?.label || null
+      }
+      session.messages.push(errorMessage)
+      session.updatedAt = errorMessage.createdAt
+      activeInsightMessageId.value = errorMessage.id
+      ElMessage.error('检索失败，请稍后重试')
     }
-    session.messages.push(errorMessage)
-    session.updatedAt = errorMessage.createdAt
-    activeInsightMessageId.value = errorMessage.id
-    ElMessage.error('检索失败，请稍后重试')
   } finally {
     asking.value = false
+    streamingMessageId.value = null
+  }
+}
+
+function createAssistantMessage(options: {
+  response: SearchResponse | null | undefined
+  question: string
+  knowledgeBaseName: string
+  session: RagSession
+  streamAnswer: boolean
+}): RagMessage {
+  const response = options.response
+  const content = options.streamAnswer ? '' : buildAnswerContent(response, options.question)
+  return {
+    id: createId('msg'),
+    role: 'assistant',
+    content,
+    createdAt: Date.now(),
+    question: options.question,
+    processSummary: buildProcessSummary(response, options.knowledgeBaseName),
+    summaryPoints: extractSummaryPoints(response, options.question),
+    thinkingSteps: buildThinkingSteps({
+      knowledgeBaseName: options.knowledgeBaseName,
+      question: options.question,
+      session: options.session,
+      mode: searchMode.value,
+      response,
+      llmModelLabel: selectedChatModel.value?.label || null
+    }),
+    citations: buildCitations(response?.results || [], options.question),
+    retrievedCount: response?.total || response?.results?.length || 0,
+    llmModelId: selectedChatModel.value?.id || null,
+    llmModelLabel: selectedChatModel.value?.label || null
   }
 }
 

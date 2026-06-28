@@ -1,4 +1,5 @@
 import request from '@/api/request'
+import { getToken } from '@/utils/auth'
 
 // ===== 类型定义 =====
 
@@ -218,4 +219,99 @@ export function searchKnowledge(data: {
   llmModelId?: number
 }) {
   return request.post<SearchResponse>('/v1/knowledge/search', data)
+}
+
+export interface StreamSearchHandlers {
+  onResults?: (response: SearchResponse) => void
+  onDelta?: (delta: string) => void
+  onDone?: (response: SearchResponse) => void
+  onError?: (message: string) => void
+}
+
+export async function streamSearchKnowledge(
+  data: {
+    query: string
+    knowledgeBaseId?: number
+    mode?: SearchMode | 'rag'
+    topK?: number
+    llmModelId?: number
+  },
+  handlers: StreamSearchHandlers
+) {
+  const baseURL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+  const token = getToken()
+  const response = await fetch(`${baseURL}/v1/knowledge/search/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify(data)
+  })
+
+  if (!response.ok || !response.body) {
+    throw new Error(`流式检索请求失败: HTTP ${response.status}`)
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+
+    const events = buffer.split(/\r?\n\r?\n/)
+    buffer = events.pop() || ''
+    events.forEach(eventBlock => handleStreamEvent(eventBlock, handlers))
+  }
+
+  if (buffer.trim()) {
+    handleStreamEvent(buffer, handlers)
+  }
+}
+
+function handleStreamEvent(eventBlock: string, handlers: StreamSearchHandlers) {
+  const lines = eventBlock.split(/\r?\n/)
+  let eventName = 'message'
+  const dataLines: string[] = []
+
+  lines.forEach((line) => {
+    if (line.startsWith('event:')) {
+      eventName = line.slice('event:'.length).trim()
+    } else if (line.startsWith('data:')) {
+      dataLines.push(line.slice('data:'.length).trimStart())
+    }
+  })
+
+  const payload = dataLines.join('\n')
+  if (!payload) return
+
+  if (eventName === 'delta') {
+    handlers.onDelta?.(payload)
+    return
+  }
+
+  if (eventName === 'error') {
+    handlers.onError?.(parseStreamMessage(payload))
+    return
+  }
+
+  const parsed = JSON.parse(payload) as SearchResponse
+  if (eventName === 'results') {
+    handlers.onResults?.(parsed)
+  } else if (eventName === 'done') {
+    handlers.onDone?.(parsed)
+  }
+}
+
+function parseStreamMessage(payload: string) {
+  try {
+    const parsed = JSON.parse(payload)
+    return parsed?.message || payload
+  } catch {
+    return payload
+  }
 }

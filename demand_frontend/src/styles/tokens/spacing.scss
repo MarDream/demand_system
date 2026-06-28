@@ -1,22 +1,33 @@
-// ===== 需求管理系统 - 间距系统 =====
-// 基于 8dp 栅格，4dp 微调
+// ===== 需求管理系统 - 间距系统 v2.0 =====
+// 基于 4dp 微调 + 8dp 栅格 + 新增 12dp 层级（受 Stripe 启发）
 
 :root {
   --spacing-0: 0;
+  --spacing-2xs: 2px;
   --spacing-xs: 4px;
   --spacing-sm: 8px;
-  --spacing-md: 16px;
-  --spacing-lg: 24px;
-  --spacing-xl: 32px;
-  --spacing-2xl: 48px;
-  --spacing-3xl: 64px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 24px;
+  --spacing-2xl: 32px;
+  --spacing-3xl: 48px;
+  --spacing-4xl: 64px;
+  --spacing-5xl: 96px;
 
   // 语义间距
-  --page-padding: var(--spacing-md);
-  --page-padding-lg: var(--spacing-lg);
-  --card-padding: var(--spacing-md);
-  --card-padding-lg: var(--spacing-lg);
-  --section-gap: var(--spacing-lg);
-  --group-gap: var(--spacing-md);
+  --page-padding: var(--spacing-lg);
+  --page-padding-lg: var(--spacing-xl);
+  --card-padding: var(--spacing-lg);
+  --card-padding-lg: var(--spacing-xl);
+  --section-gap: var(--spacing-2xl);
+  --group-gap: var(--spacing-lg);
   --item-gap: var(--spacing-sm);
+
+  // 按钮内间距
+  --button-padding-sm: 6px 12px;
+  --button-padding-md: 8px 20px;
+  --button-padding-lg: 10px 24px;
+
+  // 输入框内间距
+  --input-padding: 8px 12px;
 }

@@ -58,6 +58,8 @@ export interface WorkflowConfigDTO {
   version?: string
   /** 目标版本名称 */
   versionName?: string
+  /** 关联知识库ID，流转附件自动入库目标 */
+  knowledgeBaseId?: number | null
 }
 
 export interface WorkflowValidationIssue {
@@ -99,11 +101,14 @@ export interface WorkflowVersionDTO {
   latestSubmittedAt?: string
   latestApprovedAt?: string
   config?: WorkflowConfigDTO
+  knowledgeBaseId?: number
+  knowledgeBaseName?: string
 }
 
 export interface WorkflowVersionMetaUpdateDTO {
   version: string
   name: string
+  knowledgeBaseId?: number | null
 }
 
 export interface WorkflowVersionActivationDTO {

@@ -14,6 +14,10 @@
               <template v-if="currentVersion || !isViewMode">
                 <span v-if="isViewMode" class="version-tag">
                   V{{ currentVersion?.version }} - {{ currentVersion?.name }}
+                  <span v-if="currentVersion?.knowledgeBaseName" class="knowledge-tag">
+                    <el-icon><FolderOpened /></el-icon>
+                    {{ currentVersion.knowledgeBaseName }}
+                  </span>
                 </span>
                 <div v-else class="version-editor">
                   <div class="version-input-group">
@@ -37,6 +41,26 @@
                       show-word-limit
                       placeholder="请输入版本名称"
                     />
+                  </div>
+                  <div class="version-input-group knowledge-binding-group">
+                    <label class="knowledge-binding-label">关联知识库</label>
+                    <el-select
+                      v-model="versionForm.knowledgeBaseId"
+                      placeholder="流转附件自动入库"
+                      clearable
+                      filterable
+                      class="knowledge-binding-select"
+                    >
+                      <el-option
+                        v-for="kb in knowledgeBases"
+                        :key="kb.id"
+                        :label="kb.name"
+                        :value="kb.id"
+                      />
+                    </el-select>
+                    <el-tooltip content="绑定后，此工作流流转过程中上传的附件将自动解析入库到所选知识库，用于文档中心知识问答" placement="top">
+                      <el-icon class="knowledge-binding-help"><QuestionFilled /></el-icon>
+                    </el-tooltip>
                   </div>
                 </div>
               </template>
@@ -412,7 +436,8 @@ import {
   Grid,
   Delete,
   WarningFilled,
-  QuestionFilled
+  QuestionFilled,
+  FolderOpened
 } from '@element-plus/icons-vue'
 import LogicFlow from '@logicflow/core'
 import dagre from '@dagrejs/dagre'
@@ -429,6 +454,7 @@ import {
 import { nodeStatusApi, type NodeStatus } from '@/api/modules/workflow-engine'
 import * as roleApi from '@/api/modules/role'
 import * as userApi from '@/api/modules/user'
+import { getAllKnowledgeBases, type KnowledgeBase } from '@/api/modules/knowledge'
 import { resolveActiveMenuPath } from '@/utils/menuNavigation'
 import {
   compareWorkflowVersion,
@@ -463,6 +489,7 @@ const versionHistory = ref<WorkflowVersionDTO[]>([])
 const roleList = ref<Array<{ id: number; name: string; code: string }>>([])
 const roleGroupList = ref<Array<{ id: number; name: string }>>([])
 const allUserList = ref<Array<{ id: number; realName: string; username: string }>>([])
+const knowledgeBases = ref<KnowledgeBase[]>([])
 const orgTreeData = ref<any[]>([])
 const assigneeOptionsLoading = ref(false)
 
@@ -490,9 +517,11 @@ const onNextNodeChange = (nodeName: string | null | undefined) => {
 const versionForm = reactive<{
   version: string
   name: string
+  knowledgeBaseId: number | null
 }>({
   version: '',
-  name: ''
+  name: '',
+  knowledgeBaseId: null
 })
 const nodeStatusOptions = ref<NodeStatus[]>([])
 
@@ -544,7 +573,7 @@ const nodeForm = reactive<Partial<WorkflowNodeDTO> & {
   allowCancel?: boolean
   projectRequired?: boolean
   requireAttachment?: boolean
-  ratingConfig?: {
+  ratingConfig: {
     enabled: boolean
     required: boolean
     showInStatistics: boolean
@@ -787,6 +816,7 @@ const applyCurrentVersion = (version: WorkflowVersionDTO) => {
 const syncVersionForm = (version?: WorkflowVersionDTO) => {
   versionForm.version = version?.version || ''
   versionForm.name = version?.name || ''
+  versionForm.knowledgeBaseId = version?.knowledgeBaseId ?? null
 }
 
 const getDesiredVersionMeta = (): WorkflowVersionMetaUpdateDTO | null => {
@@ -818,7 +848,7 @@ const getDesiredVersionMeta = (): WorkflowVersionMetaUpdateDTO | null => {
     return null
   }
 
-  return { version, name }
+  return { version, name, knowledgeBaseId: versionForm.knowledgeBaseId }
 }
 
 const syncEditorVersionRoute = async (versionId: number, projectId: number) => {
@@ -2178,6 +2208,7 @@ const handleSave = async () => {
       versionId: currentVersion.value?.id,
       version: desiredVersionMeta?.version,
       versionName: desiredVersionMeta?.name,
+      knowledgeBaseId: versionForm.knowledgeBaseId,
       nodes: graphData.nodes.map((node: any) => ({
         nodeId: node.id!,
         nodeType: node.type as any,
@@ -2518,16 +2549,18 @@ onMounted(() => {
 async function loadRoleAndUserList() {
   assigneeOptionsLoading.value = true
   try {
-    const [rolesRes, roleGroupsRes, usersRes, orgTreeRes]: any[] = await Promise.all([
+    const [rolesRes, roleGroupsRes, usersRes, orgTreeRes, kbRes]: any[] = await Promise.all([
       roleApi.getRoleList(),
       roleApi.getRoleGroups(),
       userApi.getUserList({ pageNum: 1, pageSize: 999 }),
-      userApi.getOrgTree()
+      userApi.getOrgTree(),
+      getAllKnowledgeBases()
     ])
     roleList.value = (rolesRes?.data ?? rolesRes ?? [])
     roleGroupList.value = (roleGroupsRes?.data ?? roleGroupsRes ?? [])
     allUserList.value = (usersRes?.list ?? [])
     orgTreeData.value = (orgTreeRes?.data ?? orgTreeRes ?? [])
+    knowledgeBases.value = Array.isArray(kbRes) ? kbRes : (kbRes?.data ?? [])
   } catch {
     // ignore
   } finally {
@@ -2642,6 +2675,49 @@ onBeforeUnmount(() => {
 
         .version-name-input {
           width: 320px;
+        }
+
+        .knowledge-binding-group {
+          flex-direction: row;
+          align-items: center;
+          gap: 6px;
+          margin-top: 4px;
+        }
+
+        .knowledge-binding-label {
+          font-size: 12px;
+          color: var(--color-text-secondary);
+          white-space: nowrap;
+        }
+
+        .knowledge-binding-select {
+          width: 200px;
+
+          :deep(.el-input__wrapper) {
+            height: 28px;
+          }
+        }
+
+        .knowledge-binding-help {
+          font-size: 14px;
+          color: var(--color-muted-text);
+          cursor: help;
+        }
+
+        .knowledge-tag {
+          display: inline-flex;
+          align-items: center;
+          gap: 3px;
+          margin-left: 8px;
+          padding: 2px 8px;
+          font-size: 11px;
+          color: var(--color-primary);
+          background: rgba(37, 99, 235, 0.08);
+          border-radius: 4px;
+
+          .el-icon {
+            font-size: 12px;
+          }
         }
       }
     }

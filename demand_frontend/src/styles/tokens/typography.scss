@@ -1,25 +1,30 @@
-// ===== 需求管理系统 - 字体系统 =====
-// 主字体: Plus Jakarta Sans（现代、专业、易读）
+// ===== 需求管理系统 - 字体系统 v2.0 =====
+// 主字体升级: Inter（受 Stripe/Linear 启发）+ Plus Jakarta Sans 备选
+// 新增 Display 层级 + 负字距
 
 // ----- 字体家族 -----
-$font-family-base: 'Plus Jakarta Sans', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-$font-family-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+$font-family-base: 'Inter', 'Plus Jakarta Sans', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+$font-family-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
 
 :root {
   --font-family-base: #{$font-family-base};
   --font-family-mono: #{$font-family-mono};
 
-  // ----- 字号 -----
+  // ----- 字号（新增 Display 层级） -----
+  --font-size-2xs: 10px;
   --font-size-xs: 12px;
   --font-size-sm: 13px;
   --font-size-base: 14px;
-  --font-size-md: 16px;
-  --font-size-lg: 18px;
-  --font-size-xl: 20px;
-  --font-size-2xl: 24px;
-  --font-size-3xl: 30px;
+  --font-size-md: 15px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+  --font-size-2xl: 20px;
+  --font-size-3xl: 24px;
+  --font-size-4xl: 30px;
+  --font-size-5xl: 32px;
 
   // ----- 字重 -----
+  --font-weight-light: 300;
   --font-weight-normal: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
@@ -27,16 +32,29 @@ $font-family-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', m
 
   // ----- 行高 -----
   --line-height-none: 1;
-  --line-height-tight: 1.25;
-  --line-height-snug: 1.375;
-  --line-height-normal: 1.5;
-  --line-height-relaxed: 1.625;
-  --line-height-loose: 2;
+  --line-height-tight: 1.15;
+  --line-height-snug: 1.25;
+  --line-height-normal: 1.4;
+  --line-height-relaxed: 1.5;
+  --line-height-loose: 1.6;
 
   // ----- 字间距 -----
-  --letter-spacing-tight: -0.025em;
+  --letter-spacing-tighter: -0.5px;
+  --letter-spacing-tight: -0.3px;
+  --letter-spacing-snug: -0.2px;
   --letter-spacing-normal: 0;
   --letter-spacing-wide: 0.025em;
   --letter-spacing-wider: 0.05em;
   --letter-spacing-uppercase: 0.08em;
+
+  // ----- 语义排版 -----
+  --text-display-hero: var(--font-weight-bold) var(--font-size-5xl) / var(--line-height-tight) var(--font-family-base);
+  --text-display-lg: var(--font-weight-bold) var(--font-size-3xl) / var(--line-height-snug) var(--font-family-base);
+  --text-heading-lg: var(--font-weight-semibold) var(--font-size-2xl) / var(--line-height-normal) var(--font-family-base);
+  --text-heading-md: var(--font-weight-semibold) var(--font-size-lg) / var(--line-height-relaxed) var(--font-family-base);
+  --text-body: var(--font-weight-normal) var(--font-size-base) / var(--line-height-relaxed) var(--font-family-base);
+  --text-caption: var(--font-weight-normal) var(--font-size-xs) / var(--line-height-normal) var(--font-family-base);
+
+  // 数值排版（Tabular）
+  --font-variant-numeric: tabular-nums;
 }

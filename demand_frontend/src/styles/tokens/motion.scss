@@ -1,5 +1,5 @@
-// ===== 需求管理系统 - 动画系统 =====
-// 时长、缓动、关键帧
+// ===== 需求管理系统 - 动画系统 v2.0 =====
+// 时长、缓动、关键帧 + 交互过渡 Token
 
 :root {
   // ----- 时长 -----
@@ -21,6 +21,20 @@
   --transition-normal: var(--duration-normal) var(--ease-standard);
   --transition-slow: var(--duration-slow) var(--ease-standard);
   --transition-spring: var(--duration-normal) var(--ease-spring);
+
+  // ----- 交互过渡（新增） -----
+  --transition-color: color var(--duration-fast) var(--ease-standard);
+  --transition-bg: background-color var(--duration-fast) var(--ease-standard);
+  --transition-border: border-color var(--duration-fast) var(--ease-standard);
+  --transition-shadow: box-shadow var(--duration-normal) var(--ease-standard);
+  --transition-transform: transform var(--duration-normal) var(--ease-decelerate);
+  --transition-opacity: opacity var(--duration-fast) var(--ease-standard);
+  --transition-all: all var(--duration-normal) var(--ease-standard);
+
+  // ----- 按钮交互 -----
+  --button-transition: all var(--duration-fast) var(--ease-standard);
+  --button-hover-lift: translateY(-1px);
+  --button-active-press: translateY(0);
 }
 
 // ----- 关键帧 -----
@@ -50,7 +64,7 @@
 }
 
 @keyframes scaleIn {
-  from { opacity: 0; transform: scale(0.92); }
+  from { opacity: 0; transform: scale(0.96); }
   to { opacity: 1; transform: scale(1); }
 }
 

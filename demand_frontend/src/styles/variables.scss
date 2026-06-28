@@ -1,8 +1,9 @@
-// ===== 需求管理系统 - 全局变量 =====
+// ===== 需求管理系统 - 全局变量 v2.0 =====
 // 所有值引用 Token 体系，不再使用硬编码
+// 适配主色从 #0369A1 → #2563EB 的变更
 
 // ----- 主题色（兼容旧引用，映射至 Token） -----
-$primary-color: var(--color-accent);
+$primary-color: var(--color-primary);
 $success-color: var(--color-success);
 $warning-color: var(--color-warning);
 $danger-color: var(--color-danger);

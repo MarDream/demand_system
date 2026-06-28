@@ -809,24 +809,24 @@ function statusLabel(status: string) {
 .filter-bar {
   background:
     linear-gradient(180deg, rgba(248, 251, 255, 0.96) 0%, rgba(255, 255, 255, 0.98) 100%);
-  border-radius: 18px;
+  border-radius: 14px;
   border: 1px solid #dce7f5;
-  box-shadow: 0 12px 28px rgba(15, 52, 96, 0.08);
-  padding: 16px 20px;
-  margin-bottom: 16px;
+  box-shadow: 0 8px 20px rgba(15, 52, 96, 0.06);
+  padding: 12px 14px;
+  margin-bottom: 12px;
 }
 
 .filter-row {
   display: flex;
   align-items: flex-end;
-  gap: 14px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
 .filter-field {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .filter-field__label {
@@ -837,7 +837,7 @@ function statusLabel(status: string) {
 }
 
 .filter-input {
-  --el-input-height: 42px;
+  --el-input-height: 34px;
 }
 
 .filter-input :deep(.el-input__wrapper),
@@ -877,15 +877,15 @@ function statusLabel(status: string) {
 }
 
 .filter-field--name {
-  flex: 1.1 1 280px;
+  flex: 0 1 260px;
 }
 
 .filter-field--status {
-  flex: 0.7 1 170px;
+  flex: 0 0 150px;
 }
 
 .filter-field--date {
-  flex: 1.6 1 360px;
+  flex: 0 1 340px;
 }
 
 .filter-input--name,
@@ -897,7 +897,7 @@ function statusLabel(status: string) {
 .filter-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
   margin-left: auto;
@@ -907,9 +907,9 @@ function statusLabel(status: string) {
 .filter-actions__primary,
 .filter-actions__upload,
 .filter-actions__secondary {
-  height: 42px;
-  padding: 0 18px;
-  border-radius: 12px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 10px;
   font-weight: 600;
 }
 

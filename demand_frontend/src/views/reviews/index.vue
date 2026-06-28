@@ -9,32 +9,37 @@
 
       <!-- 筛选 -->
       <div class="filter-bar">
-        <el-input
-          v-model="filterRequirementId"
-          placeholder="按需求ID筛选"
-          clearable
-          style="width: 200px"
-          @clear="loadReviews"
-        />
-        <el-select
-          v-model="filterResult"
-          placeholder="按评审结果筛选"
-          clearable
-          style="width: 150px; margin-left: 12px"
-          @change="loadReviews"
-        >
-          <el-option label="通过" value="通过" />
-          <el-option label="不通过" value="不通过" />
-          <el-option label="需修改" value="需修改" />
-        </el-select>
-        <el-button type="primary" style="margin-left: 12px" @click="loadReviews">搜索</el-button>
-        <el-tooltip content="列表字段设置" style="margin-left: auto">
-          <el-button link :icon="Setting" @click="openColumnConfig" />
+        <div class="filter-field filter-field--requirement">
+          <span class="filter-label">需求ID</span>
+          <el-input
+            v-model="filterRequirementId"
+            placeholder="输入ID"
+            clearable
+            @clear="loadReviews"
+          />
+        </div>
+        <div class="filter-field filter-field--result">
+          <span class="filter-label">评审结果</span>
+          <el-select
+            v-model="filterResult"
+            placeholder="全部"
+            clearable
+            @change="loadReviews"
+          >
+            <el-option label="通过" value="通过" />
+            <el-option label="不通过" value="不通过" />
+            <el-option label="需修改" value="需修改" />
+          </el-select>
+        </div>
+        <el-button type="primary" class="filter-search-btn" @click="loadReviews">搜索</el-button>
+        <div class="filter-spacer" />
+        <el-tooltip content="列表字段设置">
+          <el-button circle :icon="Setting" @click="openColumnConfig" />
         </el-tooltip>
       </div>
 
       <!-- 评审列表 -->
-      <el-table v-loading="loading" :data="reviews" border style="width: 100%; margin-top: 16px">
+      <el-table v-loading="loading" :data="reviews" border style="width: 100%; margin-top: 10px">
         <el-table-column v-if="isColumnVisible('requirementId')" label="需求ID" width="90">
           <template #default="{ row }">{{ row.requirementId }}</template>
         </el-table-column>
@@ -290,6 +295,63 @@ onMounted(() => {
   .filter-bar {
     display: flex;
     align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    border: 1px solid var(--color-border, #e5e7eb);
+    border-radius: var(--radius-lg, 12px);
+    background: var(--color-surface-alt, #f8fafc);
+  }
+
+  .filter-field {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .filter-label {
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .filter-field--requirement {
+    width: 152px;
+  }
+
+  .filter-field--result {
+    width: 158px;
+  }
+
+  .filter-field :deep(.el-input),
+  .filter-field :deep(.el-select) {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .filter-field :deep(.el-input__wrapper),
+  .filter-field :deep(.el-select__wrapper) {
+    min-height: 30px;
+    height: 30px;
+  }
+
+  .filter-search-btn,
+  .filter-bar :deep(.el-button) {
+    height: 30px;
+    padding: 0 12px;
+    font-size: 12px;
+  }
+
+  .filter-bar :deep(.el-button.is-circle) {
+    width: 30px;
+    padding: 0;
+  }
+
+  .filter-spacer {
+    flex: 1;
+    min-width: 8px;
   }
 
   .mb-4 {

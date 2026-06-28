@@ -1,5 +1,6 @@
-// ===== 需求管理系统 - 色彩系统 =====
-// 基于 Micro-interactions 风格 + Enterprise Gateway 模式
+// ===== 需求管理系统 - 色彩系统 v2.0 =====
+// 基于 Stripe（商业化气质）+ Linear（交互精致感）混搭
+// 主色从 Sky-600 升级为更饱和的 Indigo-Blue (#2563EB)
 
 // ----- 基础色板 -----
 $palette-navy-900: #0F172A;
@@ -13,12 +14,21 @@ $palette-slate-200: #E2E8F0;
 $palette-slate-100: #F1F5F9;
 $palette-slate-50: #F8FAFC;
 
-$palette-sky-600: #0369A1;
-$palette-sky-500: #0284C7;
-$palette-sky-400: #0384D4;
-$palette-sky-300: #7DD3FC;
-$palette-sky-200: #BAE6FD;
-$palette-sky-100: #E0F2FE;
+// 主色系升级：Indigo-Blue（原 Sky）
+$palette-blue-700: #1D4ED8;
+$palette-blue-600: #2563EB;
+$palette-blue-500: #3B82F6;
+$palette-blue-400: #60A5FA;
+$palette-blue-300: #93C5FD;
+$palette-blue-200: #BFDBFE;
+$palette-blue-100: #DBEAFE;
+$palette-blue-50: #EFF6FF;
+
+// 强调色：Indigo（受 Linear Lavender 启发）
+$palette-indigo-600: #4F46E5;
+$palette-indigo-500: #6366F1;
+$palette-indigo-400: #818CF8;
+$palette-indigo-100: #E0E7FF;
 
 $palette-emerald-600: #059669;
 $palette-emerald-500: #10B981;
@@ -31,9 +41,9 @@ $palette-red-600: #DC2626;
 $palette-red-500: #EF4444;
 $palette-red-400: #F87171;
 
-$palette-gray-900: #111827;
+$palette-gray-900: #0F172A;
 $palette-gray-700: #374151;
-$palette-gray-600: #4B5563;
+$palette-gray-600: #475569;
 $palette-gray-500: #6B7280;
 $palette-gray-400: #9CA3AF;
 $palette-gray-300: #D1D5DB;
@@ -43,13 +53,21 @@ $palette-gray-50: #F9FAFB;
 
 // ----- 语义色（CSS 自定义属性） -----
 :root {
-  // 主色系
-  --color-primary: #{$palette-navy-900};
+  // 主色系 — 从 #0369A1 升级为 #2563EB
+  --color-primary: #{$palette-blue-600};
+  --color-primary-hover: #{$palette-blue-500};
+  --color-primary-active: #{$palette-blue-700};
+  --color-primary-light: #{$palette-blue-100};
+  --color-primary-subtle: #{$palette-blue-50};
   --color-on-primary: #FFFFFF;
+
+  // 次色
   --color-secondary: #{$palette-navy-700};
-  --color-accent: #{$palette-sky-600};
-  --color-accent-hover: #{$palette-sky-500};
-  --color-accent-light: #{$palette-sky-100};
+
+  // 强调色 — 新增独立强调色
+  --color-accent: #{$palette-indigo-500};
+  --color-accent-hover: #{$palette-indigo-400};
+  --color-accent-light: #{$palette-indigo-100};
 
   // 背景与前景
   --color-background: #{$palette-slate-50};
@@ -68,17 +86,17 @@ $palette-gray-50: #F9FAFB;
   --color-success-light: rgba(16, 185, 129, 0.1);
   --color-warning: #{$palette-amber-500};
   --color-warning-light: rgba(245, 158, 11, 0.1);
-  --color-danger: #{$palette-red-600};
-  --color-danger-light: rgba(220, 38, 38, 0.08);
-  --color-info: #{$palette-sky-600};
-  --color-info-light: rgba(3, 105, 161, 0.06);
+  --color-danger: #{$palette-red-500};
+  --color-danger-light: rgba(239, 68, 68, 0.08);
+  --color-info: #{$palette-blue-500};
+  --color-info-light: rgba(59, 130, 246, 0.04);
 
   // 侧边栏
   --color-sidebar-bg: #{$palette-navy-900};
   --color-sidebar-bg-gradient: linear-gradient(180deg, #{$palette-navy-900} 0%, #{$palette-navy-800} 100%);
   --color-sidebar-text: #{$palette-slate-300};
   --color-sidebar-text-active: #FFFFFF;
-  --color-sidebar-active: #{$palette-sky-600};
+  --color-sidebar-active: #{$palette-blue-500};
   --color-sidebar-hover: rgba(255, 255, 255, 0.06);
   --color-sidebar-border: rgba(255, 255, 255, 0.08);
 
@@ -89,24 +107,28 @@ $palette-gray-50: #F9FAFB;
 
   // 渐变 token
   --gradient-header: linear-gradient(180deg, #FFFFFF 0%, #{$palette-slate-50} 100%);
-  --color-accent-glow: rgba(3, 105, 161, 0.35);
-  --color-accent-glow-strong: rgba(3, 105, 161, 0.4);
-  --color-accent-tint: rgba(3, 105, 161, 0.2);
-  --color-accent-tint-light: rgba(3, 105, 161, 0.06);
-  --color-accent-overlay: rgba(3, 105, 161, 0.5);
-  --shadow-icon-accent: 0 4px 12px rgba(3, 105, 161, 0.2);
+  --gradient-primary: linear-gradient(135deg, #{$palette-blue-600} 0%, #{$palette-indigo-500} 100%);
+  --color-accent-glow: rgba(37, 99, 235, 0.25);
+  --color-accent-glow-strong: rgba(37, 99, 235, 0.35);
+  --color-accent-tint: rgba(37, 99, 235, 0.2);
+  --color-accent-tint-light: rgba(37, 99, 235, 0.06);
+  --color-accent-overlay: rgba(37, 99, 235, 0.5);
+  --shadow-icon-accent: 0 4px 12px rgba(37, 99, 235, 0.2);
 
   // 聚焦环
-  --color-ring: #{$palette-sky-600};
+  --color-ring: #{$palette-blue-500};
   --color-ring-offset: #FFFFFF;
 
-  // 文字层级
-  --color-text-primary: #{$palette-gray-900};
-  --color-text-secondary: #{$palette-gray-600};
-  --color-text-placeholder: #{$palette-gray-400};
-  --color-text-disabled: #{$palette-gray-300};
+  // 文字层级 — 统一使用 Navy 色系
+  --color-text-primary: #{$palette-navy-900};
+  --color-text-secondary: #{$palette-navy-600};
+  --color-text-placeholder: #{$palette-slate-400};
+  --color-text-disabled: #{$palette-slate-300};
 
   // 遮罩
   --color-overlay: rgba(15, 23, 42, 0.5);
   --color-overlay-light: rgba(15, 23, 42, 0.12);
+
+  // 阴影基色
+  --shadow-color: rgba(15, 23, 42, 0.06);
 }

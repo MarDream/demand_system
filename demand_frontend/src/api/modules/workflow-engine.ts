@@ -156,7 +156,7 @@ export const workflowEngineApi = {
     return request.get<CurrentNodeHandler[]>(
       '/v1/workflow-engine/current-handlers',
       { params: { ids: ids.join(',') } }
-    )
+    ) as unknown as Promise<CurrentNodeHandler[]>
   }
 }
 

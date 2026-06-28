@@ -51,18 +51,20 @@
           <el-tab-pane label="版本管理" name="versions">
             <div class="table-toolbar">
               <div class="toolbar-left">
-                <el-select v-model="activationFilter" clearable placeholder="筛选启停状态" style="width: 160px">
+                <el-select v-model="activationFilter" clearable placeholder="启停状态" class="toolbar-control toolbar-control--sm">
                   <el-option label="全部状态" value="" />
                   <el-option label="已启用" value="ACTIVE" />
                   <el-option label="未启用" value="INACTIVE" />
                 </el-select>
-                <el-select v-model="versionApprovalStatusFilter" clearable placeholder="筛选审核状态" style="width: 180px">
+                <el-select v-model="versionApprovalStatusFilter" clearable placeholder="审核状态" class="toolbar-control toolbar-control--md">
                   <el-option label="全部状态" value="" />
                   <el-option label="草稿" value="DRAFT" />
                   <el-option label="审核中" value="PENDING" />
                   <el-option label="已通过" value="APPROVED" />
                   <el-option label="已拒绝" value="REJECTED" />
                 </el-select>
+              </div>
+              <div class="toolbar-right">
                 <AppButton
                   type="success"
                   plain
@@ -72,123 +74,134 @@
                   <el-icon><Upload /></el-icon>
                   导入工作流
                 </AppButton>
-              </div>
-              <div class="toolbar-right">
-                <el-tooltip content="列表字段设置">
-                  <el-button link :icon="Setting" @click="openVersionColumnConfig" />
-                </el-tooltip>
+                <AppButton
+                  type="primary"
+                  @click="createNewWorkflow"
+                  v-permission="'button:workflow:create'"
+                >
+                  <el-icon><Plus /></el-icon>
+                  新建版本
+                </AppButton>
                 <el-input
                   v-model="versionKeyword"
                   clearable
-                  placeholder="搜索版本名称 / 版本号"
-                  style="width: 240px"
+                  placeholder="搜索版本"
+                  class="toolbar-control toolbar-control--keyword"
                 />
+                <el-tooltip content="列表字段设置">
+                  <el-button link :icon="Setting" @click="openVersionColumnConfig" />
+                </el-tooltip>
               </div>
             </div>
 
-            <el-table :data="pagedVersions" border v-loading="versionLoading" :cell-style="{ textAlign: 'center' }" :header-cell-style="{ textAlign: 'center' }">
-              <el-table-column v-if="isVersionColumnVisible('version')" prop="version" label="版本号" width="110">
-                <template #default="{ row }">V{{ row.version }}</template>
-              </el-table-column>
-              <el-table-column v-if="isVersionColumnVisible('name')" prop="name" label="版本名称" min-width="220" />
-              <el-table-column v-if="isVersionColumnVisible('boundTypes')" label="适用工单类型" min-width="160">
+            <el-table :data="pagedVersions" border v-loading="versionLoading" :cell-style="{ textAlign: 'center' }" :header-cell-style="{ textAlign: 'center' }" class="workflow-table">
+              <el-table-column v-if="isVersionColumnVisible('version')" label="版本" min-width="220">
                 <template #default="{ row }">
-                  <template v-if="boundTypeNames[row.id]?.length">
-                    <el-tag v-for="name in boundTypeNames[row.id]" :key="name" size="small" style="margin: 2px">{{ name }}</el-tag>
-                  </template>
-                  <span v-else style="color: var(--el-text-color-placeholder)">未绑定</span>
+                  <div class="version-name-cell">
+                    <div class="version-name-title">{{ row.name }}</div>
+                    <div class="version-name-subtitle">V{{ row.version }}</div>
+                  </div>
                 </template>
               </el-table-column>
-              <el-table-column v-if="isVersionColumnVisible('projectId')" label="适用范围" width="120">
+              <el-table-column v-if="isVersionColumnVisible('boundTypes')" label="适用工单类型" min-width="180">
                 <template #default="{ row }">
-                  <el-tag :type="row.projectId === GLOBAL_WORKFLOW_PROJECT_ID ? 'primary' : 'info'" effect="light">
+                  <template v-if="boundTypeNames[row.id]?.length">
+                    <el-tag v-for="name in boundTypeNames[row.id]" :key="name" size="small" effect="light" round class="workflow-tag">{{ name }}</el-tag>
+                  </template>
+                  <span v-else class="muted-cell">未绑定</span>
+                </template>
+              </el-table-column>
+              <el-table-column v-if="isVersionColumnVisible('projectId')" label="适用范围" min-width="120">
+                <template #default="{ row }">
+                  <el-tag :type="row.projectId === GLOBAL_WORKFLOW_PROJECT_ID ? 'primary' : 'info'" effect="light" round class="workflow-tag">
                     {{ row.projectId === GLOBAL_WORKFLOW_PROJECT_ID ? '全局流程' : `项目 ${row.projectId}` }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column v-if="isVersionColumnVisible('isActive')" label="启停状态" width="120">
+              <el-table-column v-if="isVersionColumnVisible('isActive')" label="启停状态" min-width="110">
                 <template #default="{ row }">
-                  <el-tag :type="row.isActive === 1 ? 'success' : 'info'">
+                  <el-tag :type="row.isActive === 1 ? 'success' : 'info'" effect="light" round class="workflow-tag">
                     {{ row.isActive === 1 ? '已启用' : '未启用' }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column v-if="isVersionColumnVisible('approvalStatus')" label="审核状态" width="140">
+              <el-table-column v-if="isVersionColumnVisible('approvalStatus')" label="审核状态" min-width="110">
                 <template #default="{ row }">
-                  <el-tag :type="approvalTagType(versionApprovalStatus(row))">
+                  <el-tag :type="approvalTagType(versionApprovalStatus(row))" effect="light" round class="workflow-tag">
                     {{ approvalStatusLabel(versionApprovalStatus(row)) }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column v-if="isVersionColumnVisible('creatorName')" prop="creatorName" label="创建人" width="140" />
-              <el-table-column v-if="isVersionColumnVisible('createdAt')" label="创建时间" width="180">
+              <el-table-column v-if="isVersionColumnVisible('creatorName')" prop="creatorName" label="创建人" min-width="110" />
+              <el-table-column v-if="isVersionColumnVisible('createdAt')" label="创建时间" min-width="160">
                 <template #default="{ row }">
                   {{ formatDateTime(row.createdAt) }}
                 </template>
               </el-table-column>
-              <el-table-column v-if="isVersionColumnVisible('latestSubmittedAt')" label="最近提交" width="180">
+              <el-table-column v-if="isVersionColumnVisible('latestSubmittedAt')" label="最近提交" min-width="160">
                 <template #default="{ row }">
                   {{ row.latestSubmittedAt ? formatDateTime(row.latestSubmittedAt) : '-' }}
                 </template>
               </el-table-column>
-              <el-table-column v-if="isVersionColumnVisible('activatedAt')" label="启用时间" width="180">
+              <el-table-column v-if="isVersionColumnVisible('activatedAt')" label="启用时间" min-width="160">
                 <template #default="{ row }">
                   {{ row.isActive === 1 && row.activatedAt ? formatDateTime(row.activatedAt) : '-' }}
                 </template>
               </el-table-column>
-              <el-table-column v-if="isVersionColumnVisible('operations')" label="操作" width="240" fixed="right">
+              <el-table-column v-if="isVersionColumnVisible('operations')" label="操作" min-width="120" fixed="right">
                 <template #default="{ row }">
-                  <el-tooltip content="查看" placement="top">
-                    <el-button link type="primary" :icon="View" @click="viewWorkflow(row)" />
-                  </el-tooltip>
-                  <el-tooltip content="编辑" placement="top">
-                    <el-button
-                      link
-                      type="primary"
-                      :icon="EditPen"
-                      @click="editWorkflow(row)"
-                      v-permission="'button:workflow:update'"
-                      :disabled="versionApprovalStatus(row) === 'PENDING' || row.isActive === 1"
-                    />
-                  </el-tooltip>
-                  <el-tooltip content="复制" placement="top">
-                    <el-button
-                      link
-                      type="primary"
-                      :icon="CopyDocument"
-                      @click="handleCopyWorkflow(row)"
-                      v-permission="'button:workflow:config'"
-                    />
-                  </el-tooltip>
-                  <el-tooltip content="导出" placement="top">
-                    <el-button
-                      link
-                      type="primary"
-                      :icon="Download"
-                      @click="handleExportWorkflow(row)"
-                      v-if="versionApprovalStatus(row) === 'APPROVED'"
-                      v-permission="'button:workflow:export'"
-                    />
-                  </el-tooltip>
-                  <el-tooltip :content="row.isActive === 1 ? '停用' : '启用'" placement="top">
-                    <el-button
-                      link
-                      :type="row.isActive === 1 ? 'warning' : 'success'"
-                      :icon="row.isActive === 1 ? SwitchButton : VideoPlay"
-                      @click="handleToggleActivation(row)"
-                      v-permission="'button:workflow:activate'"
-                    />
-                  </el-tooltip>
-                  <el-tooltip content="删除" placement="top">
-                    <el-button
-                      link
-                      type="danger"
-                      :icon="Delete"
-                      :disabled="row.isActive === 1"
-                      @click="handleDeleteVersion(row)"
-                      v-permission="'button:workflow:delete'"
-                    />
-                  </el-tooltip>
+                  <div class="operation-cell">
+                    <el-tooltip content="查看" placement="top">
+                      <el-button link type="primary" :icon="View" @click="viewWorkflow(row)" />
+                    </el-tooltip>
+                    <el-tooltip content="编辑" placement="top">
+                      <el-button
+                        link
+                        type="primary"
+                        :icon="EditPen"
+                        @click="editWorkflow(row)"
+                        v-permission="'button:workflow:update'"
+                        :disabled="versionApprovalStatus(row) === 'PENDING' || row.isActive === 1"
+                      />
+                    </el-tooltip>
+                    <el-dropdown trigger="click" class="operation-more-dropdown">
+                      <el-button link type="primary" :icon="Tools" class="operation-more-button" title="更多操作" aria-label="更多操作" />
+                      <template #dropdown>
+                        <el-dropdown-menu>
+                          <el-dropdown-item :icon="CopyDocument" @click="handleCopyWorkflow(row)" v-permission="'button:workflow:config'">
+                            复制
+                          </el-dropdown-item>
+                          <el-dropdown-item
+                            :icon="Download"
+                            v-if="versionApprovalStatus(row) === 'APPROVED'"
+                            v-permission="'button:workflow:export'"
+                            @click="handleExportWorkflow(row)"
+                          >
+                            导出
+                          </el-dropdown-item>
+                          <el-dropdown-item
+                            :icon="VideoPlay"
+                            v-if="row.isActive !== 1"
+                            v-permission="'button:workflow:activate'"
+                            @click="handleToggleActivation(row)"
+                          >
+                            启用
+                          </el-dropdown-item>
+                          <el-dropdown-item
+                            :icon="SwitchButton"
+                            v-if="row.isActive === 1"
+                            v-permission="'button:workflow:activate'"
+                            @click="handleToggleActivation(row)"
+                          >
+                            停用
+                          </el-dropdown-item>
+                          <el-dropdown-item divided :icon="Delete" v-permission="'button:workflow:delete'" :disabled="row.isActive === 1" @click="handleDeleteVersion(row)">
+                            <span style="color: var(--el-color-danger)">删除</span>
+                          </el-dropdown-item>
+                        </el-dropdown-menu>
+                      </template>
+                    </el-dropdown>
+                  </div>
                 </template>
               </el-table-column>
             </el-table>
@@ -222,7 +235,7 @@
                   <el-icon><Delete /></el-icon>
                   清空全部
                 </el-button>
-                <el-select v-model="projectFilter" clearable placeholder="筛选项目" style="width: 180px">
+                <el-select v-model="projectFilter" clearable placeholder="项目" class="toolbar-control toolbar-control--md">
                   <el-option
                     v-for="item in projectOptions"
                     :key="item.value"
@@ -233,10 +246,10 @@
                 <el-input
                   v-model="approvalKeyword"
                   clearable
-                  placeholder="搜索项目名 / 版本名"
-                  style="width: 220px"
+                  placeholder="搜索项目/版本"
+                  class="toolbar-control toolbar-control--keyword"
                 />
-                <el-select v-model="approvalStatusFilter" placeholder="筛选审核状态" clearable style="width: 180px">
+                <el-select v-model="approvalStatusFilter" placeholder="审核状态" clearable class="toolbar-control toolbar-control--md">
                   <el-option label="全部状态" value="" />
                   <el-option label="待审核" value="PENDING" />
                   <el-option label="已通过" value="APPROVED" />
@@ -250,7 +263,7 @@
               </div>
             </div>
 
-            <el-table v-loading="approvalLoading" :data="pagedApprovals" border class="approval-table">
+            <el-table v-loading="approvalLoading" :data="pagedApprovals" border class="approval-table workflow-table">
               <el-table-column v-if="isApprovalColumnVisible('task')" label="任务名称" min-width="240">
                 <template #default="{ row }">
                   <div class="task-name-cell">
@@ -259,30 +272,30 @@
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column v-if="isApprovalColumnVisible('status')" label="任务状态" width="120">
+              <el-table-column v-if="isApprovalColumnVisible('status')" label="任务状态" min-width="110">
                 <template #default="{ row }">
-                  <el-tag :type="approvalTagType(row.status)" size="small">
+                  <el-tag :type="approvalTagType(row.status)" size="small" effect="light" round class="workflow-tag">
                     {{ approvalStatusLabel(row.status) }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column v-if="isApprovalColumnVisible('submitter')" label="提交人" width="120">
+              <el-table-column v-if="isApprovalColumnVisible('submitter')" label="提交人" min-width="110">
                 <template #default="{ row }">{{ row.submitterName || '-' }}</template>
               </el-table-column>
-              <el-table-column v-if="isApprovalColumnVisible('submittedAt')" label="提交时间" width="180">
+              <el-table-column v-if="isApprovalColumnVisible('submittedAt')" label="提交时间" min-width="160">
                 <template #default="{ row }">{{ formatDateTime(row.submittedAt) }}</template>
               </el-table-column>
-              <el-table-column v-if="isApprovalColumnVisible('stayDuration')" label="停留时间" width="120">
+              <el-table-column v-if="isApprovalColumnVisible('stayDuration')" label="停留时间" min-width="120">
                 <template #default="{ row }">
                   {{ getStayDuration(row.submittedAt, row.approvedAt) }}
                 </template>
               </el-table-column>
-              <el-table-column v-if="isApprovalColumnVisible('approvedAt')" label="结束时间" width="180">
+              <el-table-column v-if="isApprovalColumnVisible('approvedAt')" label="结束时间" min-width="160">
                 <template #default="{ row }">
                   {{ row.approvedAt ? formatDateTime(row.approvedAt) : '-' }}
                 </template>
               </el-table-column>
-              <el-table-column v-if="isApprovalColumnVisible('approver')" label="审核人" width="120">
+              <el-table-column v-if="isApprovalColumnVisible('approver')" label="审核人" min-width="110">
                 <template #default="{ row }">
                   {{ row.approverName || '-' }}
                 </template>
@@ -292,10 +305,10 @@
                   <el-tooltip v-if="row.comment" :content="row.comment" placement="top">
                     <span class="comment-text">{{ row.comment }}</span>
                   </el-tooltip>
-                  <span v-else>-</span>
+                  <span v-else class="muted-cell">-</span>
                 </template>
               </el-table-column>
-              <el-table-column v-if="isApprovalColumnVisible('operations')" label="操作" width="180" fixed="right">
+              <el-table-column v-if="isApprovalColumnVisible('operations')" label="操作" min-width="180" fixed="right">
                 <template #default="{ row }">
                   <el-tooltip content="详情" placement="top">
                     <el-button link type="primary" :icon="Document" @click="openDetail(row)" />
@@ -590,8 +603,7 @@ import { requirementConfigApi, type RequirementType } from '@/api/modules/requir
 
 // ── 列表字段设置：版本管理表 ──
 const versionAllColumns: ColumnDef[] = [
-  { key: 'version', label: '版本号', group: '基础字段', width: 110 },
-  { key: 'name', label: '版本名称', group: '基础字段', minWidth: 220 },
+  { key: 'version', label: '版本', group: '基础字段', minWidth: 200 },
   { key: 'boundTypes', label: '适用工单类型', group: '基础字段', minWidth: 160 },
   { key: 'projectId', label: '适用范围', group: '基础字段', width: 120 },
   { key: 'isActive', label: '启停状态', group: '状态信息', width: 120 },
@@ -600,9 +612,9 @@ const versionAllColumns: ColumnDef[] = [
   { key: 'createdAt', label: '创建时间', group: '人员与时间', width: 180 },
   { key: 'latestSubmittedAt', label: '最近提交', group: '人员与时间', width: 180 },
   { key: 'activatedAt', label: '启用时间', group: '人员与时间', width: 180 },
-  { key: 'operations', label: '操作', width: 240 },
+  { key: 'operations', label: '操作', width: 120 },
 ]
-const versionDefaultKeys = ['version', 'name', 'boundTypes', 'projectId', 'isActive', 'approvalStatus', 'creatorName', 'createdAt', 'latestSubmittedAt', 'activatedAt', 'operations']
+const versionDefaultKeys = ['version', 'boundTypes', 'projectId', 'isActive', 'approvalStatus', 'creatorName', 'createdAt', 'operations']
 
 const {
   showColumnConfig: showVersionColumnConfig,
@@ -1344,8 +1356,51 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   flex-wrap: wrap;
+}
+
+.table-toolbar,
+.approval-toolbar {
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--color-surface-alt, #f8fafc);
+}
+
+.toolbar-control {
+  :deep(.el-input__wrapper),
+  :deep(.el-select__wrapper) {
+    min-height: 30px;
+    height: 30px;
+  }
+}
+
+.toolbar-control--sm {
+  width: 132px;
+}
+
+.toolbar-control--md {
+  width: 148px;
+}
+
+.toolbar-control--keyword {
+  width: 180px;
+  max-width: 220px;
+}
+
+.toolbar-right :deep(.el-button),
+.toolbar-left :deep(.el-button) {
+  height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.toolbar-right :deep(.el-button.is-link),
+.toolbar-left :deep(.el-button.is-link) {
+  height: auto;
+  padding: 4px;
 }
 
 .overview-header {
@@ -1442,10 +1497,94 @@ onMounted(() => {
   border-color: #fab6b6;
 }
 
+/* ============================================
+   表格样式：紧凑自适应 + 居中对齐 + 行高舒适
+   ============================================ */
+.workflow-table {
+  --el-table-border-color: var(--color-border, #e2e8f0);
+  --el-table-header-bg-color: var(--color-surface-alt, #f8fafc);
+  --el-table-row-hover-bg-color: rgba(59, 130, 246, 0.04);
+
+  :deep(th.el-table__cell) {
+    height: 38px;
+    padding: 0 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    background: var(--color-surface-alt, #f8fafc);
+    letter-spacing: 0;
+  }
+
+  :deep(td.el-table__cell) {
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--color-text-primary);
+    border-bottom: 1px solid var(--el-table-border-color);
+  }
+
+  :deep(.el-table__row) {
+    transition: background-color var(--duration-fast, 150ms) ease;
+  }
+
+  :deep(.el-table__row:hover > td.el-table__cell) {
+    background: rgba(59, 130, 246, 0.04);
+  }
+
+  :deep(.cell) {
+    word-break: break-word;
+  }
+
+  // tag 间距：单行紧凑
+  .workflow-tag {
+    margin: 2px 4px 2px 0;
+
+    &:last-child {
+      margin-right: 0;
+    }
+  }
+}
+
+.muted-cell {
+  color: var(--el-text-color-placeholder);
+  font-size: 13px;
+}
+
 .task-name-cell {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.version-name-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+
+.version-name-title {
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.version-name-subtitle {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.operation-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.operation-more-button {
+  padding: 4px;
+}
+
+.operation-more-dropdown .el-button {
+  font-size: 14px;
 }
 
 .task-name {

@@ -1,13 +1,14 @@
-// ===== 需求管理系统 - 阴影系统 =====
-// 5 级层次，从轻浮到深度
+// ===== 需求管理系统 - 阴影系统 v2.0 =====
+// 5 级层次 + 品牌色光晕 + 遮罩模糊（受 Stripe/Linear 启发）
 
 :root {
+  // 基础阴影 — 统一 rgba 基色
   --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
   --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
   --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.04);
   --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.04);
   --shadow-xl: 0 20px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
-  --shadow-2xl: 0 25px 50px -12px rgba(15, 23, 42, 0.2);
+  --shadow-2xl: 0 25px 50px -12px rgba(15, 23, 42, 0.18);
 
   // 语义阴影
   --shadow-card: var(--shadow-sm);
@@ -16,4 +17,11 @@
   --shadow-dialog: var(--shadow-2xl);
   --shadow-tooltip: var(--shadow-md);
   --shadow-sidebar: 4px 0 12px rgba(15, 23, 42, 0.08);
+
+  // 品牌色光晕 — 卡片 hover 时使用
+  --shadow-glow-primary: 0 4px 14px rgba(37, 99, 235, 0.25);
+  --shadow-glow-danger: 0 4px 14px rgba(239, 68, 68, 0.25);
+
+  // 遮罩模糊
+  --backdrop-blur: blur(4px);
 }

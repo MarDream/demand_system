@@ -1,9 +1,11 @@
 <template>
-  <PageContainer title="需求管理">
-    <!-- Filter -->
-    <FilterCard>
-      <div class="view-switch">
-        <el-tabs v-model="viewMode" class="view-switch-tabs" @tab-change="handleViewModeChange">
+  <PageContainer title="需求管理" class="requirements-page">
+    <!-- Control Console -->
+    <FilterCard class="requirement-control-card">
+      <div class="requirement-control">
+        <div class="requirement-control__top">
+          <div class="view-switch">
+            <el-tabs v-model="viewMode" class="view-switch-tabs" @tab-change="handleViewModeChange">
           <el-tab-pane v-if="hasPermission('menu:requirement:view:all')" name="all">
             <template #label>
               <span class="view-switch__tab-label">
@@ -54,133 +56,145 @@
               </span>
             </template>
           </el-tab-pane>
-        </el-tabs>
-      </div>
-      <el-form :model="filterForm" inline class="filter-form">
-        <el-collapse-transition>
-          <div v-show="filterExpanded" class="filter-collapse-wrapper">
-            <div class="filter-main">
-              <el-form-item label="需求类型" class="filter-item">
-                <el-select v-model="filterForm.type" placeholder="全部" clearable class="filter-select--type">
-                  <el-option v-for="t in configTypes" :key="t.code" :label="t.name" :value="t.code" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="优先级" class="filter-item">
-                <el-select v-model="filterForm.priority" placeholder="全部" clearable class="filter-select--priority">
-                  <el-option v-for="p in configPriorities" :key="p.code" :label="p.name" :value="p.code">
-                    <span class="priority-option">
-                      <span v-if="p.color" class="priority-dot" :style="{ backgroundColor: p.color }"></span>
-                      {{ p.name }}
-                    </span>
-                  </el-option>
-                </el-select>
-              </el-form-item>
-              <el-form-item label="状态" class="filter-item">
-                <el-select v-model="filterForm.status" placeholder="全部" clearable class="filter-select--status">
-                  <el-option label="新建" value="新建" />
-                  <el-option label="待分析" value="待分析" />
-                  <el-option label="待确认" value="待确认" />
-                  <el-option label="待评审" value="待评审" />
-                  <el-option label="评审中" value="评审中" />
-                  <el-option label="已通过" value="已通过" />
-                  <el-option label="开发中" value="开发中" />
-                  <el-option label="测试中" value="测试中" />
-                  <el-option label="已上线" value="已上线" />
-                  <el-option label="已验收" value="已验收" />
-                  <el-option label="已取消" value="已取消" />
-                  <el-option label="已拒绝" value="已拒绝" />
-                  <el-option label="打回" value="打回" />
-                  <el-option label="测试不通过" value="测试不通过" />
-                  <el-option label="验收不通过" value="验收不通过" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="负责人" class="filter-item">
-                <el-select v-model="filterForm.assigneeId" placeholder="请选择" clearable class="filter-select--assignee">
-                  <el-option v-for="user in filterUserList" :key="user.id" :label="user.realName || user.username" :value="user.id" />
-                </el-select>
-              </el-form-item>
-              <el-form-item class="filter-item filter-item--search">
-                <el-input
-                  v-model="filterForm.keyword"
-                  placeholder="关键词搜索（回车搜索）"
-                  clearable
-                  class="filter-input--keyword"
-                  @keyup.enter="handleSearch"
-                >
-                  <template #append>
-                    <el-button
-                      class="filter-search-append"
-                      aria-label="执行搜索"
-                      @click="handleSearch"
-                    >
-                      <el-icon><Search /></el-icon>
-                      <span>搜索</span>
-                    </el-button>
-                  </template>
-                </el-input>
-              </el-form-item>
-            </div>
-            <div v-show="isAllView" class="filter-extra">
-              <el-form-item label="时间维度" class="filter-item">
-                <el-select v-model="timeDimension" placeholder="选择时间维度" class="filter-select--dimension">
-                  <el-option label="创建时间" value="createdAt" />
-                  <el-option label="分析完成" value="analysisCompletedAt" />
-                  <el-option label="需求确认" value="confirmAt" />
-                  <el-option label="开发完成" value="developmentCompletedAt" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="日期范围" class="filter-item filter-item--date">
-                <el-date-picker
-                  v-model="timeRange"
-                  type="daterange"
-                  range-separator="至"
-                  start-placeholder="开始日期"
-                  end-placeholder="结束日期"
-                  value-format="YYYY-MM-DD HH:mm:ss"
-                  :default-time="defaultTime"
-                  class="filter-date-range"
-                />
-              </el-form-item>
-            </div>
+            </el-tabs>
           </div>
-        </el-collapse-transition>
-        <div class="filter-meta-actions">
-          <el-link type="primary" underline="never" class="filter-toggle" @click="filterExpanded = !filterExpanded">
-            {{ filterExpanded ? '收起' : '展开' }}
-            <el-icon class="filter-toggle__icon" :class="{ 'is-expanded': filterExpanded }"><ArrowDown /></el-icon>
-          </el-link>
-          <div class="filter-meta-actions__right">
+
+          <div class="requirement-control__actions">
             <el-button
-              class="filter-reset-icon-btn"
-              :icon="Refresh"
-              circle
-              aria-label="重置筛选条件"
-              title="重置筛选条件"
-              @click="handleReset"
-            />
+              v-if="hasPermission('button:requirement:create')"
+              type="primary"
+              class="requirement-primary-action"
+              @click="handleCreate"
+            >
+              新建需求
+            </el-button>
             <el-button
-              :icon="Setting"
-              circle
-              aria-label="列表字段设置"
-              title="列表字段设置"
-              @click="openColumnConfig"
-            />
+              v-if="hasPermission('button:requirement:export')"
+              class="requirement-secondary-action"
+              :loading="exporting"
+              :disabled="exporting"
+              @click="handleExport"
+            >
+              {{ exporting ? '导出中...' : '导出Excel' }}
+            </el-button>
+            <el-button
+              text
+              class="filter-toggle"
+              @click="filterExpanded = !filterExpanded"
+            >
+              {{ filterExpanded ? '收起高级' : '高级筛选' }}
+              <el-icon class="filter-toggle__icon" :class="{ 'is-expanded': filterExpanded }"><ArrowDown /></el-icon>
+            </el-button>
+            <el-tooltip content="重置筛选条件" placement="top">
+              <el-button
+                class="filter-reset-icon-btn"
+                :icon="Refresh"
+                circle
+                aria-label="重置筛选条件"
+                @click="handleReset"
+              />
+            </el-tooltip>
+            <el-tooltip content="列表字段设置" placement="top">
+              <el-button
+                :icon="Setting"
+                circle
+                aria-label="列表字段设置"
+                @click="openColumnConfig"
+              />
+            </el-tooltip>
           </div>
         </div>
-      </el-form>
+
+        <el-form :model="filterForm" inline class="filter-form">
+          <div class="filter-main">
+            <el-form-item label="需求类型" class="filter-item filter-item--type">
+              <el-select v-model="filterForm.type" placeholder="全部" clearable class="filter-select--type">
+                <el-option v-for="t in configTypes" :key="t.code" :label="t.name" :value="t.code" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="优先级" class="filter-item filter-item--priority">
+              <el-select v-model="filterForm.priority" placeholder="全部" clearable class="filter-select--priority">
+                <el-option v-for="p in configPriorities" :key="p.code" :label="p.name" :value="p.code">
+                  <span class="priority-option">
+                    <span v-if="p.color" class="priority-dot" :style="{ backgroundColor: p.color }"></span>
+                    {{ p.name }}
+                  </span>
+                </el-option>
+              </el-select>
+            </el-form-item>
+            <el-form-item label="状态" class="filter-item filter-item--status">
+              <el-select v-model="filterForm.status" placeholder="全部" clearable class="filter-select--status">
+                <el-option label="新建" value="新建" />
+                <el-option label="待分析" value="待分析" />
+                <el-option label="待确认" value="待确认" />
+                <el-option label="待评审" value="待评审" />
+                <el-option label="评审中" value="评审中" />
+                <el-option label="已通过" value="已通过" />
+                <el-option label="开发中" value="开发中" />
+                <el-option label="测试中" value="测试中" />
+                <el-option label="已上线" value="已上线" />
+                <el-option label="已验收" value="已验收" />
+                <el-option label="已取消" value="已取消" />
+                <el-option label="已拒绝" value="已拒绝" />
+                <el-option label="打回" value="打回" />
+                <el-option label="测试不通过" value="测试不通过" />
+                <el-option label="验收不通过" value="验收不通过" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="负责人" class="filter-item filter-item--assignee">
+              <el-select v-model="filterForm.assigneeId" placeholder="请选择" clearable class="filter-select--assignee">
+                <el-option v-for="user in filterUserList" :key="user.id" :label="user.realName || user.username" :value="user.id" />
+              </el-select>
+            </el-form-item>
+            <el-form-item v-show="filterExpanded && isAllView" label="时间维度" class="filter-item filter-item--dimension">
+              <el-select v-model="timeDimension" placeholder="选择时间维度" clearable class="filter-select--dimension">
+                <el-option label="创建时间" value="createdAt" />
+                <el-option label="分析完成" value="analysisCompletedAt" />
+                <el-option label="需求确认" value="confirmAt" />
+                <el-option label="开发完成" value="developmentCompletedAt" />
+              </el-select>
+            </el-form-item>
+
+            <el-form-item v-show="filterExpanded && isAllView" label="日期范围" class="filter-item filter-item--date">
+              <el-date-picker
+                v-model="timeRange"
+                type="daterange"
+                range-separator="至"
+                start-placeholder="开始日期"
+                end-placeholder="结束日期"
+                value-format="YYYY-MM-DD HH:mm:ss"
+                :default-time="defaultTime"
+                class="filter-date-range"
+              />
+            </el-form-item>
+
+            <el-form-item class="filter-item filter-item--search">
+              <el-input
+                v-model="filterForm.keyword"
+                placeholder="关键词搜索"
+                clearable
+                class="filter-input--keyword"
+                @keyup.enter="handleSearch"
+              >
+                <template #append>
+                  <el-button
+                    class="filter-search-append"
+                    aria-label="执行搜索"
+                    @click="handleSearch"
+                  >
+                    <el-icon><Search /></el-icon>
+                    <span>搜索</span>
+                  </el-button>
+                </template>
+              </el-input>
+            </el-form-item>
+          </div>
+        </el-form>
+      </div>
     </FilterCard>
 
     <!-- Table -->
-    <TableCard>
-      <template #toolbar>
-        <Toolbar>
-          <template #left>
-            <el-button v-if="hasPermission('button:requirement:create')" type="primary" @click="handleCreate">新建需求</el-button>
-            <el-button v-if="hasPermission('button:requirement:export')" text @click="handleExport">导出Excel</el-button>
-          </template>
-        </Toolbar>
-      </template>
-
+    <TableCard class="requirement-table-card">
       <template #table>
         <el-table
           ref="tableRef"
@@ -368,9 +382,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { TableInstance } from 'element-plus'
 import { Setting, View, Edit, Delete, ArrowDown, ArrowRight, Star, StarFilled, Close, Document, Bell, CircleCheck, EditPen, Search, Refresh } from '@element-plus/icons-vue'
-import { exportToExcel } from '@/utils/excel'
 import { requirementApi, userApi } from '@/api'
-import { getMyRequirementPending, getMyRequirementDone, getMyRequirementFollows } from '@/api/modules/requirement'
+import { getMyRequirementPending, getMyRequirementDone, getMyRequirementFollows, exportRequirementExcel } from '@/api/modules/requirement'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
 import { workflowEngineApi, type CurrentNodeHandler } from '@/api/modules/workflow-engine'
 import type { Requirement, RequirementMyListQuery, RequirementQuery } from '@/types/requirement'
@@ -383,7 +396,6 @@ import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import PageContainer from '@/components/common/PageContainer.vue'
 import FilterCard from '@/components/common/FilterCard.vue'
 import TableCard from '@/components/common/TableCard.vue'
-import Toolbar from '@/components/common/Toolbar.vue'
 import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
 
 const route = useRoute()
@@ -410,6 +422,14 @@ function setCache(key: string, value: { data: Requirement[], total: number, time
     if (oldestKey) tabDataCache.delete(oldestKey)
   }
   tabDataCache.set(key, value)
+}
+
+function invalidateViewCache(view: RequirementViewMode) {
+  Array.from(tabDataCache.keys()).forEach((key) => {
+    if (key.startsWith(`${view}:`)) {
+      tabDataCache.delete(key)
+    }
+  })
 }
 
 // 请求取消控制器：Tab切换或翻页时取消未完成的请求，避免竞态
@@ -858,6 +878,8 @@ async function handleToggleFollow(row: Requirement) {
     if (!nextFollowed) {
       await requirementApi.unfollowRequirement(row.id)
       row.followed = false
+      invalidateViewCache('follows')
+      invalidateViewCache(viewMode.value)
       ElMessage.success('已取消关注')
       if (isFollowView.value) {
         fetchData()
@@ -866,6 +888,8 @@ async function handleToggleFollow(row: Requirement) {
     }
     await requirementApi.followRequirement(row.id)
     row.followed = true
+    invalidateViewCache('follows')
+    invalidateViewCache(viewMode.value)
     ElMessage.success('已添加关注')
   } catch {
     ElMessage.error(nextFollowed ? '添加关注失败' : '取消关注失败')
@@ -917,39 +941,138 @@ async function handleBatchDelete() {
   }
 }
 
+// 导出状态：防止重复点击
+const exporting = ref(false)
+let exportAbortController: AbortController | null = null
+
 async function handleExport() {
-  if (tableData.value.length === 0) {
-    ElMessage.warning('没有数据可导出')
+  // 防重：导出进行中时禁止再次点击
+  if (exporting.value) {
+    ElMessage.warning('正在导出中，请勿重复操作')
     return
   }
 
+  // 构建检索条件参数
+  const params: RequirementQuery = {
+    pageNum: 1,
+    pageSize: 10,
+  }
+  if (filterForm.type) params.type = filterForm.type
+  if (filterForm.priority) params.priority = filterForm.priority
+  if (filterForm.status) params.status = filterForm.status
+  if (filterForm.assigneeId) params.assigneeId = filterForm.assigneeId
+  if (filterForm.keyword) params.keyword = filterForm.keyword
+
+  // 高级筛选：时间维度
+  if (isAllView.value && timeRange.value) {
+    const [start, end] = timeRange.value
+    if (timeDimension.value === 'createdAt') {
+      params.createdAtStart = start
+      params.createdAtEnd = end
+    } else if (timeDimension.value === 'analysisCompletedAt') {
+      params.analysisCompletedAtStart = start
+      params.analysisCompletedAtEnd = end
+    } else if (timeDimension.value === 'confirmAt') {
+      params.confirmAtStart = start
+      params.confirmAtEnd = end
+    } else if (timeDimension.value === 'developmentCompletedAt') {
+      params.developmentCompletedAtStart = start
+      params.developmentCompletedAtEnd = end
+    }
+  }
+
+  // 视图类型映射
+  const viewMap: Record<string, string> = {
+    all: 'all',
+    drafts: 'drafts',
+    pending: 'pending',
+    done: 'done',
+    follows: 'follows',
+  }
+  const view = viewMap[viewMode.value] || 'all'
+
+  // 构建导出列配置：只导出用户当前显示的列（排除 operations 操作列），保持显示顺序
+  const exportColumnKeys = visibleColumns.value
+    .filter(col => col.key !== 'operations')
+    .map(col => col.key)
+
+  // 创建 AbortController，支持取消正在进行的导出
+  exportAbortController = new AbortController()
+  exporting.value = true
+
   try {
-    const exportData = tableData.value.map(row => ({
-      '需求标题': row.title || '',
-      '需求编号': row.requirementNo || '',
-      '类型': typeLabel(row.type),
-      '优先级': localPriorityLabel(row.priority),
-      '状态': row.status || '',
-      '提出人': row.creatorName || '-',
-      '负责人': currentHandlerDisplay(row),
-      '归属部门': row.departmentName || '-',
-      '创建时间': formatDate(row.createdAt),
-      '分析完成时间': formatDate(row.analysisCompletedAt),
-      '需求确认时间': formatDate(row.confirmAt),
-      '开发完成时间': formatDate(row.developmentCompletedAt),
-      '描述': row.description || '',
-    }))
+    const response = await exportRequirementExcel(params, view, exportColumnKeys, exportAbortController.signal)
 
-    const columnWidths = [
-      { wch: 30 }, { wch: 22 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
-      { wch: 12 }, { wch: 12 }, { wch: 12 },
-      { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 40 },
-    ]
+    // 从响应头获取文件名
+    const contentDisposition = response.headers['content-disposition']
+    let fileName = `需求列表_${new Date().toISOString().slice(0, 10)}.xlsx`
+    if (contentDisposition) {
+      const match = contentDisposition.match(/filename\*=UTF-8''(.+)/)
+      if (match) {
+        fileName = decodeURIComponent(match[1])
+      }
+    }
 
-    exportToExcel(exportData, '需求列表', '需求列表', columnWidths)
+    // 优先使用 File System Access API 让用户选择保存位置
+    if ('showSaveFilePicker' in window) {
+      try {
+        const handle = await (window as any).showSaveFilePicker({
+          suggestedName: fileName,
+          types: [{
+            description: 'Excel 文件',
+            accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] },
+          }],
+        })
+        const writable = await handle.createWritable()
+        await writable.write(response.data)
+        await writable.close()
+        ElMessage.success('导出成功')
+        return
+      } catch (err: any) {
+        // 用户取消选择保存位置
+        if (err?.name === 'AbortError') {
+          ElMessage.info('已取消导出')
+          return
+        }
+        // File System API 失败，降级为传统下载
+      }
+    }
+
+    // 降级方案：Blob + createObjectURL 触发浏览器下载
+    const blob = new Blob([response.data], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = fileName
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+
     ElMessage.success('导出成功')
-  } catch {
-    ElMessage.error('导出失败')
+  } catch (err: any) {
+    // 请求被取消（用户主动取消或新导出覆盖旧导出）
+    if (err?.name === 'AbortError' || err?.code === 'ERR_CANCELED') {
+      return
+    }
+    // 后端返回的业务错误（如数据量超限）
+    if (err?.response?.status === 500 && err?.response?.data) {
+      try {
+        const errorData = typeof err.response.data === 'string'
+          ? JSON.parse(err.response.data)
+          : err.response.data
+        if (errorData?.message) {
+          ElMessage.error(errorData.message)
+          return
+        }
+      } catch { /* ignore */ }
+    }
+    ElMessage.error('导出失败，请稍后重试')
+  } finally {
+    exporting.value = false
+    exportAbortController = null
   }
 }
 
@@ -1013,15 +1136,86 @@ watch(tableData, (rows) => {
   --filter-gap-sm: 8px;
   --filter-gap-md: 16px;
   --filter-gap-lg: 24px;
-  --filter-item-min-width: 180px;
-  --filter-search-min-width: 200px;
+  --filter-item-min-width: 160px;
+  --filter-search-min-width: 240px;
+}
+
+/* ============================================
+   需求管理控制台 - 紧凑商业化布局
+   ============================================ */
+.requirements-page {
+  padding: 10px 14px 14px;
+  gap: 8px;
+}
+
+.requirement-control-card {
+  :deep(.el-card__body) {
+    padding: 8px 10px 10px;
+  }
+
+  :deep(.app-filter-card__body) {
+    display: block;
+  }
+}
+
+.requirement-table-card {
+  margin-top: 0;
+
+  :deep(.el-card__body) {
+    padding: 10px;
+  }
+}
+
+.requirement-control {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.requirement-control__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+}
+
+.requirement-control__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+
+  :deep(.el-button) {
+    height: 30px;
+    padding: 0 10px;
+    border-radius: var(--radius-md);
+    font-size: 12px;
+  }
+
+  :deep(.el-button.is-circle) {
+    width: 30px;
+    padding: 0;
+  }
+}
+
+.requirement-primary-action {
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.18);
+}
+
+.requirement-secondary-action {
+  color: var(--color-text-secondary);
+  background: var(--color-surface);
+  border-color: var(--color-border);
 }
 
 /* ============================================
    视图切换区域
    ============================================ */
 .view-switch {
-  margin-bottom: clamp(12px, 1.5vw, 20px);
+  flex: 1;
+  min-width: 0;
   overflow-x: auto;
 
   // 隐藏滚动条但保留功能
@@ -1035,13 +1229,18 @@ watch(tableData, (rows) => {
   }
 
   :deep(.el-tabs__nav-wrap)::after {
-    height: 1px;
+    height: 0;
+  }
+
+  :deep(.el-tabs__active-bar) {
+    height: 2px;
+    border-radius: 999px;
   }
 
   :deep(.el-tabs__item) {
-    padding: 0 14px;
-    height: 40px;
-    line-height: 40px;
+    padding: 0 12px;
+    height: 34px;
+    line-height: 34px;
   }
 }
 
@@ -1072,72 +1271,83 @@ watch(tableData, (rows) => {
 .filter-form {
   :deep(.el-form-item) {
     margin-right: 0;
-    margin-bottom: 12px;
+    margin-bottom: 0;
+  }
+
+  :deep(.el-form-item__content) {
+    min-height: 30px;
   }
 }
 
-.filter-main,
-.filter-extra {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(var(--filter-item-min-width), 1fr));
-  gap: var(--filter-gap-md);
-  align-items: end;
+/* ── 筛选表单：按控件内容定宽，避免条件框拉满遮挡搜索按钮 ── */
+.filter-main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: flex-end;
 
-  // 响应式断点：≥1280px 显示更多列
-  @media (min-width: 1280px) {
-    grid-template-columns: repeat(6, 1fr);
+  .filter-item {
+    flex: 0 0 auto;
+    width: auto;
+  }
 
-    .filter-item--search {
-      grid-column: span 1;
+  .filter-item--date {
+    width: auto;
+    min-width: 0;
+  }
+
+  .filter-item--search {
+    width: auto;
+
+    :deep(.el-form-item__content) {
+      width: auto;
     }
   }
 
-  // 响应式断点：1024px - 1279px
-  @media (min-width: 1024px) and (max-width: 1279px) {
-    grid-template-columns: repeat(4, 1fr);
-
-    .filter-item--search {
-      grid-column: span 2;
-    }
-  }
-
-  // 响应式断点：768px - 1023px（平板）
+  // 平板：仍保持内容定宽，空间不足时自然换行
   @media (min-width: 768px) and (max-width: 1023px) {
-    grid-template-columns: repeat(2, 1fr);
-    gap: var(--filter-gap-md);
+    gap: 8px 12px;
+
+    .filter-item--date {
+      flex-basis: auto;
+    }
 
     .filter-item--search {
-      grid-column: span 2;
+      flex-basis: auto;
     }
   }
 
-  // 响应式断点：<768px（手机）
+  // 手机：单列堆叠，控件铺满便于触控
   @media (max-width: 767px) {
+    display: grid;
     grid-template-columns: 1fr;
-    gap: var(--filter-gap-sm);
 
-    .filter-item--search,
-    .filter-item--date {
-      grid-column: span 1;
+    .filter-item,
+    .filter-item--date,
+    .filter-item--search {
       width: 100%;
+      justify-self: stretch;
+    }
 
-      > * {
-        width: 100% !important;
+    .filter-item {
+      :deep(.el-select),
+      :deep(.el-input),
+      :deep(.el-date-editor) {
+        width: 100%;
       }
     }
-  }
-}
 
-.filter-extra {
-  margin-top: calc(var(--filter-gap-md) + 4px);
-  padding-top: var(--filter-gap-md);
-  border-top: 1px solid var(--el-border-color-lighter);
+    .filter-date-range,
+    .filter-input--keyword {
+      width: 100%;
+      min-width: 0;
+    }
 
-  // 小屏时隐藏边框
-  @media (max-width: 767px) {
-    border-top: none;
-    margin-top: var(--filter-gap-sm);
-    padding-top: 0;
+    .filter-item--search {
+      :deep(.el-form-item__content) {
+        width: 100%;
+      }
+    }
   }
 }
 
@@ -1145,50 +1355,123 @@ watch(tableData, (rows) => {
    筛选项样式 - 流式宽度
    ============================================ */
 .filter-item {
-  min-width: 0; // 允许grid子项收缩
-  
+  display: inline-flex;
+  align-items: center;
+  min-width: 0; // 允许子控件按实际内容收缩
+
   :deep(.el-form-item__label) {
+    flex: 0 0 auto;
+    width: auto;
+    max-width: none;
+    height: 30px;
+    padding-right: 6px;
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
     font-weight: 500;
-    font-size: clamp(13px, 0.85vw, 14px);
-    color: var(--el-text-color-regular);
+    line-height: 30px;
     white-space: nowrap;
-    padding-right: 8px;
+    overflow: visible;
   }
-  
+
+  :deep(.el-form-item__content) {
+    flex: 0 0 auto;
+    min-width: 0;
+  }
+
   :deep(.el-select),
-  :deep(.el-input) {
+  :deep(.el-input),
+  :deep(.el-date-editor) {
+    width: auto;
+    min-width: 0;
+  }
+
+  :deep(.el-input__wrapper),
+  :deep(.el-select__wrapper) {
+    min-width: 0;
+    min-height: 30px;
+    height: 30px;
+    box-shadow: 0 0 0 1px var(--el-border-color) inset;
+  }
+}
+
+.filter-item--type {
+  :deep(.el-form-item__label) {
+    min-width: 48px;
+  }
+}
+
+.filter-item--priority,
+.filter-item--status,
+.filter-item--assignee,
+.filter-item--dimension {
+  :deep(.el-form-item__label) {
+    min-width: 36px;
+  }
+}
+
+.filter-item--date {
+  :deep(.el-form-item__label) {
+    min-width: 48px;
+  }
+}
+
+.filter-item--search {
+  :deep(.el-form-item__content) {
     width: 100%;
   }
 }
 
-// 各字段的特定最小宽度约束
+// 各字段按实际展示内容设置紧凑宽度
 .filter-select--type {
+  width: 138px;
+
   :deep(.el-select__wrapper) {
-    min-width: 120px;
+    min-width: 138px;
   }
 }
 
 .filter-select--priority {
+  width: 126px;
+
   :deep(.el-select__wrapper) {
-    min-width: 90px;
+    min-width: 126px;
   }
 }
 
 .filter-select--status {
+  width: 142px;
+
   :deep(.el-select__wrapper) {
-    min-width: 110px;
+    min-width: 142px;
   }
 }
 
 .filter-select--assignee {
+  width: 160px;
+
   :deep(.el-select__wrapper) {
-    min-width: 120px;
+    min-width: 160px;
   }
 }
 
 .filter-select--dimension {
+  width: 142px;
+
   :deep(.el-select__wrapper) {
-    min-width: 130px;
+    min-width: 142px;
+  }
+}
+
+.filter-date-range {
+  width: 312px;
+  min-width: 312px;
+
+  :deep(.el-range-input) {
+    min-width: 0;
+  }
+
+  :deep(.el-range-separator) {
+    flex-shrink: 0;
   }
 }
 
@@ -1196,15 +1479,11 @@ watch(tableData, (rows) => {
    关键词搜索（搜索按钮嵌入 input append）
    ============================================ */
 .filter-input--keyword {
-  :deep(.el-input__wrapper) {
-    min-width: var(--filter-search-min-width);
-  }
+  width: 226px;
+  min-width: 226px;
 
-  // 搜索框在宽屏时可以更宽
-  @media (min-width: 1280px) {
-    :deep(.el-input__wrapper) {
-      min-width: 240px;
-    }
+  :deep(.el-input__wrapper) {
+    min-width: 0;
   }
 
   // append 区域内的搜索按钮：主色填充 + 紧凑布局
@@ -1219,15 +1498,17 @@ watch(tableData, (rows) => {
 .filter-search-append {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  height: 100%;
-  padding: 0 14px;
+  justify-content: center;
+  gap: 3px;
+  width: 62px;
+  height: 30px;
+  padding: 0 8px;
   border: none !important;
   border-radius: 0 var(--radius-md) var(--radius-md) 0 !important;
   background: var(--el-color-primary) !important;
   color: #fff !important;
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
   transition: background-color var(--duration-fast) var(--ease-standard);
 
@@ -1269,40 +1550,17 @@ watch(tableData, (rows) => {
 }
 
 /* ============================================
-   筛选区域底部操作栏
+   筛选区域底部操作栏（历史兼容：当前布局已前移到顶部动作区）
    ============================================ */
 .filter-meta-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: var(--spacing-sm);
-
-  &__right {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-xs);
-  }
+  display: none;
 }
 
 /* ============================================
-   筛选区域收起状态下的紧凑间距
+   筛选区域收起状态下的紧凑间距（历史兼容）
    ============================================ */
 .filter-form:has(.filter-collapse-wrapper[style*="display: none"]) {
   margin-bottom: 0;
-
-  .filter-meta-actions {
-    margin-top: 0;
-    padding-top: 8px;
-    padding-bottom: 4px;
-  }
-}
-
-.filter-date-range {
-  width: 100% !important;
-  
-  :deep(.el-date-editor) {
-    width: 100% !important;
-  }
 }
 
 /* ============================================
@@ -1312,9 +1570,9 @@ watch(tableData, (rows) => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  margin-top: clamp(10px, 1.5vw, 16px);
-  margin-left: 4px;
-  font-size: 13px;
+  margin-left: 0;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   user-select: none;
@@ -1399,7 +1657,7 @@ watch(tableData, (rows) => {
   white-space: nowrap;
 
   :deep(.el-button.is-link) {
-    padding: 4px 6px;
+    padding: 3px 6px;
     font-size: 14px;
     border-radius: 4px;
     transition: background-color 0.15s ease, color 0.15s ease;

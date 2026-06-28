@@ -1,20 +1,20 @@
 <template>
-  <PageContainer title="项目管理">
-    <TableCard>
+  <PageContainer title="项目管理" class="project-page">
+    <TableCard class="project-table-card">
       <template #toolbar>
         <Toolbar>
           <template #left>
-            <el-form :inline="true" :model="queryParams">
-              <el-form-item>
-                <el-input v-model="queryParams.name" placeholder="项目名称" clearable style="width:180px" />
+            <el-form :inline="true" :model="queryParams" class="project-filter-form">
+              <el-form-item label="项目名称" class="project-filter-form__item project-filter-form__item--name">
+                <el-input v-model="queryParams.name" placeholder="输入项目名称" clearable />
               </el-form-item>
-              <el-form-item>
-                <el-select v-model="queryParams.status" placeholder="状态" clearable style="width:120px">
+              <el-form-item label="状态" class="project-filter-form__item project-filter-form__item--status">
+                <el-select v-model="queryParams.status" placeholder="全部" clearable>
                   <el-option label="进行中" value="active" />
                   <el-option label="已截止" value="expired" />
                 </el-select>
               </el-form-item>
-              <el-form-item>
+              <el-form-item class="project-filter-form__actions">
                 <el-button type="primary" @click="handleSearch">搜索</el-button>
                 <el-button @click="handleReset">重置</el-button>
               </el-form-item>
@@ -604,4 +604,70 @@ onMounted(() => {
 })
 </script>
 
-<style lang="scss" scoped></style>
+<style lang="scss" scoped>
+.project-page {
+  :deep(.app-table-card__toolbar) {
+    margin-bottom: 10px;
+  }
+}
+
+.project-table-card {
+  :deep(.el-card__body) {
+    padding: 14px;
+  }
+}
+
+.project-filter-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+
+  :deep(.el-form-item) {
+    margin: 0;
+  }
+
+  :deep(.el-form-item__label) {
+    height: 30px;
+    padding-right: 6px;
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 30px;
+    white-space: nowrap;
+  }
+
+  :deep(.el-input__wrapper),
+  :deep(.el-select__wrapper) {
+    min-height: 30px;
+    height: 30px;
+  }
+
+  :deep(.el-button) {
+    height: 30px;
+    padding: 0 12px;
+    font-size: 12px;
+  }
+}
+
+.project-filter-form__item--name {
+  width: 214px;
+}
+
+.project-filter-form__item--status {
+  width: 112px;
+}
+
+.project-filter-form__actions {
+  margin-left: 2px !important;
+}
+
+@media (max-width: 768px) {
+  .project-filter-form,
+  .project-filter-form__item--name,
+  .project-filter-form__item--status,
+  .project-filter-form__actions {
+    width: 100%;
+  }
+}
+</style>

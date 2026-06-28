@@ -1,15 +1,16 @@
-// ===== 需求管理系统 - Element Plus 主题覆盖 =====
-// 通过覆盖 Element Plus CSS 自定义属性，统一视觉风格
+// ===== 需求管理系统 - Element Plus 主题覆盖 v2.0 =====
+// 主色从 #0369A1 升级为 #2563EB (Indigo-Blue)
+// 新增品牌色光晕、毛玻璃遮罩、交互过渡增强
 
 :root {
-  // ----- 主色 -----
-  --el-color-primary: #0369A1;
-  --el-color-primary-light-3: #0284C7;
-  --el-color-primary-light-5: #38BDF8;
-  --el-color-primary-light-7: #7DD3FC;
-  --el-color-primary-light-8: #BAE6FD;
-  --el-color-primary-light-9: #E0F2FE;
-  --el-color-primary-dark-2: #075985;
+  // ----- 主色（#0369A1 → #2563EB） -----
+  --el-color-primary: #2563EB;
+  --el-color-primary-light-3: #3B82F6;
+  --el-color-primary-light-5: #60A5FA;
+  --el-color-primary-light-7: #93C5FD;
+  --el-color-primary-light-8: #BFDBFE;
+  --el-color-primary-light-9: #DBEAFE;
+  --el-color-primary-dark-2: #1D4ED8;
 
   // ----- 成功色 -----
   --el-color-success: #10B981;
@@ -30,13 +31,13 @@
   --el-color-warning-dark-2: #D97706;
 
   // ----- 危险色 -----
-  --el-color-danger: #DC2626;
-  --el-color-danger-light-3: #EF4444;
-  --el-color-danger-light-5: #F87171;
-  --el-color-danger-light-7: #FCA5A5;
+  --el-color-danger: #EF4444;
+  --el-color-danger-light-3: #F87171;
+  --el-color-danger-light-5: #FCA5A5;
+  --el-color-danger-light-7: #FECACA;
   --el-color-danger-light-8: #FEE2E2;
   --el-color-danger-light-9: #FEF2F2;
-  --el-color-danger-dark-2: #B91C1C;
+  --el-color-danger-dark-2: #DC2626;
 
   // ----- 信息色 -----
   --el-color-info: #64748B;
@@ -48,11 +49,11 @@
   --el-color-info-dark-2: #475569;
 
   // ----- 文字色 -----
-  --el-text-color-primary: #111827;
-  --el-text-color-regular: #374151;
-  --el-text-color-secondary: #6B7280;
-  --el-text-color-placeholder: #9CA3AF;
-  --el-text-color-disabled: #D1D5DB;
+  --el-text-color-primary: #0F172A;
+  --el-text-color-regular: #334155;
+  --el-text-color-secondary: #475569;
+  --el-text-color-placeholder: #94A3B8;
+  --el-text-color-disabled: #CBD5E1;
 
   // ----- 边框色 -----
   --el-border-color: #E2E8F0;
@@ -78,7 +79,7 @@
 
   // ----- 圆角 -----
   --el-border-radius-base: 8px;
-  --el-border-radius-small: 4px;
+  --el-border-radius-small: 6px;
   --el-border-radius-round: 16px;
   --el-border-radius-circle: 100%;
 
@@ -89,7 +90,7 @@
   --el-box-shadow-dark: 0 10px 15px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.04);
 
   // ----- 字体 -----
-  --el-font-family: 'Plus Jakarta Sans', 'PingFang SC', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, sans-serif;
+  --el-font-family: 'Inter', 'Plus Jakarta Sans', 'PingFang SC', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, sans-serif;
   --el-font-size-extra-large: 20px;
   --el-font-size-large: 16px;
   --el-font-size-medium: 14px;
@@ -109,25 +110,50 @@
 
 // ----- 组件级覆盖 -----
 
-// 按钮圆角
+// 按钮圆角 + hover 光晕
 .el-button {
   --el-button-border-radius: var(--el-border-radius-base);
+  transition: all var(--duration-fast) var(--ease-standard);
+
+  &--primary:hover {
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.25);
+    transform: translateY(-1px);
+  }
+  &--primary:active {
+    transform: translateY(0);
+    box-shadow: none;
+  }
 }
 
-// 卡片圆角
+// 卡片圆角 + hover 边框光晕
 .el-card {
   --el-card-border-radius: 12px;
   border: 1px solid var(--el-border-color);
+  transition: all var(--duration-normal) var(--ease-standard);
+
+  &:hover {
+    border-color: var(--el-color-primary);
+    box-shadow: var(--el-box-shadow-dark), 0 0 0 1px rgba(37, 99, 235, 0.1);
+  }
 }
 
-// 对话框圆角
+// 对话框圆角 + 遮罩模糊
 .el-dialog {
   --el-dialog-border-radius: 16px;
 }
 
-// 输入框圆角
+.el-overlay {
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+// 输入框圆角 + focus 光晕
 .el-input {
   --el-input-border-radius: var(--el-border-radius-base);
+
+  .el-input__wrapper:focus-within {
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  }
 }
 
 // 下拉框圆角
@@ -135,21 +161,20 @@
   border-radius: var(--el-border-radius-base);
 }
 
-// 表格优化
+// 表格优化 — 行 hover 使用品牌色淡蓝
 .el-table {
   --el-table-border-color: var(--el-border-color-lighter);
   --el-table-header-bg-color: #F8FAFC;
+  --el-table-row-hover-bg-color: rgba(59, 130, 246, 0.04);
 
-  // 表头文字加粗
   .el-table__header th {
     font-weight: 600;
     color: var(--el-text-color-primary);
     font-size: 13px;
   }
 
-  // 行悬浮效果
-  .el-table__row:hover > td {
-    background-color: rgba(3, 105, 161, 0.04) !important;
+  .el-table__row {
+    transition: background-color var(--duration-fast) var(--ease-standard);
   }
 }
 
@@ -166,4 +191,9 @@
 // Message Box 圆角
 .el-message-box {
   border-radius: 16px;
+}
+
+// Avatar hover
+.el-avatar {
+  transition: transform var(--duration-fast) var(--ease-spring);
 }
