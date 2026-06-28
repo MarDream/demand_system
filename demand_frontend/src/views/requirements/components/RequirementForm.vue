@@ -39,7 +39,12 @@
           :key="priority.code"
           :label="priority.name"
           :value="priority.code"
-        />
+        >
+          <span class="priority-option">
+            <span v-if="priority.color" class="priority-dot" :style="{ backgroundColor: priority.color }"></span>
+            {{ priority.name }}
+          </span>
+        </el-option>
       </el-select>
     </el-form-item>
 
@@ -244,5 +249,16 @@ function handleCancel() {
 <style scoped>
 .requirement-form {
   max-width: 700px;
+}
+.priority-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.priority-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 </style>

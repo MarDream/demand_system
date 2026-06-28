@@ -67,7 +67,12 @@
               </el-form-item>
               <el-form-item label="优先级" class="filter-item">
                 <el-select v-model="filterForm.priority" placeholder="全部" clearable class="filter-select--priority">
-                  <el-option v-for="p in configPriorities" :key="p.code" :label="p.name" :value="p.code" />
+                  <el-option v-for="p in configPriorities" :key="p.code" :label="p.name" :value="p.code">
+                    <span class="priority-option">
+                      <span v-if="p.color" class="priority-dot" :style="{ backgroundColor: p.color }"></span>
+                      {{ p.name }}
+                    </span>
+                  </el-option>
                 </el-select>
               </el-form-item>
               <el-form-item label="状态" class="filter-item">
@@ -259,13 +264,13 @@
                   <el-tag>{{ typeLabel(row.type) }}</el-tag>
                 </template>
                 <template v-else-if="col.key === 'priority'">
-                  <el-tag :type="priorityTagType(row.priority)">{{ priorityLabel(row.priority) }}</el-tag>
+                  <el-tag :type="localPriorityTagType(row.priority)" :style="localPriorityTagStyle(row.priority)">{{ localPriorityLabel(row.priority) }}</el-tag>
                 </template>
                 <template v-else-if="col.key === 'status'">
                   <el-tag :type="statusTagType(row.status)">{{ row.status }}</el-tag>
                 </template>
                 <template v-else-if="col.key === 'assigneeName'">
-                  {{ row.currentHandlerName || row.assigneeName || '-' }}
+                  {{ currentHandlerDisplay(row) }}
                 </template>
                 <template v-else-if="col.key.endsWith('At') || col.key === 'createdAt'">
                   {{ formatDate(row[col.key]) }}
@@ -367,10 +372,12 @@ import { exportToExcel } from '@/utils/excel'
 import { requirementApi, userApi } from '@/api'
 import { getMyRequirementPending, getMyRequirementDone, getMyRequirementFollows } from '@/api/modules/requirement'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
+import { workflowEngineApi, type CurrentNodeHandler } from '@/api/modules/workflow-engine'
 import type { Requirement, RequirementMyListQuery, RequirementQuery } from '@/types/requirement'
 import type { User } from '@/types/user'
 import { normalizeText, formatDate, stripPriorityPrefix } from '@/utils/format'
 import { usePermission } from '@/composables/usePermission'
+import { useRequirementTag } from '@/composables/useRequirementTag'
 import { useUserStore } from '@/stores/modules/user'
 import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import PageContainer from '@/components/common/PageContainer.vue'
@@ -480,6 +487,7 @@ const configTypes = ref<any[]>([])
 const configPriorities = ref<any[]>([])
 const typeMap = ref<Record<string, string>>({})
 const priorityMap = ref<Record<string, string>>({})
+const priorityColorMap = ref<Record<string, string>>({})
 
 async function loadConfig() {
   try {
@@ -493,6 +501,11 @@ async function loadConfig() {
     configPriorities.value = priorityList.map((p: any) => ({ ...p, name: stripPriorityPrefix(normalizeText(p.name)) }))
     typeMap.value = Object.fromEntries(configTypes.value.map((t: any) => [t.code, t.name]))
     priorityMap.value = Object.fromEntries(configPriorities.value.map((p: any) => [p.code, p.name]))
+    priorityColorMap.value = Object.fromEntries(
+      priorityList
+        .filter((p: any) => p.color)
+        .map((p: any) => [p.code, p.color])
+    )
   } catch {
     // ignore
   }
@@ -502,40 +515,32 @@ function typeLabel(code: string) {
   return typeMap.value[code] || code || '-'
 }
 
-function priorityLabel(code: string) {
-  if (!code) return '-'
+const { priorityLabel, priorityTagType, priorityTagStyle } = useRequirementTag()
 
-  // 如果 priorityMap 有映射，使用映射值
-  let label = priorityMap.value[code] || code
+/** 本地包装：自动传入动态配置映射 */
+function localPriorityLabel(code: string) {
+  return priorityLabel(code, priorityMap.value)
+}
 
-  // 处理 P0-P3 代码（旧格式数据的 fallback）
-  const pCodeMap: Record<string, string> = {
-    'P0': '紧急',
-    'P1': '高',
-    'P2': '中',
-    'P3': '低'
-  }
+function localPriorityTagType(priority: string): string | undefined {
+  return priorityTagType(priority, priorityMap.value, priorityColorMap.value)
+}
 
-  if (pCodeMap[code.toUpperCase()]) {
-    return pCodeMap[code.toUpperCase()]
-  }
+/** 优先级标签样式：直接使用"需求配置-优先级"中配置的 color */
+function localPriorityTagStyle(priority: string) {
+  return priorityTagStyle(priorityColorMap.value[priority])
+}
 
-  // 处理英文优先级（大小写不敏感）
-  const lowerCode = code.toLowerCase()
-  const englishMap: Record<string, string> = {
-    'urgent': '紧急',
-    'high': '高',
-    'medium': '中',
-    'middle': '中',
-    'low': '低'
-  }
-
-  if (englishMap[lowerCode]) {
-    return englishMap[lowerCode]
-  }
-
-  // 去除 P0-、P1- 等前缀
-  return stripPriorityPrefix(label)
+/**
+ * 获取需求行的负责人显示名
+ * 优先使用工作流当前节点处理人（角色多人→角色名，单人→用户名），
+ * 无工作流信息时回退到 assigneeName
+ */
+function currentHandlerDisplay(row: Requirement): string {
+  const handler = currentHandlerMap.value.get(row.id)
+  if (handler?.display) return handler.display
+  // 兜底：无工作流实例或草稿状态
+  return (row as any).currentHandlerName || row.assigneeName || '-'
 }
 
 // Filter user list
@@ -567,6 +572,8 @@ const defaultTime = [new Date(2000, 0, 1, 0, 0, 0), new Date(2000, 0, 1, 23, 59,
 // Table data
 const loading = ref(false)
 const tableData = ref<Requirement[]>([])
+/** 工作流当前节点处理人映射：requirementId → handler info */
+const currentHandlerMap = ref<Map<number, CurrentNodeHandler>>(new Map())
 const tableRef = ref<TableInstance>()
 const selectedIds = ref<number[]>([])
 const expandedRowKeys = ref<number[]>([])
@@ -728,6 +735,42 @@ async function fetchData() {
   }
 }
 
+/**
+ * 批量加载当前页需求的工作流处理人信息
+ * 用于列表"负责人"列根据工作流节点配置动态显示
+ */
+async function loadCurrentHandlers() {
+  // 注意：RequirementListVO 不返回 workflowInstanceId 字段，
+  // 不能用它过滤。后端 batchGetCurrentHandlers 内部会自动跳过
+  // 没有运行中工作流实例的需求，这里只需排除草稿。
+  const ids = tableData.value
+    .filter(r => !r.isDraft)
+    .map(r => r.id)
+  if (!ids.length) {
+    currentHandlerMap.value = new Map()
+    return
+  }
+  try {
+    const handlers = await workflowEngineApi.batchGetCurrentHandlers(ids)
+    currentHandlerMap.value = new Map(handlers.map(h => [h.requirementId, h]))
+  } catch {
+    // 静默失败，列表仍可显示 assigneeName 兜底
+    currentHandlerMap.value = new Map()
+  }
+}
+
+/**
+ * 监听列表数据变化，自动批量加载工作流处理人信息。
+ *
+ * 关键：fetchData 在缓存命中（tabDataCache 5 分钟有效）时会直接 return，
+ * 之前手动调用会漏掉缓存命中、待办/已办/草稿等分支。
+ * 改用 watch 统一触发，确保无论数据来自缓存还是新请求，
+ * 只要 tableData 变化就刷新处理人映射。
+ */
+watch(tableData, () => {
+  loadCurrentHandlers()
+})
+
 // Handlers
 function handleSearch() {
   pagination.pageNum = 1
@@ -885,10 +928,10 @@ async function handleExport() {
       '需求标题': row.title || '',
       '需求编号': row.requirementNo || '',
       '类型': typeLabel(row.type),
-      '优先级': priorityLabel(row.priority),
+      '优先级': localPriorityLabel(row.priority),
       '状态': row.status || '',
       '提出人': row.creatorName || '-',
-      '负责人': row.currentHandlerName || row.assigneeName || '-',
+      '负责人': currentHandlerDisplay(row),
       '归属部门': row.departmentName || '-',
       '创建时间': formatDate(row.createdAt),
       '分析完成时间': formatDate(row.analysisCompletedAt),
@@ -910,20 +953,7 @@ async function handleExport() {
   }
 }
 
-// Tag type helpers
-function priorityTagType(priority: string): string | undefined {
-  // 先转换为中文标签
-  const label = priorityLabel(priority)
-  // 根据中文标签映射颜色
-  const colorMap: Record<string, string | undefined> = {
-    '紧急': 'danger',
-    '高': 'warning',
-    '中': undefined,
-    '低': 'info'
-  }
-  // 使用 in 运算符检查键是否存在，而不是检查值是否为真
-  return label in colorMap ? colorMap[label] : 'info'
-}
+// Tag type helpers — priorityTagType 已由 useRequirementTag 提供
 
 function statusTagType(status: string): string {
   const map: Record<string, string> = {
@@ -963,6 +993,19 @@ watch(tableData, (rows) => {
 </script>
 
 <style scoped lang="scss">
+/* 优先级下拉选项颜色圆点（与创建页保持一致） */
+.priority-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.priority-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 /* ============================================
    响应式设计令牌系统
    ============================================ */

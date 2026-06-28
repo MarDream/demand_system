@@ -4,6 +4,7 @@ import com.demand.system.module.workflow.dto.WorkflowApprovalDTO;
 import com.demand.system.module.workflow.dto.WorkflowConfigDTO;
 import com.demand.system.module.workflow.dto.WorkflowVersionActivationDTO;
 import com.demand.system.module.workflow.dto.WorkflowVersionMetaUpdateDTO;
+import com.demand.system.module.workflow.dto.WorkflowValidationReport;
 import com.demand.system.module.workflow.dto.WorkflowVersionDTO;
 
 import java.util.List;
@@ -84,6 +85,10 @@ public interface WorkflowConfigService {
      * 清空全部审核记录
      */
     void clearAllApprovals();
+
+    WorkflowValidationReport validateLatestDraft(Long projectId);
+
+    WorkflowValidationReport validateVersionReport(Long versionId);
 
     List<com.demand.system.module.workflow.dto.WorkflowValidationIssue> validateVersion(Long versionId);
 }

@@ -26,6 +26,7 @@ import com.demand.system.module.workflow.mapper.WorkflowNodePermissionMapper;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.demand.system.module.workflow.service.WorkflowConfigService;
 import com.demand.system.module.workflow.dto.WorkflowValidationIssue;
+import com.demand.system.module.workflow.dto.WorkflowValidationReport;
 import com.demand.system.module.workflow.engine.WorkflowGraphCompiler;
 import com.demand.system.module.workflow.engine.WorkflowGraphValidator;
 import com.demand.system.module.workflow.service.WorkflowActivationService;
@@ -402,7 +403,10 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
                 .eq(WorkflowNode::getWorkflowVersionId, draftVersion.getId()));
         List<WorkflowEdge> edges = workflowEdgeMapper.selectList(new LambdaQueryWrapper<WorkflowEdge>()
                 .eq(WorkflowEdge::getWorkflowVersionId, draftVersion.getId()));
-        workflowGraphValidator.validateOrThrow(nodes, edges);
+        WorkflowValidationReport validationReport = buildValidationReport(draftVersion, nodes, edges, false);
+        if (!validationReport.isCanSubmit()) {
+            throw new BusinessException(400, "工作流配置存在错误，请修复后再提交审核", validationReport);
+        }
 
         draftVersion.setActivationStatus("pending");
         workflowVersionMapper.updateById(draftVersion);
@@ -499,8 +503,50 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
     }
 
     @Override
+    public WorkflowValidationReport validateLatestDraft(Long projectId) {
+        Long normalizedProjectId = normalizeProjectId(projectId);
+        WorkflowVersion draftVersion = findLatestInactiveVersion(normalizedProjectId);
+        if (draftVersion == null) {
+            throw new BusinessException("没有可校验的版本");
+        }
+        List<WorkflowNode> nodes = workflowNodeMapper.selectList(new LambdaQueryWrapper<WorkflowNode>()
+                .eq(WorkflowNode::getWorkflowVersionId, draftVersion.getId()));
+        List<WorkflowEdge> edges = workflowEdgeMapper.selectList(new LambdaQueryWrapper<WorkflowEdge>()
+                .eq(WorkflowEdge::getWorkflowVersionId, draftVersion.getId()));
+        return buildValidationReport(draftVersion, nodes, edges, false);
+    }
+
+    @Override
+    public WorkflowValidationReport validateVersionReport(Long versionId) {
+        WorkflowVersion version = workflowVersionMapper.selectById(versionId);
+        if (version == null) {
+            throw new BusinessException("版本不存在");
+        }
+        List<WorkflowNode> nodes = workflowNodeMapper.selectList(new LambdaQueryWrapper<WorkflowNode>()
+                .eq(WorkflowNode::getWorkflowVersionId, versionId));
+        List<WorkflowEdge> edges = workflowEdgeMapper.selectList(new LambdaQueryWrapper<WorkflowEdge>()
+                .eq(WorkflowEdge::getWorkflowVersionId, versionId));
+        return buildValidationReport(version, nodes, edges, true);
+    }
+
+    @Override
     public List<WorkflowValidationIssue> validateVersion(Long versionId) {
-        return workflowActivationService.validateVersion(versionId);
+        return validateVersionReport(versionId).getIssues();
+    }
+
+    private WorkflowValidationReport buildValidationReport(WorkflowVersion version, List<WorkflowNode> nodes,
+                                                           List<WorkflowEdge> edges, boolean forActivation) {
+        List<WorkflowValidationIssue> issues = forActivation
+                ? workflowGraphValidator.validateForActivation(nodes, edges, version.getProjectId())
+                : workflowGraphValidator.validate(nodes, edges);
+        WorkflowValidationReport report = new WorkflowValidationReport();
+        report.setVersionId(version.getId());
+        report.setVersionName(version.getName());
+        report.setVersion(version.getVersion());
+        report.setValidatedAt(LocalDateTime.now());
+        report.setIssues(issues);
+        report.computeSummary();
+        return report;
     }
 
     @Override

@@ -4,6 +4,7 @@ import com.demand.system.common.result.Result;
 import com.demand.system.module.workflow.dto.ApprovalRequestDTO;
 import com.demand.system.module.workflow.dto.WorkflowApprovalDTO;
 import com.demand.system.module.workflow.dto.WorkflowConfigDTO;
+import com.demand.system.module.workflow.dto.WorkflowValidationReport;
 import com.demand.system.module.workflow.dto.WorkflowVersionActivationDTO;
 import com.demand.system.module.workflow.dto.WorkflowVersionMetaUpdateDTO;
 import com.demand.system.module.workflow.dto.WorkflowVersionDTO;
@@ -168,6 +169,21 @@ public class WorkflowVisualConfigController {
     public Result<Void> clearAllApprovals() {
         workflowConfigService.clearAllApprovals();
         return Result.success();
+    }
+
+    /**
+     * 提交审核前校验最新草稿版本
+     */
+    @PostMapping("/workflows/{projectId}/validate-before-submit")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
+    public Result<WorkflowValidationReport> validateBeforeSubmit(@PathVariable Long projectId) {
+        return Result.success(workflowConfigService.validateLatestDraft(projectId));
+    }
+
+    @PostMapping("/workflows/versions/{versionId}/validate/report")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
+    public Result<WorkflowValidationReport> validateVersionReport(@PathVariable Long versionId) {
+        return Result.success(workflowConfigService.validateVersionReport(versionId));
     }
 
     @PostMapping("/workflows/versions/{versionId}/validate")

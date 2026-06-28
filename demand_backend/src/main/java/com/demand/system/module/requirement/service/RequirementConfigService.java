@@ -263,6 +263,12 @@ public class RequirementConfigService {
         if (existsTypeCode(type.getCode(), type.getId())) {
             return Result.fail("需求类型编码已存在");
         }
+        // code 变更时同步更新已引用的需求工单
+        if (type.getCode() != null && !type.getCode().equals(existing.getCode())) {
+            requirementMapper.update(null, new LambdaUpdateWrapper<Requirement>()
+                    .eq(Requirement::getType, existing.getCode())
+                    .set(Requirement::getType, type.getCode()));
+        }
         syncTypeDefaultFlag(type.getId(), type.getIsDefault());
         typeMapper.updateById(type);
         return Result.success();
@@ -314,6 +320,12 @@ public class RequirementConfigService {
         }
         if (existsPriorityCode(priority.getCode(), priority.getId())) {
             return Result.fail("优先级编码已存在");
+        }
+        // code 变更时同步更新已引用的需求工单
+        if (priority.getCode() != null && !priority.getCode().equals(existing.getCode())) {
+            requirementMapper.update(null, new LambdaUpdateWrapper<Requirement>()
+                    .eq(Requirement::getPriority, existing.getCode())
+                    .set(Requirement::getPriority, priority.getCode()));
         }
         syncPriorityDefaultFlag(priority.getId(), priority.getIsDefault());
         priorityMapper.updateById(priority);

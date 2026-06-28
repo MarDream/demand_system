@@ -133,7 +133,7 @@
                 <div class="recent-title">{{ item.title }}</div>
                 <div class="recent-meta">
                   <el-tag :type="getStatusType(item.status)" size="small">{{ item.status }}</el-tag>
-                  <el-tag :type="getPriorityType(item.priority)" size="small">{{ getPriorityLabel(item.priority) }}</el-tag>
+                  <el-tag :type="getPriorityType(item.priority)" :style="getPriorityStyle(item.priority)" size="small">{{ getPriorityLabel(item.priority) }}</el-tag>
                   <span class="recent-date">{{ formatDate(item.createdAt) }}</span>
                 </div>
               </div>
@@ -214,7 +214,9 @@ import { TitleComponent, TooltipComponent, LegendComponent, GridComponent } from
 import { getDashboardData, getDistributionData, getDurationData } from '@/api/modules/statistics'
 import { getRequirementList } from '@/api/modules/requirement'
 import { useUserStore } from '@/stores/modules/user'
-import { formatDate } from '@/utils/format'
+import { formatDate, stripPriorityPrefix, normalizeText } from '@/utils/format'
+import { requirementConfigApi } from '@/api/modules/requirementConfig'
+import { useRequirementTag } from '@/composables/useRequirementTag'
 import type { Requirement } from '@/types/requirement'
 
 use([SVGRenderer, PieChart, BarChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent])
@@ -336,20 +338,34 @@ function getStatusType(status: string) {
   return (map[status] || 'info') as any
 }
 
-// 紧急程度英文转中文映射
+// 优先级配置（来自"需求配置-优先级"，动态加载）
+const priorityMap = ref<Record<string, string>>({})
+const priorityColorMap = ref<Record<string, string>>({})
+const { priorityLabel: renderPriorityLabel, priorityTagStyle } = useRequirementTag()
+
+async function loadPriorityConfig() {
+  try {
+    const res = await requirementConfigApi.listPriorities()
+    const list = Array.isArray(res) ? res : (res as any)?.data || []
+    priorityMap.value = Object.fromEntries(list.map((p: any) => [p.code, stripPriorityPrefix(normalizeText(p.name))]))
+    priorityColorMap.value = Object.fromEntries(list.filter((p: any) => p.color).map((p: any) => [p.code, p.color]))
+  } catch {
+    priorityMap.value = {}
+    priorityColorMap.value = {}
+  }
+}
+
+// 优先级 code → 中文显示名（走配置，兜底英文映射）
 function getPriorityLabel(priority: string) {
   if (!priority) return '未知'
-  const map: Record<string, string> = {
-    'urgent': '紧急',
-    'high': '高',
-    'medium': '中',
-    'middle': '中',
-    'low': '低'
-  }
-  return map[priority.toLowerCase()] || priority
+  const mapped = priorityMap.value[priority] || priorityMap.value[priority.toUpperCase()]
+  if (mapped) return mapped
+  return renderPriorityLabel(priority, priorityMap.value)
 }
 
 function getPriorityType(priority: string) {
+  // 配置了 color 时由 :style 接管，type 仅作无 color 时的兜底
+  if (priorityColorMap.value[priority]) return '' as any
   const label = getPriorityLabel(priority)
   const colorMap: Record<string, string> = {
     '紧急': 'danger',
@@ -358,6 +374,10 @@ function getPriorityType(priority: string) {
     '低': 'info'
   }
   return (colorMap[label] || 'info') as any
+}
+
+function getPriorityStyle(priority: string) {
+  return priorityTagStyle(priorityColorMap.value[priority])
 }
 
 async function loadDashboardData() {
@@ -464,6 +484,7 @@ function loadProjectRates() {
 }
 
 onMounted(async () => {
+  loadPriorityConfig()
   await loadDashboardData()
   loadDistributionData()
   loadRecentRequirements()

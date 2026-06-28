@@ -33,6 +33,7 @@ import com.demand.system.module.workflow.dto.AvailableTransitionDTO;
 import com.demand.system.module.workflow.dto.FlowTransitionRequest;
 import com.demand.system.module.workflow.dto.TransitionVO;
 import com.demand.system.module.workflow.dto.WorkflowAvailableActionsDTO;
+import com.demand.system.module.workflow.dto.CurrentNodeHandlerDTO;
 import com.demand.system.module.workflow.dto.RatingConfigDTO;
 import com.demand.system.module.workflow.engine.WorkflowGraphContext;
 import com.demand.system.module.workflow.engine.WorkflowGraphNavigator;
@@ -701,6 +702,147 @@ public class WorkflowEngineService {
             actions.setParallelBranches(parallelBranchService.listByRequirementId(requirementId));
         }
         return actions;
+    }
+
+    /**
+     * 批量获取需求列表页当前节点处理人信息（轻量，仅返回显示所需字段）
+     *
+     * <p>核心逻辑：</p>
+     * <ul>
+     *   <li>SPECIFIED_ROLE 且角色仅 1 人 → display = 用户姓名</li>
+     *   <li>SPECIFIED_ROLE 且角色多人   → display = 角色名称</li>
+     *   <li>其他类型                   → display = 候选人名称 / 类型名称 / "-"</li>
+     * </ul>
+     *
+     * @param requirementIds 需求 ID 集合
+     * @return 每条需求的当前节点处理人信息（无工作流实例的需求数据为空列表中不包含）
+     */
+    public List<CurrentNodeHandlerDTO> batchGetCurrentNodeHandlers(Set<Long> requirementIds) {
+        if (requirementIds == null || requirementIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // 1. 批量查询这些需求的工作流运行实例
+        List<WorkflowInstance> instances = instanceMapper.selectList(
+                new LambdaQueryWrapper<WorkflowInstance>()
+                        .in(WorkflowInstance::getRequirementId, requirementIds)
+                        .eq(WorkflowInstance::getStatus, "running")
+        );
+        if (instances.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // 2. 收集所有涉及的 workflowVersionId
+        Set<Long> versionIds = instances.stream()
+                .map(WorkflowInstance::getWorkflowVersionId)
+                .collect(Collectors.toSet());
+
+        // 3. 批量加载工作流图上下文并缓存
+        Map<Long, WorkflowGraphContext> contextCache = new java.util.HashMap<>();
+        for (Long vid : versionIds) {
+            try {
+                contextCache.put(vid, runtimeLoader.loadContext(vid));
+            } catch (Exception e) {
+                log.warn("加载工作流版本 {} 图上下文失败: {}", vid, e.getMessage());
+            }
+        }
+
+        // 4. 批量查询需求实体（用于 CREATOR 类型的处理人解析）
+        List<Requirement> requirements = requirementMapper.selectList(
+                new LambdaQueryWrapper<Requirement>()
+                        .in(Requirement::getId, requirementIds)
+        );
+        Map<Long, Requirement> requirementMap = requirements.stream()
+                .collect(Collectors.toMap(Requirement::getId, r -> r));
+
+        Long operatorId = SecurityUtils.getCurrentUserId();
+
+        List<CurrentNodeHandlerDTO> results = new java.util.ArrayList<>();
+
+        for (WorkflowInstance instance : instances) {
+            WorkflowGraphContext ctx = contextCache.get(instance.getWorkflowVersionId());
+            if (ctx == null) continue;
+
+            WorkflowNode currentNode = ctx.getNode(instance.getCurrentNodeId());
+            if (currentNode == null) continue;
+
+            Requirement req = requirementMap.get(instance.getRequirementId());
+            String assigneeType = currentNode.getAssigneeType();
+            List<AssigneeCandidateDTO> candidates = resolveAssigneeCandidates(currentNode, req, operatorId);
+
+            CurrentNodeHandlerDTO dto = new CurrentNodeHandlerDTO();
+            dto.setRequirementId(instance.getRequirementId());
+            dto.setCurrentNodeId(instance.getCurrentNodeId());
+            dto.setCurrentNodeName(currentNode.getNodeName());
+            dto.setAssigneeType(assigneeType);
+            dto.setAssigneeTypeName(resolveAssigneeTypeName(currentNode));
+            dto.setCandidates(candidates);
+            dto.setDisplay(resolveHandlerDisplay(currentNode, candidates, assigneeType, req, operatorId));
+
+            results.add(dto);
+        }
+
+        return results;
+    }
+
+    /**
+     * 根据当前节点配置和候选用户列表，计算负责人列的显示文本。
+     *
+     * <p>规则优先级：</p>
+     * <ol>
+     *   <li>SPECIFIED_ROLE + 1 个候选人 → 用户姓名</li>
+     *   <li>SPECIFIED_ROLE + 多个候选人 → 角色名称</li>
+     *   <li>有候选用户 → 第一个用户名</li>
+     *   <li>CREATOR → 提交人名称</li>
+     *   <li>PREV_APPROVER → "上一节点处理人"</li>
+     *   <li>其他 → "-"</li>
+     * </ol>
+     */
+    private String resolveHandlerDisplay(WorkflowNode node,
+                                          List<AssigneeCandidateDTO> candidates,
+                                          String assigneeType,
+                                          Requirement requirement,
+                                          Long operatorId) {
+        if (!StringUtils.hasText(assigneeType)) {
+            return "-";
+        }
+
+        // SPECIFIED_ROLE: 核心逻辑 — 单人显示姓名，多人显示角色名
+        if ("SPECIFIED_ROLE".equals(assigneeType)) {
+            if (candidates != null && !candidates.isEmpty()) {
+                if (candidates.size() == 1) {
+                    // 仅 1 人 → 显示用户姓名
+                    return candidates.get(0).getName();
+                } else {
+                    // 多人 → 显示角色名称
+                    return resolveRoleName(node.getAssigneeRoleId());
+                }
+            }
+            return resolveRoleName(node.getAssigneeRoleId()) + "（暂无成员）";
+        }
+
+        // SPECIFIED_USER / SPECIFIED_ORG 等：有候选人就取第一个
+        if (candidates != null && !candidates.isEmpty()) {
+            return candidates.get(0).getName();
+        }
+
+        // CREATOR: 取提交人姓名
+        if ("CREATOR".equals(assigneeType)) {
+            return resolveUserName(requirement != null ? requirement.getCreatorId() : null, "提交人");
+        }
+
+        // PREV_APPROVER
+        if ("PREV_APPROVER".equals(assigneeType)) {
+            return "上一节点处理人";
+        }
+
+        // SPECIFIED_ORG / SPECIFIED_ROLE_GROUP 等兜底
+        return switch (assigneeType) {
+            case "SPECIFIED_ORG" -> resolveOrgDisplayName(node) + "（暂无成员）";
+            case "SPECIFIED_ROLE_GROUP" -> resolveRoleGroupName(node.getAssigneeRoleGroupId()) + "（暂无成员）";
+            case "SPECIFIED_USER" -> "未指定用户";
+            default -> "-";
+        };
     }
 
     @Transactional

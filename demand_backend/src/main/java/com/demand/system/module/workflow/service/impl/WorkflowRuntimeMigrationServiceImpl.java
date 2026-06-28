@@ -103,19 +103,46 @@ public class WorkflowRuntimeMigrationServiceImpl implements WorkflowRuntimeMigra
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(rollbackFor = Exception.class, timeout = 30)
     public int alignRunningInstancesToActiveVersion() {
-        List<Requirement> candidates = requirementMapper.selectList(new LambdaQueryWrapper<Requirement>()
-                .eq(Requirement::getDeletedAt, 0)
-                .eq(Requirement::getIsDraft, false)
-                .isNotNull(Requirement::getWorkflowInstanceId));
-        int migratedCount = 0;
-        for (Requirement requirement : candidates) {
-            if (alignRequirementInstanceIfNeeded(requirement.getId())) {
-                migratedCount++;
+        // 分页查询，避免一次性加载大量数据
+        int pageSize = 100;
+        int pageNum = 0;
+        int totalMigratedCount = 0;
+        
+        while (true) {
+            List<Requirement> candidates = requirementMapper.selectList(new LambdaQueryWrapper<Requirement>()
+                    .eq(Requirement::getDeletedAt, 0)
+                    .eq(Requirement::getIsDraft, false)
+                    .isNotNull(Requirement::getWorkflowInstanceId)
+                    .last("LIMIT " + (pageNum * pageSize) + ", " + pageSize));
+            
+            if (candidates.isEmpty()) {
+                break; // 没有更多数据
+            }
+            
+            int batchMigratedCount = 0;
+            for (Requirement requirement : candidates) {
+                try {
+                    if (alignRequirementInstanceIfNeeded(requirement.getId())) {
+                        batchMigratedCount++;
+                    }
+                } catch (Exception e) {
+                    log.warn("对齐需求实例失败: requirementId={}", requirement.getId(), e);
+                    // 继续处理下一条，不中断整个任务
+                }
+            }
+            
+            totalMigratedCount += batchMigratedCount;
+            pageNum++;
+            
+            // 如果当前批次已处理完毕且少于 pageSize，说明到达末尾
+            if (candidates.size() < pageSize) {
+                break;
             }
         }
-        return migratedCount;
+        
+        return totalMigratedCount;
     }
 
     @Override
