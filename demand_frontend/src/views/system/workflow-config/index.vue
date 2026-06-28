@@ -63,6 +63,15 @@
                   <el-option label="已通过" value="APPROVED" />
                   <el-option label="已拒绝" value="REJECTED" />
                 </el-select>
+                <AppButton
+                  type="success"
+                  plain
+                  @click="handleImportWorkflow"
+                  v-permission="'button:workflow:import'"
+                >
+                  <el-icon><Upload /></el-icon>
+                  导入工作流
+                </AppButton>
               </div>
               <div class="toolbar-right">
                 <el-tooltip content="列表字段设置">
@@ -127,7 +136,7 @@
                   {{ row.isActive === 1 && row.activatedAt ? formatDateTime(row.activatedAt) : '-' }}
                 </template>
               </el-table-column>
-              <el-table-column v-if="isVersionColumnVisible('operations')" label="操作" width="200" fixed="right">
+              <el-table-column v-if="isVersionColumnVisible('operations')" label="操作" width="240" fixed="right">
                 <template #default="{ row }">
                   <el-tooltip content="查看" placement="top">
                     <el-button link type="primary" :icon="View" @click="viewWorkflow(row)" />
@@ -149,6 +158,16 @@
                       :icon="CopyDocument"
                       @click="handleCopyWorkflow(row)"
                       v-permission="'button:workflow:config'"
+                    />
+                  </el-tooltip>
+                  <el-tooltip content="导出" placement="top">
+                    <el-button
+                      link
+                      type="primary"
+                      :icon="Download"
+                      @click="handleExportWorkflow(row)"
+                      v-if="versionApprovalStatus(row) === 'APPROVED'"
+                      v-permission="'button:workflow:export'"
                     />
                   </el-tooltip>
                   <el-tooltip :content="row.isActive === 1 ? '停用' : '启用'" placement="top">
@@ -581,7 +600,7 @@ const versionAllColumns: ColumnDef[] = [
   { key: 'createdAt', label: '创建时间', group: '人员与时间', width: 180 },
   { key: 'latestSubmittedAt', label: '最近提交', group: '人员与时间', width: 180 },
   { key: 'activatedAt', label: '启用时间', group: '人员与时间', width: 180 },
-  { key: 'operations', label: '操作', width: 160 },
+  { key: 'operations', label: '操作', width: 240 },
 ]
 const versionDefaultKeys = ['version', 'name', 'boundTypes', 'projectId', 'isActive', 'approvalStatus', 'creatorName', 'createdAt', 'latestSubmittedAt', 'activatedAt', 'operations']
 
