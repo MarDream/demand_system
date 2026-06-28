@@ -14,6 +14,8 @@ public class WorkflowVersion {
 
     private Long projectId;
 
+    private Integer sourceVersionId;
+
     private String version;
 
     private String name;
@@ -25,6 +27,10 @@ public class WorkflowVersion {
     private String configHash;
 
     private Integer isActive;
+
+    private Integer isTemplate;
+
+    private Integer copyCount;
 
     private String activationStatus;
 
@@ -60,6 +66,14 @@ public class WorkflowVersion {
 
     public void setProjectId(Long projectId) {
         this.projectId = projectId;
+    }
+
+    public Integer getSourceVersionId() {
+        return sourceVersionId;
+    }
+
+    public void setSourceVersionId(Integer sourceVersionId) {
+        this.sourceVersionId = sourceVersionId;
     }
 
     public String getVersion() {
@@ -108,6 +122,22 @@ public class WorkflowVersion {
 
     public void setIsActive(Integer isActive) {
         this.isActive = isActive;
+    }
+
+    public Integer getIsTemplate() {
+        return isTemplate;
+    }
+
+    public void setIsTemplate(Integer isTemplate) {
+        this.isTemplate = isTemplate;
+    }
+
+    public Integer getCopyCount() {
+        return copyCount;
+    }
+
+    public void setCopyCount(Integer copyCount) {
+        this.copyCount = copyCount;
     }
 
     public String getActivationStatus() {

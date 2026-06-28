@@ -33,7 +33,7 @@
             <el-descriptions-item label="需求编号">{{ detail.requirementNo || '-' }}</el-descriptions-item>
             <el-descriptions-item label="需求类型">{{ typeLabel(detail.type) }}</el-descriptions-item>
             <el-descriptions-item label="优先级">
-              <el-tag :type="priorityTagType(detail.priority)">{{ priorityLabel(detail.priority) }}</el-tag>
+              <el-tag :type="priorityTagType(detail.priority, priorityMap, priorityColorMap)" :style="priorityTagStyle(priorityColorMap[detail.priority])">{{ priorityLabel(detail.priority, priorityMap) }}</el-tag>
             </el-descriptions-item>
             <el-descriptions-item label="状态">
               <el-tag :type="statusTagType(detail.status)">{{ detail.status }}</el-tag>
@@ -159,7 +159,7 @@
               </el-table-column>
               <el-table-column label="优先级" width="80" align="center">
                 <template #default="{ row }">
-                  <el-tag :type="priorityTagType(row.priority)" size="small">{{ priorityLabel(row.priority) }}</el-tag>
+                  <el-tag :type="priorityTagType(row.priority, priorityMap, priorityColorMap)" :style="priorityTagStyle(priorityColorMap[row.priority])" size="small">{{ priorityLabel(row.priority, priorityMap) }}</el-tag>
                 </template>
               </el-table-column>
               <el-table-column label="状态" width="90" align="center">
@@ -813,6 +813,8 @@ const { hasAnyPermission, hasPermission } = usePermission()
 const {
   statusTagType,
   priorityTagType,
+  priorityLabel,
+  priorityTagStyle,
   approvalResultTagType,
   approvalTimelineItemType,
 } = useRequirementTag()
@@ -845,6 +847,7 @@ const projectName = ref<string>('')
 const projectOptions = ref<Array<{ id: number; name: string; status?: string | null; endDate?: string | null }>>([])
 const typeMap = ref<Record<string, string>>({})
 const priorityMap = ref<Record<string, string>>({})
+const priorityColorMap = ref<Record<string, string>>({})
 const workflowRuntime = ref<WorkflowAvailableActions>({
   canTransition: false,
   canRollback: false,
@@ -1095,9 +1098,15 @@ async function loadConfig() {
     const priorityList = Array.isArray(prioritiesRes) ? prioritiesRes : (prioritiesRes as any)?.data || []
     typeMap.value = Object.fromEntries(typeList.map((t: any) => [t.code, normalizeText(t.name)]))
     priorityMap.value = Object.fromEntries(priorityList.map((p: any) => [p.code, stripPriorityPrefix(normalizeText(p.name))]))
+    priorityColorMap.value = Object.fromEntries(
+      priorityList
+        .filter((p: any) => p.color)
+        .map((p: any) => [p.code, p.color])
+    )
   } catch {
     typeMap.value = {}
     priorityMap.value = {}
+    priorityColorMap.value = {}
   }
 }
 
@@ -1307,30 +1316,6 @@ function openSupplementDialog(item: RequirementApprovalEvaluation) {
 
 function typeLabel(code: string) {
   return typeMap.value[code] || code || '-'
-}
-
-function priorityLabel(code: string) {
-  if (!code) return '-'
-
-  // 如果 priorityMap 有映射，使用映射值
-  let label = priorityMap.value[code] || code
-
-  // 处理英文优先级（大小写不敏感）
-  const lowerCode = code.toLowerCase()
-  const englishMap: Record<string, string> = {
-    'urgent': '紧急',
-    'high': '高',
-    'medium': '中',
-    'middle': '中',
-    'low': '低'
-  }
-
-  if (englishMap[lowerCode]) {
-    return englishMap[lowerCode]
-  }
-
-  // 去除 P0-、P1- 等前缀
-  return stripPriorityPrefix(label)
 }
 
 function projectLabel(projectId: number) {

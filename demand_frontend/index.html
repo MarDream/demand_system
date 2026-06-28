@@ -8,15 +8,6 @@
   </head>
   <body>
     <div id="app"></div>
-    <!-- 在所有模块加载之前注册错误过滤，拦截浏览器扩展的 unhandled rejection -->
-    <script>
-      ;(function(){
-        var P=/Could not establish connection\. Receiving end does not exist|Extension context invalidated|A listener indicated an asynchronous response by returning true/i;
-        function m(r){if(!r)return false;if(r instanceof Error)return P.test(r.message);if(typeof r==='string')return P.test(r);var e=r&&r.message;if(e)return P.test(e);return false}
-        window.addEventListener('error',function(e){if(m(e.message)||m(e.error)){e.stopImmediatePropagation();e.preventDefault()}},true);
-        window.addEventListener('unhandledrejection',function(e){if(m(e.reason)){e.stopImmediatePropagation();e.preventDefault()}},true);
-      })()
-    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

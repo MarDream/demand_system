@@ -31,23 +31,30 @@ public class WorkflowAlignmentScheduledTask {
     /**
      * 定时对齐运行中的工作流实例到最新版本
      * 
-     * 执行频率：每60秒执行一次（fixedDelay表示上次执行完成后延迟60秒再执行）
+     * 执行频率：每120秒执行一次（从60秒调整为120秒，减轻数据库压力）
      * 初始延迟：应用启动后30秒开始首次执行（避免启动时过载）
+     * 
+     * 性能优化（2026-06-27）：
+     * 1. 分页处理，避免大事务和连接泄漏
+     * 2. 增加事务超时控制（30秒）
+     * 3. 异常隔离，单条失败不影响其他数据
+     * 4. 执行时间监控和告警阈值调整为30秒
+     * 5. 日志级别从 debug 调整为 info，便于监控
      */
-    @Scheduled(fixedDelay = 60000, initialDelay = 30000)
+    @Scheduled(fixedDelay = 120000, initialDelay = 30000)
     public void alignWorkflowVersions() {
         try {
-            log.debug("开始执行工作流版本对齐定时任务");
+            log.info("开始执行工作流版本对齐定时任务");
             long startTime = System.currentTimeMillis();
             
-            workflowRuntimeMigrationService.alignRunningInstancesToActiveVersion();
+            int migratedCount = workflowRuntimeMigrationService.alignRunningInstancesToActiveVersion();
             
             long duration = System.currentTimeMillis() - startTime;
-            log.debug("工作流版本对齐定时任务完成，耗时: {}ms", duration);
+            log.info("工作流版本对齐定时任务完成，对齐数量: {}, 耗时: {}ms", migratedCount, duration);
             
-            // 如果对齐耗时超过5秒，记录警告日志
-            if (duration > 5000) {
-                log.warn("工作流版本对齐耗时过长: {}ms，可能需要进一步优化", duration);
+            // 如果对齐耗时超过30秒，记录警告日志
+            if (duration > 30000) {
+                log.warn("工作流版本对齐耗时过长: {}ms ({}秒)，可能需要进一步优化", duration, duration / 1000);
             }
         } catch (Exception e) {
             log.error("工作流版本对齐定时任务执行失败", e);

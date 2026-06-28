@@ -2,6 +2,7 @@ package com.demand.system.module.workflow.controller;
 
 import com.demand.system.common.result.Result;
 import com.demand.system.module.workflow.dto.WorkflowAvailableActionsDTO;
+import com.demand.system.module.workflow.dto.CurrentNodeHandlerDTO;
 import com.demand.system.module.workflow.dto.FlowTransitionRequest;
 import com.demand.system.module.workflow.dto.TransitionVO;
 import com.demand.system.module.workflow.service.WorkflowEngineService;
@@ -12,6 +13,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/api/v1/workflow-engine")
@@ -79,5 +81,18 @@ public class WorkflowEngineController {
     @Operation(summary = "获取流转记录")
     public Result<List<TransitionVO>> getTransitionHistory(@PathVariable Long requirementId) {
         return Result.success(engineService.getTransitionHistory(requirementId));
+    }
+
+    @GetMapping("/current-handlers")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "批量获取需求列表页当前节点处理人信息",
+        description = "根据需求 ID 列表，批量返回每条需求在工作流当前节点的处理人显示名。"
+            + "规则：角色仅1人→显示用户姓名；角色多人→显示角色名称；其他类型按候选用户或类型名称展示。")
+    public Result<List<CurrentNodeHandlerDTO>> batchGetCurrentNodeHandlers(
+            @RequestParam Set<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Result.success(List.of());
+        }
+        return Result.success(engineService.batchGetCurrentNodeHandlers(ids));
     }
 }

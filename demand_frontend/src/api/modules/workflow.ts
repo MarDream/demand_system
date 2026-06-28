@@ -92,6 +92,101 @@ export function canCurrentUserCountersign(requirementId: number, nodeId: string)
   }) as unknown as Promise<boolean>
 }
 
+// ==================== 工作流复制相关 API ====================
+
+export interface WorkflowCopyRequest {
+  newName: string
+  newVersion?: string
+  includeDescription?: boolean
+  includeNodes?: boolean
+  includeEdges?: boolean
+  resetApprovers?: boolean
+  resetFormFields?: boolean
+  resetSensitiveData?: boolean
+  customSensitiveFields?: string[]
+  targetProjectId?: number
+}
+
+export interface WorkflowCopyResponse {
+  workflowVersionId: number
+  name: string
+  version: string
+  mode: 'sync' | 'async'
+  message: string
+  copiedNodeCount: number
+  copiedEdgeCount: number
+}
+
+export interface WorkflowTemplateDTO {
+  id: number
+  name: string
+  version: string
+  description?: string
+  isTemplate: boolean
+  copyCount: number
+  creatorId: number
+  creatorName: string
+  projectId: number
+  projectName: string
+  createdAt: string
+  lastUsedAt?: string
+  previewImage?: string
+  nodeCount: number
+  activationStatus: string
+}
+
+export interface WorkflowLineageDTO {
+  id: number
+  name: string
+  version: string
+  createdAt: string
+  creatorName: string
+  source?: WorkflowLineageDTO
+  isCircular?: boolean
+}
+
+/**
+ * 复制工作流版本
+ */
+export function copyWorkflow(versionId: number, data: WorkflowCopyRequest) {
+  return request.post<ApiResponse<WorkflowCopyResponse>>(`/v1/workflows/versions/${versionId}/copy`, data)
+}
+
+/**
+ * 获取工作流模板列表
+ */
+export function getWorkflowTemplates(params: {
+  page?: number
+  pageSize?: number
+  keyword?: string
+  includeMyWorkflows?: boolean
+}) {
+  return request.get<ApiResponse<{ records: WorkflowTemplateDTO[]; total: number }>>('/v1/workflows/templates', { params })
+}
+
+/**
+ * 检查工作流名称是否冲突
+ */
+export function checkWorkflowNameConflict(name: string, projectId: number) {
+  return request.get<ApiResponse<{ conflict: boolean; suggestedName?: string }>>('/v1/workflows/check-name', {
+    params: { name, projectId }
+  })
+}
+
+/**
+ * 标记工作流为模板
+ */
+export function markWorkflowAsTemplate(versionId: number, isTemplate: boolean) {
+  return request.post<ApiResponse<void>>(`/v1/workflows/versions/${versionId}/mark-as-template`, { isTemplate })
+}
+
+/**
+ * 获取工作流溯源树
+ */
+export function getWorkflowLineage(versionId: number) {
+  return request.get<ApiResponse<WorkflowLineageDTO>>(`/v1/workflows/versions/${versionId}/lineage`)
+}
+
 export interface ParallelBranch {
   id: number
   instanceId: number

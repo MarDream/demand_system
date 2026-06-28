@@ -7,6 +7,7 @@ import type {
   WorkflowApprovalDTO,
   ApprovalRequestDTO,
   WorkflowValidationIssue,
+  WorkflowValidationReport,
   WorkflowMigrationReport,
 } from '@/types/workflow-visual'
 
@@ -115,6 +116,14 @@ export function deleteWorkflowApproval(id: number) {
  */
 export function clearAllWorkflowApprovals() {
   return request.delete<void>('/v1/workflow-approvals') as unknown as Promise<void>
+}
+
+export function validateBeforeSubmit(projectId: number) {
+  return request.post<WorkflowValidationReport>(`/v1/workflows/${projectId}/validate-before-submit`) as unknown as Promise<WorkflowValidationReport>
+}
+
+export function validateWorkflowVersionReport(versionId: number) {
+  return request.post<WorkflowValidationReport>(`/v1/workflows/versions/${versionId}/validate/report`) as unknown as Promise<WorkflowValidationReport>
 }
 
 export function validateWorkflowVersion(versionId: number) {

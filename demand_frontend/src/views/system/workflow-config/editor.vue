@@ -411,7 +411,8 @@ import {
   Refresh,
   Grid,
   Delete,
-  WarningFilled
+  WarningFilled,
+  QuestionFilled
 } from '@element-plus/icons-vue'
 import LogicFlow from '@logicflow/core'
 import dagre from '@dagrejs/dagre'
@@ -421,6 +422,7 @@ import {
   GLOBAL_WORKFLOW_PROJECT_ID,
   saveWorkflowConfig,
   submitForApproval,
+  validateBeforeSubmit,
   getVersionConfig,
   getVersionHistory,
 } from '@/api/modules/workflow-visual'
@@ -2218,6 +2220,74 @@ const handleSave = async () => {
   }
 }
 
+const escapeHtml = (value: unknown) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;')
+
+const buildValidationHtml = (issues: Array<{ message: string; severity: string; path?: string; suggestion?: string }>) => {
+  const severityLabel: Record<string, string> = {
+    error: '错误',
+    warning: '警告',
+    info: '提示'
+  }
+  const severityColor: Record<string, string> = {
+    error: '#f56c6c',
+    warning: '#e6a23c',
+    info: '#409eff'
+  }
+  const visibleIssues = issues.slice(0, 8)
+  const items = visibleIssues.map(issue => {
+    const severity = issue.severity || 'info'
+    const label = severityLabel[severity] || severity
+    const color = severityColor[severity] || '#909399'
+    const path = issue.path ? `<div style="color:#909399;font-size:12px;margin-top:2px;">位置：${escapeHtml(issue.path)}</div>` : ''
+    const suggestion = issue.suggestion ? `<div style="color:#67c23a;font-size:12px;margin-top:2px;">建议：${escapeHtml(issue.suggestion)}</div>` : ''
+    return `<li style="margin:8px 0;line-height:1.5;"><strong style="color:${color};">[${escapeHtml(label)}]</strong> ${escapeHtml(issue.message)}${path}${suggestion}</li>`
+  }).join('')
+  const more = issues.length > visibleIssues.length ? `<p style="margin-top:8px;color:#909399;">还有 ${issues.length - visibleIssues.length} 项问题未展示，请按提示逐项检查。</p>` : ''
+  return `<div style="text-align:left;"><ol style="padding-left:18px;margin:0;">${items}</ol>${more}</div>`
+}
+
+const validateBeforeSubmitAndConfirm = async (): Promise<boolean> => {
+  const report = await validateBeforeSubmit(currentProjectId.value)
+  const issues = report?.issues || []
+  if (!issues.length) return true
+
+  const errors = issues.filter(issue => issue.severity === 'error')
+  const warnings = issues.filter(issue => issue.severity === 'warning')
+  const infos = issues.filter(issue => issue.severity === 'info')
+
+  if (errors.length > 0) {
+    await ElMessageBox.alert(
+      buildValidationHtml(issues),
+      `提交前检查未通过：${errors.length} 个错误`,
+      {
+        confirmButtonText: '我去修复',
+        dangerouslyUseHTMLString: true,
+        type: 'error',
+        customClass: 'workflow-validation-message-box'
+      }
+    )
+    return false
+  }
+
+  await ElMessageBox.confirm(
+    buildValidationHtml(issues),
+    `发现 ${warnings.length} 个警告${infos.length ? `、${infos.length} 个提示` : ''}`,
+    {
+      confirmButtonText: '继续提交',
+      cancelButtonText: '返回检查',
+      dangerouslyUseHTMLString: true,
+      type: 'warning',
+      customClass: 'workflow-validation-message-box'
+    }
+  )
+  return true
+}
+
 // 提交审核
 const handleSubmit = async () => {
   if (!lf) return
@@ -2228,11 +2298,27 @@ const handleSubmit = async () => {
 
   submitting.value = true
   try {
+    const canSubmit = await validateBeforeSubmitAndConfirm()
+    if (!canSubmit) return
+
     await submitForApproval(currentProjectId.value)
 
     ElMessage.success('提交审核成功')
     router.push(returnMenuPath.value)
-  } catch (error) {
+  } catch (error: any) {
+    const report = error?.response?.data?.data || error?.data?.data
+    if (report?.issues?.length) {
+      await ElMessageBox.alert(
+        buildValidationHtml(report.issues),
+        '提交审核失败：工作流配置存在异常',
+        {
+          confirmButtonText: '我去修复',
+          dangerouslyUseHTMLString: true,
+          type: 'error',
+          customClass: 'workflow-validation-message-box'
+        }
+      )
+    }
   } finally {
     submitting.value = false
   }

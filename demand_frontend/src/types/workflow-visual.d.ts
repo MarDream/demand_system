@@ -63,7 +63,23 @@ export interface WorkflowConfigDTO {
 export interface WorkflowValidationIssue {
   path: string
   message: string
-  severity: 'error' | 'warning' | string
+  severity: 'error' | 'warning' | 'info' | string
+  ruleCode?: string
+  fieldPath?: string
+  suggestion?: string
+  blocking?: boolean
+}
+
+export interface WorkflowValidationReport {
+  versionId: number
+  versionName: string
+  version: string
+  validatedAt: string
+  issues: WorkflowValidationIssue[]
+  errorCount: number
+  warningCount: number
+  infoCount: number
+  canSubmit: boolean
 }
 
 export interface WorkflowVersionDTO {

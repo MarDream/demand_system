@@ -102,6 +102,18 @@ export interface SortItem {
   sortOrder: number
 }
 
+/** 列表页当前节点处理人信息（轻量） */
+export interface CurrentNodeHandler {
+  requirementId: number
+  /** 负责人显示名（列表页"负责人"列直接使用） */
+  display: string
+  assigneeType: string | null
+  assigneeTypeName: string | null
+  currentNodeId: string | null
+  currentNodeName: string | null
+  candidates?: { id: number; name: string }[] | null
+}
+
 export const workflowEngineApi = {
   initWorkflow(requirementId: number, workflowVersionId: number) {
     return request.post(`/v1/workflow-engine/init?requirementId=${requirementId}&workflowVersionId=${workflowVersionId}`)
@@ -133,6 +145,18 @@ export const workflowEngineApi = {
 
   getAvailableActions(requirementId: number) {
     return request.get<WorkflowAvailableActions>(`/v1/workflow-engine/actions/${requirementId}`) as unknown as Promise<WorkflowAvailableActions>
+  },
+
+  /** 批量获取列表页当前节点处理人信息 */
+  batchGetCurrentHandlers(ids: number[]) {
+    if (!ids.length) return Promise.resolve([] as CurrentNodeHandler[])
+    // 注意：axios 默认会把数组序列化成 ids[]=1&ids[]=2，
+    // 后端 @RequestParam Set<Long> ids 只认 ids=1,2,3 或 ids=1&ids=2。
+    // 这里手动用逗号拼接，确保 Spring 能正确绑定。
+    return request.get<CurrentNodeHandler[]>(
+      '/v1/workflow-engine/current-handlers',
+      { params: { ids: ids.join(',') } }
+    )
   }
 }
 

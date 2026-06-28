@@ -127,7 +127,7 @@
                   {{ row.isActive === 1 && row.activatedAt ? formatDateTime(row.activatedAt) : '-' }}
                 </template>
               </el-table-column>
-              <el-table-column v-if="isVersionColumnVisible('operations')" label="操作" width="160" fixed="right">
+              <el-table-column v-if="isVersionColumnVisible('operations')" label="操作" width="200" fixed="right">
                 <template #default="{ row }">
                   <el-tooltip content="查看" placement="top">
                     <el-button link type="primary" :icon="View" @click="viewWorkflow(row)" />
@@ -140,6 +140,15 @@
                       @click="editWorkflow(row)"
                       v-permission="'button:workflow:update'"
                       :disabled="versionApprovalStatus(row) === 'PENDING' || row.isActive === 1"
+                    />
+                  </el-tooltip>
+                  <el-tooltip content="复制" placement="top">
+                    <el-button
+                      link
+                      type="primary"
+                      :icon="CopyDocument"
+                      @click="handleCopyWorkflow(row)"
+                      v-permission="'button:workflow:config'"
                     />
                   </el-tooltip>
                   <el-tooltip :content="row.isActive === 1 ? '停用' : '启用'" placement="top">
@@ -273,7 +282,7 @@
                     <el-button link type="primary" :icon="Document" @click="openDetail(row)" />
                   </el-tooltip>
                   <el-tooltip content="查看配置" placement="top">
-                    <el-button link type="primary" :icon="Setting" @click="handleViewVersion(row)" />
+                    <el-button link type="primary" :icon="View" @click="handleViewVersion(row)" />
                   </el-tooltip>
                   <template v-if="row.status === 'PENDING' && canProcessApproval">
                     <el-tooltip content="通过" placement="top">
@@ -493,7 +502,7 @@
         </div>
 
         <div class="drawer-actions">
-          <el-button @click="handleViewVersion(detailTask)">查看配置</el-button>
+          <el-button :icon="View" @click="handleViewVersion(detailTask)">查看配置</el-button>
           <el-button
             v-if="detailTask.status === 'PENDING' && canProcessApproval"
             type="primary"
@@ -513,6 +522,8 @@
         </div>
       </template>
     </el-drawer>
+
+    <WorkflowCopyDialog ref="copyDialogRef" :project-id="0" @success="loadVersions" />
   </PageContainer>
 </template>
 
@@ -520,10 +531,11 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh, Setting, CircleCheck, CircleClose, Document, Delete, View, EditPen, SwitchButton, VideoPlay, Tools } from '@element-plus/icons-vue'
+import { Plus, Refresh, Setting, CircleCheck, CircleClose, Document, Delete, View, EditPen, SwitchButton, VideoPlay, Tools, CopyDocument } from '@element-plus/icons-vue'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
+import WorkflowCopyDialog from './components/WorkflowCopyDialog.vue'
 import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import { formatDate as formatDateTime } from '@/utils/format'
 import { resolveActiveMenuPath } from '@/utils/menuNavigation'
@@ -669,6 +681,7 @@ const detailDrawerVisible = ref(false)
 const detailLoading = ref(false)
 const detailTask = ref<WorkflowApprovalDTO | null>(null)
 const detailVersionConfig = ref<WorkflowConfigDTO | null>(null)
+const copyDialogRef = ref<InstanceType<typeof WorkflowCopyDialog>>()
 
 const versionDialogForm = reactive<WorkflowVersionMetaUpdateDTO>({
   version: '',
@@ -933,6 +946,10 @@ function createNewWorkflow() {
   })
 }
 
+function handleCopyWorkflow(version: WorkflowVersionDTO) {
+  copyDialogRef.value?.open('copy', version.id)
+}
+
 function viewWorkflow(row: WorkflowVersionDTO) {
   router.push({
     path: '/system/workflow-config/editor',
@@ -1082,7 +1099,7 @@ async function openDetail(row: WorkflowApprovalDTO) {
 function handleApprove(row: WorkflowApprovalDTO) {
   currentTask.value = row
   processAction.value = 'approve'
-  processComment.value = ''
+  processComment.value = '同意'
   processScope.value = typeof row.projectId === 'number' ? row.projectId : GLOBAL_WORKFLOW_PROJECT_ID
   processDialogVisible.value = true
   detailDrawerVisible.value = false
@@ -1099,12 +1116,16 @@ function handleReject(row: WorkflowApprovalDTO) {
 
 function handleViewVersion(row: WorkflowApprovalDTO) {
   if (!row.workflowVersionId) return
+  // 审核记录 tab 跳转时带上 tab 参数，确保返回时回到审核记录列表
+  const sourceMenu = activeTab.value === 'approvals'
+    ? `${sourceMenuPath.value}?tab=approvals`
+    : sourceMenuPath.value
   router.push({
     path: '/system/workflow-config/editor',
     query: {
       versionId: row.workflowVersionId,
       mode: 'view',
-      sourceMenu: sourceMenuPath.value,
+      sourceMenu,
     },
   })
 }
