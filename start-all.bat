@@ -21,11 +21,15 @@ set "KKFILEVIEW_PORT=8012"
 
 :: ===== Maven 路径解析 =====
 :: 优先使用项目自带的 Maven (.mvn-tool/maven/)，
-:: 否则回退到 PATH 中的 mvn (系统装在 C:\apache-maven-3.9.x)
+:: 其次使用系统安装的 Maven (C:\Tools\apache-maven-3.9.16)，
+:: 最后回退到 PATH 中的 mvn
 set "PROJECT_MVN=%ROOT_DIR%.mvn-tool\maven\bin\mvn.cmd"
 if exist "%PROJECT_MVN%" (
     set "MVN_CMD=%PROJECT_MVN%"
     echo [INFO] 使用项目内嵌 Maven: %PROJECT_MVN%
+) else if exist "C:\Tools\apache-maven-3.9.16\bin\mvn.cmd" (
+    set "MVN_CMD=C:\Tools\apache-maven-3.9.16\bin\mvn.cmd"
+    echo [INFO] 使用系统 Maven: C:\Tools\apache-maven-3.9.16\bin\mvn.cmd
 ) else (
     set "MVN_CMD=mvn"
     echo [INFO] 使用系统 PATH 中的 mvn
