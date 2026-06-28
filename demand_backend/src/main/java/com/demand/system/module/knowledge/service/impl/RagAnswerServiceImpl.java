@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 @Service
@@ -61,6 +62,29 @@ public class RagAnswerServiceImpl implements RagAnswerService {
         }
     }
 
+    @Override
+    public void streamAnswer(
+            String query,
+            List<KnowledgeSearchResponse.SearchResultItem> searchResults,
+            Long knowledgeBaseId,
+            Long llmModelId,
+            Consumer<String> tokenConsumer
+    ) {
+        String context = buildContext(searchResults);
+        String userMessage = "问题：" + query + "\n\n参考资料：\n" + context;
+
+        try {
+            if (llmModelId != null) {
+                streamWithSelectedModel(llmModelId, userMessage, tokenConsumer);
+                return;
+            }
+            llmGateway.streamChat(SYSTEM_PROMPT, userMessage, tokenConsumer);
+        } catch (Exception e) {
+            log.error("RAG答案流式生成失败: query={}", query, e);
+            throw new RuntimeException("答案流式生成失败: " + e.getMessage());
+        }
+    }
+
     private String chatWithSelectedModel(Long llmModelId, String userMessage) {
         LlmModel model = llmModelMapper.selectById(llmModelId);
         if (model == null) {
@@ -91,6 +115,39 @@ public class RagAnswerServiceImpl implements RagAnswerService {
                 model.getTemperature(),
                 model.getMaxTokens()
         ).getContent();
+    }
+
+    private void streamWithSelectedModel(Long llmModelId, String userMessage, Consumer<String> tokenConsumer) {
+        LlmModel model = llmModelMapper.selectById(llmModelId);
+        if (model == null) {
+            throw new RuntimeException("所选问答模型不存在");
+        }
+        if (!Boolean.TRUE.equals(model.getEnabled())) {
+            throw new RuntimeException("所选问答模型未启用");
+        }
+
+        LlmProvider provider = llmProviderMapper.selectById(model.getProviderId());
+        if (provider == null) {
+            throw new RuntimeException("所选模型的接入组不存在");
+        }
+        if (!Boolean.TRUE.equals(provider.getEnabled())) {
+            throw new RuntimeException("所选模型的接入组未启用");
+        }
+
+        LlmGatewayConfig.Provider chatProvider = new LlmGatewayConfig.Provider();
+        chatProvider.setProtocol(provider.getProtocol());
+        chatProvider.setBaseUrl(provider.getBaseUrl());
+        chatProvider.setApiKey(provider.getApiKey());
+        chatProvider.setModel(model.getModelId());
+
+        llmGateway.streamChatWithProvider(
+                chatProvider,
+                SYSTEM_PROMPT,
+                userMessage,
+                model.getTemperature(),
+                model.getMaxTokens(),
+                tokenConsumer
+        );
     }
 
     private String buildContext(List<KnowledgeSearchResponse.SearchResultItem> results) {

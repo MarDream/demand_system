@@ -16,6 +16,9 @@ import com.demand.system.module.workflow.mapper.NodeStatusMapper;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.demand.system.module.workflow.service.WorkflowRuntimeMigrationService;
 import com.demand.system.module.workflow.support.WorkflowNodeUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -27,6 +30,8 @@ import java.util.Optional;
 @Service
 public class WorkflowRuntimeMigrationServiceImpl implements WorkflowRuntimeMigrationService {
 
+    private static final Logger log = LoggerFactory.getLogger(WorkflowRuntimeMigrationServiceImpl.class);
+
     private final RequirementMapper requirementMapper;
     private final WorkflowInstanceMapper workflowInstanceMapper;
     private final WorkflowVersionMapper workflowVersionMapper;
@@ -34,18 +39,24 @@ public class WorkflowRuntimeMigrationServiceImpl implements WorkflowRuntimeMigra
     private final WorkflowRuntimeLoader workflowRuntimeLoader;
     private final NodeStatusMapper nodeStatusMapper;
 
+    /** 自注入：用于在循环中调用 @Transactional 方法时走 Spring 代理，确保每次对齐独立事务 */
+    @Lazy
+    private final WorkflowRuntimeMigrationService self;
+
     public WorkflowRuntimeMigrationServiceImpl(RequirementMapper requirementMapper,
                                                WorkflowInstanceMapper workflowInstanceMapper,
                                                WorkflowVersionMapper workflowVersionMapper,
                                                WorkflowDefinitionEngine workflowDefinitionEngine,
                                                WorkflowRuntimeLoader workflowRuntimeLoader,
-                                               NodeStatusMapper nodeStatusMapper) {
+                                               NodeStatusMapper nodeStatusMapper,
+                                               @Lazy WorkflowRuntimeMigrationService self) {
         this.requirementMapper = requirementMapper;
         this.workflowInstanceMapper = workflowInstanceMapper;
         this.workflowVersionMapper = workflowVersionMapper;
         this.workflowDefinitionEngine = workflowDefinitionEngine;
         this.workflowRuntimeLoader = workflowRuntimeLoader;
         this.nodeStatusMapper = nodeStatusMapper;
+        this.self = self;
     }
 
     @Override
@@ -102,29 +113,34 @@ public class WorkflowRuntimeMigrationServiceImpl implements WorkflowRuntimeMigra
         return report;
     }
 
+    /**
+     * 对齐所有运行中的工作流实例到活跃版本。
+     * <p>外层不加事务：通过 self 代理调用 alignRequirementInstanceIfNeeded，
+     * 每次对齐在独立事务中执行，避免大事务超时。
+     */
     @Override
-    @Transactional(rollbackFor = Exception.class, timeout = 30)
     public int alignRunningInstancesToActiveVersion() {
         // 分页查询，避免一次性加载大量数据
         int pageSize = 100;
         int pageNum = 0;
         int totalMigratedCount = 0;
-        
+
         while (true) {
             List<Requirement> candidates = requirementMapper.selectList(new LambdaQueryWrapper<Requirement>()
                     .eq(Requirement::getDeletedAt, 0)
                     .eq(Requirement::getIsDraft, false)
                     .isNotNull(Requirement::getWorkflowInstanceId)
                     .last("LIMIT " + (pageNum * pageSize) + ", " + pageSize));
-            
+
             if (candidates.isEmpty()) {
                 break; // 没有更多数据
             }
-            
+
             int batchMigratedCount = 0;
             for (Requirement requirement : candidates) {
                 try {
-                    if (alignRequirementInstanceIfNeeded(requirement.getId())) {
+                    // 通过 self 代理调用，走独立事务
+                    if (self.alignRequirementInstanceIfNeeded(requirement.getId())) {
                         batchMigratedCount++;
                     }
                 } catch (Exception e) {
@@ -132,16 +148,16 @@ public class WorkflowRuntimeMigrationServiceImpl implements WorkflowRuntimeMigra
                     // 继续处理下一条，不中断整个任务
                 }
             }
-            
+
             totalMigratedCount += batchMigratedCount;
             pageNum++;
-            
+
             // 如果当前批次已处理完毕且少于 pageSize，说明到达末尾
             if (candidates.size() < pageSize) {
                 break;
             }
         }
-        
+
         return totalMigratedCount;
     }
 

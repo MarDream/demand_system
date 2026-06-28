@@ -1,22 +1,26 @@
 package com.demand.system.module.knowledge.service.impl;
 
-import com.demand.system.module.knowledge.entity.KnowledgeDocument;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.demand.system.module.knowledge.config.KnowledgeConfig;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchRequest;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse;
+import com.demand.system.module.knowledge.entity.KnowledgeChunk;
+import com.demand.system.module.knowledge.entity.KnowledgeDocument;
+import com.demand.system.module.knowledge.mapper.KnowledgeChunkMapper;
 import com.demand.system.module.knowledge.mapper.KnowledgeDocumentMapper;
-import com.demand.system.module.requirement.dto.RequirementAttachmentDTO;
-import com.demand.system.module.requirement.entity.Requirement;
-import com.demand.system.module.requirement.mapper.RequirementMapper;
 import com.demand.system.module.knowledge.service.EmbeddingService;
 import com.demand.system.module.knowledge.service.KnowledgeSearchService;
 import com.demand.system.module.knowledge.service.RagAnswerService;
 import com.demand.system.module.knowledge.vectorstore.MilvusVectorStore;
+import com.demand.system.module.requirement.entity.Requirement;
+import com.demand.system.module.requirement.mapper.RequirementMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 @Service
@@ -29,61 +33,119 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
     private final RagAnswerService ragAnswerService;
     private final RequirementMapper requirementMapper;
     private final KnowledgeDocumentMapper knowledgeDocumentMapper;
+    private final KnowledgeChunkMapper knowledgeChunkMapper;
 
     public KnowledgeSearchServiceImpl(EmbeddingService embeddingService,
                                      MilvusVectorStore milvusVectorStore,
                                      KnowledgeConfig knowledgeConfig,
                                      RagAnswerService ragAnswerService,
                                      RequirementMapper requirementMapper,
-                                     KnowledgeDocumentMapper knowledgeDocumentMapper) {
+                                     KnowledgeDocumentMapper knowledgeDocumentMapper,
+                                     KnowledgeChunkMapper knowledgeChunkMapper) {
         this.embeddingService = embeddingService;
         this.milvusVectorStore = milvusVectorStore;
         this.knowledgeConfig = knowledgeConfig;
         this.ragAnswerService = ragAnswerService;
         this.requirementMapper = requirementMapper;
         this.knowledgeDocumentMapper = knowledgeDocumentMapper;
+        this.knowledgeChunkMapper = knowledgeChunkMapper;
     }
 
     @Override
     public KnowledgeSearchResponse search(KnowledgeSearchRequest request) {
+        KnowledgeSearchResponse response = retrieve(request);
+        String mode = request.getMode() != null ? request.getMode() : "hybrid";
+        boolean shouldGenerateAnswer = !response.getResults().isEmpty() && ("rag".equals(mode) || request.getLlmModelId() != null);
+        if (!shouldGenerateAnswer) {
+            return response;
+        }
+
+        try {
+            String answer = ragAnswerService.generateAnswer(
+                    request.getQuery(),
+                    response.getResults(),
+                    request.getKnowledgeBaseId(),
+                    request.getLlmModelId()
+            );
+            response.setAnswer(answer);
+        } catch (Exception e) {
+            log.warn("RAG答案生成失败，仅返回检索结果", e);
+            response.setAnswer(null);
+        }
+        return response;
+    }
+
+    @Override
+    public SseEmitter streamSearch(KnowledgeSearchRequest request) {
+        SseEmitter emitter = new SseEmitter(180_000L);
+        CompletableFuture.runAsync(() -> {
+            StringBuilder answer = new StringBuilder();
+            try {
+                KnowledgeSearchResponse response = retrieve(request);
+                emitter.send(SseEmitter.event().name("results").data(response));
+
+                String mode = request.getMode() != null ? request.getMode() : "hybrid";
+                boolean shouldGenerateAnswer = !response.getResults().isEmpty() && ("rag".equals(mode) || request.getLlmModelId() != null);
+                if (shouldGenerateAnswer) {
+                    ragAnswerService.streamAnswer(
+                            request.getQuery(),
+                            response.getResults(),
+                            request.getKnowledgeBaseId(),
+                            request.getLlmModelId(),
+                            token -> {
+                                if (token == null || token.isEmpty()) {
+                                    return;
+                                }
+                                try {
+                                    answer.append(token);
+                                    emitter.send(SseEmitter.event().name("delta").data(token));
+                                } catch (Exception e) {
+                                    throw new RuntimeException(e);
+                                }
+                            }
+                    );
+                    response.setAnswer(answer.toString());
+                }
+
+                emitter.send(SseEmitter.event().name("done").data(response));
+                emitter.complete();
+            } catch (Exception e) {
+                log.warn("流式知识库检索失败", e);
+                try {
+                    emitter.send(SseEmitter.event().name("error").data(Map.of(
+                            "message", e.getMessage() != null ? e.getMessage() : "流式检索失败"
+                    )));
+                } catch (Exception ignored) {
+                    // The client may already have closed the stream.
+                }
+                emitter.completeWithError(e);
+            }
+        });
+        return emitter;
+    }
+
+    private KnowledgeSearchResponse retrieve(KnowledgeSearchRequest request) {
         String mode = request.getMode() != null ? request.getMode() : "hybrid";
         int topK = request.getTopK() != null ? request.getTopK() : knowledgeConfig.getSearchTopK();
         String kbId = request.getKnowledgeBaseId() != null ? String.valueOf(request.getKnowledgeBaseId()) : null;
 
-        float[] queryVector = embeddingService.embed(request.getQuery());
-
         List<KnowledgeSearchResponse.SearchResultItem> results;
 
         if ("semantic".equals(mode)) {
+            float[] queryVector = embeddingService.embed(request.getQuery());
             results = semanticSearch(queryVector, kbId, topK);
         } else if ("keyword".equals(mode)) {
-            results = semanticSearch(queryVector, kbId, topK);
+            results = keywordSearch(request.getQuery(), request.getKnowledgeBaseId(), topK);
         } else {
+            float[] queryVector = embeddingService.embed(request.getQuery());
             results = hybridSearch(request.getQuery(), queryVector, kbId, topK);
         }
 
-        KnowledgeSearchResponse.KnowledgeSearchResponseBuilder responseBuilder = KnowledgeSearchResponse.builder()
+        return KnowledgeSearchResponse.builder()
                 .results(results)
                 .total(results.size())
-                .processSummary(buildProcessSummary(request, results.size(), results));
-
-        boolean shouldGenerateAnswer = !results.isEmpty() && ("rag".equals(mode) || request.getLlmModelId() != null);
-        if (shouldGenerateAnswer) {
-            try {
-                String answer = ragAnswerService.generateAnswer(
-                        request.getQuery(),
-                        results,
-                        request.getKnowledgeBaseId(),
-                        request.getLlmModelId()
-                );
-                responseBuilder.answer(answer);
-            } catch (Exception e) {
-                log.warn("RAG答案生成失败，仅返回检索结果", e);
-                responseBuilder.answer(null);
-            }
-        }
-
-        return responseBuilder.build();
+                .processSummary(buildProcessSummary(request, results.size(), results))
+                .build();
     }
 
     private List<KnowledgeSearchResponse.SearchResultItem> semanticSearch(
@@ -140,6 +202,84 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         }
     }
 
+    private List<KnowledgeSearchResponse.SearchResultItem> keywordSearch(
+            String query, Long knowledgeBaseId, int topK) {
+        String normalizedQuery = normalizeKeyword(query);
+        if (normalizedQuery.isBlank()) {
+            return Collections.emptyList();
+        }
+
+        int candidateLimit = Math.min(Math.max(topK * 10, 50), 200);
+        List<String> terms = tokenizeKeyword(normalizedQuery);
+        Map<Long, KeywordCandidate> candidates = new LinkedHashMap<>();
+
+        LambdaQueryWrapper<KnowledgeChunk> chunkWrapper = new LambdaQueryWrapper<>();
+        if (knowledgeBaseId != null) {
+            chunkWrapper.eq(KnowledgeChunk::getKnowledgeBaseId, knowledgeBaseId);
+        }
+        chunkWrapper.and(wrapper -> {
+            wrapper.like(KnowledgeChunk::getContent, normalizedQuery)
+                    .or()
+                    .like(KnowledgeChunk::getSectionTitle, normalizedQuery);
+            for (String term : terms) {
+                wrapper.or().like(KnowledgeChunk::getContent, term)
+                        .or()
+                        .like(KnowledgeChunk::getSectionTitle, term);
+            }
+        });
+        chunkWrapper.last("LIMIT " + candidateLimit);
+
+        for (KnowledgeChunk chunk : knowledgeChunkMapper.selectList(chunkWrapper)) {
+            candidates.putIfAbsent(chunk.getId(), new KeywordCandidate(chunk, false));
+        }
+
+        LambdaQueryWrapper<KnowledgeDocument> documentWrapper = new LambdaQueryWrapper<>();
+        if (knowledgeBaseId != null) {
+            documentWrapper.eq(KnowledgeDocument::getKnowledgeBaseId, knowledgeBaseId);
+        }
+        documentWrapper.and(wrapper -> {
+            wrapper.like(KnowledgeDocument::getFileName, normalizedQuery);
+            for (String term : terms) {
+                wrapper.or().like(KnowledgeDocument::getFileName, term);
+            }
+        });
+        documentWrapper.last("LIMIT 50");
+
+        List<Long> fileMatchedDocIds = knowledgeDocumentMapper.selectList(documentWrapper).stream()
+                .map(KnowledgeDocument::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        if (!fileMatchedDocIds.isEmpty()) {
+            LambdaQueryWrapper<KnowledgeChunk> byDocumentWrapper = new LambdaQueryWrapper<>();
+            byDocumentWrapper.in(KnowledgeChunk::getDocumentId, fileMatchedDocIds);
+            if (knowledgeBaseId != null) {
+                byDocumentWrapper.eq(KnowledgeChunk::getKnowledgeBaseId, knowledgeBaseId);
+            }
+            byDocumentWrapper.last("LIMIT " + candidateLimit);
+            for (KnowledgeChunk chunk : knowledgeChunkMapper.selectList(byDocumentWrapper)) {
+                candidates.putIfAbsent(chunk.getId(), new KeywordCandidate(chunk, true));
+            }
+        }
+
+        if (candidates.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        Set<Long> docIds = candidates.values().stream()
+                .map(candidate -> candidate.chunk.getDocumentId())
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, KnowledgeDocument> documentMap = knowledgeDocumentMapper.selectBatchIds(docIds).stream()
+                .collect(Collectors.toMap(KnowledgeDocument::getId, d -> d, (a, b) -> a));
+        Map<Long, KnowledgeSearchResponse.RequirementReference> requirementMap = buildDocumentRequirementMap(docIds);
+
+        return candidates.values().stream()
+                .map(candidate -> toResultItem(candidate, documentMap, requirementMap, normalizedQuery, terms))
+                .sorted(Comparator.comparingDouble(KnowledgeSearchResponse.SearchResultItem::getScore).reversed())
+                .limit(topK)
+                .collect(Collectors.toList());
+    }
+
     private KnowledgeSearchResponse.SearchResultItem toResultItem(
             MilvusVectorStore.SearchResult sr, Map<Long, KnowledgeSearchResponse.RequirementReference> requirementMap) {
         Map<String, Object> entity = sr.getEntity();
@@ -157,12 +297,43 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                 .build();
     }
 
+    private KnowledgeSearchResponse.SearchResultItem toResultItem(
+            KeywordCandidate candidate,
+            Map<Long, KnowledgeDocument> documentMap,
+            Map<Long, KnowledgeSearchResponse.RequirementReference> requirementMap,
+            String query,
+            List<String> terms) {
+        KnowledgeChunk chunk = candidate.chunk;
+        KnowledgeDocument document = documentMap.get(chunk.getDocumentId());
+        Long docId = chunk.getDocumentId();
+        return KnowledgeSearchResponse.SearchResultItem.builder()
+                .chunkId(chunk.getId())
+                .documentId(docId)
+                .fileName(document != null ? document.getFileName() : null)
+                .sectionTitle(chunk.getSectionTitle())
+                .content(chunk.getContent())
+                .pageNum(chunk.getPageNum())
+                .score(scoreKeywordCandidate(candidate, document, query, terms))
+                .knowledgeBaseId(chunk.getKnowledgeBaseId() != null ? String.valueOf(chunk.getKnowledgeBaseId()) : null)
+                .requirement(requirementMap.get(docId))
+                .build();
+    }
+
     private Map<Long, KnowledgeSearchResponse.RequirementReference> buildDocumentRequirementMap(
             List<MilvusVectorStore.SearchResult> results) {
         Set<Long> docIds = results.stream()
                 .map(sr -> parseLong(sr.getEntity().get("document_id")))
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
+        return buildDocumentRequirementMap(docIds, results);
+    }
+
+    private Map<Long, KnowledgeSearchResponse.RequirementReference> buildDocumentRequirementMap(Collection<Long> docIds) {
+        return buildDocumentRequirementMap(docIds, Collections.emptyList());
+    }
+
+    private Map<Long, KnowledgeSearchResponse.RequirementReference> buildDocumentRequirementMap(
+            Collection<Long> docIds, List<MilvusVectorStore.SearchResult> results) {
         if (docIds.isEmpty()) return Collections.emptyMap();
 
         List<KnowledgeDocument> documents = knowledgeDocumentMapper.selectBatchIds(docIds);
@@ -181,25 +352,23 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         }
 
         // Fallback: match by fileName for docs without requirementId
-        Set<String> unmatchedFileNames = results.stream()
-                .filter(sr -> !resultMap.containsKey(parseLong(sr.getEntity().get("document_id"))))
-                .map(sr -> getString(sr.getEntity().get("file_name")))
+        Set<String> unmatchedFileNames = documents.stream()
+                .filter(document -> !resultMap.containsKey(document.getId()))
+                .map(KnowledgeDocument::getFileName)
                 .filter(name -> name != null && !name.isBlank())
                 .collect(Collectors.toSet());
         if (!unmatchedFileNames.isEmpty()) {
             List<Requirement> allWithAttachments = requirementMapper.selectList(
-                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Requirement>().isNotNull(Requirement::getAttachments));
+                    new LambdaQueryWrapper<Requirement>().isNotNull(Requirement::getAttachments));
             for (Requirement req : allWithAttachments) {
                 if (req.getAttachments() == null) continue;
                 for (var attachment : req.getAttachments()) {
                     if (attachment.getName() != null && unmatchedFileNames.stream()
                             .anyMatch(fn -> fn.equalsIgnoreCase(attachment.getName()))) {
-                        // Find which docId this fileName belongs to
-                        for (var sr : results) {
-                            Long docId = parseLong(sr.getEntity().get("document_id"));
-                            String fn = getString(sr.getEntity().get("file_name"));
-                            if (!resultMap.containsKey(docId) && fn != null && fn.equalsIgnoreCase(attachment.getName())) {
-                                resultMap.putIfAbsent(docId, toRequirementReference(req));
+                        for (KnowledgeDocument document : documents) {
+                            String fn = document.getFileName();
+                            if (!resultMap.containsKey(document.getId()) && fn != null && fn.equalsIgnoreCase(attachment.getName())) {
+                                resultMap.putIfAbsent(document.getId(), toRequirementReference(req));
                             }
                         }
                     }
@@ -266,5 +435,53 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         return val != null ? val.toString() : null;
     }
 
+    private String normalizeKeyword(String query) {
+        return query == null ? "" : query.replaceAll("\\s+", " ").trim();
+    }
+
+    private List<String> tokenizeKeyword(String query) {
+        return Arrays.stream(query.split("[\\s,，。；;:：/\\\\|]+"))
+                .map(String::trim)
+                .filter(term -> term.length() >= 2)
+                .distinct()
+                .limit(8)
+                .collect(Collectors.toList());
+    }
+
+    private double scoreKeywordCandidate(
+            KeywordCandidate candidate,
+            KnowledgeDocument document,
+            String query,
+            List<String> terms) {
+        String content = lower(candidate.chunk.getContent());
+        String sectionTitle = lower(candidate.chunk.getSectionTitle());
+        String fileName = lower(document != null ? document.getFileName() : null);
+        String lowerQuery = lower(query);
+
+        double score = 0.1d;
+        if (contains(content, lowerQuery)) score += 0.55d;
+        if (contains(sectionTitle, lowerQuery)) score += 0.2d;
+        if (contains(fileName, lowerQuery)) score += 0.3d;
+        if (candidate.fileNameMatched) score += 0.15d;
+
+        for (String term : terms) {
+            String lowerTerm = lower(term);
+            if (contains(content, lowerTerm)) score += 0.08d;
+            if (contains(sectionTitle, lowerTerm)) score += 0.05d;
+            if (contains(fileName, lowerTerm)) score += 0.06d;
+        }
+        return Math.min(score, 1.0d);
+    }
+
+    private boolean contains(String source, String target) {
+        return source != null && target != null && !target.isBlank() && source.contains(target);
+    }
+
+    private String lower(String value) {
+        return value == null ? "" : value.toLowerCase(Locale.ROOT);
+    }
+
     private record ScoredCandidate(MilvusVectorStore.SearchResult result, double score) {}
+
+    private record KeywordCandidate(KnowledgeChunk chunk, boolean fileNameMatched) {}
 }

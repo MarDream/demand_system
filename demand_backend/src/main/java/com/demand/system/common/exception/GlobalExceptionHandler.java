@@ -248,7 +248,7 @@ public class GlobalExceptionHandler {
         }
 
         // 不返回原始SQL错误信息，避免泄露表结构
-        log.warn("SQL error detail (not exposed to client): {}", message);
+        log.error("SQL error detail (not exposed to client): {}", message);
         return "数据操作失败，请稍后重试或联系管理员";
     }
 
@@ -317,12 +317,13 @@ public class GlobalExceptionHandler {
             String clientIp = getClientIp(request);
 
             // 根据异常类型选择日志级别
+            // 业务异常/输入校验异常用 warn，但补充异常对象以便追踪堆栈
             if (e instanceof BusinessException ||
                 e instanceof IllegalArgumentException ||
                 e instanceof IllegalStateException ||
                 e instanceof ConstraintViolationException) {
                 log.warn("{} - traceId={}, method={}, uri={}, ip={}, error={}",
-                        message, traceId, method, uri, clientIp, e.getMessage());
+                        message, traceId, method, uri, clientIp, e.getMessage(), e);
             } else {
                 log.error("{} - traceId={}, method={}, uri={}, ip={}",
                         message, traceId, method, uri, clientIp, e);
@@ -332,7 +333,7 @@ public class GlobalExceptionHandler {
             if (e instanceof BusinessException ||
                 e instanceof IllegalArgumentException ||
                 e instanceof IllegalStateException) {
-                log.warn("{} - traceId={}, error={}", message, traceId, e.getMessage());
+                log.warn("{} - traceId={}, error={}", message, traceId, e.getMessage(), e);
             } else {
                 log.error("{} - traceId={}", message, traceId, e);
             }

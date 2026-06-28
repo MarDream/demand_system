@@ -38,6 +38,10 @@ public class WorkflowVersionDTO {
 
     private WorkflowConfigDTO config;
 
+    private Long knowledgeBaseId;
+
+    private String knowledgeBaseName;
+
     public Long getId() {
         return id;
     }
@@ -172,5 +176,21 @@ public class WorkflowVersionDTO {
 
     public void setConfig(WorkflowConfigDTO config) {
         this.config = config;
+    }
+
+    public Long getKnowledgeBaseId() {
+        return knowledgeBaseId;
+    }
+
+    public void setKnowledgeBaseId(Long knowledgeBaseId) {
+        this.knowledgeBaseId = knowledgeBaseId;
+    }
+
+    public String getKnowledgeBaseName() {
+        return knowledgeBaseName;
+    }
+
+    public void setKnowledgeBaseName(String knowledgeBaseName) {
+        this.knowledgeBaseName = knowledgeBaseName;
     }
 }

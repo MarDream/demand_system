@@ -15,6 +15,8 @@ public class WorkflowVersionMetaUpdateDTO {
     @Size(max = 50, message = "版本名称不能超过50个字符")
     private String name;
 
+    private Long knowledgeBaseId;
+
     public String getVersion() {
         return version;
     }
@@ -29,5 +31,13 @@ public class WorkflowVersionMetaUpdateDTO {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public Long getKnowledgeBaseId() {
+        return knowledgeBaseId;
+    }
+
+    public void setKnowledgeBaseId(Long knowledgeBaseId) {
+        this.knowledgeBaseId = knowledgeBaseId;
     }
 }

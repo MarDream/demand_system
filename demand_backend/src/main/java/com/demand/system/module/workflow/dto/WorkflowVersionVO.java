@@ -76,6 +76,12 @@ public class WorkflowVersionVO {
     @Schema(description = "关联的运行中工单数")
     private Long runningInstanceCount;
 
+    @Schema(description = "关联知识库ID")
+    private Long knowledgeBaseId;
+
+    @Schema(description = "关联知识库名称")
+    private String knowledgeBaseName;
+
     // Getters and Setters
     public Long getId() {
         return id;
@@ -251,5 +257,21 @@ public class WorkflowVersionVO {
 
     public void setRunningInstanceCount(Long runningInstanceCount) {
         this.runningInstanceCount = runningInstanceCount;
+    }
+
+    public Long getKnowledgeBaseId() {
+        return knowledgeBaseId;
+    }
+
+    public void setKnowledgeBaseId(Long knowledgeBaseId) {
+        this.knowledgeBaseId = knowledgeBaseId;
+    }
+
+    public String getKnowledgeBaseName() {
+        return knowledgeBaseName;
+    }
+
+    public void setKnowledgeBaseName(String knowledgeBaseName) {
+        this.knowledgeBaseName = knowledgeBaseName;
     }
 }

@@ -10,9 +10,13 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.RestTemplate;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.math.BigDecimal;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -114,6 +118,16 @@ public class LlmGateway {
         } catch (Exception e) {
             log.error("Chat调用失败: model={}", provider.getModel(), e);
             throw new RuntimeException("Chat调用失败: " + e.getMessage());
+        }
+    }
+
+    public void streamChat(String systemPrompt, String userMessage, Consumer<String> tokenConsumer) {
+        LlmGatewayConfig.Provider provider = config.getChat();
+        try {
+            streamChatWithProvider(provider, systemPrompt, userMessage, null, null, tokenConsumer);
+        } catch (Exception e) {
+            log.error("Chat流式调用失败: model={}", provider.getModel(), e);
+            throw new RuntimeException("Chat流式调用失败: " + e.getMessage());
         }
     }
 
@@ -231,6 +245,23 @@ public class LlmGateway {
         }
     }
 
+    public void streamChatWithProvider(
+            LlmGatewayConfig.Provider provider,
+            String systemPrompt,
+            String userMessage,
+            BigDecimal temperature,
+            Integer maxTokens,
+            Consumer<String> tokenConsumer
+    ) {
+        Protocol protocol = config.resolveProtocol(provider);
+        Map<String, Object> body = protocol == Protocol.ANTHROPIC
+                ? buildAnthropicChatBody(provider, systemPrompt, userMessage, temperature, maxTokens)
+                : buildOpenAIChatBody(provider, systemPrompt, userMessage, temperature, maxTokens);
+        body.put("stream", true);
+        String path = protocol == Protocol.ANTHROPIC ? "/messages" : "/chat/completions";
+        streamCall(provider, path, body, protocol, tokenConsumer);
+    }
+
     private JsonNode callOpenAIChatRaw(
             LlmGatewayConfig.Provider provider,
             String systemPrompt,
@@ -238,14 +269,7 @@ public class LlmGateway {
             BigDecimal temperature,
             Integer maxTokens
     ) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("model", provider.getModel());
-        body.put("messages", List.of(
-                Map.of("role", "system", "content", systemPrompt),
-                Map.of("role", "user", "content", userMessage)
-        ));
-        body.put("temperature", normalizeTemperature(temperature));
-        body.put("max_tokens", normalizeMaxTokens(maxTokens));
+        Map<String, Object> body = buildOpenAIChatBody(provider, systemPrompt, userMessage, temperature, maxTokens);
         return call(provider, "/chat/completions", body);
     }
 
@@ -261,14 +285,7 @@ public class LlmGateway {
             HttpHeaders headers = buildHeaders(provider);
             headers.setContentType(MediaType.APPLICATION_JSON);
 
-            Map<String, Object> body = new HashMap<>();
-            body.put("model", provider.getModel());
-            body.put("max_tokens", normalizeMaxTokens(maxTokens));
-            body.put("system", systemPrompt);
-            body.put("messages", List.of(
-                    Map.of("role", "user", "content", userMessage)
-            ));
-            body.put("temperature", normalizeTemperature(temperature));
+            Map<String, Object> body = buildAnthropicChatBody(provider, systemPrompt, userMessage, temperature, maxTokens);
 
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
             String url = buildApiUrl(provider, "/messages");
@@ -277,6 +294,133 @@ public class LlmGateway {
         } catch (Exception e) {
             throw new RuntimeException("Anthropic Chat调用失败: " + e.getMessage(), e);
         }
+    }
+
+    private Map<String, Object> buildOpenAIChatBody(
+            LlmGatewayConfig.Provider provider,
+            String systemPrompt,
+            String userMessage,
+            BigDecimal temperature,
+            Integer maxTokens
+    ) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("model", provider.getModel());
+        body.put("messages", List.of(
+                Map.of("role", "system", "content", systemPrompt),
+                Map.of("role", "user", "content", userMessage)
+        ));
+        body.put("temperature", normalizeTemperature(temperature));
+        body.put("max_tokens", normalizeMaxTokens(maxTokens));
+        return body;
+    }
+
+    private Map<String, Object> buildAnthropicChatBody(
+            LlmGatewayConfig.Provider provider,
+            String systemPrompt,
+            String userMessage,
+            BigDecimal temperature,
+            Integer maxTokens
+    ) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("model", provider.getModel());
+        body.put("max_tokens", normalizeMaxTokens(maxTokens));
+        body.put("system", systemPrompt);
+        body.put("messages", List.of(
+                Map.of("role", "user", "content", userMessage)
+        ));
+        body.put("temperature", normalizeTemperature(temperature));
+        return body;
+    }
+
+    private void streamCall(
+            LlmGatewayConfig.Provider provider,
+            String path,
+            Map<String, Object> body,
+            Protocol protocol,
+            Consumer<String> tokenConsumer
+    ) {
+        RestTemplate restTemplate = new RestTemplate();
+        HttpHeaders headers = buildHeaders(provider);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setAccept(List.of(MediaType.TEXT_EVENT_STREAM, MediaType.APPLICATION_JSON));
+
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+        String url = buildApiUrl(provider, path);
+
+        restTemplate.execute(url, HttpMethod.POST, request -> {
+            request.getHeaders().putAll(headers);
+            objectMapper.writeValue(request.getBody(), entity.getBody());
+        }, response -> {
+            if (!response.getStatusCode().is2xxSuccessful()) {
+                throw new RuntimeException("LLM API流式调用失败: HTTP " + response.getStatusCode().value());
+            }
+
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(response.getBody(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    handleStreamLine(line, protocol, tokenConsumer);
+                }
+            }
+            return null;
+        });
+    }
+
+    private void handleStreamLine(String line, Protocol protocol, Consumer<String> tokenConsumer) {
+        if (line == null || line.isBlank() || line.startsWith(":")) {
+            return;
+        }
+        if (!line.startsWith("data:")) {
+            return;
+        }
+
+        String payload = line.substring("data:".length()).trim();
+        if (payload.isBlank() || "[DONE]".equals(payload)) {
+            return;
+        }
+
+        try {
+            JsonNode root = objectMapper.readTree(payload);
+            String delta = protocol == Protocol.ANTHROPIC ? extractAnthropicDelta(root) : extractOpenAIDelta(root);
+            if (delta != null && !delta.isEmpty()) {
+                tokenConsumer.accept(delta);
+            }
+        } catch (Exception e) {
+            log.debug("忽略无法解析的LLM流式片段: {}", payload, e);
+        }
+    }
+
+    private String extractOpenAIDelta(JsonNode root) {
+        JsonNode choice = root.path("choices").path(0);
+        JsonNode deltaNode = choice.path("delta").path("content");
+        if (deltaNode.isTextual()) {
+            return deltaNode.asText();
+        }
+        JsonNode messageNode = choice.path("message").path("content");
+        if (messageNode.isTextual()) {
+            return messageNode.asText();
+        }
+        JsonNode textNode = choice.path("text");
+        return textNode.isTextual() ? textNode.asText() : null;
+    }
+
+    private String extractAnthropicDelta(JsonNode root) {
+        JsonNode textNode = root.path("delta").path("text");
+        if (textNode.isTextual()) {
+            return textNode.asText();
+        }
+        JsonNode contentNode = root.path("content_block").path("text");
+        if (contentNode.isTextual()) {
+            return contentNode.asText();
+        }
+        JsonNode content = root.path("content");
+        if (content.isArray() && content.size() > 0) {
+            JsonNode firstText = content.path(0).path("text");
+            if (firstText.isTextual()) {
+                return firstText.asText();
+            }
+        }
+        return null;
     }
 
     private double normalizeTemperature(BigDecimal temperature) {

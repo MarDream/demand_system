@@ -5,8 +5,10 @@ import com.demand.system.module.knowledge.dto.KnowledgeSearchRequest;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse;
 import com.demand.system.module.knowledge.service.KnowledgeSearchService;
 import jakarta.validation.Valid;
+import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -25,6 +27,12 @@ public class KnowledgeSearchController {
     public Result<KnowledgeSearchResponse> search(@Valid @RequestBody KnowledgeSearchRequest request) {
         KnowledgeSearchResponse response = searchService.search(request);
         return Result.success(response);
+    }
+
+    @PostMapping(value = "/search/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @PreAuthorize("isAuthenticated()")
+    public SseEmitter streamSearch(@Valid @RequestBody KnowledgeSearchRequest request) {
+        return searchService.streamSearch(request);
     }
 
     @GetMapping("/stats")

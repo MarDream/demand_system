@@ -49,6 +49,25 @@ public interface KnowledgeDocumentService {
                                                String requirementTitle, List<RequirementAttachmentDTO> attachments, Long uploaderId);
 
     /**
+     * 同步需求附件到指定知识库（包含需求上下文信息）
+     *
+     * @param knowledgeBaseId 目标知识库ID
+     * @param projectId 项目ID
+     * @param requirementId 需求ID
+     * @param requirementCode 需求编号
+     * @param requirementTitle 需求标题
+     * @param attachments 附件列表
+     * @param uploaderId 上传人ID
+     */
+    void syncRequirementAttachmentsToKnowledgeBase(Long knowledgeBaseId,
+                                                   Long projectId,
+                                                   Long requirementId,
+                                                   String requirementCode,
+                                                   String requirementTitle,
+                                                   List<RequirementAttachmentDTO> attachments,
+                                                   Long uploaderId);
+
+    /**
      * 获取文档的需求引用列表
      *
      * @param documentId 文档ID

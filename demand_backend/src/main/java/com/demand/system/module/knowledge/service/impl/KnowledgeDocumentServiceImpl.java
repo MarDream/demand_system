@@ -265,40 +265,51 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         if (attachments == null || attachments.isEmpty()) {
             return;
         }
-
-        // 1. 确定目标知识库（优先使用默认知识库）
         Long targetKbId = getTargetKnowledgeBaseForRequirements(projectId, uploaderId);
+        syncRequirementAttachmentsToKnowledgeBase(targetKbId, projectId, requirementId, requirementCode, requirementTitle, attachments, uploaderId);
+    }
 
-        // 2. 遍历附件，判重并建立引用
+    @Override
+    @Transactional
+    public void syncRequirementAttachmentsToKnowledgeBase(Long knowledgeBaseId,
+                                                          Long projectId,
+                                                          Long requirementId,
+                                                          String requirementCode,
+                                                          String requirementTitle,
+                                                          List<RequirementAttachmentDTO> attachments,
+                                                          Long uploaderId) {
+        if (attachments == null || attachments.isEmpty()) {
+            return;
+        }
+        if (knowledgeBaseId == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "目标知识库不能为空");
+        }
+
+        KnowledgeBase targetKb = knowledgeBaseMapper.selectById(knowledgeBaseId);
+        if (targetKb == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "目标知识库不存在");
+        }
+
         for (RequirementAttachmentDTO attachment : attachments) {
             if (attachment == null) {
                 continue;
             }
 
             String fileType = extractFileType(attachment.getName());
-
-            // 3. 判重：查询是否已存在相同文件名+大小的文档
             KnowledgeDocument existingDoc = findDocumentByFileNameAndSize(
-                    targetKbId,
+                    knowledgeBaseId,
                     attachment.getName(),
                     attachment.getSize()
             );
 
             if (existingDoc != null) {
-                // 4. 文件已存在，仅添加引用关系
-                addRequirementReference(
-                        existingDoc.getId(),
-                        requirementId,
-                        requirementCode,
-                        requirementTitle
-                );
-                log.info("文件已存在知识库，添加需求引用: docId={}, reqId={}, fileName={}",
-                        existingDoc.getId(), requirementId, attachment.getName());
+                addRequirementReference(existingDoc.getId(), requirementId, requirementCode, requirementTitle);
+                log.info("文件已存在知识库，添加需求引用: kbId={}, docId={}, reqId={}, fileName={}",
+                        knowledgeBaseId, existingDoc.getId(), requirementId, attachment.getName());
             } else {
-                // 5. 文件不存在，新增文档并建立引用
                 KnowledgeDocument doc = new KnowledgeDocument();
-                doc.setKnowledgeBaseId(targetKbId);
-                doc.setProjectId(projectId);
+                doc.setKnowledgeBaseId(knowledgeBaseId);
+                doc.setProjectId(projectId != null ? projectId : targetKb.getProjectId());
                 doc.setRequirementId(requirementId);
                 doc.setFileName(attachment.getName());
                 doc.setFileType(fileType);
@@ -315,26 +326,18 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 doc.setDownloadCount(0);
                 documentMapper.insert(doc);
 
-                // 建立需求引用
-                addRequirementReference(
-                        doc.getId(),
-                        requirementId,
-                        requirementCode,
-                        requirementTitle
-                );
-
-                // 6. 触发预览预热和文档解析
+                addRequirementReference(doc.getId(), requirementId, requirementCode, requirementTitle);
                 enqueuePreviewWarmup(doc);
                 if ("pending".equals(doc.getStatus())) {
                     enqueueDocumentProcessing(doc.getId());
                 }
 
-                log.info("新文档入库: docId={}, reqId={}, fileName={}", doc.getId(), requirementId, attachment.getName());
+                log.info("新文档入库: kbId={}, docId={}, reqId={}, fileName={}",
+                        knowledgeBaseId, doc.getId(), requirementId, attachment.getName());
             }
         }
 
-        // 7. 更新知识库统计
-        updateKnowledgeBaseCount(targetKbId);
+        updateKnowledgeBaseCount(knowledgeBaseId);
     }
 
     @Override
@@ -846,7 +849,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             rabbitTemplate.convertAndSend("knowledge.exchange", "knowledge.document.process", docId);
             log.info("文档处理任务已发送到消息队列: docId={}", docId);
         } catch (Exception e) {
-            log.warn("消息队列发送失败，同步处理: docId={}", docId, e);
+            log.error("消息队列发送失败，同步处理: docId={}", docId, e);
             processDocument(docId);
         }
     }
@@ -1180,10 +1183,10 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             return "[此文档受密码保护，无法建立索引]";
         } catch (java.io.IOException e) {
             // PDFBox 3.x 解析异常统一为 IOException，密码保护场景已由 InvalidPasswordException 覆盖
-            log.error("PDF 内容解析失败（文件可能损坏或格式异常）: {}", e.getMessage());
+            log.error("PDF 内容解析失败（文件可能损坏或格式异常）", e);
             return "";
         } catch (Exception e) {
-            log.error("PDF 内容解析失败: {}", e.getMessage());
+            log.error("PDF 内容解析失败", e);
             return "";
         }
     }
@@ -1196,7 +1199,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             log.warn("DOCX 文件受密码保护，无法提取文本: {}", e.getMessage());
             return "[此文档受密码保护，无法建立索引]";
         } catch (Exception e) {
-            log.error("DOCX 内容解析失败: {}", e.getMessage());
+            log.error("DOCX 内容解析失败", e);
             return "";
         }
     }
@@ -1209,7 +1212,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             log.warn("DOC 文件受密码保护，无法提取文本: {}", e.getMessage());
             return "[此文档受密码保护，无法建立索引]";
         } catch (Exception e) {
-            log.error("DOC 内容解析失败: {}", e.getMessage());
+            log.error("DOC 内容解析失败", e);
             return "";
         }
     }
@@ -1264,7 +1267,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             }
             return chunks;
         } catch (Exception e) {
-            log.error("Excel 内容解析失败（文件可能包含超大 zip entry 或已损坏）: {}", e.getMessage());
+            log.error("Excel 内容解析失败（文件可能包含超大 zip entry 或已损坏）", e);
             return chunks; // 失败时返回已解析的 chunks（可能为空），不再让上游抛错
         }
     }

@@ -54,7 +54,7 @@ public class StateMachine {
     public boolean transition(Long requirementId, Long fromStateId, Long toStateId, Long userId, String comment) {
         Requirement requirement = requirementMapper.selectById(requirementId);
         if (requirement == null) {
-            log.error("Requirement {} not found", requirementId);
+            log.warn("Requirement {} not found", requirementId);
             return false;
         }
 
@@ -78,16 +78,16 @@ public class StateMachine {
                 .last("LIMIT 1"));
 
         if (!definitionDriven && transition == null) {
-            log.error("Transition from state {} to state {} does not exist", fromStateId, toStateId);
+            log.warn("Transition from state {} to state {} does not exist", fromStateId, toStateId);
             return false;
         }
         if (definitionDriven && resolvedSpec.isEmpty()) {
-            log.error("No executable BPMN path from {} to {}", fromState.getName(), targetState.getName());
+            log.warn("No executable BPMN path from {} to {}", fromState.getName(), targetState.getName());
             return false;
         }
 
         if (!permissionEngine.canTransition(requirementId, fromStateId, toStateId, userId)) {
-            log.error("User {} not permitted to transition from {} to {}", userId, fromStateId, toStateId);
+            log.warn("User {} not permitted to transition from {} to {}", userId, fromStateId, toStateId);
             return false;
         }
 
@@ -96,7 +96,7 @@ public class StateMachine {
                 .orElseGet(() -> transition == null ? null : transition.getRequiredFields());
         if (StringUtils.hasText(requiredFields)) {
             if (!validateRequiredFields(requirement, requiredFields)) {
-                log.error("Required fields not filled for requirement {}", requirementId);
+                log.warn("Required fields not filled for requirement {}", requirementId);
                 return false;
             }
         }
@@ -105,7 +105,7 @@ public class StateMachine {
 
         Requirement currentReq = requirementMapper.selectById(requirementId);
         if (currentReq == null) {
-            log.error("Requirement {} disappeared during transition", requirementId);
+            log.warn("Requirement {} disappeared during transition", requirementId);
             return false;
         }
         String currentStateName = currentReq.getStatus();

@@ -23,6 +23,15 @@ public interface RequirementService {
 
     PageResult<RequirementListVO> list(RequirementQueryDTO query);
 
+    /**
+     * 导出用：按检索条件查询全量需求数据
+     *
+     * @param query 检索条件
+     * @param view  视图类型：all / drafts / pending / done / follows
+     * @return 导出数据列表（每行为 Map，key 为字段名）
+     */
+    List<Map<String, Object>> listForExport(RequirementQueryDTO query, String view);
+
     RequirementVO getDetail(Long id);
 
     void create(RequirementCreateDTO dto, Long creatorId);

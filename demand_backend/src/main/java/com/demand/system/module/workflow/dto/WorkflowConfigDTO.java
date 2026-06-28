@@ -23,6 +23,11 @@ public class WorkflowConfigDTO {
      */
     private String versionName;
 
+    /**
+     * 关联知识库ID，流转附件自动入库目标
+     */
+    private Long knowledgeBaseId;
+
     public List<WorkflowNodeDTO> getNodes() {
         return nodes;
     }
@@ -61,5 +66,13 @@ public class WorkflowConfigDTO {
 
     public void setVersionName(String versionName) {
         this.versionName = versionName;
+    }
+
+    public Long getKnowledgeBaseId() {
+        return knowledgeBaseId;
+    }
+
+    public void setKnowledgeBaseId(Long knowledgeBaseId) {
+        this.knowledgeBaseId = knowledgeBaseId;
     }
 }

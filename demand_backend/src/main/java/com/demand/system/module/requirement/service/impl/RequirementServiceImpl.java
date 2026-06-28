@@ -2428,4 +2428,288 @@ public class RequirementServiceImpl implements RequirementService {
             notificationService.sendNotification(requirement.getAssigneeId(), title, content, "requirement", requirement.getId());
         }
     }
+
+    /** 导出数据量上限：超过此数量拒绝导出，防止 OOM 和超时 */
+    private static final int EXPORT_MAX_ROWS = 50000;
+
+    @Override
+    public List<Map<String, Object>> listForExport(RequirementQueryDTO query, String view) {
+        Long currentUserId = SecurityUtils.getCurrentUserId();
+        if (currentUserId == null) {
+            throw new BusinessException(401, "未登录或登录已过期");
+        }
+
+        // 构建类型/优先级映射
+        Map<String, String> typeMap = requirementConfigService.listTypes().getData().stream()
+                .collect(Collectors.toMap(
+                        t -> t.getCode() != null ? t.getCode() : "",
+                        t -> t.getName() != null ? t.getName() : "",
+                        (a, b) -> a
+                ));
+        Map<String, String> priorityMap = requirementConfigService.listPriorities().getData().stream()
+                .collect(Collectors.toMap(
+                        p -> p.getCode() != null ? p.getCode() : "",
+                        p -> p.getName() != null ? p.getName() : "",
+                        (a, b) -> a
+                ));
+
+        List<Requirement> records;
+        switch (view) {
+            case "drafts" -> {
+                RequirementMyListQueryDTO myQuery = buildMyListQuery(query);
+                Page<Requirement> page = new Page<>(1, 10000);
+                var result = requirementMapper.selectMyDrafts(page, currentUserId, null, null,
+                        myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
+                        myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword());
+                records = result.getRecords();
+            }
+            case "pending" -> {
+                RequirementMyListQueryDTO myQuery = buildMyListQuery(query);
+                Page<Requirement> page = new Page<>(1, 10000);
+                IPage<Requirement> result;
+                if (USE_V2_ARCHITECTURE) {
+                    List<Long> roleIds = getUserRoleIds(currentUserId);
+                    List<Long> orgIds = getUserOrgIds(currentUserId);
+                    result = requirementMapper.selectMyPendingV2(page, currentUserId, roleIds, orgIds,
+                            myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
+                            myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword());
+                } else {
+                    List<String> roleCodes = SecurityUtils.getCurrentUserRoles();
+                    List<Long> directOrgIds = resolveDirectOrgIds(currentUserId);
+                    List<Long> scopedOrgIds = resolveScopedOrgIds(directOrgIds);
+                    result = requirementMapper.selectMyPending(page, currentUserId, roleCodes, directOrgIds, scopedOrgIds,
+                            myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
+                            myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword());
+                }
+                records = result.getRecords();
+            }
+            case "done" -> {
+                RequirementMyListQueryDTO myQuery = buildMyListQuery(query);
+                Page<Requirement> page = new Page<>(1, 10000);
+                IPage<Requirement> result;
+                if (USE_V2_ARCHITECTURE) {
+                    List<Long> roleIds = getUserRoleIds(currentUserId);
+                    List<Long> orgIds = getUserOrgIds(currentUserId);
+                    result = requirementMapper.selectMyDoneV2(page, currentUserId, roleIds, orgIds,
+                            myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
+                            myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword());
+                } else {
+                    List<String> roleCodes = SecurityUtils.getCurrentUserRoles();
+                    List<Long> directOrgIds = resolveDirectOrgIds(currentUserId);
+                    List<Long> scopedOrgIds = resolveScopedOrgIds(directOrgIds);
+                    result = requirementMapper.selectMyDone(page, currentUserId, roleCodes, directOrgIds, scopedOrgIds,
+                            myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
+                            myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword());
+                }
+                records = result.getRecords();
+            }
+            case "follows" -> {
+                RequirementMyListQueryDTO myQuery = buildMyListQuery(query);
+                List<String> currentRoleCodes = SecurityUtils.getCurrentUserRoles();
+                boolean isSuperAdmin = isSuperAdmin(currentRoleCodes);
+                List<Long> visibleOrgIds = resolveVisibleOrgIds(currentUserId, isSuperAdmin);
+                Page<Requirement> page = new Page<>(1, 10000);
+                var result = requirementMapper.selectMyFollows(page, currentUserId,
+                        myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
+                        myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(),
+                        isSuperAdmin, visibleOrgIds);
+                records = result.getRecords();
+            }
+            default -> {
+                // "all" 视图：复用 list() 的条件构建逻辑，但不分页
+                records = listAllForExport(query, currentUserId);
+            }
+        }
+
+        // 转换为导出 Map 列表
+        return convertToExportMaps(records, typeMap, priorityMap);
+    }
+
+    /**
+     * "全部需求"视图的导出查询：复用 list() 的条件构建逻辑，查全量
+     */
+    private List<Requirement> listAllForExport(RequirementQueryDTO query, Long currentUserId) {
+        LambdaQueryWrapper<Requirement> wrapper = new LambdaQueryWrapper<>();
+
+        // 草稿仅出现在草稿箱，全部需求中排除草稿
+        wrapper.eq(Requirement::getIsDraft, false);
+
+        List<String> currentRoleCodes = SecurityUtils.getCurrentUserRoles();
+        boolean isSuperAdmin = isSuperAdmin(currentRoleCodes);
+        if (!isSuperAdmin) {
+            List<Long> visibleOrgIds = resolveVisibleOrgIds(currentUserId, false);
+            if (visibleOrgIds.isEmpty()) {
+                throw new BusinessException(400, "您尚未关联组织，请联系管理员配置您的组织信息后再查看需求");
+            } else {
+                wrapper.in(Requirement::getOrgId, visibleOrgIds);
+            }
+        }
+
+        // 复用 list() 的条件构建逻辑
+        if (query.getProjectId() != null) {
+            wrapper.eq(Requirement::getProjectId, query.getProjectId());
+        }
+        if (query.getParentId() != null) {
+            wrapper.eq(Requirement::getParentId, query.getParentId());
+        }
+        if (StringUtils.hasText(query.getType())) {
+            wrapper.eq(Requirement::getType, query.getType());
+        }
+        if (StringUtils.hasText(query.getPriority())) {
+            wrapper.eq(Requirement::getPriority, query.getPriority());
+        }
+        if (StringUtils.hasText(query.getStatus())) {
+            wrapper.eq(Requirement::getStatus, query.getStatus());
+        }
+        if (query.getAssigneeId() != null) {
+            wrapper.eq(Requirement::getAssigneeId, query.getAssigneeId());
+        }
+        if (query.getIterationId() != null) {
+            wrapper.eq(Requirement::getIterationId, query.getIterationId());
+        }
+        if (StringUtils.hasText(query.getKeyword())) {
+            final String keyword = query.getKeyword();
+            wrapper.and(w -> w.apply("MATCH(title, description) AGAINST({0} IN BOOLEAN MODE)", keyword)
+                    .or().like(Requirement::getTitle, keyword)
+                    .or().like(Requirement::getDescription, keyword));
+        }
+        if (query.getCreatedAtStart() != null) {
+            wrapper.ge(Requirement::getCreatedAt, query.getCreatedAtStart());
+        }
+        if (query.getCreatedAtEnd() != null) {
+            wrapper.le(Requirement::getCreatedAt, query.getCreatedAtEnd());
+        }
+        if (query.getAnalysisCompletedAtStart() != null) {
+            wrapper.ge(Requirement::getAnalysisCompletedAt, query.getAnalysisCompletedAtStart());
+        }
+        if (query.getAnalysisCompletedAtEnd() != null) {
+            wrapper.le(Requirement::getAnalysisCompletedAt, query.getAnalysisCompletedAtEnd());
+        }
+        if (query.getConfirmAtStart() != null) {
+            wrapper.ge(Requirement::getConfirmAt, query.getConfirmAtStart());
+        }
+        if (query.getConfirmAtEnd() != null) {
+            wrapper.le(Requirement::getConfirmAt, query.getConfirmAtEnd());
+        }
+        if (query.getDevelopmentCompletedAtStart() != null) {
+            wrapper.ge(Requirement::getDevelopmentCompletedAt, query.getDevelopmentCompletedAtStart());
+        }
+        if (query.getDevelopmentCompletedAtEnd() != null) {
+            wrapper.le(Requirement::getDevelopmentCompletedAt, query.getDevelopmentCompletedAtEnd());
+        }
+
+        wrapper.orderByDesc(Requirement::getCreatedAt);
+
+        // 导出数据量上限保护：先查总数，超限拒绝导出
+        Long count = requirementMapper.selectCount(wrapper);
+        if (count > EXPORT_MAX_ROWS) {
+            throw new BusinessException(400, "导出数据量(" + count + "条)超过上限(" + EXPORT_MAX_ROWS + "条)，请缩小筛选范围后重试");
+        }
+
+        // 不分页，查全量（已有上限保护，数据量可控）
+        return requirementMapper.selectList(wrapper);
+    }
+
+    /**
+     * 将 RequirementQueryDTO 转换为 RequirementMyListQueryDTO
+     */
+    private RequirementMyListQueryDTO buildMyListQuery(RequirementQueryDTO query) {
+        RequirementMyListQueryDTO myQuery = new RequirementMyListQueryDTO();
+        myQuery.setProjectId(query.getProjectId());
+        myQuery.setType(query.getType());
+        myQuery.setPriority(query.getPriority());
+        myQuery.setStatus(query.getStatus());
+        myQuery.setAssigneeId(query.getAssigneeId());
+        myQuery.setKeyword(query.getKeyword());
+        return myQuery;
+    }
+
+    /**
+     * 将 Requirement 列表转换为导出用的 Map 列表
+     */
+    private List<Map<String, Object>> convertToExportMaps(List<Requirement> records,
+                                                          Map<String, String> typeMap,
+                                                          Map<String, String> priorityMap) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        if (records == null || records.isEmpty()) {
+            return result;
+        }
+
+        // 批量填充用户名/部门
+        Set<Long> allUserIds = new java.util.HashSet<>();
+        Set<Long> allOrgIds = new java.util.HashSet<>();
+        for (Requirement r : records) {
+            if (r.getCreatorId() != null) allUserIds.add(r.getCreatorId());
+            if (r.getAssigneeId() != null) allUserIds.add(r.getAssigneeId());
+        }
+
+        Map<Long, User> userMap = allUserIds.isEmpty() ? Collections.emptyMap() : userLocalCache.batchGetUsers(allUserIds);
+        for (User u : userMap.values()) {
+            if (u != null) {
+                if (u.getOrgId() != null) allOrgIds.add(u.getOrgId());
+                if (u.getDepartmentId() != null) allOrgIds.add(u.getDepartmentId());
+            }
+        }
+
+        Map<Long, String> orgNameMap = new java.util.HashMap<>();
+        if (!allOrgIds.isEmpty()) {
+            Map<Long, SysOrgVO> orgMap = orgLocalCache.batchGetOrgs(allOrgIds);
+            for (var entry : orgMap.entrySet()) {
+                if (entry.getValue() != null && entry.getValue().getName() != null) {
+                    orgNameMap.put(entry.getKey(), entry.getValue().getName());
+                }
+            }
+        }
+
+        DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        DateTimeFormatter df = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+
+        for (Requirement r : records) {
+            Map<String, Object> row = new java.util.LinkedHashMap<>();
+            row.put("title", r.getTitle() != null ? r.getTitle() : "");
+            row.put("requirementNo", r.getRequirementNo() != null ? r.getRequirementNo() : "");
+            row.put("typeName", typeMap.getOrDefault(r.getType(), r.getType() != null ? r.getType() : ""));
+            row.put("priorityName", priorityMap.getOrDefault(r.getPriority(), r.getPriority() != null ? r.getPriority() : ""));
+            row.put("status", r.getStatus() != null ? r.getStatus() : "");
+
+            // 提出人
+            String creatorName = "";
+            String departmentName = "";
+            if (r.getCreatorId() != null) {
+                User creator = userMap.get(r.getCreatorId());
+                if (creator != null) {
+                    creatorName = resolveUserDisplayName(creator);
+                    if (creator.getOrgId() != null && orgNameMap.containsKey(creator.getOrgId())) {
+                        departmentName = orgNameMap.get(creator.getOrgId());
+                    } else if (creator.getDepartmentId() != null && orgNameMap.containsKey(creator.getDepartmentId())) {
+                        departmentName = orgNameMap.get(creator.getDepartmentId());
+                    }
+                }
+            }
+            row.put("creatorName", creatorName);
+
+            // 负责人
+            String assigneeName = "";
+            if (r.getAssigneeId() != null) {
+                User assignee = userMap.get(r.getAssigneeId());
+                if (assignee != null) {
+                    assigneeName = resolveUserDisplayName(assignee);
+                }
+            }
+            row.put("assigneeName", assigneeName);
+            row.put("departmentName", departmentName);
+
+            // 时间字段
+            row.put("createdAt", r.getCreatedAt() != null ? r.getCreatedAt().format(dtf) : "");
+            row.put("dueDate", r.getDueDate() != null ? r.getDueDate().format(df) : "");
+            row.put("analysisCompletedAt", r.getAnalysisCompletedAt() != null ? r.getAnalysisCompletedAt().format(dtf) : "");
+            row.put("confirmAt", r.getConfirmAt() != null ? r.getConfirmAt().format(dtf) : "");
+            row.put("developmentCompletedAt", r.getDevelopmentCompletedAt() != null ? r.getDevelopmentCompletedAt().format(dtf) : "");
+            row.put("description", r.getDescription() != null ? r.getDescription() : "");
+
+            result.add(row);
+        }
+
+        return result;
+    }
 }

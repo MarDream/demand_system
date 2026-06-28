@@ -13,6 +13,9 @@ import com.demand.system.module.requirement.entity.RequirementHistory;
 import com.demand.system.module.requirement.mapper.RequirementHistoryMapper;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
 import com.demand.system.module.requirement.service.RequirementApprovalEvaluationService;
+import com.demand.system.module.knowledge.service.KnowledgeDocumentService;
+import com.demand.system.module.knowledge.entity.KnowledgeBase;
+import com.demand.system.module.knowledge.mapper.KnowledgeBaseMapper;
 import com.demand.system.module.file.entity.FileRecord;
 import com.demand.system.module.file.mapper.FileRecordMapper;
 import com.demand.system.module.project.entity.Project;
@@ -95,6 +98,8 @@ public class WorkflowEngineService {
     private final WorkflowCountersignService countersignService;
     private final WorkflowParallelBranchService parallelBranchService;
     private final FileRecordMapper fileRecordMapper;
+    private final KnowledgeDocumentService knowledgeDocumentService;
+    private final KnowledgeBaseMapper knowledgeBaseMapper;
 
     public WorkflowEngineService(WorkflowInstanceMapper instanceMapper, WorkflowInstanceTransitionMapper transitionMapper,
                                WorkflowNodeMapper nodeMapper, WorkflowEdgeMapper edgeMapper,
@@ -110,7 +115,9 @@ public class WorkflowEngineService {
                                RequirementApprovalEvaluationService approvalEvaluationService,
                                @Lazy WorkflowCountersignService countersignService,
                                WorkflowParallelBranchService parallelBranchService,
-                               FileRecordMapper fileRecordMapper) {
+                               FileRecordMapper fileRecordMapper,
+                               KnowledgeDocumentService knowledgeDocumentService,
+                               KnowledgeBaseMapper knowledgeBaseMapper) {
         this.instanceMapper = instanceMapper;
         this.transitionMapper = transitionMapper;
         this.nodeMapper = nodeMapper;
@@ -134,6 +141,8 @@ public class WorkflowEngineService {
         this.countersignService = countersignService;
         this.parallelBranchService = parallelBranchService;
         this.fileRecordMapper = fileRecordMapper;
+        this.knowledgeDocumentService = knowledgeDocumentService;
+        this.knowledgeBaseMapper = knowledgeBaseMapper;
     }
 
     /**
@@ -368,6 +377,10 @@ public class WorkflowEngineService {
 
         notificationService.notifyNodeEntered(requirement, targetNode, operatorId);
 
+        // ====== 知识库自动入库：流转附件归集到工作流绑定的知识库 ======
+        autoIngestTransitionAttachments(instance, request, requirement, operatorId);
+        // ====== 知识库自动入库 END ======
+
         instance = instanceMapper.selectById(instance.getId());
         parallelBranchService.initParallelBranchesIfNeeded(instance, context, request.getToNodeId(), requirement);
         parallelBranchService.afterTransition(instance, context, instance.getPreviousNodeId(), request.getToNodeId(), requirement);
@@ -399,6 +412,67 @@ public class WorkflowEngineService {
         }
 
         countersignService.initCountersignRecords(instanceId, targetNode.getNodeId(), approverIds);
+    }
+
+    /**
+     * 知识库自动入库：流转时如有附件，自动归集到工作流版本绑定的知识库。
+     *
+     * 核心逻辑：
+     * 1. 从 workflowVersion.knowledgeBaseId 获取目标知识库
+     * 2. 从 FlowTransitionRequest.attachments 提取附件列表
+     * 3. 通过 KnowledgeDocumentService.syncRequirementAttachmentsWithContext 入库
+     *    - 已有判重机制（fileName + fileSize）
+     *    - 已有异步处理（RabbitMQ -> 解析 -> 分块 -> 向量化）
+     *    - 已有需求引用关联（KnowledgeDocumentRequirementRef）
+     */
+    private void autoIngestTransitionAttachments(WorkflowInstance instance,
+                                                  FlowTransitionRequest request,
+                                                  Requirement requirement,
+                                                  Long operatorId) {
+        // 1. 检查附件是否为空
+        if (request.getAttachments() == null || request.getAttachments().isEmpty()) {
+            return;
+        }
+
+        // 2. 获取工作流版本，查询绑定的知识库
+        WorkflowVersion workflowVersion = workflowVersionMapper.selectById(instance.getWorkflowVersionId());
+        if (workflowVersion == null || workflowVersion.getKnowledgeBaseId() == null) {
+            log.debug("工作流版本未绑定知识库，跳过附件自动入库，versionId={}", instance.getWorkflowVersionId());
+            return;
+        }
+
+        Long knowledgeBaseId = workflowVersion.getKnowledgeBaseId();
+
+        // 3. 校验知识库存在且可用
+        KnowledgeBase kb = knowledgeBaseMapper.selectById(knowledgeBaseId);
+        if (kb == null) {
+            log.warn("工作流绑定的知识库不存在，跳过自动入库，versionId={}, knowledgeBaseId={}",
+                    instance.getWorkflowVersionId(), knowledgeBaseId);
+            return;
+        }
+
+        // 4. 构建需求上下文信息
+        String requirementCode = requirement.getRequirementNo() != null ? requirement.getRequirementNo() : "REQ-" + requirement.getId();
+        String requirementTitle = requirement.getTitle();
+
+        try {
+            // 5. 调用知识库文档服务，显式入库到当前工作流绑定的知识库
+            knowledgeDocumentService.syncRequirementAttachmentsToKnowledgeBase(
+                    knowledgeBaseId,
+                    requirement.getProjectId(),
+                    requirement.getId(),
+                    requirementCode,
+                    requirementTitle,
+                    request.getAttachments(),
+                    operatorId
+            );
+            log.info("流转附件自动入库成功，requirementId={}, knowledgeBaseId={}, attachmentCount={}",
+                    requirement.getId(), knowledgeBaseId, request.getAttachments().size());
+        } catch (Exception e) {
+            // 知识库入库失败不影响主流程，仅记录日志
+            log.error("流转附件自动入库失败，requirementId={}, knowledgeBaseId={}",
+                    requirement.getId(), knowledgeBaseId, e);
+        }
     }
 
     /**

@@ -213,6 +213,12 @@
             <artifactId>poi-scratchpad</artifactId>
             <version>5.2.5</version>
         </dependency>
+        <!-- commons-compress: POI 5.2.5 needs 1.21+ with putArchiveEntry(ZipArchiveEntry) -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-compress</artifactId>
+            <version>1.26.1</version>
+        </dependency>
         <!-- Apache PDFBox for pdf parsing -->
         <dependency>
             <groupId>org.apache.pdfbox</groupId>

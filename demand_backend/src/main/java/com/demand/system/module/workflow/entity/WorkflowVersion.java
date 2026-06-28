@@ -52,6 +52,8 @@ public class WorkflowVersion {
 
     private String approvalComment;
 
+    private Long knowledgeBaseId;
+
     public Long getId() {
         return id;
     }
@@ -218,6 +220,14 @@ public class WorkflowVersion {
 
     public void setApprovalComment(String approvalComment) {
         this.approvalComment = approvalComment;
+    }
+
+    public Long getKnowledgeBaseId() {
+        return knowledgeBaseId;
+    }
+
+    public void setKnowledgeBaseId(Long knowledgeBaseId) {
+        this.knowledgeBaseId = knowledgeBaseId;
     }
 
     @Override

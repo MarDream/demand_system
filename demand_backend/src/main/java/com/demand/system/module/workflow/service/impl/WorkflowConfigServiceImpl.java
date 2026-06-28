@@ -31,6 +31,8 @@ import com.demand.system.module.workflow.engine.WorkflowGraphCompiler;
 import com.demand.system.module.workflow.engine.WorkflowGraphValidator;
 import com.demand.system.module.workflow.service.WorkflowActivationService;
 import com.demand.system.module.workflow.support.WorkflowVersionUtils;
+import com.demand.system.module.knowledge.entity.KnowledgeBase;
+import com.demand.system.module.knowledge.mapper.KnowledgeBaseMapper;
 import com.demand.system.module.project.mapper.ProjectMapper;
 import com.demand.system.module.project.entity.Project;
 import com.demand.system.module.auth.mapper.SysUserMapper;
@@ -65,13 +67,15 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
     private final WorkflowGraphValidator workflowGraphValidator;
     private final WorkflowGraphCompiler workflowGraphCompiler;
     private final WorkflowActivationService workflowActivationService;
+    private final KnowledgeBaseMapper knowledgeBaseMapper;
 
     public WorkflowConfigServiceImpl(WorkflowVersionMapper workflowVersionMapper, WorkflowNodeMapper workflowNodeMapper,
                                    WorkflowEdgeMapper workflowEdgeMapper, WorkflowApprovalMapper workflowApprovalMapper,
                                    WorkflowInstanceMapper workflowInstanceMapper, WorkflowNodePermissionMapper workflowNodePermissionMapper,
                                    ProjectMapper projectMapper, SysUserMapper sysUserMapper,
                                    WorkflowGraphValidator workflowGraphValidator, WorkflowGraphCompiler workflowGraphCompiler,
-                                   WorkflowActivationService workflowActivationService) {
+                                   WorkflowActivationService workflowActivationService,
+                                   KnowledgeBaseMapper knowledgeBaseMapper) {
         this.workflowVersionMapper = workflowVersionMapper;
         this.workflowNodeMapper = workflowNodeMapper;
         this.workflowEdgeMapper = workflowEdgeMapper;
@@ -83,6 +87,7 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         this.workflowGraphValidator = workflowGraphValidator;
         this.workflowGraphCompiler = workflowGraphCompiler;
         this.workflowActivationService = workflowActivationService;
+        this.knowledgeBaseMapper = knowledgeBaseMapper;
     }
 
     @Override
@@ -194,6 +199,17 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
                 }
             }
 
+            // 更新知识库绑定（允许清空）
+            if (configDTO.getKnowledgeBaseId() != null) {
+                KnowledgeBase kb = knowledgeBaseMapper.selectById(configDTO.getKnowledgeBaseId());
+                if (kb == null) {
+                    throw new BusinessException("指定的知识库不存在");
+                }
+                existingVersion.setKnowledgeBaseId(configDTO.getKnowledgeBaseId());
+            } else {
+                existingVersion.setKnowledgeBaseId(null);
+            }
+
             workflowVersionMapper.updateById(existingVersion);
 
             log.info("更新工作流版本成功，projectId={}, versionId={}, status={}", normalizedProjectId, existingVersion.getId(), existingVersion.getActivationStatus());
@@ -212,6 +228,16 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
 
         // 创建新草稿版本
         WorkflowVersion draftVersion = createDraftVersion(normalizedProjectId, currentUserId, targetVersion, targetName);
+
+        // 设置知识库绑定
+        if (configDTO.getKnowledgeBaseId() != null) {
+            KnowledgeBase kb = knowledgeBaseMapper.selectById(configDTO.getKnowledgeBaseId());
+            if (kb == null) {
+                throw new BusinessException("指定的知识库不存在");
+            }
+            draftVersion.setKnowledgeBaseId(configDTO.getKnowledgeBaseId());
+            workflowVersionMapper.updateById(draftVersion);
+        }
 
         // 保存节点
         saveNodes(configDTO.getNodes(), draftVersion.getId());
@@ -482,6 +508,20 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
 
         version.setVersion(targetVersion);
         version.setName(targetName);
+
+        // 更新知识库绑定关系
+        if (updateDTO.getKnowledgeBaseId() != null) {
+            // 校验知识库存在且可用
+            KnowledgeBase kb = knowledgeBaseMapper.selectById(updateDTO.getKnowledgeBaseId());
+            if (kb == null) {
+                throw new BusinessException("指定的知识库不存在");
+            }
+            version.setKnowledgeBaseId(updateDTO.getKnowledgeBaseId());
+        } else {
+            // 允许清空绑定
+            version.setKnowledgeBaseId(null);
+        }
+
         workflowVersionMapper.updateById(version);
 
         return toVersionDTO(version);
@@ -959,6 +999,14 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             SysUser user = sysUserMapper.selectById(version.getCreatorId());
             if (user != null) {
                 dto.setCreatorName(StringUtils.hasText(user.getRealName()) ? user.getRealName() : user.getUsername());
+            }
+        }
+
+        // 填充知识库名称
+        if (version.getKnowledgeBaseId() != null) {
+            KnowledgeBase kb = knowledgeBaseMapper.selectById(version.getKnowledgeBaseId());
+            if (kb != null) {
+                dto.setKnowledgeBaseName(kb.getName());
             }
         }
 
