@@ -9,6 +9,8 @@ import type {
   WorkflowValidationIssue,
   WorkflowValidationReport,
   WorkflowMigrationReport,
+  WorkflowExportData,
+  WorkflowImportResponse,
 } from '@/types/workflow-visual'
 
 export const GLOBAL_WORKFLOW_PROJECT_ID = 0
@@ -136,4 +138,22 @@ export function markLegacyWorkflowRequirements() {
 
 export function backfillWorkflowInstances() {
   return request.post<WorkflowMigrationReport>('/v1/admin/workflow-migration/backfill-instances') as unknown as Promise<WorkflowMigrationReport>
+}
+
+/**
+ * 导出工作流（审核通过的版本）
+ */
+export function exportWorkflowVersion(versionId: number) {
+  return request.get<WorkflowExportData>(`/v1/workflows/versions/${versionId}/export`) as unknown as Promise<WorkflowExportData>
+}
+
+/**
+ * 导入工作流
+ */
+export function importWorkflowVersion(data: WorkflowExportData, targetProjectId?: number) {
+  return request.post<WorkflowImportResponse>(
+    '/v1/workflows/import',
+    data,
+    { params: { projectId: targetProjectId ?? GLOBAL_WORKFLOW_PROJECT_ID } },
+  ) as unknown as Promise<WorkflowImportResponse>
 }

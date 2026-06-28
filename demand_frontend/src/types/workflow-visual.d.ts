@@ -139,6 +139,40 @@ export interface WorkflowMigrationReport {
   failedRequirementIds: number[]
 }
 
+// 工作流导出数据格式
+export interface WorkflowExportData {
+  exportVersion: string
+  exportedAt: string
+  exportedBy: string
+  workflow: {
+    name: string
+    version: string
+    projectId: number
+    config: WorkflowConfigDTO
+    metadata: {
+      originalVersionId: number
+      originalCreatedAt: string
+      approvedAt?: string
+      description?: string
+    }
+  }
+}
+
+// 工作流导入响应
+export interface WorkflowImportResponse {
+  success: boolean
+  versionId: number
+  version: string
+  name: string
+  message: string
+  conflicts?: {
+    nameConflict: boolean
+    versionConflict: boolean
+    resolvedName: string
+    resolvedVersion: string
+  }
+}
+
 // LogicFlow 节点数据结构
 export interface LogicFlowNodeData {
   id: string
