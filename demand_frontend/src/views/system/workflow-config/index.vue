@@ -1221,6 +1221,98 @@ async function confirmProcess() {
   }
 }
 
+async function handleExportWorkflow(row: WorkflowVersionDTO) {
+  if (versionApprovalStatus(row) !== 'APPROVED') {
+    ElMessage.warning('只能导出审核通过的工作流')
+    return
+  }
+
+  try {
+    const data = await exportWorkflowVersion(row.id)
+
+    // 生成文件名
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const safeName = row.name.replace(/[^\w\u4E00-\u9FA5-]/g, '_')
+    const filename = `workflow-${safeName}-v${row.version}-${timestamp}.json`
+
+    // 触发下载
+    const blob = new Blob([JSON.stringify(data, null, 2)], {
+      type: 'application/json',
+    })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    link.click()
+    URL.revokeObjectURL(url)
+
+    ElMessage.success('工作流已导出')
+  }
+  catch (error) {
+    ElMessage.error('导出失败')
+    console.error(error)
+  }
+}
+
+function handleImportWorkflow() {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = '.json'
+
+  input.onchange = async (e: Event) => {
+    const file = (e.target as HTMLInputElement).files?.[0]
+    if (!file)
+      return
+
+    try {
+      const text = await file.text()
+      const data: WorkflowExportData = JSON.parse(text)
+
+      // 校验数据格式
+      if (!data.workflow?.config?.nodes || !data.workflow?.config?.edges) {
+        ElMessage.error('导入文件格式不正确')
+        return
+      }
+
+      // 确认导入
+      await ElMessageBox.confirm(
+        `确认导入工作流"${data.workflow.name}"吗？\n\n原版本号：V${data.workflow.version}\n导入后将自动分配新的版本号和名称（如有冲突）`,
+        '导入确认',
+        { type: 'info' },
+      )
+
+      // 调用导入接口
+      const result = await importWorkflowVersion(data, GLOBAL_WORKFLOW_PROJECT_ID)
+
+      // 显示结果
+      let message = `导入成功！\n新版本：V${result.version}\n新名称：${result.name}`
+      if (result.conflicts?.nameConflict) {
+        message += '\n（已自动重命名避免冲突）'
+      }
+      ElMessage.success(message)
+
+      // 刷新列表
+      await reloadAllData()
+
+      // 跳转到新导入的版本
+      const newVersion = versions.value.find(v => v.id === result.versionId)
+      if (newVersion) {
+        viewWorkflow(newVersion)
+      }
+    }
+    catch (error: any) {
+      if (error === 'cancel')
+        return
+
+      const message = error?.response?.data?.message || error?.message || '导入失败'
+      ElMessage.error(message)
+      console.error(error)
+    }
+  }
+
+  input.click()
+}
+
 onMounted(() => {
   reloadAllData()
   loadVersionColumnConfig()
