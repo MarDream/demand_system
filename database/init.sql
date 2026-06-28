@@ -321,12 +321,14 @@ CREATE TABLE `workflow_versions` (
   `runtime_hash` VARCHAR(64) DEFAULT NULL COMMENT '启用时图结构哈希',
   `is_active` TINYINT DEFAULT 0 COMMENT '是否当前启用 0=否 1=是',
   `activation_status` VARCHAR(20) NOT NULL DEFAULT 'draft' COMMENT 'draft/pending/approved/active/inactive',
+  `knowledge_base_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联知识库ID，流转附件自动入库目标',
   `activated_at` DATETIME DEFAULT NULL COMMENT '最近一次启用时间',
   `creator_id` INT UNSIGNED NOT NULL COMMENT '创建人ID',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   INDEX `idx_project_id` (`project_id`),
   INDEX `idx_is_active` (`is_active`),
+  INDEX `idx_knowledge_base_id` (`knowledge_base_id`),
   UNIQUE INDEX `uk_project_version` (`project_id`, `version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工作流版本表';
 
@@ -651,7 +653,20 @@ CREATE TABLE `requirements` (
   INDEX `idx_deleted_draft_updated` (`deleted_at`, `is_draft`, `updated_at` DESC) COMMENT '性能优化:按删除状态+草稿状态+更新时间查询',
   INDEX `idx_deleted_draft_orgid` (`deleted_at`, `is_draft`, `org_id`) COMMENT '性能优化:按删除状态+草稿状态+组织过滤',
   INDEX `idx_workflow_instance` (`workflow_instance_id`) COMMENT '性能优化:通过工作流实例反查需求',
-  UNIQUE INDEX `uk_requirement_no` (`requirement_no`)
+  UNIQUE INDEX `uk_requirement_no` (`requirement_no`),
+  -- ===== 性能优化: 列表查询覆盖索引（解决按状态/类型/优先级检索超时） =====
+  -- 核心查询模式: WHERE deleted_at=0 AND is_draft=0 AND org_id IN (...) AND status=? ORDER BY created_at DESC
+  INDEX `idx_list_status_cover` (`deleted_at`, `is_draft`, `org_id`, `status`, `created_at` DESC)
+      COMMENT '覆盖索引:按状态检索+组织过滤+排序，命中最频繁的查询模式',
+  INDEX `idx_list_type_cover` (`deleted_at`, `is_draft`, `org_id`, `type`, `created_at` DESC)
+      COMMENT '覆盖索引:按类型检索+组织过滤+排序',
+  INDEX `idx_list_priority_cover` (`deleted_at`, `is_draft`, `org_id`, `priority`, `created_at` DESC)
+      COMMENT '覆盖索引:按优先级检索+组织过滤+排序',
+  INDEX `idx_list_assignee_cover` (`deleted_at`, `is_draft`, `org_id`, `assignee_id`, `created_at` DESC)
+      COMMENT '覆盖索引:按负责人检索+组织过滤+排序',
+  -- 全文索引: 关键词搜索 MATCH(title, description) AGAINST
+  FULLTEXT INDEX `ft_title_desc` (`title`, `description`) WITH PARSER ngram
+      COMMENT '全文索引:ngram分词，支持中文关键词搜索，替代 LIKE 模糊查询'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='需求表';
 -- 33. 需求关注表 requirement_follows
 DROP TABLE IF EXISTS `requirement_follows`;
@@ -1196,7 +1211,9 @@ INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description
 (119, 'button:review:view',         '查看评审详情',       'BUTTON', '评审-查看详情', 1),
 (120, 'button:iteration:view',      '查看迭代/燃尽图',    'BUTTON', '迭代-查看详情', 1),
 (121, 'button:relation:create',     '创建需求关联',       'BUTTON', '需求-创建关联', 1),
-(122, 'button:relation:delete',     '删除需求关联',       'BUTTON', '需求-删除关联', 1);
+(122, 'button:relation:delete',     '删除需求关联',       'BUTTON', '需求-删除关联', 1),
+(123, 'button:workflow:export',     '导出工作流',         'BUTTON', '工作流配置-导出审核通过的工作流', 1),
+(124, 'button:workflow:import',     '导入工作流',         'BUTTON', '工作流配置-导入工作流为新草稿版本', 1);
 -- 菜单数据(合并所有历史INSERT/UPDATE为一次)
 INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
 -- 一级目录
@@ -1278,6 +1295,8 @@ INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, 
 (72, 14, '删除工作流',   'BUTTON',    NULL, NULL, NULL, NULL, 3, 'button:workflow:delete',  1, 1, 0),
 (73, 14, '启用停用',     'BUTTON',    NULL, NULL, NULL, NULL, 4, 'button:workflow:activate', 1, 1, 0),
 (74, 14, '审批',         'BUTTON',    NULL, NULL, NULL, NULL, 5, 'button:workflow:approve',  1, 1, 0),
+(91, 14, '导出工作流',   'BUTTON',    NULL, NULL, NULL, NULL, 6, 'button:workflow:export',  1, 1, 0),
+(92, 14, '导入工作流',   'BUTTON',    NULL, NULL, NULL, NULL, 7, 'button:workflow:import',  1, 1, 0),
 -- LLM配置下的按钮
 (75, 16, '新建提供商',   'BUTTON',    NULL, NULL, NULL, NULL, 1, 'button:llm-provider:create', 1, 1, 0),
 (76, 16, '编辑提供商',   'BUTTON',    NULL, NULL, NULL, NULL, 2, 'button:llm-provider:update', 1, 1, 0),
@@ -1309,7 +1328,8 @@ INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_
 (1, 112, 1), (1, 113, 1), (1, 114, 1), (1, 115, 1),
 (1, 116, 1), (1, 117, 1), (1, 118, 1),
 (1, 119, 1), (1, 120, 1),
-(1, 121, 1), (1, 122, 1);
+(1, 121, 1), (1, 122, 1),
+(1, 123, 1), (1, 124, 1);
 
 -- 业务角色授权需求管理视图权限,
 -- 产品经理: 全部需求 + 我的草稿 + 我的关注 + 新建需求 + 导出 + 批量删除
@@ -1538,9 +1558,27 @@ UPDATE requirement_types SET workflow_version_id = @v17   WHERE code = 'FEATURE'
 -- V20260626_01: 需求列表查询性能优化（索引）
 -- =====================================================
 -- 已应用到表定义中的索引:
--- requirements: idx_list_cover, idx_list_type_cover, idx_list_status_cover, idx_list_priority_cover, ft_title_desc
+-- requirements: idx_list_status_cover, idx_list_type_cover, idx_list_priority_cover, idx_list_assignee_cover, ft_title_desc
 -- workflow_instance_transitions: idx_req_operator
 -- workflow_node_assignees: idx_version_node_assignee
+
+-- =====================================================
+-- V20260628_01: 需求列表查询性能优化（索引增量）
+-- =====================================================
+-- 已合并到 V20260626_01，表定义中已包含全部覆盖索引和全文索引
+
+-- =====================================================
+-- V20260628_02: 工作流绑定知识库
+-- =====================================================
+-- 已应用到表定义中: workflow_versions.knowledge_base_id 字段 + idx_knowledge_base_id 索引
+
+-- =====================================================
+-- workflow_export_import_permissions: 工作流导出/导入权限
+-- =====================================================
+-- 已合并到初始化数据:
+-- sys_permissions: id=123 (button:workflow:export), id=124 (button:workflow:import)
+-- sys_menus: id=91 (导出工作流), id=92 (导入工作流)
+-- sys_role_permissions: SUPER_ADMIN 获得 permission_id=123,124
 
 -- =====================================================
 -- V20260627_01: 统一需求优先级 code
