@@ -531,7 +531,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh, Setting, CircleCheck, CircleClose, Document, Delete, View, EditPen, SwitchButton, VideoPlay, Tools, CopyDocument } from '@element-plus/icons-vue'
+import { Plus, Refresh, Setting, CircleCheck, CircleClose, Document, Delete, View, EditPen, SwitchButton, VideoPlay, Tools, CopyDocument, Download, Upload } from '@element-plus/icons-vue'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
@@ -554,6 +554,8 @@ import {
   updateWorkflowVersionActivation,
   updateWorkflowVersionMeta,
   validateWorkflowVersion,
+  exportWorkflowVersion,
+  importWorkflowVersion,
 } from '@/api/modules/workflow-visual'
 import type {
   WorkflowApprovalDTO,
@@ -561,6 +563,8 @@ import type {
   WorkflowValidationIssue,
   WorkflowVersionDTO,
   WorkflowVersionMetaUpdateDTO,
+  WorkflowExportData,
+  WorkflowImportResponse,
 } from '@/types/workflow-visual'
 
 import { requirementConfigApi, type RequirementType } from '@/api/modules/requirementConfig'
