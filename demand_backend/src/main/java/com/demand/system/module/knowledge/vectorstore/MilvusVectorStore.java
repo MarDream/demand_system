@@ -178,7 +178,7 @@ public class MilvusVectorStore {
         SearchReq searchReq = SearchReq.builder()
                 .collectionName(collectionName)
                 .data(Collections.singletonList(new FloatVec(queryList)))
-                .topK(topK)
+                .limit(topK)
                 .filter(filter)
                 .outputFields(List.of("id", "knowledge_base_id", "document_id", "chunk_index",
                         "text", "section_title", "page_num", "file_name", "file_type"))

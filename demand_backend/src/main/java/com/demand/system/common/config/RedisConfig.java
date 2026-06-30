@@ -1,12 +1,5 @@
 package com.demand.system.common.config;
 
-import com.fasterxml.jackson.annotation.JsonAutoDetect;
-import com.fasterxml.jackson.annotation.JsonTypeInfo;
-import com.fasterxml.jackson.annotation.PropertyAccessor;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -14,7 +7,7 @@ import org.springframework.data.redis.cache.RedisCacheConfiguration;
 import org.springframework.data.redis.cache.RedisCacheManager;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
+import org.springframework.data.redis.serializer.GenericJacksonJsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializationContext;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
@@ -33,34 +26,23 @@ import java.time.Duration;
 public class RedisConfig {
 
     /**
-     * 构建支持 Java 8 时间类型（LocalDateTime 等）并保留类型信息的 ObjectMapper
-     *
-     * 解决 Redis 序列化报错：
-     * "Java 8 date/time type `java.time.LocalDateTime` not supported by default"
-     *
-     * 关键配置：
-     * - 注册 JavaTimeModule：支持 LocalDateTime / LocalDate 等 Java 8 时间类型
-     * - 禁用 WRITE_DATES_AS_TIMESTAMPS：时间序列化为 ISO-8601 字符串而非数值时间戳
-     * - 开启默认类型信息：反序列化时能还原为具体类型（User / SysOrgVO 等），
-     *   使 {@code instanceof} 检查正常工作
-     */
-    private ObjectMapper buildObjectMapper() {
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.registerModule(new JavaTimeModule());
-        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        mapper.setVisibility(PropertyAccessor.ALL, JsonAutoDetect.Visibility.ANY);
-        mapper.activateDefaultTyping(
-                LaissezFaireSubTypeValidator.instance,
-                ObjectMapper.DefaultTyping.NON_FINAL,
-                JsonTypeInfo.As.PROPERTY);
-        return mapper;
-    }
-
-    /**
      * 构建带类型信息的 JSON 序列化器（RedisTemplate 与 CacheManager 共用）
+     *
+     * 使用 Spring Data Redis 4.0+ 推荐的 GenericJacksonJsonRedisSerializer（基于 Jackson 3.x），
+     * 替代已废弃的 GenericJackson2JsonRedisSerializer（基于 Jackson 2.x，标记为待删除）。
+     *
+     * 配置说明：
+     * - enableUnsafeDefaultTyping：开启默认类型信息，反序列化时能还原为具体类型（User / SysOrgVO 等）
+     * - enableSpringCacheNullValueSupport：支持 Spring Cache 的 NullValue 序列化
+     *
+     * 注意：Jackson 3.x 内置 JSR-310 时间类型支持，默认 ISO-8601 格式输出，
+     * 无需额外注册 JavaTimeModule 或禁用 WRITE_DATES_AS_TIMESTAMPS（该 Feature 已移除）
      */
-    private GenericJackson2JsonRedisSerializer buildJsonSerializer() {
-        return new GenericJackson2JsonRedisSerializer(buildObjectMapper());
+    private GenericJacksonJsonRedisSerializer buildJsonSerializer() {
+        return GenericJacksonJsonRedisSerializer.create(builder -> builder
+                .enableUnsafeDefaultTyping()
+                .enableSpringCacheNullValueSupport()
+        );
     }
 
     @Bean
@@ -69,7 +51,7 @@ public class RedisConfig {
         template.setConnectionFactory(connectionFactory);
         template.setKeySerializer(new StringRedisSerializer());
         template.setHashKeySerializer(new StringRedisSerializer());
-        GenericJackson2JsonRedisSerializer jsonSerializer = buildJsonSerializer();
+        GenericJacksonJsonRedisSerializer jsonSerializer = buildJsonSerializer();
         template.setValueSerializer(jsonSerializer);
         template.setHashValueSerializer(jsonSerializer);
         template.afterPropertiesSet();
