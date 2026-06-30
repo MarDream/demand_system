@@ -79,6 +79,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         kb.setDocCount(0);
         kb.setChunkCount(0);
         kb.setStatus("active");
+        kb.setDocTimeoutMinutes(dto.getDocTimeoutMinutes() != null ? dto.getDocTimeoutMinutes() : 10);
         knowledgeBaseMapper.insert(kb);
         return toVO(kb);
     }
@@ -113,6 +114,9 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         }
         if (dto.getDescription() != null) {
             kb.setDescription(dto.getDescription());
+        }
+        if (dto.getDocTimeoutMinutes() != null) {
+            kb.setDocTimeoutMinutes(dto.getDocTimeoutMinutes());
         }
         knowledgeBaseMapper.updateById(kb);
         return toVO(kb);
@@ -369,6 +373,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
                 .chunkCount(kb.getChunkCount())
                 .status(kb.getStatus())
                 .isDefaultForRequirements(Integer.valueOf(1).equals(kb.getIsDefaultForRequirements()))
+                .docTimeoutMinutes(kb.getDocTimeoutMinutes())
                 .createdAt(kb.getCreatedAt())
                 .updatedAt(kb.getUpdatedAt())
                 .build();

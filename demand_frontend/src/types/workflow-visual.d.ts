@@ -213,3 +213,108 @@ export interface LogicFlowGraphData {
   nodes: LogicFlowNodeData[]
   edges: LogicFlowEdgeData[]
 }
+
+// ============ ADR-002: 工作流迁移计划类型 ============
+
+// 节点映射项
+export interface NodeMappingItem {
+  fromNodeId: string
+  toNodeId: string | null
+  fromNodeName: string
+  toNodeName: string | null
+}
+
+// 节点映射 VO（含自动匹配标记）
+export interface NodeMappingVO {
+  fromNodeId: string
+  fromNodeName: string
+  fromNodeType: string
+  toNodeId: string | null
+  toNodeName: string | null
+  toNodeType: string | null
+  autoMatched: boolean
+  skipped: boolean
+}
+
+// 目标节点选项（供前端下拉选择）
+export interface TargetNodeOption {
+  nodeId: string
+  nodeName: string
+  nodeType: string
+}
+
+// 迁移计划 VO
+export interface MigrationPlanVO {
+  id: number
+  fromVersionId: number
+  fromVersionName: string
+  fromVersion: string
+  toVersionId: number
+  toVersionName: string
+  toVersion: string
+  projectId: number
+  nodeMapping: NodeMappingVO[]
+  unmappedNodes: NodeMappingVO[]
+  toVersionNodes: TargetNodeOption[]
+  status: 'draft' | 'pending' | 'executing' | 'completed' | 'failed'
+  totalInstanceCount: number
+  migratedCount: number
+  failedCount: number
+  operatorName: string
+  remark: string
+  createdAt: string
+}
+
+// 创建迁移计划请求
+export interface CreateMigrationPlanRequest {
+  fromVersionId: number
+  toVersionId: number
+  remark?: string
+}
+
+// 迁移预检结果
+export interface MigrationPreviewVO {
+  totalInstances: number
+  canMigrateCount: number
+  needManualCount: number
+  items: MigrationPreviewItem[]
+}
+
+export interface MigrationPreviewItem {
+  instanceId: number
+  requirementId: number
+  currentNodeId: string
+  currentNodeName: string
+  mapped: boolean
+  mappedToNodeId: string | null
+  mappedToNodeName: string | null
+}
+
+// 迁移执行结果
+export interface MigrationResultDTO {
+  totalCount: number
+  successCount: number
+  failedCount: number
+  message: string
+  planId: number
+  warnings: string[]
+}
+
+// 迁移日志 VO
+export interface WorkflowMigrationLogVO {
+  id: number
+  fromVersionId: number
+  toVersionId: number
+  fromNodeId: string | null
+  toNodeId: string | null
+  fromNodeName: string | null
+  toNodeName: string | null
+  requirementId: number
+  instanceId: number | null
+  planId: number | null
+  migrationType: string
+  migrationStatus: string
+  errorMessage: string | null
+  operatorId: number | null
+  createdAt: string
+}

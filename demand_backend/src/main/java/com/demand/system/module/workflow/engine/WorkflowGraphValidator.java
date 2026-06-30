@@ -179,6 +179,10 @@ public class WorkflowGraphValidator {
             }
         }
 
+        // ADR-002（2026-06-30）：
+        // 在途需求状态兼容性检查从 error 改为 warning。
+        // 原因：采用版本快照策略后，在途实例继续按旧版本执行，不会被自动对齐。
+        // 新版本中不存在的状态不会导致运行时错误，仅表示需要管理员手动迁移。
         if (forActivation && projectId != null && !hasErrors(issues)) {
             Set<String> supportedCodes = new HashSet<>();
             for (WorkflowNode node : nodes) {
@@ -200,7 +204,9 @@ public class WorkflowGraphValidator {
                 }
                 String nodeStatus = requirement.getNodeStatus();
                 if (StringUtils.hasText(nodeStatus) && !supportedCodes.contains(nodeStatus)) {
-                    issues.add(issue("activation", "在途需求使用了新版本不支持的状态: " + nodeStatus, "error", "请保留该状态对应的节点，或先迁移/处理相关在途需求"));
+                    issues.add(issue("activation", "在途需求使用了新版本不支持的状态: " + nodeStatus
+                            + "（不影响激活，但需要手动迁移相关实例）", "warning",
+                            "可通过「工作流迁移管理」配置节点映射后手动迁移在途实例"));
                 }
             }
         }

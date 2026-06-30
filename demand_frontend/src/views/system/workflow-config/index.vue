@@ -108,7 +108,7 @@
                   <template v-if="boundTypeNames[row.id]?.length">
                     <el-tag v-for="name in boundTypeNames[row.id]" :key="name" size="small" effect="light" round class="workflow-tag">{{ name }}</el-tag>
                   </template>
-                  <span v-else class="muted-cell">未绑定</span>
+                  <a v-else class="link-hint" @click="goToRequirementConfig(row)">未绑定</a>
                 </template>
               </el-table-column>
               <el-table-column v-if="isVersionColumnVisible('projectId')" label="适用范围" min-width="120">
@@ -118,11 +118,27 @@
                   </el-tag>
                 </template>
               </el-table-column>
+              <el-table-column v-if="isVersionColumnVisible('knowledgeBaseName')" label="知识库" min-width="140">
+                <template #default="{ row }">
+                  <template v-if="row.knowledgeBaseName">
+                    <el-tag type="warning" effect="light" round class="workflow-tag">
+                      {{ row.knowledgeBaseName }}
+                    </el-tag>
+                  </template>
+                  <span v-else class="text-secondary">未绑定</span>
+                </template>
+              </el-table-column>
               <el-table-column v-if="isVersionColumnVisible('isActive')" label="启停状态" min-width="110">
                 <template #default="{ row }">
-                  <el-tag :type="row.isActive === 1 ? 'success' : 'info'" effect="light" round class="workflow-tag">
-                    {{ row.isActive === 1 ? '已启用' : '未启用' }}
-                  </el-tag>
+                  <span v-permission="'button:workflow:activate'">
+                    <el-switch
+                      :model-value="row.isActive === 1"
+                      size="small"
+                      :disabled="!canActivate || (row.isActive !== 1 && versionApprovalStatus(row) !== 'APPROVED')"
+                      @change="handleToggleActivation(row)"
+                      @click.stop
+                    />
+                  </span>
                 </template>
               </el-table-column>
               <el-table-column v-if="isVersionColumnVisible('approvalStatus')" label="审核状态" min-width="110">
@@ -168,36 +184,21 @@
                       <el-button link type="primary" :icon="Tools" class="operation-more-button" title="更多操作" aria-label="更多操作" />
                       <template #dropdown>
                         <el-dropdown-menu>
-                          <el-dropdown-item :icon="CopyDocument" @click="handleCopyWorkflow(row)" v-permission="'button:workflow:config'">
-                            复制
-                          </el-dropdown-item>
-                          <el-dropdown-item
-                            :icon="Download"
-                            v-if="versionApprovalStatus(row) === 'APPROVED'"
-                            v-permission="'button:workflow:export'"
-                            @click="handleExportWorkflow(row)"
-                          >
-                            导出
-                          </el-dropdown-item>
-                          <el-dropdown-item
-                            :icon="VideoPlay"
-                            v-if="row.isActive !== 1"
-                            v-permission="'button:workflow:activate'"
-                            @click="handleToggleActivation(row)"
-                          >
-                            启用
-                          </el-dropdown-item>
-                          <el-dropdown-item
-                            :icon="SwitchButton"
-                            v-if="row.isActive === 1"
-                            v-permission="'button:workflow:activate'"
-                            @click="handleToggleActivation(row)"
-                          >
-                            停用
-                          </el-dropdown-item>
-                          <el-dropdown-item divided :icon="Delete" v-permission="'button:workflow:delete'" :disabled="row.isActive === 1" @click="handleDeleteVersion(row)">
-                            <span style="color: var(--el-color-danger)">删除</span>
-                          </el-dropdown-item>
+                          <template v-if="canConfig">
+                            <el-dropdown-item :icon="CopyDocument" @click="handleCopyWorkflow(row)">
+                              复制
+                            </el-dropdown-item>
+                          </template>
+                          <template v-if="canExport && versionApprovalStatus(row) === 'APPROVED'">
+                            <el-dropdown-item :icon="Download" @click="handleExportWorkflow(row)">
+                              导出
+                            </el-dropdown-item>
+                          </template>
+                          <template v-if="canDelete">
+                            <el-dropdown-item divided :icon="Delete" :disabled="row.isActive === 1" @click="handleDeleteVersion(row)">
+                              <span style="color: var(--el-color-danger)">删除</span>
+                            </el-dropdown-item>
+                          </template>
                         </el-dropdown-menu>
                       </template>
                     </el-dropdown>
@@ -563,7 +564,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh, Setting, CircleCheck, CircleClose, Document, Delete, View, EditPen, SwitchButton, VideoPlay, Tools, CopyDocument, Download, Upload } from '@element-plus/icons-vue'
+import { Plus, Refresh, Setting, CircleCheck, CircleClose, Document, Delete, View, EditPen, Tools, CopyDocument, Download, Upload } from '@element-plus/icons-vue'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
@@ -606,6 +607,7 @@ const versionAllColumns: ColumnDef[] = [
   { key: 'version', label: '版本', group: '基础字段', minWidth: 200 },
   { key: 'boundTypes', label: '适用工单类型', group: '基础字段', minWidth: 160 },
   { key: 'projectId', label: '适用范围', group: '基础字段', width: 120 },
+  { key: 'knowledgeBaseName', label: '知识库', group: '基础字段', minWidth: 140 },
   { key: 'isActive', label: '启停状态', group: '状态信息', width: 120 },
   { key: 'approvalStatus', label: '审核状态', group: '状态信息', width: 140 },
   { key: 'creatorName', label: '创建人', group: '人员与时间', width: 140 },
@@ -614,7 +616,7 @@ const versionAllColumns: ColumnDef[] = [
   { key: 'activatedAt', label: '启用时间', group: '人员与时间', width: 180 },
   { key: 'operations', label: '操作', width: 120 },
 ]
-const versionDefaultKeys = ['version', 'boundTypes', 'projectId', 'isActive', 'approvalStatus', 'creatorName', 'createdAt', 'operations']
+const versionDefaultKeys = ['version', 'boundTypes', 'projectId', 'knowledgeBaseName', 'isActive', 'approvalStatus', 'creatorName', 'createdAt', 'operations']
 
 const {
   showColumnConfig: showVersionColumnConfig,
@@ -731,6 +733,10 @@ const pagination = reactive({
 const pageTitle = '工作流配置'
 const pageDescription = '维护工作流版本、流程审核和生效状态。'
 const canProcessApproval = computed(() => hasPermission('button:workflow:approve'))
+const canConfig = computed(() => hasPermission('button:workflow:config'))
+const canExport = computed(() => hasPermission('button:workflow:export'))
+const canActivate = computed(() => hasPermission('button:workflow:activate'))
+const canDelete = computed(() => hasPermission('button:workflow:delete'))
 const activeVersionCount = computed(() => versions.value.filter(item => item.isActive === 1).length)
 const sourceMenuPath = computed(() => resolveActiveMenuPath(route))
 const approvalSummary = computed(() => ({
@@ -1079,13 +1085,37 @@ function formatValidationIssues(issues: WorkflowValidationIssue[]) {
 
 async function handleToggleActivation(row: WorkflowVersionDTO) {
   const targetActive = row.isActive !== 1
-  const actionLabel = targetActive ? '启用' : '停用'
 
   if (targetActive) {
     if (versionApprovalStatus(row) !== 'APPROVED') {
       ElMessage.warning('请先完成审核并通过后再启用')
       return
     }
+
+    // 检查是否绑定了工单类型
+    const hasBoundTypes = boundTypeNames.value[row.id]?.length > 0
+    if (!hasBoundTypes) {
+      try {
+        await ElMessageBox.confirm(
+          '该工作流尚未绑定任何工单类型，启用后无法被需求使用。是否前往需求配置绑定工单类型？',
+          '工单类型未绑定',
+          {
+            confirmButtonText: '前往绑定',
+            cancelButtonText: '仍然启用',
+            type: 'warning',
+            distinguishCancelAndClose: true,
+          }
+        )
+        // 用户选择”前往绑定”
+        router.push('/settings/requirements')
+        return
+      } catch (action: unknown) {
+        // 用户选择”仍然启用”（cancel），继续启用流程
+        // 用户选择关闭（close），中止操作
+        if (action === 'close') return
+      }
+    }
+
     const issues = (await validateWorkflowVersion(row.id)) || []
     const errorText = formatValidationIssues(issues)
     if (errorText) {
@@ -1094,10 +1124,9 @@ async function handleToggleActivation(row: WorkflowVersionDTO) {
     }
   }
 
-  await ElMessageBox.confirm(`确认${actionLabel}工作流“${row.name}”吗？`, `${actionLabel}工作流`, { type: 'warning' })
   try {
     await updateWorkflowVersionActivation(row.id, { active: targetActive })
-    ElMessage.success(`工作流已${actionLabel}`)
+    ElMessage.success(targetActive ? '已启用' : '已停用')
     await reloadAllData()
   } catch (error: unknown) {
     const issues = (error as { data?: WorkflowValidationIssue[] })?.data
@@ -1110,10 +1139,15 @@ async function handleToggleActivation(row: WorkflowVersionDTO) {
 }
 
 async function handleDeleteVersion(row: WorkflowVersionDTO) {
-  await ElMessageBox.confirm(`确认删除工作流“${row.name}”吗？该操作无法恢复。`, '删除工作流', { type: 'warning' })
+  await ElMessageBox.confirm(`确认删除工作流"${row.name}"吗？该操作无法恢复。`, '删除工作流', { type: 'warning' })
   await deleteWorkflowVersion(row.id)
   ElMessage.success('工作流已删除')
   await reloadAllData()
+}
+
+/** 点击"未绑定"跳转到需求配置页面绑定工单类型 */
+function goToRequirementConfig(_row?: WorkflowVersionDTO) {
+  router.push('/settings/requirements')
 }
 
 async function openDetail(row: WorkflowApprovalDTO) {
@@ -1547,6 +1581,20 @@ onMounted(() => {
 .muted-cell {
   color: var(--el-text-color-placeholder);
   font-size: 13px;
+}
+
+.link-hint {
+  color: var(--el-color-primary);
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: none;
+  border-bottom: 1px dashed var(--el-color-primary-light-5);
+  transition: color 0.2s, border-color 0.2s;
+
+  &:hover {
+    color: var(--el-color-primary-dark-2);
+    border-bottom-color: var(--el-color-primary);
+  }
 }
 
 .task-name-cell {

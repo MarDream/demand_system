@@ -28,6 +28,9 @@ public class KnowledgeBase {
 
     private Integer isDefaultForRequirements;
 
+    /** 文档处理超时时间(分钟), 0=不超时 */
+    private Integer docTimeoutMinutes;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
@@ -105,6 +108,14 @@ public class KnowledgeBase {
 
     public void setIsDefaultForRequirements(Integer isDefaultForRequirements) {
         this.isDefaultForRequirements = isDefaultForRequirements;
+    }
+
+    public Integer getDocTimeoutMinutes() {
+        return docTimeoutMinutes;
+    }
+
+    public void setDocTimeoutMinutes(Integer docTimeoutMinutes) {
+        this.docTimeoutMinutes = docTimeoutMinutes;
     }
 
     public LocalDateTime getCreatedAt() {

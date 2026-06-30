@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.*;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.RestTemplate;
@@ -24,6 +25,8 @@ import java.util.regex.Pattern;
 public class LlmGateway {
     private static final Logger log = LoggerFactory.getLogger(LlmGateway.class);
     private static final Pattern V1_PATH_SEGMENT = Pattern.compile("(?i)(^|/)v1($|/)");
+    /** Matches any versioned path segment like /v1, /v2, /v4, /v1beta1 etc. */
+    private static final Pattern VERSION_PATH_SEGMENT = Pattern.compile("(?i)(^|/)v\\d+[a-z\\d]*($|/)");
     private static final List<String> MODEL_LIST_FIELDS = List.of("data", "models", "model", "items", "results", "list");
     private static final List<String> MODEL_ID_FIELDS = List.of("id", "model", "model_id", "modelId", "name", "value");
     private static final List<String> MODEL_OWNER_FIELDS = List.of(
@@ -41,20 +44,50 @@ public class LlmGateway {
 
     private final LlmGatewayConfig config;
     private final ObjectMapper objectMapper;
+    private final RestTemplate sharedRestTemplate;
 
     public LlmGateway(LlmGatewayConfig config, ObjectMapper objectMapper) {
         this.config = config;
         this.objectMapper = objectMapper;
+
+        var requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(java.time.Duration.ofSeconds(10));
+        requestFactory.setReadTimeout(java.time.Duration.ofSeconds(120));
+        this.sharedRestTemplate = new RestTemplate(requestFactory);
+    }
+
+    public LlmGatewayConfig getConfig() {
+        return config;
     }
 
     // ==================== Embedding ====================
 
+    /**
+     * @deprecated Embedding 模型必须由上层服务从数据库模型配置解析后传入 Provider，禁止回退 YML 固定配置。
+     */
+    @Deprecated(forRemoval = true)
     public List<float[]> embed(List<String> texts) {
-        LlmGatewayConfig.Provider provider = config.getEmbedding();
+        throw new UnsupportedOperationException("Embedding 模型必须从数据库模型配置读取，请使用 embedWithProvider(provider, texts)");
+    }
+
+    /**
+     * @deprecated Embedding 模型必须由上层服务从数据库模型配置解析后传入 Provider，禁止回退 YML 固定配置。
+     */
+    @Deprecated(forRemoval = true)
+    public float[] embed(String text) {
+        throw new UnsupportedOperationException("Embedding 模型必须从数据库模型配置读取，请使用 embedWithProvider(provider, text)");
+    }
+
+    /**
+     * 使用指定的 Provider 配置调用 Embedding 接口，
+     * 支持从数据库动态选择模型（而非绑定 YAML 配置）。
+     */
+    public List<float[]> embedWithProvider(LlmGatewayConfig.Provider provider, List<String> texts) {
         try {
             Map<String, Object> body = new HashMap<>();
             body.put("model", provider.getModel());
             body.put("input", texts);
+            addEmbeddingDimensionsIfSupported(provider, body);
 
             JsonNode root = call(provider, "/embeddings", body);
             JsonNode dataNode = root.get("data");
@@ -75,14 +108,25 @@ public class LlmGateway {
         }
     }
 
-    public float[] embed(String text) {
-        return embed(List.of(text)).get(0);
+    public float[] embedWithProvider(LlmGatewayConfig.Provider provider, String text) {
+        return embedWithProvider(provider, List.of(text)).get(0);
     }
 
     // ==================== Reranker ====================
 
+    /**
+     * @deprecated Reranker 模型必须由上层服务从数据库模型配置解析后传入 Provider，禁止回退 YML 固定配置。
+     */
+    @Deprecated(forRemoval = true)
     public List<Double> rerank(String query, List<String> documents) {
-        LlmGatewayConfig.Provider provider = config.getReranker();
+        throw new UnsupportedOperationException("Reranker 模型必须从数据库模型配置读取，请使用 rerankWithProvider(provider, query, documents)");
+    }
+
+    /**
+     * 使用指定的 Provider 配置调用 Reranker 接口，
+     * 支持从数据库动态选择模型（而非绑定 YAML 配置）。
+     */
+    public List<Double> rerankWithProvider(LlmGatewayConfig.Provider provider, String query, List<String> documents) {
         try {
             Map<String, Object> body = new HashMap<>();
             body.put("model", provider.getModel());
@@ -105,43 +149,33 @@ public class LlmGateway {
 
     // ==================== Chat (RAG Answer Generation) ====================
 
+    /**
+     * @deprecated Chat 模型必须由上层服务从数据库模型配置解析后传入 Provider，禁止回退 YML 固定配置。
+     */
+    @Deprecated(forRemoval = true)
     public String chat(String systemPrompt, String userMessage) {
-        LlmGatewayConfig.Provider provider = config.getChat();
-        try {
-            Protocol protocol = config.resolveProtocol(provider);
-
-            if (protocol == Protocol.ANTHROPIC) {
-                return callAnthropicChat(provider, systemPrompt, userMessage, null, null);
-            } else {
-                return callOpenAIChat(provider, systemPrompt, userMessage, null, null);
-            }
-        } catch (Exception e) {
-            log.error("Chat调用失败: model={}", provider.getModel(), e);
-            throw new RuntimeException("Chat调用失败: " + e.getMessage());
-        }
+        throw new UnsupportedOperationException("Chat 模型必须从数据库模型配置读取，请使用 chatWithProvider(...)");
     }
 
+    /**
+     * @deprecated Chat 模型必须由上层服务从数据库模型配置解析后传入 Provider，禁止回退 YML 固定配置。
+     */
+    @Deprecated(forRemoval = true)
     public void streamChat(String systemPrompt, String userMessage, Consumer<String> tokenConsumer) {
-        LlmGatewayConfig.Provider provider = config.getChat();
-        try {
-            streamChatWithProvider(provider, systemPrompt, userMessage, null, null, tokenConsumer);
-        } catch (Exception e) {
-            log.error("Chat流式调用失败: model={}", provider.getModel(), e);
-            throw new RuntimeException("Chat流式调用失败: " + e.getMessage());
-        }
+        throw new UnsupportedOperationException("Chat 模型必须从数据库模型配置读取，请使用 streamChatWithProvider(...)");
     }
 
     // ==================== Core HTTP Call ====================
 
     private JsonNode call(LlmGatewayConfig.Provider provider, String path, Map<String, Object> body) {
         try {
-            RestTemplate restTemplate = new RestTemplate();
             HttpHeaders headers = buildHeaders(provider);
             headers.setContentType(MediaType.APPLICATION_JSON);
 
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
             String url = buildApiUrl(provider, path);
-            ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
+            log.info("LLM API 调用: url={}, model={}, body={}", url, provider.getModel(), body);
+            ResponseEntity<String> response = sharedRestTemplate.postForEntity(url, entity, String.class);
             return objectMapper.readTree(response.getBody());
         } catch (Exception e) {
             throw new RuntimeException("LLM API调用失败: " + e.getMessage(), e);
@@ -175,7 +209,7 @@ public class LlmGateway {
             JsonNode root = callOpenAIChatRaw(provider, systemPrompt, userMessage, temperature, maxTokens);
             return root.path("choices").path(0).path("message").path("content").asText();
         } catch (Exception e) {
-            throw new RuntimeException("OpenAI Chat调用失败: " + e.getMessage(), e);
+            throw new RuntimeException("OpenAI Chat调用失败: " + describeApiException(e), e);
         }
     }
 
@@ -190,7 +224,7 @@ public class LlmGateway {
             JsonNode root = callAnthropicChatRaw(provider, systemPrompt, userMessage, temperature, maxTokens);
             return root.path("content").path(0).path("text").asText();
         } catch (Exception e) {
-            throw new RuntimeException("Anthropic Chat调用失败: " + e.getMessage(), e);
+            throw new RuntimeException("Anthropic Chat调用失败: " + describeApiException(e), e);
         }
     }
 
@@ -241,7 +275,7 @@ public class LlmGateway {
                     .model(model)
                     .build();
         } catch (Exception e) {
-            throw new RuntimeException("Chat调用失败: " + e.getMessage(), e);
+            throw new RuntimeException("Chat调用失败: " + describeApiException(e), e);
         }
     }
 
@@ -281,7 +315,6 @@ public class LlmGateway {
             Integer maxTokens
     ) {
         try {
-            RestTemplate restTemplate = new RestTemplate();
             HttpHeaders headers = buildHeaders(provider);
             headers.setContentType(MediaType.APPLICATION_JSON);
 
@@ -289,10 +322,10 @@ public class LlmGateway {
 
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
             String url = buildApiUrl(provider, "/messages");
-            ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
+            ResponseEntity<String> response = sharedRestTemplate.postForEntity(url, entity, String.class);
             return objectMapper.readTree(response.getBody());
         } catch (Exception e) {
-            throw new RuntimeException("Anthropic Chat调用失败: " + e.getMessage(), e);
+            throw new RuntimeException("Anthropic Chat调用失败: " + describeApiException(e), e);
         }
     }
 
@@ -311,7 +344,37 @@ public class LlmGateway {
         ));
         body.put("temperature", normalizeTemperature(temperature));
         body.put("max_tokens", normalizeMaxTokens(maxTokens));
+        addSiliconFlowChatCompatibility(provider, body);
         return body;
+    }
+
+    private void addSiliconFlowChatCompatibility(LlmGatewayConfig.Provider provider, Map<String, Object> body) {
+        if (!isSiliconFlowProvider(provider)) {
+            return;
+        }
+        // SiliconFlow 官方 Chat Completions 文档对 Qwen3/DeepSeek/GLM 等思考模型支持 enable_thinking。
+        // 批量连通性测试只需要快速确认可用性，关闭思考模式可避免部分模型返回空 content 或测试耗时过长。
+        body.put("enable_thinking", false);
+    }
+
+    private void addEmbeddingDimensionsIfSupported(LlmGatewayConfig.Provider provider, Map<String, Object> body) {
+        if (!isSiliconFlowProvider(provider)) {
+            return;
+        }
+        String dimension = provider.getDimension();
+        if (dimension == null || dimension.isBlank()) {
+            return;
+        }
+        try {
+            body.put("dimensions", Integer.parseInt(dimension.trim()));
+        } catch (NumberFormatException e) {
+            log.warn("忽略非法的 SiliconFlow Embedding 维度配置: model={}, dimension={}", provider.getModel(), dimension);
+        }
+    }
+
+    private boolean isSiliconFlowProvider(LlmGatewayConfig.Provider provider) {
+        String baseUrl = provider == null ? null : provider.getBaseUrl();
+        return baseUrl != null && baseUrl.toLowerCase(Locale.ROOT).contains("siliconflow");
     }
 
     private Map<String, Object> buildAnthropicChatBody(
@@ -339,7 +402,6 @@ public class LlmGateway {
             Protocol protocol,
             Consumer<String> tokenConsumer
     ) {
-        RestTemplate restTemplate = new RestTemplate();
         HttpHeaders headers = buildHeaders(provider);
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setAccept(List.of(MediaType.TEXT_EVENT_STREAM, MediaType.APPLICATION_JSON));
@@ -347,7 +409,7 @@ public class LlmGateway {
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
         String url = buildApiUrl(provider, path);
 
-        restTemplate.execute(url, HttpMethod.POST, request -> {
+        sharedRestTemplate.execute(url, HttpMethod.POST, request -> {
             request.getHeaders().putAll(headers);
             objectMapper.writeValue(request.getBody(), entity.getBody());
         }, response -> {
@@ -435,14 +497,13 @@ public class LlmGateway {
 
     public List<ModelInfo> fetchModelList(LlmGatewayConfig.Provider provider) {
         try {
-            RestTemplate restTemplate = new RestTemplate();
             HttpHeaders headers = buildHeaders(provider);
             headers.setContentType(MediaType.APPLICATION_JSON);
 
             HttpEntity<Void> entity = new HttpEntity<>(headers);
             String url = buildApiUrl(provider, "/models");
 
-            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            ResponseEntity<String> response = sharedRestTemplate.exchange(url, HttpMethod.GET, entity, String.class);
             JsonNode root = objectMapper.readTree(response.getBody());
 
             return parseModelList(root);
@@ -466,7 +527,9 @@ public class LlmGateway {
         String base = stripQueryAndFragment(baseUrl.trim()).replaceAll("/+$", "");
         Protocol protocol = config.resolveProtocol(provider);
         if (protocol == Protocol.OPENAI || protocol == Protocol.ANTHROPIC) {
-            return normalizeVersionedApiRoot(base);
+            String result = normalizeVersionedApiRoot(base);
+            log.info("normalizeApiBaseUrl: input={}, protocol={}, result={}", base, protocol, result);
+            return result;
         }
         return base;
     }
@@ -485,17 +548,26 @@ public class LlmGateway {
     }
 
     private String normalizeVersionedApiRoot(String base) {
+        // 1. If the URL already contains /v1, truncate after it
         String versionRoot = truncateAfterV1Segment(base);
         if (versionRoot != null) {
             return versionRoot;
         }
 
+        // 2. Strip known endpoint suffixes (e.g. /chat/completions) and check again
         String endpointRoot = stripKnownEndpointSuffix(base);
         versionRoot = truncateAfterV1Segment(endpointRoot);
         if (versionRoot != null) {
             return versionRoot;
         }
 
+        // 3. If the URL already contains a versioned segment (e.g. /v4, /v2, /v1beta1),
+        //    don't append /v1 — the provider uses a non-standard version path (e.g. ZhiPu /v4)
+        if (hasVersionedPathSegment(endpointRoot)) {
+            return endpointRoot;
+        }
+
+        // 4. No version segment found at all, append /v1 (standard OpenAI convention)
         return endpointRoot + "/v1";
     }
 
@@ -533,11 +605,24 @@ public class LlmGateway {
         return base;
     }
 
+    private boolean hasVersionedPathSegment(String url) {
+        try {
+            String path = URI.create(url).getRawPath();
+            return path != null && VERSION_PATH_SEGMENT.matcher(path).find();
+        } catch (Exception e) {
+            return VERSION_PATH_SEGMENT.matcher(url).find();
+        }
+    }
+
     private String describeApiException(Exception e) {
-        if (e instanceof RestClientResponseException responseException) {
-            String upstreamMessage = extractUpstreamErrorMessage(responseException.getResponseBodyAsString());
-            String status = "HTTP " + responseException.getStatusCode().value();
-            return upstreamMessage == null ? status : status + ": " + upstreamMessage;
+        Throwable cause = e;
+        while (cause != null) {
+            if (cause instanceof RestClientResponseException responseException) {
+                String upstreamMessage = extractUpstreamErrorMessage(responseException.getResponseBodyAsString());
+                String status = "HTTP " + responseException.getStatusCode().value();
+                return upstreamMessage == null ? status : status + ": " + upstreamMessage;
+            }
+            cause = cause.getCause();
         }
         return e.getMessage();
     }
@@ -619,11 +704,16 @@ public class LlmGateway {
             if (value.isObject()) {
                 String id = firstText(value, MODEL_ID_FIELDS);
                 String ownedBy = firstText(value, MODEL_OWNER_FIELDS);
+                Long contextWindow = firstLong(value, "context_window", "contextWindow", "context_length", "max_context_length");
+                Long created = firstLong(value, "created", "created_at", "createdAt");
                 if (id == null || id.isBlank()) {
                     id = entry.getKey();
                 }
                 if (!models.containsKey(id)) {
-                    models.put(id, new ModelInfo(id, ownedBy));
+                    ModelInfo info = new ModelInfo(id, ownedBy);
+                    info.setContextWindow(contextWindow);
+                    info.setCreated(created);
+                    models.put(id, info);
                 }
             } else if (value.isValueNode()) {
                 String id = value.asText();
@@ -640,11 +730,15 @@ public class LlmGateway {
     private void collectModelItem(JsonNode item, Map<String, ModelInfo> models) {
         String id;
         String ownedBy = null;
+        Long contextWindow = null;
+        Long created = null;
         if (item.isValueNode()) {
             id = item.asText();
         } else if (item.isObject()) {
             id = firstText(item, MODEL_ID_FIELDS);
             ownedBy = firstText(item, MODEL_OWNER_FIELDS);
+            contextWindow = firstLong(item, "context_window", "contextWindow", "context_length", "max_context_length");
+            created = firstLong(item, "created", "created_at", "createdAt");
         } else {
             return;
         }
@@ -652,7 +746,10 @@ public class LlmGateway {
         if (id == null || id.isBlank() || models.containsKey(id)) {
             return;
         }
-        models.put(id, new ModelInfo(id, ownedBy));
+        ModelInfo info = new ModelInfo(id, ownedBy);
+        info.setContextWindow(contextWindow);
+        info.setCreated(created);
+        models.put(id, info);
     }
 
     private String firstText(JsonNode node, List<String> fields) {
@@ -672,9 +769,33 @@ public class LlmGateway {
         return firstText(node, Arrays.asList(fields));
     }
 
+    private Long firstLong(JsonNode node, String... fields) {
+        for (String field : fields) {
+            JsonNode value = node.get(field);
+            if (value != null && value.isValueNode()) {
+                if (value.isNumber()) {
+                    long v = value.asLong();
+                    if (v > 0) return v;
+                }
+                // 有些厂商返回字符串形式的数字
+                String text = value.asText();
+                if (text != null && !text.isBlank()) {
+                    try {
+                        long v = Long.parseLong(text);
+                        if (v > 0) return v;
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
     public static class ModelInfo {
         private String id;
         private String ownedBy;
+        private Long contextWindow;
+        private Long created;
 
         public ModelInfo() {}
 
@@ -687,6 +808,10 @@ public class LlmGateway {
         public void setId(String id) { this.id = id; }
         public String getOwnedBy() { return ownedBy; }
         public void setOwnedBy(String ownedBy) { this.ownedBy = ownedBy; }
+        public Long getContextWindow() { return contextWindow; }
+        public void setContextWindow(Long contextWindow) { this.contextWindow = contextWindow; }
+        public Long getCreated() { return created; }
+        public void setCreated(Long created) { this.created = created; }
     }
 
     public static class ChatResult {

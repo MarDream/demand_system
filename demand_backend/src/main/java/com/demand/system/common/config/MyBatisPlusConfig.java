@@ -107,7 +107,10 @@ public class MyBatisPlusConfig {
         factoryBean.setDataSource(dataSource);
         factoryBean.setTypeAliasesPackage(properties.getTypeAliasesPackage());
         factoryBean.setTypeHandlersPackage(properties.getTypeHandlersPackage());
-        factoryBean.setMapperLocations(resolveMapperLocations(properties));
+        Resource[] mapperLocations = resolveMapperLocations(properties);
+        if (mapperLocations != null && mapperLocations.length > 0) {
+            factoryBean.setMapperLocations(mapperLocations);
+        }
         // 3.5.7 的 MybatisPlusProperties.CoreConfiguration.applyTo() 调用了
         // PropertyMapper.alwaysApplyingWhenNonNull()，但 Spring Boot 4.0.7 已删除该方法。
         // 这里手写字段复制，避开不兼容 API。

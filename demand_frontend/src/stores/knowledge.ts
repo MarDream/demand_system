@@ -38,13 +38,13 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     }
   }
 
-  async function createBase(data: { name: string; description?: string; projectId?: number }) {
+  async function createBase(data: { name: string; description?: string; projectId?: number; docTimeoutMinutes?: number }) {
     const res = await createKnowledgeBase(data)
     await fetchAllBases()
     return res
   }
 
-  async function updateBase(id: number, data: { name?: string; description?: string }) {
+  async function updateBase(id: number, data: { name?: string; description?: string; docTimeoutMinutes?: number }) {
     const res = await updateKnowledgeBase(id, data)
     await fetchAllBases()
     return res

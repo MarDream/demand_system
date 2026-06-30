@@ -30,6 +30,10 @@ export interface LlmModel {
   name: string
   modelId: string
   modelType: string
+  dimension?: number | null
+  contextWindow?: number | null
+  ownedBy?: string | null
+  modelCreated?: number | null
   temperature: number
   maxTokens: number
   isDefault: boolean
@@ -38,6 +42,14 @@ export interface LlmModel {
   testDuration: number | null
   testError: string | null
   testAt: string | null
+  /** 文本分块大小（仅 embedding 模型使用） */
+  chunkSize?: number | null
+  /** 文本分块重叠大小（仅 embedding 模型使用） */
+  chunkOverlap?: number | null
+  /** 检索返回 TopK（仅 embedding 模型使用） */
+  searchTopK?: number | null
+  /** 完整测试结果（前端缓存，非后端字段） */
+  testResult?: LlmTestResult | null
   createdAt?: string
   updatedAt?: string
 }
@@ -46,10 +58,20 @@ export interface LlmModelForm {
   name: string
   modelId: string
   modelType: string
+  dimension?: number | null
+  contextWindow?: number | null
+  ownedBy?: string | null
+  modelCreated?: number | null
   temperature: number
   maxTokens: number
   isDefault: boolean
   enabled: boolean
+  /** 文本分块大小（仅 embedding 模型使用） */
+  chunkSize?: number | null
+  /** 文本分块重叠大小（仅 embedding 模型使用） */
+  chunkOverlap?: number | null
+  /** 检索返回 TopK（仅 embedding 模型使用） */
+  searchTopK?: number | null
 }
 
 // ---- Test ----
@@ -73,7 +95,20 @@ export interface LlmTestResult {
 export interface SniffedModel {
   modelId: string
   ownedBy: string | null
+  contextWindow: number | null
+  created: number | null
   alreadyExists: boolean
+  inferredType: string
+}
+
+export interface ChatModelOption {
+  id: number
+  providerId: number
+  providerName: string
+  name: string
+  modelId: string
+  modelType: string
+  isDefault: boolean
 }
 
 // ---- Column Config (re-export from common) ----
@@ -100,11 +135,16 @@ export const llmProviderApi = {
     request.delete(`/v1/llm-providers/${providerId}/models/${modelId}`),
   toggleModel: (providerId: number, modelId: number) =>
     request.patch(`/v1/llm-providers/${providerId}/models/${modelId}/toggle`),
+  toggleDefault: (providerId: number, modelId: number) =>
+    request.patch(`/v1/llm-providers/${providerId}/models/${modelId}/toggle-default`),
   testModel: (providerId: number, modelId: number, data: LlmTestRequest) =>
     request.post<LlmTestResult>(`/v1/llm-providers/${providerId}/models/${modelId}/test`, data, { timeout: 60000 }),
 
   // Roles
   getRoles: () => request.get<string[]>('/v1/llm-providers/models/roles'),
+
+  // Chat Models (for RAG)
+  listChatModels: () => request.get<ChatModelOption[]>('/v1/llm-providers/chat-models'),
 
   // Sniff
   sniffModels: (id: number) =>

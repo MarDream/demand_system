@@ -127,14 +127,22 @@
               <el-option :value="5" label="Top 5" />
               <el-option :value="10" label="Top 10" />
               <el-option :value="20" label="Top 20" />
+              <el-option v-if="ragConfig?.searchTopK && ![5, 10, 20].includes(ragConfig.searchTopK)" :value="ragConfig.searchTopK" :label="`Top ${ragConfig.searchTopK}`" />
             </el-select>
-            <el-button
-              v-if="selectedKnowledgeBase"
-              text
-              @click="goToKnowledgeDetail(selectedKnowledgeBase.id)"
-            >
-              查看文档
-            </el-button>
+            <el-tooltip v-if="ragConfig" placement="bottom">
+              <template #content>
+                <div style="max-width: 280px">
+                  <div>Embedding: {{ ragConfig.embedding.configured ? ragConfig.embedding.name : '未配置' }}</div>
+                  <div v-if="ragConfig.embedding.configured && !ragConfig.embedding.dimensionMatch" style="color: var(--color-text-warning)">维度不匹配（模型 {{ ragConfig.embedding.dimension }} ≠ Milvus {{ ragConfig.milvusDimension }}）</div>
+                  <div>Reranker: {{ ragConfig.reranker.configured ? ragConfig.reranker.name : '未配置' }}</div>
+                  <div>分块: {{ ragConfig.chunkSize }} / 重叠: {{ ragConfig.chunkOverlap }}</div>
+                </div>
+              </template>
+              <span style="display: inline-flex; align-items: center; gap: 4px; cursor: pointer; font-size: 12px;">
+                <span :style="{ width: '6px', height: '6px', borderRadius: '50%', background: ragConfig.embedding.configured && (ragConfig.reranker.configured || !rerankerCandidates.length) ? 'var(--color-text-success)' : 'var(--color-text-warning)' }" />
+                配置
+              </span>
+            </el-tooltip>
           </div>
         </header>
 
@@ -158,6 +166,12 @@
                   {{ message.role === 'user' ? '提问' : '检索回答' }}
                 </div>
                 <div class="message-bubble__content">{{ message.content }}</div>
+
+                <div v-if="message.role === 'user'" class="message-bubble__actions">
+                  <el-tooltip content="复制提问" placement="top">
+                    <el-button link :icon="DocumentCopy" class="copy-btn" @click.stop="copyMessageContent(message.content)" />
+                  </el-tooltip>
+                </div>
 
                 <div v-if="message.role === 'assistant'" class="message-bubble__footer">
                   <span>{{ message.citations?.length || 0 }} 份证据文件</span>
@@ -198,7 +212,7 @@
                 resize="none"
                 :autosize="{ minRows: 4, maxRows: 8 }"
                 class="composer-input"
-                :disabled="!selectedKnowledgeBase || asking"
+                :disabled="!selectedKnowledgeBase"
                 placeholder="请输入你想在当前知识库中检索的问题，按 Enter 发送，Shift + Enter 换行"
                 @keydown.enter.exact.prevent="handleAsk"
               />
@@ -229,7 +243,7 @@
                     <button
                       type="button"
                       class="composer-pill composer-pill--interactive"
-                      :disabled="!activeSession || asking"
+                      :disabled="!activeSession"
                     >
                       <span>{{ contextDisplayLabel }}</span>
                       <el-icon><ArrowDown /></el-icon>
@@ -270,7 +284,7 @@
                     <button
                       type="button"
                       class="composer-pill composer-pill--interactive composer-pill--model"
-                      :disabled="!availableChatModels.length || asking"
+                      :disabled="!availableChatModels.length"
                     >
                       <span>{{ selectedModelDisplay }}</span>
                       <el-icon><ArrowDown /></el-icon>
@@ -323,7 +337,7 @@
                 <button
                   type="button"
                   class="composer-send"
-                  :disabled="!selectedKnowledgeBase || asking"
+                  :disabled="!selectedKnowledgeBase || !draftQuestion.trim()"
                   @click="handleAsk"
                 >
                   <span class="composer-send__icon">{{ asking ? '...' : '↑' }}</span>
@@ -353,12 +367,17 @@
           <section class="insight-card">
             <div class="insight-card__header">
               <div>
-                <div class="insight-card__label">模型思考摘要</div>
-                <div class="insight-card__title">可审阅的检索路径</div>
+                <div class="insight-card__label">检索处理过程</div>
+                <div class="insight-card__title">与最终回答分离的执行轨迹</div>
               </div>
             </div>
             <div class="thinking-list">
-              <div v-for="(step, index) in currentInsight.thinkingSteps || []" :key="step.title" class="thinking-item">
+              <div
+                v-for="(step, index) in currentInsight.thinkingSteps || []"
+                :key="`${step.stepType || 'step'}-${index}`"
+                class="thinking-item"
+                :class="`thinking-item--${step.stepType || 'default'}`"
+              >
                 <div class="thinking-item__index">{{ index + 1 }}</div>
                 <div class="thinking-item__body">
                   <div class="thinking-item__title">{{ step.title }}</div>
@@ -389,33 +408,57 @@
             </div>
 
             <div v-if="currentInsight.citations?.length" class="citation-list">
-              <button
+              <div
                 v-for="citation in currentInsight.citations"
                 :key="`${citation.documentId}-${citation.fileName}`"
-                type="button"
                 class="citation-item"
-                @click="openPreview(citation)"
+                :class="{ 'citation-item--expanded': expandedCitations.has(citation.documentId) }"
               >
-                <div class="citation-item__top">
-                  <div class="citation-item__name">
-                    <el-icon><Document /></el-icon>
-                    <span>{{ citation.fileName }}</span>
+                <div class="citation-item__header" @click="toggleCitationExpand(citation)">
+                  <div class="citation-item__top">
+                    <div class="citation-item__name">
+                      <el-icon><Document /></el-icon>
+                      <span>{{ citation.fileName }}</span>
+                      <el-tag size="small" type="info">{{ citation.hitCount }} 个片段</el-tag>
+                    </div>
+                    <div class="citation-item__meta">
+                      <span>{{ citation.pageText }}</span>
+                      <span>{{ Math.round(citation.score * 100) }}% 相关度</span>
+                      <el-button text type="primary" size="small" @click.stop="openPreview(citation)">
+                        <el-icon><View /></el-icon>
+                        预览全文
+                      </el-button>
+                    </div>
                   </div>
-                  <el-button text type="primary" @click.stop="openPreview(citation)">
-                    <el-icon><View /></el-icon>
-                    <span>预览</span>
-                  </el-button>
+                  <!-- 折叠时显示摘要片段 -->
+                  <div v-if="!expandedCitations.has(citation.documentId)" class="citation-item__excerpt">
+                    <HighlightText :content="citation.excerpt" :query="currentInsight.question || ''" />
+                    <div v-if="citation.hitCount > 1" class="citation-item__expand-hint">
+                      <el-icon><ArrowRight /></el-icon>
+                      展开查看其余 {{ citation.hitCount - 1 }} 条片段
+                    </div>
+                  </div>
                 </div>
-                <div class="citation-item__meta">
-                  <span>{{ citation.hitCount }} 个片段</span>
-                  <span v-if="citation.sectionTitle">{{ citation.sectionTitle }}</span>
-                  <span>{{ citation.pageText }}</span>
-                  <span>{{ Math.round(citation.score * 100) }}% 相关度</span>
+
+                <!-- 展开时显示所有片段 -->
+                <div v-if="expandedCitations.has(citation.documentId)" class="citation-item__chunks">
+                  <div
+                    v-for="(chunk, idx) in getCitationChunks(citation)"
+                    :key="idx"
+                    class="citation-chunk"
+                    @click.stop="openPreview(citation)"
+                  >
+                    <div class="citation-chunk__header">
+                      <el-tag size="small" type="info">片段 {{ idx + 1 }}</el-tag>
+                      <span v-if="chunk.sectionTitle" class="citation-chunk__section">{{ chunk.sectionTitle }}</span>
+                      <span v-if="chunk.pageNum" class="citation-chunk__page">第 {{ chunk.pageNum }} 页</span>
+                    </div>
+                    <div class="citation-chunk__content">
+                      <HighlightText :content="chunk.content" :query="currentInsight.question || ''" />
+                    </div>
+                  </div>
                 </div>
-                <div class="citation-item__excerpt">
-                  <HighlightText :content="citation.excerpt" :query="currentInsight.question || ''" />
-                </div>
-              </button>
+              </div>
             </div>
 
             <el-empty v-else description="当前回答未返回可预览文件" />
@@ -446,20 +489,29 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown, ArrowLeft, ArrowRight, Delete, Document, Plus, RefreshRight, View } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowLeft, ArrowRight, Delete, Document, DocumentCopy, Plus, RefreshRight, View } from '@element-plus/icons-vue'
 import PageContainer from '@/components/common/PageContainer.vue'
 import HighlightText from '@/components/common/HighlightText.vue'
 import FilePreviewDialog from '@/components/document/FilePreviewDialog.vue'
-import { llmProviderApi, type LlmModel, type LlmProvider } from '@/api/modules/llmProvider'
+import { llmProviderApi, type ChatModelOption } from '@/api/modules/llmProvider'
 import { useKnowledgeStore } from '@/stores/knowledge'
 import { useCollapsibleSidebar } from '@/composables/useCollapsibleSidebar'
 import storage from '@/utils/storage'
 import { formatDate } from '@/utils/format'
-import { streamSearchKnowledge, type KnowledgeBase, type SearchMode, type SearchResponse, type SearchResultItem } from '@/api/modules/knowledge'
+import { streamSearchKnowledge, type KnowledgeBase, type SearchMode, type SearchResponse, type SearchResultItem, getRagConfig, type RagConfig, type RagModelCandidate } from '@/api/modules/knowledge'
 
 interface RagThinkingStep {
+  stepType?: 'query_parse' | 'retrieve' | 'rerank' | 'synthesize'
   title: string
   detail: string
+  score?: number
+}
+
+interface CitationChunk {
+  content: string
+  sectionTitle?: string
+  pageNum?: number
+  score?: number
 }
 
 interface RagCitation {
@@ -472,6 +524,7 @@ interface RagCitation {
   score: number
   hitCount: number
   pageText: string
+  chunks?: CitationChunk[]
 }
 
 interface RagModelOption {
@@ -543,7 +596,14 @@ const streamingMessageId = ref<string | null>(null)
 const refreshing = ref(false)
 const availableChatModels = ref<RagModelOption[]>([])
 
+// RAG 动态配置
+const ragConfig = ref<RagConfig | null>(null)
+const embeddingCandidates = ref<RagModelCandidate[]>([])
+const rerankerCandidates = ref<RagModelCandidate[]>([])
+const configLoading = ref(false)
+
 const previewVisible = ref(false)
+const expandedCitations = ref<Set<number>>(new Set())
 const previewState = ref({
   knowledgeBaseId: 0,
   documentId: 0,
@@ -657,7 +717,7 @@ const currentInsight = computed<RagMessage | null>(() => {
 
 onMounted(async () => {
   restoreWorkspace()
-  await Promise.all([store.fetchAllBases(), loadAvailableLlmModels()])
+  await Promise.all([store.fetchAllBases(), loadAvailableLlmModels(), loadRagConfig()])
   bootstrapWorkspace()
 })
 
@@ -718,15 +778,20 @@ function persistWorkspace() {
 
 async function loadAvailableLlmModels() {
   try {
-    const res = await llmProviderApi.list() as any
-    const providers = (res?.data ?? res ?? []) as LlmProvider[]
-    availableChatModels.value = providers
-      .filter(provider => provider.enabled)
-      .flatMap((provider) => {
-        return (provider.models || [])
-          .filter(model => model.enabled && isChatModel(model))
-          .map((model) => toModelOption(provider, model))
-      })
+    const res = await llmProviderApi.listChatModels() as any
+    const models = (res?.data ?? res ?? []) as ChatModelOption[]
+
+    availableChatModels.value = models
+      .map((model) => ({
+        id: model.id,
+        providerId: model.providerId,
+        providerName: model.providerName,
+        name: model.name,
+        label: `${model.providerName} / ${model.name}`,
+        modelId: model.modelId,
+        modelType: model.modelType,
+        isDefault: model.isDefault
+      }))
       .sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.label.localeCompare(b.label, 'zh-CN'))
 
     if (!availableChatModels.value.length) {
@@ -741,6 +806,26 @@ async function loadAvailableLlmModels() {
   } catch {
     availableChatModels.value = []
     selectedLlmModelId.value = null
+  }
+}
+
+/** 从后端动态获取 RAG 配置（embedding/reranker 状态 + 知识库参数） */
+async function loadRagConfig() {
+  configLoading.value = true
+  try {
+    const res = await getRagConfig() as any
+    const cfg = (res?.data ?? res) as RagConfig
+    ragConfig.value = cfg
+    embeddingCandidates.value = cfg.embeddingCandidates ?? []
+    rerankerCandidates.value = cfg.rerankerCandidates ?? []
+    // 用后端默认值初始化 topK（如果前端未手动改过）
+    if (cfg.searchTopK && topK.value === 10) {
+      topK.value = cfg.searchTopK
+    }
+  } catch {
+    ragConfig.value = null
+  } finally {
+    configLoading.value = false
   }
 }
 
@@ -879,7 +964,21 @@ function handleSelectInsight(message: RagMessage) {
   activeInsightMessageId.value = message.id
 }
 
+async function copyMessageContent(content: string) {
+  try {
+    await navigator.clipboard.writeText(content)
+    ElMessage.success('已复制')
+  } catch {
+    ElMessage.error('复制失败')
+  }
+}
+
 async function handleAsk() {
+  if (asking.value) {
+    ElMessage.warning('上一轮回答还在生成中，请稍后再问')
+    return
+  }
+
   const knowledgeBase = selectedKnowledgeBase.value
   const session = activeSession.value
   const question = draftQuestion.value.trim()
@@ -969,14 +1068,17 @@ async function handleAsk() {
           assistantMessage.summaryPoints = extractSummaryPoints(response, question)
           assistantMessage.citations = buildCitations(response?.results || [], question)
           assistantMessage.retrievedCount = response?.total || response?.results?.length || 0
-          assistantMessage.thinkingSteps = buildThinkingSteps({
-            knowledgeBaseName: knowledgeBase.name,
-            question,
-            session,
-            mode: searchMode.value,
-            response,
-            llmModelLabel: selectedModel?.label || null
-          })
+          // 优先使用后端返回的 thinkingSteps，前端仅作兜底
+          assistantMessage.thinkingSteps = response.thinkingSteps?.length
+            ? response.thinkingSteps
+            : buildThinkingStepsFallback({
+                knowledgeBaseName: knowledgeBase.name,
+                question,
+                session,
+                mode: searchMode.value,
+                response,
+                llmModelLabel: selectedModel?.label || null
+              })
           assistantMessage.createdAt = Date.now()
           session.updatedAt = assistantMessage.createdAt
         },
@@ -985,11 +1087,14 @@ async function handleAsk() {
         }
       }
     )
-  } catch {
+  } catch (streamError: any) {
+    const streamErrMsg = streamError?.message || ''
     try {
-      if (streamedAssistantMessage) {
-        session.messages = session.messages.filter(message => message.id !== streamedAssistantMessage?.id)
-        if (activeInsightMessageId.value === streamedAssistantMessage.id) {
+      const streamedMsg = streamedAssistantMessage as any
+      if (streamedMsg && streamedMsg.id) {
+        const msgId = streamedMsg.id
+        session.messages = session.messages.filter(message => message.id !== msgId)
+        if (activeInsightMessageId.value === msgId) {
           activeInsightMessageId.value = null
         }
       }
@@ -1011,20 +1116,21 @@ async function handleAsk() {
       session.updatedAt = assistantMessage.createdAt
       activeInsightMessageId.value = assistantMessage.id
       ElMessage.warning('流式输出不可用，已切换为普通回答')
-    } catch {
+    } catch (fallbackError: any) {
+      const errorDetail = extractLlmErrorDetail(fallbackError || streamError)
       const errorMessage: RagMessage = {
         id: createId('msg'),
         role: 'assistant',
-        content: '本次检索未能完成，请检查模型配置、知识库索引状态或稍后重试。',
+        content: errorDetail.userMessage,
         createdAt: Date.now(),
         failed: true,
         question,
-        processSummary: '检索请求失败，当前未返回有效的知识文件证据。',
-        summaryPoints: ['请确认知识库已完成索引。', '请检查大模型与向量检索配置。', '如问题持续，请查看后台日志。'],
+        processSummary: errorDetail.processSummary,
+        summaryPoints: errorDetail.summaryPoints,
         thinkingSteps: [
           { title: '请求提交', detail: '已向检索服务提交本轮问题。' },
-          { title: '服务异常', detail: '当前接口未返回有效结果，因此未生成文件证据与回答摘要。' },
-          { title: '建议处理', detail: '优先确认模型、向量库和知识库文档状态是否正常。' }
+          { title: '服务异常', detail: errorDetail.detail },
+          { title: '建议处理', detail: errorDetail.suggestion }
         ],
         citations: [],
         retrievedCount: 0,
@@ -1034,11 +1140,100 @@ async function handleAsk() {
       session.messages.push(errorMessage)
       session.updatedAt = errorMessage.createdAt
       activeInsightMessageId.value = errorMessage.id
-      ElMessage.error('检索失败，请稍后重试')
+      ElMessage.error(errorDetail.toastMessage)
     }
   } finally {
     asking.value = false
     streamingMessageId.value = null
+  }
+}
+
+/**
+ * 解析 LLM / 知识库检索错误，返回用户友好的提示信息
+ */
+function extractLlmErrorDetail(error: any) {
+  const msg = String(error?.message || error?.msg || '').toLowerCase()
+
+  // 余额不足
+  if (msg.includes('余额不足') || msg.includes('无可用资源包') || msg.includes('充值')) {
+    return {
+      userMessage: 'AI 服务余额不足，暂时无法完成检索问答。',
+      processSummary: '检索失败：AI 服务余额不足，请充值后重试。',
+      summaryPoints: ['AI 服务账户余额已耗尽。', '请联系管理员充值 AI 服务。', '充值完成后即可恢复正常使用。'],
+      detail: 'AI 服务（Embedding/Chat）账户余额不足或资源包已耗尽，无法调用向量化和问答接口。',
+      suggestion: '请联系管理员前往 AI 服务商控制台充值，充值后即可恢复。',
+      toastMessage: 'AI 服务余额不足，请联系管理员充值'
+    }
+  }
+
+  // 请求频率限制
+  if (msg.includes('429') || msg.includes('too many requests') || msg.includes('频繁') || msg.includes('请求过多')) {
+    return {
+      userMessage: 'AI 服务请求过于频繁，请稍后重试。',
+      processSummary: '检索失败：AI 服务请求频率超限。',
+      summaryPoints: ['当前请求频率超过了 AI 服务限制。', '请等待 1-2 分钟后重试。', '如持续出现，请联系管理员调整配置。'],
+      detail: 'AI 服务返回 429 状态码，表示请求频率超限。',
+      suggestion: '请稍等 1-2 分钟后再次提问，避免频繁操作。',
+      toastMessage: '请求过于频繁，请稍后重试'
+    }
+  }
+
+  // 认证失败
+  if (msg.includes('认证失败') || msg.includes('api key') || msg.includes('401') || msg.includes('unauthorized')) {
+    return {
+      userMessage: 'AI 服务认证失败，请检查模型配置。',
+      processSummary: '检索失败：AI 服务 API Key 无效或已过期。',
+      summaryPoints: ['AI 服务的 API Key 可能无效或已过期。', '请在"模型配置"页面检查并更新 API Key。', '更新后需重新测试连通性。'],
+      detail: 'AI 服务返回认证失败，通常是因为 API Key 无效、过期或未配置。',
+      suggestion: '请前往"模型配置"页面，检查对应模型的 API Key 是否正确，并测试连通性。',
+      toastMessage: 'AI 服务认证失败，请检查模型配置'
+    }
+  }
+
+  // 服务不可用
+  if (msg.includes('暂时不可用') || msg.includes('不可用') || msg.includes('500') || msg.includes('502') || msg.includes('503')) {
+    return {
+      userMessage: 'AI 服务暂时不可用，请稍后重试。',
+      processSummary: '检索失败：AI 服务暂时不可用。',
+      summaryPoints: ['AI 服务可能正在维护或过载。', '请等待几分钟后重试。', '如问题持续，请联系管理员。'],
+      detail: 'AI 服务返回服务不可用错误，可能是上游服务维护或过载。',
+      suggestion: '请稍后重试，如持续出现请联系管理员检查 AI 服务状态。',
+      toastMessage: 'AI 服务暂时不可用，请稍后重试'
+    }
+  }
+
+  // 超时
+  if (msg.includes('超时') || msg.includes('timeout')) {
+    return {
+      userMessage: 'AI 服务响应超时，请稍后重试。',
+      processSummary: '检索失败：AI 服务响应超时。',
+      summaryPoints: ['AI 服务响应时间过长。', '可能是网络波动或服务负载过高。', '请稍后重试。'],
+      detail: 'AI 服务响应超时，可能是网络延迟或上游服务负载过高。',
+      suggestion: '请稍后重试，如持续超时请联系管理员检查网络配置。',
+      toastMessage: 'AI 服务超时，请稍后重试'
+    }
+  }
+
+  // 向量化服务异常
+  if (msg.includes('向量化') || msg.includes('embedding')) {
+    return {
+      userMessage: '文本向量化服务异常，请稍后重试。',
+      processSummary: '检索失败：文本向量化服务异常。',
+      summaryPoints: ['Embedding 模型服务调用失败。', '请检查模型配置中的 Embedding 模型是否正常。', '如问题持续，请联系管理员。'],
+      detail: '文本向量化（Embedding）服务调用失败，无法将查询文本转换为向量。',
+      suggestion: '请前往"模型配置"页面，检查 Embedding 模型的连通性。如余额不足请充值。',
+      toastMessage: '向量化服务异常，请稍后重试'
+    }
+  }
+
+  // 默认兜底
+  return {
+    userMessage: '本次检索未能完成，请检查模型配置、知识库索引状态或稍后重试。',
+    processSummary: '检索请求失败，当前未返回有效的知识文件证据。',
+    summaryPoints: ['请确认知识库已完成索引。', '请检查大模型与向量检索配置。', '如问题持续，请查看后台日志。'],
+    detail: '当前接口未返回有效结果，因此未生成文件证据与回答摘要。',
+    suggestion: '优先确认模型、向量库和知识库文档状态是否正常。',
+    toastMessage: '检索失败，请稍后重试'
   }
 }
 
@@ -1059,7 +1254,7 @@ function createAssistantMessage(options: {
     question: options.question,
     processSummary: buildProcessSummary(response, options.knowledgeBaseName),
     summaryPoints: extractSummaryPoints(response, options.question),
-    thinkingSteps: buildThinkingSteps({
+    thinkingSteps: buildThinkingStepsFallback({
       knowledgeBaseName: options.knowledgeBaseName,
       question: options.question,
       session: options.session,
@@ -1083,6 +1278,32 @@ function openPreview(citation: RagCitation) {
     downloadUrl: `/api/v1/knowledge/bases/${citation.knowledgeBaseId}/documents/${citation.documentId}/download`
   }
   previewVisible.value = true
+}
+
+function toggleCitationExpand(citation: RagCitation) {
+  const id = citation.documentId
+  if (expandedCitations.value.has(id)) {
+    expandedCitations.value.delete(id)
+  } else {
+    expandedCitations.value.add(id)
+  }
+  // 触发响应式更新
+  expandedCitations.value = new Set(expandedCitations.value)
+}
+
+function getCitationChunks(citation: RagCitation): CitationChunk[] {
+  if (citation.chunks?.length) {
+    return citation.chunks
+  }
+  // 兜底：从 excerpt 构建单片段
+  if (citation.excerpt) {
+    return [{
+      content: citation.excerpt,
+      sectionTitle: citation.sectionTitle,
+      pageNum: citation.pageText ? parseInt(citation.pageText.replace(/[^0-9]/g, '')) || undefined : undefined
+    }]
+  }
+  return []
 }
 
 function buildRequestQuery(session: RagSession, question: string) {
@@ -1165,7 +1386,7 @@ function extractSummaryPoints(response: SearchResponse | null | undefined, quest
     })
 }
 
-function buildThinkingSteps(params: {
+function buildThinkingStepsFallback(params: {
   knowledgeBaseName: string
   question: string
   session: RagSession
@@ -1253,10 +1474,24 @@ function buildCitations(results: SearchResultItem[], question: string) {
   return Array.from(grouped.values())
     .map(({ pageSet: _pageSet, textPool, sectionPool, ...citation }) => {
       const preferredSection = pickBestSectionTitle(sectionPool, question)
+      // 构建 chunks 数组：每个检索片段一个条目
+      const chunks: CitationChunk[] = textPool.map((content, idx) => {
+        const sections = sectionPool[idx] || ''
+        const pageNums = Array.from(_pageSet || new Set<number>())
+        return {
+          content,
+          sectionTitle: sections || undefined,
+          pageNum: pageNums[idx % pageNums.length] || undefined,
+          score: undefined
+        }
+      })
+      // excerpt = 第一条内容摘要（折叠状态显示）
+      const excerpt = extractCoreExcerpt(textPool, question, preferredSection || citation.sectionTitle || '')
       return {
         ...citation,
         sectionTitle: preferredSection || citation.sectionTitle,
-        excerpt: extractCoreExcerpt(textPool, question, preferredSection || citation.sectionTitle || '')
+        excerpt,
+        chunks
       }
     })
     .sort((a, b) => b.score - a.score)
@@ -1390,28 +1625,10 @@ function formatPageText(pageSet: Set<number>) {
   return `第 ${values[0]} / ${values[values.length - 1]} 页`
 }
 
-function isChatModel(model: LlmModel) {
-  const type = (model.modelType || '').toLowerCase()
-  return type !== 'embedding' && type !== 'rerank'
-}
-
 function compactModelName(model: RagModelOption) {
   const source = (model.name || model.modelId || model.label).trim()
   const compact = source.replace(/^(gpt|claude|glm|qwen|deepseek|gemini)[-_:\s]*/i, '').trim()
   return compact || source
-}
-
-function toModelOption(provider: LlmProvider, model: LlmModel): RagModelOption {
-  return {
-    id: model.id || 0,
-    providerId: provider.id || 0,
-    providerName: provider.name,
-    name: model.name,
-    label: `${provider.name} / ${model.name}`,
-    modelId: model.modelId,
-    modelType: model.modelType,
-    isDefault: Boolean(model.isDefault)
-  }
 }
 
 function buildSessionTitle(question: string) {
@@ -1826,6 +2043,27 @@ function formatDateTime(timestamp: number) {
   color: #ffffff;
 }
 
+.message-bubble__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+  opacity: 0;
+  transition: opacity 0.2s;
+
+  .copy-btn {
+    color: rgba(255, 255, 255, 0.7);
+    padding: 2px;
+
+    &:hover {
+      color: #ffffff;
+    }
+  }
+}
+
+.message-row--user:hover .message-bubble__actions {
+  opacity: 1;
+}
+
 .message-bubble__footer {
   margin-top: 10px;
 }
@@ -2201,7 +2439,14 @@ function formatDateTime(timestamp: number) {
 .thinking-item {
   display: flex;
   gap: var(--spacing-sm);
+  align-items: flex-start;
 }
+
+/* 按步骤类型区分样式 */
+.thinking-item--query_parse .thinking-item__index { background: rgba(37, 99, 235, 0.12); color: #2563eb; }
+.thinking-item--retrieve .thinking-item__index { background: rgba(34, 197, 94, 0.12); color: #16a34a; }
+.thinking-item--rerank .thinking-item__index { background: rgba(234, 179, 8, 0.12); color: #ca8a04; }
+.thinking-item--synthesize .thinking-item__index { background: rgba(139, 92, 246, 0.12); color: #7c3aed; }
 
 .thinking-item__index {
   width: 24px;
@@ -2245,26 +2490,48 @@ function formatDateTime(timestamp: number) {
 }
 
 .citation-item {
-  padding: 12px;
   border-radius: 10px;
   background: #f8fafc;
   border: 1px solid var(--color-border);
   color: var(--color-text-primary);
-  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  transition: box-shadow 0.18s ease, border-color 0.18s ease;
+  overflow: hidden;
 }
 
 .citation-item:hover {
   box-shadow: var(--shadow-sm);
 }
 
+.citation-item--expanded {
+  border-color: var(--color-accent);
+}
+
+.citation-item__header {
+  padding: 12px;
+  cursor: pointer;
+}
+
+.citation-item__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
 .citation-item__name {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
 }
 
 .citation-item__meta {
-  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
 }
 
 .citation-item__excerpt {
@@ -2273,9 +2540,61 @@ function formatDateTime(timestamp: number) {
   color: var(--color-text-secondary);
 }
 
+.citation-item__expand-hint {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-accent);
+  font-size: var(--font-size-xs);
+}
+
 .citation-item__excerpt :deep(mark) {
   background: rgba(64, 158, 255, 0.16);
   color: var(--color-text-primary);
+}
+
+.citation-item__chunks {
+  border-top: 1px solid var(--color-border);
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.citation-chunk {
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.citation-chunk:last-child {
+  border-bottom: none;
+}
+
+.citation-chunk:hover {
+  background: rgba(64, 158, 255, 0.06);
+}
+
+.citation-chunk__header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: 4px;
+}
+
+.citation-chunk__section {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.citation-chunk__page {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+.citation-chunk__content {
+  line-height: 1.7;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
 }
 
 .rag-workspace :deep(.el-empty__description p) {

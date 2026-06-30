@@ -23,6 +23,7 @@ export interface ColumnDef {
   fixed?: string | boolean
   showOverflowTooltip?: boolean
   disabled?: boolean
+  sortable?: boolean
 }
 
 export interface UseColumnConfigOptions {

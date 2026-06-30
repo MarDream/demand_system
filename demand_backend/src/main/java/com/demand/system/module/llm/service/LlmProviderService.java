@@ -19,10 +19,14 @@ public interface LlmProviderService {
     LlmModelVO updateModel(Long modelId, LlmModelDTO dto);
     void deleteModel(Long modelId);
     void toggleModelEnabled(Long modelId);
+    void toggleModelDefault(Long modelId);
     LlmTestResultVO testModel(Long modelId, LlmTestRequestDTO request);
 
     // Role
     LlmModelVO getModelByType(String type);
+
+    // Chat Models (for RAG)
+    java.util.List<java.util.Map<String, Object>> listChatModels();
 
     // Sniff
     List<SniffedModelVO> sniffModels(Long id);

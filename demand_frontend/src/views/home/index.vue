@@ -334,8 +334,8 @@ function getProgressColor(rate: number) {
 }
 
 function getStatusType(status: string) {
-  const map: Record<string, string> = { '待处理': 'info', '进行中': 'warning', '已完成': 'success', '已关闭': '', '已逾期': 'danger' }
-  return (map[status] || 'info') as any
+  const map: Record<string, string | undefined> = { '待处理': 'info', '进行中': 'warning', '已完成': 'success', '已关闭': undefined, '已逾期': 'danger' }
+  return map[status] ?? 'info'
 }
 
 // 优先级配置（来自"需求配置-优先级"，动态加载）
@@ -364,16 +364,16 @@ function getPriorityLabel(priority: string) {
 }
 
 function getPriorityType(priority: string) {
-  // 配置了 color 时由 :style 接管，type 仅作无 color 时的兜底
-  if (priorityColorMap.value[priority]) return '' as any
+  // 配置了 color 时由 :style 接管，type 不传让 ElTag 用默认样式
+  if (priorityColorMap.value[priority]) return undefined
   const label = getPriorityLabel(priority)
-  const colorMap: Record<string, string> = {
+  const colorMap: Record<string, string | undefined> = {
     '紧急': 'danger',
     '高': 'warning',
-    '中': '',
+    '中': undefined,
     '低': 'info'
   }
-  return (colorMap[label] || 'info') as any
+  return colorMap[label] ?? 'info'
 }
 
 function getPriorityStyle(priority: string) {

@@ -289,12 +289,12 @@ const loadTemplates = async () => {
       pageSize: 20,
       keyword: searchKeyword.value,
       includeMyWorkflows: isMyWorkflows
-    })
-    
+    }) as any
+
     if (isMyWorkflows) {
-      myWorkflowList.value = res.data.records || []
+      myWorkflowList.value = res.records || []
     } else {
-      templateList.value = res.data.records || []
+      templateList.value = res.records || []
     }
   } catch (error) {
     console.error('加载模板列表失败:', error)
@@ -326,10 +326,10 @@ const checkNameConflict = async () => {
 
   nameStatus.value = 'checking'
   try {
-    const res = await checkWorkflowNameConflict(copyOptions.newName, props.projectId)
-    if (res.data.conflict) {
+    const res = await checkWorkflowNameConflict(copyOptions.newName, props.projectId) as any
+    if (res.conflict) {
       nameStatus.value = 'conflict'
-      suggestedName.value = res.data.suggestedName || ''
+      suggestedName.value = res.suggestedName || ''
     } else {
       nameStatus.value = 'available'
       suggestedName.value = ''
@@ -369,10 +369,10 @@ const handleCreate = async () => {
       const res = await copyWorkflow(selectedWorkflow.value.id, {
         ...copyOptions,
         targetProjectId: props.projectId
-      })
-      
-      ElMessage.success(res.data.message || '工作流复制成功')
-      emit('success', res.data.workflowVersionId)
+      }) as any
+
+      ElMessage.success(res.message || '工作流复制成功')
+      emit('success', res.workflowVersionId)
       handleClose()
     } catch (error: any) {
       console.error('复制工作流失败:', error)

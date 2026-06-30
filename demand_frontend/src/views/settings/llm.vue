@@ -5,6 +5,40 @@
       <p class="config-desc">管理大模型接入组和模型实例，支持 OpenAI 和 Anthropic 协议</p>
     </div>
 
+    <!-- 知识库配置状态卡片 -->
+    <div v-if="ragConfig" class="rag-status-bar">
+      <div class="rag-status-item">
+        <span class="rag-status-label">Embedding</span>
+        <template v-if="ragConfig.embedding?.configured">
+          <span class="rag-status-value">{{ ragConfig.embedding.name }}</span>
+          <el-tag v-if="ragConfig.embedding.dimension" size="small" type="info">{{ ragConfig.embedding.dimension }}d</el-tag>
+          <span v-if="ragConfig.embedding.dimensionMatch === false" class="rag-status-warn">维度不匹配</span>
+          <span v-else class="rag-status-ok">正常</span>
+        </template>
+        <template v-else>
+          <span class="rag-status-missing">未配置</span>
+        </template>
+      </div>
+      <div class="rag-status-item">
+        <span class="rag-status-label">Reranker</span>
+        <template v-if="ragConfig.reranker?.configured">
+          <span class="rag-status-value">{{ ragConfig.reranker.name }}</span>
+          <span class="rag-status-ok">正常</span>
+        </template>
+        <template v-else>
+          <span class="rag-status-missing">未配置</span>
+        </template>
+      </div>
+      <div class="rag-status-item">
+        <span class="rag-status-label">Milvus</span>
+        <span class="rag-status-value">{{ ragConfig.milvusDimension }}d</span>
+      </div>
+      <div class="rag-status-item">
+        <span class="rag-status-label">分块</span>
+        <span class="rag-status-value">{{ ragConfig.chunkSize }} / {{ ragConfig.chunkOverlap }}</span>
+      </div>
+    </div>
+
     <div class="config-layout">
       <!-- 左侧：接入组列表 -->
       <div class="provider-panel">
@@ -39,7 +73,7 @@
                     @click.stop
                   />
                 </span>
-                <div class="provider-count">{{ p.models?.length ?? 0 }} 个模型</div>
+                <div class="provider-count">{{ p.models?.length ?? 0 }} 个模型{{ providerValidCount(p) > 0 ? `，有效 ${providerValidCount(p)} 个` : '' }}</div>
               </div>
             </div>
             <div class="provider-item-actions" @click.stop>
@@ -111,7 +145,19 @@
             </div>
           </div>
 
-          <el-table :data="selectedProviderModels" border style="width: 100%" size="small" row-key="id">
+          <!-- 模型类型快捷筛选 -->
+          <div class="model-type-filter">
+            <span
+              v-for="ft in modelTypeFilters"
+              :key="ft.value"
+              class="model-type-filter-item"
+              :class="{ 'is-active': modelTypeFilter === ft.value }"
+              @click="modelTypeFilter = ft.value"
+            >{{ ft.label }} <sup v-if="ft.count > 0">{{ ft.count }}</sup></span>
+          </div>
+
+          <el-table :data="pagedModels" border style="width: 100%" size="small" row-key="id" :row-class-name="modelRowClassName" @selection-change="handleModelSelectionChange">
+            <el-table-column type="selection" width="40" align="center" />
             <template v-for="col in visibleColumns" :key="col.key">
               <el-table-column
                 :prop="col.prop"
@@ -121,16 +167,21 @@
                 :align="col.align || 'left'"
                 :fixed="col.fixed"
                 :show-overflow-tooltip="col.showOverflowTooltip"
+                :sortable="col.sortable || false"
               >
                 <template #default="{ row }">
-                  <template v-if="col.key === 'name'">
-                    {{ row.name }}
-                  </template>
-                  <template v-else-if="col.key === 'modelId'">
-                    {{ row.modelId }}
+                  <template v-if="col.key === 'modelId'">
+                    <span :class="{ 'model-name-default': row.isDefault }">{{ row.modelId }}</span>
                   </template>
                   <template v-else-if="col.key === 'modelType'">
                     <el-tag :type="typeTagType(row.modelType)" size="small">{{ row.modelType || 'general' }}</el-tag>
+                  </template>
+                  <template v-else-if="col.key === 'contextWindow'">
+                    <span :class="row.contextWindow ? '' : 'conn-pending'">{{ formatContextWindow(row.contextWindow ?? null) }}</span>
+                  </template>
+                  <template v-else-if="col.key === 'ownedBy'">
+                    <template v-if="row.ownedBy">{{ row.ownedBy }}</template>
+                    <span v-else class="conn-pending">-</span>
                   </template>
                   <template v-else-if="col.key === 'temperature'">
                     {{ row.temperature }}
@@ -139,8 +190,13 @@
                     {{ row.maxTokens }}
                   </template>
                   <template v-else-if="col.key === 'isDefault'">
-                    <el-tag v-if="row.isDefault" type="success" size="small">是</el-tag>
-                    <span v-else>-</span>
+                    <template v-if="hasUpdatePermission">
+                      <el-switch :model-value="row.isDefault" size="small" @change="handleToggleDefault(selectedProvider!, row)" />
+                    </template>
+                    <template v-else>
+                      <el-tag v-if="row.isDefault" type="success" size="small">默认</el-tag>
+                      <span v-else class="conn-pending">-</span>
+                    </template>
                   </template>
                   <template v-else-if="col.key === 'enabled'">
                     <span v-permission="'button:llm-provider:update'">
@@ -168,7 +224,16 @@
                     </template>
                     <span v-else class="conn-pending">-</span>
                   </template>
+                  <template v-else-if="col.key === 'testAt'">
+                    <template v-if="row.testAt">
+                      {{ formatTestAt(row.testAt) }}
+                    </template>
+                    <span v-else class="conn-pending">-</span>
+                  </template>
                   <template v-else-if="col.key === 'operations'">
+                    <el-tooltip v-if="row.testAt" content="测试详情" placement="top">
+                      <el-icon class="action-icon info" @click="openTestDetail(row)"><Document /></el-icon>
+                    </el-tooltip>
                     <el-tooltip content="测试连通性" placement="top">
                       <span v-permission="'button:llm-provider:test'">
                         <el-icon class="action-icon" @click="handleTestModel(row)"><Connection /></el-icon>
@@ -189,6 +254,33 @@
               </el-table-column>
             </template>
           </el-table>
+
+          <div v-if="selectedProviderModels.length > 0" class="model-table-footer">
+            <div class="model-table-footer-left">
+              <AppButton
+                v-if="selectedModelRows.length > 0"
+                size="small"
+                type="danger"
+                :icon="Delete"
+                permission="button:llm-provider:delete"
+                @click="handleBatchDeleteModels"
+              >
+                删除选中 ({{ selectedModelRows.length }})
+              </AppButton>
+              <span v-if="selectedModelRows.length > 0" class="model-selection-info">
+                已选 {{ selectedModelRows.length }} / {{ selectedProviderModels.length }} 项
+              </span>
+            </div>
+            <el-pagination
+              v-if="selectedProviderModels.length > modelPageSize"
+              v-model:current-page="modelCurrentPage"
+              :page-size="modelPageSize"
+              :total="selectedProviderModels.length"
+              layout="total, prev, pager, next"
+              size="small"
+              class="model-pagination"
+            />
+          </div>
 
           <el-empty v-if="selectedProviderModels.length === 0" description="暂无模型，请新增或嗅探" />
         </template>
@@ -284,6 +376,35 @@
             <el-option v-for="r in presetTypes" :key="r" :label="r" :value="r" />
           </el-select>
         </el-form-item>
+        <el-form-item v-if="modelForm.modelType === 'embedding'" label="向量维度" class="form-row-item">
+          <el-input-number v-model="modelForm.dimension" :min="1" :max="8192" :step="256" placeholder="如 1024、2048" style="width: 100%" />
+          <div class="form-hint">Embedding 模型输出维度，需与 Milvus 集合维度一致</div>
+        </el-form-item>
+        <template v-if="modelForm.modelType === 'embedding'">
+          <div class="form-section-title">Embedding 参数</div>
+          <div class="form-row">
+            <el-form-item label="分块大小" class="form-row-item">
+              <el-input-number v-model="modelForm.chunkSize" :min="1" :max="10000" :step="64" placeholder="如 512" style="width: 100%" />
+              <div class="form-hint">每个文本块的字符数</div>
+            </el-form-item>
+            <el-form-item label="分块重叠" class="form-row-item">
+              <el-input-number v-model="modelForm.chunkOverlap" :min="0" :max="5000" :step="32" placeholder="如 128" style="width: 100%" />
+              <div class="form-hint">相邻块之间的重叠字符数</div>
+            </el-form-item>
+          </div>
+          <el-form-item label="检索 TopK">
+            <el-input-number v-model="modelForm.searchTopK" :min="1" :max="1000" :step="5" placeholder="如 20" style="width: 100%" />
+            <div class="form-hint">检索时返回的最相关结果数量</div>
+          </el-form-item>
+        </template>
+        <div class="form-row">
+          <el-form-item label="上下文长度" class="form-row-item">
+            <span class="form-static-value">{{ formatContextWindow(modelForm.contextWindow ?? null) }}</span>
+          </el-form-item>
+          <el-form-item label="厂商" class="form-row-item">
+            <span class="form-static-value">{{ modelForm.ownedBy || '-' }}</span>
+          </el-form-item>
+        </div>
         <div class="form-section-title">模型参数</div>
         <div class="form-row">
           <el-form-item label="温度" class="form-row-item">
@@ -310,7 +431,7 @@
     </el-dialog>
 
     <!-- 嗅探模型对话框 -->
-    <el-dialog v-model="sniffDialogVisible" title="嗅探模型" width="560px">
+    <el-dialog v-model="sniffDialogVisible" title="嗅探模型" width="620px">
       <div v-loading="sniffing" style="min-height: 100px;">
         <el-alert
           v-if="!sniffing && sniffedModels.length > 0"
@@ -321,17 +442,58 @@
           发现 {{ sniffedModels.length }} 个可用模型，已自动选择未导入的模型。已导入的模型将显示为灰色。
         </el-alert>
         <el-empty v-if="!sniffing && sniffedModels.length === 0" description="未发现可用模型" />
-        <el-checkbox-group v-model="sniffSelectedModelIds">
-          <div v-for="model in sniffedModels" :key="model.modelId" style="margin-bottom: 6px;">
-            <el-checkbox :value="model.modelId" :disabled="model.alreadyExists">
-              <span :style="{ color: model.alreadyExists ? '#c0c4cc' : '' }">
-                {{ model.modelId }}
-                <el-tag v-if="model.alreadyExists" size="small" type="info" style="margin-left: 6px;">已导入</el-tag>
-                <el-tag v-if="model.ownedBy" size="small" style="margin-left: 6px;">{{ model.ownedBy }}</el-tag>
-              </span>
+        <template v-if="sniffedModels.length > 0">
+          <el-input
+            v-model="sniffSearchKeyword"
+            placeholder="搜索模型名称..."
+            clearable
+            size="small"
+            style="margin-bottom: 10px;"
+            :prefix-icon="Search"
+          />
+          <div class="sniff-select-bar">
+            <el-checkbox
+              :model-value="sniffIsAllFilteredSelected"
+              :indeterminate="sniffIsFilteredPartialSelected"
+              @change="handleSniffSelectAllFiltered"
+            >
+              全选当前结果（已选 {{ sniffSelectedModelIds.length }} 个）
             </el-checkbox>
           </div>
-        </el-checkbox-group>
+          <div class="sniff-model-list">
+            <el-checkbox-group v-model="sniffSelectedModelIds">
+              <div v-for="model in filteredSniffedModels" :key="model.modelId" class="sniff-model-item">
+                <el-checkbox :value="model.modelId" :disabled="model.alreadyExists">
+                  <div class="sniff-model-info">
+                    <div class="sniff-model-row">
+                      <span class="sniff-model-id" :style="{ color: model.alreadyExists ? '#c0c4cc' : '' }">
+                        {{ model.modelId }}
+                      </span>
+                      <el-tag v-if="model.alreadyExists" size="small" type="info">已导入</el-tag>
+                      <el-tag v-if="model.ownedBy" size="small">{{ model.ownedBy }}</el-tag>
+                      <el-tag
+                        v-if="model.inferredType && model.inferredType !== 'general'"
+                        :type="sniffTypeTagType(model.inferredType)"
+                        size="small"
+                      >{{ model.inferredType }}</el-tag>
+                    </div>
+                    <div class="sniff-model-meta">
+                      <span class="sniff-meta-item">
+                        <span class="sniff-meta-label">上下文</span>
+                        <span class="sniff-meta-value">{{ formatContextWindow(model.contextWindow) }}</span>
+                      </span>
+                      <span class="sniff-meta-item">
+                        <span class="sniff-meta-label">发布日期</span>
+                        <span class="sniff-meta-value">{{ formatCreatedDate(model.created) }}</span>
+                      </span>
+                    </div>
+                  </div>
+                </el-checkbox>
+              </div>
+            </el-checkbox-group>
+            <el-empty v-if="filteredSniffedModels.length === 0" description="无匹配模型" :image-size="60" />
+          </div>
+        </template>
       </div>
       <template #footer>
         <el-button @click="sniffDialogVisible = false">取消</el-button>
@@ -340,13 +502,91 @@
         </AppButton>
       </template>
     </el-dialog>
+
+    <!-- 测试详情 Drawer -->
+    <el-drawer
+      v-model="testDetailVisible"
+      :title="testDetailModel ? `${testDetailModel.name} - 测试详情` : '测试详情'"
+      direction="rtl"
+      size="480px"
+      :destroy-on-close="true"
+    >
+      <template v-if="testDetailModel">
+        <!-- 基础状态 -->
+        <div class="test-detail-section">
+          <div class="test-detail-section-title">测试状态</div>
+          <div class="test-detail-grid">
+            <div class="test-detail-item">
+              <span class="test-detail-label">连通性</span>
+              <span class="test-detail-value">
+                <span v-if="testDetailModel.testSuccess === true" class="conn-badge conn-badge-success">成功</span>
+                <span v-else-if="testDetailModel.testSuccess === false" class="conn-badge conn-badge-fail">失败</span>
+                <span v-else class="conn-badge conn-badge-pending">未测试</span>
+              </span>
+            </div>
+            <div class="test-detail-item">
+              <span class="test-detail-label">响应耗时</span>
+              <span class="test-detail-value" :style="{ color: testDetailModel.testDuration ? durationColor(testDetailModel.testDuration) : '' }">
+                {{ testDetailModel.testDuration != null ? formatDuration(testDetailModel.testDuration) : '-' }}
+              </span>
+            </div>
+            <div class="test-detail-item">
+              <span class="test-detail-label">测试时间</span>
+              <span class="test-detail-value">{{ testDetailModel.testAt ? formatTestAt(testDetailModel.testAt) : '-' }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 错误信息 -->
+        <div v-if="testDetailModel.testError" class="test-detail-section">
+          <div class="test-detail-section-title">错误信息</div>
+          <div class="test-detail-error-box">{{ testDetailModel.testError }}</div>
+        </div>
+
+        <!-- 完整测试结果 -->
+        <template v-if="testDetailModel.testResult">
+          <div class="test-detail-section">
+            <div class="test-detail-section-title">响应详情</div>
+            <div class="test-detail-grid">
+              <div v-if="testDetailModel.testResult.model" class="test-detail-item">
+                <span class="test-detail-label">响应模型</span>
+                <span class="test-detail-value">{{ testDetailModel.testResult.model }}</span>
+              </div>
+              <div v-if="testDetailModel.testResult.promptTokens != null" class="test-detail-item">
+                <span class="test-detail-label">Prompt Tokens</span>
+                <span class="test-detail-value">{{ testDetailModel.testResult.promptTokens }}</span>
+              </div>
+              <div v-if="testDetailModel.testResult.completionTokens != null" class="test-detail-item">
+                <span class="test-detail-label">Completion Tokens</span>
+                <span class="test-detail-value">{{ testDetailModel.testResult.completionTokens }}</span>
+              </div>
+              <div v-if="testDetailModel.testResult.totalTokens != null" class="test-detail-item">
+                <span class="test-detail-label">Total Tokens</span>
+                <span class="test-detail-value">{{ testDetailModel.testResult.totalTokens }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 响应内容 -->
+          <div v-if="testDetailModel.testResult.content" class="test-detail-section">
+            <div class="test-detail-section-title">响应内容</div>
+            <div class="test-detail-content-box">{{ testDetailModel.testResult.content }}</div>
+          </div>
+        </template>
+
+        <!-- 无完整结果提示 -->
+        <div v-else-if="testDetailModel.testAt" class="test-detail-section">
+          <el-alert type="info" :closable="false" description="当前会话未缓存完整测试结果，请重新测试以查看详情" />
+        </div>
+      </template>
+    </el-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Loading, View, Hide, Setting, EditPen, Delete, Connection, Search } from '@element-plus/icons-vue'
+import { Plus, Loading, View, Hide, Setting, EditPen, Delete, Connection, Search, Document } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
   llmProviderApi,
@@ -356,26 +596,30 @@ import {
   type LlmModelForm,
   type SniffedModel,
 } from '@/api/modules/llmProvider'
+import { getRagConfig, type RagConfig } from '@/api/modules/knowledge'
 import AppButton from '@/components/common/AppButton.vue'
 import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
 import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
+import { usePermission } from '@/composables/usePermission'
 
 // ==================== 列字段设置 ====================
 
 const llmModelColumns: ColumnDef[] = [
-  { key: 'name', label: '名称', group: '基础字段', prop: 'name', minWidth: 120 },
-  { key: 'modelId', label: '模型ID', group: '基础字段', prop: 'modelId', minWidth: 140, showOverflowTooltip: true },
+  { key: 'modelId', label: '模型名称', group: '基础字段', prop: 'modelId', minWidth: 140, showOverflowTooltip: true },
   { key: 'modelType', label: '类型', group: '基础字段', prop: 'modelType', width: 100, align: 'center' },
+  { key: 'contextWindow', label: '上下文', group: '基础字段', prop: 'contextWindow', width: 80, align: 'center' },
+  { key: 'ownedBy', label: '厂商', group: '基础字段', prop: 'ownedBy', width: 100, align: 'center' },
   { key: 'temperature', label: '温度', group: '参数配置', prop: 'temperature', width: 60, align: 'center' },
   { key: 'maxTokens', label: 'Max Tokens', group: '参数配置', prop: 'maxTokens', width: 90, align: 'center' },
   { key: 'isDefault', label: '默认', group: '状态信息', width: 55, align: 'center' },
   { key: 'enabled', label: '状态', group: '状态信息', width: 60, align: 'center' },
   { key: 'connectivity', label: '连通性', group: '测试信息', width: 90, align: 'center' },
-  { key: 'testDuration', label: '最近耗时', group: '测试信息', width: 100, align: 'center' },
-  { key: 'operations', label: '操作', width: 110, align: 'center', fixed: false },
+  { key: 'testDuration', label: '最近耗时', group: '测试信息', width: 100, align: 'center', sortable: true },
+  { key: 'testAt', label: '测试时间', group: '测试信息', width: 170, align: 'center' },
+  { key: 'operations', label: '操作', width: 140, align: 'center', fixed: false },
 ]
 
-const llmModelDefaultKeys = ['name', 'modelId', 'modelType', 'temperature', 'maxTokens', 'isDefault', 'enabled', 'connectivity', 'testDuration', 'operations']
+const llmModelDefaultKeys = ['modelId', 'modelType', 'contextWindow', 'ownedBy', 'temperature', 'maxTokens', 'isDefault', 'enabled', 'connectivity', 'testDuration', 'testAt', 'operations']
 
 const {
   showColumnConfig,
@@ -402,15 +646,80 @@ const selectedProviderId = ref<number | null>(null)
 const selectedProvider = computed(() =>
   providers.value.find(p => p.id === selectedProviderId.value) ?? null
 )
-const selectedProviderModels = computed(() =>
-  selectedProvider.value?.models ?? []
-)
+const selectedProviderModels = computed(() => {
+  const models = selectedProvider.value?.models ?? []
+  // 默认模型排在最前面，其余按 id 升序
+  return [...models].sort((a, b) => {
+    const aDef = a.isDefault ? 0 : 1
+    const bDef = b.isDefault ? 0 : 1
+    if (aDef !== bDef) return aDef - bDef
+    return (a.id ?? 0) - (b.id ?? 0)
+  })
+})
+
+// RAG 配置状态
+const ragConfig = ref<RagConfig | null>(null)
+
+// 模型类型快捷筛选
+const modelTypeFilter = ref('all')
+const modelTypeFilters = computed(() => {
+  const all = selectedProviderModels.value
+  const countByType = (type: string) => type === 'all'
+    ? all.length
+    : type === 'chat'
+      ? all.filter(m => m.modelType !== 'embedding' && m.modelType !== 'rerank').length
+      : all.filter(m => m.modelType === type).length
+  return [
+    { value: 'all', label: '全部', count: countByType('all') },
+    { value: 'chat', label: '对话', count: countByType('chat') },
+    { value: 'embedding', label: 'Embedding', count: countByType('embedding') },
+    { value: 'rerank', label: 'Reranker', count: countByType('rerank') },
+  ]
+})
+
+// Model pagination
+const modelCurrentPage = ref(1)
+const modelPageSize = 20
+const pagedModels = computed(() => {
+  let all = selectedProviderModels.value
+  if (modelTypeFilter.value === 'embedding') {
+    all = all.filter(m => m.modelType === 'embedding')
+  } else if (modelTypeFilter.value === 'rerank') {
+    all = all.filter(m => m.modelType === 'rerank')
+  } else if (modelTypeFilter.value === 'chat') {
+    all = all.filter(m => m.modelType !== 'embedding' && m.modelType !== 'rerank')
+  }
+  if (all.length <= modelPageSize) return all
+  const start = (modelCurrentPage.value - 1) * modelPageSize
+  return all.slice(start, start + modelPageSize)
+})
+
+// Model batch selection
+const selectedModelRows = ref<LlmModel[]>([])
+function modelRowClassName({ row }: { row: LlmModel }) {
+  return row.isDefault ? 'is-default-model' : ''
+}
+
+function handleModelSelectionChange(rows: LlmModel[]) {
+  selectedModelRows.value = rows
+}
+
+// Reset page when provider or filter changes
+watch([() => selectedProviderId.value, () => modelTypeFilter.value], () => {
+  modelCurrentPage.value = 1
+  selectedModelRows.value = []
+})
+
 const providerSavePermission = computed(() =>
   editingProviderId.value ? 'button:llm-provider:update' : 'button:llm-provider:create'
 )
 const modelSavePermission = computed(() =>
   editingModelId.value ? 'button:llm-provider:update' : 'button:llm-provider:create'
 )
+
+// Permission check for isDefault column
+const { hasPermission } = usePermission()
+const hasUpdatePermission = computed(() => hasPermission('button:llm-provider:update'))
 
 // Provider dialog
 const providerDialogVisible = ref(false)
@@ -440,6 +749,10 @@ const modelForm = reactive<LlmModelForm>({
   name: '',
   modelId: '',
   modelType: 'general',
+  dimension: null,
+  contextWindow: null,
+  ownedBy: null,
+  modelCreated: null,
   temperature: 0.3,
   maxTokens: 2048,
   isDefault: false,
@@ -454,12 +767,52 @@ const modelRules = reactive<FormRules>({
 const testingModels = reactive<Record<number, boolean>>({})
 const batchTesting = ref(false)
 
+// Test detail drawer
+const testDetailVisible = ref(false)
+const testDetailModel = ref<LlmModel | null>(null)
+
+function openTestDetail(model: LlmModel) {
+  testDetailModel.value = model
+  testDetailVisible.value = true
+}
+
 // Sniff state
 const sniffDialogVisible = ref(false)
 const sniffing = ref(false)
 const sniffedModels = ref<SniffedModel[]>([])
 const sniffSelectedModelIds = ref<string[]>([])
 const sniffProviderId = ref<number | null>(null)
+const sniffSearchKeyword = ref('')
+
+const filteredSniffedModels = computed(() => {
+  const kw = sniffSearchKeyword.value.trim().toLowerCase()
+  if (!kw) return sniffedModels.value
+  return sniffedModels.value.filter(m =>
+    m.modelId.toLowerCase().includes(kw) || (m.ownedBy?.toLowerCase().includes(kw))
+  )
+})
+
+const sniffIsAllFilteredSelected = computed(() => {
+  const selectable = filteredSniffedModels.value.filter(m => !m.alreadyExists)
+  return selectable.length > 0 && selectable.every(m => sniffSelectedModelIds.value.includes(m.modelId))
+})
+
+const sniffIsFilteredPartialSelected = computed(() => {
+  const selectable = filteredSniffedModels.value.filter(m => !m.alreadyExists)
+  const selectedCount = selectable.filter(m => sniffSelectedModelIds.value.includes(m.modelId)).length
+  return selectedCount > 0 && selectedCount < selectable.length
+})
+
+function handleSniffSelectAllFiltered(checked: boolean) {
+  const selectable = filteredSniffedModels.value.filter(m => !m.alreadyExists)
+  const selectableIds = selectable.map(m => m.modelId)
+  if (checked) {
+    const newIds = selectableIds.filter(id => !sniffSelectedModelIds.value.includes(id))
+    sniffSelectedModelIds.value = [...sniffSelectedModelIds.value, ...newIds]
+  } else {
+    sniffSelectedModelIds.value = sniffSelectedModelIds.value.filter(id => !selectableIds.includes(id))
+  }
+}
 
 // ==================== Lifecycle ====================
 
@@ -467,6 +820,7 @@ onMounted(() => {
   loadProviders()
   loadColumnConfig()
   loadRoles()
+  loadRagConfig()
 })
 
 // ==================== Data ====================
@@ -484,6 +838,17 @@ async function loadProviders() {
     providers.value = []
   } finally {
     loading.value = false
+  }
+  // Refresh RAG config to keep status bar in sync
+  loadRagConfig()
+}
+
+async function loadRagConfig() {
+  try {
+    const res = await getRagConfig() as any
+    ragConfig.value = res?.data ?? res ?? null
+  } catch {
+    ragConfig.value = null
   }
 }
 
@@ -606,10 +971,17 @@ function resetModelForm() {
   modelForm.name = ''
   modelForm.modelId = ''
   modelForm.modelType = 'general'
+  modelForm.dimension = null
+  modelForm.contextWindow = null
+  modelForm.ownedBy = null
+  modelForm.modelCreated = null
   modelForm.temperature = 0.3
   modelForm.maxTokens = 2048
   modelForm.isDefault = false
   modelForm.enabled = true
+  modelForm.chunkSize = null
+  modelForm.chunkOverlap = null
+  modelForm.searchTopK = null
   modelFormRef.value?.resetFields()
 }
 
@@ -625,10 +997,17 @@ function openEditModel(model: LlmModel) {
   modelForm.name = model.name
   modelForm.modelId = model.modelId
   modelForm.modelType = model.modelType
+  modelForm.dimension = model.dimension ?? null
+  modelForm.contextWindow = model.contextWindow ?? null
+  modelForm.ownedBy = model.ownedBy ?? null
+  modelForm.modelCreated = model.modelCreated ?? null
   modelForm.temperature = model.temperature
   modelForm.maxTokens = model.maxTokens
   modelForm.isDefault = model.isDefault
   modelForm.enabled = model.enabled
+  modelForm.chunkSize = model.chunkSize ?? null
+  modelForm.chunkOverlap = model.chunkOverlap ?? null
+  modelForm.searchTopK = model.searchTopK ?? null
   modelDialogVisible.value = true
 }
 
@@ -664,15 +1043,49 @@ async function handleToggleModel(_provider: LlmProvider, model: LlmModel) {
   }
 }
 
+async function handleToggleDefault(_provider: LlmProvider, model: LlmModel) {
+  try {
+    await llmProviderApi.toggleDefault(model.providerId, model.id!)
+    ElMessage.success(model.isDefault ? '已取消默认' : '已设为默认')
+    await loadProviders()
+  } catch {
+    ElMessage.error('操作失败')
+  }
+}
+
 async function handleDeleteModel(model: LlmModel) {
   await ElMessageBox.confirm(`确认删除模型"${model.name}"吗？`, '提示', { type: 'warning' })
   try {
     await llmProviderApi.deleteModel(model.providerId, model.id!)
     ElMessage.success('删除成功')
+    selectedModelRows.value = selectedModelRows.value.filter(m => m.id !== model.id)
     await loadProviders()
   } catch {
     ElMessage.error('删除失败')
   }
+}
+
+async function handleBatchDeleteModels() {
+  if (selectedModelRows.value.length === 0) return
+  const names = selectedModelRows.value.map(m => m.name).join('、')
+  await ElMessageBox.confirm(`确认批量删除以下 ${selectedModelRows.value.length} 个模型吗？\n${names}`, '批量删除', { type: 'warning' })
+  let deleted = 0
+  let failed = 0
+  for (const model of selectedModelRows.value) {
+    try {
+      await llmProviderApi.deleteModel(model.providerId, model.id!)
+      deleted++
+    } catch {
+      failed++
+    }
+  }
+  if (failed === 0) {
+    ElMessage.success(`已删除 ${deleted} 个模型`)
+  } else {
+    ElMessage.warning(`删除完成：${deleted} 个成功，${failed} 个失败`)
+  }
+  selectedModelRows.value = []
+  await loadProviders()
 }
 
 // ==================== Test ====================
@@ -694,13 +1107,16 @@ async function handleTestModel(model: LlmModel) {
 
   try {
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('timeout')), 30000)
+      setTimeout(() => reject(new Error('timeout')), 120000)
     })
 
     const testPromise = llmProviderApi.testModel(model.providerId, model.id!, { userMessage: '你好' })
 
     const res = await Promise.race([testPromise, timeoutPromise]) as any
     const result = res?.data ?? res
+
+    // 缓存完整测试结果
+    model.testResult = result
 
     if (result.success) {
       if (result.durationMs > 5000) {
@@ -714,7 +1130,7 @@ async function handleTestModel(model: LlmModel) {
     await loadProviders()
   } catch (error: any) {
     if (error?.message === 'timeout') {
-      ElMessage.error(`${model.name} 测试超时 (>30s)`)
+      ElMessage.error(`${model.name} 测试超时 (>120s)`)
     } else {
       ElMessage.error(`${model.name} 请求失败`)
     }
@@ -740,26 +1156,33 @@ async function handleBatchTest() {
 
   ElMessage.info(`开始并行测试 ${models.length} 个模型...`)
 
-  let completedCount = 0
   let successCount = 0
   let failCount = 0
   let timeoutCount = 0
 
-  // 并行启动所有测试，每个测试完成后立即更新UI
+  // 并行启动所有测试，每个测试完成后仅局部更新该模型行的状态
   const testPromises = models.map(async (model) => {
-    const result = await testModelWithTimeout(model, 30000)
+    const result = await testModelWithTimeout(model, 120000)
 
-    // 立即刷新当前模型的数据
-    await loadProviders()
-
-    // 更新计数
-    completedCount++
+    // 局部更新模型状态（不刷新整个 providers 列表）
     if (result.success) {
+      model.testSuccess = true
+      model.testDuration = result.duration ?? null
+      model.testError = null
+      model.testAt = new Date().toISOString()
       successCount++
     } else if (result.timeout) {
+      model.testSuccess = false
+      model.testDuration = null
+      model.testError = '超时 (>120s)'
+      model.testAt = new Date().toISOString()
       timeoutCount++
       failCount++
     } else {
+      model.testSuccess = false
+      model.testDuration = null
+      model.testError = result.errorMessage ?? '连接失败'
+      model.testAt = new Date().toISOString()
       failCount++
     }
 
@@ -770,6 +1193,9 @@ async function handleBatchTest() {
   await Promise.all(testPromises)
 
   batchTesting.value = false
+
+  // 所有模型测试完成后，统一刷新一次接入组列表（更新左侧卡片的总模型数/有效数）
+  await loadProviders()
 
   // 显示最终统计结果
   if (failCount === 0 && timeoutCount === 0) {
@@ -782,7 +1208,7 @@ async function handleBatchTest() {
   }
 }
 
-async function testModelWithTimeout(model: LlmModel, timeout: number = 30000): Promise<{ success: boolean; timeout: boolean; duration?: number }> {
+async function testModelWithTimeout(model: LlmModel, timeout: number = 120000): Promise<{ success: boolean; timeout: boolean; duration?: number; errorMessage?: string; result?: any }> {
   testingModels[model.id!] = true
 
   try {
@@ -797,19 +1223,36 @@ async function testModelWithTimeout(model: LlmModel, timeout: number = 30000): P
 
     delete testingModels[model.id!]
 
+    // 缓存完整测试结果
+    model.testResult = result
+
     if (result.success) {
-      return { success: true, timeout: false, duration: result.durationMs }
+      return { success: true, timeout: false, duration: result.durationMs, result }
     } else {
-      return { success: false, timeout: false }
+      return { success: false, timeout: false, errorMessage: result.errorMessage, result }
     }
   } catch (error: any) {
     delete testingModels[model.id!]
 
     if (error?.message === 'timeout') {
-      return { success: false, timeout: true }
+      return { success: false, timeout: true, errorMessage: `超时 (>${timeout / 1000}s)` }
     }
-    return { success: false, timeout: false }
+    return { success: false, timeout: false, errorMessage: getBatchTestErrorMessage(error) }
   }
+}
+
+function getBatchTestErrorMessage(error: unknown): string {
+  const requestError = error as {
+    message?: string
+    response?: {
+      data?: string | { message?: string }
+    }
+  }
+  const data = requestError.response?.data
+  if (typeof data === 'string' && data.trim()) return data
+  if (typeof data === 'object' && data?.message?.trim()) return data.message
+  if (requestError.message?.trim()) return requestError.message
+  return '连接失败'
 }
 
 function formatDuration(ms: number): string {
@@ -825,6 +1268,18 @@ function durationColor(ms: number): string {
   return '#22c55e' // 绿色
 }
 
+function formatTestAt(val: string): string {
+  if (!val) return '-'
+  const d = new Date(val)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+
+function providerValidCount(p: LlmProvider): number {
+  if (!p.models || p.models.length === 0) return 0
+  return p.models.filter(m => m.testSuccess === true).length
+}
+
 // ==================== Role ====================
 
 function typeTagType(modelType: string): string {
@@ -834,8 +1289,16 @@ function typeTagType(modelType: string): string {
     sonnet: 'success',
     opus: 'warning',
     embedding: 'info',
-    rerank: 'info',
+    rerank: 'danger',
     general: 'info',
+  }
+  return map[modelType] ?? 'info'
+}
+
+function sniffTypeTagType(modelType: string): string {
+  const map: Record<string, string> = {
+    embedding: 'info',
+    rerank: 'danger',
   }
   return map[modelType] ?? 'info'
 }
@@ -848,17 +1311,59 @@ async function handleSniff(row: LlmProvider) {
   sniffDialogVisible.value = true
   sniffedModels.value = []
   sniffSelectedModelIds.value = []
+  sniffSearchKeyword.value = ''
   try {
     const res = await llmProviderApi.sniffModels(row.id!) as any
     const data = res?.data ?? res ?? []
-    sniffedModels.value = data
-    sniffSelectedModelIds.value = data.filter((m: SniffedModel) => !m.alreadyExists).map((m: SniffedModel) => m.modelId)
+    sniffedModels.value = data.map((m: SniffedModel) => ({
+      ...m,
+      inferredType: m.inferredType || inferModelType(m.modelId),
+    }))
+    sniffSelectedModelIds.value = sniffedModels.value.filter((m: SniffedModel) => !m.alreadyExists).map((m: SniffedModel) => m.modelId)
   } catch (error) {
     ElMessage.error(formatSniffError(error))
     sniffDialogVisible.value = false
   } finally {
     sniffing.value = false
   }
+}
+
+/**
+ * 根据模型 ID 推断 modelType：
+ * - embedding: 包含 embed/embedding/text-embedding/bge/m3e/gte 等关键词
+ * - rerank: 包含 rerank/reranker 等关键词
+ * - 其他: general
+ */
+function inferModelType(modelId: string): string {
+  const id = modelId.toLowerCase()
+  // 先判断 rerank，避免 BAAI/bge-reranker-v2-m3 被 bge 规则误判为 embedding
+  if (id.includes('rerank') || id.includes('reranker')) return 'rerank'
+  if (
+    id.includes('embedding') ||
+    id.includes('embed') ||
+    id.includes('text-embedding') ||
+    id.includes('bge') ||
+    id.includes('m3e') ||
+    id.includes('gte') ||
+    id.includes('e5')
+  ) {
+    return 'embedding'
+  }
+  return 'general'
+}
+
+function formatContextWindow(val: number | null): string {
+  if (val == null) return '-'
+  if (val >= 1_000_000) return `${(val / 1_000_000).toFixed(val % 1_000_000 === 0 ? 0 : 1)}M`
+  if (val >= 1_000) return `${(val / 1_000).toFixed(val % 1_000 === 0 ? 0 : 1)}K`
+  return String(val)
+}
+
+function formatCreatedDate(val: number | null): string {
+  if (val == null || val === 0) return '-'
+  const d = new Date(val * 1000)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
 function formatSniffError(error: unknown): string {
@@ -897,10 +1402,15 @@ async function handleSniffImport() {
     for (const modelId of sniffSelectedModelIds.value) {
       const model = sniffedModels.value.find(m => m.modelId === modelId)
       if (model && !model.alreadyExists) {
+        const inferredType = model.inferredType || inferModelType(model.modelId)
         await llmProviderApi.addModel(sniffProviderId.value!, {
           name: modelId,
           modelId: model.modelId,
-          modelType: 'general',
+          modelType: inferredType,
+          dimension: null,
+          contextWindow: model.contextWindow ?? null,
+          ownedBy: model.ownedBy ?? null,
+          modelCreated: model.created ?? null,
           temperature: 0.3,
           maxTokens: 2048,
           isDefault: false,
@@ -1100,6 +1610,8 @@ async function handleSniffImport() {
   }
   &.primary { color: var(--el-color-primary); }
   &.primary:hover { color: var(--el-color-primary); }
+  &.info { color: #6366f1; }
+  &.info:hover { color: #4f46e5; background: rgba(99, 102, 241, 0.08); }
   &.danger { color: #ef4444; }
   &.danger:hover { color: #dc2626; background: rgba(239, 68, 68, 0.08); }
 }
@@ -1144,6 +1656,19 @@ async function handleSniffImport() {
   padding-left: 10px;
   border-left: 3px solid var(--el-color-primary);
   line-height: 1;
+}
+
+.form-hint {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.form-static-value {
+  font-size: 14px;
+  color: #374151;
+  line-height: 32px;
 }
 
 .provider-form {
@@ -1227,4 +1752,299 @@ async function handleSniffImport() {
 }
 
 // 列设置弹窗样式已迁至 src/styles/column-config.scss（全局）
+
+// ==================== 测试详情 Drawer ====================
+.test-detail-section {
+  margin-bottom: 20px;
+}
+
+.test-detail-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 10px;
+  padding-left: 10px;
+  border-left: 3px solid var(--el-color-primary);
+  line-height: 1;
+}
+
+.test-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.test-detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  background: var(--el-fill-color-light);
+  border-radius: 8px;
+}
+
+.test-detail-label {
+  font-size: 12px;
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.test-detail-value {
+  font-size: 14px;
+  color: var(--color-text-primary);
+  font-weight: 500;
+  word-break: break-all;
+}
+
+.test-detail-error-box {
+  padding: 12px 14px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #dc2626;
+  line-height: 1.6;
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+.test-detail-content-box {
+  padding: 12px 14px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #166534;
+  line-height: 1.6;
+  word-break: break-all;
+  white-space: pre-wrap;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.conn-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.conn-badge-success {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.conn-badge-fail {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+// ==================== 嗅探搜索 ====================
+.sniff-model-list {
+  max-height: 340px;
+  overflow-y: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: #fafbfc;
+}
+
+.sniff-model-item {
+  padding: 6px 4px;
+  border-radius: 6px;
+  transition: background 0.15s;
+
+  &:hover {
+    background: #f0f7ff;
+  }
+
+  :deep(.el-checkbox__label) {
+    font-size: 13px;
+    line-height: 1.6;
+  }
+}
+
+.sniff-model-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sniff-model-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sniff-model-id {
+  font-weight: 500;
+}
+
+.sniff-model-meta {
+  display: flex;
+  gap: 16px;
+  padding-left: 2px;
+}
+
+.sniff-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.sniff-meta-label {
+  color: #9ca3af;
+}
+
+.sniff-meta-value {
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+}
+
+.sniff-select-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  margin-bottom: 4px;
+  font-size: 13px;
+  color: #4b5563;
+}
+
+// ==================== 模型表格底栏 ====================
+.model-table-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-top: 1px solid var(--color-surface-alt);
+  background: #fafbfc;
+  flex-shrink: 0;
+}
+
+.model-table-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.model-selection-info {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.model-pagination {
+  :deep(.el-pagination) {
+    margin: 0;
+  }
+}
+
+.conn-badge-pending {
+  background: #f3f4f6;
+  color: #9ca3af;
+}
+
+// ==================== RAG 状态条 ====================
+.rag-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  background: #f8fbff;
+  border: 1px solid #d8e2f0;
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+
+.rag-status-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rag-status-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.rag-status-value {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1f2937;
+}
+
+.rag-status-ok {
+  font-size: 12px;
+  color: #16a34a;
+  font-weight: 500;
+}
+
+.rag-status-warn {
+  font-size: 12px;
+  color: #f59e0b;
+  font-weight: 500;
+}
+
+.rag-status-missing {
+  font-size: 12px;
+  color: #ef4444;
+  font-weight: 500;
+}
+
+// ==================== 模型类型筛选 ====================
+.model-type-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--color-surface-alt);
+  flex-shrink: 0;
+}
+
+.model-type-filter-item {
+  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #6b7280;
+  transition: all 0.15s;
+  user-select: none;
+
+  sup {
+    font-size: 10px;
+    color: #9ca3af;
+    margin-left: 1px;
+  }
+
+  &:hover {
+    background: #f0f7ff;
+    color: #3b82f6;
+  }
+
+  &.is-active {
+    background: #eff6ff;
+    color: #2563eb;
+    font-weight: 600;
+
+    sup { color: #2563eb; }
+  }
+}
+
+// 默认模型名称样式
+.model-name-default {
+  font-weight: 600;
+  color: var(--el-color-primary, #2563eb);
+}
+
+// 默认模型行高亮
+:deep(.el-table__row) {
+  &.is-default-model {
+    background-color: #f0f7ff;
+  }
+}
 </style>

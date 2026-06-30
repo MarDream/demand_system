@@ -92,7 +92,6 @@ public class WorkflowEngineService {
     private final NodeStatusMapper nodeStatusMapper;
     private final WorkflowGraphNavigator graphNavigator;
     private final WorkflowRuntimeLoader runtimeLoader;
-    private final WorkflowRuntimeMigrationService workflowRuntimeMigrationService;
     private final WorkflowNotificationService notificationService;
     private final RequirementApprovalEvaluationService approvalEvaluationService;
     private final WorkflowCountersignService countersignService;
@@ -110,7 +109,7 @@ public class WorkflowEngineService {
                                UserOrganizationMapper userOrganizationMapper,
                                SysOrgMapper sysOrgMapper,
                                NodeStatusMapper nodeStatusMapper, WorkflowGraphNavigator graphNavigator,
-                               WorkflowRuntimeLoader runtimeLoader, WorkflowRuntimeMigrationService workflowRuntimeMigrationService,
+                               WorkflowRuntimeLoader runtimeLoader,
                                WorkflowNotificationService notificationService,
                                RequirementApprovalEvaluationService approvalEvaluationService,
                                @Lazy WorkflowCountersignService countersignService,
@@ -135,7 +134,6 @@ public class WorkflowEngineService {
         this.nodeStatusMapper = nodeStatusMapper;
         this.graphNavigator = graphNavigator;
         this.runtimeLoader = runtimeLoader;
-        this.workflowRuntimeMigrationService = workflowRuntimeMigrationService;
         this.notificationService = notificationService;
         this.approvalEvaluationService = approvalEvaluationService;
         this.countersignService = countersignService;
@@ -266,7 +264,6 @@ public class WorkflowEngineService {
 
     @Transactional
     public void transition(FlowTransitionRequest request) {
-        workflowRuntimeMigrationService.alignRequirementInstanceIfNeeded(request.getRequirementId());
         Long operatorId = SecurityUtils.getCurrentUserId();
         Requirement requirement = requirementMapper.selectById(request.getRequirementId());
         if (requirement == null) {
@@ -549,7 +546,6 @@ public class WorkflowEngineService {
 
     @Transactional
     public void rollback(Long requirementId, String comment) {
-        workflowRuntimeMigrationService.alignRequirementInstanceIfNeeded(requirementId);
         Long operatorId = SecurityUtils.getCurrentUserId();
         WorkflowInstance instance = getRunningInstance(requirementId);
         requireWorkflowActive(instance);
@@ -606,7 +602,6 @@ public class WorkflowEngineService {
 
     @Transactional
     public void cancel(Long requirementId, String comment) {
-        workflowRuntimeMigrationService.alignRequirementInstanceIfNeeded(requirementId);
         Long operatorId = SecurityUtils.getCurrentUserId();
         Requirement requirement = requirementMapper.selectById(requirementId);
         if (requirement == null) {
@@ -664,7 +659,6 @@ public class WorkflowEngineService {
     }
 
     public WorkflowAvailableActionsDTO getAvailableActions(Long requirementId) {
-        workflowRuntimeMigrationService.alignRequirementInstanceIfNeeded(requirementId);
         WorkflowAvailableActionsDTO actions = new WorkflowAvailableActionsDTO();
         actions.setCanTransition(false);
         actions.setCanRollback(false);
@@ -921,7 +915,6 @@ public class WorkflowEngineService {
 
     @Transactional
     public void autoTransitionAfterCountersign(Long requirementId, String nodeId) {
-        workflowRuntimeMigrationService.alignRequirementInstanceIfNeeded(requirementId);
         Requirement requirement = requirementMapper.selectById(requirementId);
         if (requirement == null) {
             return;

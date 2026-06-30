@@ -21,7 +21,7 @@
 
 import { stripPriorityPrefix, normalizeText } from '@/utils/format'
 
-export type ElementPlusTagType = '' | 'success' | 'info' | 'warning' | 'danger' | 'primary' | undefined
+export type ElementPlusTagType = 'success' | 'info' | 'warning' | 'danger' | 'primary' | undefined
 export type TimelineItemType = 'primary' | 'success' | 'warning' | 'danger' | 'info'
 
 /** 状态 → 颜色映射（中文状态 + 后端枚举） */

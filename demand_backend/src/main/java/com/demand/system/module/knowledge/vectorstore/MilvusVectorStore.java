@@ -8,6 +8,7 @@ import io.milvus.v2.common.DataType;
 import io.milvus.v2.common.IndexParam;
 import io.milvus.v2.service.collection.request.AddFieldReq;
 import io.milvus.v2.service.collection.request.CreateCollectionReq;
+import io.milvus.v2.service.collection.request.DropCollectionReq;
 import io.milvus.v2.service.collection.request.GetCollectionStatsReq;
 import io.milvus.v2.service.collection.request.HasCollectionReq;
 import io.milvus.v2.service.collection.response.GetCollectionStatsResp;
@@ -145,6 +146,19 @@ public class MilvusVectorStore {
         log.info("Milvus插入{}条向量", documents.size());
     }
 
+    public void insertVectorsInBatches(List<VectorDocument> documents, int batchSize) {
+        if (documents.isEmpty()) return;
+        if (documents.size() <= batchSize) {
+            insertVectors(documents);
+            return;
+        }
+        for (int i = 0; i < documents.size(); i += batchSize) {
+            List<VectorDocument> batch = documents.subList(i, Math.min(i + batchSize, documents.size()));
+            insertVectors(batch);
+            log.info("Milvus分批插入: {}/{}", Math.min(i + batchSize, documents.size()), documents.size());
+        }
+    }
+
     public List<SearchResult> search(float[] queryVector, String knowledgeBaseId, int topK) {
         String collectionName = milvusConfig.getCollectionName();
 
@@ -215,6 +229,48 @@ public class MilvusVectorStore {
         } catch (Exception e) {
             return -1;
         }
+    }
+
+    /**
+     * 重建集合：删除旧集合并用指定维度重新创建。
+     * ⚠️ 此操作不可逆，会清除所有向量数据，需重新导入知识库文档。
+     *
+     * @param dimension 新的向量维度
+     * @return true 如果重建成功
+     */
+    public boolean rebuildCollection(int dimension) {
+        String collectionName = milvusConfig.getCollectionName();
+        try {
+            HasCollectionReq hasReq = HasCollectionReq.builder()
+                    .collectionName(collectionName).build();
+            boolean exists = client.hasCollection(hasReq);
+            if (exists) {
+                DropCollectionReq dropReq = DropCollectionReq.builder()
+                        .collectionName(collectionName).build();
+                client.dropCollection(dropReq);
+                log.warn("Milvus旧集合已删除: {}", collectionName);
+            }
+
+            // 临时覆盖维度
+            int originalDimension = milvusConfig.getDimension();
+            milvusConfig.setDimension(dimension);
+            ensureCollection();
+            milvusConfig.setDimension(originalDimension);
+
+            log.info("Milvus集合重建成功: {}, 新维度={}", collectionName, dimension);
+            return true;
+        } catch (Exception e) {
+            log.error("Milvus集合重建失败", e);
+            return false;
+        }
+    }
+
+    /**
+     * 获取当前集合实际使用的向量维度。
+     * 如果集合不存在或无法获取，返回配置中的维度。
+     */
+    public int getActualDimension() {
+        return milvusConfig.getDimension();
     }
 
     public static class VectorDocument {

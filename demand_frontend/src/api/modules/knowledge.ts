@@ -15,6 +15,7 @@ export interface KnowledgeBase {
   chunkCount: number
   status: string
   isDefaultForRequirements: boolean
+  docTimeoutMinutes: number
   createdAt: string
   updatedAt: string
 }
@@ -68,11 +69,20 @@ export interface SearchResultItem {
   } | null
 }
 
+export interface ThinkingStep {
+  stepType: 'query_parse' | 'retrieve' | 'rerank' | 'synthesize'
+  title: string
+  detail: string
+  score?: number
+  metadata?: Record<string, any>
+}
+
 export interface SearchResponse {
   results: SearchResultItem[]
   total: number
   answer?: string | null
   processSummary?: string | null
+  thinkingSteps?: ThinkingStep[]
 }
 
 export type SearchMode = 'hybrid' | 'semantic' | 'keyword'
@@ -89,7 +99,7 @@ export interface DocumentRequirementRef {
 // ===== API 函数 =====
 
 // 知识库管理
-export function createKnowledgeBase(data: { name: string; description?: string; projectId?: number }) {
+export function createKnowledgeBase(data: { name: string; description?: string; projectId?: number; docTimeoutMinutes?: number }) {
   return request.post<KnowledgeBase>('/v1/knowledge/bases', data)
 }
 
@@ -105,7 +115,7 @@ export function getKnowledgeBase(id: number) {
   return request.get<KnowledgeBase>(`/v1/knowledge/bases/${id}`)
 }
 
-export function updateKnowledgeBase(id: number, data: { name?: string; description?: string }) {
+export function updateKnowledgeBase(id: number, data: { name?: string; description?: string; docTimeoutMinutes?: number }) {
   return request.put<KnowledgeBase>(`/v1/knowledge/bases/${id}`, data)
 }
 
@@ -314,4 +324,50 @@ function parseStreamMessage(payload: string) {
   } catch {
     return payload
   }
+}
+
+// ===== RAG 配置动态获取 =====
+
+export interface RagModelStatus {
+  configured: boolean
+  modelId?: string
+  name?: string
+  providerName?: string | null
+  dimension?: number | null
+  dimensionMatch?: boolean | null
+  testSuccess?: boolean | null
+  testError?: string | null
+}
+
+export interface RagModelCandidate {
+  id: number
+  modelId: string
+  name: string
+  providerId: number
+  providerName: string
+  modelType?: string
+  isDefault: boolean
+  enabled?: boolean
+  dimension?: number | null
+}
+
+export interface RagConfig {
+  chunkSize: number
+  chunkOverlap: number
+  searchTopK: number
+  milvusDimension: number
+  embedding: RagModelStatus
+  reranker: RagModelStatus
+  chat?: RagModelStatus
+  embeddingCandidates: RagModelCandidate[]
+  rerankerCandidates: RagModelCandidate[]
+  chatCandidates?: RagModelCandidate[]
+}
+
+export function getRagConfig() {
+  return request.get<RagConfig>('/v1/knowledge/config')
+}
+
+export function updateRagConfig(data: { chunkSize?: number; chunkOverlap?: number; searchTopK?: number }) {
+  return request.put<{ chunkSize: number; chunkOverlap: number; searchTopK: number }>('/v1/knowledge/config', data)
 }

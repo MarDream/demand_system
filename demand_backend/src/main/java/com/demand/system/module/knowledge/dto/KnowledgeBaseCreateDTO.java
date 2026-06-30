@@ -14,6 +14,9 @@ public class KnowledgeBaseCreateDTO {
 
     private Long projectId;
 
+    /** 文档处理超时时间(分钟), 0=不超时, null=使用默认值20 */
+    private Integer docTimeoutMinutes;
+
     public String getName() {
         return name;
     }
@@ -36,5 +39,13 @@ public class KnowledgeBaseCreateDTO {
 
     public void setProjectId(Long projectId) {
         this.projectId = projectId;
+    }
+
+    public Integer getDocTimeoutMinutes() {
+        return docTimeoutMinutes;
+    }
+
+    public void setDocTimeoutMinutes(Integer docTimeoutMinutes) {
+        this.docTimeoutMinutes = docTimeoutMinutes;
     }
 }

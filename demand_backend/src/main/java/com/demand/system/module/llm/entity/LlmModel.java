@@ -13,6 +13,10 @@ public class LlmModel {
     private String name;
     private String modelId;
     private String modelType;
+    private Integer dimension;
+    private Integer contextWindow;
+    private String ownedBy;
+    private Long modelCreated;
     private BigDecimal temperature;
     private Integer maxTokens;
     private Boolean isDefault;
@@ -21,6 +25,9 @@ public class LlmModel {
     private Integer testDuration;
     private String testError;
     private LocalDateTime testAt;
+    private Integer chunkSize;
+    private Integer chunkOverlap;
+    private Integer searchTopK;
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
     @TableField(fill = FieldFill.INSERT_UPDATE)
@@ -36,6 +43,14 @@ public class LlmModel {
     public void setModelId(String modelId) { this.modelId = modelId; }
     public String getModelType() { return modelType; }
     public void setModelType(String modelType) { this.modelType = modelType; }
+    public Integer getDimension() { return dimension; }
+    public void setDimension(Integer dimension) { this.dimension = dimension; }
+    public Integer getContextWindow() { return contextWindow; }
+    public void setContextWindow(Integer contextWindow) { this.contextWindow = contextWindow; }
+    public String getOwnedBy() { return ownedBy; }
+    public void setOwnedBy(String ownedBy) { this.ownedBy = ownedBy; }
+    public Long getModelCreated() { return modelCreated; }
+    public void setModelCreated(Long modelCreated) { this.modelCreated = modelCreated; }
     public BigDecimal getTemperature() { return temperature; }
     public void setTemperature(BigDecimal temperature) { this.temperature = temperature; }
     public Integer getMaxTokens() { return maxTokens; }
@@ -52,6 +67,12 @@ public class LlmModel {
     public void setTestError(String testError) { this.testError = testError; }
     public LocalDateTime getTestAt() { return testAt; }
     public void setTestAt(LocalDateTime testAt) { this.testAt = testAt; }
+    public Integer getChunkSize() { return chunkSize; }
+    public void setChunkSize(Integer chunkSize) { this.chunkSize = chunkSize; }
+    public Integer getChunkOverlap() { return chunkOverlap; }
+    public void setChunkOverlap(Integer chunkOverlap) { this.chunkOverlap = chunkOverlap; }
+    public Integer getSearchTopK() { return searchTopK; }
+    public void setSearchTopK(Integer searchTopK) { this.searchTopK = searchTopK; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }

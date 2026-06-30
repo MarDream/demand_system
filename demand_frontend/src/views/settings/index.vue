@@ -12,7 +12,7 @@
             <el-icon v-else :size="48" :color="item.color"><component :is="item.icon" /></el-icon>
             <h3>{{ item.title }}</h3>
             <p>{{ item.description }}</p>
-            <el-button :type="item.buttonType" text>进入管理 &rarr;</el-button>
+            <el-button :type="item.buttonType || undefined" text>进入管理 &rarr;</el-button>
           </div>
         </el-card>
       </el-col>

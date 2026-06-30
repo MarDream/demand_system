@@ -1,6 +1,7 @@
 package com.demand.system.module.knowledge.dto;
 
 import java.util.List;
+import java.util.Map;
 
 public class KnowledgeSearchResponse {
 
@@ -8,6 +9,7 @@ public class KnowledgeSearchResponse {
     private Integer total;
     private String answer;
     private String processSummary;
+    private List<ThinkingStep> thinkingSteps;
 
     public List<SearchResultItem> getResults() {
         return results;
@@ -41,8 +43,84 @@ public class KnowledgeSearchResponse {
         this.processSummary = processSummary;
     }
 
+    public List<ThinkingStep> getThinkingSteps() {
+        return thinkingSteps;
+    }
+
+    public void setThinkingSteps(List<ThinkingStep> thinkingSteps) {
+        this.thinkingSteps = thinkingSteps;
+    }
+
     public static KnowledgeSearchResponseBuilder builder() {
         return new KnowledgeSearchResponseBuilder();
+    }
+
+    /**
+     * 思维链步骤：
+     * stepType 标识步骤类型，用于前端样式和交互：
+     *   query_parse  - 问题解析
+     *   retrieve     - 文档检索
+     *   rerank       - 结果重排序
+     *   synthesize   - 答案综合
+     */
+    public static class ThinkingStep {
+        private String stepType;
+        private String title;
+        private String detail;
+        private Double score;
+        private Map<String, Object> metadata;
+
+        public ThinkingStep() {}
+
+        public ThinkingStep(String stepType, String title, String detail) {
+            this.stepType = stepType;
+            this.title = title;
+            this.detail = detail;
+        }
+
+        public ThinkingStep(String stepType, String title, String detail, Double score) {
+            this.stepType = stepType;
+            this.title = title;
+            this.detail = detail;
+            this.score = score;
+        }
+
+        public String getStepType() { return stepType; }
+        public void setStepType(String stepType) { this.stepType = stepType; }
+        public String getTitle() { return title; }
+        public void setTitle(String title) { this.title = title; }
+        public String getDetail() { return detail; }
+        public void setDetail(String detail) { this.detail = detail; }
+        public Double getScore() { return score; }
+        public void setScore(Double score) { this.score = score; }
+        public Map<String, Object> getMetadata() { return metadata; }
+        public void setMetadata(Map<String, Object> metadata) { this.metadata = metadata; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private String stepType;
+            private String title;
+            private String detail;
+            private Double score;
+            private Map<String, Object> metadata;
+
+            public Builder stepType(String v) { this.stepType = v; return this; }
+            public Builder title(String v) { this.title = v; return this; }
+            public Builder detail(String v) { this.detail = v; return this; }
+            public Builder score(Double v) { this.score = v; return this; }
+            public Builder metadata(Map<String, Object> v) { this.metadata = v; return this; }
+
+            public ThinkingStep build() {
+                ThinkingStep s = new ThinkingStep();
+                s.setStepType(stepType);
+                s.setTitle(title);
+                s.setDetail(detail);
+                s.setScore(score);
+                s.setMetadata(metadata);
+                return s;
+            }
+        }
     }
 
     public static class KnowledgeSearchResponseBuilder {
@@ -50,6 +128,7 @@ public class KnowledgeSearchResponse {
         private Integer total;
         private String answer;
         private String processSummary;
+        private List<ThinkingStep> thinkingSteps;
 
         public KnowledgeSearchResponseBuilder results(List<SearchResultItem> results) {
             this.results = results;
@@ -71,12 +150,18 @@ public class KnowledgeSearchResponse {
             return this;
         }
 
+        public KnowledgeSearchResponseBuilder thinkingSteps(List<ThinkingStep> steps) {
+            this.thinkingSteps = steps;
+            return this;
+        }
+
         public KnowledgeSearchResponse build() {
             KnowledgeSearchResponse response = new KnowledgeSearchResponse();
             response.setResults(results);
             response.setTotal(total);
             response.setAnswer(answer);
             response.setProcessSummary(processSummary);
+            response.setThinkingSteps(thinkingSteps);
             return response;
         }
     }

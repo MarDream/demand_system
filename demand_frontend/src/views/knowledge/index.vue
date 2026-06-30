@@ -137,6 +137,12 @@
         <el-form-item label="描述">
           <el-input v-model="form.description" type="textarea" :rows="3" placeholder="请输入描述" maxlength="500" />
         </el-form-item>
+        <el-form-item label="超时时间">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <el-input-number v-model="form.docTimeoutMinutes" :min="0" :max="120" :step="5" placeholder="20" />
+            <span style="color: var(--el-text-color-secondary); font-size: 13px;">分钟（0=不超时，默认10）</span>
+          </div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showCreateDialog = false">取消</el-button>
@@ -243,7 +249,7 @@ const showCreateDialog = ref(false)
 const editingKb = ref<KnowledgeBase | null>(null)
 const submitting = ref(false)
 const deletingId = ref<number | null>(null)
-const form = reactive({ name: '', description: '' })
+const form = reactive({ name: '', description: '', docTimeoutMinutes: 10 })
 const keyword = ref('')
 const statusFilter = ref<'all' | 'active' | 'archived'>('all')
 
@@ -306,6 +312,7 @@ function resetForm() {
   editingKb.value = null
   form.name = ''
   form.description = ''
+  form.docTimeoutMinutes = 10
 }
 
 function openCreateDialog() {
@@ -317,6 +324,7 @@ function openEditDialog(kb: KnowledgeBase) {
   editingKb.value = kb
   form.name = kb.name
   form.description = kb.description || ''
+  form.docTimeoutMinutes = kb.docTimeoutMinutes ?? 10
   showCreateDialog.value = true
 }
 
@@ -465,12 +473,13 @@ async function handleSubmit() {
   submitting.value = true
   const name = form.name.trim()
   const description = form.description.trim()
+  const docTimeoutMinutes = form.docTimeoutMinutes
   try {
     if (editingKb.value) {
-      await store.updateBase(editingKb.value.id, { name, description })
+      await store.updateBase(editingKb.value.id, { name, description, docTimeoutMinutes })
       ElMessage.success('更新成功')
     } else {
-      await store.createBase({ name, description })
+      await store.createBase({ name, description, docTimeoutMinutes })
       ElMessage.success('创建成功')
     }
     showCreateDialog.value = false

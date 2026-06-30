@@ -17,11 +17,7 @@ public class KnowledgeDocumentConsumer {
     @RabbitListener(queues = "knowledge.document.process.queue")
     public void handleDocumentProcess(Long documentId) {
         log.info("收到文档处理任务: documentId={}", documentId);
-        try {
-            documentService.processDocument(documentId);
-            log.info("文档处理完成: documentId={}", documentId);
-        } catch (Exception e) {
-            log.error("文档处理失败: documentId={}", documentId, e);
-        }
+        documentService.processDocument(documentId);
+        log.info("文档处理完成: documentId={}", documentId);
     }
 }

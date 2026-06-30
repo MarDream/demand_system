@@ -139,6 +139,12 @@ export const routes: RouteRecordRaw[] = [
         meta: { title: '工作流编辑器', hidden: true, activeMenu: '/system/workflow-config' },
       },
       {
+        path: 'system/workflow-migration',
+        name: 'WorkflowMigration',
+        component: () => import('@/views/system/workflow-migration/index.vue'),
+        meta: { title: '工作流迁移管理', hidden: true, activeMenu: '/system/workflow-config', requiredRoles: ['admin', 'SUPER_ADMIN'], requiredPermissions: ['admin:workflow:migration'] },
+      },
+      {
         path: 'settings/requirements',
         name: 'RequirementConfig',
         component: () => import('@/views/settings/requirements.vue'),

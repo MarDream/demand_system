@@ -144,7 +144,7 @@ export function backfillWorkflowInstances() {
  * 导出工作流（审核通过的版本）
  */
 export function exportWorkflowVersion(versionId: number) {
-  return request.get<WorkflowExportData>(`/v1/workflows/versions/${versionId}/export`) as unknown as Promise<WorkflowExportData>
+  return request.get<WorkflowExportData>(`/v1/workflow/versions/${versionId}/export`) as unknown as Promise<WorkflowExportData>
 }
 
 /**
@@ -152,7 +152,7 @@ export function exportWorkflowVersion(versionId: number) {
  */
 export function importWorkflowVersion(data: WorkflowExportData, targetProjectId?: number) {
   return request.post<WorkflowImportResponse>(
-    '/v1/workflows/import',
+    '/v1/workflow/import',
     data,
     { params: { projectId: targetProjectId ?? GLOBAL_WORKFLOW_PROJECT_ID } },
   ) as unknown as Promise<WorkflowImportResponse>

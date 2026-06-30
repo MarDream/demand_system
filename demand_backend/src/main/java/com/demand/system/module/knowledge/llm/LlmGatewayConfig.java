@@ -42,7 +42,7 @@ public class LlmGatewayConfig {
         private String baseUrl = "";
         private String apiKey = "";
         private String model = "";
-        private String dimension = "1024";
+        private String dimension = null;
 
         public String getProtocol() {
             return protocol;

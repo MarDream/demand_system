@@ -2,6 +2,7 @@ package com.demand.system.module.workflow.controller;
 
 import com.demand.system.common.result.Result;
 import com.demand.system.module.workflow.dto.ApproveWorkflowRequest;
+import com.demand.system.module.workflow.dto.MigrationResultDTO;
 import com.demand.system.module.workflow.dto.PublishWorkflowRequest;
 import com.demand.system.module.workflow.dto.WorkflowVersionVO;
 import com.demand.system.module.workflow.service.WorkflowMigrationService;
@@ -83,14 +84,13 @@ public class WorkflowVersionController {
     }
 
     @PostMapping("/migrate")
-    @Operation(summary = "批量迁移工作流版本", description = "将存量工单从旧版本迁移到新版本")
+    @Operation(summary = "执行工作流版本迁移", description = "根据迁移计划ID执行存量工单迁移")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN')")
-    public Result<WorkflowMigrationService.MigrationResult> migrateVersion(
-            @RequestParam Long fromVersionId,
-            @RequestParam Long toVersionId
+    public Result<MigrationResultDTO> migrateVersion(
+            @RequestParam Long planId
     ) {
-        WorkflowMigrationService.MigrationResult result =
-                workflowMigrationService.batchMigrate(fromVersionId, toVersionId);
+        MigrationResultDTO result =
+                workflowMigrationService.executeMigration(planId);
         return Result.success(result);
     }
 }

@@ -190,7 +190,11 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
         for (WorkflowNode sourceNode : sourceNodes) {
             WorkflowNode newNode = new WorkflowNode();
             newNode.setWorkflowVersionId(targetVersionId);
-            newNode.setNodeId(sourceNode.getNodeId()); // 保持节点ID一致
+            // 为复制后的节点生成新 ID，避免唯一约束冲突
+            // 格式：v{targetVersionId}_{原nodeId}，与 WorkflowConfigServiceImpl 保持一致
+            String newNodeId = "v" + targetVersionId + "_" + sourceNode.getNodeId();
+            newNode.setNodeId(newNodeId);
+            nodeIdMap.put(sourceNode.getNodeId(), newNodeId);
             newNode.setNodeType(sourceNode.getNodeType());
             newNode.setNodeName(sourceNode.getNodeName());
             newNode.setPositionX(sourceNode.getPositionX());
@@ -254,9 +258,13 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
 
             WorkflowEdge newEdge = new WorkflowEdge();
             newEdge.setWorkflowVersionId(targetVersionId);
-            newEdge.setEdgeId(sourceEdge.getEdgeId());
-            newEdge.setSourceNodeId(sourceEdge.getSourceNodeId());
-            newEdge.setTargetNodeId(sourceEdge.getTargetNodeId());
+            // 为复制后的连线生成新 ID，避免唯一约束冲突
+            // 格式：v{targetVersionId}_{原edgeId}，与节点 ID 前缀规则保持一致
+            String newEdgeId = "v" + targetVersionId + "_" + sourceEdge.getEdgeId();
+            newEdge.setEdgeId(newEdgeId);
+            // 使用 nodeIdMap 映射后的新节点 ID
+            newEdge.setSourceNodeId(nodeIdMap.get(sourceEdge.getSourceNodeId()));
+            newEdge.setTargetNodeId(nodeIdMap.get(sourceEdge.getTargetNodeId()));
             newEdge.setLabel(sourceEdge.getLabel());
             newEdge.setCondition(sourceEdge.getCondition());
             newEdge.setProperties(sourceEdge.getProperties());

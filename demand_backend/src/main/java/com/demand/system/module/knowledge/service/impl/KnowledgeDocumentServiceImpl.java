@@ -42,6 +42,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -61,6 +62,7 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -106,6 +108,9 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
      */
     private static final int DEFAULT_PREVIEW_PRESIGN_HOURS = 24;
 
+    /** Redis 文档超时 key 前缀 */
+    private static final String DOC_TIMEOUT_KEY_PREFIX = "demand:doc:timeout:";
+
     private final KnowledgeDocumentMapper documentMapper;
     private final KnowledgeChunkMapper chunkMapper;
     private final KnowledgeBaseMapper knowledgeBaseMapper;
@@ -122,6 +127,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     private final PreviewWarmupService previewWarmupService;
     private final com.demand.system.module.knowledge.mapper.KnowledgeDocumentRequirementRefMapper refMapper;
     private final com.demand.system.module.knowledge.service.KnowledgeBaseService knowledgeBaseService;
+    private final RedisTemplate<String, Object> redisTemplate;
 
     @Value("${jwt.secret}")
     private String jwtSecret;
@@ -141,7 +147,8 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                                         com.demand.system.module.project.mapper.ProjectMapper projectMapper,
                                         PreviewWarmupService previewWarmupService,
                                         com.demand.system.module.knowledge.mapper.KnowledgeDocumentRequirementRefMapper refMapper,
-                                        com.demand.system.module.knowledge.service.KnowledgeBaseService knowledgeBaseService) {
+                                        com.demand.system.module.knowledge.service.KnowledgeBaseService knowledgeBaseService,
+                                        RedisTemplate<String, Object> redisTemplate) {
         this.documentMapper = documentMapper;
         this.chunkMapper = chunkMapper;
         this.knowledgeBaseMapper = knowledgeBaseMapper;
@@ -158,6 +165,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         this.previewWarmupService = previewWarmupService;
         this.refMapper = refMapper;
         this.knowledgeBaseService = knowledgeBaseService;
+        this.redisTemplate = redisTemplate;
     }
 
     @Override
@@ -200,6 +208,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         enqueuePreviewWarmup(doc);
         if (vectorizable) {
             enqueueDocumentProcessing(doc.getId());
+            registerDocTimeout(doc.getId(), kb.getDocTimeoutMinutes());
         }
 
         return toVO(doc);
@@ -227,6 +236,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             return;
         }
         Long kbId = ensureProjectAttachmentKnowledgeBase(projectId, uploaderId);
+        KnowledgeBase kb = knowledgeBaseMapper.selectById(kbId);
         for (RequirementAttachmentDTO attachment : attachments) {
             if (attachment == null) {
                 continue;
@@ -253,6 +263,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             enqueuePreviewWarmup(doc);
             if ("pending".equals(doc.getStatus())) {
                 enqueueDocumentProcessing(doc.getId());
+                registerDocTimeout(doc.getId(), kb != null ? kb.getDocTimeoutMinutes() : null);
             }
         }
         updateKnowledgeBaseCount(kbId);
@@ -330,6 +341,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 enqueuePreviewWarmup(doc);
                 if ("pending".equals(doc.getStatus())) {
                     enqueueDocumentProcessing(doc.getId());
+                    registerDocTimeout(doc.getId(), targetKb.getDocTimeoutMinutes());
                 }
 
                 log.info("新文档入库: kbId={}, docId={}, reqId={}, fileName={}",
@@ -686,6 +698,9 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
     @Override
     public void processDocument(Long documentId) {
+        // 文档开始处理时立即移除 Redis 超时 key，避免处理过程中误触发超时
+        removeDocTimeout(documentId);
+
         KnowledgeDocument doc = documentMapper.selectById(documentId);
         if (doc == null) {
             return;
@@ -806,7 +821,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             }
 
             if (!milvusDocs.isEmpty()) {
-                milvusVectorStore.insertVectors(milvusDocs);
+                milvusVectorStore.insertVectorsInBatches(milvusDocs, knowledgeConfig.getMilvusInsertBatchSize());
             }
 
         } catch (Exception e) {
@@ -1105,21 +1120,34 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
     private List<float[]> embedInBatches(List<String> chunks) {
         List<float[]> allVectors = new ArrayList<>();
-        int batchSize = 16;
+        int batchSize = knowledgeConfig.getEmbeddingBatchSize();
+        long delayMs = knowledgeConfig.getEmbeddingDelayMs();
         for (int i = 0; i < chunks.size(); i += batchSize) {
             List<String> batch = chunks.subList(i, Math.min(i + batchSize, chunks.size()));
             try {
                 List<float[]> batchVectors = embeddingService.embed(batch);
                 allVectors.addAll(batchVectors);
+            } catch (BusinessException e) {
+                throw e;
             } catch (Exception e) {
                 log.warn("批量Embedding失败，降级为逐条处理: {}", e.getMessage());
                 for (String text : batch) {
                     try {
                         allVectors.add(embeddingService.embed(text));
+                    } catch (BusinessException ex) {
+                        throw ex;
                     } catch (Exception ex) {
                         log.warn("单条Embedding失败，跳过: text长度={}", text.length());
                         allVectors.add(new float[0]);
                     }
+                }
+            }
+            if (delayMs > 0 && i + batchSize < chunks.size()) {
+                try {
+                    Thread.sleep(delayMs);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
                 }
             }
         }
@@ -1227,8 +1255,10 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         // 把整个 StringBuilder 撑爆堆内存或拖到 20 分钟超时阈值。
         org.apache.poi.util.IOUtils.setByteArrayMaxOverride(POI_BYTE_ARRAY_MAX_OVERRIDE);
         List<String> chunks = new ArrayList<>();
-        int chunkSize = knowledgeConfig.getChunkSize();
-        int chunkOverlap = knowledgeConfig.getChunkOverlap();
+        // 优先级：模型配置 > 全局配置
+        int[] config = resolveChunkConfig();
+        int chunkSize = config[0];
+        int chunkOverlap = config[1];
         try (var wb = org.apache.poi.ss.usermodel.WorkbookFactory.create(is)) {
             for (int si = 0; si < wb.getNumberOfSheets() && chunks.size() < EXCEL_MAX_CHUNKS; si++) {
                 var sheet = wb.getSheetAt(si);
@@ -1308,8 +1338,10 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
     private List<String> splitContent(String content) {
         List<String> chunks = new ArrayList<>();
-        int chunkSize = knowledgeConfig.getChunkSize();
-        int overlap = knowledgeConfig.getChunkOverlap();
+        // 优先级：模型配置 > 全局配置
+        int[] config = resolveChunkConfig();
+        int chunkSize = config[0];
+        int overlap = config[1];
 
         String[] paragraphs = content.split("\\n\\n+");
 
@@ -1351,6 +1383,18 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     }
 
     /**
+     * 解析分块配置，优先级：模型配置 > 全局配置
+     * @return [chunkSize, chunkOverlap]
+     */
+    private int[] resolveChunkConfig() {
+        var modelConfig = embeddingService.getDefaultModelConfig();
+        if (modelConfig != null) {
+            return new int[] { modelConfig.chunkSize(), modelConfig.chunkOverlap() };
+        }
+        return new int[] { knowledgeConfig.getChunkSize(), knowledgeConfig.getChunkOverlap() };
+    }
+
+    /**
      * 行级权限：校验当前用户对知识库有写入权限（超管或创建人）。
      */
     private void assertCanModifyKnowledgeBase(Long knowledgeBaseId) {
@@ -1384,6 +1428,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     @Transactional
     public int retryDocuments(Long knowledgeBaseId, List<Long> documentIds) {
         assertCanModifyKnowledgeBase(knowledgeBaseId);
+        KnowledgeBase kb = knowledgeBaseMapper.selectById(knowledgeBaseId);
         int retried = 0;
         for (Long docId : documentIds) {
             KnowledgeDocument doc = documentMapper.selectById(docId);
@@ -1405,6 +1450,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             doc.setChunkCount(0);
             documentMapper.updateById(doc);
             enqueueDocumentProcessing(docId);
+            registerDocTimeout(docId, kb != null ? kb.getDocTimeoutMinutes() : null);
             retried++;
         }
         return retried;
@@ -1447,6 +1493,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         doc.setErrorMessage("已跳过索引，仅保留文件存储。如需建立索引请手动重传。");
         doc.setUpdatedAt(LocalDateTime.now());
         documentMapper.updateById(doc);
+        removeDocTimeout(documentId);
         updateKnowledgeBaseCount(knowledgeBaseId);
         log.info("已跳过文档索引: id={}, name={}", doc.getId(), doc.getFileName());
     }
@@ -1604,6 +1651,42 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             } catch (DateTimeParseException ex) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "时间范围格式错误");
             }
+        }
+    }
+
+    /**
+     * 注册文档处理超时 Redis key。
+     * 当知识库的 docTimeoutMinutes > 0 时，创建带 TTL 的 key；
+     * key 过期后由 DocumentTimeoutKeyListener 监听到并标记文档超时。
+     * docTimeoutMinutes 为 null 或 0 时不注册（不超时）。
+     */
+    private void registerDocTimeout(Long docId, Integer docTimeoutMinutes) {
+        if (docTimeoutMinutes == null || docTimeoutMinutes <= 0) {
+            log.debug("知识库未启用文档超时检测，跳过注册: docId={}", docId);
+            return;
+        }
+        String key = DOC_TIMEOUT_KEY_PREFIX + docId;
+        try {
+            redisTemplate.opsForValue().set(key, String.valueOf(docId), docTimeoutMinutes, TimeUnit.MINUTES);
+            log.debug("已注册文档超时 key: docId={}, timeoutMinutes={}", docId, docTimeoutMinutes);
+        } catch (Exception e) {
+            log.warn("注册文档超时 key 失败（不影响文档处理）: docId={}, error={}", docId, e.getMessage());
+        }
+    }
+
+    /**
+     * 移除文档处理超时 Redis key。
+     * 在文档处理开始、完成或跳过时调用，避免误触发超时。
+     */
+    private void removeDocTimeout(Long docId) {
+        String key = DOC_TIMEOUT_KEY_PREFIX + docId;
+        try {
+            Boolean deleted = redisTemplate.delete(key);
+            if (Boolean.TRUE.equals(deleted)) {
+                log.debug("已移除文档超时 key: docId={}", docId);
+            }
+        } catch (Exception e) {
+            log.warn("移除文档超时 key 失败（不影响文档处理）: docId={}, error={}", docId, e.getMessage());
         }
     }
 

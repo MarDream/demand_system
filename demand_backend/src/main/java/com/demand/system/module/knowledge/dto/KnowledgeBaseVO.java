@@ -15,6 +15,7 @@ public class KnowledgeBaseVO {
     private Integer chunkCount;
     private String status;
     private Boolean isDefaultForRequirements;
+    private Integer docTimeoutMinutes;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -106,6 +107,14 @@ public class KnowledgeBaseVO {
         this.isDefaultForRequirements = isDefaultForRequirements;
     }
 
+    public Integer getDocTimeoutMinutes() {
+        return docTimeoutMinutes;
+    }
+
+    public void setDocTimeoutMinutes(Integer docTimeoutMinutes) {
+        this.docTimeoutMinutes = docTimeoutMinutes;
+    }
+
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
@@ -138,6 +147,7 @@ public class KnowledgeBaseVO {
         private Integer chunkCount;
         private String status;
         private Boolean isDefaultForRequirements;
+        private Integer docTimeoutMinutes;
         private LocalDateTime createdAt;
         private LocalDateTime updatedAt;
 
@@ -196,6 +206,11 @@ public class KnowledgeBaseVO {
             return this;
         }
 
+        public Builder docTimeoutMinutes(Integer docTimeoutMinutes) {
+            this.docTimeoutMinutes = docTimeoutMinutes;
+            return this;
+        }
+
         public Builder createdAt(LocalDateTime createdAt) {
             this.createdAt = createdAt;
             return this;
@@ -219,6 +234,7 @@ public class KnowledgeBaseVO {
             vo.setChunkCount(chunkCount);
             vo.setStatus(status);
             vo.setIsDefaultForRequirements(isDefaultForRequirements);
+            vo.setDocTimeoutMinutes(docTimeoutMinutes);
             vo.setCreatedAt(createdAt);
             vo.setUpdatedAt(updatedAt);
             return vo;

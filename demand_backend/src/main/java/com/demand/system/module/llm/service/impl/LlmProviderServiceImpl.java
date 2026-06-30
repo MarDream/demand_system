@@ -16,8 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -129,10 +128,14 @@ public class LlmProviderServiceImpl implements LlmProviderService {
         model.setName(dto.getName());
         model.setModelId(dto.getModelId());
         model.setModelType(dto.getModelType());
+        model.setDimension(dto.getDimension());
         model.setTemperature(dto.getTemperature());
         model.setMaxTokens(dto.getMaxTokens());
         model.setIsDefault(dto.getIsDefault());
         model.setEnabled(dto.getEnabled());
+        model.setChunkSize(dto.getChunkSize());
+        model.setChunkOverlap(dto.getChunkOverlap());
+        model.setSearchTopK(dto.getSearchTopK());
         modelMapper.updateById(model);
         return toModelVO(model);
     }
@@ -152,6 +155,24 @@ public class LlmProviderServiceImpl implements LlmProviderService {
 
     @Override
     @Transactional
+    public void toggleModelDefault(Long modelId) {
+        LlmModel model = modelMapper.selectById(modelId);
+        if (model == null) throw new RuntimeException("模型不存在");
+
+        if (Boolean.TRUE.equals(model.getIsDefault())) {
+            // 取消默认
+            model.setIsDefault(false);
+            modelMapper.updateById(model);
+        } else {
+            // 设为默认：先清理同类默认，再设置当前
+            clearTypeDefaults(model.getProviderId(), model.getModelType());
+            model.setIsDefault(true);
+            modelMapper.updateById(model);
+        }
+    }
+
+    @Override
+    @Transactional
     public LlmTestResultVO testModel(Long modelId, LlmTestRequestDTO request) {
         LlmModel model = modelMapper.selectById(modelId);
         if (model == null) throw new RuntimeException("模型不存在");
@@ -159,11 +180,7 @@ public class LlmProviderServiceImpl implements LlmProviderService {
         LlmProvider provider = providerMapper.selectById(model.getProviderId());
         if (provider == null) throw new RuntimeException("接入组不存在");
 
-        LlmGatewayConfig.Provider gwProvider = new LlmGatewayConfig.Provider();
-        gwProvider.setProtocol(provider.getProtocol());
-        gwProvider.setBaseUrl(provider.getBaseUrl());
-        gwProvider.setApiKey(provider.getApiKey());
-        gwProvider.setModel(model.getModelId());
+        LlmGatewayConfig.Provider gwProvider = buildGatewayProvider(provider, model);
 
         String systemPrompt = (request.getSystemPrompt() != null && !request.getSystemPrompt().isBlank())
                 ? request.getSystemPrompt() : "You are a helpful assistant.";
@@ -171,19 +188,44 @@ public class LlmProviderServiceImpl implements LlmProviderService {
         long start = System.currentTimeMillis();
         LlmTestResultVO result;
         try {
-            LlmGateway.ChatResult chatResult = llmGateway.chatWithProvider(gwProvider, systemPrompt, request.getUserMessage());
-            result = LlmTestResultVO.builder()
-                    .success(true)
-                    .content(chatResult.getContent())
-                    .durationMs(chatResult.getDurationMs())
-                    .promptTokens(chatResult.getPromptTokens())
-                    .completionTokens(chatResult.getCompletionTokens())
-                    .totalTokens(chatResult.getTotalTokens())
-                    .model(chatResult.getModel())
-                    .build();
-
-            // 记录测试结果
-            updateTestResult(modelId, true, (int) chatResult.getDurationMs(), null);
+            if (isModelType(model, "embedding")) {
+                List<float[]> vectors = llmGateway.embedWithProvider(gwProvider, List.of(request.getUserMessage()));
+                long duration = System.currentTimeMillis() - start;
+                int dimension = vectors.isEmpty() || vectors.get(0) == null ? 0 : vectors.get(0).length;
+                result = LlmTestResultVO.builder()
+                        .success(true)
+                        .content("Embedding 调用成功，返回向量维度：" + dimension)
+                        .durationMs(duration)
+                        .model(model.getModelId())
+                        .build();
+                updateTestResult(modelId, true, (int) duration, null);
+            } else if (isModelType(model, "rerank")) {
+                List<Double> scores = llmGateway.rerankWithProvider(
+                        gwProvider,
+                        request.getUserMessage(),
+                        List.of(request.getUserMessage(), "这是用于连通性测试的候选文档")
+                );
+                long duration = System.currentTimeMillis() - start;
+                result = LlmTestResultVO.builder()
+                        .success(true)
+                        .content("Rerank 调用成功，返回相关性分数：" + scores)
+                        .durationMs(duration)
+                        .model(model.getModelId())
+                        .build();
+                updateTestResult(modelId, true, (int) duration, null);
+            } else {
+                LlmGateway.ChatResult chatResult = llmGateway.chatWithProvider(gwProvider, systemPrompt, request.getUserMessage());
+                result = LlmTestResultVO.builder()
+                        .success(true)
+                        .content(chatResult.getContent())
+                        .durationMs(chatResult.getDurationMs())
+                        .promptTokens(chatResult.getPromptTokens())
+                        .completionTokens(chatResult.getCompletionTokens())
+                        .totalTokens(chatResult.getTotalTokens())
+                        .model(chatResult.getModel())
+                        .build();
+                updateTestResult(modelId, true, (int) chatResult.getDurationMs(), null);
+            }
         } catch (Exception e) {
             result = LlmTestResultVO.builder()
                     .success(false)
@@ -219,6 +261,41 @@ public class LlmProviderServiceImpl implements LlmProviderService {
         return toModelVO(model);
     }
 
+    // ==================== Chat Models (for RAG) ====================
+
+    @Override
+    public List<Map<String, Object>> listChatModels() {
+        // 查出所有已启用的 provider
+        List<LlmProvider> enabledProviders = providerMapper.selectList(
+                new LambdaQueryWrapper<LlmProvider>().eq(LlmProvider::getEnabled, true)
+        );
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (LlmProvider provider : enabledProviders) {
+            // 查出该 provider 下已启用且非 embedding/rerank 的模型
+            List<LlmModel> chatModels = modelMapper.selectList(
+                    new LambdaQueryWrapper<LlmModel>()
+                            .eq(LlmModel::getProviderId, provider.getId())
+                            .eq(LlmModel::getEnabled, true)
+                            .notIn(LlmModel::getModelType, "embedding", "rerank")
+                            .orderByDesc(LlmModel::getIsDefault)
+            );
+
+            for (LlmModel model : chatModels) {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("id", model.getId());
+                item.put("providerId", provider.getId());
+                item.put("providerName", provider.getName());
+                item.put("name", model.getName());
+                item.put("modelId", model.getModelId());
+                item.put("modelType", model.getModelType());
+                item.put("isDefault", model.getIsDefault());
+                result.add(item);
+            }
+        }
+        return result;
+    }
+
     // ==================== Sniff ====================
 
     @Override
@@ -226,10 +303,7 @@ public class LlmProviderServiceImpl implements LlmProviderService {
         LlmProvider provider = providerMapper.selectById(id);
         if (provider == null) throw new RuntimeException("接入组不存在");
 
-        LlmGatewayConfig.Provider gwProvider = new LlmGatewayConfig.Provider();
-        gwProvider.setProtocol(provider.getProtocol());
-        gwProvider.setBaseUrl(provider.getBaseUrl());
-        gwProvider.setApiKey(provider.getApiKey());
+        LlmGatewayConfig.Provider gwProvider = buildGatewayProvider(provider, null);
 
         List<LlmGateway.ModelInfo> remoteModels = llmGateway.fetchModelList(gwProvider);
 
@@ -241,6 +315,8 @@ public class LlmProviderServiceImpl implements LlmProviderService {
             SniffedModelVO vo = new SniffedModelVO();
             vo.setModelId(m.getId());
             vo.setOwnedBy(m.getOwnedBy());
+            vo.setContextWindow(m.getContextWindow());
+            vo.setCreated(m.getCreated());
             vo.setAlreadyExists(existingModelIds.contains(m.getId()));
             return vo;
         }).collect(Collectors.toList());
@@ -248,14 +324,62 @@ public class LlmProviderServiceImpl implements LlmProviderService {
 
     // ==================== Private ====================
 
+    /**
+     * 清理同类模型的默认标记。
+     * embedding / rerank 全局唯一默认（跨接入组），其他类型按接入组内唯一。
+     */
     private void clearTypeDefaults(Long providerId, String modelType) {
-        modelMapper.update(null,
-                new LambdaUpdateWrapper<LlmModel>()
-                        .eq(LlmModel::getProviderId, providerId)
-                        .eq(LlmModel::getModelType, modelType)
-                        .eq(LlmModel::getIsDefault, true)
-                        .set(LlmModel::getIsDefault, false)
-        );
+        LambdaUpdateWrapper<LlmModel> wrapper = new LambdaUpdateWrapper<LlmModel>()
+                .eq(LlmModel::getModelType, modelType)
+                .eq(LlmModel::getIsDefault, true)
+                .set(LlmModel::getIsDefault, false);
+
+        // embedding 和 rerank 全局唯一默认，不限定 providerId
+        if (!"embedding".equalsIgnoreCase(modelType) && !"rerank".equalsIgnoreCase(modelType)) {
+            wrapper.eq(LlmModel::getProviderId, providerId);
+        }
+
+        modelMapper.update(null, wrapper);
+    }
+
+    private LlmGatewayConfig.Provider buildGatewayProvider(LlmProvider provider, LlmModel model) {
+        LlmGatewayConfig.Provider gwProvider = new LlmGatewayConfig.Provider();
+        gwProvider.setProtocol(provider.getProtocol());
+        gwProvider.setBaseUrl(provider.getBaseUrl());
+        gwProvider.setApiKey(provider.getApiKey());
+        if (model != null) {
+            gwProvider.setModel(model.getModelId());
+            if (model.getDimension() != null) {
+                gwProvider.setDimension(String.valueOf(model.getDimension()));
+            }
+        }
+        return gwProvider;
+    }
+
+    private boolean isModelType(LlmModel model, String modelType) {
+        String configuredType = model.getModelType();
+        if (configuredType != null && configuredType.equalsIgnoreCase(modelType)) {
+            return true;
+        }
+        if (configuredType != null && !configuredType.isBlank() && !"general".equalsIgnoreCase(configuredType)) {
+            return false;
+        }
+        return inferModelType(model.getModelId()).equalsIgnoreCase(modelType);
+    }
+
+    private String inferModelType(String modelId) {
+        if (modelId == null || modelId.isBlank()) {
+            return "general";
+        }
+        String id = modelId.toLowerCase(Locale.ROOT);
+        if (id.contains("rerank") || id.contains("reranker")) {
+            return "rerank";
+        }
+        if (id.contains("embedding") || id.contains("embed") || id.contains("text-embedding")
+                || id.contains("bge") || id.contains("m3e") || id.contains("gte") || id.contains("e5")) {
+            return "embedding";
+        }
+        return "general";
     }
 
     private void updateTestResult(Long modelId, boolean success, int duration, String error) {

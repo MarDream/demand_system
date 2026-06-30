@@ -1,6 +1,7 @@
 package com.demand.system.module.knowledge.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.demand.system.common.exception.BusinessException;
 import com.demand.system.module.knowledge.config.KnowledgeConfig;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchRequest;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse;
@@ -22,6 +23,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 @Service
 public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
@@ -55,14 +57,18 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
     public KnowledgeSearchResponse search(KnowledgeSearchRequest request) {
         KnowledgeSearchResponse response = retrieve(request);
         String mode = request.getMode() != null ? request.getMode() : "hybrid";
+        String query = request.getQuery();
+        List<KnowledgeSearchResponse.ThinkingStep> thinkingSteps = buildThinkingSteps(query, mode, response);
+
         boolean shouldGenerateAnswer = !response.getResults().isEmpty() && ("rag".equals(mode) || request.getLlmModelId() != null);
         if (!shouldGenerateAnswer) {
+            response.setThinkingSteps(thinkingSteps);
             return response;
         }
 
         try {
             String answer = ragAnswerService.generateAnswer(
-                    request.getQuery(),
+                    query,
                     response.getResults(),
                     request.getKnowledgeBaseId(),
                     request.getLlmModelId()
@@ -72,7 +78,44 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
             log.warn("RAG答案生成失败，仅返回检索结果", e);
             response.setAnswer(null);
         }
+        response.setThinkingSteps(thinkingSteps);
         return response;
+    }
+
+    private List<KnowledgeSearchResponse.ThinkingStep> buildThinkingSteps(
+            String query, String mode, KnowledgeSearchResponse response) {
+        List<KnowledgeSearchResponse.ThinkingStep> steps = new ArrayList<>();
+        steps.add(new KnowledgeSearchResponse.ThinkingStep(
+                "query_parse", "问题解析", buildQueryParseDetail(query)));
+
+        int resultCount = response.getResults().size();
+        int uniqueDocs = (int) response.getResults().stream()
+                .map(KnowledgeSearchResponse.SearchResultItem::getDocumentId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .count();
+        steps.add(new KnowledgeSearchResponse.ThinkingStep(
+                "retrieve", "文档检索",
+                String.format("在知识库中检索到 %d 条相关片段，来自 %d 份文档", resultCount, uniqueDocs),
+                resultCount > 0 ? Math.min(1.0, resultCount / 10.0) : 0.0));
+
+        if ("hybrid".equals(mode)) {
+            boolean reranked = response.getResults().stream()
+                    .anyMatch(r -> r.getScore() != null && r.getScore() < 1.0);
+            if (reranked) {
+                steps.add(new KnowledgeSearchResponse.ThinkingStep(
+                        "rerank", "智能排序",
+                        String.format("使用重排序模型优化结果顺序，优先呈现最相关的 %d 条片段", Math.min(resultCount, 5))));
+            }
+        }
+
+        String synthesizeDetail = response.getAnswer() != null
+                ? String.format("已基于 %d 条检索片段生成回答（%d 字）", resultCount, response.getAnswer().length())
+                : String.format("未使用 AI 模型，共检索到 %d 条相关片段", resultCount);
+        steps.add(new KnowledgeSearchResponse.ThinkingStep(
+                "synthesize", response.getAnswer() != null ? "生成回答" : "检索摘要", synthesizeDetail));
+
+        return steps;
     }
 
     @Override
@@ -80,15 +123,59 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         SseEmitter emitter = new SseEmitter(180_000L);
         CompletableFuture.runAsync(() -> {
             StringBuilder answer = new StringBuilder();
+            String query = request.getQuery();
+            String mode = request.getMode() != null ? request.getMode() : "hybrid";
+            List<KnowledgeSearchResponse.ThinkingStep> thinkingSteps = new ArrayList<>();
             try {
+                // Step 1: 问题解析
+                thinkingSteps.add(new KnowledgeSearchResponse.ThinkingStep(
+                        "query_parse",
+                        "问题解析",
+                        buildQueryParseDetail(query)
+                ));
+
+                // Step 2: 检索
                 KnowledgeSearchResponse response = retrieve(request);
                 emitter.send(SseEmitter.event().name("results").data(response));
 
-                String mode = request.getMode() != null ? request.getMode() : "hybrid";
+                int resultCount = response.getResults().size();
+                int uniqueDocs = (int) response.getResults().stream()
+                        .map(KnowledgeSearchResponse.SearchResultItem::getDocumentId)
+                        .filter(Objects::nonNull)
+                        .distinct()
+                        .count();
+
+                thinkingSteps.add(new KnowledgeSearchResponse.ThinkingStep(
+                        "retrieve",
+                        "文档检索",
+                        String.format("在知识库中检索到 %d 条相关片段，来自 %d 份文档", resultCount, uniqueDocs),
+                        resultCount > 0 ? Math.min(1.0, resultCount / 10.0) : 0.0
+                ));
+
+                // Step 3: Rerank（仅混合检索）
+                if ("hybrid".equals(mode)) {
+                    boolean hasReranked = response.getResults().stream()
+                            .anyMatch(r -> r.getScore() != null && r.getScore() < 1.0);
+                    if (hasReranked) {
+                        thinkingSteps.add(new KnowledgeSearchResponse.ThinkingStep(
+                                "rerank",
+                                "智能排序",
+                                String.format("使用重排序模型优化结果顺序，优先呈现最相关的 %d 条片段", Math.min(resultCount, 5))
+                        ));
+                    }
+                }
+
+                // Step 4: 生成回答
                 boolean shouldGenerateAnswer = !response.getResults().isEmpty() && ("rag".equals(mode) || request.getLlmModelId() != null);
                 if (shouldGenerateAnswer) {
+                    thinkingSteps.add(new KnowledgeSearchResponse.ThinkingStep(
+                            "synthesize",
+                            "生成回答",
+                            String.format("基于检索结果生成回答%s", request.getLlmModelId() != null ? "（使用 AI 模型）" : "")
+                    ));
+
                     ragAnswerService.streamAnswer(
-                            request.getQuery(),
+                            query,
                             response.getResults(),
                             request.getKnowledgeBaseId(),
                             request.getLlmModelId(),
@@ -105,12 +192,24 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                             }
                     );
                     response.setAnswer(answer.toString());
+
+                    // 更新 synthesize 步骤为完成状态
+                    KnowledgeSearchResponse.ThinkingStep last = thinkingSteps.get(thinkingSteps.size() - 1);
+                    last.setDetail(String.format("已基于 %d 条检索片段生成回答（%d 字）", resultCount, answer.length()));
+                } else {
+                    thinkingSteps.add(new KnowledgeSearchResponse.ThinkingStep(
+                            "synthesize",
+                            "检索摘要",
+                            String.format("未使用 AI 模型，共检索到 %d 条相关片段", resultCount)
+                    ));
                 }
 
+                response.setThinkingSteps(thinkingSteps);
                 emitter.send(SseEmitter.event().name("done").data(response));
                 emitter.complete();
             } catch (Exception e) {
                 log.warn("流式知识库检索失败", e);
+                // 即使出错，也尝试返回已有的 thinkingSteps
                 try {
                     emitter.send(SseEmitter.event().name("error").data(Map.of(
                             "message", e.getMessage() != null ? e.getMessage() : "流式检索失败"
@@ -124,9 +223,28 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         return emitter;
     }
 
+    private String buildQueryParseDetail(String query) {
+        // 分析问题特征，提取关键词
+        List<String> terms = Arrays.stream(query.split("[\\s,，。；;:：/\\\\|]+"))
+                .map(String::trim)
+                .filter(t -> t.length() >= 2)
+                .limit(5)
+                .collect(Collectors.toList());
+        if (terms.isEmpty()) {
+            return String.format("已解析问题：%s", shortenText(query, 30));
+        }
+        return String.format("已解析问题，关键词：%s", String.join("、", terms));
+    }
+
+    private String shortenText(String text, int maxLen) {
+        if (text == null) return "";
+        return text.length() <= maxLen ? text : text.substring(0, maxLen) + "…";
+    }
+
     private KnowledgeSearchResponse retrieve(KnowledgeSearchRequest request) {
         String mode = request.getMode() != null ? request.getMode() : "hybrid";
-        int topK = request.getTopK() != null ? request.getTopK() : knowledgeConfig.getSearchTopK();
+        // 优先级：请求参数 > 模型配置 > 全局配置
+        int topK = request.getTopK() != null ? request.getTopK() : resolveTopK();
         String kbId = request.getKnowledgeBaseId() != null ? String.valueOf(request.getKnowledgeBaseId()) : null;
 
         List<KnowledgeSearchResponse.SearchResultItem> results;
@@ -146,6 +264,17 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                 .total(results.size())
                 .processSummary(buildProcessSummary(request, results.size(), results))
                 .build();
+    }
+
+    /**
+     * 解析 TopK，优先级：模型配置 > 全局配置
+     */
+    private int resolveTopK() {
+        var modelConfig = embeddingService.getDefaultModelConfig();
+        if (modelConfig != null) {
+            return modelConfig.searchTopK();
+        }
+        return knowledgeConfig.getSearchTopK();
     }
 
     private List<KnowledgeSearchResponse.SearchResultItem> semanticSearch(
@@ -193,6 +322,8 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                     })
                     .collect(Collectors.toList());
 
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.warn("Reranker调用失败，降级使用向量检索结果", e);
             return candidates.stream()

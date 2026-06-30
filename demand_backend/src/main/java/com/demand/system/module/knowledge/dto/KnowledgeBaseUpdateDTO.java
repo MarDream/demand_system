@@ -10,6 +10,9 @@ public class KnowledgeBaseUpdateDTO {
     @Size(max = 500, message = "描述最长500字")
     private String description;
 
+    /** 文档处理超时时间(分钟), 0=不超时 */
+    private Integer docTimeoutMinutes;
+
     public String getName() {
         return name;
     }
@@ -24,5 +27,13 @@ public class KnowledgeBaseUpdateDTO {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public Integer getDocTimeoutMinutes() {
+        return docTimeoutMinutes;
+    }
+
+    public void setDocTimeoutMinutes(Integer docTimeoutMinutes) {
+        this.docTimeoutMinutes = docTimeoutMinutes;
     }
 }
