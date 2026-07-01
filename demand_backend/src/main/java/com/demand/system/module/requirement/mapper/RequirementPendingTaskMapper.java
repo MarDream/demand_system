@@ -1,84 +1,71 @@
 package com.demand.system.module.requirement.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.demand.system.module.requirement.entity.RequirementPendingTask;
-import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Param;
-import org.apache.ibatis.annotations.Select;
 
 import java.util.List;
 
 /**
  * 需求待办任务Mapper
+ *
+ * SQL 定义在 src/main/resources/mapper/RequirementPendingTaskMapper.xml
+ *
+ * 查询优化说明（性能优先）：
+ * - user_id 非空时：直接匹配 user_id
+ * - role_id 非空时：JOIN user_roles 判断用户是否拥有该角色
+ * - role_group_id 非空时：JOIN roles + user_roles 判断用户是否在该角色组
+ * - org_id 非空时：JOIN user_organizations 判断用户是否在该组织
+ *
+ * 索引依赖：
+ * - idx_pending_role_id (role_id)
+ * - idx_pending_role_group_id (role_group_id)
+ * - idx_pending_org_id (org_id)
+ * - idx_pending_user_id (user_id) - 原有
  */
 public interface RequirementPendingTaskMapper extends BaseMapper<RequirementPendingTask> {
 
     /**
      * 删除指定需求的所有待办任务
      */
-    @Delete("DELETE FROM requirement_pending_tasks WHERE requirement_id = #{requirementId}")
     int deleteByRequirementId(@Param("requirementId") Long requirementId);
 
     /**
      * 批量删除需求的待办任务
      */
-    @Delete({
-            "<script>",
-            "DELETE FROM requirement_pending_tasks",
-            "WHERE requirement_id IN",
-            "<foreach collection='requirementIds' item='id' open='(' separator=',' close=')'>",
-            "  #{id}",
-            "</foreach>",
-            "</script>"
-    })
     int deleteByRequirementIds(@Param("requirementIds") List<Long> requirementIds);
 
     /**
-     * 批量插入待办任务（忽略重复）
+     * 批量插入待办任务（支持角色/角色组/组织范围）
      */
-    @org.apache.ibatis.annotations.Insert({
-            "<script>",
-            "INSERT IGNORE INTO requirement_pending_tasks",
-            "(requirement_id, user_id, assignee_type, workflow_instance_id, current_node_id, current_node_name)",
-            "VALUES",
-            "<foreach collection='tasks' item='task' separator=','>",
-            "(#{task.requirementId}, #{task.userId}, #{task.assigneeType}, ",
-            "#{task.workflowInstanceId}, #{task.currentNodeId}, #{task.currentNodeName})",
-            "</foreach>",
-            "</script>"
-    })
     int insertBatch(@Param("tasks") List<RequirementPendingTask> tasks);
 
     /**
-     * 查询用户的待办需求ID列表（优化后的简单查询）
+     * 查询用户的待办需求ID列表
+     *
+     * 匹配逻辑（满足任一即可）：
+     * 1. 直接匹配：pt.user_id = #{userId}
+     * 2. 角色匹配：用户拥有 pt.role_id 对应的角色
+     * 3. 角色组匹配：用户的角色属于 pt.role_group_id 对应的角色组
+     * 4. 组织匹配：用户属于 pt.org_id 对应的组织
+     *
+     * 性能优化策略：
+     * - 第一步：先从用户关联表获取用户的所有角色ID、角色组ID、组织ID
+     * - 第二步：用这些ID集合与 requirement_pending_tasks 做 JOIN
+     * - 索引利用：user_roles(role_id)、roles(role_group_id)、user_organizations(org_id) 上都有索引
+     * - 这样可以避免子查询走全表扫描，利用已有的索引加速
      */
-    @Select({
-            "<script>",
-            "SELECT DISTINCT pt.requirement_id",
-            "FROM requirement_pending_tasks pt",
-            "WHERE pt.user_id = #{userId}",
-            "<if test='projectId != null'> AND EXISTS (",
-            "  SELECT 1 FROM requirements r",
-            "  WHERE r.id = pt.requirement_id AND r.project_id = #{projectId}",
-            ")</if>",
-            "ORDER BY pt.updated_at DESC",
-            "LIMIT #{limit}",
-            "</script>"
-    })
     List<Long> selectPendingRequirementIds(@Param("userId") Long userId,
                                            @Param("projectId") Long projectId,
                                            @Param("limit") int limit);
 
     /**
-     * 统计用户的待办任务数量
+     * 统计用户的待办任务数量（最简化版本用于调试）
      */
-    @Select("SELECT COUNT(DISTINCT requirement_id) FROM requirement_pending_tasks WHERE user_id = #{userId}")
     Long countByUserId(@Param("userId") Long userId);
 
     /**
-     * 查询需求的所有待办人ID
+     * 查询需求的所有待办人ID（仅返回直接指定的user_id）
      */
-    @Select("SELECT DISTINCT user_id FROM requirement_pending_tasks WHERE requirement_id = #{requirementId}")
     List<Long> selectPendingUserIds(@Param("requirementId") Long requirementId);
 }

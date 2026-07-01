@@ -2,6 +2,7 @@ package com.demand.system.module.statistics.service;
 
 import com.demand.system.module.statistics.dto.BurndownPoint;
 import com.demand.system.module.statistics.dto.CfdPoint;
+import com.demand.system.module.workflow.dto.WorkflowProcessStatsDTO;
 
 import java.util.List;
 import java.util.Map;
@@ -12,4 +13,5 @@ public interface StatisticsService {
     List<Map<String, Object>> getDurationData(Long projectId);
     List<BurndownPoint> getBurndownData(Long iterationId);
     List<CfdPoint> getCfdData(Long projectId);
+    WorkflowProcessStatsDTO getWorkflowProcessStats(Long userId);
 }

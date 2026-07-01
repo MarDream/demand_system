@@ -1,5 +1,7 @@
 package com.demand.system.module.requirement.dto;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
@@ -26,6 +28,12 @@ public class RequirementListVO {
     private Boolean isDraft;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    // 时间字段
+    private LocalDate dueDate;
+    private LocalDateTime analysisCompletedAt;
+    private LocalDateTime confirmAt;
+    private LocalDateTime developmentCompletedAt;
 
     // 关联填充字段（由 batchFillUserNamesAndOrg 回填）
     private String creatorName;
@@ -69,6 +77,14 @@ public class RequirementListVO {
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+    public LocalDate getDueDate() { return dueDate; }
+    public void setDueDate(LocalDate dueDate) { this.dueDate = dueDate; }
+    public LocalDateTime getAnalysisCompletedAt() { return analysisCompletedAt; }
+    public void setAnalysisCompletedAt(LocalDateTime analysisCompletedAt) { this.analysisCompletedAt = analysisCompletedAt; }
+    public LocalDateTime getConfirmAt() { return confirmAt; }
+    public void setConfirmAt(LocalDateTime confirmAt) { this.confirmAt = confirmAt; }
+    public LocalDateTime getDevelopmentCompletedAt() { return developmentCompletedAt; }
+    public void setDevelopmentCompletedAt(LocalDateTime developmentCompletedAt) { this.developmentCompletedAt = developmentCompletedAt; }
     public String getCreatorName() { return creatorName; }
     public void setCreatorName(String creatorName) { this.creatorName = creatorName; }
     public String getAssigneeName() { return assigneeName; }

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demand.system.module.requirement.mapper.RequirementHistoryMapper">
+
+    <select id="selectHistoryByRequirement" resultType="java.util.Map">
+        SELECT rh.*,
+               u.real_name AS operator_name
+        FROM requirement_history rh
+        LEFT JOIN users u ON rh.operator_id = u.id
+        WHERE rh.requirement_id = #{requirementId}
+        ORDER BY rh.created_at DESC
+    </select>
+
+</mapper>

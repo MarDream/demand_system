@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demand.system.module.requirement.mapper.RequirementCommentMapper">
+
+    <resultMap id="RequirementCommentVOMap" type="com.demand.system.module.requirement.dto.RequirementCommentVO">
+        <id property="id" column="id"/>
+        <result property="requirementId" column="requirement_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="userName" column="user_name"/>
+        <result property="content" column="content"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <select id="selectByRequirementId" resultMap="RequirementCommentVOMap">
+        SELECT rc.id,
+               rc.requirement_id,
+               rc.user_id,
+               u.real_name AS user_name,
+               rc.content,
+               rc.created_at
+        FROM requirement_comments rc
+        LEFT JOIN users u ON rc.user_id = u.id
+        WHERE rc.requirement_id = #{requirementId}
+        ORDER BY rc.created_at DESC, rc.id DESC
+    </select>
+
+</mapper>

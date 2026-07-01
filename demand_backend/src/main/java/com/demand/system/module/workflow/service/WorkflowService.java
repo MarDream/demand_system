@@ -41,4 +41,11 @@ public interface WorkflowService {
     List<String> validateWorkflow(String definition);
 
     String resolveInitialStateName(Long projectId, Requirement requirement);
+
+    /**
+     * 按需求类型解析初始状态名（推荐使用）。
+     */
+    default String resolveInitialStateName(String typeCode, Requirement requirement) {
+        return resolveInitialStateName(requirement != null ? requirement.getProjectId() : null, requirement);
+    }
 }

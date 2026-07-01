@@ -30,7 +30,7 @@
         <minio.version>8.5.7</minio.version>
         <mapstruct.version>1.5.5.Final</mapstruct.version>
         <testcontainers.version>1.21.4</testcontainers.version>
-        <milvus-sdk.version>3.0.1</milvus-sdk.version>
+        <milvus-sdk.version>3.0.3</milvus-sdk.version>
     </properties>
 
     <dependencies>
@@ -164,6 +164,11 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

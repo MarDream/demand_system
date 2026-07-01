@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demand.system.module.iteration.mapper.IterationMapper">
+
+    <!-- 查询迭代详情，包含需求数量和完成数量 -->
+    <select id="selectDetailById" resultType="java.util.Map">
+        SELECT i.*,
+               COUNT(r.id) as requirement_count,
+               SUM(CASE WHEN r.status IN ('已上线','已验收') THEN 1 ELSE 0 END) as completed_count
+        FROM iterations i
+        LEFT JOIN requirements r ON i.id = r.iteration_id AND r.deleted_at = 0
+        WHERE i.id = #{id}
+        GROUP BY i.id
+    </select>
+
+    <!-- 统计指定迭代下的需求数量 -->
+    <select id="countRequirements" resultType="int">
+        SELECT COUNT(*)
+        FROM requirements
+        WHERE iteration_id = #{iterationId}
+          AND deleted_at = 0
+    </select>
+
+</mapper>

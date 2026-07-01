@@ -5,17 +5,17 @@ import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.WebApplicationContext;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.utility.DockerImageName;
@@ -41,15 +41,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 5. 版本激活兼容性检查改为 warning
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@AutoConfigureMockMvc
 class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
 
     private static final String DEFAULT_PASSWORD = "admin123";
-    private static final String ADMIN_TOKEN = loginAndGetAccessToken("admin", DEFAULT_PASSWORD);
-    private static final String SUPER_ADMIN_USERNAME = "superadmin" + shortId();
+    private String adminToken;
     private static final String SUPER_ADMIN_ROLE = "SUPER_ADMIN";
 
     @Autowired
+    private WebApplicationContext webApplicationContext;
+
     private MockMvc mockMvc;
 
     @Autowired
@@ -63,13 +63,35 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
 
     // ==================== 辅助方法 ====================
 
+    @BeforeEach
+    void setUpMockMvc() {
+        this.mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext).build();
+        this.adminToken = obtainAccessToken("admin", DEFAULT_PASSWORD);
+    }
+
+    private String obtainAccessToken(String username, String password) {
+        try {
+            MvcResult result = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                            .post("/api/v1/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(
+                                    java.util.Map.of("username", username, "password", password))))
+                    .andReturn();
+            String response = result.getResponse().getContentAsString();
+            return JsonPath.read(response, "$.data.accessToken");
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
     private Long createSuperAdmin() {
+        String username = "superadmin" + shortId();
         jdbcTemplate.update("""
                 INSERT INTO users (username, password, real_name, email, status, created_at, updated_at, deleted_at)
                 VALUES (?, ?, '超级管理员', ?, 'active', NOW(), NOW(), 0)
-                """, SUPER_ADMIN_USERNAME, passwordEncoder.encode(DEFAULT_PASSWORD), SUPER_ADMIN_USERNAME + "@test.local");
+                """, username, passwordEncoder.encode(DEFAULT_PASSWORD), username + "@test.local");
         Long userId = jdbcTemplate.queryForObject(
-                "SELECT id FROM users WHERE username = ?", Long.class, SUPER_ADMIN_USERNAME);
+                "SELECT id FROM users WHERE username = ?", Long.class, username);
         jdbcTemplate.update("""
                 INSERT INTO user_organizations (user_id, region_id, department_id, system_role, manager_id, effective_date)
                 VALUES (?, 1, 1, ?, NULL, ?)
@@ -130,7 +152,7 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andReturn();
-        return JsonPath.read(result.getResponse().getContentAsString(), "$.data[0].id").asLong();
+        return ((Number) JsonPath.read(result.getResponse().getContentAsString(), "$.data[0].id")).longValue();
     }
 
     private void activateVersion(Long versionId, Long projectId, String token) throws Exception {
@@ -165,7 +187,7 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.list[0].title").value(title))
                 .andReturn();
-        return JsonPath.read(result.getResponse().getContentAsString(), "$.data.list[0].id").asLong();
+        return ((Number) JsonPath.read(result.getResponse().getContentAsString(), "$.data.list[0].id")).longValue();
     }
 
     private void startWorkflowInstance(Long requirementId, Long projectId, String token) throws Exception {
@@ -225,7 +247,7 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
                 edgePayload("proposal", "developing", "进入开发"),
                 edgePayload("developing", "done", "完成")
         );
-        createWorkflowVersion(projectId, ADMIN_TOKEN, "v1版", workflowDefinition("v1版", v1Nodes, v1Edges));
+        createWorkflowVersion(projectId, adminToken, "v1版", workflowDefinition("v1版", v1Nodes, v1Edges));
 
         // v2: proposal → review → developing → done (新增 review 节点)
         List<Map<String, Object>> v2Nodes = List.of(
@@ -239,17 +261,17 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
                 edgePayload("review", "developing", "通过评审"),
                 edgePayload("developing", "done", "完成")
         );
-        createWorkflowVersion(projectId, ADMIN_TOKEN, "v2版", workflowDefinition("v2版", v2Nodes, v2Edges));
+        createWorkflowVersion(projectId, adminToken, "v2版", workflowDefinition("v2版", v2Nodes, v2Edges));
 
-        Long v1Id = getLatestVersionId(projectId, ADMIN_TOKEN);
-        Long v2Id = getLatestVersionId(projectId, ADMIN_TOKEN);
-        activateVersion(v1Id, projectId, ADMIN_TOKEN);
-        activateVersion(v2Id, projectId, ADMIN_TOKEN);
+        Long v1Id = getLatestVersionId(projectId, adminToken);
+        Long v2Id = getLatestVersionId(projectId, adminToken);
+        activateVersion(v1Id, projectId, adminToken);
+        activateVersion(v2Id, projectId, adminToken);
 
         // 创建需求并启动实例（绑定到 v1）
-        createRequirement(projectId, ADMIN_TOKEN, "迁移CRUD需求-" + shortId());
-        Long reqId = findRequirementId(projectId, "迁移CRUD需求-" + shortId(), ADMIN_TOKEN);
-        startWorkflowInstance(reqId, projectId, ADMIN_TOKEN);
+        createRequirement(projectId, adminToken, "迁移CRUD需求-" + shortId());
+        Long reqId = findRequirementId(projectId, "迁移CRUD需求-" + shortId(), adminToken);
+        startWorkflowInstance(reqId, projectId, adminToken);
 
         // 创建迁移计划
         Map<String, Object> request = new LinkedHashMap<>();
@@ -258,7 +280,7 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
         request.put("remark", "自动建议映射测试");
 
         mockMvc.perform(post("/api/v1/admin/workflow-migration/plans")
-                        .header("Authorization", "Bearer " + ADMIN_TOKEN)
+                        .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -279,7 +301,6 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
     void listMigrationPlans_shouldReturnAllPlans() throws Exception {
         // 创建项目和版本
         Long projectId = createProject("列表查询项目-" + shortId(), 1L);
-        String adminToken = loginAndGetAccessToken("admin", DEFAULT_PASSWORD);
 
         createWorkflowVersion(projectId, adminToken, "v1版", workflowDefinition("v1版",
                 List.of(nodePayload("a", "A", false, 1), nodePayload("b", "B", true, 2)),
@@ -301,7 +322,7 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
 
         // 查询列表
         mockMvc.perform(get("/api/v1/admin/workflow-migration/plans")
-                        .header("Authorization", "Bearer " + ADMIN_TOKEN))
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.length()").value(1))
@@ -314,7 +335,6 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
     void getMigrationPlan_shouldReturnDetail() throws Exception {
         // 创建计划
         Long projectId = createProject("详情查询项目-" + shortId(), 1L);
-        String adminToken = loginAndGetAccessToken("admin", DEFAULT_PASSWORD);
 
         createWorkflowVersion(projectId, adminToken, "v1版", workflowDefinition("v1版",
                 List.of(nodePayload("a", "A", false, 1)), List.of()));
@@ -335,7 +355,7 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
                 "SELECT id FROM workflow_migration_plans ORDER BY id DESC LIMIT 1", Long.class);
 
         mockMvc.perform(get("/api/v1/admin/workflow-migration/plans/{planId}", planId)
-                        .header("Authorization", "Bearer " + ADMIN_TOKEN))
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.id").value(planId))
@@ -348,7 +368,6 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
     @Transactional
     void updateNodeMapping_shouldAcceptCustomMapping() throws Exception {
         Long projectId = createProject("映射配置项目-" + shortId(), 1L);
-        String adminToken = loginAndGetAccessToken("admin", DEFAULT_PASSWORD);
 
         // v1: proposal → developing → done
         createWorkflowVersion(projectId, adminToken, "v1版", workflowDefinition("v1版",
@@ -377,7 +396,7 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
         createReq.put("fromVersionId", v1Id);
         createReq.put("toVersionId", v2Id);
         mockMvc.perform(post("/api/v1/admin/workflow-migration/plans")
-                        .header("Authorization", "Bearer " + ADMIN_TOKEN)
+                        .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(createReq)))
                 .andExpect(status().isOk())
@@ -393,7 +412,7 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
         mapping.add(Map.of("fromNodeId", "done", "toNodeId", "done", "fromNodeName", "已完成", "toNodeName", "已完成"));
 
         mockMvc.perform(put("/api/v1/admin/workflow-migration/plans/{planId}/mapping", planId)
-                        .header("Authorization", "Bearer " + ADMIN_TOKEN)
+                        .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(mapping)))
                 .andExpect(status().isOk())
@@ -410,7 +429,6 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
     @Test
     void updateNodeMapping_shouldRejectInvalidTargetNode() throws Exception {
         Long projectId = createProject("无效目标节点项目-" + shortId(), 1L);
-        String adminToken = loginAndGetAccessToken("admin", DEFAULT_PASSWORD);
 
         createWorkflowVersion(projectId, adminToken, "v1版", workflowDefinition("v1版",
                 List.of(nodePayload("a", "A", false, 1)), List.of()));
@@ -427,7 +445,7 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
         createReq.put("fromVersionId", v1Id);
         createReq.put("toVersionId", v2Id);
         mockMvc.perform(post("/api/v1/admin/workflow-migration/plans")
-                        .header("Authorization", "Bearer " + ADMIN_TOKEN)
+                        .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(createReq)))
                 .andExpect(status().isOk());
@@ -440,7 +458,7 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
         invalidMapping.add(Map.of("fromNodeId", "a", "toNodeId", "x", "fromNodeName", "A", "toNodeName", "X"));
 
         mockMvc.perform(put("/api/v1/admin/workflow-migration/plans/{planId}/mapping", planId)
-                        .header("Authorization", "Bearer " + ADMIN_TOKEN)
+                        .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(invalidMapping)))
                 .andExpect(status().isBadRequest());
@@ -452,7 +470,6 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
     @Transactional
     void previewMigration_shouldAnalyzeAffectedInstances() throws Exception {
         Long projectId = createProject("预检分析项目-" + shortId(), 1L);
-        String adminToken = loginAndGetAccessToken("admin", DEFAULT_PASSWORD);
 
         // v1: proposal → developing → done
         createWorkflowVersion(projectId, adminToken, "v1版", workflowDefinition("v1版",
@@ -481,7 +498,7 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
         createReq.put("fromVersionId", v1Id);
         createReq.put("toVersionId", v2Id);
         mockMvc.perform(post("/api/v1/admin/workflow-migration/plans")
-                        .header("Authorization", "Bearer " + ADMIN_TOKEN)
+                        .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(createReq)))
                 .andExpect(status().isOk());
@@ -491,7 +508,7 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
 
         // 执行预检
         mockMvc.perform(post("/api/v1/admin/workflow-migration/plans/{planId}/preview", planId)
-                        .header("Authorization", "Bearer " + ADMIN_TOKEN))
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.totalInstances").exists())
@@ -505,7 +522,6 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
     @Transactional
     void executeMigration_shouldUpdateInstancesAndLog() throws Exception {
         Long projectId = createProject("执行迁移项目-" + shortId(), 1L);
-        String adminToken = loginAndGetAccessToken("admin", DEFAULT_PASSWORD);
 
         // v1: proposal → developing → done
         createWorkflowVersion(projectId, adminToken, "v1版", workflowDefinition("v1版",
@@ -534,7 +550,7 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
         createReq.put("fromVersionId", v1Id);
         createReq.put("toVersionId", v2Id);
         mockMvc.perform(post("/api/v1/admin/workflow-migration/plans")
-                        .header("Authorization", "Bearer " + ADMIN_TOKEN)
+                        .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(createReq)))
                 .andExpect(status().isOk());
@@ -548,14 +564,14 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
         mapping.add(Map.of("fromNodeId", "developing", "toNodeId", "developing", "fromNodeName", "开发中", "toNodeName", "开发中"));
         mapping.add(Map.of("fromNodeId", "done", "toNodeId", "done", "fromNodeName", "已完成", "toNodeName", "已完成"));
         mockMvc.perform(put("/api/v1/admin/workflow-migration/plans/{planId}/mapping", planId)
-                        .header("Authorization", "Bearer " + ADMIN_TOKEN)
+                        .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(mapping)))
                 .andExpect(status().isOk());
 
         // 执行迁移
         mockMvc.perform(post("/api/v1/admin/workflow-migration/plans/{planId}/execute", planId)
-                        .header("Authorization", "Bearer " + ADMIN_TOKEN))
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.successCount").exists())
@@ -579,7 +595,6 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
     @Transactional
     void executeMigration_shouldSkipInstancesWithoutMapping() throws Exception {
         Long projectId = createProject("跳过无映射项目-" + shortId(), 1L);
-        String adminToken = loginAndGetAccessToken("admin", DEFAULT_PASSWORD);
 
         // v1: a → b → c (三个节点)
         createWorkflowVersion(projectId, adminToken, "v1版", workflowDefinition("v1版",
@@ -604,7 +619,7 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
         createReq.put("fromVersionId", v1Id);
         createReq.put("toVersionId", v2Id);
         mockMvc.perform(post("/api/v1/admin/workflow-migration/plans")
-                        .header("Authorization", "Bearer " + ADMIN_TOKEN)
+                        .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(createReq)))
                 .andExpect(status().isOk());
@@ -617,14 +632,14 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
         mapping.add(Map.of("fromNodeId", "a", "toNodeId", "a", "fromNodeName", "A", "toNodeName", "A"));
         mapping.add(Map.of("fromNodeId", "b", "toNodeId", "b", "fromNodeName", "B", "toNodeName", "B"));
         mockMvc.perform(put("/api/v1/admin/workflow-migration/plans/{planId}/mapping", planId)
-                        .header("Authorization", "Bearer " + ADMIN_TOKEN)
+                        .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(mapping)))
                 .andExpect(status().isOk());
 
         // 执行迁移
         mockMvc.perform(post("/api/v1/admin/workflow-migration/plans/{planId}/execute", planId)
-                        .header("Authorization", "Bearer " + ADMIN_TOKEN))
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
 
@@ -641,7 +656,6 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
     @Test
     @Transactional
     void activateVersion_withUnsupportedStatus_shouldReturnWarningNotError() throws Exception {
-        String adminToken = loginAndGetAccessToken("admin", DEFAULT_PASSWORD);
         Long projectId = createProject("兼容性检查项目-" + shortId(), 1L);
 
         // v1: proposal → doing → done
@@ -686,7 +700,6 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
 
     @Test
     void validateVersion_shouldReturnWarningForIncompatibleStatus() throws Exception {
-        String adminToken = loginAndGetAccessToken("admin", DEFAULT_PASSWORD);
         Long projectId = createProject("验证警告项目-" + shortId(), 1L);
 
         // v1: proposal → doing → done

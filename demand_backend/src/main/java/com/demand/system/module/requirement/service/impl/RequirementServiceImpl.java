@@ -334,7 +334,9 @@ public class RequirementServiceImpl implements RequirementService {
             Requirement::getType, Requirement::getPriority, Requirement::getStatus,
             Requirement::getOrgId, Requirement::getCreatorId, Requirement::getAssigneeId,
             Requirement::getOpsFollowId, Requirement::getMaintFollowId,
-            Requirement::getIsDraft, Requirement::getCreatedAt, Requirement::getUpdatedAt
+            Requirement::getIsDraft, Requirement::getCreatedAt, Requirement::getUpdatedAt,
+            Requirement::getDueDate, Requirement::getAnalysisCompletedAt,
+            Requirement::getConfirmAt, Requirement::getDevelopmentCompletedAt
         );
 
         Page<Requirement> resultPage = requirementMapper.selectPage(page, wrapper);
@@ -379,7 +381,11 @@ public class RequirementServiceImpl implements RequirementService {
     @Transactional(rollbackFor = Exception.class)
     public void create(RequirementCreateDTO dto, Long creatorId) {
         Long projectId = normalizeProjectId(dto.getProjectId());
-        if (workflowDefinitionEngine.hasActiveDefinition(projectId)) {
+        RequirementTypeConfig defaultType = requirementConfigService.getDefaultType();
+        if (defaultType == null || !StringUtils.hasText(defaultType.getCode())) {
+            throw new BusinessException("请先配置至少一个需求类型");
+        }
+        if (workflowDefinitionEngine.hasActiveDefinition(defaultType.getCode())) {
             throw new BusinessException(410, "请使用草稿创建并提交流程：POST /api/v1/requirements/drafts");
         }
         requireProjectSelection(dto.getProjectId());
@@ -387,14 +393,10 @@ public class RequirementServiceImpl implements RequirementService {
         BeanUtils.copyProperties(dto, requirement);
         requirement.setProjectId(projectId);
         ensureProjectCanBeBound(requirement.getProjectId());
-        RequirementTypeConfig defaultType = requirementConfigService.getDefaultType();
-        if (defaultType == null || !StringUtils.hasText(defaultType.getCode())) {
-            throw new BusinessException("请先配置至少一个需求类型");
-        }
         requirement.setType(defaultType.getCode());
         requirement.setIterationId(null);
         requirement.setCreatorId(creatorId);
-        requirement.setStatus(workflowService.resolveInitialStateName(projectId, requirement));
+        requirement.setStatus(workflowService.resolveInitialStateName(defaultType.getCode(), requirement));
         requirement.setLegacyWorkflow(true);
         if (requirement.getOrderNum() == null) {
             requirement.setOrderNum(0);

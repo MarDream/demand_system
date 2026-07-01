@@ -42,7 +42,10 @@
             <el-descriptions-item label="负责人">{{ detail.currentHandlerName || detail.assigneeName || '-' }}</el-descriptions-item>
             <el-descriptions-item label="创建时间">{{ formatDate(detail.createdAt) }}</el-descriptions-item>
             <el-descriptions-item label="所属迭代">{{ detail.iterationId || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="期望上线日期">{{ formatDate(detail.dueDate, 'YYYY-MM-DD HH:mm:ss') }}</el-descriptions-item>
+            <el-descriptions-item label="期望上线日期">{{ formatDate(detail.dueDate, 'YYYY-MM-DD') }}</el-descriptions-item>
+            <el-descriptions-item label="分析完成时间">{{ detail.analysisCompletedAt ? formatDate(detail.analysisCompletedAt, 'YYYY-MM-DD HH:mm:ss') : '-' }}</el-descriptions-item>
+            <el-descriptions-item label="需求确认时间">{{ detail.confirmAt ? formatDate(detail.confirmAt, 'YYYY-MM-DD HH:mm:ss') : '-' }}</el-descriptions-item>
+            <el-descriptions-item label="开发完成时间">{{ detail.developmentCompletedAt ? formatDate(detail.developmentCompletedAt, 'YYYY-MM-DD HH:mm:ss') : '-' }}</el-descriptions-item>
             <el-descriptions-item label="估算工时">{{ detail.estimatedHours ? detail.estimatedHours + ' 小时' : '-' }}</el-descriptions-item>
             <el-descriptions-item label="实际工时">{{ detail.actualHours ? detail.actualHours + ' 小时' : '-' }}</el-descriptions-item>
             <el-descriptions-item label="描述" :span="2">
@@ -1270,6 +1273,8 @@ async function executeTransition(extra?: { rating?: number; ratingDimensions?: R
       ratingDimensions: extra?.ratingDimensions,
       attachments: extra?.attachments,
       lockVersion: workflowRuntime.value.lockVersion ?? undefined,
+      // 流转时选择的处理人（传给后端用于更新 assignee_id 和待办同步）
+      selectedAssigneeId: selectedTransitionAssigneeId.value,
     })
     ElMessage.success('提交审核成功')
     selectedTransitionTargetId.value = null

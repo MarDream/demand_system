@@ -31,6 +31,13 @@ public class FlowTransitionRequest {
     /** 审批附件 */
     private List<RequirementAttachmentDTO> attachments;
 
+    /**
+     * 本次流转选择的处理人ID（从前端候选人列表中选择的具体用户）
+     * - 有值时：待办只分配给该用户，列表显示该用户为责任人
+     * - null时：待办按节点 assigneeType 分配给角色/角色组/组织/所有候选人
+     */
+    private Long selectedAssigneeId;
+
     public Long getRequirementId() {
         return requirementId;
     }
@@ -101,5 +108,13 @@ public class FlowTransitionRequest {
 
     public void setAttachments(List<RequirementAttachmentDTO> attachments) {
         this.attachments = attachments;
+    }
+
+    public Long getSelectedAssigneeId() {
+        return selectedAssigneeId;
+    }
+
+    public void setSelectedAssigneeId(Long selectedAssigneeId) {
+        this.selectedAssigneeId = selectedAssigneeId;
     }
 }

@@ -358,6 +358,7 @@ public class WorkflowDefinitionEngine {
         return new RuntimeCompilation(runtimeStates, deduplicateTransitions(transitions, null));
     }
 
+    @SuppressWarnings("deprecation")
     private Optional<WorkflowGraph> loadActiveGraph(Long projectId) {
         return workflowVersionResolver.findActiveVersion(projectId)
                 .map(WorkflowVersion::getDefinition)

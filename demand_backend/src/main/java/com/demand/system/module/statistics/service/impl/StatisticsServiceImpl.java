@@ -1,5 +1,6 @@
 package com.demand.system.module.statistics.service.impl;
 
+import com.demand.system.module.requirement.mapper.RequirementPendingTaskMapper;
 import com.demand.system.module.statistics.dto.BurndownPoint;
 import com.demand.system.module.statistics.dto.CfdPoint;
 import com.demand.system.module.statistics.dto.DashboardData;
@@ -7,6 +8,7 @@ import com.demand.system.module.statistics.dto.DistributionData;
 import com.demand.system.module.statistics.dto.DurationData;
 import com.demand.system.module.statistics.mapper.StatisticsMapper;
 import com.demand.system.module.statistics.service.StatisticsService;
+import com.demand.system.module.workflow.dto.WorkflowProcessStatsDTO;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -17,9 +19,11 @@ import java.util.stream.Collectors;
 public class StatisticsServiceImpl implements StatisticsService {
 
     private final StatisticsMapper statisticsMapper;
+    private final RequirementPendingTaskMapper pendingTaskMapper;
 
-    public StatisticsServiceImpl(StatisticsMapper statisticsMapper) {
+    public StatisticsServiceImpl(StatisticsMapper statisticsMapper, RequirementPendingTaskMapper pendingTaskMapper) {
         this.statisticsMapper = statisticsMapper;
+        this.pendingTaskMapper = pendingTaskMapper;
     }
 
     @Override
@@ -179,5 +183,22 @@ public class StatisticsServiceImpl implements StatisticsService {
             result.put(key, count);
         }
         return result;
+    }
+
+    @Override
+    public WorkflowProcessStatsDTO getWorkflowProcessStats(Long userId) {
+        // 待办数：从 requirement_pending_tasks 表统计
+        Long pending = pendingTaskMapper.countByUserId(userId);
+
+        // 已办数：我参与过的非草稿需求（从 workflow_instance_transition 或 requirement 表统计）
+        Long processed = statisticsMapper.countProcessedByUserId(userId);
+
+        // 我发起的：creator_id = userId 的非草稿需求
+        Long initiated = statisticsMapper.countInitiatedByUserId(userId);
+
+        // 抄送我的：cc_user_ids 包含当前用户的需求
+        Long cc = statisticsMapper.countCcByUserId(userId);
+
+        return new WorkflowProcessStatsDTO(pending, processed, initiated, cc);
     }
 }

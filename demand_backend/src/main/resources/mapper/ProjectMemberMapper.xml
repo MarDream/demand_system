@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demand.system.module.project.mapper.ProjectMemberMapper">
+
+    <!-- 查询项目成员列表（含用户信息） -->
+    <select id="selectMembersWithUser" resultType="com.demand.system.module.project.entity.ProjectMember">
+        SELECT pm.*, u.username, u.real_name
+        FROM project_members pm
+        LEFT JOIN users u ON pm.user_id = u.id
+        WHERE pm.project_id = #{projectId}
+    </select>
+
+</mapper>

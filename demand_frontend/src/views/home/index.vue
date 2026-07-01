@@ -56,13 +56,33 @@
             </div>
           </template>
           <div v-show="expandedSections.statusDist" class="section-body">
-            <div class="chart-box">
-              <template v-if="distLoading">
-                <div class="skeleton-chart shimmer" />
-              </template>
-              <v-chart v-else-if="pieLoaded" :option="pieOption" :init-options="chartInitOptions" class="chart" autoresize />
-              <el-empty v-else description="暂无数据" />
-            </div>
+            <template v-if="distLoading">
+              <div class="skeleton-chart shimmer" style="height:260px" />
+            </template>
+            <template v-else-if="pieLoaded">
+              <div class="status-dist-layout">
+                <!-- 左侧：环形图 -->
+                <div class="status-pie-wrap">
+                  <v-chart :option="pieOption" :init-options="chartInitOptions" class="status-pie-chart" autoresize />
+                </div>
+                <!-- 右侧：图例列表 -->
+                <div class="status-legend-list">
+                  <div
+                    v-for="(item, idx) in pieOption.series[0].data"
+                    :key="item.name"
+                    class="status-legend-item"
+                  >
+                    <span class="legend-dot" :style="{ background: statusPieColors[idx % statusPieColors.length] }" />
+                    <span class="legend-name">{{ item.name }}</span>
+                    <span class="legend-value">{{ item.value }}</span>
+                    <span class="legend-percent">
+                      {{ pieTotalCount > 0 ? ((item.value / pieTotalCount) * 100).toFixed(1) + '%' : '0%' }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </template>
+            <el-empty v-else description="暂无数据" />
           </div>
         </el-card>
 
@@ -75,13 +95,13 @@
             </div>
           </template>
           <div v-show="expandedSections.typeDist" class="section-body">
-            <div class="chart-box">
-              <template v-if="distLoading">
-                <div class="skeleton-chart shimmer" />
-              </template>
-              <v-chart v-else-if="barLoaded" :option="barOption" :init-options="chartInitOptions" class="chart" autoresize />
-              <el-empty v-else description="暂无数据" />
-            </div>
+            <template v-if="distLoading">
+              <div class="skeleton-chart shimmer" style="height:280px" />
+            </template>
+            <template v-else-if="barLoaded">
+              <v-chart :option="barOption" :init-options="chartInitOptions" class="type-bar-chart" autoresize />
+            </template>
+            <el-empty v-else description="暂无数据" />
           </div>
         </el-card>
 
@@ -110,8 +130,52 @@
         </el-card>
       </el-col>
 
-      <!-- 右栏：最近需求 + 流转历史 + 项目进度 -->
+      <!-- 右栏：流程处理概览 + 最近需求 + 流转历史 + 项目进度 -->
       <el-col :xs="24" :lg="8">
+        <!-- 流程处理概览 -->
+        <el-card shadow="hover" class="section-card workflow-overview-card">
+          <template #header>
+            <div class="section-header">
+              <span>流程处理概览</span>
+            </div>
+          </template>
+          <div class="workflow-overview">
+            <!-- 左侧：环形图 -->
+            <div class="workflow-circle-wrap">
+              <div class="workflow-circle" :style="{ '--progress': workflowProcessRate }">
+                <svg class="circle-svg" viewBox="0 0 100 100">
+                  <circle class="circle-bg" cx="50" cy="50" r="42" />
+                  <circle
+                    class="circle-fill"
+                    cx="50" cy="50" r="42"
+                    :stroke-dasharray="`${workflowProcessRate * 2.639} 263.9`"
+                  />
+                </svg>
+                <div class="circle-inner">
+                  <el-icon class="circle-icon"><Document /></el-icon>
+                  <span class="circle-label">流程总览</span>
+                </div>
+              </div>
+            </div>
+            <!-- 右侧：统计项列表 -->
+            <div class="workflow-stats-list">
+              <div
+                v-for="item in workflowStatItems"
+                :key="item.key"
+                class="workflow-stat-item"
+                @click="item.route && router.push(item.route)"
+                :class="{ 'is-clickable': !!item.route }"
+              >
+                <span class="workflow-stat-label">{{ item.label }}</span>
+                <span class="workflow-stat-value" :class="item.cls">
+                  <template v-if="workflowStatsLoading">—</template>
+                  <template v-else>{{ workflowStats[item.key as keyof typeof workflowStats] }}</template>
+                </span>
+              </div>
+            </div>
+          </div>
+        </el-card>
+
         <!-- 最近需求 -->
         <el-card shadow="hover" class="section-card">
           <template #header>
@@ -211,7 +275,8 @@ import { use } from 'echarts/core'
 import { SVGRenderer } from 'echarts/renderers'
 import { PieChart, BarChart } from 'echarts/charts'
 import { TitleComponent, TooltipComponent, LegendComponent, GridComponent } from 'echarts/components'
-import { getDashboardData, getDistributionData, getDurationData } from '@/api/modules/statistics'
+import { getDashboardData, getDistributionData, getDurationData, getWorkflowProcessStats } from '@/api/modules/statistics'
+import type { WorkflowProcessStats } from '@/api/modules/statistics'
 import { getRequirementList } from '@/api/modules/requirement'
 import { useUserStore } from '@/stores/modules/user'
 import { formatDate, stripPriorityPrefix, normalizeText } from '@/utils/format'
@@ -269,32 +334,96 @@ const statCardsPro = computed(() => [
 // 状态分布饼图
 const distLoading = ref(true)
 const pieLoaded = ref(false)
-const pieOption = ref({
-  tooltip: { trigger: 'item' },
-  legend: { top: '5%', left: 'center' },
+
+// 饼图配色（与截图参考风格一致）
+const statusPieColors = ['#2563EB', '#60A5FA', '#93C5FD', '#F59E0B', '#10B981', '#EF4444', '#8B5CF6', '#6366F1']
+
+const pieTotalCount = computed(() =>
+  (pieOption.value.series[0].data as { name: string; value: number }[]).reduce((s, d) => s + d.value, 0)
+)
+
+const pieOption = ref<any>({
+  tooltip: {
+    trigger: 'item',
+    formatter: '{b}: {c} ({d}%)',
+  },
+  color: statusPieColors,
   series: [{
     name: '需求状态',
     type: 'pie',
-    radius: ['40%', '70%'],
+    radius: ['52%', '78%'],
+    center: ['50%', '50%'],
     avoidLabelOverlap: false,
-    itemStyle: { borderRadius: 10, borderColor: 'var(--color-on-primary)', borderWidth: 2 },
-    label: { show: false, position: 'center' },
-    emphasis: { label: { show: true, fontSize: 16, fontWeight: 'bold' } },
+    itemStyle: { borderRadius: 6, borderColor: '#1e293b', borderWidth: 2 },
+    label: { show: false },
+    emphasis: {
+      itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: 'rgba(0,0,0,0.3)' },
+    },
+    // 中间总数标注（graphic 实现）
     data: [] as { name: string; value: number }[],
   }],
+  graphic: [],
 })
 
-// 类型分布柱状图
+// 类型分布柱状图（渐变蓝色，顶部标注数值）
 const barLoaded = ref(false)
-const barOption = ref({
-  tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-  xAxis: { type: 'category', data: [] as string[] },
-  yAxis: { type: 'value' },
+const barOption = ref<any>({
+  tooltip: {
+    trigger: 'axis',
+    axisPointer: { type: 'shadow' },
+    formatter: (params: any[]) => {
+      const p = params[0]
+      return `${p.name}: <strong>${p.value}</strong>`
+    },
+  },
+  grid: { top: 36, right: 16, bottom: 40, left: 40, containLabel: true },
+  xAxis: {
+    type: 'category',
+    data: [] as string[],
+    axisLine: { lineStyle: { color: '#334155' } },
+    axisTick: { show: false },
+    axisLabel: { color: '#94a3b8', fontSize: 12 },
+  },
+  yAxis: {
+    type: 'value',
+    splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
+    axisLabel: { color: '#94a3b8', fontSize: 12 },
+  },
   series: [{
     name: '数量',
     type: 'bar',
+    barMaxWidth: 56,
     data: [] as number[],
-    itemStyle: { color: COLORS.accent },
+    itemStyle: {
+      color: {
+        type: 'linear',
+        x: 0, y: 0, x2: 0, y2: 1,
+        colorStops: [
+          { offset: 0, color: '#60A5FA' },
+          { offset: 1, color: '#2563EB' },
+        ],
+      },
+      borderRadius: [6, 6, 0, 0],
+    },
+    label: {
+      show: true,
+      position: 'top',
+      color: '#94a3b8',
+      fontSize: 12,
+      fontWeight: 600,
+    },
+    emphasis: {
+      itemStyle: {
+        color: {
+          type: 'linear',
+          x: 0, y: 0, x2: 0, y2: 1,
+          colorStops: [
+            { offset: 0, color: '#93C5FD' },
+            { offset: 1, color: '#3B82F6' },
+          ],
+        },
+      },
+    },
   }],
 })
 
@@ -325,6 +454,42 @@ const durationData = ref<{ stateName: string; avgHours: number; maxHours: number
 
 // 项目进度
 const projectRates = ref<{ name: string; rate: number; completed: number; total: number }[]>([])
+
+// 流程处理概览
+const workflowStatsLoading = ref(true)
+const workflowStats = ref<WorkflowProcessStats>({ pending: 0, processed: 0, initiated: 0, cc: 0 })
+
+async function loadWorkflowStats() {
+  workflowStatsLoading.value = true
+  try {
+    const res = await getWorkflowProcessStats()
+    const data = (res as any)?.data ?? (res as any)
+    workflowStats.value = {
+      pending: data?.pending ?? 0,
+      processed: data?.processed ?? 0,
+      initiated: data?.initiated ?? 0,
+      cc: data?.cc ?? 0,
+    }
+  } catch {
+    workflowStats.value = { pending: 0, processed: 0, initiated: 0, cc: 0 }
+  } finally {
+    workflowStatsLoading.value = false
+  }
+}
+
+const workflowStatItems = [
+  { key: 'pending',   label: '待办流程', cls: 'is-pending',   route: '/requirements?view=pending' },
+  { key: 'processed', label: '已办流程', cls: 'is-processed', route: '/requirements?view=processed' },
+  { key: 'initiated', label: '我发起的', cls: 'is-initiated', route: '/requirements?view=initiated' },
+  { key: 'cc',        label: '抄送我的', cls: 'is-cc',        route: '/requirements?view=cc' },
+]
+
+// 流程处理率（待办/总流程）
+const workflowProcessRate = computed(() => {
+  const total = workflowStats.value.pending + workflowStats.value.processed
+  if (total === 0) return 0
+  return Math.round((workflowStats.value.processed / total) * 100)
+})
 
 function getProgressColor(rate: number) {
   if (rate >= 80) return COLORS.emeraldHover
@@ -393,24 +558,6 @@ async function loadDashboardData() {
   }
 }
 
-// 需求类型英文转中文映射
-function getTypeLabel(type: string): string {
-  const typeMap: Record<string, string> = {
-    'feature': '功能需求',
-    'bug': '缺陷',
-    'improvement': '优化改进',
-    'enhancement': '功能增强',
-    'task': '任务',
-    'story': '用户故事',
-    'research': '研究',
-    'test': '测试',
-    'document': '文档',
-    'order': '工单',
-    'requirement': '需求',
-    'other': '其他'
-  }
-  return typeMap[type.toLowerCase()] || type
-}
 
 async function loadDistributionData() {
   distLoading.value = true
@@ -420,10 +567,39 @@ async function loadDistributionData() {
     const statusDist: Record<string, number> = raw?.statusDist || raw?.statusDistribution || {}
     const typeDist: Record<string, number> = raw?.typeDist || raw?.typeDistribution || {}
 
-    pieOption.value.series[0].data = Object.entries(statusDist).map(([name, value]) => ({ name, value }))
+    const pieData = Object.entries(statusDist).map(([name, value]) => ({ name, value }))
+    const total = pieData.reduce((s, d) => s + d.value, 0)
+    pieOption.value.series[0].data = pieData
+    // 中间文字：总数 + 标签
+    pieOption.value.graphic = [
+      {
+        type: 'text',
+        left: 'center',
+        top: '38%',
+        style: {
+          text: String(total),
+          textAlign: 'center',
+          fill: '#e2e8f0',
+          fontSize: 28,
+          fontWeight: 'bold',
+          fontFamily: 'Inter, sans-serif',
+        },
+      },
+      {
+        type: 'text',
+        left: 'center',
+        top: '55%',
+        style: {
+          text: '需求总数',
+          textAlign: 'center',
+          fill: '#94a3b8',
+          fontSize: 13,
+        },
+      },
+    ]
     pieLoaded.value = true
 
-    barOption.value.xAxis.data = Object.keys(typeDist).map(type => getTypeLabel(type))
+    barOption.value.xAxis.data = Object.keys(typeDist)
     barOption.value.series[0].data = Object.values(typeDist)
     barLoaded.value = true
   } catch {
@@ -490,6 +666,7 @@ onMounted(async () => {
   loadRecentRequirements()
   loadDurationData()
   loadProjectRates()
+  loadWorkflowStats()
 })
 </script>
 
@@ -692,6 +869,77 @@ onMounted(async () => {
   width: 100%;
 }
 
+// ── 状态分布：环形图 + 右侧图例 ──────────────────
+.status-dist-layout {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-md) 0;
+}
+
+.status-pie-wrap {
+  flex-shrink: 0;
+  width: 260px;
+  height: 260px;
+}
+
+.status-pie-chart {
+  width: 100%;
+  height: 100%;
+}
+
+.status-legend-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.status-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-size-sm);
+  cursor: default;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.legend-name {
+  flex: 1;
+  color: var(--color-text-secondary);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.legend-value {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+  min-width: 32px;
+  text-align: right;
+}
+
+.legend-percent {
+  color: var(--color-muted-text);
+  font-size: var(--font-size-xs);
+  min-width: 44px;
+  text-align: right;
+}
+
+// ── 需求类型分布：渐变柱状图 ──────────────────
+.type-bar-chart {
+  width: 100%;
+  height: 280px;
+}
+
 // 最近需求列表
 .recent-list {
   max-height: 360px;
@@ -796,5 +1044,116 @@ onMounted(async () => {
     flex-direction: column;
     align-items: flex-start;
   }
+}
+
+// 流程处理概览
+.workflow-overview-card {
+  :deep(.el-card__body) {
+    padding: var(--spacing-md) var(--spacing-lg);
+  }
+}
+
+.workflow-overview {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-lg);
+}
+
+.workflow-circle-wrap {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.workflow-circle {
+  position: relative;
+  width: 110px;
+  height: 110px;
+
+  .circle-svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+  }
+
+  .circle-bg {
+    fill: none;
+    stroke: var(--color-border);
+    stroke-width: 10;
+  }
+
+  .circle-fill {
+    fill: none;
+    stroke: #2563EB;
+    stroke-width: 10;
+    stroke-linecap: round;
+    stroke-dashoffset: 0;
+    transition: stroke-dasharray 0.6s ease;
+  }
+
+  .circle-inner {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+
+    .circle-icon {
+      font-size: 24px;
+      color: #2563EB;
+    }
+
+    .circle-label {
+      font-size: var(--font-size-xs);
+      color: var(--color-muted-text);
+      white-space: nowrap;
+    }
+  }
+}
+
+.workflow-stats-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.workflow-stat-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+
+  &.is-clickable {
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    padding: 4px 6px;
+    margin: 0 -6px;
+    transition: background-color var(--transition-fast);
+
+    &:hover {
+      background-color: var(--color-surface-alt);
+    }
+  }
+}
+
+.workflow-stat-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.workflow-stat-value {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-primary);
+
+  &.is-pending   { color: #2563EB; }
+  &.is-processed { color: #059669; }
+  &.is-initiated { color: #D97706; }
+  &.is-cc        { color: #6366F1; }
 }
 </style>

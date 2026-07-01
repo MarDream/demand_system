@@ -1,6 +1,6 @@
 package com.demand.system.common.service;
 
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
@@ -28,7 +28,7 @@ public class DistributedIdGenerator {
     // Redis key过期时间（秒）- 保留7天
     private static final long KEY_EXPIRE_SECONDS = 7 * 24 * 60 * 60;
 
-    private final RedisTemplate<String, Object> redisTemplate;
+    private final StringRedisTemplate stringRedisTemplate;
 
     // Lua脚本：原子性地获取并递增序列号
     private static final String LUA_SCRIPT =
@@ -40,8 +40,8 @@ public class DistributedIdGenerator {
         "end\n" +
         "return current";
 
-    public DistributedIdGenerator(RedisTemplate<String, Object> redisTemplate) {
-        this.redisTemplate = redisTemplate;
+    public DistributedIdGenerator(StringRedisTemplate stringRedisTemplate) {
+        this.stringRedisTemplate = stringRedisTemplate;
     }
 
     /**
@@ -96,7 +96,7 @@ public class DistributedIdGenerator {
         script.setResultType(Long.class);
 
         List<String> keys = Collections.singletonList(key);
-        return redisTemplate.execute(script, keys, String.valueOf(ttl));
+        return stringRedisTemplate.execute(script, keys, String.valueOf(ttl));
     }
 
     /**
@@ -111,16 +111,16 @@ public class DistributedIdGenerator {
         String dateStr = dateTime.format(DATE_FORMATTER);
         String redisKey = REDIS_KEY_PREFIX + prefix + ":" + dateStr;
 
-        Object value = redisTemplate.opsForValue().get(redisKey);
+        String value = stringRedisTemplate.opsForValue().get(redisKey);
         if (value == null) {
             return 0L;
         }
 
-        if (value instanceof Number) {
-            return ((Number) value).longValue();
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException e) {
+            return 0L;
         }
-
-        return 0L;
     }
 
     /**
@@ -132,6 +132,6 @@ public class DistributedIdGenerator {
         String prefix = "BR";
         String dateStr = dateTime.format(DATE_FORMATTER);
         String redisKey = REDIS_KEY_PREFIX + prefix + ":" + dateStr;
-        redisTemplate.delete(redisKey);
+        stringRedisTemplate.delete(redisKey);
     }
 }

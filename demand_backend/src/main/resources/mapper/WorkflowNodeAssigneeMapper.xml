@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demand.system.module.workflow.mapper.WorkflowNodeAssigneeMapper">
+
+    <!-- 批量插入指派关系 -->
+    <insert id="batchInsert">
+        INSERT INTO workflow_node_assignees
+        (workflow_version_id, node_id, assignee_type, assignee_id)
+        VALUES
+        <foreach collection="assignees" item="item" separator=",">
+            (#{item.workflowVersionId}, #{item.nodeId}, #{item.assigneeType}, #{item.assigneeId})
+        </foreach>
+        ON DUPLICATE KEY UPDATE updated_at = NOW()
+    </insert>
+
+    <!-- 删除指定版本+节点的所有指派关系 -->
+    <delete id="deleteByVersionAndNode">
+        DELETE FROM workflow_node_assignees
+        WHERE workflow_version_id = #{workflowVersionId}
+          AND node_id = #{nodeId}
+    </delete>
+
+    <!-- 查询用户可见的工作流版本+节点组合（用于权限判断） -->
+    <select id="findByUserId" resultType="com.demand.system.module.workflow.entity.WorkflowNodeAssignee">
+        SELECT DISTINCT workflow_version_id, node_id
+        FROM workflow_node_assignees
+        WHERE assignee_type = 'USER'
+          AND assignee_id = #{userId}
+    </select>
+
+    <!-- 查询指定版本+节点的所有指派关系 -->
+    <select id="findByVersionAndNode" resultType="com.demand.system.module.workflow.entity.WorkflowNodeAssignee">
+        SELECT *
+        FROM workflow_node_assignees
+        WHERE workflow_version_id = #{workflowVersionId}
+          AND node_id = #{nodeId}
+    </select>
+
+    <!-- 删除指定工作流版本的所有指派关系 -->
+    <delete id="deleteByVersion">
+        DELETE FROM workflow_node_assignees
+        WHERE workflow_version_id = #{workflowVersionId}
+    </delete>
+
+</mapper>

@@ -173,7 +173,7 @@ public class WorkflowServiceImpl implements WorkflowService {
             return Collections.emptyList();
         }
 
-        if (workflowDefinitionEngine.hasActiveDefinition(requirement.getProjectId())) {
+        if (StringUtils.hasText(requirement.getType()) && workflowDefinitionEngine.hasActiveDefinition(requirement.getType())) {
             return workflowDefinitionEngine.resolveAvailableTransitions(requirement).stream()
                     .map(spec -> toRuntimeTransition(requirement.getProjectId(), currentState, spec))
                     .filter(Objects::nonNull)
@@ -341,8 +341,15 @@ public class WorkflowServiceImpl implements WorkflowService {
     }
 
     @Override
+    @SuppressWarnings("deprecation")
     public String resolveInitialStateName(Long projectId, Requirement requirement) {
-        Optional<String> definitionDrivenState = workflowDefinitionEngine.resolveInitialStateName(projectId, requirement);
+        // 优先按 type 维度解析
+        Optional<String> definitionDrivenState;
+        if (requirement != null && StringUtils.hasText(requirement.getType())) {
+            definitionDrivenState = workflowDefinitionEngine.resolveInitialStateName(requirement.getType(), requirement);
+        } else {
+            definitionDrivenState = workflowDefinitionEngine.resolveInitialStateName(projectId, requirement);
+        }
         if (definitionDrivenState.isPresent()) {
             return definitionDrivenState.get();
         }

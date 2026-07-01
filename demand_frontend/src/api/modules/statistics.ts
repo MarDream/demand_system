@@ -101,3 +101,21 @@ export function getLowRatedRequirements(params: RatingQueryParams = {}) {
 export function getNodeAverageRatings(params: RatingQueryParams = {}) {
   return request.get<ApiResponse<Record<string, number>>>('/v1/statistics/rating/node-averages', { params: toParams(params) })
 }
+
+// ==================== 流程统计 ====================
+
+export interface WorkflowProcessStats {
+  /** 待办流程数 */
+  pending: number
+  /** 已办流程数 */
+  processed: number
+  /** 我发起的流程数 */
+  initiated: number
+  /** 抄送我的流程数 */
+  cc: number
+}
+
+/** 流程处理概览统计（当前登录用户维度） */
+export function getWorkflowProcessStats() {
+  return request.get<ApiResponse<WorkflowProcessStats>>('/v1/workflow/process-stats')
+}

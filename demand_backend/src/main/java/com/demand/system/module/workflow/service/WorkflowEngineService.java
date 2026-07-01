@@ -13,6 +13,7 @@ import com.demand.system.module.requirement.entity.RequirementHistory;
 import com.demand.system.module.requirement.mapper.RequirementHistoryMapper;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
 import com.demand.system.module.requirement.service.RequirementApprovalEvaluationService;
+import com.demand.system.module.requirement.service.RequirementPendingTaskSyncService;
 import com.demand.system.module.knowledge.service.KnowledgeDocumentService;
 import com.demand.system.module.knowledge.entity.KnowledgeBase;
 import com.demand.system.module.knowledge.mapper.KnowledgeBaseMapper;
@@ -99,6 +100,7 @@ public class WorkflowEngineService {
     private final FileRecordMapper fileRecordMapper;
     private final KnowledgeDocumentService knowledgeDocumentService;
     private final KnowledgeBaseMapper knowledgeBaseMapper;
+    private final RequirementPendingTaskSyncService pendingTaskSyncService;
 
     public WorkflowEngineService(WorkflowInstanceMapper instanceMapper, WorkflowInstanceTransitionMapper transitionMapper,
                                WorkflowNodeMapper nodeMapper, WorkflowEdgeMapper edgeMapper,
@@ -116,7 +118,8 @@ public class WorkflowEngineService {
                                WorkflowParallelBranchService parallelBranchService,
                                FileRecordMapper fileRecordMapper,
                                KnowledgeDocumentService knowledgeDocumentService,
-                               KnowledgeBaseMapper knowledgeBaseMapper) {
+                               KnowledgeBaseMapper knowledgeBaseMapper,
+                               @Lazy RequirementPendingTaskSyncService pendingTaskSyncService) {
         this.instanceMapper = instanceMapper;
         this.transitionMapper = transitionMapper;
         this.nodeMapper = nodeMapper;
@@ -141,6 +144,7 @@ public class WorkflowEngineService {
         this.fileRecordMapper = fileRecordMapper;
         this.knowledgeDocumentService = knowledgeDocumentService;
         this.knowledgeBaseMapper = knowledgeBaseMapper;
+        this.pendingTaskSyncService = pendingTaskSyncService;
     }
 
     /**
@@ -255,6 +259,10 @@ public class WorkflowEngineService {
 
         notificationService.notifyNodeEntered(requirement, targetNode, operatorId);
         initCountersignIfNeeded(instance.getId(), targetNode, requirement);
+
+        // ====== 待办任务同步（提交时无 selectedAssigneeId，按角色/角色组/组织分配）======
+        pendingTaskSyncService.syncPendingTasks(requirementId, null);
+        // ====== 待办任务同步 END ======
     }
 
     @Transactional
@@ -382,6 +390,17 @@ public class WorkflowEngineService {
         parallelBranchService.initParallelBranchesIfNeeded(instance, context, request.getToNodeId(), requirement);
         parallelBranchService.afterTransition(instance, context, instance.getPreviousNodeId(), request.getToNodeId(), requirement);
         initCountersignIfNeeded(instance.getId(), targetNode, requirement);
+
+        // ====== 待办任务同步 ======
+        // 如果有选中的处理人，更新需求的 assignee_id（用于列表显示）
+        if (request.getSelectedAssigneeId() != null) {
+            requirementMapper.update(null, new LambdaUpdateWrapper<Requirement>()
+                .eq(Requirement::getId, request.getRequirementId())
+                .set(Requirement::getAssigneeId, request.getSelectedAssigneeId()));
+        }
+        // 同步待办任务（传入 selectedAssigneeId 以决定是存用户还是存角色范围）
+        pendingTaskSyncService.syncPendingTasks(request.getRequirementId(), request.getSelectedAssigneeId());
+        // ====== 待办任务同步 END ======
     }
 
     /**
@@ -877,6 +896,17 @@ public class WorkflowEngineService {
 
         // SPECIFIED_ROLE: 核心逻辑 — 单人显示姓名，多人显示角色名
         if ("SPECIFIED_ROLE".equals(assigneeType)) {
+            // 优先判断：需求已指定具体的 assignee_id 且该用户在候选人中 → 显示该用户姓名
+            if (requirement != null && requirement.getAssigneeId() != null) {
+                Long assigneeId = requirement.getAssigneeId().longValue();
+                if (candidates != null) {
+                    for (AssigneeCandidateDTO candidate : candidates) {
+                        if (candidate.getId() != null && candidate.getId().equals(assigneeId)) {
+                            return candidate.getName();
+                        }
+                    }
+                }
+            }
             if (candidates != null && !candidates.isEmpty()) {
                 if (candidates.size() == 1) {
                     // 仅 1 人 → 显示用户姓名
@@ -889,8 +919,17 @@ public class WorkflowEngineService {
             return resolveRoleName(node.getAssigneeRoleId()) + "（暂无成员）";
         }
 
-        // SPECIFIED_USER / SPECIFIED_ORG 等：有候选人就取第一个
+        // SPECIFIED_USER / SPECIFIED_ORG 等：有候选人时优先判断 requirement.assigneeId 是否匹配
         if (candidates != null && !candidates.isEmpty()) {
+            // 优先判断：需求已指定具体的 assignee_id 且该用户在候选人中 → 显示该用户姓名
+            if (requirement != null && requirement.getAssigneeId() != null) {
+                Long assigneeId = requirement.getAssigneeId().longValue();
+                for (AssigneeCandidateDTO candidate : candidates) {
+                    if (candidate.getId() != null && candidate.getId().equals(assigneeId)) {
+                        return candidate.getName();
+                    }
+                }
+            }
             return candidates.get(0).getName();
         }
 

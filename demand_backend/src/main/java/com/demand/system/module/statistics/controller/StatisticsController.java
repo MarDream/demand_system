@@ -7,6 +7,7 @@ import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.statistics.dto.BurndownPoint;
 import com.demand.system.module.statistics.dto.CfdPoint;
 import com.demand.system.module.statistics.service.StatisticsService;
+import com.demand.system.module.workflow.dto.WorkflowProcessStatsDTO;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -14,7 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/v1/projects")
+@RequestMapping("/api/v1")
 public class StatisticsController {
 
     private final StatisticsService statisticsService;
@@ -57,6 +58,16 @@ public class StatisticsController {
     public Result<List<Map<String, Object>>> getCfd(@PathVariable("id") Long projectId) {
         List<CfdPoint> data = statisticsService.getCfdData(projectId);
         return Result.success(data.stream().map(this::cfdPointToMap).toList());
+    }
+
+    @GetMapping("/workflow/process-stats")
+    @PreAuthorize("isAuthenticated()")
+    public Result<WorkflowProcessStatsDTO> getWorkflowProcessStats() {
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "未登录");
+        }
+        return Result.success(statisticsService.getWorkflowProcessStats(userId));
     }
 
     private Map<String, Object> pointToMap(BurndownPoint point) {

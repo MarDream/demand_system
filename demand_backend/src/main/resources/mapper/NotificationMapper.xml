@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demand.system.module.notification.mapper.NotificationMapper">
+
+    <!-- 统计未读通知数量 -->
+    <select id="countUnread" resultType="int">
+        SELECT COUNT(*)
+        FROM notifications
+        WHERE user_id = #{userId}
+          AND is_read = 0
+    </select>
+
+    <!-- 查询用户最近的通知 -->
+    <select id="selectRecentByUser" resultType="com.demand.system.module.notification.entity.Notification">
+        SELECT *
+        FROM notifications
+        WHERE user_id = #{userId}
+        ORDER BY created_at DESC
+        LIMIT #{limit}
+    </select>
+
+</mapper>

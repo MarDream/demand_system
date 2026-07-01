@@ -3,12 +3,16 @@ package com.demand.system.module.project.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.demand.system.module.project.entity.ProjectMember;
 import org.apache.ibatis.annotations.Param;
-import org.apache.ibatis.annotations.Select;
 
 import java.util.List;
 
 public interface ProjectMemberMapper extends BaseMapper<ProjectMember> {
 
-    @Select("SELECT pm.*, u.username, u.real_name FROM project_members pm LEFT JOIN users u ON pm.user_id = u.id WHERE pm.project_id = #{projectId}")
+    /**
+     * 查询项目成员列表（含用户信息）
+     *
+     * @param projectId 项目ID
+     * @return 项目成员列表
+     */
     List<ProjectMember> selectMembersWithUser(@Param("projectId") Long projectId);
 }

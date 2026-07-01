@@ -70,7 +70,9 @@ public class WorkflowRuntimeMigrationServiceImpl implements WorkflowRuntimeMigra
                 report.setSkippedCount(report.getSkippedCount() + 1);
                 continue;
             }
-            if (workflowDefinitionEngine.hasActiveDefinition(requirement.getProjectId())) {
+            boolean hasActive = StringUtils.hasText(requirement.getType())
+                    && workflowDefinitionEngine.hasActiveDefinition(requirement.getType());
+            if (hasActive) {
                 report.setSkippedCount(report.getSkippedCount() + 1);
                 continue;
             }
@@ -93,7 +95,9 @@ public class WorkflowRuntimeMigrationServiceImpl implements WorkflowRuntimeMigra
                 .and(w -> w.isNull(Requirement::getLegacyWorkflow).or().eq(Requirement::getLegacyWorkflow, false)));
 
         for (Requirement requirement : candidates) {
-            if (!workflowDefinitionEngine.hasActiveDefinition(requirement.getProjectId())) {
+            boolean hasActive = StringUtils.hasText(requirement.getType())
+                    && workflowDefinitionEngine.hasActiveDefinition(requirement.getType());
+            if (!hasActive) {
                 report.setSkippedCount(report.getSkippedCount() + 1);
                 continue;
             }

@@ -484,7 +484,7 @@ const requirementAllColumns: ColumnDef[] = [
 ]
 
 // 默认显示的列
-const requirementDefaultKeys = ['title', 'requirementNo', 'type', 'priority', 'status', 'creatorName', 'assigneeName', 'createdAt', 'operations']
+const requirementDefaultKeys = ['title', 'requirementNo', 'type', 'priority', 'status', 'creatorName', 'assigneeName', 'createdAt', 'dueDate', 'analysisCompletedAt', 'confirmAt', 'developmentCompletedAt', 'operations']
 
 const {
   showColumnConfig,
@@ -651,12 +651,6 @@ async function fetchData() {
   if (cached && Date.now() - cached.timestamp < CACHE_EXPIRY_MS) {
     tableData.value = cached.data
     pagination.total = cached.total
-    // 更新视图计数
-    if (isDraftView.value) {
-      viewCounts.drafts = cached.total
-    } else if (isPendingView.value) {
-      viewCounts.pending = cached.total
-    }
     return
   }
 
@@ -746,12 +740,6 @@ async function fetchData() {
     ElMessage.error('获取需求列表失败')
   } finally {
     loading.value = false
-    // Update view counts based on current view mode
-    if (isDraftView.value) {
-      viewCounts.drafts = pagination.total
-    } else if (isPendingView.value) {
-      viewCounts.pending = pagination.total
-    }
   }
 }
 

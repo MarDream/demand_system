@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demand.system.module.statistics.mapper.StatisticsMapper">
+
+    <!-- 状态分布统计 -->
+    <select id="getStatusDistribution" resultType="java.util.Map">
+        SELECT status, COUNT(*) as count
+        FROM requirements
+        WHERE project_id = #{projectId} AND deleted_at = 0
+        GROUP BY status
+    </select>
+
+    <!-- 需求类型分布统计 -->
+    <select id="getTypeDistribution" resultType="java.util.Map">
+        SELECT rt.name AS type, COUNT(r.id) AS count
+        FROM requirement_types rt
+        LEFT JOIN requirements r ON r.type = rt.code
+            AND r.project_id = #{projectId} AND r.deleted_at = 0
+        GROUP BY rt.id, rt.name, rt.sort_order
+        ORDER BY MIN(COALESCE(rt.sort_order, 999))
+    </select>
+
+    <!-- 优先级分布统计 -->
+    <select id="getPriorityDistribution" resultType="java.util.Map">
+        SELECT priority, COUNT(*) as count
+        FROM requirements
+        WHERE project_id = #{projectId} AND deleted_at = 0
+        GROUP BY priority
+    </select>
+
+    <!-- 总需求数：登录用户可见的全部需求数（排除草稿） -->
+    <select id="getTotalCount" resultType="int">
+        SELECT COUNT(DISTINCT r.id) FROM requirements r
+        WHERE r.deleted_at = 0 AND (r.is_draft = 0 OR r.is_draft IS NULL)
+        AND (
+            EXISTS (SELECT 1 FROM user_roles ur JOIN roles ro ON ur.role_id = ro.id WHERE ur.user_id = #{userId} AND ro.code = 'SUPER_ADMIN')
+            OR r.creator_id = #{userId}
+            OR EXISTS (SELECT 1 FROM workflow_instance_transitions wit WHERE wit.requirement_id = r.id AND wit.operator_id = #{userId})
+            OR EXISTS (SELECT 1 FROM workflow_instances wi JOIN workflow_nodes wn ON wi.workflow_version_id = wn.workflow_version_id AND wi.current_node_id = wn.node_id WHERE wi.requirement_id = r.id AND JSON_CONTAINS(wn.assignee_user_ids, CAST(#{userId} AS JSON)))
+            OR EXISTS (SELECT 1 FROM user_organizations uo WHERE uo.user_id = #{userId} AND uo.org_id = r.org_id)
+        )
+    </select>
+
+    <!-- 进行中需求：处于开发中节点的需求 -->
+    <select id="getInProgressCount" resultType="int">
+        SELECT COUNT(DISTINCT r.id) FROM requirements r
+        WHERE r.deleted_at = 0 AND (r.is_draft = 0 OR r.is_draft IS NULL) AND r.node_status = 'IN_DEVELOPMENT'
+        AND (
+            EXISTS (SELECT 1 FROM user_roles ur JOIN roles ro ON ur.role_id = ro.id WHERE ur.user_id = #{userId} AND ro.code = 'SUPER_ADMIN')
+            OR r.creator_id = #{userId}
+            OR EXISTS (SELECT 1 FROM workflow_instance_transitions wit WHERE wit.requirement_id = r.id AND wit.operator_id = #{userId})
+            OR EXISTS (SELECT 1 FROM workflow_instances wi JOIN workflow_nodes wn ON wi.workflow_version_id = wn.workflow_version_id AND wi.current_node_id = wn.node_id WHERE wi.requirement_id = r.id AND JSON_CONTAINS(wn.assignee_user_ids, CAST(#{userId} AS JSON)))
+            OR EXISTS (SELECT 1 FROM user_organizations uo WHERE uo.user_id = #{userId} AND uo.org_id = r.org_id)
+        )
+    </select>
+
+    <!-- 已完成需求：处于结束节点的需求 -->
+    <select id="getCompletedCount" resultType="int">
+        SELECT COUNT(DISTINCT r.id) FROM requirements r
+        WHERE r.deleted_at = 0 AND (r.is_draft = 0 OR r.is_draft IS NULL) AND r.node_status = 'ACCEPTED'
+        AND (
+            EXISTS (SELECT 1 FROM user_roles ur JOIN roles ro ON ur.role_id = ro.id WHERE ur.user_id = #{userId} AND ro.code = 'SUPER_ADMIN')
+            OR r.creator_id = #{userId}
+            OR EXISTS (SELECT 1 FROM workflow_instance_transitions wit WHERE wit.requirement_id = r.id AND wit.operator_id = #{userId})
+            OR EXISTS (SELECT 1 FROM workflow_instances wi JOIN workflow_nodes wn ON wi.workflow_version_id = wn.workflow_version_id AND wi.current_node_id = wn.node_id WHERE wi.requirement_id = r.id AND JSON_CONTAINS(wn.assignee_user_ids, CAST(#{userId} AS JSON)))
+            OR EXISTS (SELECT 1 FROM user_organizations uo WHERE uo.user_id = #{userId} AND uo.org_id = r.org_id)
+        )
+    </select>
+
+    <!-- 已逾期需求：未结束且超过期望完成日期的需求 -->
+    <select id="getOverdueCount" resultType="int">
+        SELECT COUNT(DISTINCT r.id) FROM requirements r
+        WHERE r.deleted_at = 0 AND (r.is_draft = 0 OR r.is_draft IS NULL)
+        AND r.node_status != 'ACCEPTED' AND r.due_date IS NOT NULL AND r.due_date &lt; CURDATE()
+        AND (
+            EXISTS (SELECT 1 FROM user_roles ur JOIN roles ro ON ur.role_id = ro.id WHERE ur.user_id = #{userId} AND ro.code = 'SUPER_ADMIN')
+            OR r.creator_id = #{userId}
+            OR EXISTS (SELECT 1 FROM workflow_instance_transitions wit WHERE wit.requirement_id = r.id AND wit.operator_id = #{userId})
+            OR EXISTS (SELECT 1 FROM workflow_instances wi JOIN workflow_nodes wn ON wi.workflow_version_id = wn.workflow_version_id AND wi.current_node_id = wn.node_id WHERE wi.requirement_id = r.id AND JSON_CONTAINS(wn.assignee_user_ids, CAST(#{userId} AS JSON)))
+            OR EXISTS (SELECT 1 FROM user_organizations uo WHERE uo.user_id = #{userId} AND uo.org_id = r.org_id)
+        )
+    </select>
+
+    <!-- 我的待办数量 -->
+    <select id="getMyTodoCount" resultType="int">
+        SELECT COUNT(*)
+        FROM requirements
+        WHERE assignee_id = #{userId} AND deleted_at = 0 AND status NOT IN ('已上线','已验收','已取消')
+    </select>
+
+    <!-- 需求趋势数据 -->
+    <select id="getTrendData" resultType="java.util.Map">
+        SELECT DATE(created_at) as date, COUNT(*) as count
+        FROM requirements
+        WHERE project_id = #{projectId} AND deleted_at = 0
+        GROUP BY DATE(created_at)
+        ORDER BY date
+    </select>
+
+    <!-- 需求耗时数据 -->
+    <select id="getDurationData" resultType="java.util.Map">
+        SELECT status,
+               AVG(DATEDIFF(updated_at, created_at)) as avg_days,
+               MAX(DATEDIFF(updated_at, created_at)) as max_days,
+               MIN(DATEDIFF(updated_at, created_at)) as min_days
+        FROM requirements
+        WHERE project_id = #{projectId} AND deleted_at = 0
+        GROUP BY status
+    </select>
+
+    <!-- 燃尽图数据 -->
+    <select id="getBurndownData" resultType="java.util.Map">
+        SELECT DATE(created_at) as date,
+               COUNT(*) as total,
+               SUM(CASE WHEN status IN ('已上线','已验收') THEN 1 ELSE 0 END) as completed
+        FROM requirements
+        WHERE iteration_id = #{iterationId} AND deleted_at = 0
+        GROUP BY DATE(created_at)
+        ORDER BY date
+    </select>
+
+    <!-- 累积流图数据 -->
+    <select id="getCfdData" resultType="java.util.Map">
+        SELECT DATE(created_at) as date, status, COUNT(*) as count
+        FROM requirements
+        WHERE project_id = #{projectId} AND deleted_at = 0
+        GROUP BY DATE(created_at), status
+        ORDER BY date
+    </select>
+
+    <!-- 已办流程数：用户参与过的流转记录对应的需求数（去重） -->
+    <select id="countProcessedByUserId" resultType="java.lang.Long">
+        SELECT COUNT(DISTINCT wit.requirement_id)
+        FROM workflow_instance_transitions wit
+        JOIN requirements r ON wit.requirement_id = r.id
+        WHERE wit.operator_id = #{userId} AND r.deleted_at = 0 AND (r.is_draft = 0 OR r.is_draft IS NULL)
+    </select>
+
+    <!-- 我发起的流程数：creator_id = userId 的非草稿需求 -->
+    <select id="countInitiatedByUserId" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM requirements
+        WHERE creator_id = #{userId} AND deleted_at = 0 AND (is_draft = 0 OR is_draft IS NULL)
+    </select>
+
+    <!-- 抄送我的流程数：cc_user_ids 包含当前用户的需求（JSON_CONTAINS） -->
+    <select id="countCcByUserId" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM requirements
+        WHERE deleted_at = 0 AND (is_draft = 0 OR is_draft IS NULL)
+        AND cc_user_ids IS NOT NULL AND JSON_CONTAINS(cc_user_ids, CAST(#{userId} AS JSON))
+    </select>
+
+</mapper>

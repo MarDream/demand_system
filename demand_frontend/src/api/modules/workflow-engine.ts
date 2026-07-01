@@ -11,6 +11,8 @@ export interface FlowTransitionRequest {
   ratingDimensions?: Record<string, number> | null
   lockVersion?: number | null
   attachments?: RequirementAttachment[]
+  /** 本次流转选择的处理人ID（从前端候选人列表中选择的具体用户） */
+  selectedAssigneeId?: number | null
 }
 
 export interface TransitionAssigneeCandidate {

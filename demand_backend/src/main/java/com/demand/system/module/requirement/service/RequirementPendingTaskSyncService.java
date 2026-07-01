@@ -23,13 +23,19 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 /**
  * 需求待办任务同步服务
  * 负责在需求流转时维护待办任务物化表
+ *
+ * 存储策略：
+ * - 有 selectedAssigneeId（选中具体用户）：存 user_id
+ * - SPECIFIED_ROLE：无选中人时，存 role_id
+ * - SPECIFIED_ROLE_GROUP：无选中人时，存 role_group_id
+ * - SPECIFIED_ORG：无选中人时，存 org_id
+ * - SPECIFIED_USER（无选中人）：存所有候选人 user_id
+ * - CREATOR/PREV_APPROVER：存 user_id
  */
 @Service
 public class RequirementPendingTaskSyncService {
@@ -65,10 +71,12 @@ public class RequirementPendingTaskSyncService {
 
     /**
      * 同步需求的待办任务
-     * 在需求流转到新节点时调用
+     *
+     * @param requirementId 需求ID
+     * @param selectedAssigneeId 本次流转选择的处理人ID（可为null）
      */
     @Transactional(rollbackFor = Exception.class)
-    public void syncPendingTasks(Long requirementId) {
+    public void syncPendingTasks(Long requirementId, Long selectedAssigneeId) {
         try {
             // 1. 删除旧的待办记录
             pendingTaskMapper.deleteByRequirementId(requirementId);
@@ -101,23 +109,13 @@ public class RequirementPendingTaskSyncService {
             }
 
             // 4. 计算待办用户列表
-            Set<Long> pendingUserIds = calculatePendingUsers(requirement, instance, currentNode);
+            List<RequirementPendingTask> tasks = buildPendingTasks(requirement, instance, currentNode, selectedAssigneeId);
 
             // 5. 批量插入新待办记录
-            if (!pendingUserIds.isEmpty()) {
-                List<RequirementPendingTask> tasks = new ArrayList<>();
-                for (Long userId : pendingUserIds) {
-                    tasks.add(new RequirementPendingTask(
-                        requirementId,
-                        userId,
-                        currentNode.getAssigneeType(),
-                        instance.getId(),
-                        currentNode.getNodeId(),
-                        currentNode.getNodeName()
-                    ));
-                }
+            if (!tasks.isEmpty()) {
                 pendingTaskMapper.insertBatch(tasks);
-                log.info("同步待办任务成功: requirement={}, users={}", requirementId, pendingUserIds.size());
+                log.info("同步待办任务成功: requirement={}, taskCount={}, assigneeType={}, selectedAssigneeId={}",
+                        requirementId, tasks.size(), currentNode.getAssigneeType(), selectedAssigneeId);
             }
         } catch (Exception e) {
             log.error("同步待办任务失败: requirementId={}", requirementId, e);
@@ -126,69 +124,111 @@ public class RequirementPendingTaskSyncService {
     }
 
     /**
-     * 计算当前节点的待办用户列表
+     * 重载方法：兼容原有调用（无 selectedAssigneeId）
      */
-    private Set<Long> calculatePendingUsers(Requirement requirement, WorkflowInstance instance, WorkflowNode node) {
-        Set<Long> userIds = new HashSet<>();
+    @Transactional(rollbackFor = Exception.class)
+    public void syncPendingTasks(Long requirementId) {
+        syncPendingTasks(requirementId, null);
+    }
+
+    /**
+     * 构建待办任务列表
+     */
+    private List<RequirementPendingTask> buildPendingTasks(Requirement requirement, WorkflowInstance instance,
+                                                          WorkflowNode node, Long selectedAssigneeId) {
+        List<RequirementPendingTask> tasks = new ArrayList<>();
         String assigneeType = node.getAssigneeType();
 
+        // 如果有选中的具体用户，直接存该用户
+        if (selectedAssigneeId != null) {
+            RequirementPendingTask task = new RequirementPendingTask(
+                requirement.getId(),
+                "SPECIFIED_USER",
+                selectedAssigneeId, null, null,
+                instance.getId(),
+                node.getNodeId(),
+                node.getNodeName()
+            );
+            tasks.add(task);
+            return tasks;
+        }
+
+        // 无选中人时，根据类型存储对应字段
         switch (assigneeType) {
             case "SPECIFIED_USER":
-                // 指定用户：从 JSON 数组中提取
-                if (node.getAssigneeUserIds() != null) {
-                    userIds.addAll(node.getAssigneeUserIds());
-                }
-                break;
-
-            case "SPECIFIED_ROLE":
-                // 指定角色：查询拥有该角色的用户
-                if (node.getAssigneeRoleId() != null) {
-                    List<User> users = userMapper.selectList(
-                        new LambdaQueryWrapper<User>()
-                            .inSql(User::getId, "SELECT user_id FROM role_user WHERE role_id = " + node.getAssigneeRoleId())
-                    );
-                    users.forEach(u -> userIds.add(u.getId()));
-                }
-                break;
-
-            case "SPECIFIED_ROLE_GROUP":
-                // 指定角色组：查询角色组内所有角色的用户
-                if (node.getAssigneeRoleGroupId() != null) {
-                    List<Role> roles = roleMapper.selectList(
-                        new LambdaQueryWrapper<Role>()
-                            .eq(Role::getRoleGroupId, node.getAssigneeRoleGroupId())
-                            .eq(Role::getDeletedAt, 0)
-                    );
-                    for (Role role : roles) {
-                        List<User> users = userMapper.selectList(
-                            new LambdaQueryWrapper<User>()
-                                .inSql(User::getId, "SELECT user_id FROM role_user WHERE role_id = " + role.getId())
-                        );
-                        users.forEach(u -> userIds.add(u.getId()));
+                // 指定用户：存所有候选人 user_id
+                if (node.getAssigneeUserIds() != null && !node.getAssigneeUserIds().isEmpty()) {
+                    for (Long userId : node.getAssigneeUserIds()) {
+                        tasks.add(new RequirementPendingTask(
+                            requirement.getId(),
+                            "SPECIFIED_USER",
+                            userId, null, null,
+                            instance.getId(),
+                            node.getNodeId(),
+                            node.getNodeName()
+                        ));
                     }
                 }
                 break;
 
+            case "SPECIFIED_ROLE":
+                // 指定角色：存 role_id
+                if (node.getAssigneeRoleId() != null) {
+                    tasks.add(new RequirementPendingTask(
+                        requirement.getId(),
+                        "SPECIFIED_ROLE",
+                        null, node.getAssigneeRoleId().longValue(), null,
+                        instance.getId(),
+                        node.getNodeId(),
+                        node.getNodeName()
+                    ));
+                }
+                break;
+
+            case "SPECIFIED_ROLE_GROUP":
+                // 指定角色组：存 role_group_id
+                if (node.getAssigneeRoleGroupId() != null) {
+                    tasks.add(new RequirementPendingTask(
+                        requirement.getId(),
+                        "SPECIFIED_ROLE_GROUP",
+                        null, null, node.getAssigneeRoleGroupId(),
+                        instance.getId(),
+                        node.getNodeId(),
+                        node.getNodeName()
+                    ));
+                }
+                break;
+
             case "SPECIFIED_ORG":
-                // 指定组织：查询该组织的用户
+                // 指定组织：存 org_id
                 if (node.getAssigneeOrgId() != null) {
-                    List<UserOrganization> userOrgs = userOrganizationMapper.selectList(
-                        new LambdaQueryWrapper<UserOrganization>()
-                            .eq(UserOrganization::getOrgId, node.getAssigneeOrgId())
-                    );
-                    userOrgs.forEach(uo -> userIds.add(uo.getUserId()));
+                    tasks.add(new RequirementPendingTask(
+                        requirement.getId(),
+                        "SPECIFIED_ORG",
+                        null, null, node.getAssigneeOrgId(),
+                        instance.getId(),
+                        node.getNodeId(),
+                        node.getNodeName()
+                    ));
                 }
                 break;
 
             case "CREATOR":
-                // 需求创建人
+                // 需求创建人：存 user_id
                 if (requirement.getCreatorId() != null) {
-                    userIds.add(requirement.getCreatorId());
+                    tasks.add(new RequirementPendingTask(
+                        requirement.getId(),
+                        "CREATOR",
+                        requirement.getCreatorId(), null, null,
+                        instance.getId(),
+                        node.getNodeId(),
+                        node.getNodeName()
+                    ));
                 }
                 break;
 
             case "PREV_APPROVER":
-                // 上一个审批人
+                // 上一个审批人：存 user_id
                 WorkflowInstanceTransition prevTransition = transitionMapper.selectOne(
                     new LambdaQueryWrapper<WorkflowInstanceTransition>()
                         .eq(WorkflowInstanceTransition::getInstanceId, instance.getId())
@@ -197,7 +237,14 @@ public class RequirementPendingTaskSyncService {
                         .last("LIMIT 1")
                 );
                 if (prevTransition != null && prevTransition.getOperatorId() != null) {
-                    userIds.add(prevTransition.getOperatorId());
+                    tasks.add(new RequirementPendingTask(
+                        requirement.getId(),
+                        "PREV_APPROVER",
+                        prevTransition.getOperatorId(), null, null,
+                        instance.getId(),
+                        node.getNodeId(),
+                        node.getNodeName()
+                    ));
                 }
                 break;
 
@@ -205,7 +252,7 @@ public class RequirementPendingTaskSyncService {
                 log.warn("未知的待办人类型: {}", assigneeType);
         }
 
-        return userIds;
+        return tasks;
     }
 
     /**

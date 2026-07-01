@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demand.system.module.requirement.mapper.RequirementPendingTaskMapper">
+
+    <!-- 删除指定需求的所有待办任务 -->
+    <delete id="deleteByRequirementId">
+        DELETE FROM requirement_pending_tasks
+        WHERE requirement_id = #{requirementId}
+    </delete>
+
+    <!-- 批量删除需求的待办任务 -->
+    <delete id="deleteByRequirementIds">
+        DELETE FROM requirement_pending_tasks
+        WHERE requirement_id IN
+        <foreach collection="requirementIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+
+    <!-- 批量插入待办任务（支持角色/角色组/组织范围） -->
+    <insert id="insertBatch">
+        INSERT INTO requirement_pending_tasks
+        (requirement_id, user_id, assignee_type, role_id, role_group_id, org_id, workflow_instance_id, current_node_id, current_node_name)
+        VALUES
+        <foreach collection="tasks" item="task" separator=",">
+            (#{task.requirementId}, #{task.userId}, #{task.assigneeType},
+            #{task.roleId}, #{task.roleGroupId}, #{task.orgId},
+            #{task.workflowInstanceId}, #{task.currentNodeId}, #{task.currentNodeName})
+        </foreach>
+    </insert>
+
+    <!--
+        查询用户的待办需求ID列表
+
+        匹配逻辑（满足任一即可）：
+        1. 直接匹配：pt.user_id = #{userId}
+        2. 角色匹配：用户拥有 pt.role_id 对应的角色
+        3. 角色组匹配：用户的角色属于 pt.role_group_id 对应的角色组
+        4. 组织匹配：用户属于 pt.org_id 对应的组织
+
+        性能优化策略：
+        - 第一步：先从用户关联表获取用户的所有角色ID、角色组ID、组织ID
+        - 第二步：用这些ID集合与 requirement_pending_tasks 做 JOIN
+        - 索引利用：user_roles(role_id)、roles(role_group_id)、user_organizations(org_id) 上都有索引
+        - 这样可以避免子查询走全表扫描，利用已有的索引加速
+    -->
+    <select id="selectPendingRequirementIds" resultType="java.lang.Long">
+        SELECT DISTINCT pt.requirement_id
+        FROM requirement_pending_tasks pt
+        LEFT JOIN (SELECT DISTINCT role_id FROM user_roles WHERE user_id = #{userId}) ur ON ur.role_id = pt.role_id
+        LEFT JOIN (SELECT DISTINCT r.role_group_id FROM roles r JOIN user_roles ru ON r.id = ru.role_id AND ru.user_id = #{userId}) rg ON rg.role_group_id = pt.role_group_id
+        LEFT JOIN (SELECT DISTINCT org_id FROM user_organizations WHERE user_id = #{userId}) uo ON uo.org_id = pt.org_id
+        WHERE (
+            pt.user_id = #{userId}
+            OR ur.role_id IS NOT NULL
+            OR rg.role_group_id IS NOT NULL
+            OR uo.org_id IS NOT NULL
+        )
+        <if test="projectId != null">
+            AND EXISTS (
+                SELECT 1 FROM requirements r
+                WHERE r.id = pt.requirement_id AND r.project_id = #{projectId}
+            )
+        </if>
+        ORDER BY pt.updated_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- 统计用户的待办任务数量（最简化版本用于调试） -->
+    <select id="countByUserId" resultType="java.lang.Long">
+        SELECT COUNT(DISTINCT requirement_id)
+        FROM requirement_pending_tasks
+        WHERE user_id = #{userId}
+    </select>
+
+    <!-- 查询需求的所有待办人ID（仅返回直接指定的user_id） -->
+    <select id="selectPendingUserIds" resultType="java.lang.Long">
+        SELECT DISTINCT user_id
+        FROM requirement_pending_tasks
+        WHERE requirement_id = #{requirementId}
+          AND user_id IS NOT NULL
+    </select>
+
+</mapper>
