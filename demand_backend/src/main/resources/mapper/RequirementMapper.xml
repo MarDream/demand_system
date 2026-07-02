@@ -279,38 +279,82 @@
          ORDER BY pt.updated_at DESC, r.id DESC
     </select>
 
-    <!-- 我的待办 - V2架构重构版（使用workflow_node_assignees关联表）
-         性能提升：消除JSON_CONTAINS，使用索引JOIN
-
-         性能优化（2026-06-26）：移除 DISTINCT，workflow_node_assignees 表设计保证无重复
-         - 验证：已检查数据库无重复记录（workflow_version_id + node_id + assignee_type + assignee_id 唯一）
-         - 收益：避免临时表和排序开销，查询速度提升30-50% -->
+    <!-- 我的待办 - 使用运行期待办物化表
+         运行时若前序节点指定了具体处理人，仅 pt.user_id 命中该用户；
+         未指定具体处理人时，按角色、角色组、组织及子组织范围匹配。 -->
     <select id="selectMyPendingV2" resultType="com.demand.system.module.requirement.entity.Requirement">
         SELECT r.*
         FROM requirements r
         INNER JOIN workflow_instances wi ON r.workflow_instance_id = wi.id
-        INNER JOIN workflow_node_assignees wna ON
-            wna.workflow_version_id = wi.workflow_version_id
-            AND wna.node_id = wi.current_node_id
         WHERE r.deleted_at = 0
           AND r.is_draft = 0
           AND wi.status = 'running'
-          AND (
-            (wna.assignee_type = 'USER' AND wna.assignee_id = #{userId})
-            <if test='roleIds != null and roleIds.size() &gt; 0'>
-              OR (wna.assignee_type = 'ROLE' AND wna.assignee_id IN
-              <foreach collection='roleIds' item='roleId' open='(' separator=',' close=')'>
-                #{roleId}
-              </foreach>
+          AND EXISTS (
+            SELECT 1
+            FROM requirement_pending_tasks pt
+            LEFT JOIN roles direct_role ON pt.role_id IS NOT NULL
+                AND direct_role.id = pt.role_id
+                AND direct_role.deleted_at = 0
+            LEFT JOIN user_roles ur ON direct_role.id IS NOT NULL
+                AND ur.user_id = #{userId}
+                AND ur.role_id = direct_role.id
+            LEFT JOIN roles rg_role ON pt.role_group_id IS NOT NULL
+                AND rg_role.role_group_id = pt.role_group_id
+                AND rg_role.deleted_at = 0
+            LEFT JOIN user_roles rg_ur ON rg_role.id IS NOT NULL
+                AND rg_ur.user_id = #{userId}
+                AND rg_ur.role_id = rg_role.id
+            LEFT JOIN sys_org pt_org ON pt.org_id IS NOT NULL
+                AND pt_org.id = pt.org_id
+                AND pt_org.deleted_at = 0
+            LEFT JOIN users login_user ON login_user.id = #{userId}
+            LEFT JOIN user_organizations uo ON uo.user_id = #{userId}
+            WHERE pt.requirement_id = r.id
+              AND pt.workflow_instance_id = wi.id
+              AND pt.current_node_id = wi.current_node_id
+              AND (
+                pt.user_id = #{userId}
+                OR (
+                  NOT EXISTS (
+                    SELECT 1
+                    FROM requirement_pending_tasks direct_pt
+                    WHERE direct_pt.requirement_id = r.id
+                      AND direct_pt.workflow_instance_id = wi.id
+                      AND direct_pt.current_node_id = wi.current_node_id
+                      AND direct_pt.user_id IS NOT NULL
+                  )
+                  AND (
+                    ur.role_id IS NOT NULL
+                    OR rg_ur.role_id IS NOT NULL
+                    OR (
+                      pt.org_id IS NOT NULL
+                      AND pt_org.id IS NOT NULL
+                      AND (
+                        login_user.org_id = pt.org_id
+                        OR login_user.department_id = pt.org_id
+                        OR login_user.region_id = pt.org_id
+                        OR uo.org_id = pt.org_id
+                        OR uo.department_id = pt.org_id
+                        OR uo.region_id = pt.org_id
+                        OR EXISTS (
+                          SELECT 1
+                          FROM sys_org user_org
+                          WHERE user_org.deleted_at = 0
+                            AND user_org.id IN (
+                              login_user.org_id,
+                              login_user.department_id,
+                              login_user.region_id,
+                              uo.org_id,
+                              uo.department_id,
+                              uo.region_id
+                            )
+                            AND user_org.path LIKE CONCAT(pt_org.path, '%')
+                        )
+                      )
+                    )
+                  )
+                )
               )
-            </if>
-            <if test='orgIds != null and orgIds.size() &gt; 0'>
-              OR (wna.assignee_type = 'ORG' AND wna.assignee_id IN
-              <foreach collection='orgIds' item='orgId' open='(' separator=',' close=')'>
-                #{orgId}
-              </foreach>
-              )
-            </if>
           )
           <if test='projectId != null'> AND r.project_id = #{projectId} </if>
           <if test='type != null and type != ""'> AND r.type = #{type} </if>
@@ -320,7 +364,11 @@
           <if test='keyword != null and keyword != ""'>
             AND (r.title LIKE CONCAT('%', #{keyword}, '%') OR r.description LIKE CONCAT('%', #{keyword}, '%'))
           </if>
-        ORDER BY r.updated_at DESC
+        ORDER BY (
+          SELECT MAX(pt_sort.updated_at)
+          FROM requirement_pending_tasks pt_sort
+          WHERE pt_sort.requirement_id = r.id
+        ) DESC, r.id DESC
     </select>
 
     <!-- 我的已办 - V2架构重构版（使用workflow_node_assignees关联表）
@@ -345,27 +393,74 @@
           AND NOT EXISTS (
             SELECT 1
             FROM workflow_instances wi2
-            INNER JOIN workflow_node_assignees wna2 ON
-                wna2.workflow_version_id = wi2.workflow_version_id
-                AND wna2.node_id = wi2.current_node_id
             WHERE wi2.id = r.workflow_instance_id
               AND wi2.status = 'running'
-              AND (
-                (wna2.assignee_type = 'USER' AND wna2.assignee_id = #{userId})
-                <if test='roleIds != null and roleIds.size() &gt; 0'>
-                  OR (wna2.assignee_type = 'ROLE' AND wna2.assignee_id IN
-                  <foreach collection='roleIds' item='roleId' open='(' separator=',' close=')'>
-                    #{roleId}
-                  </foreach>
+              AND EXISTS (
+                SELECT 1
+                FROM requirement_pending_tasks pt
+                LEFT JOIN roles direct_role ON pt.role_id IS NOT NULL
+                    AND direct_role.id = pt.role_id
+                    AND direct_role.deleted_at = 0
+                LEFT JOIN user_roles ur ON direct_role.id IS NOT NULL
+                    AND ur.user_id = #{userId}
+                    AND ur.role_id = direct_role.id
+                LEFT JOIN roles rg_role ON pt.role_group_id IS NOT NULL
+                    AND rg_role.role_group_id = pt.role_group_id
+                    AND rg_role.deleted_at = 0
+                LEFT JOIN user_roles rg_ur ON rg_role.id IS NOT NULL
+                    AND rg_ur.user_id = #{userId}
+                    AND rg_ur.role_id = rg_role.id
+                LEFT JOIN sys_org pt_org ON pt.org_id IS NOT NULL
+                    AND pt_org.id = pt.org_id
+                    AND pt_org.deleted_at = 0
+                LEFT JOIN users login_user ON login_user.id = #{userId}
+                LEFT JOIN user_organizations uo ON uo.user_id = #{userId}
+                WHERE pt.requirement_id = r.id
+                  AND pt.workflow_instance_id = wi2.id
+                  AND pt.current_node_id = wi2.current_node_id
+                  AND (
+                    pt.user_id = #{userId}
+                    OR (
+                      NOT EXISTS (
+                        SELECT 1
+                        FROM requirement_pending_tasks direct_pt
+                        WHERE direct_pt.requirement_id = r.id
+                          AND direct_pt.workflow_instance_id = wi2.id
+                          AND direct_pt.current_node_id = wi2.current_node_id
+                          AND direct_pt.user_id IS NOT NULL
+                      )
+                      AND (
+                        ur.role_id IS NOT NULL
+                        OR rg_ur.role_id IS NOT NULL
+                        OR (
+                          pt.org_id IS NOT NULL
+                          AND pt_org.id IS NOT NULL
+                          AND (
+                            login_user.org_id = pt.org_id
+                            OR login_user.department_id = pt.org_id
+                            OR login_user.region_id = pt.org_id
+                            OR uo.org_id = pt.org_id
+                            OR uo.department_id = pt.org_id
+                            OR uo.region_id = pt.org_id
+                            OR EXISTS (
+                              SELECT 1
+                              FROM sys_org user_org
+                              WHERE user_org.deleted_at = 0
+                                AND user_org.id IN (
+                                  login_user.org_id,
+                                  login_user.department_id,
+                                  login_user.region_id,
+                                  uo.org_id,
+                                  uo.department_id,
+                                  uo.region_id
+                                )
+                                AND user_org.path LIKE CONCAT(pt_org.path, '%')
+                            )
+                          )
+                        )
+                      )
+                    )
                   )
-                </if>
-                <if test='orgIds != null and orgIds.size() &gt; 0'>
-                  OR (wna2.assignee_type = 'ORG' AND wna2.assignee_id IN
-                  <foreach collection='orgIds' item='orgId' open='(' separator=',' close=')'>
-                    #{orgId}
-                  </foreach>
-                  )
-                </if>
               )
           )
           <if test='projectId != null'> AND r.project_id = #{projectId} </if>

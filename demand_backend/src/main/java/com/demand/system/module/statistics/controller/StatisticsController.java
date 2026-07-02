@@ -24,7 +24,7 @@ public class StatisticsController {
         this.statisticsService = statisticsService;
     }
 
-    @GetMapping("/{id}/stats/dashboard")
+    @GetMapping("/projects/{id}/stats/dashboard")
     @PreAuthorize("isAuthenticated()")
     public Result<Map<String, Object>> getDashboard(@PathVariable("id") Long projectId) {
         Long userId = SecurityUtils.getCurrentUserId();
@@ -34,13 +34,13 @@ public class StatisticsController {
         return Result.success(statisticsService.getDashboardData(projectId, userId));
     }
 
-    @GetMapping("/{id}/stats/distribution")
+    @GetMapping("/projects/{id}/stats/distribution")
     @PreAuthorize("isAuthenticated()")
     public Result<Map<String, Object>> getDistribution(@PathVariable("id") Long projectId) {
         return Result.success(statisticsService.getDistributionData(projectId));
     }
 
-    @GetMapping("/{id}/stats/duration")
+    @GetMapping("/projects/{id}/stats/duration")
     @PreAuthorize("isAuthenticated()")
     public Result<List<Map<String, Object>>> getDuration(@PathVariable("id") Long projectId) {
         return Result.success(statisticsService.getDurationData(projectId));
@@ -53,7 +53,7 @@ public class StatisticsController {
         return Result.success(data.stream().map(this::pointToMap).toList());
     }
 
-    @GetMapping("/{id}/stats/cfd")
+    @GetMapping("/projects/{id}/stats/cfd")
     @PreAuthorize("isAuthenticated()")
     public Result<List<Map<String, Object>>> getCfd(@PathVariable("id") Long projectId) {
         List<CfdPoint> data = statisticsService.getCfdData(projectId);

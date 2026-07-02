@@ -12,6 +12,7 @@ import com.demand.system.module.requirement.entity.Requirement;
 import com.demand.system.module.requirement.entity.RequirementHistory;
 import com.demand.system.module.requirement.mapper.RequirementHistoryMapper;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
+import com.demand.system.module.requirement.mapper.RequirementPendingTaskMapper;
 import com.demand.system.module.requirement.service.RequirementApprovalEvaluationService;
 import com.demand.system.module.requirement.service.RequirementPendingTaskSyncService;
 import com.demand.system.module.knowledge.service.KnowledgeDocumentService;
@@ -101,6 +102,7 @@ public class WorkflowEngineService {
     private final KnowledgeDocumentService knowledgeDocumentService;
     private final KnowledgeBaseMapper knowledgeBaseMapper;
     private final RequirementPendingTaskSyncService pendingTaskSyncService;
+    private final RequirementPendingTaskMapper pendingTaskMapper;
 
     public WorkflowEngineService(WorkflowInstanceMapper instanceMapper, WorkflowInstanceTransitionMapper transitionMapper,
                                WorkflowNodeMapper nodeMapper, WorkflowEdgeMapper edgeMapper,
@@ -119,7 +121,8 @@ public class WorkflowEngineService {
                                FileRecordMapper fileRecordMapper,
                                KnowledgeDocumentService knowledgeDocumentService,
                                KnowledgeBaseMapper knowledgeBaseMapper,
-                               @Lazy RequirementPendingTaskSyncService pendingTaskSyncService) {
+                               @Lazy RequirementPendingTaskSyncService pendingTaskSyncService,
+                               RequirementPendingTaskMapper pendingTaskMapper) {
         this.instanceMapper = instanceMapper;
         this.transitionMapper = transitionMapper;
         this.nodeMapper = nodeMapper;
@@ -145,6 +148,7 @@ public class WorkflowEngineService {
         this.knowledgeDocumentService = knowledgeDocumentService;
         this.knowledgeBaseMapper = knowledgeBaseMapper;
         this.pendingTaskSyncService = pendingTaskSyncService;
+        this.pendingTaskMapper = pendingTaskMapper;
     }
 
     /**
@@ -317,6 +321,7 @@ public class WorkflowEngineService {
                 && (request.getAttachments() == null || request.getAttachments().isEmpty())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "当前节点要求必须上传附件");
         }
+        validateSelectedAssignee(targetNode, requirement, operatorId, request.getSelectedAssigneeId());
 
         closeCurrentTransition(instance.getId());
 
@@ -392,15 +397,27 @@ public class WorkflowEngineService {
         initCountersignIfNeeded(instance.getId(), targetNode, requirement);
 
         // ====== 待办任务同步 ======
-        // 如果有选中的处理人，更新需求的 assignee_id（用于列表显示）
-        if (request.getSelectedAssigneeId() != null) {
-            requirementMapper.update(null, new LambdaUpdateWrapper<Requirement>()
-                .eq(Requirement::getId, request.getRequirementId())
-                .set(Requirement::getAssigneeId, request.getSelectedAssigneeId()));
-        }
-        // 同步待办任务（传入 selectedAssigneeId 以决定是存用户还是存角色范围）
+        requirementMapper.update(null, new LambdaUpdateWrapper<Requirement>()
+            .eq(Requirement::getId, request.getRequirementId())
+            .set(Requirement::getAssigneeId, request.getSelectedAssigneeId()));
         pendingTaskSyncService.syncPendingTasks(request.getRequirementId(), request.getSelectedAssigneeId());
         // ====== 待办任务同步 END ======
+    }
+
+    private void validateSelectedAssignee(WorkflowNode targetNode, Requirement requirement,
+                                          Long operatorId, Long selectedAssigneeId) {
+        List<AssigneeCandidateDTO> candidates = resolveAssigneeCandidates(targetNode, requirement, operatorId);
+        if (selectedAssigneeId == null && candidates.size() > 1) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择一个具体处理人");
+        }
+        if (selectedAssigneeId == null) {
+            return;
+        }
+        boolean matched = candidates.stream()
+                .anyMatch(candidate -> Objects.equals(candidate.getId(), selectedAssigneeId));
+        if (!matched) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "所选处理人不属于目标节点候选人");
+        }
     }
 
     /**
@@ -617,6 +634,7 @@ public class WorkflowEngineService {
         // 回退：当前节点结束，记录对应时间戳
         stampNodeEndTime(rollbackUpdate, currentNode);
         requirementMapper.update(null, rollbackUpdate);
+        pendingTaskSyncService.syncPendingTasks(requirementId, null);
     }
 
     @Transactional
@@ -668,6 +686,7 @@ public class WorkflowEngineService {
         // 取消：当前节点结束，记录对应时间戳
         stampNodeEndTime(cancelUpdate, currentNode);
         requirementMapper.update(null, cancelUpdate);
+        pendingTaskSyncService.syncPendingTasks(requirementId, null);
     }
 
     public void saveDraft(Long requirementId) {
@@ -1280,6 +1299,13 @@ public class WorkflowEngineService {
             log.debug("Admin bypass: userId={}, requirementId={}", operatorId, requirement.getId());
             return;
         }
+        if (hasRuntimePendingTask(instance, requirement)) {
+            validateRuntimePendingPermission(instance, requirement.getId(), operatorId);
+            return;
+        }
+        if (requiresRuntimePendingPermission(instance, node)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
+        }
         if (node == null) {
             log.warn("Node is null for requirement: requirementId={}, userId={}", requirement.getId(), operatorId);
             throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
@@ -1326,6 +1352,31 @@ public class WorkflowEngineService {
             default:
                 // 未来扩展：尝试从 properties 动态验证
                 validateDynamicPermission(node, assigneeType, operatorId);
+        }
+    }
+
+    private boolean hasRuntimePendingTask(WorkflowInstance instance, Requirement requirement) {
+        if (instance == null || requirement == null || requirement.getId() == null
+                || instance.getId() == null || !StringUtils.hasText(instance.getCurrentNodeId())) {
+            return false;
+        }
+        Long count = pendingTaskMapper.countByCurrentWorkflowPosition(
+                requirement.getId(), instance.getId(), instance.getCurrentNodeId());
+        return count != null && count > 0;
+    }
+
+    private boolean requiresRuntimePendingPermission(WorkflowInstance instance, WorkflowNode node) {
+        return instance != null
+                && "running".equals(instance.getStatus())
+                && node != null
+                && StringUtils.hasText(node.getAssigneeType());
+    }
+
+    private void validateRuntimePendingPermission(WorkflowInstance instance, Long requirementId, Long operatorId) {
+        Long count = pendingTaskMapper.countAccessibleByCurrentWorkflowPositionAndUser(
+                requirementId, instance.getId(), instance.getCurrentNodeId(), operatorId);
+        if (count == null || count <= 0) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
         }
     }
 
@@ -1789,24 +1840,28 @@ public class WorkflowEngineService {
             return "-";
         }
 
-        if (assigneeCandidates != null && !assigneeCandidates.isEmpty()) {
-            return assigneeCandidates.get(0).getName();
-        }
-
         String assigneeType = node.getAssigneeType();
         if (!StringUtils.hasText(assigneeType)) {
             return "end".equalsIgnoreCase(node.getNodeType()) ? "流程结束" : "-";
         }
 
         return switch (assigneeType) {
-            case "SPECIFIED_USER" -> "未指定用户";
-            case "SPECIFIED_ROLE" -> resolveRoleName(node.getAssigneeRoleId()) + "（暂无成员）";
-            case "SPECIFIED_ROLE_GROUP" -> resolveRoleGroupName(node.getAssigneeRoleGroupId()) + "（暂无成员）";
-            case "SPECIFIED_ORG" -> resolveOrgDisplayName(node) + "（暂无成员）";
+            case "SPECIFIED_USER" -> firstAssigneeCandidateName(assigneeCandidates, "未指定用户");
+            case "SPECIFIED_ROLE" -> resolveRoleName(node.getAssigneeRoleId());
+            case "SPECIFIED_ROLE_GROUP" -> resolveRoleGroupName(node.getAssigneeRoleGroupId());
+            case "SPECIFIED_ORG" -> resolveOrgDisplayName(node);
             case "CREATOR" -> resolveUserName(requirement != null ? requirement.getCreatorId() : null, "提交人");
             case "PREV_APPROVER" -> resolveUserName(operatorId, "上一节点处理人");
             default -> assigneeType;
         };
+    }
+
+    private String firstAssigneeCandidateName(List<AssigneeCandidateDTO> assigneeCandidates, String fallback) {
+        if (assigneeCandidates == null || assigneeCandidates.isEmpty()) {
+            return fallback;
+        }
+        AssigneeCandidateDTO candidate = assigneeCandidates.get(0);
+        return candidate != null && StringUtils.hasText(candidate.getName()) ? candidate.getName() : fallback;
     }
 
     private List<AssigneeCandidateDTO> resolveRoleGroupCandidates(Long roleGroupId) {

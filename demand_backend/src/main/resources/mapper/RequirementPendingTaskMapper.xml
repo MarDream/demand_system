@@ -29,55 +29,124 @@
         </foreach>
     </insert>
 
-    <!--
-        查询用户的待办需求ID列表
+    <sql id="pendingUserAccessJoins">
+        LEFT JOIN roles direct_role ON pt.role_id IS NOT NULL
+            AND direct_role.id = pt.role_id
+            AND direct_role.deleted_at = 0
+        LEFT JOIN user_roles ur ON direct_role.id IS NOT NULL
+            AND ur.user_id = #{userId}
+            AND ur.role_id = direct_role.id
+        LEFT JOIN roles rg_role ON pt.role_group_id IS NOT NULL
+            AND rg_role.role_group_id = pt.role_group_id
+            AND rg_role.deleted_at = 0
+        LEFT JOIN user_roles rg_ur ON rg_role.id IS NOT NULL
+            AND rg_ur.user_id = #{userId}
+            AND rg_ur.role_id = rg_role.id
+        LEFT JOIN sys_org pt_org ON pt.org_id IS NOT NULL
+            AND pt_org.id = pt.org_id
+            AND pt_org.deleted_at = 0
+        LEFT JOIN users login_user ON login_user.id = #{userId}
+        LEFT JOIN user_organizations uo ON uo.user_id = #{userId}
+    </sql>
 
-        匹配逻辑（满足任一即可）：
-        1. 直接匹配：pt.user_id = #{userId}
-        2. 角色匹配：用户拥有 pt.role_id 对应的角色
-        3. 角色组匹配：用户的角色属于 pt.role_group_id 对应的角色组
-        4. 组织匹配：用户属于 pt.org_id 对应的组织
-
-        性能优化策略：
-        - 第一步：先从用户关联表获取用户的所有角色ID、角色组ID、组织ID
-        - 第二步：用这些ID集合与 requirement_pending_tasks 做 JOIN
-        - 索引利用：user_roles(role_id)、roles(role_group_id)、user_organizations(org_id) 上都有索引
-        - 这样可以避免子查询走全表扫描，利用已有的索引加速
-    -->
-    <select id="selectPendingRequirementIds" resultType="java.lang.Long">
-        SELECT DISTINCT pt.requirement_id
-        FROM requirement_pending_tasks pt
-        LEFT JOIN (SELECT DISTINCT role_id FROM user_roles WHERE user_id = #{userId}) ur ON ur.role_id = pt.role_id
-        LEFT JOIN (SELECT DISTINCT r.role_group_id FROM roles r JOIN user_roles ru ON r.id = ru.role_id AND ru.user_id = #{userId}) rg ON rg.role_group_id = pt.role_group_id
-        LEFT JOIN (SELECT DISTINCT org_id FROM user_organizations WHERE user_id = #{userId}) uo ON uo.org_id = pt.org_id
-        WHERE (
+    <sql id="pendingUserAccessCondition">
+        (
             pt.user_id = #{userId}
-            OR ur.role_id IS NOT NULL
-            OR rg.role_group_id IS NOT NULL
-            OR uo.org_id IS NOT NULL
+            OR (
+                NOT EXISTS (
+                    SELECT 1
+                    FROM requirement_pending_tasks direct_pt
+                    WHERE direct_pt.requirement_id = pt.requirement_id
+                      AND direct_pt.workflow_instance_id = pt.workflow_instance_id
+                      AND direct_pt.current_node_id = pt.current_node_id
+                      AND direct_pt.user_id IS NOT NULL
+                )
+                AND (
+                    ur.role_id IS NOT NULL
+                    OR rg_ur.role_id IS NOT NULL
+                    OR (
+                        pt.org_id IS NOT NULL
+                        AND pt_org.id IS NOT NULL
+                        AND (
+                            login_user.org_id = pt.org_id
+                            OR login_user.department_id = pt.org_id
+                            OR login_user.region_id = pt.org_id
+                            OR uo.org_id = pt.org_id
+                            OR uo.department_id = pt.org_id
+                            OR uo.region_id = pt.org_id
+                            OR EXISTS (
+                                SELECT 1
+                                FROM sys_org user_org
+                                WHERE user_org.deleted_at = 0
+                                  AND user_org.id IN (
+                                      login_user.org_id,
+                                      login_user.department_id,
+                                      login_user.region_id,
+                                      uo.org_id,
+                                      uo.department_id,
+                                      uo.region_id
+                                  )
+                                  AND user_org.path LIKE CONCAT(pt_org.path, '%')
+                            )
+                        )
+                    )
+                )
+            )
         )
+    </sql>
+
+    <!-- 查询用户的待办需求ID列表 -->
+    <select id="selectPendingRequirementIds" resultType="java.lang.Long">
+        SELECT pt.requirement_id
+        FROM requirement_pending_tasks pt
+        <include refid="pendingUserAccessJoins" />
+        WHERE <include refid="pendingUserAccessCondition" />
         <if test="projectId != null">
             AND EXISTS (
                 SELECT 1 FROM requirements r
                 WHERE r.id = pt.requirement_id AND r.project_id = #{projectId}
             )
         </if>
-        ORDER BY pt.updated_at DESC
+        GROUP BY pt.requirement_id
+        ORDER BY MAX(pt.updated_at) DESC
         LIMIT #{limit}
     </select>
 
-    <!-- 统计用户的待办任务数量（最简化版本用于调试） -->
+    <!-- 统计用户的待办任务数量 -->
     <select id="countByUserId" resultType="java.lang.Long">
-        SELECT COUNT(DISTINCT requirement_id)
-        FROM requirement_pending_tasks
-        WHERE user_id = #{userId}
+        SELECT COUNT(DISTINCT pt.requirement_id)
+        FROM requirement_pending_tasks pt
+        <include refid="pendingUserAccessJoins" />
+        WHERE <include refid="pendingUserAccessCondition" />
     </select>
 
-    <!-- 查询需求的所有待办人ID（仅返回直接指定的user_id） -->
+    <!-- 统计当前流程位置是否已有运行期待办记录 -->
+    <select id="countByCurrentWorkflowPosition" resultType="java.lang.Long">
+        SELECT COUNT(1)
+        FROM requirement_pending_tasks
+        WHERE requirement_id = #{requirementId}
+          AND workflow_instance_id = #{workflowInstanceId}
+          AND current_node_id = #{currentNodeId}
+    </select>
+
+    <!-- 统计用户对指定需求当前流程位置的运行期待办权限 -->
+    <select id="countAccessibleByCurrentWorkflowPositionAndUser" resultType="java.lang.Long">
+        SELECT COUNT(DISTINCT pt.requirement_id)
+        FROM requirement_pending_tasks pt
+        <include refid="pendingUserAccessJoins" />
+        WHERE pt.requirement_id = #{requirementId}
+          AND pt.workflow_instance_id = #{workflowInstanceId}
+          AND pt.current_node_id = #{currentNodeId}
+          AND <include refid="pendingUserAccessCondition" />
+    </select>
+
+    <!-- 查询需求当前流程位置的所有直接待办人ID -->
     <select id="selectPendingUserIds" resultType="java.lang.Long">
         SELECT DISTINCT user_id
         FROM requirement_pending_tasks
         WHERE requirement_id = #{requirementId}
+          AND workflow_instance_id = #{workflowInstanceId}
+          AND current_node_id = #{currentNodeId}
           AND user_id IS NOT NULL
     </select>
 

@@ -6,15 +6,19 @@
           <div class="detail-main">
             <div v-if="showPrimaryActions" class="detail-actions">
               <div class="detail-actions__primary">
-                <el-button v-if="canEditRequirement" type="primary" @click="handleEdit">编辑</el-button>
-                <el-button v-if="canSplitRequirement" type="success" @click="handleSplit">拆分子需求</el-button>
-                <el-button v-if="canDeleteRequirement" type="danger">
-                  <el-popconfirm title="确定删除该需求吗？" @confirm="handleDelete">
-                    <template #reference>
-                      <el-button type="danger">删除</el-button>
-                    </template>
-                  </el-popconfirm>
+                <el-button v-if="canEditRequirement" type="primary" @click="handleEdit">
+                  <el-icon style="margin-right:4px"><Edit /></el-icon>编辑
                 </el-button>
+                <el-button v-if="canSplitRequirement" type="success" @click="handleSplit">
+                  <el-icon style="margin-right:4px"><List /></el-icon>拆分子需求
+                </el-button>
+                <el-popconfirm v-if="canDeleteRequirement" title="确定删除该需求吗？" @confirm="handleDelete">
+                  <template #reference>
+                    <el-button type="danger" plain>
+                      <el-icon style="margin-right:4px"><Delete /></el-icon>删除
+                    </el-button>
+                  </template>
+                </el-popconfirm>
               </div>
             </div>
 
@@ -39,7 +43,7 @@
               <el-tag :type="statusTagType(detail.status)">{{ detail.status }}</el-tag>
             </el-descriptions-item>
             <el-descriptions-item label="提出人">{{ detail.creatorName || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="负责人">{{ detail.currentHandlerName || detail.assigneeName || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="当前处理人">{{ detail.currentHandlerName || detail.assigneeName || '-' }}</el-descriptions-item>
             <el-descriptions-item label="创建时间">{{ formatDate(detail.createdAt) }}</el-descriptions-item>
             <el-descriptions-item label="所属迭代">{{ detail.iterationId || '-' }}</el-descriptions-item>
             <el-descriptions-item label="期望上线日期">{{ formatDate(detail.dueDate, 'YYYY-MM-DD') }}</el-descriptions-item>
@@ -48,11 +52,23 @@
             <el-descriptions-item label="开发完成时间">{{ detail.developmentCompletedAt ? formatDate(detail.developmentCompletedAt, 'YYYY-MM-DD HH:mm:ss') : '-' }}</el-descriptions-item>
             <el-descriptions-item label="估算工时">{{ detail.estimatedHours ? detail.estimatedHours + ' 小时' : '-' }}</el-descriptions-item>
             <el-descriptions-item label="实际工时">{{ detail.actualHours ? detail.actualHours + ' 小时' : '-' }}</el-descriptions-item>
-            <el-descriptions-item label="描述" :span="2">
-              <div v-if="detail.description" class="rich-content" v-html="richDescription"></div>
-              <span v-else>-</span>
-            </el-descriptions-item>
           </el-descriptions>
+
+          <!-- 工单内容单独展示 -->
+          <div class="description-content-section">
+            <div class="description-content-section__header">
+              <span class="description-content-section__label">工单内容</span>
+            </div>
+            <div class="description-content-section__body">
+              <div
+                v-if="detail.description"
+                class="rich-content"
+                v-html="richDescription"
+                @click="handleRichContentClick"
+              ></div>
+              <el-empty v-else description="暂无内容" :image-size="48" />
+            </div>
+          </div>
         </el-tab-pane>
 
         <!-- 附件 -->
@@ -361,7 +377,11 @@
                   <strong>{{ comment.userName || '用户' }}</strong>
                   <span class="comment-time">{{ formatDate(comment.createdAt) }}</span>
                 </div>
-                <div class="rich-content comment-body" v-html="hydrateRichTextImageHtml(comment.content || '')"></div>
+                <div
+                  class="rich-content comment-body"
+                  v-html="hydrateRichTextImageHtml(comment.content || '')"
+                  @click="handleRichContentClick"
+                ></div>
               </div>
             </div>
           </div>
@@ -401,13 +421,17 @@
               </div>
 
               <div v-if="showCurrentNodeStatus" class="current-node-status workflow-action-panel__status">
-                <span class="current-node-status__label">当前节点</span>
-                <span class="current-node-status__value">{{ currentNodeDisplayName }}</span>
-                <span class="current-node-status__divider">/</span>
-                <span class="current-node-status__label">节点状态</span>
-                <el-tag size="small" effect="plain" :type="statusTagType(currentNodeStatusName)">
-                  {{ currentNodeStatusName }}
-                </el-tag>
+                <div class="current-node-status__item">
+                  <span class="current-node-status__label">当前节点</span>
+                  <span class="current-node-status__value">{{ currentNodeDisplayName }}</span>
+                </div>
+                <span class="current-node-status__sep" />
+                <div class="current-node-status__item">
+                  <span class="current-node-status__label">节点状态</span>
+                  <el-tag size="small" effect="light" :type="statusTagType(currentNodeStatusName)">
+                    {{ currentNodeStatusName }}
+                  </el-tag>
+                </div>
               </div>
 
               <el-alert
@@ -417,7 +441,7 @@
                 :closable="false"
                 show-icon
                 title="当前工作流已停用"
-                description="因工作流正调整中或已停用，暂不支持提交审核、驳回或取消等操作。请等待管理员重新启用工作流后再试。"
+                description="因工作流正调整中或已停用，暂不支持提交审核、驳回或取消等操作。请等待管理员重新启用工作流。"
               />
 
               <div class="workflow-action-panel__body">
@@ -438,30 +462,28 @@
                   </el-select>
                 </div>
 
-                <div class="workflow-action-panel__field">
-                  <span class="workflow-action-panel__field-label">下个节点处理人</span>
-                  <div class="workflow-action-panel__assignee">
-                    <el-tag
-                      v-if="selectedTransitionAssigneeTypeName"
-                      size="small"
-                      effect="plain"
-                      type="info"
-                    >
-                      {{ selectedTransitionAssigneeTypeName }}
-                    </el-tag>
-                    <el-select
-                      v-if="showTransitionAssigneeSelector"
-                      v-model="selectedTransitionAssigneeId"
-                      class="workflow-action-panel__assignee-select"
-                    >
-                      <el-option
-                        v-for="candidate in selectedTransitionAssigneeCandidates"
-                        :key="candidate.id"
-                        :label="candidate.name"
-                        :value="candidate.id"
-                      />
-                    </el-select>
-                    <span v-else class="workflow-action-panel__assignee-value">{{ selectedTransitionAssigneeDisplayName }}</span>
+                <div class="workflow-action-panel__field workflow-action-panel__field--vertical">
+                  <div class="workflow-action-panel__field-label-row">
+                    <span class="workflow-action-panel__field-label">处理人</span>
+                    <span v-if="selectedTransitionAssigneeTypeName" class="workflow-action-panel__field-tag">{{ selectedTransitionAssigneeTypeName }}</span>
+                  </div>
+                  <el-select
+                    v-if="showTransitionAssigneeSelector"
+                    v-model="selectedTransitionAssigneeId"
+                    filterable
+                    clearable
+                    placeholder="请选择处理人"
+                    class="workflow-action-panel__control"
+                  >
+                    <el-option
+                      v-for="candidate in selectedTransitionAssigneeCandidates"
+                      :key="candidate.id"
+                      :label="candidate.name"
+                      :value="candidate.id"
+                    />
+                  </el-select>
+                  <div v-else class="workflow-action-panel__assignee-readonly">
+                    {{ selectedTransitionAssigneeDisplayName }}
                   </div>
                 </div>
 
@@ -507,7 +529,6 @@
                 <div class="workflow-action-panel__actions">
                   <AppButton
                     v-if="usingUnifiedEngine && workflowRuntime.canCountersign"
-                    type="warning"
                     permission="button:requirement:submit"
                     @click="openCountersignDialog(workflowRuntime.currentNodeId || '')"
                   >
@@ -515,6 +536,8 @@
                   </AppButton>
                   <AppButton
                     v-if="usingUnifiedEngine && workflowRuntime.canRollback"
+                    type="danger"
+                    plain
                     :loading="transitionLoading"
                     permission="button:requirement:rollback"
                     @click="handleRollback"
@@ -523,7 +546,6 @@
                   </AppButton>
                   <AppButton
                     v-if="usingUnifiedEngine && workflowRuntime.canCancel"
-                    type="warning"
                     :loading="transitionLoading"
                     permission="button:requirement:cancel"
                     @click="handleCancel"
@@ -688,6 +710,43 @@
       :file-id="previewFile.fileId || undefined"
       :download-url="previewFile.url"
     />
+
+    <el-dialog
+      v-model="richImagePreviewVisible"
+      class="rich-image-preview-dialog"
+      :title="richImagePreviewTitle"
+      width="86%"
+      top="5vh"
+      :show-close="true"
+      @closed="resetRichImagePreview"
+    >
+      <template #header>
+        <div class="rich-image-preview-header">
+          <span class="rich-image-preview-title">{{ richImagePreviewTitle }}</span>
+          <div class="rich-image-preview-toolbar">
+            <el-button size="small" :disabled="richImagePreviewZoom <= 50" title="缩小" @click="zoomOutRichImage">
+              <el-icon><ZoomOut /></el-icon>
+            </el-button>
+            <span class="rich-image-preview-zoom">{{ richImagePreviewZoom }}%</span>
+            <el-button size="small" :disabled="richImagePreviewZoom >= 300" title="放大" @click="zoomInRichImage">
+              <el-icon><ZoomIn /></el-icon>
+            </el-button>
+            <el-button size="small" title="重置为100%" @click="resetRichImageZoom">
+              <el-icon><RefreshLeft /></el-icon>
+            </el-button>
+          </div>
+        </div>
+      </template>
+      <div class="rich-image-preview-body">
+        <img
+          v-if="richImagePreviewSrc"
+          :src="richImagePreviewSrc"
+          :alt="richImagePreviewTitle"
+          class="rich-image-preview-img"
+          :style="{ transform: `scale(${richImagePreviewZoom / 100})` }"
+        />
+      </div>
+    </el-dialog>
   </PageContainer>
 </template>
 
@@ -695,7 +754,7 @@
 import { computed, ref, onMounted, watch, type Ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeftBold, ArrowRightBold, Document, Picture, List, Histogram, ChatLineRound, ChatDotRound, View, Download } from '@element-plus/icons-vue'
+import { ArrowLeftBold, ArrowRightBold, Document, Picture, List, Histogram, ChatLineRound, ChatDotRound, View, Download, Edit, Delete, ZoomIn, ZoomOut, RefreshLeft } from '@element-plus/icons-vue'
 import { requirementApi, projectApi, relationApi } from '@/api'
 import { downloadRequirementAttachment, uploadRequirementAttachment } from '@/api/modules/file'
 import type { RelationItem } from '@/api/modules/relation'
@@ -942,6 +1001,12 @@ const commentEditorInstance = ref<any>(null)
 const commentEditorExtensions = [
   RichTextKit.configure({
     placeholder: { placeholder: '输入评论内容...' },
+    table: {
+      resizable: true,
+      HTMLAttributes: {
+        class: 'comment-editor-table',
+      },
+    },
   }),
   Image.configure({
     inline: false,
@@ -1379,6 +1444,10 @@ async function handleAttachmentDownload(attachment: RequirementAttachment) {
 
 const previewVisible = ref(false)
 const previewFile = ref<RequirementAttachment | null>(null)
+const richImagePreviewVisible = ref(false)
+const richImagePreviewSrc = ref('')
+const richImagePreviewTitle = ref('图片预览')
+const richImagePreviewZoom = ref(100)
 
 /**
  * 是否允许预览：必须存在 fileId（用于走 /api/v1/files/{id}/preview-url 链路）
@@ -1396,6 +1465,37 @@ function handleAttachmentPreview(attachment: RequirementAttachment) {
   }
   previewFile.value = attachment
   previewVisible.value = true
+}
+
+function handleRichContentClick(event: MouseEvent) {
+  const target = event.target
+  if (!(target instanceof HTMLImageElement)) return
+
+  const src = target.currentSrc || target.src || target.getAttribute('src') || ''
+  if (!src) return
+
+  richImagePreviewSrc.value = src
+  richImagePreviewTitle.value = target.alt?.trim() || '图片预览'
+  richImagePreviewZoom.value = 100
+  richImagePreviewVisible.value = true
+}
+
+function zoomInRichImage() {
+  richImagePreviewZoom.value = Math.min(300, richImagePreviewZoom.value + 25)
+}
+
+function zoomOutRichImage() {
+  richImagePreviewZoom.value = Math.max(50, richImagePreviewZoom.value - 25)
+}
+
+function resetRichImageZoom() {
+  richImagePreviewZoom.value = 100
+}
+
+function resetRichImagePreview() {
+  richImagePreviewSrc.value = ''
+  richImagePreviewTitle.value = '图片预览'
+  richImagePreviewZoom.value = 100
 }
 
 type TransitionOption = AvailableTransition
@@ -1423,6 +1523,10 @@ const showTransitionAssigneeSelector = computed(() => {
   return selectedTransitionAssigneeCandidates.value.length > 1
 })
 
+const requiresSingleTransitionAssignee = computed(() => {
+  return showTransitionAssigneeSelector.value
+})
+
 const selectedTransitionAssigneeOption = computed<TransitionAssigneeCandidate | null>(() => {
   if (!selectedTransitionAssigneeCandidates.value.length) {
     return null
@@ -1436,10 +1540,20 @@ const selectedTransitionAssigneeDisplayName = computed(() => {
   if (!selectedUnifiedTransition.value) {
     return transitionOptions.value.length > 0 ? '请选择目标节点' : '当前无可执行操作'
   }
-  return selectedTransitionAssigneeOption.value?.name
-    || selectedUnifiedTransition.value.assigneeDisplayName
-    || '未配置处理人'
+  return formatTransitionAssigneeDisplay(
+    selectedUnifiedTransition.value.assigneeDisplayName,
+    selectedTransitionAssigneeOption.value?.name,
+  ) || '未配置处理人'
 })
+
+function formatTransitionAssigneeDisplay(scopeName?: string | null, userName?: string | null) {
+  const normalizedScope = scopeName?.trim()
+  const normalizedUser = userName?.trim()
+  if (normalizedScope && normalizedUser && normalizedScope !== normalizedUser) {
+    return `${normalizedScope} ${normalizedUser}`
+  }
+  return normalizedUser || normalizedScope || ''
+}
 
 const requiresProjectBinding = computed(() => (
   usingUnifiedEngine.value
@@ -1526,7 +1640,9 @@ const transitionSubmitDisabled = computed(() => {
   if (!isWorkflowActive.value) {
     return true
   }
-  return transitionOptions.value.length === 0 || (requiresProjectBinding.value && !bindingProjectId.value)
+  return transitionOptions.value.length === 0
+    || (requiresProjectBinding.value && !bindingProjectId.value)
+    || (requiresSingleTransitionAssignee.value && !selectedTransitionAssigneeId.value)
 })
 
 /** 工作流是否处于启用状态：默认 true（无 workflowInstanceId 时按启用处理，避免误判）；
@@ -1621,6 +1737,10 @@ async function handleStatusTransition() {
   }
   if (!selectedTransitionTargetId.value) {
     ElMessage.warning('请选择目标节点')
+    return
+  }
+  if (requiresSingleTransitionAssignee.value && !selectedTransitionAssigneeId.value) {
+    ElMessage.warning('请选择处理人')
     return
   }
 
@@ -1898,7 +2018,7 @@ onMounted(() => {
 .detail-layout {
   display: flex;
   align-items: flex-start;
-  gap: 16px;
+  gap: 24px;
 }
 
 .detail-main {
@@ -1906,10 +2026,16 @@ onMounted(() => {
   min-width: 0;
 }
 
+/* ===== 页面操作栏 ===== */
 .detail-actions {
   display: flex;
-  justify-content: flex-start;
+  justify-content: flex-end;
   margin-bottom: 16px;
+  padding: 12px 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
 
 .detail-actions__primary {
@@ -1918,18 +2044,86 @@ onMounted(() => {
   flex-wrap: wrap;
 }
 
+/* ===== Tabs ===== */
+.detail-tabs {
+  margin-top: 0;
+}
+
+.detail-tabs :deep(.el-tabs__header) {
+  margin-bottom: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-bottom: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding: 0 8px;
+}
+
+.detail-tabs :deep(.el-tabs__nav-wrap) {
+  padding: 4px 0;
+}
+
+.detail-tabs :deep(.el-tabs__content) {
+  padding: 24px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-top: none;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  min-height: 300px;
+}
+
+/* 工单内容独立区块 */
+.description-content-section {
+  margin-top: 24px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.description-content-section__header {
+  padding: 12px 16px;
+  background: var(--color-surface-alt);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.description-content-section__label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.description-content-section__body {
+  padding: 16px;
+  background: var(--color-surface);
+}
+
+.description-content-section__body .rich-content {
+  min-height: 80px;
+}
+
+.detail-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.detail-tab-label .el-icon {
+  font-size: 15px;
+}
+
+/* ===== 审批侧边栏 ===== */
 .workflow-sidebar {
   position: sticky;
   top: 16px;
-  flex: 0 0 360px;
+  flex: 0 0 340px;
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
 }
 
 .workflow-sidebar.is-collapsed {
-  flex-basis: 60px;
+  flex-basis: 56px;
 }
 
 .workflow-sidebar__rail {
@@ -1938,11 +2132,11 @@ onMounted(() => {
   align-items: center;
   gap: var(--spacing-sm);
   width: 40px;
-  padding: 12px 4px;
-  border: 1px solid var(--el-color-primary-light-9);
+  padding: 14px 4px;
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  background: var(--color-accent-tint-light);
-  box-shadow: var(--shadow-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
 }
 
 .workflow-sidebar__toggle-button {
@@ -1969,20 +2163,20 @@ onMounted(() => {
 .workflow-action-panel {
   flex: 1;
   min-width: 0;
-  padding: 14px;
-  border: 1px solid var(--el-color-primary-light-9);
+  padding: 20px;
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-surface);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-md);
 }
 
 .workflow-action-panel__header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  padding-bottom: 14px;
-  margin-bottom: 14px;
-  border-bottom: 1px solid var(--el-color-primary-light-9);
+  padding-bottom: 16px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .workflow-action-panel__title {
@@ -1993,24 +2187,24 @@ onMounted(() => {
 }
 
 .workflow-action-panel__subtitle {
-  margin-top: 2px;
+  margin-top: 4px;
   color: var(--color-muted-text);
   font-size: 12px;
   line-height: 18px;
 }
 
 .workflow-action-panel__status {
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 
 .workflow-action-panel__alert {
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 
 .workflow-action-panel__body {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .workflow-action-panel__field {
@@ -2019,12 +2213,43 @@ onMounted(() => {
   gap: 12px;
 }
 
+.workflow-action-panel__field--vertical {
+  flex-direction: column;
+  gap: 10px;
+}
+
+.workflow-action-panel__field-label-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.workflow-action-panel__field-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--color-accent-tint-light, #eff6ff);
+  color: var(--color-accent, #2563eb);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
 .workflow-action-panel__field-label {
-  flex: 0 0 92px;
+  flex: 0 0 88px;
   padding-top: 6px;
   color: var(--color-text-secondary);
   font-size: 13px;
   line-height: 20px;
+}
+
+.workflow-action-panel__field--vertical .workflow-action-panel__field-label {
+  flex: none;
+  padding-top: 0;
+  font-weight: 500;
+  color: var(--color-text-primary);
 }
 
 .workflow-action-panel__control {
@@ -2032,25 +2257,11 @@ onMounted(() => {
   min-width: 0;
 }
 
-.workflow-action-panel__assignee {
-  flex: 1;
-  min-height: 32px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  padding: 5px 10px;
-  border: 1px solid #e4e7ed;
-  border-radius: 8px;
-  background: #fff;
-}
-
-.workflow-action-panel__assignee-select {
-  flex: 1;
-  min-width: 0;
-}
-
-.workflow-action-panel__assignee-value {
+.workflow-action-panel__assignee-readonly {
+  padding: 7px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
   color: var(--color-text-primary);
   font-size: 13px;
   line-height: 20px;
@@ -2060,9 +2271,15 @@ onMounted(() => {
 .workflow-action-panel__actions {
   display: flex;
   justify-content: flex-start;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  padding-top: 8px;
+  padding-top: 4px;
+}
+
+.workflow-action-panel__actions :deep(.el-button),
+.workflow-action-panel__actions :deep(button) {
+  min-width: 80px;
 }
 
 .workflow-action-panel__submit-actions {
@@ -2070,41 +2287,57 @@ onMounted(() => {
   justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
-  margin-top: 4px;
-  padding-top: 14px;
+  margin-top: 8px;
+  padding-top: 18px;
   border-top: 1px solid var(--color-border);
 }
 
 .workflow-action-panel__submit-actions :deep(.el-button),
 .workflow-action-panel__submit-actions :deep(button) {
-  min-width: 88px;
+  min-width: 96px;
 }
 
+/* ===== 当前节点状态栏 ===== */
 .current-node-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.current-node-status__item {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border: 1px solid var(--el-color-primary-light-9);
-  border-radius: var(--radius-md);
-  background: var(--color-accent-tint-light);
+  gap: 6px;
+  white-space: nowrap;
 }
 
 .current-node-status__label {
   color: var(--color-text-secondary);
   font-size: 13px;
+  white-space: nowrap;
 }
 
 .current-node-status__value {
   color: var(--color-text-primary);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
-.current-node-status__divider {
-  color: var(--color-text-placeholder);
+.current-node-status__sep {
+  width: 1px;
+  height: 14px;
+  background: var(--color-border);
+  flex-shrink: 0;
 }
 
+/* ===== 响应式 ===== */
 @media (max-width: 1200px) {
   .detail-layout {
     flex-direction: column;
@@ -2117,6 +2350,10 @@ onMounted(() => {
     width: 100%;
   }
 
+  .detail-actions {
+    flex-wrap: wrap;
+  }
+
   .workflow-sidebar {
     position: static;
     flex-basis: auto;
@@ -2127,7 +2364,6 @@ onMounted(() => {
     width: 100%;
   }
 
-  /* <1200px 时隐藏 rail，仅显示 action panel，无需手动折叠 */
   .workflow-sidebar__rail {
     display: none;
   }
@@ -2142,29 +2378,20 @@ onMounted(() => {
     gap: 6px;
   }
 
+  .workflow-action-panel__field--vertical {
+    gap: 6px;
+  }
+
   .workflow-action-panel__field-label {
     flex: none;
     padding-top: 0;
   }
 }
 
-.detail-tabs {
-  margin-top: 16px;
-}
-
-.detail-tab-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.detail-tab-label .el-icon {
-  font-size: 14px;
-}
-
 .rich-content {
   line-height: var(--line-height-relaxed);
   color: var(--el-text-color-regular);
+  overflow-x: auto;
 
   :deep(p) {
     margin: 0 0 12px;
@@ -2203,7 +2430,100 @@ onMounted(() => {
   :deep(img) {
     max-width: 100%;
     height: auto;
+    cursor: zoom-in;
+    border-radius: 4px;
+    transition: opacity 0.15s ease, box-shadow 0.15s ease;
   }
+
+  :deep(img:hover) {
+    opacity: 0.92;
+    box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.18);
+  }
+
+  :deep(table) {
+    border-collapse: collapse;
+    table-layout: auto;
+    width: max-content;
+    max-width: 100%;
+    margin: 12px 0;
+  }
+
+  :deep(td),
+  :deep(th) {
+    min-width: 1em;
+    border: 1px solid #dcdfe6 !important;
+    padding: 8px 12px;
+    vertical-align: top;
+    box-sizing: border-box;
+    word-break: normal;
+    overflow-wrap: break-word;
+  }
+
+  :deep(th) {
+    font-weight: 600;
+    text-align: left;
+    background-color: #f5f7fa;
+  }
+
+  :deep(.rich-text-table) {
+    background: #fff;
+  }
+}
+
+.rich-image-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-right: 36px;
+}
+
+.rich-image-preview-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.rich-image-preview-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.rich-image-preview-zoom {
+  min-width: 48px;
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.rich-image-preview-body {
+  height: 72vh;
+  overflow: auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 24px;
+  background: var(--color-surface-alt);
+}
+
+.rich-image-preview-img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  transform-origin: top center;
+  transition: transform 0.16s ease;
+  box-shadow: var(--shadow-md);
+  background: #fff;
+}
+
+:global(.rich-image-preview-dialog .el-dialog__body) {
+  padding: 0;
 }
 
 .attachments-tab {
@@ -2229,7 +2549,7 @@ onMounted(() => {
 }
 
 .comment-section {
-  margin-bottom: 24px;
+  margin-bottom: 0;
 }
 
 .comment-actions {
@@ -2262,25 +2582,26 @@ onMounted(() => {
 }
 
 .comment-section-block {
-  margin-top: 32px;
-  padding-top: 24px;
-  border-top: 1px solid var(--color-border);
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
 }
 
 .comment-editor-wrapper {
-  border: 1px solid #dcdfe6;
-  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   overflow: hidden;
-  margin-top: 12px;
+  margin-top: 16px;
   min-height: 160px;
+  background: var(--color-surface);
 }
 
 .comment-editor-toolbar {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 6px 10px;
-  background: #fafbfc;
+  padding: 8px 12px;
+  background: var(--color-surface-alt);
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -2305,6 +2626,45 @@ onMounted(() => {
   height: auto;
   border-radius: 6px;
   position: relative;
+}
+
+/* 评论编辑器表格样式 */
+.comment-editor-dropzone :deep(.comment-editor-table) {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 12px 0;
+  overflow: hidden;
+}
+
+.comment-editor-dropzone :deep(.comment-editor-table td),
+.comment-editor-dropzone :deep(.comment-editor-table th) {
+  min-width: 1em;
+  border: 1px solid #dcdfe6;
+  padding: 8px 12px;
+  vertical-align: top;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.comment-editor-dropzone :deep(.comment-editor-table th) {
+  font-weight: 600;
+  text-align: left;
+  background-color: #f5f7fa;
+}
+
+.comment-editor-dropzone :deep(.comment-editor-table .selectedCell) {
+  background-color: #e8f4ff;
+}
+
+.comment-editor-dropzone :deep(.comment-editor-table .column-resize-handle) {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: -2px;
+  width: 4px;
+  background-color: #409eff;
+  pointer-events: none;
 }
 
 .comment-editor-dropzone :deep([data-resize-container]) {
@@ -2471,13 +2831,14 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
 
 .section-header h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
+  color: var(--color-text-primary);
 }
 
 .section-hint {
@@ -2486,26 +2847,32 @@ onMounted(() => {
 }
 
 .approval-evaluations-section {
-  margin-top: 8px;
+  margin-top: 0;
 }
 
 .approval-evaluation-timeline {
-  margin-top: 8px;
+  margin-top: 16px;
   padding-left: 4px;
 }
 
 .approval-evaluation-card {
   border: 1px solid var(--color-border);
   background: var(--color-surface-alt);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.approval-evaluation-card:hover {
+  border-color: var(--color-accent-light, #93c5fd);
+  box-shadow: 0 2px 12px rgba(37, 99, 235, 0.08);
 }
 
 .approval-evaluation-card :deep(.el-card__body) {
-  padding: 14px 16px;
+  padding: 18px 20px;
 }
 
 .approval-evaluation-header {
   display: flex;
-  gap: 12px;
+  gap: 14px;
   align-items: flex-start;
 }
 
@@ -2517,7 +2884,7 @@ onMounted(() => {
 .approval-evaluation-title {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
@@ -2558,9 +2925,9 @@ onMounted(() => {
 }
 
 .approval-evaluation-content {
-  margin: 10px 0 0 44px;
+  margin: 12px 0 0 46px;
   color: var(--color-text-primary);
-  line-height: 1.6;
+  line-height: 1.7;
   white-space: pre-wrap;
 }
 
@@ -2590,14 +2957,14 @@ onMounted(() => {
 }
 
 .approval-supplement-list {
-  margin: 12px 0 0 44px;
+  margin: 14px 0 0 46px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .approval-supplement-item {
-  padding: 10px 12px;
+  padding: 12px 14px;
   border-radius: 8px;
   background: var(--el-color-primary-light-9);
   border: 1px solid var(--el-color-primary-light-7);
@@ -2719,7 +3086,7 @@ onMounted(() => {
 }
 
 .approval-evaluation-attachments--main {
-  margin-left: 44px;
+  margin-left: 46px;
 }
 
 .approval-evaluation-attachments__label {

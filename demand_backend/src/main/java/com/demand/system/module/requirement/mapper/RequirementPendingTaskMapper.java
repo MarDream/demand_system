@@ -60,12 +60,29 @@ public interface RequirementPendingTaskMapper extends BaseMapper<RequirementPend
                                            @Param("limit") int limit);
 
     /**
-     * 统计用户的待办任务数量（最简化版本用于调试）
+     * 统计用户的待办任务数量
      */
     Long countByUserId(@Param("userId") Long userId);
 
     /**
-     * 查询需求的所有待办人ID（仅返回直接指定的user_id）
+     * 统计当前流程位置是否已有运行期待办记录
      */
-    List<Long> selectPendingUserIds(@Param("requirementId") Long requirementId);
+    Long countByCurrentWorkflowPosition(@Param("requirementId") Long requirementId,
+                                        @Param("workflowInstanceId") Long workflowInstanceId,
+                                        @Param("currentNodeId") String currentNodeId);
+
+    /**
+     * 统计用户对指定需求当前流程位置的运行期待办权限
+     */
+    Long countAccessibleByCurrentWorkflowPositionAndUser(@Param("requirementId") Long requirementId,
+                                                         @Param("workflowInstanceId") Long workflowInstanceId,
+                                                         @Param("currentNodeId") String currentNodeId,
+                                                         @Param("userId") Long userId);
+
+    /**
+     * 查询需求当前流程位置的所有直接待办人ID
+     */
+    List<Long> selectPendingUserIds(@Param("requirementId") Long requirementId,
+                                    @Param("workflowInstanceId") Long workflowInstanceId,
+                                    @Param("currentNodeId") String currentNodeId);
 }

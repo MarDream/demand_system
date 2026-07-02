@@ -2,36 +2,36 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.demand.system.module.statistics.mapper.StatisticsMapper">
 
-    <!-- 状态分布统计 -->
+    <!-- 状态分布统计（不过滤项目，排除草稿，与需求列表视图一致） -->
     <select id="getStatusDistribution" resultType="java.util.Map">
         SELECT status, COUNT(*) as count
         FROM requirements
-        WHERE project_id = #{projectId} AND deleted_at = 0
+        WHERE deleted_at = 0 AND is_draft = 0
         GROUP BY status
     </select>
 
-    <!-- 需求类型分布统计 -->
+    <!-- 需求类型分布统计（不过滤项目，排除草稿，与需求列表视图一致） -->
     <select id="getTypeDistribution" resultType="java.util.Map">
         SELECT rt.name AS type, COUNT(r.id) AS count
         FROM requirement_types rt
         LEFT JOIN requirements r ON r.type = rt.code
-            AND r.project_id = #{projectId} AND r.deleted_at = 0
+            AND r.deleted_at = 0 AND r.is_draft = 0
         GROUP BY rt.id, rt.name, rt.sort_order
         ORDER BY MIN(COALESCE(rt.sort_order, 999))
     </select>
 
-    <!-- 优先级分布统计 -->
+    <!-- 优先级分布统计（不过滤项目，排除草稿，与需求列表视图一致） -->
     <select id="getPriorityDistribution" resultType="java.util.Map">
         SELECT priority, COUNT(*) as count
         FROM requirements
-        WHERE project_id = #{projectId} AND deleted_at = 0
+        WHERE deleted_at = 0 AND is_draft = 0
         GROUP BY priority
     </select>
 
-    <!-- 总需求数：登录用户可见的全部需求数（排除草稿） -->
+    <!-- 总需求数：登录用户可见的全部需求数（含草稿） -->
     <select id="getTotalCount" resultType="int">
         SELECT COUNT(DISTINCT r.id) FROM requirements r
-        WHERE r.deleted_at = 0 AND (r.is_draft = 0 OR r.is_draft IS NULL)
+        WHERE r.deleted_at = 0
         AND (
             EXISTS (SELECT 1 FROM user_roles ur JOIN roles ro ON ur.role_id = ro.id WHERE ur.user_id = #{userId} AND ro.code = 'SUPER_ADMIN')
             OR r.creator_id = #{userId}
@@ -54,10 +54,11 @@
         )
     </select>
 
-    <!-- 已完成需求：处于结束节点的需求 -->
+    <!-- 已完成需求：节点状态走到结束状态（node_statuses.is_end = 1）的需求 -->
     <select id="getCompletedCount" resultType="int">
         SELECT COUNT(DISTINCT r.id) FROM requirements r
-        WHERE r.deleted_at = 0 AND (r.is_draft = 0 OR r.is_draft IS NULL) AND r.node_status = 'ACCEPTED'
+        WHERE r.deleted_at = 0 AND (r.is_draft = 0 OR r.is_draft IS NULL)
+        AND r.node_status IN (SELECT code FROM node_statuses WHERE is_end = 1)
         AND (
             EXISTS (SELECT 1 FROM user_roles ur JOIN roles ro ON ur.role_id = ro.id WHERE ur.user_id = #{userId} AND ro.code = 'SUPER_ADMIN')
             OR r.creator_id = #{userId}
@@ -67,11 +68,12 @@
         )
     </select>
 
-    <!-- 已逾期需求：未结束且超过期望完成日期的需求 -->
+    <!-- 已逾期需求：未走到结束状态且超过期望完成日期的需求 -->
     <select id="getOverdueCount" resultType="int">
         SELECT COUNT(DISTINCT r.id) FROM requirements r
         WHERE r.deleted_at = 0 AND (r.is_draft = 0 OR r.is_draft IS NULL)
-        AND r.node_status != 'ACCEPTED' AND r.due_date IS NOT NULL AND r.due_date &lt; CURDATE()
+        AND r.node_status NOT IN (SELECT code FROM node_statuses WHERE is_end = 1)
+        AND r.due_date IS NOT NULL AND r.due_date &lt; CURDATE()
         AND (
             EXISTS (SELECT 1 FROM user_roles ur JOIN roles ro ON ur.role_id = ro.id WHERE ur.user_id = #{userId} AND ro.code = 'SUPER_ADMIN')
             OR r.creator_id = #{userId}
@@ -88,23 +90,23 @@
         WHERE assignee_id = #{userId} AND deleted_at = 0 AND status NOT IN ('已上线','已验收','已取消')
     </select>
 
-    <!-- 需求趋势数据 -->
+    <!-- 需求趋势数据（不过滤项目，排除草稿，与需求列表视图一致） -->
     <select id="getTrendData" resultType="java.util.Map">
         SELECT DATE(created_at) as date, COUNT(*) as count
         FROM requirements
-        WHERE project_id = #{projectId} AND deleted_at = 0
+        WHERE deleted_at = 0 AND is_draft = 0
         GROUP BY DATE(created_at)
         ORDER BY date
     </select>
 
-    <!-- 需求耗时数据 -->
+    <!-- 需求耗时数据（不过滤项目，排除草稿，与需求列表视图一致） -->
     <select id="getDurationData" resultType="java.util.Map">
         SELECT status,
                AVG(DATEDIFF(updated_at, created_at)) as avg_days,
                MAX(DATEDIFF(updated_at, created_at)) as max_days,
                MIN(DATEDIFF(updated_at, created_at)) as min_days
         FROM requirements
-        WHERE project_id = #{projectId} AND deleted_at = 0
+        WHERE deleted_at = 0 AND is_draft = 0
         GROUP BY status
     </select>
 

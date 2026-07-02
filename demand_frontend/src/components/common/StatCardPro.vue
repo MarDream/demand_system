@@ -3,9 +3,11 @@
     <div class="stat-card-pro__content">
       <!-- 图标区域：渐变背景 -->
       <div class="stat-icon-wrap" :style="iconStyle">
-        <el-icon :size="24" color="var(--color-on-primary)">
-          <component :is="icon" />
-        </el-icon>
+        <slot name="icon">
+          <el-icon :size="24" color="var(--color-on-primary)">
+            <component :is="icon" />
+          </el-icon>
+        </slot>
       </div>
 
       <!-- 数据区域 -->
@@ -156,41 +158,67 @@ watch(() => props.value, (newVal) => {
 
 <style lang="scss" scoped>
 .stat-card-pro {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border) !important;
+  border-radius: 12px !important;
   cursor: pointer;
   transition:
-    transform var(--transition-normal),
-    box-shadow var(--transition-normal),
-    border-color var(--transition-fast);
-  overflow: hidden;
+    transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.3s ease;
+  overflow: hidden !important;
+  position: relative;
+  background: var(--color-surface) !important;
+
+  // 顶部发光线
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--color-accent, #2563EB), transparent);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
 
   &:hover {
     transform: translateY(-4px);
-    box-shadow: var(--shadow-card-hover);
-    border-color: var(--color-accent);
+    box-shadow:
+      0 12px 32px rgba(0, 0, 0, 0.08),
+      0 0 0 1px rgba(37, 99, 235, 0.08),
+      0 0 48px rgba(37, 99, 235, 0.06);
+    border-color: rgba(37, 99, 235, 0.3) !important;
+
+    &::before { opacity: 1; }
+
+    .stat-icon-wrap {
+      transform: scale(1.08);
+      box-shadow: 0 4px 16px rgba(37, 99, 235, 0.3);
+    }
   }
 
   :deep(.el-card__body) {
-    padding: var(--spacing-lg);
+    padding: 20px;
   }
 
   &__content {
     display: flex;
     align-items: flex-start;
-    gap: var(--spacing-md);
+    gap: 16px;
   }
 }
 
 .stat-icon-wrap {
-  width: 52px;
-  height: 52px;
-  border-radius: var(--radius-md);
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  box-shadow: var(--shadow-icon-accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
 
   .el-icon {
     filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.15));
@@ -205,59 +233,65 @@ watch(() => props.value, (newVal) => {
 .stat-value-row {
   display: flex;
   align-items: baseline;
-  gap: var(--spacing-sm);
+  gap: 8px;
   margin-bottom: 4px;
 }
 
 .stat-value {
   font-size: 28px;
-  font-weight: var(--font-weight-bold);
+  font-weight: 700;
   color: var(--color-text-primary);
   line-height: 1.2;
-  letter-spacing: -0.025em;
+  letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
 }
 
 .stat-trend {
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
+  font-size: 11px;
+  font-weight: 600;
   display: inline-flex;
   align-items: center;
   gap: 2px;
   padding: 2px 6px;
-  border-radius: var(--radius-sm);
+  border-radius: 6px;
 
   &.up {
-    color: var(--color-success);
-    background: var(--color-success-light);
+    color: var(--color-success, #059669);
+    background: rgba(5, 150, 105, 0.1);
   }
 
   &.down {
-    color: var(--color-danger);
-    background: var(--color-danger-light);
+    color: var(--color-danger, #DC2626);
+    background: rgba(220, 38, 38, 0.1);
   }
 }
 
 .stat-label {
-  font-size: var(--font-size-sm);
+  font-size: 13px;
   color: var(--color-text-secondary);
-  font-weight: var(--font-weight-medium);
+  font-weight: 500;
 }
 
 .stat-tip {
-  font-size: var(--font-size-xs);
+  font-size: 11px;
   color: var(--color-muted-text);
   margin-top: 2px;
 }
 
 .stat-sparkline {
-  margin-top: var(--spacing-md);
+  margin-top: 12px;
   width: 100%;
-  opacity: 0.7;
+  opacity: 0.6;
+  transition: opacity 0.2s ease;
 
   svg {
     width: 100%;
     height: auto;
   }
 }
+
+.stat-card-pro:hover .stat-sparkline {
+  opacity: 1;
+}
 </style>
+

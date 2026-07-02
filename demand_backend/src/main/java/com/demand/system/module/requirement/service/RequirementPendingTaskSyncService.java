@@ -139,12 +139,12 @@ public class RequirementPendingTaskSyncService {
         List<RequirementPendingTask> tasks = new ArrayList<>();
         String assigneeType = node.getAssigneeType();
 
-        // 如果有选中的具体用户，直接存该用户
+        // 如果有选中的具体用户，直接存 user_id，确保只有该用户拥有待办权限
         if (selectedAssigneeId != null) {
             RequirementPendingTask task = new RequirementPendingTask(
                 requirement.getId(),
+                selectedAssigneeId,
                 "SPECIFIED_USER",
-                selectedAssigneeId, null, null,
                 instance.getId(),
                 node.getNodeId(),
                 node.getNodeName()
@@ -161,8 +161,8 @@ public class RequirementPendingTaskSyncService {
                     for (Long userId : node.getAssigneeUserIds()) {
                         tasks.add(new RequirementPendingTask(
                             requirement.getId(),
+                            userId,
                             "SPECIFIED_USER",
-                            userId, null, null,
                             instance.getId(),
                             node.getNodeId(),
                             node.getNodeName()
@@ -177,7 +177,7 @@ public class RequirementPendingTaskSyncService {
                     tasks.add(new RequirementPendingTask(
                         requirement.getId(),
                         "SPECIFIED_ROLE",
-                        null, node.getAssigneeRoleId().longValue(), null,
+                        node.getAssigneeRoleId().longValue(), null, null,
                         instance.getId(),
                         node.getNodeId(),
                         node.getNodeName()
@@ -191,7 +191,7 @@ public class RequirementPendingTaskSyncService {
                     tasks.add(new RequirementPendingTask(
                         requirement.getId(),
                         "SPECIFIED_ROLE_GROUP",
-                        null, null, node.getAssigneeRoleGroupId(),
+                        null, node.getAssigneeRoleGroupId(), null,
                         instance.getId(),
                         node.getNodeId(),
                         node.getNodeName()
@@ -218,8 +218,8 @@ public class RequirementPendingTaskSyncService {
                 if (requirement.getCreatorId() != null) {
                     tasks.add(new RequirementPendingTask(
                         requirement.getId(),
+                        requirement.getCreatorId(),
                         "CREATOR",
-                        requirement.getCreatorId(), null, null,
                         instance.getId(),
                         node.getNodeId(),
                         node.getNodeName()
@@ -239,8 +239,8 @@ public class RequirementPendingTaskSyncService {
                 if (prevTransition != null && prevTransition.getOperatorId() != null) {
                     tasks.add(new RequirementPendingTask(
                         requirement.getId(),
+                        prevTransition.getOperatorId(),
                         "PREV_APPROVER",
-                        prevTransition.getOperatorId(), null, null,
                         instance.getId(),
                         node.getNodeId(),
                         node.getNodeName()

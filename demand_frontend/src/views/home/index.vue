@@ -1,23 +1,33 @@
 <template>
   <div class="dashboard-container">
+    <!-- 科技感背景装饰 -->
+    <div class="tech-bg">
+      <div class="tech-bg__grid" />
+      <div class="tech-bg__glow tech-bg__glow--1" />
+      <div class="tech-bg__glow tech-bg__glow--2" />
+    </div>
+
     <!-- 欢迎区 + 快捷操作 -->
     <div class="dashboard-header">
       <div class="dashboard-header__left">
-        <h2>工作台</h2>
-        <span class="dashboard-subtitle">{{ getGreeting() }}，{{ userStore.userInfo?.realName || '用户' }}</span>
+        <h2 class="dashboard-title">
+          <span class="dashboard-title__greeting">{{ getGreeting() }}，</span>
+          <span class="dashboard-title__name">{{ userStore.userInfo?.realName || '用户' }}</span>
+        </h2>
+        <p class="dashboard-desc">今日{{ getCurrentDate() }}，{{ getWeekDay() }}，祝工作顺利 🚀</p>
       </div>
       <div class="dashboard-header__actions">
         <AppButton type="primary" permission="button:requirement:create" @click="router.push('/requirements/create')">
           <el-icon><Document /></el-icon>新建需求
         </AppButton>
-        <el-button @click="router.push('/requirements?view=pending')">
+        <el-button class="btn-tech" @click="router.push('/requirements?view=pending')">
           <el-icon><List /></el-icon>我的待办
         </el-button>
       </div>
     </div>
 
-    <!-- 统计卡片（骨架屏） -->
-    <el-row :gutter="24" class="stat-row">
+    <!-- 统计卡片 -->
+    <el-row :gutter="20" class="stat-row">
       <template v-if="statsLoading">
         <el-col :xs="24" :sm="12" :lg="6" v-for="i in 4" :key="i">
           <div class="skeleton-card">
@@ -39,58 +49,93 @@
             :gradient-start="card.gradientStart"
             :gradient-end="card.gradientEnd"
             :trend="card.trend"
-          />
+          >
+            <template #icon>
+              <component :is="card.icon" />
+            </template>
+          </StatCardPro>
         </el-col>
       </template>
     </el-row>
 
     <!-- 双栏布局：图表 + 最近动态 -->
-    <el-row :gutter="24" class="content-row">
+    <el-row :gutter="20" class="content-row">
       <!-- 左栏：趋势图表 -->
       <el-col :xs="24" :lg="16">
-        <el-card shadow="hover" class="section-card">
+        <el-card shadow="never" class="section-card tech-card">
           <template #header>
             <div class="section-header">
-              <span>需求状态分布</span>
+              <div class="section-header__left">
+                <span class="section-dot" />
+                <span>需求状态分布</span>
+              </div>
               <el-icon class="collapse-icon" :class="{ 'is-expanded': expandedSections.statusDist }" @click="toggleSection('statusDist')"><ArrowRight /></el-icon>
             </div>
           </template>
           <div v-show="expandedSections.statusDist" class="section-body">
             <template v-if="distLoading">
-              <div class="skeleton-chart shimmer" style="height:260px" />
+              <div class="skeleton-chart shimmer" style="height:180px" />
             </template>
             <template v-else-if="pieLoaded">
-              <div class="status-dist-layout">
-                <!-- 左侧：环形图 -->
-                <div class="status-pie-wrap">
-                  <v-chart :option="pieOption" :init-options="chartInitOptions" class="status-pie-chart" autoresize />
-                </div>
-                <!-- 右侧：图例列表 -->
-                <div class="status-legend-list">
-                  <div
-                    v-for="(item, idx) in pieOption.series[0].data"
-                    :key="item.name"
-                    class="status-legend-item"
-                  >
-                    <span class="legend-dot" :style="{ background: statusPieColors[idx % statusPieColors.length] }" />
-                    <span class="legend-name">{{ item.name }}</span>
-                    <span class="legend-value">{{ item.value }}</span>
-                    <span class="legend-percent">
-                      {{ pieTotalCount > 0 ? ((item.value / pieTotalCount) * 100).toFixed(1) + '%' : '0%' }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </template>
+      <!-- 精美环形图 + 右侧图例 -->
+      <div class="pie-section">
+        <!-- 左侧环形图 -->
+        <div class="pie-section__chart">
+          <v-chart
+            ref="pieChartRef"
+            :option="pieOption"
+            :init-options="chartInitOptions"
+            class="pie-chart"
+            autoresize
+            @mouseover="onPieHover"
+            @mouseout="onPieUnhover"
+          />
+        </div>
+        <!-- 右侧图例列表 -->
+        <div class="pie-section__legend">
+          <div class="pie-legend-item pie-legend-item--header">
+            <span class="pie-legend-color" />
+            <span class="pie-legend-name">状态</span>
+            <span class="pie-legend-value">个数</span>
+            <span class="pie-legend-pct">占比</span>
+          </div>
+          <div
+            v-for="(item, idx) in pieOption.series[0].data"
+            :key="item.name"
+            class="pie-legend-item"
+            :class="{ 'is-active': hoveredSlice === item.name }"
+            @mouseenter="onLegendHover(item.name)"
+            @mouseleave="onLegendUnhover"
+            @click="onLegendClick(item.name)"
+          >
+            <span class="pie-legend-color" :style="{ background: statusPieColors[idx % statusPieColors.length] }" />
+            <span class="pie-legend-name">{{ item.name }}</span>
+            <span class="pie-legend-value">{{ item.value }}</span>
+            <span class="pie-legend-pct" :style="{ color: statusPieColors[idx % statusPieColors.length] }">
+              {{ pieTotalCount > 0 ? ((item.value / pieTotalCount) * 100).toFixed(1) + '%' : '0%' }}
+            </span>
+          </div>
+          <!-- 合计 -->
+          <div class="pie-legend-item pie-legend-item--total">
+            <span class="pie-legend-color" />
+            <span class="pie-legend-name">合计</span>
+            <span class="pie-legend-value">{{ pieTotalCount }}</span>
+            <span class="pie-legend-pct">100%</span>
+          </div>
+        </div>
+      </div>
+    </template>
             <el-empty v-else description="暂无数据" />
           </div>
         </el-card>
 
-        <!-- 需求类型分布 -->
-        <el-card shadow="hover" class="section-card">
+        <el-card shadow="never" class="section-card tech-card">
           <template #header>
             <div class="section-header">
-              <span>需求类型分布</span>
+              <div class="section-header__left">
+                <span class="section-dot" />
+                <span>需求类型分布</span>
+              </div>
               <el-icon class="collapse-icon" :class="{ 'is-expanded': expandedSections.typeDist }" @click="toggleSection('typeDist')"><ArrowRight /></el-icon>
             </div>
           </template>
@@ -105,11 +150,13 @@
           </div>
         </el-card>
 
-        <!-- 需求时长统计 -->
-        <el-card shadow="hover" class="section-card">
+        <el-card shadow="never" class="section-card tech-card">
           <template #header>
             <div class="section-header">
-              <span>需求时长统计</span>
+              <div class="section-header__left">
+                <span class="section-dot" />
+                <span>需求时长统计</span>
+              </div>
               <el-icon class="collapse-icon" :class="{ 'is-expanded': expandedSections.duration }" @click="toggleSection('duration')"><ArrowRight /></el-icon>
             </div>
           </template>
@@ -130,17 +177,19 @@
         </el-card>
       </el-col>
 
-      <!-- 右栏：流程处理概览 + 最近需求 + 流转历史 + 项目进度 -->
+      <!-- 右栏 -->
       <el-col :xs="24" :lg="8">
         <!-- 流程处理概览 -->
-        <el-card shadow="hover" class="section-card workflow-overview-card">
+        <el-card shadow="never" class="section-card tech-card workflow-overview-card">
           <template #header>
             <div class="section-header">
-              <span>流程处理概览</span>
+              <div class="section-header__left">
+                <span class="section-dot section-dot--accent" />
+                <span>流程处理概览</span>
+              </div>
             </div>
           </template>
           <div class="workflow-overview">
-            <!-- 左侧：环形图 -->
             <div class="workflow-circle-wrap">
               <div class="workflow-circle" :style="{ '--progress': workflowProcessRate }">
                 <svg class="circle-svg" viewBox="0 0 100 100">
@@ -153,11 +202,11 @@
                 </svg>
                 <div class="circle-inner">
                   <el-icon class="circle-icon"><Document /></el-icon>
-                  <span class="circle-label">流程总览</span>
+                  <span class="circle-rate">{{ workflowProcessRate }}%</span>
+                  <span class="circle-label">处理率</span>
                 </div>
               </div>
             </div>
-            <!-- 右侧：统计项列表 -->
             <div class="workflow-stats-list">
               <div
                 v-for="item in workflowStatItems"
@@ -166,7 +215,10 @@
                 @click="item.route && router.push(item.route)"
                 :class="{ 'is-clickable': !!item.route }"
               >
-                <span class="workflow-stat-label">{{ item.label }}</span>
+                <div class="workflow-stat-left">
+                  <span class="workflow-stat-dot" :class="item.cls" />
+                  <span class="workflow-stat-label">{{ item.label }}</span>
+                </div>
                 <span class="workflow-stat-value" :class="item.cls">
                   <template v-if="workflowStatsLoading">—</template>
                   <template v-else>{{ workflowStats[item.key as keyof typeof workflowStats] }}</template>
@@ -177,10 +229,13 @@
         </el-card>
 
         <!-- 最近需求 -->
-        <el-card shadow="hover" class="section-card">
+        <el-card shadow="never" class="section-card tech-card">
           <template #header>
             <div class="section-header">
-              <span>最近需求</span>
+              <div class="section-header__left">
+                <span class="section-dot" />
+                <span>最近需求</span>
+              </div>
               <el-button text size="small" @click="router.push('/requirements')">查看全部</el-button>
             </div>
           </template>
@@ -206,10 +261,13 @@
         </el-card>
 
         <!-- 流转历史 -->
-        <el-card shadow="hover" class="section-card">
+        <el-card shadow="never" class="section-card tech-card">
           <template #header>
             <div class="section-header">
-              <span>流转动态</span>
+              <div class="section-header__left">
+                <span class="section-dot" />
+                <span>流转动态</span>
+              </div>
             </div>
           </template>
           <div class="activity-timeline">
@@ -240,22 +298,27 @@
         </el-card>
 
         <!-- 项目进度 -->
-        <el-card shadow="hover" class="section-card">
+        <el-card shadow="never" class="section-card tech-card">
           <template #header>
             <div class="section-header">
-              <span>项目进度</span>
+              <div class="section-header__left">
+                <span class="section-dot" />
+                <span>项目进度</span>
+              </div>
             </div>
           </template>
           <el-empty v-if="projectRates.length === 0" description="暂无项目数据" :image-size="60" />
           <div v-else class="project-progress">
             <div v-for="p in projectRates" :key="p.name" class="progress-item">
-              <span class="project-name">{{ p.name }}</span>
+              <div class="progress-header">
+                <span class="project-name">{{ p.name }}</span>
+                <span class="progress-text">{{ p.completed }}/{{ p.total }}</span>
+              </div>
               <el-progress
                 :percentage="p.rate"
                 :color="getProgressColor(p.rate)"
-                :stroke-width="20"
+                :stroke-width="12"
               />
-              <span class="progress-text">{{ p.completed }}/{{ p.total }}</span>
             </div>
           </div>
         </el-card>
@@ -265,9 +328,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, computed, h, defineComponent, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Document, Loading, CircleCheck, Warning, ArrowRight, List } from '@element-plus/icons-vue'
+import { Document, List, ArrowRight } from '@element-plus/icons-vue'
 import StatCardPro from '@/components/common/StatCardPro.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import VChart from 'vue-echarts'
@@ -289,6 +352,61 @@ use([SVGRenderer, PieChart, BarChart, TitleComponent, TooltipComponent, LegendCo
 const router = useRouter()
 const chartInitOptions = { renderer: 'svg' as const }
 const userStore = useUserStore()
+const pieChartRef = ref<any>(null)
+
+// ═══════════════════════════════════════════════
+// 自定义 SVG 图标（替代 Element Plus 默认图标）
+// ═══════════════════════════════════════════════
+
+/**
+ * 总需求数图标 — 分层文档 + 图表
+ */
+const SvgIconTotal = defineComponent({
+  setup() {
+    return () => h('svg', { width: 22, height: 22, viewBox: '0 0 24 24', fill: 'none' }, [
+      h('rect', { x: 3, y: 2, width: 18, height: 20, rx: 3, stroke: '#fff', 'stroke-width': 1.8, opacity: 0.9 }),
+      h('path', { d: 'M7 8h10M7 12h6M7 16h8', stroke: '#fff', 'stroke-width': 1.8, 'stroke-linecap': 'round', opacity: 0.7 }),
+      h('rect', { x: 14, y: 6, width: 7, height: 7, rx: 1.5, stroke: '#fff', 'stroke-width': 1.5, opacity: 0.5 }),
+    ])
+  }
+})
+
+/**
+ * 进行中图标 — 动态旋转弧线
+ */
+const SvgIconProgress = defineComponent({
+  setup() {
+    return () => h('svg', { width: 22, height: 22, viewBox: '0 0 24 24', fill: 'none' }, [
+      h('circle', { cx: 12, cy: 12, r: 8, stroke: '#fff', 'stroke-width': 1.8, 'stroke-dasharray': '14 36', 'stroke-linecap': 'round', opacity: 0.9 }),
+      h('circle', { cx: 12, cy: 12, r: 8, stroke: '#fff', 'stroke-width': 1.8, 'stroke-dasharray': '8 42', 'stroke-linecap': 'round', opacity: 0.4 }),
+    ])
+  }
+})
+
+/**
+ * 已完成图标 — 对勾 + 背景圆
+ */
+const SvgIconDone = defineComponent({
+  setup() {
+    return () => h('svg', { width: 22, height: 22, viewBox: '0 0 24 24', fill: 'none' }, [
+      h('circle', { cx: 12, cy: 12, r: 9, stroke: '#fff', 'stroke-width': 1.8, opacity: 0.9 }),
+      h('path', { d: 'M7.5 12.5L10.5 15.5L16.5 9.5', stroke: '#fff', 'stroke-width': 2.2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', opacity: 0.9 }),
+    ])
+  }
+})
+
+/**
+ * 已逾期图标 — 三角形警示
+ */
+const SvgIconAlert = defineComponent({
+  setup() {
+    return () => h('svg', { width: 22, height: 22, viewBox: '0 0 24 24', fill: 'none' }, [
+      h('path', { d: 'M12 2L22 20H2L12 2Z', stroke: '#fff', 'stroke-width': 1.8, 'stroke-linejoin': 'round', opacity: 0.9 }),
+      h('line', { x1: 12, y1: 9, x2: 12, y2: 14, stroke: '#fff', 'stroke-width': 2.2, 'stroke-linecap': 'round', opacity: 0.9 }),
+      h('circle', { cx: 12, cy: 17.5, r: 1.2, fill: '#fff', opacity: 0.9 }),
+    ])
+  }
+})
 
 function getGreeting() {
   const hour = new Date().getHours()
@@ -297,6 +415,16 @@ function getGreeting() {
   if (hour < 14) return '中午好'
   if (hour < 18) return '下午好'
   return '晚上好'
+}
+
+function getCurrentDate() {
+  const now = new Date()
+  return `${now.getMonth() + 1}月${now.getDate()}日`
+}
+
+function getWeekDay() {
+  const days = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
+  return days[new Date().getDay()]
 }
 
 const expandedSections = reactive<Record<string, boolean>>({
@@ -325,18 +453,28 @@ const COLORS = {
 }
 
 const statCardsPro = computed(() => [
-  { icon: Document, label: '总需求数', value: statsData.value?.totalReqs ?? 0, tip: '全部需求', gradientStart: COLORS.accent, gradientEnd: COLORS.accentHover, trend: null },
-  { icon: Loading, label: '进行中需求', value: statsData.value?.inProgressReqs ?? 0, tip: '开发中', gradientStart: COLORS.amber, gradientEnd: COLORS.amberHover, trend: null },
-  { icon: CircleCheck, label: '已完成', value: statsData.value?.completedReqs ?? 0, tip: '已交付', gradientStart: COLORS.emerald, gradientEnd: COLORS.emeraldHover, trend: null },
-  { icon: Warning, label: '已逾期', value: statsData.value?.overdueReqs ?? 0, tip: '超过截止日期', gradientStart: COLORS.red, gradientEnd: COLORS.redHover, trend: null },
+  { icon: SvgIconTotal, label: '总需求数', value: statsData.value?.totalReqs ?? 0, tip: '全部需求', gradientStart: COLORS.accent, gradientEnd: COLORS.accentHover, trend: null },
+  { icon: SvgIconProgress, label: '进行中需求', value: statsData.value?.inProgressReqs ?? 0, tip: '开发中', gradientStart: COLORS.amber, gradientEnd: COLORS.amberHover, trend: null },
+  { icon: SvgIconDone, label: '已完成', value: statsData.value?.completedReqs ?? 0, tip: '已交付', gradientStart: COLORS.emerald, gradientEnd: COLORS.emeraldHover, trend: null },
+  { icon: SvgIconAlert, label: '已逾期', value: statsData.value?.overdueReqs ?? 0, tip: '超过截止日期', gradientStart: COLORS.red, gradientEnd: COLORS.redHover, trend: null },
 ])
 
 // 状态分布饼图
 const distLoading = ref(true)
 const pieLoaded = ref(false)
+const hoveredSlice = ref<string | null>(null)
 
-// 饼图配色（与截图参考风格一致）
-const statusPieColors = ['#2563EB', '#60A5FA', '#93C5FD', '#F59E0B', '#10B981', '#EF4444', '#8B5CF6', '#6366F1']
+// 饼图配色（精致蓝色系 + 辅助色）
+const statusPieColors = [
+  '#4F8EF7', // 待处理 - 亮蓝
+  '#F59E0B', // 进行中 - 琥珀
+  '#10B981', // 已完成 - 翠绿
+  '#EF4444', // 已逾期 - 红
+  '#8B5CF6', // 已关闭 - 紫
+  '#06B6D4', // 其他1 - 青
+  '#F97316', // 其他2 - 橙
+  '#6366F1', // 其他3 - indigo
+]
 
 const pieTotalCount = computed(() =>
   (pieOption.value.series[0].data as { name: string; value: number }[]).reduce((s, d) => s + d.value, 0)
@@ -345,25 +483,82 @@ const pieTotalCount = computed(() =>
 const pieOption = ref<any>({
   tooltip: {
     trigger: 'item',
-    formatter: '{b}: {c} ({d}%)',
+    backgroundColor: 'rgba(15, 23, 42, 0.92)',
+    borderColor: 'rgba(71, 85, 105, 0.4)',
+    borderWidth: 1,
+    padding: [10, 14],
+    textStyle: { color: '#e2e8f0', fontSize: 13 },
+    formatter: (params: any) => {
+      const p = params
+      const total = pieTotalCount.value
+      const pct = total > 0 ? ((p.value / total) * 100).toFixed(1) : '0'
+      return `<div style="display:flex;align-items:center;gap:8px;">
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};box-shadow:0 0 6px ${p.color};"></span>
+        <strong>${p.name}</strong>
+        <span style="margin-left:auto;font-variant-numeric:tabular-nums;">${p.value} <span style="opacity:0.6;font-size:11px;">(${pct}%)</span></span>
+      </div>`
+    },
   },
   color: statusPieColors,
   series: [{
     name: '需求状态',
     type: 'pie',
-    radius: ['52%', '78%'],
+    radius: ['50%', '76%'],
     center: ['50%', '50%'],
     avoidLabelOverlap: false,
-    itemStyle: { borderRadius: 6, borderColor: '#1e293b', borderWidth: 2 },
+    itemStyle: {
+      borderRadius: 6,
+      borderColor: 'var(--color-surface, #0f172a)',
+      borderWidth: 2.5,
+    },
     label: { show: false },
     emphasis: {
-      itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: 'rgba(0,0,0,0.3)' },
+      scale: true,
+      scaleSize: 8,
+      itemStyle: {
+        shadowBlur: 20,
+        shadowOffsetX: 0,
+        shadowColor: 'rgba(0,0,0,0.3)',
+      },
     },
-    // 中间总数标注（graphic 实现）
     data: [] as { name: string; value: number }[],
   }],
-  graphic: [],
+  // 中心文字：总数 + 标签
+  graphic: [] as any[],
 })
+
+function onPieHover(params: any) {
+  hoveredSlice.value = params?.name || null
+}
+
+function onPieUnhover() {
+  hoveredSlice.value = null
+}
+
+// 高亮/取消高亮饼图扇形
+function highlightSlice(name: string) {
+  const inst = pieChartRef.value?.getEchartsInstance?.()
+  if (inst) inst.dispatchAction({ type: 'highlight', name })
+}
+function downplaySlice(name: string) {
+  const inst = pieChartRef.value?.getEchartsInstance?.()
+  if (inst) inst.dispatchAction({ type: 'downplay', name })
+}
+
+function onLegendHover(name: string) {
+  hoveredSlice.value = name
+  highlightSlice(name)
+}
+
+function onLegendUnhover() {
+  const prev = hoveredSlice.value
+  hoveredSlice.value = null
+  if (prev) downplaySlice(prev)
+}
+
+function onLegendClick(name: string) {
+  // 可选：点击图例筛选
+}
 
 // 类型分布柱状图（渐变蓝色，顶部标注数值）
 const barLoaded = ref(false)
@@ -570,30 +765,31 @@ async function loadDistributionData() {
     const pieData = Object.entries(statusDist).map(([name, value]) => ({ name, value }))
     const total = pieData.reduce((s, d) => s + d.value, 0)
     pieOption.value.series[0].data = pieData
-    // 中间文字：总数 + 标签
+    // 中心文字：总数 + 标签（graphic 实现）
     pieOption.value.graphic = [
       {
         type: 'text',
         left: 'center',
-        top: '38%',
+        top: '36%',
         style: {
           text: String(total),
           textAlign: 'center',
-          fill: '#e2e8f0',
-          fontSize: 28,
+          fill: 'var(--color-text-primary, #f1f5f9)',
+          fontSize: 32,
           fontWeight: 'bold',
-          fontFamily: 'Inter, sans-serif',
+          fontFamily: 'Inter, system-ui, sans-serif',
         },
       },
       {
         type: 'text',
         left: 'center',
-        top: '55%',
+        top: '54%',
         style: {
           text: '需求总数',
           textAlign: 'center',
-          fill: '#94a3b8',
+          fill: 'var(--color-muted-text, #64748b)',
           fontSize: 13,
+          fontFamily: 'Inter, system-ui, sans-serif',
         },
       },
     ]
@@ -671,121 +867,214 @@ onMounted(async () => {
 </script>
 
 <style scoped lang="scss">
+// ═══════════════════════════════════════════════
+// 科技感仪表盘样式
+// ═══════════════════════════════════════════════
+
 .dashboard-container {
-  padding: var(--spacing-lg);
+  padding: 24px;
+  min-height: 100vh;
+  position: relative;
+  overflow: hidden;
 }
 
-// 欢迎区 + 快捷操作
+// ── 科技感背景 ────────────────────────────────
+.tech-bg {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+
+  &__grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+      radial-gradient(circle, var(--color-border) 1px, transparent 1px);
+    background-size: 32px 32px;
+    opacity: 0.4;
+  }
+
+  &__glow {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(120px);
+    opacity: 0.15;
+    pointer-events: none;
+
+    &--1 {
+      width: 600px;
+      height: 600px;
+      background: var(--color-accent, #2563EB);
+      top: -200px;
+      right: -100px;
+      animation: glow-drift 20s ease-in-out infinite alternate;
+    }
+
+    &--2 {
+      width: 500px;
+      height: 500px;
+      background: var(--color-accent-hover, #6366F1);
+      bottom: -150px;
+      left: -100px;
+      animation: glow-drift 25s ease-in-out infinite alternate-reverse;
+    }
+  }
+}
+
+@keyframes glow-drift {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(60px, 40px) scale(1.15); }
+}
+
+// ── 欢迎区 ────────────────────────────────────
 .dashboard-header {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  margin-bottom: var(--spacing-lg);
+  margin-bottom: 28px;
   flex-wrap: wrap;
-  gap: var(--spacing-md);
+  gap: 20px;
 
   &__left {
     h2 {
-      font-size: var(--font-size-2xl);
-      font-weight: var(--font-weight-bold);
-      color: var(--color-text-primary);
-      margin: 0 0 var(--spacing-xs);
-      letter-spacing: -0.025em;
+      margin: 0 0 6px;
+      letter-spacing: -0.03em;
     }
   }
+}
 
-  .dashboard-subtitle {
-    font-size: var(--font-size-base);
-    color: var(--color-muted-text);
+// ── 仪表盘标题 ─────────────────────────────────
+.dashboard-title {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0 0 8px;
+  letter-spacing: -0.03em;
+  line-height: 1.3;
+
+  &__greeting {
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    font-size: 20px;
   }
 
-  &__actions {
-    display: flex;
-    gap: var(--spacing-sm);
-    flex-shrink: 0;
+  &__name {
+    background: linear-gradient(135deg, var(--color-accent, #2563EB), var(--color-accent-hover, #6366F1));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
   }
 }
 
-// 统计卡片
+.dashboard-desc {
+  font-size: 13px;
+  color: var(--color-muted-text);
+  margin: 0;
+}
+
+.dashboard-header__actions {
+  display: flex;
+  gap: 12px;
+  flex-shrink: 0;
+
+  .btn-tech {
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text-secondary);
+    transition: all 0.2s ease;
+
+    &:hover {
+      border-color: var(--color-accent, #2563EB);
+      color: var(--color-accent, #2563EB);
+      background: rgba(37, 99, 235, 0.04);
+    }
+  }
+}
+
+// ── 统计卡片行 ─────────────────────────────────
 .stat-row {
-  margin-bottom: var(--spacing-lg);
+  position: relative;
+  z-index: 1;
+  margin-bottom: 20px;
 
   .el-col {
-    margin-bottom: var(--spacing-md);
+    margin-bottom: 16px;
   }
 }
 
-// 骨架屏
+// ── 骨架屏 ────────────────────────────────────
 .shimmer {
   background: linear-gradient(90deg, var(--color-surface-alt) 25%, var(--color-border) 50%, var(--color-surface-alt) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
 }
 
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 .skeleton-card {
   display: flex;
   align-items: center;
-  gap: var(--spacing-md);
-  padding: var(--spacing-lg);
+  gap: 16px;
+  padding: 20px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: 12px;
 
   &__icon {
     width: 52px;
     height: 52px;
-    border-radius: var(--radius-md);
+    border-radius: 10px;
   }
 
-  &__info {
-    flex: 1;
-  }
+  &__info { flex: 1; }
 
   &__value {
     height: 28px;
     width: 60%;
-    border-radius: var(--radius-sm);
-    margin-bottom: var(--spacing-sm);
+    border-radius: 6px;
+    margin-bottom: 8px;
   }
 
   &__label {
     height: 14px;
     width: 40%;
-    border-radius: var(--radius-sm);
+    border-radius: 6px;
   }
 }
 
 .skeleton-chart {
   height: 320px;
-  border-radius: var(--radius-md);
+  border-radius: 10px;
 }
 
 .skeleton-recent-item {
-  padding: var(--spacing-md) 0;
-
-  &:not(:last-child) {
-    border-bottom: 1px solid var(--color-border);
-  }
+  padding: 14px 0;
+  &:not(:last-child) { border-bottom: 1px solid var(--color-border); }
 }
 
 .skeleton-recent-title {
   height: 16px;
   width: 70%;
-  border-radius: var(--radius-sm);
-  margin-bottom: var(--spacing-sm);
+  border-radius: 6px;
+  margin-bottom: 8px;
 }
 
 .skeleton-recent-meta {
   height: 12px;
   width: 40%;
-  border-radius: var(--radius-sm);
+  border-radius: 6px;
 }
 
 .skeleton-timeline-item {
   display: flex;
   align-items: flex-start;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-sm) 0;
+  gap: 10px;
+  padding: 10px 0;
 }
 
 .skeleton-timeline-dot {
@@ -799,53 +1088,119 @@ onMounted(async () => {
 .skeleton-timeline-content {
   height: 14px;
   flex: 1;
-  border-radius: var(--radius-sm);
+  border-radius: 6px;
 }
 
-// 双栏布局
+// ── 内容区双栏 ─────────────────────────────────
 .content-row {
-  .el-col {
-    margin-bottom: 0;
-  }
+  position: relative;
+  z-index: 1;
 
-  .section-card {
-    margin-bottom: var(--spacing-lg);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-
-    &:last-child {
-      margin-bottom: 0;
-    }
-  }
+  .el-col { margin-bottom: 0; }
 }
 
-// 区块卡片
-.section-card {
+// ── 科技感卡片 ─────────────────────────────────
+.tech-card {
+  border: 1px solid var(--color-border) !important;
+  border-radius: 12px !important;
+  background: var(--color-surface) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: visible !important;
+
+  // 顶部装饰线
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 20px;
+    right: 20px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--color-accent, #2563EB), transparent);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    border-radius: 0 0 2px 2px;
+  }
+
+  &:hover {
+    border-color: rgba(37, 99, 235, 0.3) !important;
+    box-shadow:
+      0 4px 24px rgba(0, 0, 0, 0.08),
+      0 0 0 1px rgba(37, 99, 235, 0.05),
+      0 0 40px rgba(37, 99, 235, 0.04);
+
+    &::before { opacity: 1; }
+  }
+
   :deep(.el-card__header) {
-    padding: var(--spacing-md) var(--spacing-lg);
-    cursor: pointer;
-    user-select: none;
+    padding: 16px 20px;
     border-bottom: 1px solid var(--color-border);
+    background: transparent;
   }
 
   :deep(.el-card__body) {
-    padding: var(--spacing-lg);
+    padding: 20px;
   }
+}
+
+// ── 区块头部 ───────────────────────────────────
+.section-card {
+  margin-bottom: 16px;
+
+  &:last-child { margin-bottom: 0; }
 }
 
 .section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-semibold);
+  font-size: 14px;
+  font-weight: 600;
   color: var(--color-text-primary);
+
+  &__left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+}
+
+.section-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-accent, #2563EB);
+  position: relative;
+  flex-shrink: 0;
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: 50%;
+    background: var(--color-accent, #2563EB);
+    opacity: 0.2;
+    animation: dot-pulse 2s ease-in-out infinite;
+  }
+
+  &--accent {
+    background: var(--color-accent-hover, #6366F1);
+
+    &::after {
+      background: var(--color-accent-hover, #6366F1);
+    }
+  }
+}
+
+@keyframes dot-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.2; }
+  50% { transform: scale(1.8); opacity: 0; }
 }
 
 .collapse-icon {
   font-size: 14px;
   color: var(--color-muted-text);
-  transition: transform var(--transition-fast);
+  transition: transform 0.2s ease;
   cursor: pointer;
 
   &.is-expanded {
@@ -857,115 +1212,176 @@ onMounted(async () => {
   padding: 0;
 }
 
-.chart-box {
-  min-height: 320px;
+// ── 需求状态分布：精美环形图 + 图例 ───
+.pie-section {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 36px;
+  padding: 8px 0;
+  min-height: 260px;
+
+  &__chart {
+    flex-shrink: 0;
+    width: 260px;
+    height: 260px;
+    position: relative;
+  }
 }
 
-.chart {
-  height: 320px;
-  width: 100%;
-}
-
-// ── 状态分布：环形图 + 右侧图例 ──────────────────
-.status-dist-layout {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-lg);
-  padding: var(--spacing-md) 0;
-}
-
-.status-pie-wrap {
-  flex-shrink: 0;
-  width: 260px;
-  height: 260px;
-}
-
-.status-pie-chart {
+.pie-chart {
   width: 100%;
   height: 100%;
 }
 
-.status-legend-list {
+.pie-section__legend {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
 }
 
-.status-legend-item {
+// 图例行
+.pie-legend-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: var(--font-size-sm);
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
   cursor: default;
+  transition: all 0.2s ease;
+
+  &:not(.pie-legend-item--header):not(.pie-legend-item--total):hover {
+    background: var(--color-surface-alt, rgba(30, 41, 59, 0.5));
+  }
+
+  &.is-active {
+    background: rgba(37, 99, 235, 0.08);
+    box-shadow: inset 3px 0 0 var(--color-accent, #2563EB);
+  }
+
+  &--header {
+    padding: 0 12px 10px;
+    border-bottom: 1px solid var(--color-border, #1e293b);
+    margin-bottom: 6px;
+    cursor: default;
+
+    .pie-legend-name,
+    .pie-legend-value,
+    .pie-legend-pct {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--color-muted-text, #64748b);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+  }
+
+  &--total {
+    padding: 12px 12px 4px;
+    margin-top: 6px;
+    border-top: 1px dashed var(--color-border, #1e293b);
+    cursor: default;
+
+    .pie-legend-name {
+      font-weight: 600;
+      color: var(--color-text-secondary, #94a3b8);
+    }
+
+    .pie-legend-value {
+      font-weight: 700;
+      color: var(--color-text-primary, #e2e8f0);
+    }
+
+    .pie-legend-pct {
+      font-weight: 600;
+      color: var(--color-text-primary, #e2e8f0);
+    }
+  }
 }
 
-.legend-dot {
+.pie-legend-color {
   width: 10px;
   height: 10px;
   border-radius: 50%;
   flex-shrink: 0;
+  transition: box-shadow 0.2s ease;
+  box-shadow: 0 0 0 transparent;
+
+  .pie-legend-item.is-active & {
+    box-shadow: 0 0 8px currentColor;
+  }
 }
 
-.legend-name {
+.pie-legend-name {
+  width: 72px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary, #94a3b8);
+  flex-shrink: 0;
+  transition: color 0.2s ease;
+
+  .pie-legend-item.is-active & {
+    color: var(--color-text-primary, #e2e8f0);
+    font-weight: 600;
+  }
+}
+
+.pie-legend-value {
   flex: 1;
-  color: var(--color-text-secondary);
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.legend-value {
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-primary);
+  text-align: right;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text-primary, #e2e8f0);
   font-variant-numeric: tabular-nums;
-  min-width: 32px;
-  text-align: right;
+  transition: transform 0.2s ease;
+
+  .pie-legend-item.is-active & {
+    transform: scale(1.05);
+  }
 }
 
-.legend-percent {
-  color: var(--color-muted-text);
-  font-size: var(--font-size-xs);
-  min-width: 44px;
+.pie-legend-pct {
+  width: 56px;
   text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  transition: transform 0.2s ease;
 }
 
-// ── 需求类型分布：渐变柱状图 ──────────────────
+// ── 柱状图 ─────────────────────────────────────
 .type-bar-chart {
   width: 100%;
   height: 280px;
 }
 
-// 最近需求列表
+// ── 最近需求列表 ────────────────────────────────
 .recent-list {
   max-height: 360px;
   overflow-y: auto;
 }
 
 .recent-item {
-  padding: var(--spacing-sm) 0;
+  padding: 12px 10px;
   cursor: pointer;
-  border-radius: var(--radius-sm);
-  transition: background-color var(--transition-fast);
+  border-radius: 8px;
+  transition: all 0.15s ease;
 
   &:not(:last-child) {
     border-bottom: 1px solid var(--color-border);
   }
 
   &:hover {
-    background-color: var(--color-surface-alt);
+    background: var(--color-surface-alt);
+    transform: translateX(4px);
   }
 }
 
 .recent-title {
-  font-size: var(--font-size-base);
+  font-size: 14px;
   color: var(--color-text-primary);
-  font-weight: var(--font-weight-medium);
-  margin-bottom: var(--spacing-xs);
+  font-weight: 500;
+  margin-bottom: 6px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -974,16 +1390,16 @@ onMounted(async () => {
 .recent-meta {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
+  gap: 8px;
 }
 
 .recent-date {
-  font-size: var(--font-size-xs);
+  font-size: 12px;
   color: var(--color-muted-text);
   margin-left: auto;
 }
 
-// 流转动态
+// ── 流转动态 ────────────────────────────────────
 .activity-timeline {
   max-height: 360px;
   overflow-y: auto;
@@ -991,72 +1407,65 @@ onMounted(async () => {
 
 .activity-item {
   .activity-title {
-    font-size: var(--font-size-sm);
+    font-size: 13px;
     color: var(--color-text-primary);
-    font-weight: var(--font-weight-medium);
+    font-weight: 500;
   }
 
   .activity-user {
     display: block;
-    font-size: var(--font-size-xs);
+    font-size: 12px;
     color: var(--color-muted-text);
     margin-top: 2px;
   }
 }
 
-// 项目进度
+// ── 项目进度 ────────────────────────────────────
 .project-progress {
   .progress-item {
-    display: flex;
-    align-items: center;
-    margin-bottom: var(--spacing-md);
+    margin-bottom: 18px;
 
-    &:last-child {
-      margin-bottom: 0;
-    }
-
-    .project-name {
-      width: 160px;
-      font-weight: var(--font-weight-medium);
-      flex-shrink: 0;
-      color: var(--color-text-secondary);
-    }
-
-    .el-progress {
-      flex: 1;
-      margin: 0 var(--spacing-md);
-    }
-
-    .progress-text {
-      width: 60px;
-      text-align: right;
-      color: var(--color-muted-text);
-      font-size: var(--font-size-base);
-      flex-shrink: 0;
-      font-variant-numeric: tabular-nums;
-    }
+    &:last-child { margin-bottom: 0; }
   }
 }
 
-// 响应式
-@media (max-width: 1024px) {
-  .dashboard-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
+.progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
 }
 
-// 流程处理概览
+.project-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-text {
+  font-size: 13px;
+  color: var(--color-muted-text);
+  font-variant-numeric: tabular-nums;
+  margin-left: 12px;
+  flex-shrink: 0;
+}
+
+// ── 流程处理概览 ────────────────────────────────
 .workflow-overview-card {
   :deep(.el-card__body) {
-    padding: var(--spacing-md) var(--spacing-lg);
+    padding: 16px 20px;
   }
 }
 
 .workflow-overview {
   display: flex;
   align-items: center;
-  gap: var(--spacing-lg);
+  gap: 24px;
 }
 
 .workflow-circle-wrap {
@@ -1068,8 +1477,8 @@ onMounted(async () => {
 
 .workflow-circle {
   position: relative;
-  width: 110px;
-  height: 110px;
+  width: 120px;
+  height: 120px;
 
   .circle-svg {
     width: 100%;
@@ -1080,16 +1489,17 @@ onMounted(async () => {
   .circle-bg {
     fill: none;
     stroke: var(--color-border);
-    stroke-width: 10;
+    stroke-width: 8;
   }
 
   .circle-fill {
     fill: none;
-    stroke: #2563EB;
-    stroke-width: 10;
+    stroke: var(--color-accent, #2563EB);
+    stroke-width: 8;
     stroke-linecap: round;
     stroke-dashoffset: 0;
-    transition: stroke-dasharray 0.6s ease;
+    transition: stroke-dasharray 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    filter: drop-shadow(0 0 6px rgba(37, 99, 235, 0.3));
   }
 
   .circle-inner {
@@ -1099,15 +1509,22 @@ onMounted(async () => {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 4px;
+    gap: 2px;
 
     .circle-icon {
-      font-size: 24px;
-      color: #2563EB;
+      font-size: 22px;
+      color: var(--color-accent, #2563EB);
+    }
+
+    .circle-rate {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--color-text-primary);
+      font-variant-numeric: tabular-nums;
     }
 
     .circle-label {
-      font-size: var(--font-size-xs);
+      font-size: 11px;
       color: var(--color-muted-text);
       white-space: nowrap;
     }
@@ -1118,36 +1535,51 @@ onMounted(async () => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-sm);
+  gap: 4px;
 }
 
 .workflow-stat-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  transition: background-color 0.15s ease;
 
   &.is-clickable {
     cursor: pointer;
-    border-radius: var(--radius-sm);
-    padding: 4px 6px;
-    margin: 0 -6px;
-    transition: background-color var(--transition-fast);
 
     &:hover {
-      background-color: var(--color-surface-alt);
+      background: var(--color-surface-alt);
     }
   }
 }
 
+.workflow-stat-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.workflow-stat-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+
+  &.is-pending   { background: #2563EB; box-shadow: 0 0 6px rgba(37, 99, 235, 0.4); }
+  &.is-processed { background: #059669; box-shadow: 0 0 6px rgba(5, 150, 105, 0.4); }
+  &.is-initiated { background: #D97706; box-shadow: 0 0 6px rgba(217, 119, 6, 0.4); }
+  &.is-cc        { background: #6366F1; box-shadow: 0 0 6px rgba(99, 102, 241, 0.4); }
+}
+
 .workflow-stat-label {
-  font-size: var(--font-size-sm);
+  font-size: 13px;
   color: var(--color-text-secondary);
 }
 
 .workflow-stat-value {
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-bold);
+  font-size: 18px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--color-text-primary);
 
@@ -1156,4 +1588,42 @@ onMounted(async () => {
   &.is-initiated { color: #D97706; }
   &.is-cc        { color: #6366F1; }
 }
+
+// ── 响应式 ────────────────────────────────────
+@media (max-width: 1024px) {
+  .dashboard-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .pie-section {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 20px;
+
+    &__chart {
+      width: 220px;
+      height: 220px;
+      margin: 0 auto;
+    }
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboard-container {
+    padding: 16px;
+  }
+
+  .dashboard-title {
+    font-size: 20px;
+
+    &__greeting { font-size: 16px; }
+  }
+
+  .pie-section__chart {
+    width: 180px;
+    height: 180px;
+  }
+}
 </style>
+

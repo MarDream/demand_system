@@ -83,6 +83,7 @@ goto after_container_check
 call :wait_healthy kkfileview %KKFILEVIEW_PORT% "kkFileView"
 call :wait_healthy mysql 3306 "MySQL"
 call :wait_healthy redis 6379 "Redis"
+call :wait_healthy rabbitmq 5672 "RabbitMQ"
 call :wait_healthy minio 9000 "MinIO"
 :after_container_check
 
@@ -217,6 +218,7 @@ echo [1/4] 启动依赖服务...
 docker compose -f "%COMPOSE_FILE%" up -d
 call :wait_healthy mysql 3306 "MySQL"
 call :wait_healthy redis 6379 "Redis"
+call :wait_healthy rabbitmq 5672 "RabbitMQ"
 call :wait_healthy minio 9000 "MinIO"
 
 :: 启动后端

@@ -39,6 +39,7 @@ import com.demand.system.module.requirement.mapper.RequirementCommentMapper;
 import com.demand.system.module.requirement.mapper.RequirementFollowMapper;
 import com.demand.system.module.requirement.mapper.RequirementHistoryMapper;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
+import com.demand.system.module.requirement.mapper.RequirementPendingTaskMapper;
 import com.demand.system.module.file.entity.FileRecord;
 import com.demand.system.module.file.mapper.FileRecordMapper;
 import com.demand.system.module.requirement.service.RequirementApprovalEvaluationService;
@@ -132,6 +133,7 @@ public class RequirementServiceImpl implements RequirementService {
     private static final boolean USE_V2_ARCHITECTURE = true;
 
     private final RequirementMapper requirementMapper;
+    private final RequirementPendingTaskMapper pendingTaskMapper;
     private final RequirementFollowMapper requirementFollowMapper;
     private final RequirementHistoryMapper historyMapper;
     private final RequirementCommentMapper requirementCommentMapper;
@@ -168,8 +170,9 @@ public class RequirementServiceImpl implements RequirementService {
     private final OrgLocalCache orgLocalCache;
     private final VisibleOrgCache visibleOrgCache;
 
-    public RequirementServiceImpl(RequirementMapper requirementMapper, RequirementFollowMapper requirementFollowMapper, RequirementHistoryMapper historyMapper, RequirementCommentMapper requirementCommentMapper, CustomFieldValueMapper customFieldValueMapper, UserMapper userMapper, UserOrganizationMapper userOrganizationMapper, SysOrgService sysOrgService, NotificationService notificationService, RelationService relationService, WorkflowService workflowService, WorkflowEngineService workflowEngineService, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowGraphNavigator workflowGraphNavigator, WorkflowRuntimeLoader workflowRuntimeLoader, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, WorkflowInstanceMapper workflowInstanceMapper, WorkflowInstanceTransitionMapper workflowInstanceTransitionMapper, WorkflowTransitionRecordMapper workflowTransitionRecordMapper, WorkflowDefinitionEngine workflowDefinitionEngine, RequirementApprovalEvaluationService approvalEvaluationService, RequirementConfigService requirementConfigService, KnowledgeDocumentService knowledgeDocumentService, NodeStatusMapper nodeStatusMapper, ProjectMapper projectMapper, RoleMapper roleMapper, RoleGroupMapper roleGroupMapper, FileRecordMapper fileRecordMapper, ObjectMapper objectMapper, DistributedIdGenerator distributedIdGenerator, com.demand.system.module.organization.service.OrgHierarchyCache orgHierarchyCache, UserLocalCache userLocalCache, OrgLocalCache orgLocalCache, VisibleOrgCache visibleOrgCache) {
+    public RequirementServiceImpl(RequirementMapper requirementMapper, RequirementPendingTaskMapper pendingTaskMapper, RequirementFollowMapper requirementFollowMapper, RequirementHistoryMapper historyMapper, RequirementCommentMapper requirementCommentMapper, CustomFieldValueMapper customFieldValueMapper, UserMapper userMapper, UserOrganizationMapper userOrganizationMapper, SysOrgService sysOrgService, NotificationService notificationService, RelationService relationService, WorkflowService workflowService, WorkflowEngineService workflowEngineService, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowGraphNavigator workflowGraphNavigator, WorkflowRuntimeLoader workflowRuntimeLoader, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, WorkflowInstanceMapper workflowInstanceMapper, WorkflowInstanceTransitionMapper workflowInstanceTransitionMapper, WorkflowTransitionRecordMapper workflowTransitionRecordMapper, WorkflowDefinitionEngine workflowDefinitionEngine, RequirementApprovalEvaluationService approvalEvaluationService, RequirementConfigService requirementConfigService, KnowledgeDocumentService knowledgeDocumentService, NodeStatusMapper nodeStatusMapper, ProjectMapper projectMapper, RoleMapper roleMapper, RoleGroupMapper roleGroupMapper, FileRecordMapper fileRecordMapper, ObjectMapper objectMapper, DistributedIdGenerator distributedIdGenerator, com.demand.system.module.organization.service.OrgHierarchyCache orgHierarchyCache, UserLocalCache userLocalCache, OrgLocalCache orgLocalCache, VisibleOrgCache visibleOrgCache) {
         this.requirementMapper = requirementMapper;
+        this.pendingTaskMapper = pendingTaskMapper;
         this.requirementFollowMapper = requirementFollowMapper;
         this.historyMapper = historyMapper;
         this.requirementCommentMapper = requirementCommentMapper;
@@ -1628,6 +1631,13 @@ public class RequirementServiceImpl implements RequirementService {
             log.warn("未找到工作流节点: workflowVersionId={}, nodeId={}", instance.getWorkflowVersionId(), instance.getCurrentNodeId());
             return null;
         }
+
+        List<Long> pendingUserIds = pendingTaskMapper.selectPendingUserIds(
+                requirement.getId(), instance.getId(), instance.getCurrentNodeId());
+        if (pendingUserIds != null && !pendingUserIds.isEmpty()) {
+            return resolveSpecifiedUsersDisplay(pendingUserIds);
+        }
+
         if (!StringUtils.hasText(currentNode.getAssigneeType())) {
             log.warn("节点未配置处理人类型: nodeId={}, nodeName={}", currentNode.getNodeId(), currentNode.getNodeName());
             return null;

@@ -40,6 +40,11 @@
               <span class="view-switch__tab-label">
                 <el-icon><Star /></el-icon>
                 <span class="view-switch__tab-text">我的关注</span>
+                <el-badge
+                  v-if="viewCounts.follows > 0"
+                  :value="viewCounts.follows"
+                  class="view-switch__badge"
+                />
               </span>
             </template>
           </el-tab-pane>
@@ -141,7 +146,7 @@
                 <el-option label="验收不通过" value="验收不通过" />
               </el-select>
             </el-form-item>
-            <el-form-item label="负责人" class="filter-item filter-item--assignee">
+            <el-form-item label="当前处理人" class="filter-item filter-item--assignee">
               <el-select v-model="filterForm.assigneeId" placeholder="请选择" clearable class="filter-select--assignee">
                 <el-option v-for="user in filterUserList" :key="user.id" :label="user.realName || user.username" :value="user.id" />
               </el-select>
@@ -473,7 +478,7 @@ const requirementAllColumns: ColumnDef[] = [
   { key: 'priority', label: '优先级', group: '基础字段', minWidth: 90 },
   { key: 'status', label: '状态', group: '基础字段', minWidth: 100 },
   { key: 'creatorName', label: '提出人', group: '人员与时间', minWidth: 100 },
-  { key: 'assigneeName', label: '负责人', group: '人员与时间', minWidth: 100 },
+  { key: 'assigneeName', label: '当前处理人', group: '人员与时间', minWidth: 120 },
   { key: 'departmentName', label: '归属部门', group: '基础字段', minWidth: 120 },
   { key: 'createdAt', label: '创建时间', group: '人员与时间', minWidth: 170 },
   { key: 'dueDate', label: '期望上线日期', group: '人员与时间', minWidth: 160 },
@@ -552,7 +557,7 @@ function localPriorityTagStyle(priority: string) {
 }
 
 /**
- * 获取需求行的负责人显示名
+ * 获取需求行的当前处理人显示名
  * 优先使用工作流当前节点处理人（角色多人→角色名，单人→用户名），
  * 无工作流信息时回退到 assigneeName
  */
@@ -607,6 +612,7 @@ const pagination = reactive({
 const viewCounts = reactive({
   drafts: 0,
   pending: 0,
+  follows: 0,
 })
 
 function buildMyListParams(): RequirementMyListQuery {
@@ -623,12 +629,14 @@ function buildMyListParams(): RequirementMyListQuery {
 
 async function refreshViewCounts() {
   try {
-    const [drafts, pending] = await Promise.all([
+    const [drafts, pending, follows] = await Promise.all([
       requirementApi.getMyRequirementDrafts({ pageNum: 1, pageSize: 1 }),
       getMyRequirementPending({ pageNum: 1, pageSize: 1 }),
+      getMyRequirementFollows({ pageNum: 1, pageSize: 1 }),
     ])
     viewCounts.drafts = drafts.total
     viewCounts.pending = pending.total
+    viewCounts.follows = follows.total
   } catch {
     // ignore count refresh failures
   }
@@ -745,7 +753,7 @@ async function fetchData() {
 
 /**
  * 批量加载当前页需求的工作流处理人信息
- * 用于列表"负责人"列根据工作流节点配置动态显示
+ * 用于列表"当前处理人"列根据工作流节点配置动态显示
  */
 async function loadCurrentHandlers() {
   // 注意：RequirementListVO 不返回 workflowInstanceId 字段，
@@ -868,6 +876,7 @@ async function handleToggleFollow(row: Requirement) {
       row.followed = false
       invalidateViewCache('follows')
       invalidateViewCache(viewMode.value)
+      refreshViewCounts()
       ElMessage.success('已取消关注')
       if (isFollowView.value) {
         fetchData()
@@ -878,6 +887,7 @@ async function handleToggleFollow(row: Requirement) {
     row.followed = true
     invalidateViewCache('follows')
     invalidateViewCache(viewMode.value)
+    refreshViewCounts()
     ElMessage.success('已添加关注')
   } catch {
     ElMessage.error(nextFollowed ? '添加关注失败' : '取消关注失败')

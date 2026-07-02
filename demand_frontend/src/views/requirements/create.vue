@@ -718,6 +718,12 @@ const editorExtensions = [
     fontSize: {
       type: 'complex',
     },
+    table: {
+      resizable: true,
+      HTMLAttributes: {
+        class: 'requirement-editor-table',
+      },
+    },
   }),
   Image.configure({
     inline: false,
@@ -1554,6 +1560,45 @@ watch(() => formData.type, (typeCode) => {
   display: block;
   max-width: 100%;
   border-radius: 6px;
+}
+
+/* 表格样式 */
+.editor-wrapper :deep(.requirement-editor-table) {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 12px 0;
+  overflow: hidden;
+}
+
+.editor-wrapper :deep(.requirement-editor-table td),
+.editor-wrapper :deep(.requirement-editor-table th) {
+  min-width: 1em;
+  border: 1px solid #dcdfe6;
+  padding: 8px 12px;
+  vertical-align: top;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.editor-wrapper :deep(.requirement-editor-table th) {
+  font-weight: 600;
+  text-align: left;
+  background-color: #f5f7fa;
+}
+
+.editor-wrapper :deep(.requirement-editor-table .selectedCell) {
+  background-color: #e8f4ff;
+}
+
+.editor-wrapper :deep(.requirement-editor-table .column-resize-handle) {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: -2px;
+  width: 4px;
+  background-color: #409eff;
+  pointer-events: none;
 }
 
 .editor-wrapper :deep([data-resize-container]) {

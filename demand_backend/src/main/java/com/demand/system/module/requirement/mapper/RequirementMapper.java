@@ -95,12 +95,8 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                                 @Param("keyword") String keyword);
 
     /**
-     * 我的待办 - V2架构重构版（使用workflow_node_assignees关联表）
-     * 性能提升：消除JSON_CONTAINS，使用索引JOIN
-     *
-     * 性能优化（2026-06-26）：移除 DISTINCT，workflow_node_assignees 表设计保证无重复
-     * - 验证：已检查数据库无重复记录（workflow_version_id + node_id + assignee_type + assignee_id 唯一）
-     * - 收益：避免临时表和排序开销，查询速度提升30-50%
+     * 我的待办 - 使用运行期待办物化表判定当前处理权限。
+     * 直接指定用户时仅 user_id 命中；未指定具体用户时按角色、角色组或组织范围命中。
      */
     IPage<Requirement> selectMyPendingV2(IPage<Requirement> page,
                                          @Param("userId") Long userId,
@@ -114,12 +110,7 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                          @Param("keyword") String keyword);
 
     /**
-     * 我的已办 - V2架构重构版（使用workflow_node_assignees关联表）
-     * 性能提升：排除当前待办时使用索引JOIN而非JSON_CONTAINS
-     *
-     * 性能优化（2026-06-26）：移除 DISTINCT
-     * - 逻辑：creator_id 和 EXISTS 查询本身不会产生重复记录
-     * - 收益：避免临时表和排序开销
+     * 我的已办 - 查询当前用户创建或已处理的需求，并使用运行期待办物化表排除当前仍待我处理的需求。
      */
     IPage<Requirement> selectMyDoneV2(IPage<Requirement> page,
                                       @Param("userId") Long userId,
