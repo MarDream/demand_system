@@ -199,7 +199,8 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
         evaluationMapper.insert(supplement);
     }
 
-    private void validateRating(Integer rating) {
+    @Override
+    public void validateRating(Integer rating) {
         if (rating != null && (rating < 1 || rating > 5)) {
             throw new BusinessException(400, "评分必须在 1-5 星之间");
         }

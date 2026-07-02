@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>审批功能 - 设计调整稿 V2</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    /* ============================================================
+       Design tokens (与项目 src/styles/tokens 保持一致)
+       ============================================================ */
+    :root {
+      --color-primary: #2563EB;
+      --color-primary-hover: #3B82F6;
+      --color-primary-active: #1D4ED8;
+      --color-primary-light: #DBEAFE;
+      --color-primary-subtle: #EFF6FF;
+      --color-on-primary: #FFFFFF;
+
+      --color-secondary: #334155;
+
+      --color-accent: #6366F1;
+      --color-accent-light: #E0E7FF;
+
+      --color-background: #F8FAFC;
+      --color-surface: #FFFFFF;
+      --color-surface-alt: #F1F5F9;
+
+      --color-text-primary: #0F172A;
+      --color-text-secondary: #475569;
+      --color-text-placeholder: #94A3B8;
+
+      --color-border: #E2E8F0;
+      --color-border-hover: #CBD5E1;
+
+      --color-success: #10B981;
+      --color-warning: #F59E0B;
+      --color-warning-light: rgba(245, 158, 11, 0.12);
+      --color-warning-strong: #B45309;
+      --color-danger: #EF4444;
+      --color-danger-light: rgba(239, 68, 68, 0.08);
+      --color-danger-strong: #DC2626;
+
+      --radius-sm: 4px;
+      --radius-md: 6px;
+      --radius-lg: 10px;
+
+      --shadow-color: rgba(15, 23, 42, 0.06);
+      --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+      --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.06);
+      --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.04), 0 8px 24px -8px rgba(15, 23, 42, 0.08);
+
+      --space-1: 4px;
+      --space-2: 8px;
+      --space-3: 12px;
+      --space-4: 16px;
+      --space-5: 20px;
+      --space-6: 24px;
+      --space-8: 32px;
+
+      --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-background);
+      color: var(--color-text-primary);
+      font-size: 14px;
+      line-height: 1.5;
+      padding: 40px 20px;
+      min-height: 100vh;
+    }
+
+    .preview-stage {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .preview-stage > h1 {
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--color-text-primary);
+      margin-bottom: var(--space-2);
+    }
+
+    .preview-stage > p.lead {
+      color: var(--color-text-secondary);
+      font-size: 13px;
+      margin-bottom: var(--space-8);
+    }
+
+    .preview-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+      gap: 32px;
+      align-items: start;
+    }
+
+    .preview-card {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-3);
+    }
+
+    .preview-card__label {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--color-text-secondary);
+      background: var(--color-surface-alt);
+      padding: 4px 10px;
+      border-radius: var(--radius-sm);
+      align-self: flex-start;
+    }
+
+    .preview-card__note {
+      font-size: 12px;
+      color: var(--color-text-secondary);
+      background: var(--color-primary-subtle);
+      border-left: 3px solid var(--color-primary);
+      padding: 8px 12px;
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    }
+
+    /* ============================================================
+       Approval panel
+       ============================================================ */
+    .approval-panel {
+      width: 100%;
+      max-width: 420px;
+      background: var(--color-surface);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-card);
+      padding: var(--space-6);
+      border: 1px solid var(--color-border);
+    }
+
+    /* header */
+    .approval-panel__header {
+      padding-bottom: var(--space-4);
+      border-bottom: 1px solid var(--color-border);
+      margin-bottom: var(--space-5);
+    }
+    .approval-panel__title {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--color-text-primary);
+      letter-spacing: -0.01em;
+    }
+    .approval-panel__subtitle {
+      font-size: 13px;
+      color: var(--color-text-secondary);
+      margin-top: 4px;
+    }
+
+    /* current node status block */
+    .current-node-status {
+      display: flex;
+      align-items: center;
+      gap: var(--space-4);
+      background: var(--color-primary-subtle);
+      border: 1px solid var(--color-primary-light);
+      padding: 12px 16px;
+      border-radius: var(--radius-md);
+      margin-bottom: var(--space-5);
+    }
+    .current-node-status__item {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+    }
+    .current-node-status__label {
+      font-size: 13px;
+      color: var(--color-text-secondary);
+    }
+    .current-node-status__value {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--color-text-primary);
+    }
+    .current-node-status__sep {
+      width: 1px;
+      height: 16px;
+      background: var(--color-primary-light);
+    }
+
+    /* tag (badge) */
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      line-height: 1;
+      padding: 4px 8px;
+      border-radius: var(--radius-sm);
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .tag--warning-light { background: var(--color-warning-light); color: var(--color-warning-strong); border: 1px solid #FCD34D; }
+    .tag--accent-light { background: var(--color-accent-light); color: var(--color-accent); }
+    .tag--success-light { background: rgba(16, 185, 129, 0.1); color: #047857; }
+    .tag--neutral { background: var(--color-surface-alt); color: var(--color-text-secondary); }
+
+    /* field row */
+    .field {
+      display: grid;
+      grid-template-columns: 100px 1fr;
+      gap: var(--space-3);
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px dashed transparent;
+    }
+    .field:last-of-type { border-bottom: none; }
+
+    .field__label {
+      font-size: 14px;
+      color: var(--color-text-secondary);
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+    }
+
+    .field__value {
+      font-size: 14px;
+      color: var(--color-text-primary);
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      min-height: 24px;
+    }
+    .field__value--placeholder {
+      color: var(--color-text-placeholder);
+      font-style: italic;
+    }
+    .field__value--strong {
+      font-weight: 600;
+    }
+
+    /* 处理角色字段已不再展示后台「动态」说明文案（保留占位符即可） */
+
+    /* inline icon-button (replace select caret) */
+    .field__pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 13px;
+      color: var(--color-text-secondary);
+      padding: 4px 10px;
+      background: var(--color-surface-alt);
+      border-radius: var(--radius-md);
+      border: 1px solid transparent;
+      transition: border-color 0.15s, background 0.15s;
+      cursor: not-allowed;
+    }
+
+    /* empty hint when next-node not chosen */
+    .field__empty-hint {
+      font-size: 12px;
+      color: var(--color-text-secondary);
+      padding: 6px 10px;
+      background: #FFFBEB;
+      border: 1px dashed #FCD34D;
+      border-radius: var(--radius-sm);
+      width: 100%;
+    }
+
+    /* buttons row */
+    .panel__divider {
+      height: 1px;
+      background: var(--color-border);
+      margin: var(--space-5) 0;
+    }
+
+    .panel__bottom-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: var(--space-3);
+    }
+    .panel__left-actions {
+      display: flex;
+      gap: var(--space-3);
+    }
+    .panel__right-actions {
+      display: flex;
+      gap: var(--space-3);
+    }
+
+    /* button primitives */
+    .btn {
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 500;
+      padding: 10px 20px;
+      border-radius: var(--radius-md);
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: transparent;
+    }
+    .btn--primary {
+      background: var(--color-primary);
+      color: var(--color-on-primary);
+    }
+    .btn--primary:hover { background: var(--color-primary-hover); }
+    .btn--primary:active { background: var(--color-primary-active); }
+
+    .btn--default {
+      background: var(--color-surface);
+      color: var(--color-text-secondary);
+      border-color: var(--color-border);
+    }
+    .btn--default:hover { color: var(--color-primary); border-color: var(--color-primary); }
+
+    .btn--danger-outline {
+      background: var(--color-danger-light);
+      color: var(--color-danger-strong);
+      border-color: #FCA5A5;
+    }
+    .btn--danger-outline:hover { background: #FEE2E2; }
+
+    /* ============================================================
+       Annotations
+       ============================================================ */
+    .legend {
+      margin-top: 48px;
+      padding: 24px;
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      font-size: 13px;
+      color: var(--color-text-secondary);
+    }
+    .legend h2 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--color-text-primary);
+      margin-bottom: 12px;
+    }
+    .legend ul { padding-left: 22px; }
+    .legend li { margin-bottom: 6px; }
+    .legend code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      background: var(--color-surface-alt);
+      padding: 1px 6px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      color: var(--color-text-primary);
+    }
+  </style>
+</head>
+<body>
+  <div class="preview-stage">
+    <h1>审批功能 · 结构按线框，视觉沿用既有样式</h1>
+    <p class="lead">对照需求：把当前「目标节点下拉 + 处理人下拉 + 处理角色」改造为「只读展示式」工作流信息卡，按钮收为 驳回 / 取消 / 提交。</p>
+
+    <div class="preview-grid">
+
+      <!-- ============================================
+           Variant A — 目标节点未选（占位态）
+           ============================================ -->
+      <div class="preview-card">
+        <span class="preview-card__label">状态 A · 目标节点未选</span>
+
+        <div class="approval-panel">
+          <div class="approval-panel__header">
+            <div class="approval-panel__title">审批</div>
+            <div class="approval-panel__subtitle">请选择目标节点并提交到下一个个审批环节</div>
+          </div>
+
+          <div class="current-node-status">
+            <div class="current-node-status__item">
+              <span class="current-node-status__label">当前节点</span>
+              <span class="current-node-status__value">待分析</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field__label">目标节点</div>
+            <div class="field__value field__value--placeholder">待选择</div>
+          </div>
+
+          <div class="field">
+            <div class="field__label">
+              处理角色
+            </div>
+            <div class="field__value field__value--placeholder">请先选择目标节点</div>
+          </div>
+
+          <div class="field">
+            <div class="field__label">处理人</div>
+            <div class="field__value field__value--placeholder">请先选择目标节点</div>
+          </div>
+
+          <div class="panel__divider"></div>
+
+          <div class="panel__bottom-row">
+            <div class="panel__left-actions">
+              <button class="btn btn--danger-outline" type="button">驳回</button>
+              <button class="btn btn--default" type="button">取消</button>
+            </div>
+            <div class="panel__right-actions">
+              <button class="btn btn--primary" type="button" disabled>提交</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="preview-card__note">
+          提交按钮在没有选定目标节点时为 <strong>disabled</strong> 态；处理角色/处理人均用占位文案引导用户操作。
+        </div>
+      </div>
+
+      <!-- ============================================
+           Variant B — 目标节点已选（信息展示态）
+           ============================================ -->
+      <div class="preview-card">
+        <span class="preview-card__label">状态 B · 目标节点已选</span>
+
+        <div class="approval-panel">
+          <div class="approval-panel__header">
+            <div class="approval-panel__title">审批</div>
+            <div class="approval-panel__subtitle">请选择目标节点并提交到下一个个审批环节</div>
+          </div>
+
+          <div class="current-node-status">
+            <div class="current-node-status__item">
+              <span class="current-node-status__label">当前节点</span>
+              <span class="current-node-status__value">待分析</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field__label">目标节点</div>
+            <div class="field__value field__value--strong">待确认</div>
+          </div>
+
+          <div class="field">
+            <div class="field__label">
+              处理角色
+            </div>
+            <div class="field__value field__value--strong">产品经理</div>
+          </div>
+
+          <div class="field">
+            <div class="field__label">处理人</div>
+            <div class="field__value field__value--strong">胡金燕</div>
+          </div>
+
+          <div class="panel__divider"></div>
+
+          <div class="panel__bottom-row">
+            <div class="panel__left-actions">
+              <button class="btn btn--danger-outline" type="button">驳回</button>
+              <button class="btn btn--default" type="button">取消</button>
+            </div>
+            <div class="panel__right-actions">
+              <button class="btn btn--primary" type="button">提交</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="preview-card__note">
+          信息流展示态：所有节点流转信息只读呈现；按钮区收齐为左 驳回/取消 + 右 提交，与线框图一致。
+        </div>
+      </div>
+
+    </div>
+
+    <section class="legend">
+      <h2>本次调整要点</h2>
+      <ul>
+        <li>标题：<code>审批功能</code> → <code>审批</code>，与线框图命名一致。</li>
+        <li>副标题：<code>选择目标节点并提交到下一审批环节</code> → <code>请选择目标节点并提交到下一个个审批环节</code>（线框原文）。</li>
+        <li>删除了「目标节点」下拉选择器和「处理人」下拉选择器，整体改为只读展示。</li>
+        <li>「处理人 + 处理角色」拆成两条独立字段：<code>处理角色</code> + <code>处理人</code>；不再展示「动态」徽章和后台逻辑说明文案。</li>
+        <li>底部按钮精简为三类：<code>驳回</code>（红描边）/<code>取消</code>（白底）在左侧，<code>提交</code>（蓝实心）在右侧。</li>
+        <li>视觉：徽章、下拉框（替换为只读 chip）、卡片头部风格沿用图1的 <code>#2563EB</code> 主色与 Inter 字体。</li>
+        <li>当前节点 chip 与图1保持完全一致，作为身份标识让用户感知仍处于工作流上下文。</li>
+      </ul>
+    </section>
+
+  </div>
+</body>
+</html>

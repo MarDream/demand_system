@@ -77,6 +77,15 @@ public class WorkflowEngineService {
 
     private static final Logger log = LoggerFactory.getLogger(WorkflowEngineService.class);
 
+    /**
+     * 工作流版本级别评价的固定评分配置（启用 + 必填 + 来源标记）
+     */
+    private static final Map<String, Object> VERSION_EVAL_RATING_CONFIG = Map.of(
+            "enabled", true,
+            "required", true,
+            "source", "VERSION"
+    );
+
     private final WorkflowInstanceMapper instanceMapper;
     private final WorkflowInstanceTransitionMapper transitionMapper;
     private final WorkflowNodeMapper nodeMapper;
@@ -196,6 +205,13 @@ public class WorkflowEngineService {
             return false;
         }
         WorkflowVersion version = workflowVersionMapper.selectById(instance.getWorkflowVersionId());
+        return isWorkflowVersionActive(version);
+    }
+
+    /**
+     * 判断工作流版本实体是否处于启用状态（避免重复查询 DB）
+     */
+    private boolean isWorkflowVersionActive(WorkflowVersion version) {
         return version != null && version.getIsActive() != null && version.getIsActive() == 1;
     }
 
@@ -316,7 +332,11 @@ public class WorkflowEngineService {
         boolean nodeEvaluationEnabled = isApprovalEvaluationEnabled(currentNode);
         boolean evaluationEnabled = versionEvaluationEnabled || nodeEvaluationEnabled;
         if (versionEvaluationEnabled) {
-            validateVersionApprovalEvaluation(request.getRating());
+            // 版本级评价：评分必填且需在 1-5 星范围内
+            if (request.getRating() == null) {
+                throw new BusinessException(400, "当前工作流要求完成评价（1-5星）");
+            }
+            approvalEvaluationService.validateRating(request.getRating());
         } else if (nodeEvaluationEnabled) {
             validateApprovalEvaluation(currentNode, request.getRating(), request.getRatingDimensions(), request.getComment());
         }
@@ -726,8 +746,11 @@ public class WorkflowEngineService {
             return actions;
         }
 
+        // 查询工作流版本一次，供后续启用状态和评价开关复用
+        WorkflowVersion workflowVersion = workflowVersionMapper.selectById(instance.getWorkflowVersionId());
+
         // 工作流启用状态：实例存在但版本已停用时，不返回任何可用操作，前端不会渲染按钮
-        boolean workflowActive = isWorkflowVersionActive(instance);
+        boolean workflowActive = isWorkflowVersionActive(workflowVersion);
         actions.setWorkflowActive(workflowActive);
         if (!workflowActive) {
             return actions;
@@ -788,16 +811,12 @@ public class WorkflowEngineService {
         actions.setCanCancel(canCancel);
 
         // 工作流版本级别的评价开关：优先于节点级别的评分配置
-        boolean versionEvaluationEnabled = isVersionApprovalEvaluationEnabled(instance);
+        boolean versionEvaluationEnabled = isVersionApprovalEvaluationEnabled(workflowVersion);
         if (versionEvaluationEnabled) {
             // 工作流版本启用了评价，则评分必填
             actions.setEvaluationRequired(canOperate);
             // 传递工作流版本级别的评分配置标记（用于前端区分配置来源）
-            actions.setCurrentNodeRatingConfig(java.util.Map.of(
-                "enabled", true,
-                "required", true,
-                "source", "VERSION"
-            ));
+            actions.setCurrentNodeRatingConfig(VERSION_EVAL_RATING_CONFIG);
         } else {
             // 工作流版本未启用评价，使用节点级别的配置
             actions.setEvaluationRequired(canOperate && isApprovalEvaluationRequired(currentNode));
@@ -1130,10 +1149,14 @@ public class WorkflowEngineService {
             return false;
         }
         WorkflowVersion version = workflowVersionMapper.selectById(instance.getWorkflowVersionId());
-        if (version == null) {
-            return false;
-        }
-        return Boolean.TRUE.equals(version.getApprovalEvaluationEnabled());
+        return isVersionApprovalEvaluationEnabled(version);
+    }
+
+    /**
+     * 判断工作流版本实体是否用了评价功能（避免重复查询 DB）
+     */
+    private boolean isVersionApprovalEvaluationEnabled(WorkflowVersion version) {
+        return version != null && Boolean.TRUE.equals(version.getApprovalEvaluationEnabled());
     }
 
     /**
@@ -1187,8 +1210,8 @@ public class WorkflowEngineService {
             if (ratingDimensions != null) {
                 for (Map.Entry<String, Integer> e : ratingDimensions.entrySet()) {
                     Integer s = e.getValue();
-                    if (s != null && (s < 1 || s > 5)) {
-                        throw new BusinessException(400, "评分必须在 1-5 星之间");
+                    if (s != null) {
+                        approvalEvaluationService.validateRating(s);
                     }
                 }
             }
@@ -1196,18 +1219,9 @@ public class WorkflowEngineService {
             if (Boolean.TRUE.equals(required) && rating == null) {
                 throw new BusinessException(400, "当前节点要求完成评价");
             }
-            if (rating != null && (rating < 1 || rating > 5)) {
-                throw new BusinessException(400, "评分必须在 1-5 星之间");
+            if (rating != null) {
+                approvalEvaluationService.validateRating(rating);
             }
-        }
-    }
-
-    /**
-     * 验证工作流版本级别的评价（单一评分，必填）
-     */
-    private void validateVersionApprovalEvaluation(Integer rating) {
-        if (rating == null || rating < 1 || rating > 5) {
-            throw new BusinessException(400, "当前工作流要求完成评价（1-5星）");
         }
     }
 

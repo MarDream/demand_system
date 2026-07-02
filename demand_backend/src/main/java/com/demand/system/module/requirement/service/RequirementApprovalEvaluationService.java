@@ -32,4 +32,9 @@ public interface RequirementApprovalEvaluationService {
 
     void addSupplement(Long requirementId, Long parentEvaluationId, Long operatorId, String content,
                        List<RequirementAttachmentDTO> attachments);
+
+    /**
+     * 校验评分值是否在有效范围内（1-5 星），允许 null
+     */
+    void validateRating(Integer rating);
 }
