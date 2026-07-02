@@ -111,7 +111,7 @@
         </div>
 
         <el-form :model="filterForm" inline class="filter-form">
-          <div class="filter-main">
+          <div v-show="filterExpanded" class="filter-main">
             <el-form-item label="需求类型" class="filter-item filter-item--type">
               <el-select v-model="filterForm.type" placeholder="全部" clearable class="filter-select--type">
                 <el-option v-for="t in configTypes" :key="t.code" :label="t.name" :value="t.code" />
@@ -146,11 +146,12 @@
                 <el-option label="验收不通过" value="验收不通过" />
               </el-select>
             </el-form-item>
-            <el-form-item label="当前处理人" class="filter-item filter-item--assignee">
+            <el-form-item v-show="filterExpanded && isAllView" label="当前处理人" class="filter-item filter-item--assignee">
               <el-select v-model="filterForm.assigneeId" placeholder="请选择" clearable class="filter-select--assignee">
                 <el-option v-for="user in filterUserList" :key="user.id" :label="user.realName || user.username" :value="user.id" />
               </el-select>
             </el-form-item>
+
             <el-form-item v-show="filterExpanded && isAllView" label="时间维度" class="filter-item filter-item--dimension">
               <el-select v-model="timeDimension" placeholder="选择时间维度" clearable class="filter-select--dimension">
                 <el-option label="创建时间" value="createdAt" />

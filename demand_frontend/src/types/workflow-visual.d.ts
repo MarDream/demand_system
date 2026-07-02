@@ -103,12 +103,14 @@ export interface WorkflowVersionDTO {
   config?: WorkflowConfigDTO
   knowledgeBaseId?: number
   knowledgeBaseName?: string
+  approvalEvaluationEnabled?: boolean
 }
 
 export interface WorkflowVersionMetaUpdateDTO {
   version: string
   name: string
   knowledgeBaseId?: number | null
+  approvalEvaluationEnabled?: boolean
 }
 
 export interface WorkflowVersionActivationDTO {

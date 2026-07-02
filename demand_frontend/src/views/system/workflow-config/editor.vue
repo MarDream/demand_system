@@ -62,6 +62,14 @@
                       <el-icon class="knowledge-binding-help"><QuestionFilled /></el-icon>
                     </el-tooltip>
                   </div>
+                  <div class="version-input-group evaluation-binding-group">
+                    <label class="evaluation-binding-label">评价状态</label>
+                    <el-switch v-model="versionForm.approvalEvaluationEnabled" />
+                    <span class="evaluation-binding-desc">{{ versionForm.approvalEvaluationEnabled ? '审批时显示评分（必填）' : '审批时不显示评分' }}</span>
+                    <el-tooltip content="开启后，使用该工作流的工单在审批时需要填写评分；关闭则隐藏评分功能" placement="top">
+                      <el-icon class="evaluation-binding-help"><QuestionFilled /></el-icon>
+                    </el-tooltip>
+                  </div>
                 </div>
               </template>
             </div>
@@ -211,6 +219,25 @@
                   <el-checkbox v-model="nodeForm.requireAttachment">
                     必须上传附件
                   </el-checkbox>
+                </div>
+              </el-form-item>
+
+              <!-- 消息提醒：进入本节点后向已审批路径 / 实际处理用户推送站内消息 -->
+              <el-form-item v-if="nodeForm.nodeType !== 'end'" label="消息提醒">
+                <div class="node-notify-panel">
+                  <div class="node-notify-row">
+                    <el-switch v-model="nodeForm.notifyOnEnter" />
+                    <span class="node-notify-label">流转后向相关用户推送站内消息</span>
+                    <el-tooltip content="开启后，流转到本节点时自动给指定范围的用户发送站内消息提醒" placement="top">
+                      <el-icon class="node-notify-help"><QuestionFilled /></el-icon>
+                    </el-tooltip>
+                  </div>
+                  <template v-if="nodeForm.notifyOnEnter">
+                    <el-radio-group v-model="nodeForm.notifyScope" class="node-notify-scope">
+                      <el-radio value="PATH_APPROVERS">已审批节点路径上的用户（含创建人）</el-radio>
+                      <el-radio value="ACTUAL_HANDLERS">从需求创建到当前节点实际处理过的用户</el-radio>
+                    </el-radio-group>
+                  </template>
                 </div>
               </el-form-item>
 
@@ -518,10 +545,12 @@ const versionForm = reactive<{
   version: string
   name: string
   knowledgeBaseId: number | null
+  approvalEvaluationEnabled: boolean
 }>({
   version: '',
   name: '',
-  knowledgeBaseId: null
+  knowledgeBaseId: null,
+  approvalEvaluationEnabled: false
 })
 const nodeStatusOptions = ref<NodeStatus[]>([])
 
@@ -573,6 +602,8 @@ const nodeForm = reactive<Partial<WorkflowNodeDTO> & {
   allowCancel?: boolean
   projectRequired?: boolean
   requireAttachment?: boolean
+  notifyOnEnter?: boolean
+  notifyScope?: 'PATH_APPROVERS' | 'ACTUAL_HANDLERS'
   ratingConfig: {
     enabled: boolean
     required: boolean
@@ -607,6 +638,8 @@ const nodeForm = reactive<Partial<WorkflowNodeDTO> & {
   allowCancel: true,
   projectRequired: false,
   requireAttachment: false,
+  notifyOnEnter: false,
+  notifyScope: 'PATH_APPROVERS',
   ratingConfig: {
     enabled: false,
     required: false,
@@ -817,6 +850,7 @@ const syncVersionForm = (version?: WorkflowVersionDTO) => {
   versionForm.version = version?.version || ''
   versionForm.name = version?.name || ''
   versionForm.knowledgeBaseId = version?.knowledgeBaseId ?? null
+  versionForm.approvalEvaluationEnabled = version?.approvalEvaluationEnabled ?? false
 }
 
 const getDesiredVersionMeta = (): WorkflowVersionMetaUpdateDTO | null => {
@@ -848,7 +882,7 @@ const getDesiredVersionMeta = (): WorkflowVersionMetaUpdateDTO | null => {
     return null
   }
 
-  return { version, name, knowledgeBaseId: versionForm.knowledgeBaseId }
+  return { version, name, knowledgeBaseId: versionForm.knowledgeBaseId, approvalEvaluationEnabled: versionForm.approvalEvaluationEnabled }
 }
 
 const syncEditorVersionRoute = async (versionId: number, projectId: number) => {
@@ -1863,6 +1897,11 @@ const handleNodeClick = (data: any) => {
     allowCancel: data.properties?.allowCancel ?? data.properties?.properties?.allowCancel ?? true,
     projectRequired: data.properties?.projectRequired ?? data.properties?.properties?.projectRequired ?? false,
     requireAttachment: data.properties?.requireAttachment ?? data.properties?.properties?.requireAttachment ?? false,
+    notifyOnEnter: data.properties?.notifyOnEnter ?? data.properties?.properties?.notifyOnEnter ?? false,
+    notifyScope: (() => {
+      const scope = data.properties?.notifyScope ?? data.properties?.properties?.notifyScope
+      return scope === 'ACTUAL_HANDLERS' ? 'ACTUAL_HANDLERS' : 'PATH_APPROVERS'
+    })(),
     ratingConfig: data.properties?.ratingConfig ?? data.properties?.properties?.ratingConfig ?? {
       enabled: false,
       required: false,
@@ -2002,6 +2041,8 @@ const handleSaveNodeConfig = () => {
       allowCancel: nodeForm.allowCancel,
       projectRequired: showProjectRequiredCheckbox.value ? nodeForm.projectRequired : false,
       requireAttachment: nodeForm.requireAttachment,
+      notifyOnEnter: nodeForm.notifyOnEnter ?? false,
+      notifyScope: nodeForm.notifyOnEnter ? (nodeForm.notifyScope || 'PATH_APPROVERS') : undefined,
       ratingConfig: nodeForm.nodeType === 'approval' ? nodeForm.ratingConfig : undefined,
       [SELECTED_NEXT_NODE_PROPERTY]: validNextNode,
       // 会签配置
@@ -2704,6 +2745,30 @@ onBeforeUnmount(() => {
           cursor: help;
         }
 
+        .evaluation-binding-group {
+          flex-direction: row;
+          align-items: center;
+          gap: 6px;
+          margin-top: 4px;
+        }
+
+        .evaluation-binding-label {
+          font-size: 12px;
+          color: var(--color-text-secondary);
+          white-space: nowrap;
+        }
+
+        .evaluation-binding-desc {
+          font-size: 12px;
+          color: var(--el-text-color-placeholder);
+        }
+
+        .evaluation-binding-help {
+          font-size: 14px;
+          color: var(--color-muted-text);
+          cursor: help;
+        }
+
         .knowledge-tag {
           display: inline-flex;
           align-items: center;
@@ -2902,6 +2967,52 @@ onBeforeUnmount(() => {
 
     :deep(.el-checkbox__label) {
       line-height: 24px;
+    }
+  }
+
+  .node-notify-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-alt);
+    width: 100%;
+  }
+
+  .node-notify-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: nowrap;
+  }
+
+  .node-notify-label {
+    color: var(--color-text-primary);
+    font-size: 13px;
+    line-height: 20px;
+  }
+
+  .node-notify-help {
+    color: var(--color-muted-text);
+    cursor: help;
+  }
+
+  .node-notify-scope {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+
+    :deep(.el-radio) {
+      margin-right: 0;
+      align-items: flex-start;
+      min-height: 22px;
+    }
+
+    :deep(.el-radio__label) {
+      line-height: 1.5;
+      padding-left: 6px;
     }
   }
 

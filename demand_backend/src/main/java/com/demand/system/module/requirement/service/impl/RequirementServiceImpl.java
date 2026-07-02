@@ -1644,12 +1644,30 @@ public class RequirementServiceImpl implements RequirementService {
         }
 
         String result = switch (currentNode.getAssigneeType()) {
-            case "SPECIFIED_USER" -> resolveSpecifiedUsersDisplay(currentNode.getAssigneeUserIds());
-            case "SPECIFIED_ROLE" -> resolveRoleDisplay(currentNode.getAssigneeRoleId());
-            case "SPECIFIED_ROLE_GROUP" -> resolveRoleGroupDisplay(currentNode.getAssigneeRoleGroupId());
-            case "SPECIFIED_ORG" -> resolveOrgDisplay(currentNode.getAssigneeOrgId(), currentNode.getProperties());
-            case "CREATOR" -> vo.getCreatorName();
-            case "PREV_APPROVER" -> resolvePreviousApproverDisplay(instance.getId(), currentNode.getNodeId());
+            case "SPECIFIED_USER" -> {
+                String users = resolveSpecifiedUsersDisplay(currentNode.getAssigneeUserIds());
+                yield users != null ? "处理人 " + users : null;
+            }
+            case "SPECIFIED_ROLE" -> {
+                String role = resolveRoleDisplay(currentNode.getAssigneeRoleId());
+                yield role != null ? "处理角色 " + role : null;
+            }
+            case "SPECIFIED_ROLE_GROUP" -> {
+                String roleGroup = resolveRoleGroupDisplay(currentNode.getAssigneeRoleGroupId());
+                yield roleGroup != null ? "处理角色组 " + roleGroup : null;
+            }
+            case "SPECIFIED_ORG" -> {
+                String org = resolveOrgDisplay(currentNode.getAssigneeOrgId(), currentNode.getProperties());
+                yield org != null ? "指定组织 " + org : null;
+            }
+            case "CREATOR" -> {
+                String creator = vo.getCreatorName();
+                yield creator != null ? "创建人 " + creator : null;
+            }
+            case "PREV_APPROVER" -> {
+                String prev = resolvePreviousApproverDisplay(instance.getId(), currentNode.getNodeId());
+                yield prev != null ? "上一处理人 " + prev : null;
+            }
             default -> null;
         };
 

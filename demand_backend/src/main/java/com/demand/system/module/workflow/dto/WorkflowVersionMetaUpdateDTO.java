@@ -17,6 +17,8 @@ public class WorkflowVersionMetaUpdateDTO {
 
     private Long knowledgeBaseId;
 
+    private Boolean approvalEvaluationEnabled;
+
     public String getVersion() {
         return version;
     }
@@ -39,5 +41,13 @@ public class WorkflowVersionMetaUpdateDTO {
 
     public void setKnowledgeBaseId(Long knowledgeBaseId) {
         this.knowledgeBaseId = knowledgeBaseId;
+    }
+
+    public Boolean getApprovalEvaluationEnabled() {
+        return approvalEvaluationEnabled;
+    }
+
+    public void setApprovalEvaluationEnabled(Boolean approvalEvaluationEnabled) {
+        this.approvalEvaluationEnabled = approvalEvaluationEnabled;
     }
 }

@@ -611,8 +611,8 @@
           @closed="resetApprovalDialog"
         >
           <p class="approval-dialog-tip">提交到下一节点前，请补充审核信息。</p>
-          <div class="approval-dialog-rate">
-            <span class="approval-dialog-label">评分</span>
+          <div v-if="workflowRuntime.evaluationRequired" class="approval-dialog-rate">
+            <span class="approval-dialog-label">评分（必填）</span>
             <el-rate v-model="approvalRating" :max="5" />
           </div>
           <el-form-item
@@ -737,7 +737,7 @@
           </div>
         </div>
       </template>
-      <div class="rich-image-preview-body">
+      <div class="rich-image-preview-body" @wheel.prevent="handleRichImageWheel">
         <img
           v-if="richImagePreviewSrc"
           :src="richImagePreviewSrc"
@@ -1480,6 +1480,15 @@ function handleRichContentClick(event: MouseEvent) {
   richImagePreviewVisible.value = true
 }
 
+function handleRichImageWheel(event: WheelEvent) {
+  const delta = event.deltaY || event.detail
+  if (delta < 0) {
+    richImagePreviewZoom.value = Math.min(300, richImagePreviewZoom.value + 15)
+  } else {
+    richImagePreviewZoom.value = Math.max(50, richImagePreviewZoom.value - 15)
+  }
+}
+
 function zoomInRichImage() {
   richImagePreviewZoom.value = Math.min(300, richImagePreviewZoom.value + 25)
 }
@@ -1831,7 +1840,8 @@ async function handleSwitchParallelBranch(branchId: number) {
 }
 
 async function confirmApprovalTransition() {
-  if (!approvalRating.value || approvalRating.value < 1) {
+  // 工作流版本启用评价时，评分必填
+  if (workflowRuntime.value.evaluationRequired && (!approvalRating.value || approvalRating.value < 1)) {
     ElMessage.warning('请选择 1-5 星评价')
     return
   }
@@ -1845,7 +1855,7 @@ async function confirmApprovalTransition() {
     return
   }
   await executeTransition({
-    rating: approvalRating.value,
+    rating: workflowRuntime.value.evaluationRequired ? approvalRating.value : undefined,
     comment: approvalComment.value.trim() || undefined,
     attachments: approvalAttachments.value.length > 0 ? approvalAttachments.value : undefined,
   })

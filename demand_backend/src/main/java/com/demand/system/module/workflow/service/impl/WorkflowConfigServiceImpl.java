@@ -522,6 +522,11 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             version.setKnowledgeBaseId(null);
         }
 
+        // 更新评价开关
+        if (updateDTO.getApprovalEvaluationEnabled() != null) {
+            version.setApprovalEvaluationEnabled(updateDTO.getApprovalEvaluationEnabled());
+        }
+
         workflowVersionMapper.updateById(version);
 
         return toVersionDTO(version);

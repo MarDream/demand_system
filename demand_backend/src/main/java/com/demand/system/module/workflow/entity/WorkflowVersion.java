@@ -54,6 +54,8 @@ public class WorkflowVersion {
 
     private Long knowledgeBaseId;
 
+    private Boolean approvalEvaluationEnabled;
+
     public Long getId() {
         return id;
     }
@@ -228,6 +230,14 @@ public class WorkflowVersion {
 
     public void setKnowledgeBaseId(Long knowledgeBaseId) {
         this.knowledgeBaseId = knowledgeBaseId;
+    }
+
+    public Boolean getApprovalEvaluationEnabled() {
+        return approvalEvaluationEnabled;
+    }
+
+    public void setApprovalEvaluationEnabled(Boolean approvalEvaluationEnabled) {
+        this.approvalEvaluationEnabled = approvalEvaluationEnabled;
     }
 
     @Override

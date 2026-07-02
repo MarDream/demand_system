@@ -262,6 +262,8 @@ public class WorkflowEngineService {
                 .set(Requirement::getIsDraft, false));
 
         notificationService.notifyNodeEntered(requirement, targetNode, operatorId);
+        // 节点消息提醒开关开启时，向已审批路径 / 实际处理用户推送站内消息
+        notificationService.notifyApproversOnTransition(requirement, targetNode, operatorId, instance.getId());
         initCountersignIfNeeded(instance.getId(), targetNode, requirement);
 
         // ====== 待办任务同步（提交时无 selectedAssigneeId，按角色/角色组/组织分配）======
@@ -308,8 +310,14 @@ public class WorkflowEngineService {
                 && !countersignService.canProceedAfterCountersign(instance.getId(), instance.getCurrentNodeId(), currentNode)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "会签尚未完成，无法流转");
         }
-        boolean approvalEvaluationEnabled = isApprovalEvaluationEnabled(currentNode);
-        if (approvalEvaluationEnabled) {
+        // 工作流版本级别启用评价时，评分必填
+        boolean versionEvaluationEnabled = isVersionApprovalEvaluationEnabled(instance);
+        // 节点级别启用评价
+        boolean nodeEvaluationEnabled = isApprovalEvaluationEnabled(currentNode);
+        boolean evaluationEnabled = versionEvaluationEnabled || nodeEvaluationEnabled;
+        if (versionEvaluationEnabled) {
+            validateVersionApprovalEvaluation(request.getRating());
+        } else if (nodeEvaluationEnabled) {
             validateApprovalEvaluation(currentNode, request.getRating(), request.getRatingDimensions(), request.getComment());
         }
         // 修复 P2：按节点 properties.requireComment 校验意见必填
@@ -346,7 +354,7 @@ public class WorkflowEngineService {
         newTransition.setAttachmentIds(extractAttachmentIds(request.getAttachments()));
         transitionMapper.insert(newTransition);
 
-        if (approvalEvaluationEnabled && currentNode != null) {
+        if (evaluationEnabled && currentNode != null) {
             approvalEvaluationService.saveOnApprovalTransition(
                     instance, currentNode, newTransition.getId(), operatorId,
                     request.getRating(), request.getRatingDimensions(),
@@ -386,6 +394,8 @@ public class WorkflowEngineService {
         requirementMapper.update(null, requirementUpdate);
 
         notificationService.notifyNodeEntered(requirement, targetNode, operatorId);
+        // 节点消息提醒开关开启时，向已审批路径 / 实际处理用户推送站内消息
+        notificationService.notifyApproversOnTransition(requirement, targetNode, operatorId, instance.getId());
 
         // ====== 知识库自动入库：流转附件归集到工作流绑定的知识库 ======
         autoIngestTransitionAttachments(instance, request, requirement, operatorId);
@@ -776,16 +786,31 @@ public class WorkflowEngineService {
         actions.setCanTransition(canOperate && !transitions.isEmpty());
         actions.setCanRollback(canOperate && instance.getPreviousNodeId() != null && !"end".equals(currentNode.getNodeType()));
         actions.setCanCancel(canCancel);
-        actions.setEvaluationRequired(canOperate && isApprovalEvaluationRequired(currentNode));
-        if (currentNode != null && currentNode.getProperties() != null) {
-            Object ratingCfg = currentNode.getProperties().get("ratingConfig");
-            if (ratingCfg instanceof Map) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> cfg = (Map<String, Object>) ratingCfg;
-                Boolean required = (Boolean) cfg.getOrDefault("required", false);
-                actions.setEvaluationRequired(canOperate && Boolean.TRUE.equals(required));
-                if (Boolean.TRUE.equals(cfg.get("enabled"))) {
-                    actions.setCurrentNodeRatingConfig(ratingCfg);
+
+        // 工作流版本级别的评价开关：优先于节点级别的评分配置
+        boolean versionEvaluationEnabled = isVersionApprovalEvaluationEnabled(instance);
+        if (versionEvaluationEnabled) {
+            // 工作流版本启用了评价，则评分必填
+            actions.setEvaluationRequired(canOperate);
+            // 传递工作流版本级别的评分配置标记（用于前端区分配置来源）
+            actions.setCurrentNodeRatingConfig(java.util.Map.of(
+                "enabled", true,
+                "required", true,
+                "source", "VERSION"
+            ));
+        } else {
+            // 工作流版本未启用评价，使用节点级别的配置
+            actions.setEvaluationRequired(canOperate && isApprovalEvaluationRequired(currentNode));
+            if (currentNode != null && currentNode.getProperties() != null) {
+                Object ratingCfg = currentNode.getProperties().get("ratingConfig");
+                if (ratingCfg instanceof Map) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> cfg = (Map<String, Object>) ratingCfg;
+                    Boolean required = (Boolean) cfg.getOrDefault("required", false);
+                    actions.setEvaluationRequired(canOperate && Boolean.TRUE.equals(required));
+                    if (Boolean.TRUE.equals(cfg.get("enabled"))) {
+                        actions.setCurrentNodeRatingConfig(ratingCfg);
+                    }
                 }
             }
         }
@@ -893,14 +918,15 @@ public class WorkflowEngineService {
 
     /**
      * 根据当前节点配置和候选用户列表，计算负责人列的显示文本。
+     * 显示格式：类型前缀 + 名称，如"处理角色 运维需求分析员"、"指定组织 市民服务中心"
      *
      * <p>规则优先级：</p>
      * <ol>
-     *   <li>SPECIFIED_ROLE + 1 个候选人 → 用户姓名</li>
-     *   <li>SPECIFIED_ROLE + 多个候选人 → 角色名称</li>
-     *   <li>有候选用户 → 第一个用户名</li>
-     *   <li>CREATOR → 提交人名称</li>
-     *   <li>PREV_APPROVER → "上一节点处理人"</li>
+     *   <li>SPECIFIED_ROLE + 1 个候选人 → "处理人 张三"</li>
+     *   <li>SPECIFIED_ROLE + 多个候选人 → "处理角色 运维需求分析员"</li>
+     *   <li>有候选用户 → "处理人 张三"</li>
+     *   <li>CREATOR → "创建人 张三"</li>
+     *   <li>PREV_APPROVER → "上一处理人"</li>
      *   <li>其他 → "-"</li>
      * </ol>
      */
@@ -921,7 +947,7 @@ public class WorkflowEngineService {
                 if (candidates != null) {
                     for (AssigneeCandidateDTO candidate : candidates) {
                         if (candidate.getId() != null && candidate.getId().equals(assigneeId)) {
-                            return candidate.getName();
+                            return "处理人 " + candidate.getName();
                         }
                     }
                 }
@@ -929,13 +955,13 @@ public class WorkflowEngineService {
             if (candidates != null && !candidates.isEmpty()) {
                 if (candidates.size() == 1) {
                     // 仅 1 人 → 显示用户姓名
-                    return candidates.get(0).getName();
+                    return "处理人 " + candidates.get(0).getName();
                 } else {
                     // 多人 → 显示角色名称
-                    return resolveRoleName(node.getAssigneeRoleId());
+                    return "处理角色 " + resolveRoleName(node.getAssigneeRoleId());
                 }
             }
-            return resolveRoleName(node.getAssigneeRoleId()) + "（暂无成员）";
+            return "处理角色 " + resolveRoleName(node.getAssigneeRoleId()) + "（暂无成员）";
         }
 
         // SPECIFIED_USER / SPECIFIED_ORG 等：有候选人时优先判断 requirement.assigneeId 是否匹配
@@ -945,27 +971,28 @@ public class WorkflowEngineService {
                 Long assigneeId = requirement.getAssigneeId().longValue();
                 for (AssigneeCandidateDTO candidate : candidates) {
                     if (candidate.getId() != null && candidate.getId().equals(assigneeId)) {
-                        return candidate.getName();
+                        return "处理人 " + candidate.getName();
                     }
                 }
             }
-            return candidates.get(0).getName();
+            return "处理人 " + candidates.get(0).getName();
         }
 
         // CREATOR: 取提交人姓名
         if ("CREATOR".equals(assigneeType)) {
-            return resolveUserName(requirement != null ? requirement.getCreatorId() : null, "提交人");
+            String userName = resolveUserName(requirement != null ? requirement.getCreatorId() : null, null);
+            return userName != null ? "创建人 " + userName : "-";
         }
 
         // PREV_APPROVER
         if ("PREV_APPROVER".equals(assigneeType)) {
-            return "上一节点处理人";
+            return "上一处理人";
         }
 
         // SPECIFIED_ORG / SPECIFIED_ROLE_GROUP 等兜底
         return switch (assigneeType) {
-            case "SPECIFIED_ORG" -> resolveOrgDisplayName(node) + "（暂无成员）";
-            case "SPECIFIED_ROLE_GROUP" -> resolveRoleGroupName(node.getAssigneeRoleGroupId()) + "（暂无成员）";
+            case "SPECIFIED_ORG" -> "指定组织 " + resolveOrgDisplayName(node) + "（暂无成员）";
+            case "SPECIFIED_ROLE_GROUP" -> "处理角色组 " + resolveRoleGroupName(node.getAssigneeRoleGroupId()) + "（暂无成员）";
             case "SPECIFIED_USER" -> "未指定用户";
             default -> "-";
         };
@@ -1096,6 +1123,20 @@ public class WorkflowEngineService {
     }
 
     /**
+     * 工作流版本是否启用了评价功能（approvalEvaluationEnabled）
+     */
+    private boolean isVersionApprovalEvaluationEnabled(WorkflowInstance instance) {
+        if (instance == null || instance.getWorkflowVersionId() == null) {
+            return false;
+        }
+        WorkflowVersion version = workflowVersionMapper.selectById(instance.getWorkflowVersionId());
+        if (version == null) {
+            return false;
+        }
+        return Boolean.TRUE.equals(version.getApprovalEvaluationEnabled());
+    }
+
+    /**
      * 修复 P2：判断当前节点是否要求必填审批意见。
      * 读取节点 properties.requireComment。
      */
@@ -1158,6 +1199,15 @@ public class WorkflowEngineService {
             if (rating != null && (rating < 1 || rating > 5)) {
                 throw new BusinessException(400, "评分必须在 1-5 星之间");
             }
+        }
+    }
+
+    /**
+     * 验证工作流版本级别的评价（单一评分，必填）
+     */
+    private void validateVersionApprovalEvaluation(Integer rating) {
+        if (rating == null || rating < 1 || rating > 5) {
+            throw new BusinessException(400, "当前工作流要求完成评价（1-5星）");
         }
     }
 

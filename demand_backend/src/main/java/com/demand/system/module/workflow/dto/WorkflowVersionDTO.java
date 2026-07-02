@@ -42,6 +42,8 @@ public class WorkflowVersionDTO {
 
     private String knowledgeBaseName;
 
+    private Boolean approvalEvaluationEnabled;
+
     public Long getId() {
         return id;
     }
@@ -192,5 +194,13 @@ public class WorkflowVersionDTO {
 
     public void setKnowledgeBaseName(String knowledgeBaseName) {
         this.knowledgeBaseName = knowledgeBaseName;
+    }
+
+    public Boolean getApprovalEvaluationEnabled() {
+        return approvalEvaluationEnabled;
+    }
+
+    public void setApprovalEvaluationEnabled(Boolean approvalEvaluationEnabled) {
+        this.approvalEvaluationEnabled = approvalEvaluationEnabled;
     }
 }
