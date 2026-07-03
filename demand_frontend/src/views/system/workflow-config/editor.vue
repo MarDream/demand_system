@@ -133,19 +133,27 @@
                 <el-icon><Refresh /></el-icon>
                 重置
               </el-button>
-              <AppButton
-                class="toolbar-action-btn"
-                @click="handleFormatLayout"
-                permission="button:workflow:update"
-                :disabled="isViewMode"
-              >
-                <el-icon><Grid /></el-icon>
-                格式化排版
-              </AppButton>
-              <AppButton class="toolbar-action-btn" @click="handleClearCanvas" type="danger" permission="button:workflow:update" :disabled="isViewMode">
-                <el-icon><Delete /></el-icon>
-                清空画布
-              </AppButton>
+              <el-tooltip content="查看模式不可编辑" placement="bottom" :disabled="!isViewMode">
+                <span>
+                  <AppButton
+                    class="toolbar-action-btn"
+                    @click="handleFormatLayout"
+                    permission="button:workflow:update"
+                    :disabled="isViewMode"
+                  >
+                    <el-icon><Grid /></el-icon>
+                    格式化排版
+                  </AppButton>
+                </span>
+              </el-tooltip>
+              <el-tooltip content="查看模式不可编辑" placement="bottom" :disabled="!isViewMode">
+                <span>
+                  <AppButton class="toolbar-action-btn" @click="handleClearCanvas" type="danger" permission="button:workflow:update" :disabled="isViewMode">
+                    <el-icon><Delete /></el-icon>
+                    清空画布
+                  </AppButton>
+                </span>
+              </el-tooltip>
             </div>
           </div>
         </div>

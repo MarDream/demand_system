@@ -1,9 +1,7 @@
 package com.demand.system.module.workflow.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.demand.system.common.exception.BusinessException;
-import com.demand.system.module.requirement.entity.RequirementTypeConfig;
 import com.demand.system.module.requirement.mapper.RequirementTypeMapper;
 import com.demand.system.module.workflow.dto.WorkflowValidationIssue;
 import com.demand.system.module.workflow.dto.WorkflowVersionDTO;
@@ -105,9 +103,6 @@ public class WorkflowActivationServiceImpl implements WorkflowActivationService 
         version.setIsActive(0);
         version.setActivationStatus("inactive");
         workflowVersionMapper.updateById(version);
-        requirementTypeMapper.update(null, new LambdaUpdateWrapper<RequirementTypeConfig>()
-                .eq(RequirementTypeConfig::getWorkflowVersionId, versionId)
-                .set(RequirementTypeConfig::getWorkflowVersionId, null));
         return toVersionDTO(version);
     }
 

@@ -1,6 +1,7 @@
 package com.demand.system.module.requirement.service.impl;
 
 import com.demand.system.common.exception.BusinessException;
+import com.demand.system.common.util.UserNameResolver;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.requirement.dto.RequirementApprovalEvaluationVO;
 import com.demand.system.module.requirement.dto.RequirementAttachmentDTO;
@@ -9,8 +10,6 @@ import com.demand.system.module.requirement.entity.Requirement;
 import com.demand.system.module.requirement.mapper.RequirementApprovalEvaluationMapper;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
 import com.demand.system.module.requirement.service.RequirementApprovalEvaluationService;
-import com.demand.system.module.user.entity.User;
-import com.demand.system.module.user.mapper.UserMapper;
 import com.demand.system.module.requirement.service.RatingFeedbackService;
 import com.demand.system.module.workflow.entity.WorkflowInstance;
 import com.demand.system.module.workflow.entity.WorkflowInstanceTransition;
@@ -37,19 +36,19 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
     private final RequirementApprovalEvaluationMapper evaluationMapper;
     private final WorkflowInstanceTransitionMapper transitionMapper;
     private final RequirementMapper requirementMapper;
-    private final UserMapper userMapper;
     private final RatingFeedbackService feedbackService;
+    private final UserNameResolver userNameResolver;
 
     public RequirementApprovalEvaluationServiceImpl(RequirementApprovalEvaluationMapper evaluationMapper,
                                                    WorkflowInstanceTransitionMapper transitionMapper,
                                                    RequirementMapper requirementMapper,
-                                                   UserMapper userMapper,
-                                                   RatingFeedbackService feedbackService) {
+                                                   RatingFeedbackService feedbackService,
+                                                   UserNameResolver userNameResolver) {
         this.evaluationMapper = evaluationMapper;
         this.transitionMapper = transitionMapper;
         this.requirementMapper = requirementMapper;
-        this.userMapper = userMapper;
         this.feedbackService = feedbackService;
+        this.userNameResolver = userNameResolver;
     }
 
     @Override
@@ -291,7 +290,7 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
         vo.setIsSupplement(false);
         vo.setCanSupplement(evaluation != null && canSupplement(requirement, currentUserId));
         vo.setEvaluatorId(transition.getOperatorId());
-        vo.setEvaluatorName(resolveUserName(transition.getOperatorId()));
+        vo.setEvaluatorName(userNameResolver.resolveUserName(transition.getOperatorId()));
         vo.setAction(action);
         vo.setActionLabel(resolveActionLabel(transition, action));
         vo.setResult(resolveResult(transition, action));
@@ -309,7 +308,7 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
         RequirementApprovalEvaluationVO vo = new RequirementApprovalEvaluationVO();
         BeanUtils.copyProperties(supplement, vo);
         vo.setCanSupplement(false);
-        vo.setEvaluatorName(resolveUserName(supplement.getEvaluatorId()));
+        vo.setEvaluatorName(userNameResolver.resolveUserName(supplement.getEvaluatorId()));
         vo.setAction("supplement");
         vo.setActionLabel("补充意见");
         vo.setResult("SUPPLEMENT");
@@ -412,16 +411,6 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
         return transition != null && "start".equalsIgnoreCase(transition.getFromNodeId());
     }
 
-    private String resolveUserName(Long userId) {
-        if (userId == null) {
-            return null;
-        }
-        User user = userMapper.selectById(userId);
-        if (user == null) {
-            return null;
-        }
-        return StringUtils.hasText(user.getRealName()) ? user.getRealName() : user.getUsername();
-    }
 
     private String resolveActionLabel(WorkflowInstanceTransition transition, String action) {
         return switch (action) {

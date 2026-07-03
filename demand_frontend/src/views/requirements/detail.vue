@@ -239,31 +239,33 @@
               <span class="section-hint">按时间倒序展示提交、通过、驳回与取消意见</span>
             </div>
             <el-empty v-if="sortedApprovalEvaluations.length === 0" description="暂无审核记录" :image-size="60" />
-            <el-timeline v-else class="approval-evaluation-timeline">
-              <el-timeline-item
+            <div v-else class="approval-evaluation-list">
+              <div
                 v-for="item in sortedApprovalEvaluations"
                 :key="item.id"
-                :timestamp="formatDate(item.createdAt)"
-                placement="top"
-                :type="approvalTimelineItemType(item.result)"
+                class="approval-evaluation-card"
+                :class="`is-${approvalResultTagType(item.result)}`"
               >
-                <el-card shadow="never" class="approval-evaluation-card">
+                <div class="approval-evaluation-card__timeline">
+                  <div class="approval-evaluation-card__dot" :class="`is-${approvalResultTagType(item.result)}`" />
+                  <div class="approval-evaluation-card__line" />
+                </div>
+                <div class="approval-evaluation-card__body">
                   <div class="approval-evaluation-header">
-                    <el-avatar :size="32">{{ item.evaluatorName?.charAt(0) || '审' }}</el-avatar>
+                    <el-avatar :size="28" class="approval-evaluation-avatar">{{ item.evaluatorName?.charAt(0) || '审' }}</el-avatar>
                     <div class="approval-evaluation-meta">
                       <div class="approval-evaluation-title">
                         <strong>{{ item.evaluatorName || '处理人' }}</strong>
-                        <el-tag v-if="item.id !== -1" size="small" effect="dark" :type="approvalResultTagType(item.result)">
+                        <el-tag v-if="item.id !== -1" size="small" effect="dark" round :type="approvalResultTagType(item.result)">
                           {{ item.resultLabel || item.actionLabel || '审核' }}
                         </el-tag>
-                        <el-tag size="small" effect="plain" type="info">{{ item.nodeName }}</el-tag>
-                        <el-tag v-if="item.nodeStatusName && item.nodeStatusName !== item.nodeName" size="small" effect="plain">{{ item.nodeStatusName }}</el-tag>
+                        <span class="approval-evaluation-node">{{ item.nodeName }}</span>
                       </div>
+                      <div class="approval-evaluation-time">{{ formatDate(item.createdAt) }}</div>
                     </div>
                     <div v-if="item.rating || item.canSupplement" class="approval-evaluation-side">
                       <div v-if="item.rating" class="approval-evaluation-rating">
-                        <span class="approval-evaluation-rating__label">评分</span>
-                        <el-rate :model-value="item.rating" disabled />
+                        <el-rate :model-value="item.rating" disabled size="small" />
                       </div>
                       <el-button
                         v-if="item.canSupplement"
@@ -305,9 +307,9 @@
                       </div>
                     </div>
                   </div>
-                </el-card>
-              </el-timeline-item>
-            </el-timeline>
+                </div>
+              </div>
+            </div>
           </div>
         </el-tab-pane>
 
@@ -414,24 +416,30 @@
 
             <div v-if="!workflowPanelCollapsed" class="workflow-action-panel">
               <div class="workflow-action-panel__header">
+                <div class="workflow-action-panel__header-icon">
+                  <el-icon><CircleCheck /></el-icon>
+                </div>
                 <div>
-                  <div class="workflow-action-panel__title">审批功能</div>
-                  <div class="workflow-action-panel__subtitle">选择目标节点并提交到下一审批环节</div>
+                  <div class="workflow-action-panel__title">审批操作</div>
+                  <div class="workflow-action-panel__subtitle">当前节点决策与流转</div>
                 </div>
               </div>
 
-              <div v-if="showCurrentNodeStatus" class="current-node-status workflow-action-panel__status">
-                <div class="current-node-status__item">
-                  <span class="current-node-status__label">当前节点</span>
-                  <span class="current-node-status__value">{{ currentNodeDisplayName }}</span>
+              <div v-if="showCurrentNodeStatus" class="workflow-action-panel__status-bar">
+                <div class="workflow-action-panel__status-node">
+                  <span class="workflow-action-panel__status-dot" :class="`is-${statusTagType(currentNodeStatusName)}`" />
+                  <span class="workflow-action-panel__status-label">当前节点</span>
+                  <span class="workflow-action-panel__status-value">{{ currentNodeDisplayName }}</span>
                 </div>
-                <span class="current-node-status__sep" />
-                <div class="current-node-status__item">
-                  <span class="current-node-status__label">节点状态</span>
-                  <el-tag size="small" effect="light" :type="statusTagType(currentNodeStatusName)">
-                    {{ currentNodeStatusName }}
-                  </el-tag>
-                </div>
+                <el-tag
+                  v-if="showNodeStatusTag"
+                  size="small"
+                  effect="light"
+                  round
+                  :type="statusTagType(currentNodeStatusName)"
+                >
+                  {{ currentNodeStatusName }}
+                </el-tag>
               </div>
 
               <el-alert
@@ -445,125 +453,137 @@
               />
 
               <div class="workflow-action-panel__body">
-                <div class="workflow-action-panel__field">
-                  <span class="workflow-action-panel__field-label">目标节点</span>
-                  <el-select
-                    v-model="selectedTransitionTargetId"
-                    :disabled="transitionLoading || transitionOptions.length === 0"
-                    :placeholder="transitionOptions.length > 0 ? '选择目标节点' : '当前无可执行操作'"
-                    class="workflow-action-panel__control"
-                  >
-                    <el-option
-                      v-for="transition in transitionOptions"
-                      :key="transitionOptionKey(transition)"
-                      :label="transitionOptionLabel(transition)"
-                      :value="transitionOptionValue(transition)"
-                    />
-                  </el-select>
-                </div>
+                <div class="workflow-action-panel__section">
+                  <div class="workflow-action-panel__section-title">流转配置</div>
 
-                <div class="workflow-action-panel__field workflow-action-panel__field--vertical">
-                  <div class="workflow-action-panel__field-label-row">
+                  <div class="workflow-action-panel__field">
+                    <span class="workflow-action-panel__field-label">目标节点</span>
+                    <el-select
+                      v-model="selectedTransitionTargetId"
+                      :disabled="transitionLoading || transitionOptions.length === 0"
+                      :placeholder="transitionOptions.length > 0 ? '选择目标节点' : '当前无可执行操作'"
+                      class="workflow-action-panel__control"
+                    >
+                      <el-option
+                        v-for="transition in transitionOptions"
+                        :key="transitionOptionKey(transition)"
+                        :label="transitionOptionLabel(transition)"
+                        :value="transitionOptionValue(transition)"
+                      />
+                    </el-select>
+                  </div>
+
+                  <div v-if="selectedTransitionScopeLabel" class="workflow-action-panel__field">
+                    <span class="workflow-action-panel__field-label">{{ selectedTransitionScopeLabel }}</span>
+                    <div class="workflow-action-panel__assignee-readonly">
+                      {{ selectedTransitionScopeName || selectedTransitionAssigneeTypeName }}
+                    </div>
+                  </div>
+
+                  <div class="workflow-action-panel__field">
                     <span class="workflow-action-panel__field-label">处理人</span>
-                    <span v-if="selectedTransitionAssigneeTypeName" class="workflow-action-panel__field-tag">{{ selectedTransitionAssigneeTypeName }}</span>
+                    <el-select
+                      v-if="showTransitionAssigneeSelector"
+                      v-model="selectedTransitionAssigneeId"
+                      filterable
+                      clearable
+                      placeholder="请选择处理人"
+                      class="workflow-action-panel__control"
+                    >
+                      <el-option
+                        v-for="candidate in selectedTransitionAssigneeCandidates"
+                        :key="candidate.id"
+                        :label="candidate.name"
+                        :value="candidate.id"
+                      />
+                    </el-select>
+                    <div v-else class="workflow-action-panel__assignee-readonly">
+                      {{ selectedTransitionAssigneeName }}
+                    </div>
                   </div>
-                  <el-select
-                    v-if="showTransitionAssigneeSelector"
-                    v-model="selectedTransitionAssigneeId"
-                    filterable
-                    clearable
-                    placeholder="请选择处理人"
-                    class="workflow-action-panel__control"
+
+                  <div v-if="requiresProjectBinding" class="workflow-action-panel__field">
+                    <span class="workflow-action-panel__field-label">绑定项目</span>
+                    <el-select
+                      v-model="bindingProjectId"
+                      filterable
+                      clearable
+                      placeholder="流转前绑定项目"
+                      class="workflow-action-panel__control"
+                    >
+                      <el-option
+                        v-for="project in bindableProjects"
+                        :key="project.id"
+                        :label="projectOptionLabel(project)"
+                        :value="project.id"
+                      />
+                    </el-select>
+                  </div>
+
+                  <div
+                    v-if="workflowRuntime.parallelActive && parallelBranches.length > 0"
+                    class="workflow-action-panel__field"
                   >
-                    <el-option
-                      v-for="candidate in selectedTransitionAssigneeCandidates"
-                      :key="candidate.id"
-                      :label="candidate.name"
-                      :value="candidate.id"
-                    />
-                  </el-select>
-                  <div v-else class="workflow-action-panel__assignee-readonly">
-                    {{ selectedTransitionAssigneeDisplayName }}
+                    <span class="workflow-action-panel__field-label">并行分支</span>
+                    <el-select
+                      :model-value="workflowRuntime.activeParallelBranchId"
+                      placeholder="切换并行分支"
+                      class="workflow-action-panel__control"
+                      @change="handleSwitchParallelBranch"
+                    >
+                      <el-option
+                        v-for="branch in parallelBranches"
+                        :key="branch.id"
+                        :label="`${branch.branchName} (${parallelBranchStatusLabel(branch.status)})`"
+                        :value="branch.id"
+                        :disabled="branch.status === 'completed' || branch.status === 'skipped'"
+                      />
+                    </el-select>
                   </div>
                 </div>
 
-                <div v-if="requiresProjectBinding" class="workflow-action-panel__field">
-                  <span class="workflow-action-panel__field-label">绑定项目</span>
-                  <el-select
-                    v-model="bindingProjectId"
-                    filterable
-                    clearable
-                    placeholder="流转前绑定项目"
-                    class="workflow-action-panel__control"
-                  >
-                    <el-option
-                      v-for="project in bindableProjects"
-                      :key="project.id"
-                      :label="projectOptionLabel(project)"
-                      :value="project.id"
-                    />
-                  </el-select>
-                </div>
+                <div class="workflow-action-panel__section">
+                  <div class="workflow-action-panel__section-title">操作</div>
 
-                <div
-                  v-if="workflowRuntime.parallelActive && parallelBranches.length > 0"
-                  class="workflow-action-panel__field"
-                >
-                  <span class="workflow-action-panel__field-label">并行分支</span>
-                  <el-select
-                    :model-value="workflowRuntime.activeParallelBranchId"
-                    placeholder="切换并行分支"
-                    class="workflow-action-panel__control"
-                    @change="handleSwitchParallelBranch"
-                  >
-                    <el-option
-                      v-for="branch in parallelBranches"
-                      :key="branch.id"
-                      :label="`${branch.branchName} (${parallelBranchStatusLabel(branch.status)})`"
-                      :value="branch.id"
-                      :disabled="branch.status === 'completed' || branch.status === 'skipped'"
-                    />
-                  </el-select>
-                </div>
+                  <div class="workflow-action-panel__actions">
+                    <AppButton
+                      v-if="usingUnifiedEngine && workflowRuntime.canCountersign"
+                      permission="button:requirement:submit"
+                      @click="openCountersignDialog(workflowRuntime.currentNodeId || '')"
+                    >
+                      会签审批
+                    </AppButton>
+                    <AppButton
+                      v-if="usingUnifiedEngine && workflowRuntime.canRollback"
+                      type="danger"
+                      plain
+                      :loading="transitionLoading"
+                      permission="button:requirement:rollback"
+                      @click="handleRollback"
+                    >
+                      驳回
+                    </AppButton>
+                    <AppButton
+                      v-if="usingUnifiedEngine && workflowRuntime.canCancel"
+                      :loading="transitionLoading"
+                      permission="button:requirement:cancel"
+                      @click="handleCancel"
+                    >
+                      取消
+                    </AppButton>
+                  </div>
 
-                <div class="workflow-action-panel__actions">
-                  <AppButton
-                    v-if="usingUnifiedEngine && workflowRuntime.canCountersign"
-                    permission="button:requirement:submit"
-                    @click="openCountersignDialog(workflowRuntime.currentNodeId || '')"
-                  >
-                    会签审批
-                  </AppButton>
-                  <AppButton
-                    v-if="usingUnifiedEngine && workflowRuntime.canRollback"
-                    type="danger"
-                    plain
-                    :loading="transitionLoading"
-                    permission="button:requirement:rollback"
-                    @click="handleRollback"
-                  >
-                    驳回
-                  </AppButton>
-                  <AppButton
-                    v-if="usingUnifiedEngine && workflowRuntime.canCancel"
-                    :loading="transitionLoading"
-                    permission="button:requirement:cancel"
-                    @click="handleCancel"
-                  >
-                    取消需求
-                  </AppButton>
-                </div>
-
-                <div class="workflow-action-panel__submit-actions">
-                  <AppButton
-                    type="primary"
-                    permission="button:requirement:submit"
-                    :loading="transitionLoading"
-                    :disabled="transitionSubmitDisabled"
-                    @click="handleStatusTransition"
-                  >
-                    提交
-                  </AppButton>
+                  <div class="workflow-action-panel__submit-actions">
+                    <AppButton
+                      type="primary"
+                      permission="button:requirement:submit"
+                      :loading="transitionLoading"
+                      :disabled="transitionSubmitDisabled"
+                      @click="handleStatusTransition"
+                    >
+                      提交
+                    </AppButton>
+                  </div>
                 </div>
               </div>
             </div>
@@ -611,10 +631,20 @@
           @closed="resetApprovalDialog"
         >
           <p class="approval-dialog-tip">提交到下一节点前，请补充审核信息。</p>
-          <div v-if="workflowRuntime.evaluationRequired" class="approval-dialog-rate">
-            <span class="approval-dialog-label">评分（必填）</span>
-            <el-rate v-model="approvalRating" :max="5" />
-          </div>
+          <el-form-item
+            v-if="workflowRuntime.evaluationRequired"
+            label="评分"
+            :required="true"
+            class="approval-dialog-rate-item"
+          >
+            <el-rate
+              v-model="approvalRating"
+              :max="5"
+              show-text
+              :texts="['不满意', '一般', '满意', '比较满意', '非常满意']"
+              class="approval-dialog-rate"
+            />
+          </el-form-item>
           <el-form-item
             label="审核意见"
             :required="isCommentRequired"
@@ -754,7 +784,7 @@
 import { computed, ref, onMounted, watch, type Ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeftBold, ArrowRightBold, Document, Picture, List, Histogram, ChatLineRound, ChatDotRound, View, Download, Edit, Delete, ZoomIn, ZoomOut, RefreshLeft } from '@element-plus/icons-vue'
+import { ArrowLeftBold, ArrowRightBold, Document, Picture, List, Histogram, ChatLineRound, ChatDotRound, View, Download, Edit, Delete, ZoomIn, ZoomOut, RefreshLeft, CircleCheck } from '@element-plus/icons-vue'
 import { requirementApi, projectApi, relationApi } from '@/api'
 import { downloadRequirementAttachment, uploadRequirementAttachment } from '@/api/modules/file'
 import type { RelationItem } from '@/api/modules/relation'
@@ -878,7 +908,6 @@ const {
   priorityLabel,
   priorityTagStyle,
   approvalResultTagType,
-  approvalTimelineItemType,
 } = useRequirementTag()
 const canSubmitApproval = computed(() => hasPermission('button:requirement:submit'))
 const userStore = useUserStore()
@@ -951,6 +980,12 @@ const showCurrentNodeStatus = computed(() => {
     && Boolean(detail.value?.workflowInstanceId)
     && workflowRuntime.value.currentNodeType !== 'start'
     && Boolean(currentNodeStatusName.value)
+})
+// 状态名与节点名相同时不再重复渲染右侧 tag，避免"待分析"等关键词出现两次
+const showNodeStatusTag = computed(() => {
+  const statusName = currentNodeStatusName.value?.trim()
+  if (!statusName) return false
+  return statusName !== currentNodeDisplayName.value?.trim()
 })
 const attachmentCount = computed(() => {
   const requirementAttachmentCount = detail.value?.attachments?.length || 0
@@ -1528,6 +1563,25 @@ const selectedTransitionAssigneeTypeName = computed(() => {
   return selectedUnifiedTransition.value?.assigneeTypeName || ''
 })
 
+/** 处理人作用域标签前缀：根据 assigneeType 返回中文前缀 */
+const selectedTransitionScopeLabel = computed(() => {
+  const type = selectedUnifiedTransition.value?.assigneeType
+  switch (type) {
+    case 'SPECIFIED_USER': return '处理类型'
+    case 'SPECIFIED_ROLE': return '处理角色'
+    case 'SPECIFIED_ROLE_GROUP': return '处理角色组'
+    case 'SPECIFIED_ORG': return '处理类型'
+    case 'CREATOR': return '处理类型'
+    case 'PREV_APPROVER': return '处理类型'
+    default: return ''
+  }
+})
+
+/** 处理人作用域名称：角色名称 / 角色组名称 / 类型名称 */
+const selectedTransitionScopeName = computed(() => {
+  return selectedUnifiedTransition.value?.assigneeScopeName || ''
+})
+
 const showTransitionAssigneeSelector = computed(() => {
   return selectedTransitionAssigneeCandidates.value.length > 1
 })
@@ -1545,24 +1599,13 @@ const selectedTransitionAssigneeOption = computed<TransitionAssigneeCandidate | 
   ) || selectedTransitionAssigneeCandidates.value[0] || null
 })
 
-const selectedTransitionAssigneeDisplayName = computed(() => {
+/** 当前选中的处理人显示名（仅展示人名，不含作用域前缀） */
+const selectedTransitionAssigneeName = computed(() => {
   if (!selectedUnifiedTransition.value) {
     return transitionOptions.value.length > 0 ? '请选择目标节点' : '当前无可执行操作'
   }
-  return formatTransitionAssigneeDisplay(
-    selectedUnifiedTransition.value.assigneeDisplayName,
-    selectedTransitionAssigneeOption.value?.name,
-  ) || '未配置处理人'
+  return selectedTransitionAssigneeOption.value?.name || '未配置处理人'
 })
-
-function formatTransitionAssigneeDisplay(scopeName?: string | null, userName?: string | null) {
-  const normalizedScope = scopeName?.trim()
-  const normalizedUser = userName?.trim()
-  if (normalizedScope && normalizedUser && normalizedScope !== normalizedUser) {
-    return `${normalizedScope} ${normalizedUser}`
-  }
-  return normalizedUser || normalizedScope || ''
-}
 
 const requiresProjectBinding = computed(() => (
   usingUnifiedEngine.value
@@ -2173,54 +2216,138 @@ onMounted(() => {
 .workflow-action-panel {
   flex: 1;
   min-width: 0;
-  padding: 20px;
+  padding: 0;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-surface);
   box-shadow: var(--shadow-md);
+  overflow: hidden;
 }
 
 .workflow-action-panel__header {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  padding-bottom: 16px;
-  margin-bottom: 18px;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px 14px;
   border-bottom: 1px solid var(--color-border);
+}
+
+.workflow-action-panel__header-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: linear-gradient(
+    135deg,
+    rgba(99, 102, 241, 0.12) 0%,
+    rgba(37, 99, 235, 0.08) 100%
+  );
+  color: var(--color-accent);
+  font-size: 18px;
+  flex-shrink: 0;
+  box-shadow: 0 1px 2px rgba(99, 102, 241, 0.08);
 }
 
 .workflow-action-panel__title {
   color: var(--color-text-primary);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
-  line-height: 24px;
+  line-height: 22px;
 }
 
 .workflow-action-panel__subtitle {
-  margin-top: 4px;
+  margin-top: 2px;
   color: var(--color-muted-text);
   font-size: 12px;
-  line-height: 18px;
+  line-height: 16px;
 }
 
-.workflow-action-panel__status {
-  margin-bottom: 16px;
+.workflow-action-panel__status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
+}
+
+.workflow-action-panel__status-node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.workflow-action-panel__status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+
+  &.is-primary { background: var(--el-color-primary); }
+  &.is-success { background: var(--el-color-success); }
+  &.is-warning { background: var(--el-color-warning); }
+  &.is-danger { background: var(--el-color-danger); }
+  &.is-info { background: var(--el-color-info); }
+}
+
+.workflow-action-panel__status-label {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.workflow-action-panel__status-value {
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .workflow-action-panel__alert {
-  margin-bottom: 16px;
+  margin: 0 16px 12px;
 }
 
 .workflow-action-panel__body {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  padding: 16px 20px 20px;
+  gap: 0;
+}
+
+.workflow-action-panel__section {
+  padding: 14px 0;
+
+  & + & {
+    border-top: 1px solid var(--color-border);
+    margin-top: 4px;
+  }
+}
+
+.workflow-action-panel__section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-muted-text);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: 14px;
 }
 
 .workflow-action-panel__field {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
+
+  & + & {
+    margin-top: 12px;
+  }
 }
 
 .workflow-action-panel__field--vertical {
@@ -2268,14 +2395,20 @@ onMounted(() => {
 }
 
 .workflow-action-panel__assignee-readonly {
-  padding: 7px 12px;
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 4px 11px;
+  min-height: 32px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface-alt);
   color: var(--color-text-primary);
   font-size: 13px;
-  line-height: 20px;
+  line-height: 24px;
   word-break: break-all;
+  display: flex;
+  align-items: center;
 }
 
 .workflow-action-panel__actions {
@@ -2860,30 +2993,109 @@ onMounted(() => {
   margin-top: 0;
 }
 
-.approval-evaluation-timeline {
-  margin-top: 16px;
-  padding-left: 4px;
+.approval-evaluation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 20px;
+  padding-left: 8px;
 }
 
 .approval-evaluation-card {
+  display: flex;
+  gap: 16px;
+  position: relative;
+  padding-bottom: 24px;
+
+  &:last-child {
+    padding-bottom: 0;
+
+    .approval-evaluation-card__line {
+      display: none;
+    }
+  }
+}
+
+.approval-evaluation-card__timeline {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  width: 12px;
+}
+
+.approval-evaluation-card__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2.5px solid;
+  flex-shrink: 0;
+  background: var(--color-surface);
+  z-index: 1;
+  box-shadow: 0 0 0 3px var(--color-surface);
+
+  &.is-primary { border-color: var(--el-color-primary); }
+  &.is-success { border-color: var(--el-color-success); }
+  &.is-warning { border-color: var(--el-color-warning); }
+  &.is-danger { border-color: var(--el-color-danger); }
+  &.is-info { border-color: var(--el-color-info); }
+}
+
+.approval-evaluation-card__line {
+  flex: 1;
+  width: 1px;
+  background: var(--color-border);
+  margin-top: 4px;
+}
+
+.approval-evaluation-card__body {
+  flex: 1;
+  min-width: 0;
+  padding: 14px 16px;
   border: 1px solid var(--color-border);
-  background: var(--color-surface-alt);
-  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+
+  &:hover {
+    border-color: var(--color-accent-light, #93c5fd);
+    box-shadow: 0 2px 12px rgba(37, 99, 235, 0.06);
+  }
 }
 
-.approval-evaluation-card:hover {
-  border-color: var(--color-accent-light, #93c5fd);
-  box-shadow: 0 2px 12px rgba(37, 99, 235, 0.08);
+.approval-evaluation-card.is-success .approval-evaluation-card__body {
+  border-left: 3px solid var(--el-color-success);
 }
 
-.approval-evaluation-card :deep(.el-card__body) {
-  padding: 18px 20px;
+.approval-evaluation-card.is-danger .approval-evaluation-card__body {
+  border-left: 3px solid var(--el-color-danger);
+}
+
+.approval-evaluation-card.is-warning .approval-evaluation-card__body {
+  border-left: 3px solid var(--el-color-warning);
+}
+
+.approval-evaluation-card.is-primary .approval-evaluation-card__body {
+  border-left: 3px solid var(--el-color-primary);
+}
+
+.approval-evaluation-card.is-info .approval-evaluation-card__body {
+  border-left: 3px solid var(--el-color-info);
 }
 
 .approval-evaluation-header {
   display: flex;
-  gap: 14px;
+  gap: 12px;
   align-items: flex-start;
+}
+
+.approval-evaluation-avatar {
+  flex-shrink: 0;
+  margin-top: 1px;
+  background: var(--color-accent-tint-light, #eff6ff);
+  color: var(--color-accent);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .approval-evaluation-meta {
@@ -2894,17 +3106,35 @@ onMounted(() => {
 .approval-evaluation-title {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
+}
+
+.approval-evaluation-node {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--color-surface-alt);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.approval-evaluation-time {
+  margin-top: 2px;
+  color: var(--color-muted-text);
+  font-size: 12px;
+  line-height: 16px;
 }
 
 .approval-evaluation-side {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 14px;
+  gap: 10px;
   flex: 0 0 auto;
-  min-height: 32px;
   margin-left: auto;
   white-space: nowrap;
 }
@@ -2912,17 +3142,11 @@ onMounted(() => {
 .approval-evaluation-rating {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
   line-height: 1;
 }
 
-.approval-evaluation-rating__label {
-  color: var(--color-muted-text);
-  font-size: 12px;
-}
-
 .approval-evaluation-rating :deep(.el-rate) {
-  height: 18px;
+  height: 16px;
 }
 
 .approval-evaluation-rating :deep(.el-rate__item) {
@@ -2931,21 +3155,22 @@ onMounted(() => {
 
 .approval-evaluation-rating :deep(.el-rate__icon) {
   margin-right: 0;
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .approval-evaluation-content {
-  margin: 12px 0 0 46px;
+  margin: 10px 0 0;
   color: var(--color-text-primary);
   line-height: 1.7;
   white-space: pre-wrap;
+  font-size: 13px;
 }
 
 .approval-evaluation-supplement-button {
   width: 24px;
   height: 24px;
   padding: 0;
-  font-size: 16px;
+  font-size: 15px;
   border-radius: 4px;
 }
 
@@ -2959,25 +3184,25 @@ onMounted(() => {
   }
 
   .approval-evaluation-side {
-    width: calc(100% - 44px);
-    margin-left: 44px;
+    width: calc(100% - 40px);
+    margin-left: 40px;
     justify-content: flex-start;
     flex-wrap: wrap;
   }
 }
 
 .approval-supplement-list {
-  margin: 14px 0 0 46px;
+  margin: 12px 0 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .approval-supplement-item {
-  padding: 12px 14px;
+  padding: 10px 12px;
   border-radius: 8px;
-  background: var(--el-color-primary-light-9);
-  border: 1px solid var(--el-color-primary-light-7);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
 }
 
 .approval-supplement-item__header {
@@ -2991,11 +3216,13 @@ onMounted(() => {
 .approval-supplement-item__tag {
   display: inline-flex;
   align-items: center;
-  padding: 2px 6px;
+  padding: 2px 7px;
   border-radius: 999px;
   background: var(--color-accent);
   color: #fff;
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
 }
 
 .approval-supplement-item__time {
@@ -3008,6 +3235,7 @@ onMounted(() => {
   color: var(--color-text-primary);
   line-height: 1.6;
   white-space: pre-wrap;
+  font-size: 13px;
 }
 
 .approval-dialog-tip {
@@ -3016,16 +3244,35 @@ onMounted(() => {
   font-size: 13px;
 }
 
+.approval-dialog-rate-item {
+  margin-bottom: 18px;
+}
+
+.approval-dialog-rate-item :deep(.el-form-item__label) {
+  color: var(--color-text-secondary);
+  font-weight: 500;
+  letter-spacing: 0.2px;
+}
+
 .approval-dialog-rate {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: 10px;
 }
 
-.approval-dialog-label {
+.approval-dialog-rate :deep(.el-rate__icon) {
+  font-size: 22px;
+  transition: transform 200ms ease, color 200ms ease;
+}
+
+.approval-dialog-rate :deep(.el-rate__item:hover .el-rate__icon) {
+  transform: scale(1.12);
+}
+
+.approval-dialog-rate :deep(.el-rate__text) {
+  margin-left: 8px;
   color: var(--color-text-secondary);
-  font-size: 14px;
+  font-size: 13px;
 }
 
 /* 会签审批样式 */

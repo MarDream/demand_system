@@ -131,13 +131,33 @@
               <el-table-column v-if="isVersionColumnVisible('isActive')" label="启停状态" min-width="110">
                 <template #default="{ row }">
                   <span v-permission="'button:workflow:activate'">
-                    <el-switch
-                      :model-value="row.isActive === 1"
-                      size="small"
-                      :disabled="!canActivate || (row.isActive !== 1 && versionApprovalStatus(row) !== 'APPROVED')"
-                      @change="handleToggleActivation(row)"
-                      @click.stop
-                    />
+                    <el-tooltip :content="getActivationTooltip(row)" placement="top" :disabled="!isActivationDisabled(row)">
+                      <span>
+                        <el-switch
+                          :model-value="row.isActive === 1"
+                          size="small"
+                          :disabled="isActivationDisabled(row)"
+                          @change="handleToggleActivation(row)"
+                          @click.stop
+                        />
+                      </span>
+                    </el-tooltip>
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column v-if="isVersionColumnVisible('approvalEvaluation')" label="评价状态" min-width="110">
+                <template #default="{ row }">
+                  <span v-permission="'button:workflow:config'">
+                    <el-tooltip content="开启后审批时显示评分（必填）" placement="top" :disabled="!!row.approvalEvaluationEnabled">
+                      <span>
+                        <el-switch
+                          :model-value="!!row.approvalEvaluationEnabled"
+                          size="small"
+                          @change="handleToggleEvaluation(row)"
+                          @click.stop
+                        />
+                      </span>
+                    </el-tooltip>
                   </span>
                 </template>
               </el-table-column>
@@ -170,15 +190,17 @@
                     <el-tooltip content="查看" placement="top">
                       <el-button link type="primary" :icon="View" @click="viewWorkflow(row)" />
                     </el-tooltip>
-                    <el-tooltip content="编辑" placement="top">
-                      <el-button
-                        link
-                        type="primary"
-                        :icon="EditPen"
-                        @click="editWorkflow(row)"
-                        v-permission="'button:workflow:update'"
-                        :disabled="versionApprovalStatus(row) === 'PENDING' || row.isActive === 1"
-                      />
+                    <el-tooltip :content="getEditButtonTooltip(row)" placement="top">
+                      <span>
+                        <el-button
+                          link
+                          type="primary"
+                          :icon="EditPen"
+                          @click="editWorkflow(row)"
+                          v-permission="'button:workflow:update'"
+                          :disabled="versionApprovalStatus(row) === 'PENDING' || row.isActive === 1"
+                        />
+                      </span>
                     </el-tooltip>
                     <el-dropdown trigger="click" class="operation-more-dropdown">
                       <el-button link type="primary" :icon="Tools" class="operation-more-button" title="更多操作" aria-label="更多操作" />
@@ -609,6 +631,7 @@ const versionAllColumns: ColumnDef[] = [
   { key: 'projectId', label: '适用范围', group: '基础字段', width: 120 },
   { key: 'knowledgeBaseName', label: '知识库', group: '基础字段', minWidth: 140 },
   { key: 'isActive', label: '启停状态', group: '状态信息', width: 120 },
+  { key: 'approvalEvaluation', label: '评价状态', group: '状态信息', width: 120 },
   { key: 'approvalStatus', label: '审核状态', group: '状态信息', width: 140 },
   { key: 'creatorName', label: '创建人', group: '人员与时间', width: 140 },
   { key: 'createdAt', label: '创建时间', group: '人员与时间', width: 180 },
@@ -616,7 +639,7 @@ const versionAllColumns: ColumnDef[] = [
   { key: 'activatedAt', label: '启用时间', group: '人员与时间', width: 180 },
   { key: 'operations', label: '操作', width: 120 },
 ]
-const versionDefaultKeys = ['version', 'boundTypes', 'projectId', 'knowledgeBaseName', 'isActive', 'approvalStatus', 'creatorName', 'createdAt', 'operations']
+const versionDefaultKeys = ['version', 'boundTypes', 'projectId', 'knowledgeBaseName', 'isActive', 'approvalEvaluation', 'approvalStatus', 'creatorName', 'createdAt', 'operations']
 
 const {
   showColumnConfig: showVersionColumnConfig,
@@ -867,6 +890,25 @@ function versionApprovalStatus(row: WorkflowVersionDTO) {
   return row.latestApprovalStatus || 'DRAFT'
 }
 
+/** 编辑按钮的 tooltip 文案：根据禁用原因动态显示 */
+function getEditButtonTooltip(row: WorkflowVersionDTO) {
+  if (row.isActive === 1) return '当前工作流启用中，请先停用工作流再进行操作'
+  if (versionApprovalStatus(row) === 'PENDING') return '该版本审核中，暂不可编辑'
+  return '编辑'
+}
+
+/** 启停开关是否禁用 */
+function isActivationDisabled(row: WorkflowVersionDTO) {
+  return !canActivate.value || (row.isActive !== 1 && versionApprovalStatus(row) !== 'APPROVED')
+}
+
+/** 启停开关禁用时的 tooltip 文案 */
+function getActivationTooltip(row: WorkflowVersionDTO) {
+  if (!canActivate.value) return '暂无启停权限'
+  if (row.isActive !== 1 && versionApprovalStatus(row) !== 'APPROVED') return '仅已通过的版本可启用'
+  return row.isActive === 1 ? '点击停用' : '点击启用'
+}
+
 function approvalStatusLabel(status: string) {
   const map: Record<string, string> = {
     DRAFT: '草稿',
@@ -1081,6 +1123,23 @@ function formatValidationIssues(issues: WorkflowValidationIssue[]) {
     return ''
   }
   return errors.map((item) => item.message).join('\n')
+}
+
+/** 切换评价状态 */
+async function handleToggleEvaluation(row: WorkflowVersionDTO) {
+  const enabled = !row.approvalEvaluationEnabled
+  try {
+    await updateWorkflowVersionMeta(row.id, {
+      version: row.version,
+      name: row.name,
+      approvalEvaluationEnabled: enabled,
+    })
+    ElMessage.success(enabled ? '评价已开启' : '评价已关闭')
+    await loadVersions()
+  } catch (error) {
+    const errorMsg = (error as any)?.response?.data?.message || (error as Error)?.message || '操作失败'
+    ElMessage.error(errorMsg)
+  }
 }
 
 async function handleToggleActivation(row: WorkflowVersionDTO) {

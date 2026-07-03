@@ -59,7 +59,14 @@ public class UserServiceImpl implements UserService {
         if (query.getOrgId() != null) {
             List<Long> orgIds = sysOrgService.getDescendantIds(query.getOrgId());
             orgIds.add(query.getOrgId());
-            wrapper.in(User::getOrgId, orgIds);
+            // 同时包含无组织归属的超级管理员用户
+            Set<Long> superAdminIds = collectSuperAdminUserIds();
+            if (!superAdminIds.isEmpty()) {
+                wrapper.and(w -> w.in(User::getOrgId, orgIds)
+                        .or().in(User::getId, superAdminIds));
+            } else {
+                wrapper.in(User::getOrgId, orgIds);
+            }
         } else {
             // Fallback to old fields for backward compatibility
             if (query.getRegionId() != null) {

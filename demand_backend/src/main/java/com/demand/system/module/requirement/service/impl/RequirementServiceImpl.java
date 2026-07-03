@@ -59,7 +59,6 @@ import com.demand.system.module.project.entity.Project;
 import com.demand.system.module.project.mapper.ProjectMapper;
 import com.demand.system.module.knowledge.service.KnowledgeDocumentService;
 import com.demand.system.module.rbac.entity.Role;
-import com.demand.system.module.rbac.entity.RoleGroup;
 import com.demand.system.module.rbac.mapper.RoleGroupMapper;
 import com.demand.system.module.rbac.mapper.RoleMapper;
 import com.demand.system.module.rbac.support.RbacConstants;
@@ -83,6 +82,7 @@ import com.demand.system.module.workflow.mapper.WorkflowNodeMapper;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.demand.system.module.workflow.service.WorkflowEngineService;
 import com.demand.system.module.workflow.service.WorkflowService;
+import com.demand.system.module.workflow.dto.AssigneeCandidateDTO;
 import com.demand.system.module.workflow.dto.WorkflowAvailableActionsDTO;
 import com.demand.system.module.workflow.mapper.WorkflowTransitionRecordMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -105,6 +105,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
 @Service
@@ -1643,35 +1644,15 @@ public class RequirementServiceImpl implements RequirementService {
             return null;
         }
 
-        String result = switch (currentNode.getAssigneeType()) {
-            case "SPECIFIED_USER" -> {
-                String users = resolveSpecifiedUsersDisplay(currentNode.getAssigneeUserIds());
-                yield users != null ? "处理人 " + users : null;
-            }
-            case "SPECIFIED_ROLE" -> {
-                String role = resolveRoleDisplay(currentNode.getAssigneeRoleId());
-                yield role != null ? "处理角色 " + role : null;
-            }
-            case "SPECIFIED_ROLE_GROUP" -> {
-                String roleGroup = resolveRoleGroupDisplay(currentNode.getAssigneeRoleGroupId());
-                yield roleGroup != null ? "处理角色组 " + roleGroup : null;
-            }
-            case "SPECIFIED_ORG" -> {
-                String org = resolveOrgDisplay(currentNode.getAssigneeOrgId(), currentNode.getProperties());
-                yield org != null ? "指定组织 " + org : null;
-            }
-            case "CREATOR" -> {
-                String creator = vo.getCreatorName();
-                yield creator != null ? "创建人 " + creator : null;
-            }
-            case "PREV_APPROVER" -> {
-                String prev = resolvePreviousApproverDisplay(instance.getId(), currentNode.getNodeId());
-                yield prev != null ? "上一处理人 " + prev : null;
-            }
-            default -> null;
-        };
+        // 委托 WorkflowEngineService 计算处理人显示文本
+        String assigneeType = currentNode.getAssigneeType();
+        Long operatorId = SecurityUtils.getCurrentUserId();
+        List<AssigneeCandidateDTO> candidates = workflowEngineService.resolveAssigneeCandidates(currentNode, requirement, operatorId);
+        String display = workflowEngineService.resolveHandlerDisplay(currentNode, candidates, assigneeType, requirement, operatorId);
+        // resolveHandlerDisplay 返回 "-" 表示无处理人，这里转为 null 以保持兼容
+        String result = "-".equals(display) ? null : display;
 
-        log.debug("resolveCurrentHandlerName: reqId={}, assigneeType={}, result={}", requirement.getId(), currentNode.getAssigneeType(), result);
+        log.debug("resolveCurrentHandlerName: reqId={}, assigneeType={}, result={}", requirement.getId(), assigneeType, result);
         return result;
     }
 
@@ -1686,57 +1667,6 @@ public class RequirementServiceImpl implements RequirementService {
                 .filter(StringUtils::hasText)
                 .distinct()
                 .collect(Collectors.joining("、"));
-    }
-
-    private String resolveRoleDisplay(Integer roleId) {
-        if (roleId == null) {
-            return null;
-        }
-        Role role = roleMapper.selectById(Long.valueOf(roleId));
-        if (role == null) {
-            return null;
-        }
-        return StringUtils.hasText(role.getName()) ? role.getName() : role.getCode();
-    }
-
-    private String resolveRoleGroupDisplay(Long roleGroupId) {
-        if (roleGroupId == null) {
-            return null;
-        }
-        RoleGroup roleGroup = roleGroupMapper.selectById(roleGroupId);
-        return roleGroup != null ? roleGroup.getName() : null;
-    }
-
-    private String resolveOrgDisplay(Long orgId, Map<String, Object> properties) {
-        if (orgId == null) {
-            return null;
-        }
-        SysOrgVO org = sysOrgService.getDetail(orgId);
-        if (org == null || !StringUtils.hasText(org.getName())) {
-            return null;
-        }
-        Object orgScopeType = properties != null ? properties.get("orgScopeType") : null;
-        if (orgScopeType != null && !"current".equalsIgnoreCase(String.valueOf(orgScopeType))) {
-            return org.getName() + "（含子级）";
-        }
-        return org.getName();
-    }
-
-    private String resolvePreviousApproverDisplay(Long instanceId, String currentNodeId) {
-        if (instanceId == null || !StringUtils.hasText(currentNodeId)) {
-            return null;
-        }
-        WorkflowInstanceTransition transition = workflowInstanceTransitionMapper.selectOne(
-                new LambdaQueryWrapper<WorkflowInstanceTransition>()
-                        .eq(WorkflowInstanceTransition::getInstanceId, instanceId)
-                        .eq(WorkflowInstanceTransition::getToNodeId, currentNodeId)
-                        .orderByDesc(WorkflowInstanceTransition::getId)
-                        .last("LIMIT 1"));
-        if (transition == null || transition.getOperatorId() == null) {
-            return null;
-        }
-        User approver = userMapper.selectById(transition.getOperatorId());
-        return approver != null ? resolveUserDisplayName(approver) : null;
     }
 
     private String resolveUserDisplayName(User user) {
@@ -1842,6 +1772,38 @@ public class RequirementServiceImpl implements RequirementService {
      * 详细的当前处理人信息在需求详情页按需加载。</p>
      */
     private void batchFillUserNamesAndOrg(List<RequirementVO> voList, List<Requirement> records) {
+        batchFillUserNamesAndOrgInternal(voList, records,
+                RequirementVO::setCreatorName,
+                RequirementVO::setAssigneeName,
+                RequirementVO::setOpsFollowName,
+                RequirementVO::setMaintFollowName,
+                RequirementVO::setDepartmentName);
+        // 列表页：currentHandlerName 用 assigneeName 替代（避免逐行查工作流引擎）
+        // 详细的当前处理人在需求详情页按需加载
+        for (RequirementVO vo : voList) {
+            vo.setCurrentHandlerName(vo.getAssigneeName());
+        }
+    }
+
+    /**
+     * 通用批量填充用户名称和组织名称（走二级缓存）。
+     * <p>收集全页涉及的 userId / orgId，3~4 次批量查询回填。</p>
+     *
+     * @param voList               VO 列表
+     * @param records              对应的 Requirement 列表
+     * @param creatorNameSetter    设置创建人名称
+     * @param assigneeNameSetter    设置处理人名称
+     * @param opsFollowNameSetter  设置运维关注人名称
+     * @param maintFollowNameSetter 设置维护关注人名称
+     * @param departmentNameSetter 设置部门名称
+     * @param <T>                  VO 类型
+     */
+    private <T> void batchFillUserNamesAndOrgInternal(List<T> voList, List<Requirement> records,
+            BiConsumer<T, String> creatorNameSetter,
+            BiConsumer<T, String> assigneeNameSetter,
+            BiConsumer<T, String> opsFollowNameSetter,
+            BiConsumer<T, String> maintFollowNameSetter,
+            BiConsumer<T, String> departmentNameSetter) {
         if (voList == null || voList.isEmpty() || records == null || records.isEmpty()) {
             return;
         }
@@ -1857,15 +1819,11 @@ public class RequirementServiceImpl implements RequirementService {
         }
 
         // 2. 批量查询用户信息（走二级缓存：Caffeine -> Redis -> DB）
-        Map<Long, User> userMap = new java.util.HashMap<>();
-        if (!allUserIds.isEmpty()) {
-            userMap = userLocalCache.batchGetUsers(allUserIds);
-            // 同时收集用户所属的 orgId
-            for (User u : userMap.values()) {
-                if (u != null) {
-                    if (u.getOrgId() != null) allOrgIds.add(u.getOrgId());
-                    if (u.getDepartmentId() != null) allOrgIds.add(u.getDepartmentId());
-                }
+        Map<Long, User> userMap = allUserIds.isEmpty() ? Collections.emptyMap() : userLocalCache.batchGetUsers(allUserIds);
+        for (User u : userMap.values()) {
+            if (u != null) {
+                if (u.getOrgId() != null) allOrgIds.add(u.getOrgId());
+                if (u.getDepartmentId() != null) allOrgIds.add(u.getDepartmentId());
             }
         }
 
@@ -1882,19 +1840,19 @@ public class RequirementServiceImpl implements RequirementService {
 
         // 4. 批量回填 VO 字段
         for (int i = 0; i < voList.size(); i++) {
-            RequirementVO vo = voList.get(i);
+            T vo = voList.get(i);
             Requirement r = records.get(i);
 
             // creatorName + departmentName
             if (r.getCreatorId() != null) {
                 User creator = userMap.get(r.getCreatorId());
                 if (creator != null) {
-                    vo.setCreatorName(resolveUserDisplayName(creator));
+                    creatorNameSetter.accept(vo, resolveUserDisplayName(creator));
                     // 归属部门显示为提出人所在的组织机构名称
                     if (creator.getOrgId() != null && orgNameMap.containsKey(creator.getOrgId())) {
-                        vo.setDepartmentName(orgNameMap.get(creator.getOrgId()));
+                        departmentNameSetter.accept(vo, orgNameMap.get(creator.getOrgId()));
                     } else if (creator.getDepartmentId() != null && orgNameMap.containsKey(creator.getDepartmentId())) {
-                        vo.setDepartmentName(orgNameMap.get(creator.getDepartmentId()));
+                        departmentNameSetter.accept(vo, orgNameMap.get(creator.getDepartmentId()));
                     }
                 }
             }
@@ -1903,7 +1861,7 @@ public class RequirementServiceImpl implements RequirementService {
             if (r.getAssigneeId() != null) {
                 User assignee = userMap.get(r.getAssigneeId());
                 if (assignee != null) {
-                    vo.setAssigneeName(resolveUserDisplayName(assignee));
+                    assigneeNameSetter.accept(vo, resolveUserDisplayName(assignee));
                 }
             }
 
@@ -1911,7 +1869,7 @@ public class RequirementServiceImpl implements RequirementService {
             if (r.getOpsFollowId() != null) {
                 User opsFollow = userMap.get(r.getOpsFollowId());
                 if (opsFollow != null) {
-                    vo.setOpsFollowName(resolveUserDisplayName(opsFollow));
+                    opsFollowNameSetter.accept(vo, resolveUserDisplayName(opsFollow));
                 }
             }
 
@@ -1919,13 +1877,9 @@ public class RequirementServiceImpl implements RequirementService {
             if (r.getMaintFollowId() != null) {
                 User maintFollow = userMap.get(r.getMaintFollowId());
                 if (maintFollow != null) {
-                    vo.setMaintFollowName(resolveUserDisplayName(maintFollow));
+                    maintFollowNameSetter.accept(vo, resolveUserDisplayName(maintFollow));
                 }
             }
-
-            // 列表页：currentHandlerName 用 assigneeName 替代（避免逐行查工作流引擎）
-            // 详细的当前处理人在需求详情页按需加载
-            vo.setCurrentHandlerName(vo.getAssigneeName());
         }
     }
 
@@ -1933,74 +1887,12 @@ public class RequirementServiceImpl implements RequirementService {
      * 为 RequirementListVO 批量填充用户名和组织名（精简版，走二级缓存）
      */
     private void batchFillUserNamesAndOrgForListVO(List<RequirementListVO> voList, List<Requirement> records) {
-        if (voList == null || voList.isEmpty() || records == null || records.isEmpty()) {
-            return;
-        }
-
-        Set<Long> allUserIds = new java.util.HashSet<>();
-        Set<Long> allOrgIds = new java.util.HashSet<>();
-        for (Requirement r : records) {
-            if (r.getCreatorId() != null) allUserIds.add(r.getCreatorId());
-            if (r.getAssigneeId() != null) allUserIds.add(r.getAssigneeId());
-            if (r.getOpsFollowId() != null) allUserIds.add(r.getOpsFollowId());
-            if (r.getMaintFollowId() != null) allUserIds.add(r.getMaintFollowId());
-        }
-
-        Map<Long, User> userMap = allUserIds.isEmpty() ? Collections.emptyMap() : userLocalCache.batchGetUsers(allUserIds);
-        for (User u : userMap.values()) {
-            if (u != null) {
-                if (u.getOrgId() != null) allOrgIds.add(u.getOrgId());
-                if (u.getDepartmentId() != null) allOrgIds.add(u.getDepartmentId());
-            }
-        }
-
-        Map<Long, String> orgNameMap = new java.util.HashMap<>();
-        if (!allOrgIds.isEmpty()) {
-            Map<Long, SysOrgVO> orgMap = orgLocalCache.batchGetOrgs(allOrgIds);
-            for (var entry : orgMap.entrySet()) {
-                if (entry.getValue() != null && entry.getValue().getName() != null) {
-                    orgNameMap.put(entry.getKey(), entry.getValue().getName());
-                }
-            }
-        }
-
-        for (int i = 0; i < voList.size(); i++) {
-            RequirementListVO vo = voList.get(i);
-            Requirement r = records.get(i);
-
-            if (r.getCreatorId() != null) {
-                User creator = userMap.get(r.getCreatorId());
-                if (creator != null) {
-                    vo.setCreatorName(resolveUserDisplayName(creator));
-                    if (creator.getOrgId() != null && orgNameMap.containsKey(creator.getOrgId())) {
-                        vo.setDepartmentName(orgNameMap.get(creator.getOrgId()));
-                    } else if (creator.getDepartmentId() != null && orgNameMap.containsKey(creator.getDepartmentId())) {
-                        vo.setDepartmentName(orgNameMap.get(creator.getDepartmentId()));
-                    }
-                }
-            }
-
-            if (r.getAssigneeId() != null) {
-                User assignee = userMap.get(r.getAssigneeId());
-                if (assignee != null) {
-                    vo.setAssigneeName(resolveUserDisplayName(assignee));
-                }
-            }
-
-            if (r.getOpsFollowId() != null) {
-                User opsFollow = userMap.get(r.getOpsFollowId());
-                if (opsFollow != null) {
-                    vo.setOpsFollowName(resolveUserDisplayName(opsFollow));
-                }
-            }
-
-            if (r.getMaintFollowId() != null) {
-                User maintFollow = userMap.get(r.getMaintFollowId());
-                if (maintFollow != null) {
-                    vo.setMaintFollowName(resolveUserDisplayName(maintFollow));
-                }
-            }
-        }
+        batchFillUserNamesAndOrgInternal(voList, records,
+                RequirementListVO::setCreatorName,
+                RequirementListVO::setAssigneeName,
+                RequirementListVO::setOpsFollowName,
+                RequirementListVO::setMaintFollowName,
+                RequirementListVO::setDepartmentName);
     }
 
     /**

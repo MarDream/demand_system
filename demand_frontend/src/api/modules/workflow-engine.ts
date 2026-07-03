@@ -32,6 +32,13 @@ export interface AvailableTransition {
   assigneeDisplayName?: string | null
   assigneeCandidates?: TransitionAssigneeCandidate[] | null
   defaultAssigneeId?: number | null
+  /** 处理人作域名称：根据 assigneeType 不同含义不同
+   *  SPECIFIED_USER → "指定用户"
+   *  SPECIFIED_ROLE → 角色名称
+   *  SPECIFIED_ROLE_GROUP → 角色组名称
+   *  SPECIFIED_ORG → "指定组织"
+   *  用于前端审批侧边栏第一行展示，如"处理角色 运维需求分析员" */
+  assigneeScopeName?: string | null
 }
 
 export interface WorkflowAvailableActions {
@@ -114,6 +121,8 @@ export interface CurrentNodeHandler {
   currentNodeId: string | null
   currentNodeName: string | null
   candidates?: { id: number; name: string }[] | null
+  /** 处理人作用域名称（同 AvailableTransition.assigneeScopeName） */
+  assigneeScopeName?: string | null
 }
 
 export const workflowEngineApi = {

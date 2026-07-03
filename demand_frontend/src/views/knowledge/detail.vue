@@ -279,7 +279,11 @@
       <template #footer>
         <el-button @click="shareDialogVisible = false">关闭</el-button>
         <el-button type="primary" @click="generateCurrentShareLink" v-permission="'button:knowledge:share'">生成链接</el-button>
-        <el-button :disabled="!currentShareLink" @click="copyCurrentShareLink">复制链接</el-button>
+        <el-tooltip content="请先生成分享链接" placement="top" :disabled="!!currentShareLink">
+          <span>
+            <el-button :disabled="!currentShareLink" @click="copyCurrentShareLink">复制链接</el-button>
+          </span>
+        </el-tooltip>
       </template>
     </AppDialog>
 

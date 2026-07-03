@@ -33,6 +33,11 @@ public class CurrentNodeHandlerDTO {
     /** 当前节点关联的候选用户（用于判断角色下人数） */
     private List<AssigneeCandidateDTO> candidates;
 
+    /**
+     * 处理人作用域名称：与 AvailableTransitionDTO.assigneeScopeName 含义一致
+     */
+    private String assigneeScopeName;
+
     // Getters & Setters
 
     public Long getRequirementId() {
@@ -89,5 +94,13 @@ public class CurrentNodeHandlerDTO {
 
     public void setCandidates(List<AssigneeCandidateDTO> candidates) {
         this.candidates = candidates;
+    }
+
+    public String getAssigneeScopeName() {
+        return assigneeScopeName;
+    }
+
+    public void setAssigneeScopeName(String assigneeScopeName) {
+        this.assigneeScopeName = assigneeScopeName;
     }
 }

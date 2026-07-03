@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.ErrorCode;
+import com.demand.system.common.util.UserNameResolver;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.organization.entity.SysOrg;
 import com.demand.system.module.organization.mapper.SysOrgMapper;
@@ -86,6 +87,23 @@ public class WorkflowEngineService {
             "source", "VERSION"
     );
 
+    /**
+     * 评价配置解析结果
+     */
+    record EvaluationConfig(
+            boolean enabled,
+            boolean required,
+            String source,
+            Map<String, Object> ratingConfig,
+            boolean hasDimensions
+    ) {
+        private static final EvaluationConfig DISABLED = new EvaluationConfig(false, false, null, null, false);
+        private static final EvaluationConfig VERSION_ENABLED = new EvaluationConfig(true, true, "VERSION", null, false);
+
+        static EvaluationConfig disabled() { return DISABLED; }
+        static EvaluationConfig versionEnabled() { return VERSION_ENABLED; }
+    }
+
     private final WorkflowInstanceMapper instanceMapper;
     private final WorkflowInstanceTransitionMapper transitionMapper;
     private final WorkflowNodeMapper nodeMapper;
@@ -112,6 +130,7 @@ public class WorkflowEngineService {
     private final KnowledgeBaseMapper knowledgeBaseMapper;
     private final RequirementPendingTaskSyncService pendingTaskSyncService;
     private final RequirementPendingTaskMapper pendingTaskMapper;
+    private final UserNameResolver userNameResolver;
 
     public WorkflowEngineService(WorkflowInstanceMapper instanceMapper, WorkflowInstanceTransitionMapper transitionMapper,
                                WorkflowNodeMapper nodeMapper, WorkflowEdgeMapper edgeMapper,
@@ -131,7 +150,8 @@ public class WorkflowEngineService {
                                KnowledgeDocumentService knowledgeDocumentService,
                                KnowledgeBaseMapper knowledgeBaseMapper,
                                @Lazy RequirementPendingTaskSyncService pendingTaskSyncService,
-                               RequirementPendingTaskMapper pendingTaskMapper) {
+                               RequirementPendingTaskMapper pendingTaskMapper,
+                               UserNameResolver userNameResolver) {
         this.instanceMapper = instanceMapper;
         this.transitionMapper = transitionMapper;
         this.nodeMapper = nodeMapper;
@@ -158,6 +178,7 @@ public class WorkflowEngineService {
         this.knowledgeBaseMapper = knowledgeBaseMapper;
         this.pendingTaskSyncService = pendingTaskSyncService;
         this.pendingTaskMapper = pendingTaskMapper;
+        this.userNameResolver = userNameResolver;
     }
 
     /**
@@ -205,13 +226,6 @@ public class WorkflowEngineService {
             return false;
         }
         WorkflowVersion version = workflowVersionMapper.selectById(instance.getWorkflowVersionId());
-        return isWorkflowVersionActive(version);
-    }
-
-    /**
-     * 判断工作流版本实体是否处于启用状态（避免重复查询 DB）
-     */
-    private boolean isWorkflowVersionActive(WorkflowVersion version) {
         return version != null && version.getIsActive() != null && version.getIsActive() == 1;
     }
 
@@ -326,19 +340,14 @@ public class WorkflowEngineService {
                 && !countersignService.canProceedAfterCountersign(instance.getId(), instance.getCurrentNodeId(), currentNode)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "会签尚未完成，无法流转");
         }
-        // 工作流版本级别启用评价时，评分必填
-        boolean versionEvaluationEnabled = isVersionApprovalEvaluationEnabled(instance);
-        // 节点级别启用评价
-        boolean nodeEvaluationEnabled = isApprovalEvaluationEnabled(currentNode);
-        boolean evaluationEnabled = versionEvaluationEnabled || nodeEvaluationEnabled;
-        if (versionEvaluationEnabled) {
-            // 版本级评价：评分必填且需在 1-5 星范围内
-            if (request.getRating() == null) {
-                throw new BusinessException(400, "当前工作流要求完成评价（1-5星）");
+        // 统一的评价配置解析（版本级别优先于节点级别）
+        EvaluationConfig evalConfig = resolveEvaluationConfig(instance, currentNode);
+        if (evalConfig.enabled()) {
+            if ("VERSION".equals(evalConfig.source())) {
+                validateVersionApprovalEvaluation(request.getRating());
+            } else {
+                validateApprovalEvaluation(currentNode, request.getRating(), request.getRatingDimensions(), request.getComment());
             }
-            approvalEvaluationService.validateRating(request.getRating());
-        } else if (nodeEvaluationEnabled) {
-            validateApprovalEvaluation(currentNode, request.getRating(), request.getRatingDimensions(), request.getComment());
         }
         // 修复 P2：按节点 properties.requireComment 校验意见必填
         if (isCommentRequired(currentNode)
@@ -374,7 +383,7 @@ public class WorkflowEngineService {
         newTransition.setAttachmentIds(extractAttachmentIds(request.getAttachments()));
         transitionMapper.insert(newTransition);
 
-        if (evaluationEnabled && currentNode != null) {
+        if (evalConfig.enabled() && currentNode != null) {
             approvalEvaluationService.saveOnApprovalTransition(
                     instance, currentNode, newTransition.getId(), operatorId,
                     request.getRating(), request.getRatingDimensions(),
@@ -746,11 +755,8 @@ public class WorkflowEngineService {
             return actions;
         }
 
-        // 查询工作流版本一次，供后续启用状态和评价开关复用
-        WorkflowVersion workflowVersion = workflowVersionMapper.selectById(instance.getWorkflowVersionId());
-
         // 工作流启用状态：实例存在但版本已停用时，不返回任何可用操作，前端不会渲染按钮
-        boolean workflowActive = isWorkflowVersionActive(workflowVersion);
+        boolean workflowActive = isWorkflowVersionActive(instance);
         actions.setWorkflowActive(workflowActive);
         if (!workflowActive) {
             return actions;
@@ -801,6 +807,7 @@ public class WorkflowEngineService {
                 dto.setAssigneeCandidates(assigneeCandidates);
                 dto.setDefaultAssigneeId(!assigneeCandidates.isEmpty() ? assigneeCandidates.get(0).getId() : null);
                 dto.setAssigneeDisplayName(resolveAssigneeDisplayName(targetNode, requirement, operatorId, assigneeCandidates));
+                dto.setAssigneeScopeName(resolveAssigneeScopeName(targetNode, requirement, operatorId));
                 return dto;
             }).collect(Collectors.toList());
         }
@@ -810,28 +817,16 @@ public class WorkflowEngineService {
         actions.setCanRollback(canOperate && instance.getPreviousNodeId() != null && !"end".equals(currentNode.getNodeType()));
         actions.setCanCancel(canCancel);
 
-        // 工作流版本级别的评价开关：优先于节点级别的评分配置
-        boolean versionEvaluationEnabled = isVersionApprovalEvaluationEnabled(workflowVersion);
-        if (versionEvaluationEnabled) {
-            // 工作流版本启用了评价，则评分必填
+        // 统一的评价配置解析（版本级别优先于节点级别）
+        EvaluationConfig evalConfig = resolveEvaluationConfig(instance, currentNode);
+        if ("VERSION".equals(evalConfig.source())) {
             actions.setEvaluationRequired(canOperate);
-            // 传递工作流版本级别的评分配置标记（用于前端区分配置来源）
             actions.setCurrentNodeRatingConfig(VERSION_EVAL_RATING_CONFIG);
+        } else if ("NODE".equals(evalConfig.source())) {
+            actions.setEvaluationRequired(canOperate && evalConfig.required());
+            actions.setCurrentNodeRatingConfig(evalConfig.ratingConfig());
         } else {
-            // 工作流版本未启用评价，使用节点级别的配置
-            actions.setEvaluationRequired(canOperate && isApprovalEvaluationRequired(currentNode));
-            if (currentNode != null && currentNode.getProperties() != null) {
-                Object ratingCfg = currentNode.getProperties().get("ratingConfig");
-                if (ratingCfg instanceof Map) {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> cfg = (Map<String, Object>) ratingCfg;
-                    Boolean required = (Boolean) cfg.getOrDefault("required", false);
-                    actions.setEvaluationRequired(canOperate && Boolean.TRUE.equals(required));
-                    if (Boolean.TRUE.equals(cfg.get("enabled"))) {
-                        actions.setCurrentNodeRatingConfig(ratingCfg);
-                    }
-                }
-            }
+            actions.setEvaluationRequired(false);
         }
         boolean countersignEnabled = isCountersignEnabled(currentNode);
         actions.setCountersignEnabled(countersignEnabled);
@@ -928,6 +923,7 @@ public class WorkflowEngineService {
             dto.setAssigneeTypeName(resolveAssigneeTypeName(currentNode));
             dto.setCandidates(candidates);
             dto.setDisplay(resolveHandlerDisplay(currentNode, candidates, assigneeType, req, operatorId));
+            dto.setAssigneeScopeName(resolveAssigneeScopeName(currentNode, req, operatorId));
 
             results.add(dto);
         }
@@ -936,20 +932,39 @@ public class WorkflowEngineService {
     }
 
     /**
+     * 在候选人列表中查找与指定 assigneeId 匹配的用户名
+     *
+     * @param candidates 候选人列表
+     * @param assigneeId 指派人ID
+     * @return 匹配的用户名，无匹配时返回 null
+     */
+    private String findMatchingCandidateName(List<AssigneeCandidateDTO> candidates, Long assigneeId) {
+        if (candidates == null || assigneeId == null) {
+            return null;
+        }
+        for (AssigneeCandidateDTO candidate : candidates) {
+            if (candidate.getId() != null && candidate.getId().equals(assigneeId)) {
+                return candidate.getName();
+            }
+        }
+        return null;
+    }
+
+    /**
      * 根据当前节点配置和候选用户列表，计算负责人列的显示文本。
-     * 显示格式：类型前缀 + 名称，如"处理角色 运维需求分析员"、"指定组织 市民服务中心"
+     * 只显示名称，不带类型前缀。
      *
      * <p>规则优先级：</p>
      * <ol>
-     *   <li>SPECIFIED_ROLE + 1 个候选人 → "处理人 张三"</li>
-     *   <li>SPECIFIED_ROLE + 多个候选人 → "处理角色 运维需求分析员"</li>
-     *   <li>有候选用户 → "处理人 张三"</li>
-     *   <li>CREATOR → "创建人 张三"</li>
+     *   <li>SPECIFIED_ROLE + 1 个候选人 → "张三"</li>
+     *   <li>SPECIFIED_ROLE + 多个候选人 → "运维需求分析员"</li>
+     *   <li>有候选用户 → "张三"</li>
+     *   <li>CREATOR → "张三"</li>
      *   <li>PREV_APPROVER → "上一处理人"</li>
      *   <li>其他 → "-"</li>
      * </ol>
      */
-    private String resolveHandlerDisplay(WorkflowNode node,
+    public String resolveHandlerDisplay(WorkflowNode node,
                                           List<AssigneeCandidateDTO> candidates,
                                           String assigneeType,
                                           Requirement requirement,
@@ -962,56 +977,43 @@ public class WorkflowEngineService {
         if ("SPECIFIED_ROLE".equals(assigneeType)) {
             // 优先判断：需求已指定具体的 assignee_id 且该用户在候选人中 → 显示该用户姓名
             if (requirement != null && requirement.getAssigneeId() != null) {
-                Long assigneeId = requirement.getAssigneeId().longValue();
-                if (candidates != null) {
-                    for (AssigneeCandidateDTO candidate : candidates) {
-                        if (candidate.getId() != null && candidate.getId().equals(assigneeId)) {
-                            return "处理人 " + candidate.getName();
-                        }
-                    }
+                String matchedName = findMatchingCandidateName(candidates, requirement.getAssigneeId().longValue());
+                if (matchedName != null) {
+                    return matchedName;
                 }
             }
             if (candidates != null && !candidates.isEmpty()) {
                 if (candidates.size() == 1) {
                     // 仅 1 人 → 显示用户姓名
-                    return "处理人 " + candidates.get(0).getName();
+                    return candidates.get(0).getName();
                 } else {
                     // 多人 → 显示角色名称
-                    return "处理角色 " + resolveRoleName(node.getAssigneeRoleId());
+                    return resolveAssigneeDisplayName(node, requirement, operatorId, candidates);
                 }
             }
-            return "处理角色 " + resolveRoleName(node.getAssigneeRoleId()) + "（暂无成员）";
+            return resolveAssigneeDisplayName(node, requirement, operatorId, candidates) + "（暂无成员）";
         }
 
         // SPECIFIED_USER / SPECIFIED_ORG 等：有候选人时优先判断 requirement.assigneeId 是否匹配
         if (candidates != null && !candidates.isEmpty()) {
-            // 优先判断：需求已指定具体的 assignee_id 且该用户在候选人中 → 显示该用户姓名
             if (requirement != null && requirement.getAssigneeId() != null) {
-                Long assigneeId = requirement.getAssigneeId().longValue();
-                for (AssigneeCandidateDTO candidate : candidates) {
-                    if (candidate.getId() != null && candidate.getId().equals(assigneeId)) {
-                        return "处理人 " + candidate.getName();
-                    }
+                String matchedName = findMatchingCandidateName(candidates, requirement.getAssigneeId().longValue());
+                if (matchedName != null) {
+                    return matchedName;
                 }
             }
-            return "处理人 " + candidates.get(0).getName();
+            return candidates.get(0).getName();
         }
 
-        // CREATOR: 取提交人姓名
-        if ("CREATOR".equals(assigneeType)) {
-            String userName = resolveUserName(requirement != null ? requirement.getCreatorId() : null, null);
-            return userName != null ? "创建人 " + userName : "-";
-        }
-
-        // PREV_APPROVER
-        if ("PREV_APPROVER".equals(assigneeType)) {
-            return "上一处理人";
-        }
-
-        // SPECIFIED_ORG / SPECIFIED_ROLE_GROUP 等兜底
+        // 无候选人时的兜底处理
         return switch (assigneeType) {
-            case "SPECIFIED_ORG" -> "指定组织 " + resolveOrgDisplayName(node) + "（暂无成员）";
-            case "SPECIFIED_ROLE_GROUP" -> "处理角色组 " + resolveRoleGroupName(node.getAssigneeRoleGroupId()) + "（暂无成员）";
+            case "CREATOR" -> {
+                String userName = userNameResolver.resolveUserName(requirement != null ? requirement.getCreatorId() : null, null);
+                yield userName != null ? userName : "-";
+            }
+            case "PREV_APPROVER" -> "上一处理人";
+            case "SPECIFIED_ORG" -> resolveAssigneeDisplayName(node, requirement, operatorId, null) + "（暂无成员）";
+            case "SPECIFIED_ROLE_GROUP" -> resolveAssigneeDisplayName(node, requirement, operatorId, null) + "（暂无成员）";
             case "SPECIFIED_USER" -> "未指定用户";
             default -> "-";
         };
@@ -1118,27 +1120,11 @@ public class WorkflowEngineService {
         }
     }
 
-    private boolean isApprovalEvaluationRequired(WorkflowNode currentNode) {
-        if (currentNode == null || !"approval".equalsIgnoreCase(currentNode.getNodeType())) {
-            return false;
-        }
-        return !isCountersignEnabled(currentNode);
-    }
-
     /**
      * 节点是否启用了评分配置（ratingConfig.enabled == true）
      */
     private boolean isApprovalEvaluationEnabled(WorkflowNode currentNode) {
-        if (currentNode == null || currentNode.getProperties() == null) {
-            return false;
-        }
-        Object ratingCfg = currentNode.getProperties().get("ratingConfig");
-        if (!(ratingCfg instanceof Map)) {
-            return false;
-        }
-        @SuppressWarnings("unchecked")
-        Map<String, Object> cfg = (Map<String, Object>) ratingCfg;
-        return Boolean.TRUE.equals(cfg.get("enabled"));
+        return resolveNodeRatingConfig(currentNode).enabled();
     }
 
     /**
@@ -1149,14 +1135,10 @@ public class WorkflowEngineService {
             return false;
         }
         WorkflowVersion version = workflowVersionMapper.selectById(instance.getWorkflowVersionId());
-        return isVersionApprovalEvaluationEnabled(version);
-    }
-
-    /**
-     * 判断工作流版本实体是否用了评价功能（避免重复查询 DB）
-     */
-    private boolean isVersionApprovalEvaluationEnabled(WorkflowVersion version) {
-        return version != null && Boolean.TRUE.equals(version.getApprovalEvaluationEnabled());
+        if (version == null) {
+            return false;
+        }
+        return Boolean.TRUE.equals(version.getApprovalEvaluationEnabled());
     }
 
     /**
@@ -1185,44 +1167,83 @@ public class WorkflowEngineService {
 
     private void validateApprovalEvaluation(WorkflowNode currentNode, Integer rating,
                                             Map<String, Integer> ratingDimensions, String comment) {
-        if (currentNode == null || currentNode.getProperties() == null) {
+        EvaluationConfig cfg = resolveNodeRatingConfig(currentNode);
+        if (!cfg.enabled()) {
             return;
         }
-        Object ratingCfg = currentNode.getProperties().get("ratingConfig");
-        if (!(ratingCfg instanceof Map)) {
-            // 节点未配置评分
-            return;
-        }
-        @SuppressWarnings("unchecked")
-        Map<String, Object> cfg = (Map<String, Object>) ratingCfg;
-        Boolean enabled = (Boolean) cfg.get("enabled");
-        if (!Boolean.TRUE.equals(enabled)) {
-            return;
-        }
-        Boolean required = (Boolean) cfg.getOrDefault("required", false);
-        Object dimsObj = cfg.get("dimensions");
-        boolean hasDimensions = dimsObj instanceof List && !((List<?>) dimsObj).isEmpty();
-        if (hasDimensions) {
+        if (cfg.hasDimensions()) {
             boolean dimensionsEmpty = ratingDimensions == null || ratingDimensions.isEmpty();
-            if (Boolean.TRUE.equals(required) && dimensionsEmpty) {
+            if (cfg.required() && dimensionsEmpty) {
                 throw new BusinessException(400, "当前节点要求完成多维评价");
             }
             if (ratingDimensions != null) {
                 for (Map.Entry<String, Integer> e : ratingDimensions.entrySet()) {
                     Integer s = e.getValue();
-                    if (s != null) {
-                        approvalEvaluationService.validateRating(s);
+                    if (s != null && (s < 1 || s > 5)) {
+                        throw new BusinessException(400, "评分必须在 1-5 星之间");
                     }
                 }
             }
         } else {
-            if (Boolean.TRUE.equals(required) && rating == null) {
+            if (cfg.required() && rating == null) {
                 throw new BusinessException(400, "当前节点要求完成评价");
             }
-            if (rating != null) {
-                approvalEvaluationService.validateRating(rating);
+            if (rating != null && (rating < 1 || rating > 5)) {
+                throw new BusinessException(400, "评分必须在 1-5 星之间");
             }
         }
+    }
+
+    /**
+     * 验证工作流版本级别的评价（评分必填且需在 1-5 星范围内）
+     */
+    private void validateVersionApprovalEvaluation(Integer rating) {
+        if (rating == null) {
+            throw new BusinessException(400, "当前工作流要求完成评价（1-5星）");
+        }
+        approvalEvaluationService.validateRating(rating);
+    }
+
+    /**
+     * 从节点属性中解析评分配置（ratingConfig），返回节点级别的评价配置
+     */
+    private EvaluationConfig resolveNodeRatingConfig(WorkflowNode node) {
+        if (node == null || node.getProperties() == null) {
+            return EvaluationConfig.disabled();
+        }
+        Object rawCfg = node.getProperties().get("ratingConfig");
+        if (!(rawCfg instanceof Map)) {
+            return EvaluationConfig.disabled();
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> cfg = (Map<String, Object>) rawCfg;
+        if (!Boolean.TRUE.equals(cfg.get("enabled"))) {
+            return EvaluationConfig.disabled();
+        }
+        boolean required = Boolean.TRUE.equals(cfg.getOrDefault("required", false));
+        boolean hasDimensions = cfg.get("dimensions") instanceof List && !((List<?>) cfg.get("dimensions")).isEmpty();
+        return new EvaluationConfig(true, required, "NODE", cfg, hasDimensions);
+    }
+
+    /**
+     * 统一的评价配置解析：版本级别优先，节点级别兜底
+     */
+    private EvaluationConfig resolveEvaluationConfig(WorkflowVersion version, WorkflowNode node) {
+        if (version != null && Boolean.TRUE.equals(version.getApprovalEvaluationEnabled())) {
+            return EvaluationConfig.versionEnabled();
+        }
+        return resolveNodeRatingConfig(node);
+    }
+
+    /**
+     * 统一的评价配置解析（从实例查询版本）
+     */
+    private EvaluationConfig resolveEvaluationConfig(WorkflowInstance instance, WorkflowNode node) {
+        if (instance == null || instance.getWorkflowVersionId() == null) {
+            return EvaluationConfig.disabled();
+        }
+        WorkflowVersion version = workflowVersionMapper.selectById(instance.getWorkflowVersionId());
+        return resolveEvaluationConfig(version, node);
     }
 
     public List<TransitionVO> getTransitionHistory(Long requirementId) {
@@ -1871,7 +1892,26 @@ public class WorkflowEngineService {
         };
     }
 
-    private List<AssigneeCandidateDTO> resolveAssigneeCandidates(WorkflowNode node, Requirement requirement, Long operatorId) {
+    private String resolveAssigneeScopeName(WorkflowNode node, Requirement requirement, Long operatorId) {
+        if (node == null) {
+            return "";
+        }
+        String assigneeType = node.getAssigneeType();
+        if (!StringUtils.hasText(assigneeType)) {
+            return "end".equalsIgnoreCase(node.getNodeType()) ? "结束节点" : "";
+        }
+        return switch (assigneeType) {
+            case "SPECIFIED_USER" -> "指定用户";
+            case "SPECIFIED_ROLE" -> resolveRoleName(node.getAssigneeRoleId());
+            case "SPECIFIED_ROLE_GROUP" -> resolveRoleGroupName(node.getAssigneeRoleGroupId());
+            case "SPECIFIED_ORG" -> "指定组织";
+            case "CREATOR" -> "提交人";
+            case "PREV_APPROVER" -> "上一节点处理人";
+            default -> assigneeType;
+        };
+    }
+
+    public List<AssigneeCandidateDTO> resolveAssigneeCandidates(WorkflowNode node, Requirement requirement, Long operatorId) {
         if (node == null) {
             return Collections.emptyList();
         }
@@ -1914,8 +1954,8 @@ public class WorkflowEngineService {
             case "SPECIFIED_ROLE" -> resolveRoleName(node.getAssigneeRoleId());
             case "SPECIFIED_ROLE_GROUP" -> resolveRoleGroupName(node.getAssigneeRoleGroupId());
             case "SPECIFIED_ORG" -> resolveOrgDisplayName(node);
-            case "CREATOR" -> resolveUserName(requirement != null ? requirement.getCreatorId() : null, "提交人");
-            case "PREV_APPROVER" -> resolveUserName(operatorId, "上一节点处理人");
+            case "CREATOR" -> userNameResolver.resolveUserName(requirement != null ? requirement.getCreatorId() : null, "提交人");
+            case "PREV_APPROVER" -> userNameResolver.resolveUserName(operatorId, "上一节点处理人");
             default -> assigneeType;
         };
     }
@@ -2100,23 +2140,6 @@ public class WorkflowEngineService {
             return orgName + "（当前层级及子层级）";
         }
         return orgName + "（仅当前层级）";
-    }
-
-    private String resolveUserName(Long userId, String fallback) {
-        if (userId == null) {
-            return fallback;
-        }
-        User user = userMapper.selectById(userId);
-        if (user == null) {
-            return fallback;
-        }
-        if (StringUtils.hasText(user.getRealName())) {
-            return user.getRealName().trim();
-        }
-        if (StringUtils.hasText(user.getUsername())) {
-            return user.getUsername().trim();
-        }
-        return fallback;
     }
 
     private String formatDuration(Long seconds) {

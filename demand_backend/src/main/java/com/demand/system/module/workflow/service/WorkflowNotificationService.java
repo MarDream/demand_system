@@ -7,6 +7,7 @@ import com.demand.system.module.rbac.mapper.UserRoleMapper;
 import com.demand.system.module.requirement.entity.Requirement;
 import com.demand.system.module.workflow.entity.WorkflowInstanceTransition;
 import com.demand.system.module.workflow.entity.WorkflowNode;
+import com.demand.system.module.workflow.entity.NotificationScope;
 import com.demand.system.module.workflow.mapper.WorkflowInstanceTransitionMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,10 +26,6 @@ public class WorkflowNotificationService {
 
     /** 节点属性：是否启用消息提醒开关 */
     public static final String PROP_NOTIFY_ON_ENTER = "notifyOnEnter";
-    /** 节点属性：消息提醒范围 — 沿已审批节点路径上审批过需求的所有用户（含创建人） */
-    public static final String NOTIFY_SCOPE_PATH_APPROVERS = "PATH_APPROVERS";
-    /** 节点属性：消息提醒范围 — 从需求创建节点到当前节点实际处理过的所有用户 */
-    public static final String NOTIFY_SCOPE_ACTUAL_HANDLERS = "ACTUAL_HANDLERS";
 
     private final NotificationService notificationService;
     private final UserRoleMapper userRoleMapper;
@@ -79,12 +76,11 @@ public class WorkflowNotificationService {
         if (!isNotifyOnEnterEnabled(enteredNode)) {
             return;
         }
-        String scope = resolveNotifyScope(enteredNode);
+        NotificationScope scope = resolveNotifyScope(enteredNode);
         Set<Long> recipientIds;
         try {
             recipientIds = switch (scope) {
-                case NOTIFY_SCOPE_ACTUAL_HANDLERS -> resolveActualHandlerIds(instanceId, requirement);
-                default -> resolvePathApproverIds(instanceId, requirement);
+                case ACTUAL_HANDLERS, PATH_APPROVERS -> resolvePathApproverIds(instanceId, requirement);
             };
         } catch (Exception ex) {
             log.warn("计算流转通知接收人失败, instanceId={}, scope={}", instanceId, scope, ex);
@@ -152,17 +148,6 @@ public class WorkflowNotificationService {
         return recipientIds;
     }
 
-    /**
-     * 解析"实际处理用户"集合：
-     * 包括需求创建人 + 已流转过的所有 transition 操作人（去重），即从开始节点到当前节点过程中真实处理过的用户。
-     * 与 {@link #resolvePathApproverIds} 区别：去重合并创建人与操作人，作为同一份接收人集合。
-     */
-    private Set<Long> resolveActualHandlerIds(Long instanceId, Requirement requirement) {
-        // 实际处理用户 = 已审批路径上的操作人 ∪ 需求创建人，实现上与 PATH_APPROVERS 等价。
-        // 保留为独立方法，便于后续扩展（例如仅通知"实际操作过的非创建人用户"）。
-        return resolvePathApproverIds(instanceId, requirement);
-    }
-
     private boolean isNotifyOnEnterEnabled(WorkflowNode node) {
         Map<String, Object> properties = node.getProperties();
         if (properties == null) {
@@ -172,18 +157,15 @@ public class WorkflowNotificationService {
         return Boolean.TRUE.equals(value);
     }
 
-    private String resolveNotifyScope(WorkflowNode node) {
+    private NotificationScope resolveNotifyScope(WorkflowNode node) {
         Map<String, Object> properties = node.getProperties();
         if (properties == null) {
-            return NOTIFY_SCOPE_PATH_APPROVERS;
+            return NotificationScope.PATH_APPROVERS;
         }
         Object value = properties.get("notifyScope");
         if (value instanceof String scope && StringUtils.hasText(scope)) {
-            String normalized = scope.trim().toUpperCase();
-            if (NOTIFY_SCOPE_ACTUAL_HANDLERS.equals(normalized) || NOTIFY_SCOPE_PATH_APPROVERS.equals(normalized)) {
-                return normalized;
-            }
+            return NotificationScope.fromString(scope);
         }
-        return NOTIFY_SCOPE_PATH_APPROVERS;
+        return NotificationScope.PATH_APPROVERS;
     }
 }
