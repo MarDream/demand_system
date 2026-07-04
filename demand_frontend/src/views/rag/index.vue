@@ -442,11 +442,21 @@
 
                 <!-- 展开时显示所有片段 -->
                 <div v-if="expandedCitations.has(citation.documentId)" class="citation-item__chunks">
+                  <div class="citation-item__chunks-header">
+                    <span class="citation-item__chunks-count">{{ getCitationChunks(citation).length }} 条片段</span>
+                    <el-button
+                      text
+                      type="primary"
+                      size="small"
+                      @click.stop="toggleCitationExpand(citation)"
+                    >
+                      收起片段
+                    </el-button>
+                  </div>
                   <div
                     v-for="(chunk, idx) in getCitationChunks(citation)"
                     :key="idx"
                     class="citation-chunk"
-                    @click.stop="openPreview(citation)"
                   >
                     <div class="citation-chunk__header">
                       <el-tag size="small" type="info">片段 {{ idx + 1 }}</el-tag>
@@ -545,6 +555,8 @@ interface RagMessage {
   createdAt: number
   failed?: boolean
   question?: string
+  questionIntent?: string | null
+  intentConfidence?: number | null
   processSummary?: string
   summaryPoints?: string[]
   thinkingSteps?: RagThinkingStep[]
@@ -1032,7 +1044,10 @@ async function handleAsk() {
             question,
             knowledgeBaseName: knowledgeBase.name,
             session,
-            streamAnswer: Boolean(selectedModel?.id)
+            streamAnswer: Boolean(selectedModel?.id),
+            questionIntent: response.questionIntent ?? null,
+            intentConfidence: response.intentConfidence ?? null,
+            citations: response.citations ?? buildCitations(response.results || [], question, response),
           })
           session.messages.push(assistantMessage)
           session.updatedAt = assistantMessage.createdAt
@@ -1066,7 +1081,10 @@ async function handleAsk() {
           }
           assistantMessage.processSummary = buildProcessSummary(response, knowledgeBase.name)
           assistantMessage.summaryPoints = extractSummaryPoints(response, question)
-          assistantMessage.citations = buildCitations(response?.results || [], question)
+          // 优先走后端角标 citations，否则用前端片段兜底
+          assistantMessage.citations = response.citations?.length
+            ? buildCitationsFromBackend(response.citations, question)
+            : buildCitations(response?.results || [], question)
           assistantMessage.retrievedCount = response?.total || response?.results?.length || 0
           // 优先使用后端返回的 thinkingSteps，前端仅作兜底
           assistantMessage.thinkingSteps = response.thinkingSteps?.length
@@ -1110,7 +1128,10 @@ async function handleAsk() {
         question,
         knowledgeBaseName: knowledgeBase.name,
         session,
-        streamAnswer: false
+        streamAnswer: false,
+        questionIntent: response.questionIntent ?? null,
+        intentConfidence: response.intentConfidence ?? null,
+        citations: response.citations ?? buildCitations(response.results || [], question, response),
       })
       session.messages.push(assistantMessage)
       session.updatedAt = assistantMessage.createdAt
@@ -1243,6 +1264,9 @@ function createAssistantMessage(options: {
   knowledgeBaseName: string
   session: RagSession
   streamAnswer: boolean
+  questionIntent?: string | null
+  intentConfidence?: number | null
+  citations?: CitationReference[]
 }): RagMessage {
   const response = options.response
   const content = options.streamAnswer ? '' : buildAnswerContent(response, options.question)
@@ -1252,6 +1276,8 @@ function createAssistantMessage(options: {
     content,
     createdAt: Date.now(),
     question: options.question,
+    questionIntent: options.questionIntent ?? null,
+    intentConfidence: options.intentConfidence ?? null,
     processSummary: buildProcessSummary(response, options.knowledgeBaseName),
     summaryPoints: extractSummaryPoints(response, options.question),
     thinkingSteps: buildThinkingStepsFallback({
@@ -1262,7 +1288,7 @@ function createAssistantMessage(options: {
       response,
       llmModelLabel: selectedChatModel.value?.label || null
     }),
-    citations: buildCitations(response?.results || [], options.question),
+    citations: options.citations ?? buildCitations(response?.results || [], options.question),
     retrievedCount: response?.total || response?.results?.length || 0,
     llmModelId: selectedChatModel.value?.id || null,
     llmModelLabel: selectedChatModel.value?.label || null
@@ -1341,13 +1367,10 @@ function buildAnswerContent(response: SearchResponse | null | undefined, questio
   const answer = response?.answer?.trim()
   if (answer) return answer
 
-  const firstResult = response?.results?.[0]
-  if (!firstResult) {
-    return '当前没有检索到相关文档片段，建议换一个描述方式或补充更明确的关键词。'
+  if (response?.results?.length) {
+    return `已命中 ${response.total || response.results.length} 条相关片段，请查看右侧「涉及文件」列表了解详情。`
   }
-
-  const summary = extractCoreExcerpt([firstResult.content], question, firstResult.sectionTitle || '')
-  return `已命中 ${response?.total || response?.results?.length || 1} 条相关片段，优先参考「${firstResult.fileName}」中的核心命中内容：${summary}`
+  return '当前没有检索到相关文档片段，建议换一个描述方式或补充更明确的关键词。'
 }
 
 function buildProcessSummary(response: SearchResponse | null | undefined, knowledgeBaseName: string) {
@@ -1431,6 +1454,9 @@ function buildThinkingStepsFallback(params: {
 }
 
 function buildCitations(results: SearchResultItem[], question: string) {
+  // 若传入 results 为空，返回空
+  if (!results?.length) return []
+
   const grouped = new Map<number, RagCitation & { pageSet: Set<number>; textPool: string[]; sectionPool: string[] }>()
 
   results.forEach((item) => {
@@ -1474,7 +1500,6 @@ function buildCitations(results: SearchResultItem[], question: string) {
   return Array.from(grouped.values())
     .map(({ pageSet: _pageSet, textPool, sectionPool, ...citation }) => {
       const preferredSection = pickBestSectionTitle(sectionPool, question)
-      // 构建 chunks 数组：每个检索片段一个条目
       const chunks: CitationChunk[] = textPool.map((content, idx) => {
         const sections = sectionPool[idx] || ''
         const pageNums = Array.from(_pageSet || new Set<number>())
@@ -1485,7 +1510,6 @@ function buildCitations(results: SearchResultItem[], question: string) {
           score: undefined
         }
       })
-      // excerpt = 第一条内容摘要（折叠状态显示）
       const excerpt = extractCoreExcerpt(textPool, question, preferredSection || citation.sectionTitle || '')
       return {
         ...citation,
@@ -1495,6 +1519,26 @@ function buildCitations(results: SearchResultItem[], question: string) {
       }
     })
     .sort((a, b) => b.score - a.score)
+}
+
+/**
+ * 使用后端角标引用列表构建 citations 面板条目。
+ * 后端角标按 documentId 聚合、按相关度降序、带连续序号。
+ * 折叠摘要由回答正文内的 [N] 角标负责，不在 citations 面板重复片段原文。
+ */
+function buildCitationsFromBackend(citations: CitationReference[], question: string): RagCitation[] {
+  return citations.map((c) => ({
+    knowledgeBaseId: selectedKbId.value ?? 0,
+    documentId: c.documentId,
+    fileName: c.fileName,
+    fileType: detectFileType(c.fileName),
+    sectionTitle: '',
+    excerpt: '',
+    score: c.maxScore,
+    hitCount: c.hitCount,
+    pageText: `${c.hitCount} 个片段`,
+    chunks: undefined,
+  }))
 }
 
 function collectRepresentativePoints(texts: string[], question: string, limit: number) {
@@ -2557,6 +2601,19 @@ function formatDateTime(timestamp: number) {
 .citation-item__chunks {
   border-top: 1px solid var(--color-border);
   background: rgba(255, 255, 255, 0.6);
+}
+
+.citation-item__chunks-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.citation-item__chunks-count {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
 }
 
 .citation-chunk {

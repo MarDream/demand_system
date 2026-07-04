@@ -1337,12 +1337,25 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     }
 
     private List<String> splitContent(String content) {
-        List<String> chunks = new ArrayList<>();
         // 优先级：模型配置 > 全局配置
         int[] config = resolveChunkConfig();
         int chunkSize = config[0];
         int overlap = config[1];
 
+        // 新增：根据配置选择分块模式
+        String chunkingMode = knowledgeConfig.getChunkingMode();
+        if ("token".equalsIgnoreCase(chunkingMode) || "token_mode".equalsIgnoreCase(chunkingMode)) {
+            int maxTokens = knowledgeConfig.getMaxTokens() > 0 ? knowledgeConfig.getMaxTokens() : chunkSize / 2;
+            int overlapTokens = knowledgeConfig.getOverlapTokens() > 0 ? knowledgeConfig.getOverlapTokens() : overlap;
+            try {
+                return splitContentByTokens(content, maxTokens, overlapTokens);
+            } catch (Exception e) {
+                log.warn("Token 级分块失败，降级为字符级分块: {}", e.getMessage());
+                // fallback to char mode
+            }
+        }
+
+        List<String> chunks = new ArrayList<>();
         String[] paragraphs = content.split("\\n\\n+");
 
         StringBuilder currentChunk = new StringBuilder();
@@ -1372,6 +1385,46 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             chunks.add(currentChunk.toString().trim());
         }
 
+        return chunks;
+    }
+
+    /**
+     * Token 级滑动窗口分块（基于 jtokkit cl100k_base 编码）。
+     * 替代固定字符窗口，确保每块不超过模型实际 token 上限。
+     */
+    private List<String> splitContentByTokens(String content, int maxTokens, int overlapTokens) {
+        List<String> chunks = new ArrayList<>();
+        if (content == null || content.isBlank()) {
+            return chunks;
+        }
+
+        var encoding = com.knuddels.jtokkit.Encodings.newDefaultEncodingRegistry()
+                .getEncoding(com.knuddels.jtokkit.api.EncodingType.CL100K_BASE);
+        var encoded = encoding.encode(content);
+        int total = encoded.size();
+
+        if (total <= maxTokens) {
+            chunks.add(content.trim());
+            return chunks;
+        }
+
+        int start = 0;
+        while (start < total) {
+            int end = Math.min(start + maxTokens, total);
+            var chunkTokens = new com.knuddels.jtokkit.api.IntArrayList(end - start);
+            for (int i = start; i < end; i++) {
+                chunkTokens.add(encoded.get(i));
+            }
+            String chunkText = encoding.decode(chunkTokens);
+            chunks.add(chunkText.trim());
+            if (end >= total) {
+                break;
+            }
+            start = end - overlapTokens;
+            if (start < 0) {
+                start = 0;
+            }
+        }
         return chunks;
     }
 

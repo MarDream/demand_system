@@ -83,6 +83,17 @@ export interface SearchResponse {
   answer?: string | null
   processSummary?: string | null
   thinkingSteps?: ThinkingStep[]
+  questionIntent?: string | null
+  intentConfidence?: number | null
+  citations?: CitationReference[]
+}
+
+export interface CitationReference {
+  index: number
+  documentId: number
+  fileName: string
+  hitCount: number
+  maxScore: number
 }
 
 export type SearchMode = 'hybrid' | 'semantic' | 'keyword'

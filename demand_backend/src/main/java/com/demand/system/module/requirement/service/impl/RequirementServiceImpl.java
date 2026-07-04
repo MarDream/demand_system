@@ -61,6 +61,7 @@ import com.demand.system.module.knowledge.service.KnowledgeDocumentService;
 import com.demand.system.module.rbac.entity.Role;
 import com.demand.system.module.rbac.mapper.RoleGroupMapper;
 import com.demand.system.module.rbac.mapper.RoleMapper;
+import com.demand.system.module.rbac.mapper.RoleDataScopeOrgMapper;
 import com.demand.system.module.rbac.support.RbacConstants;
 import com.demand.system.module.workflow.entity.WorkflowEdge;
 import com.demand.system.module.workflow.entity.WorkflowInstance;
@@ -170,8 +171,9 @@ public class RequirementServiceImpl implements RequirementService {
     private final UserLocalCache userLocalCache;
     private final OrgLocalCache orgLocalCache;
     private final VisibleOrgCache visibleOrgCache;
+    private final RoleDataScopeOrgMapper roleDataScopeOrgMapper;
 
-    public RequirementServiceImpl(RequirementMapper requirementMapper, RequirementPendingTaskMapper pendingTaskMapper, RequirementFollowMapper requirementFollowMapper, RequirementHistoryMapper historyMapper, RequirementCommentMapper requirementCommentMapper, CustomFieldValueMapper customFieldValueMapper, UserMapper userMapper, UserOrganizationMapper userOrganizationMapper, SysOrgService sysOrgService, NotificationService notificationService, RelationService relationService, WorkflowService workflowService, WorkflowEngineService workflowEngineService, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowGraphNavigator workflowGraphNavigator, WorkflowRuntimeLoader workflowRuntimeLoader, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, WorkflowInstanceMapper workflowInstanceMapper, WorkflowInstanceTransitionMapper workflowInstanceTransitionMapper, WorkflowTransitionRecordMapper workflowTransitionRecordMapper, WorkflowDefinitionEngine workflowDefinitionEngine, RequirementApprovalEvaluationService approvalEvaluationService, RequirementConfigService requirementConfigService, KnowledgeDocumentService knowledgeDocumentService, NodeStatusMapper nodeStatusMapper, ProjectMapper projectMapper, RoleMapper roleMapper, RoleGroupMapper roleGroupMapper, FileRecordMapper fileRecordMapper, ObjectMapper objectMapper, DistributedIdGenerator distributedIdGenerator, com.demand.system.module.organization.service.OrgHierarchyCache orgHierarchyCache, UserLocalCache userLocalCache, OrgLocalCache orgLocalCache, VisibleOrgCache visibleOrgCache) {
+    public RequirementServiceImpl(RequirementMapper requirementMapper, RequirementPendingTaskMapper pendingTaskMapper, RequirementFollowMapper requirementFollowMapper, RequirementHistoryMapper historyMapper, RequirementCommentMapper requirementCommentMapper, CustomFieldValueMapper customFieldValueMapper, UserMapper userMapper, UserOrganizationMapper userOrganizationMapper, SysOrgService sysOrgService, NotificationService notificationService, RelationService relationService, WorkflowService workflowService, WorkflowEngineService workflowEngineService, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowGraphNavigator workflowGraphNavigator, WorkflowRuntimeLoader workflowRuntimeLoader, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, WorkflowInstanceMapper workflowInstanceMapper, WorkflowInstanceTransitionMapper workflowInstanceTransitionMapper, WorkflowTransitionRecordMapper workflowTransitionRecordMapper, WorkflowDefinitionEngine workflowDefinitionEngine, RequirementApprovalEvaluationService approvalEvaluationService, RequirementConfigService requirementConfigService, KnowledgeDocumentService knowledgeDocumentService, NodeStatusMapper nodeStatusMapper, ProjectMapper projectMapper, RoleMapper roleMapper, RoleGroupMapper roleGroupMapper, FileRecordMapper fileRecordMapper, ObjectMapper objectMapper, DistributedIdGenerator distributedIdGenerator, com.demand.system.module.organization.service.OrgHierarchyCache orgHierarchyCache, UserLocalCache userLocalCache, OrgLocalCache orgLocalCache, VisibleOrgCache visibleOrgCache, RoleDataScopeOrgMapper roleDataScopeOrgMapper) {
         this.requirementMapper = requirementMapper;
         this.pendingTaskMapper = pendingTaskMapper;
         this.requirementFollowMapper = requirementFollowMapper;
@@ -209,6 +211,7 @@ public class RequirementServiceImpl implements RequirementService {
         this.userLocalCache = userLocalCache;
         this.orgLocalCache = orgLocalCache;
         this.visibleOrgCache = visibleOrgCache;
+        this.roleDataScopeOrgMapper = roleDataScopeOrgMapper;
     }
 
     @Override
@@ -224,7 +227,7 @@ public class RequirementServiceImpl implements RequirementService {
         List<String> currentRoleCodes = SecurityUtils.getCurrentUserRoles();
         boolean isSuperAdmin = isSuperAdmin(currentRoleCodes);
         if (!isSuperAdmin) {
-            List<Long> visibleOrgIds = resolveVisibleOrgIds(currentUserId, false);
+            List<Long> visibleOrgIds = resolveVisibleOrgIds(currentUserId, isSuperAdmin);
             if (visibleOrgIds.isEmpty()) {
                 // 方案A：用户未关联任何组织时，提示完善信息而非降级为只看自己创建的
                 throw new BusinessException(400, "您尚未关联组织，请联系管理员配置您的组织信息后再查看需求");
@@ -1452,6 +1455,17 @@ public class RequirementServiceImpl implements RequirementService {
         return new ArrayList<>(orgIds);
     }
 
+    /**
+     * 查询用户所有角色配置的数据权限组织 ID 列表
+     */
+    private List<Long> resolveRoleDataScopeOrgIds(Long userId) {
+        List<Long> roleIds = getUserRoleIds(userId);
+        if (roleIds == null || roleIds.isEmpty()) {
+            return List.of();
+        }
+        return roleDataScopeOrgMapper.selectOrgIdsByRoleIds(roleIds);
+    }
+
     private List<Long> resolveScopedOrgIds(List<Long> directOrgIds) {
         if (directOrgIds == null || directOrgIds.isEmpty()) {
             return List.of();
@@ -2104,7 +2118,7 @@ public class RequirementServiceImpl implements RequirementService {
         vo.setFollowed(count != null && count > 0);
     }
 
-    private boolean isSuperAdmin(List<String> roleCodes) {
+    public static boolean isSuperAdmin(List<String> roleCodes) {
         if (roleCodes == null) {
             return false;
         }
@@ -2116,7 +2130,7 @@ public class RequirementServiceImpl implements RequirementService {
         );
     }
 
-    private List<Long> resolveVisibleOrgIds(Long userId, boolean isSuperAdmin) {
+    public List<Long> resolveVisibleOrgIds(Long userId, boolean isSuperAdmin) {
         if (isSuperAdmin || userId == null) {
             return List.of();
         }
@@ -2125,16 +2139,28 @@ public class RequirementServiceImpl implements RequirementService {
         if (cached != null) {
             return cached;
         }
-        // 缓存未命中，走 DB 查询
+
+        // 1. 用户直属组织（含下级）
         List<Long> directOrgIds = resolveDirectOrgIds(userId);
-        if (directOrgIds.isEmpty()) {
-            return List.of();
+        Set<Long> result = new LinkedHashSet<>();
+        if (!directOrgIds.isEmpty()) {
+            result.addAll(orgHierarchyCache.getDescendantsBatch(directOrgIds));
         }
-        // 使用缓存批量获取所有子孙组织ID
-        List<Long> result = orgHierarchyCache.getDescendantsBatch(directOrgIds);
+
+        // 2. 角色配置的数据权限组织（含下级）
+        //    若角色未配置 dataScopeOrgIds（列表为空），则默认等于用户自身直属组织（含下级）
+        List<Long> roleOrgIds = resolveRoleDataScopeOrgIds(userId);
+        if (roleOrgIds.isEmpty()) {
+            roleOrgIds = directOrgIds;  // 默认：角色未配置时，等于用户自身组织
+        }
+        if (!roleOrgIds.isEmpty()) {
+            result.addAll(orgHierarchyCache.getDescendantsBatch(roleOrgIds));
+        }
+
+        List<Long> finalResult = new ArrayList<>(result);
         // 写入缓存
-        visibleOrgCache.putVisibleOrgIds(userId, result);
-        return result;
+        visibleOrgCache.putVisibleOrgIds(userId, finalResult);
+        return finalResult;
     }
 
     private boolean canViewRequirement(Requirement requirement, Long userId) {
@@ -2156,7 +2182,7 @@ public class RequirementServiceImpl implements RequirementService {
         if (isAssignedAsCurrentNodeApprover(requirement, userId)) {
             return true;
         }
-        List<Long> visibleOrgIds = resolveVisibleOrgIds(userId, false);
+        List<Long> visibleOrgIds = resolveVisibleOrgIds(userId, isSuperAdmin(SecurityUtils.getCurrentUserRoles()));
         return requirement.getOrgId() != null && visibleOrgIds.contains(requirement.getOrgId());
     }
 
@@ -2455,7 +2481,7 @@ public class RequirementServiceImpl implements RequirementService {
         List<String> currentRoleCodes = SecurityUtils.getCurrentUserRoles();
         boolean isSuperAdmin = isSuperAdmin(currentRoleCodes);
         if (!isSuperAdmin) {
-            List<Long> visibleOrgIds = resolveVisibleOrgIds(currentUserId, false);
+            List<Long> visibleOrgIds = resolveVisibleOrgIds(currentUserId, isSuperAdmin);
             if (visibleOrgIds.isEmpty()) {
                 throw new BusinessException(400, "您尚未关联组织，请联系管理员配置您的组织信息后再查看需求");
             } else {

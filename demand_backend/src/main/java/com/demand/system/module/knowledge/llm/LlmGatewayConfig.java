@@ -12,6 +12,10 @@ public class LlmGatewayConfig {
     private Provider embedding = new Provider();
     private Provider reranker = new Provider();
     private Provider chat = new Provider();
+    /** Provider for event/entity extraction during multi-hop expansion */
+    private Provider eventExtractor = new Provider();
+    /** Provider for LLM-based rerank (standard mode) */
+    private Provider llmReranker = new Provider();
 
     public Provider getEmbedding() {
         return embedding;
@@ -35,6 +39,22 @@ public class LlmGatewayConfig {
 
     public void setChat(Provider chat) {
         this.chat = chat;
+    }
+
+    public Provider getEventExtractor() {
+        return eventExtractor;
+    }
+
+    public void setEventExtractor(Provider eventExtractor) {
+        this.eventExtractor = eventExtractor;
+    }
+
+    public Provider getLlmReranker() {
+        return llmReranker;
+    }
+
+    public void setLlmReranker(Provider llmReranker) {
+        this.llmReranker = llmReranker;
     }
 
     public static class Provider {

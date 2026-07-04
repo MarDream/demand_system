@@ -440,7 +440,7 @@ function invalidateViewCache(view: RequirementViewMode) {
 }
 
 // 待办操作后刷新，只清除待办视图缓存
-export function invalidatePendingCache() {
+function invalidatePendingCache() {
   const view: RequirementViewMode = 'pending'
   invalidateViewCache(view)
 }
@@ -793,6 +793,15 @@ watch(tableData, () => {
 })
 
 // Handlers
+
+// 防抖定时器：handleSearch 和 handleReset 共享，避免快速连续触发时竞态
+let debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+function debouncedSearch(fn: () => void, wait = 300) {
+  if (debounceTimer) clearTimeout(debounceTimer)
+  debounceTimer = setTimeout(fn, wait)
+}
+
 function handleSearch() {
   pagination.pageNum = 1
   // 清除缓存，强制重新加载
@@ -958,7 +967,7 @@ async function handleExport() {
   // 构建检索条件参数
   const params: RequirementQuery = {
     pageNum: 1,
-    pageSize: 10,
+    pageSize: pagination.pageSize,
   }
   if (filterForm.type) params.type = filterForm.type
   if (filterForm.priority) params.priority = filterForm.priority
@@ -1087,8 +1096,6 @@ function statusTagType(status: string): string {
     '评审中': 'warning', '已通过': 'success', '开发中': 'primary', '测试中': 'info',
     '已上线': 'success', '已验收': 'success', '已取消': 'info', '已拒绝': 'danger',
     '打回': 'danger', '测试不通过': 'danger', '验收不通过': 'danger',
-    PENDING_REVIEW: 'warning', REJECTED: 'danger', SENT_BACK: 'danger',
-    TEST_FAILED: 'danger', ACCEPT_FAILED: 'danger',
   }
   return map[status] || 'info'
 }
@@ -1102,6 +1109,14 @@ onMounted(async () => {
   ])
 
   // 加载主数据
+  // detail.vue 操作完成后跳回时，检测刷新标记并清除缓存
+  const refreshCache = route.query._r === '1'
+  if (refreshCache) {
+    tabDataCache.clear()
+    // 清除 URL 中的刷新标记
+    router.replace({ query: { ...route.query, _r: undefined } })
+  }
+
   await fetchData()
 
   // 异步加载非关键数据（不阻塞页面渲染）

@@ -173,7 +173,7 @@ public class MilvusVectorStore {
         }
 
         Map<String, Object> searchParams = new HashMap<>();
-        searchParams.put("ef", String.valueOf(milvusConfig.getHnswEfSearch()));
+        searchParams.put("ef", String.valueOf(milvusConfig.getHnswEfSearchDefault()));
 
         SearchReq searchReq = SearchReq.builder()
                 .collectionName(collectionName)

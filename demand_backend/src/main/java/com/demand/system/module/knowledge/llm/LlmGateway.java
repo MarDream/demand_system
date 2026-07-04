@@ -147,6 +147,145 @@ public class LlmGateway {
         }
     }
 
+    // ==================== Event Extraction (SAG) ====================
+
+    /**
+     * 从文档chunk中提取事件和实体（SAG事件提取）。
+     * 调用 LLM 要求其返回 JSON 格式的事件和实体。
+     *
+     * @param provider   LLM provider配置（从数据库解析）
+     * @param chunkText  chunk原文
+     * @param chunkIndex chunk序号
+     * @param docTitle   文档标题（用于上下文）
+     * @return JSON字符串（{"events":[...], "entities":[...]}）
+     */
+    public String extractEventsFromChunk(
+            LlmGatewayConfig.Provider provider,
+            String chunkText,
+            int chunkIndex,
+            String docTitle
+    ) {
+        try {
+            String systemPrompt = """
+                    你是一个专业的内容理解助手，擅长从文档片段中提取结构化的事件和实体信息。
+
+                    请仔细分析以下文档片段，提取所有有意义的事件和实体。
+
+                    提取规则：
+                    1. 事件提取：
+                       - 从片段中识别出所有具有完整语义的事件
+                       - 每个事件应包含：title（事件标题）、summary（一句话摘要）、content（详细描述，原文摘录）
+                       - category 从以下选一个：需求/缺陷/变更/决策/测试/部署/其他
+                       - priority 从以下选一个：high/medium/low
+                       - keywords：提取3-5个核心关键词
+                       - references：提及的相关文档、系统或人员列表
+
+                    2. 实体提取：
+                       - 识别事件中提到的重要实体（人员、组织、系统、产品、指标等）
+                       - type 从以下选一个：person/organization/product/metric/system/action/work/group/subject/tags
+                       - 每个实体包含：type、name、description（描述）
+
+                    输出格式（严格 JSON）：
+                    {
+                      "events": [
+                        {
+                          "title": "事件标题",
+                          "summary": "一句话摘要",
+                          "content": "详细描述",
+                          "category": "需求",
+                          "priority": "medium",
+                          "keywords": ["关键词1","关键词2"],
+                          "references": ["引用1","引用2"],
+                          "entities": [
+                            {"type": "product", "name": "系统名称", "description": "描述"},
+                            {"type": "person", "name": "人员名称", "description": "描述"}
+                          ]
+                        }
+                      ]
+                    }
+
+                    注意：如果片段中没有任何有意义的事件或实体，请返回空数组。
+                    重要：必须直接返回 JSON，不要额外解释。
+                    """;
+
+            String userMessage = String.format(
+                    "文档标题：%s\nChunk序号：%d\n\n文档内容：\n%s",
+                    docTitle != null && !docTitle.isBlank() ? docTitle : "未知文档",
+                    chunkIndex,
+                    chunkText
+            );
+
+            // 构建 OpenAI chat 请求
+            Map<String, Object> body = new HashMap<>();
+            body.put("model", provider.getModel());
+            body.put("messages", List.of(
+                    Map.of("role", "system", "content", systemPrompt),
+                    Map.of("role", "user", "content", userMessage)
+            ));
+            body.put("temperature", 0.1);  // 低温度确保输出稳定
+            body.put("max_tokens", 2048);
+
+            JsonNode root = call(provider, "/chat/completions", body);
+            String content = root.path("choices").path(0).path("message").path("content").asText();
+
+            if (content == null || content.isBlank()) {
+                return "{\"events\":[],\"entities\":[]}";
+            }
+
+            // 清理可能的 markdown 代码块包裹
+            content = cleanJsonResponse(content);
+
+            // 验证是合法 JSON
+            try {
+                objectMapper.readTree(content);
+                return content;
+            } catch (Exception e) {
+                log.warn("LLM返回内容非合法JSON，尝试提取JSON片段: {}", content.substring(0, Math.min(200, content.length())));
+                // 尝试从 markdown 代码块或文本中提取 JSON
+                return extractJsonFromText(content);
+            }
+        } catch (Exception e) {
+            log.error("事件提取失败: model={}, error={}", provider.getModel(), e.getMessage());
+            // 返回空结果而非抛出异常，确保 ingestion 不中断
+            return "{\"events\":[],\"entities\":[]}";
+        }
+    }
+
+    /**
+     * 清理 LLM 返回内容：移除 markdown 代码块包裹、前后空白。
+     */
+    private String cleanJsonResponse(String raw) {
+        if (raw == null) return "{\"events\":[],\"entities\":[]}";
+        String s = raw.trim();
+        // 移除 ```json ... ``` 或 ``` ... ``` 包裹
+        if (s.startsWith("```")) {
+            int firstNewline = s.indexOf('\n');
+            if (firstNewline >= 0) {
+                s = s.substring(firstNewline + 1);
+            }
+            if (s.endsWith("```")) {
+                s = s.substring(0, s.length() - 3).trim();
+            }
+        }
+        return s;
+    }
+
+    /**
+     * 从可能包含非 JSON 内容的文本中提取 JSON 对象。
+     */
+    private String extractJsonFromText(String text) {
+        int start = text.indexOf('{');
+        int end = text.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+            try {
+                String candidate = text.substring(start, end + 1);
+                objectMapper.readTree(candidate);
+                return candidate;
+            } catch (Exception ignored) {}
+        }
+        return "{\"events\":[],\"entities\":[]}";
+    }
+
     // ==================== Chat (RAG Answer Generation) ====================
 
     /**

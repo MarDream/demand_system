@@ -10,6 +10,9 @@ public class KnowledgeSearchResponse {
     private String answer;
     private String processSummary;
     private List<ThinkingStep> thinkingSteps;
+    private String questionIntent;
+    private Double intentConfidence;
+    private List<CitationReference> citations;
 
     public List<SearchResultItem> getResults() {
         return results;
@@ -49,6 +52,30 @@ public class KnowledgeSearchResponse {
 
     public void setThinkingSteps(List<ThinkingStep> thinkingSteps) {
         this.thinkingSteps = thinkingSteps;
+    }
+
+    public String getQuestionIntent() {
+        return questionIntent;
+    }
+
+    public void setQuestionIntent(String questionIntent) {
+        this.questionIntent = questionIntent;
+    }
+
+    public Double getIntentConfidence() {
+        return intentConfidence;
+    }
+
+    public void setIntentConfidence(Double intentConfidence) {
+        this.intentConfidence = intentConfidence;
+    }
+
+    public List<CitationReference> getCitations() {
+        return citations;
+    }
+
+    public void setCitations(List<CitationReference> citations) {
+        this.citations = citations;
     }
 
     public static KnowledgeSearchResponseBuilder builder() {
@@ -123,12 +150,66 @@ public class KnowledgeSearchResponse {
         }
     }
 
+    public static class CitationReference {
+        private Integer index;
+        private Long documentId;
+        private String fileName;
+        private Integer hitCount;
+        private Double maxScore;
+        private List<String> sources;
+
+        public Integer getIndex() { return index; }
+        public void setIndex(Integer index) { this.index = index; }
+        public Long getDocumentId() { return documentId; }
+        public void setDocumentId(Long documentId) { this.documentId = documentId; }
+        public String getFileName() { return fileName; }
+        public void setFileName(String fileName) { this.fileName = fileName; }
+        public Integer getHitCount() { return hitCount; }
+        public void setHitCount(Integer hitCount) { this.hitCount = hitCount; }
+        public Double getMaxScore() { return maxScore; }
+        public void setMaxScore(Double maxScore) { this.maxScore = maxScore; }
+        public List<String> getSources() { return sources; }
+        public void setSources(List<String> sources) { this.sources = sources; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private Integer index;
+            private Long documentId;
+            private String fileName;
+            private Integer hitCount;
+            private Double maxScore;
+            private List<String> sources;
+
+            public Builder index(Integer v) { this.index = v; return this; }
+            public Builder documentId(Long v) { this.documentId = v; return this; }
+            public Builder fileName(String v) { this.fileName = v; return this; }
+            public Builder hitCount(Integer v) { this.hitCount = v; return this; }
+            public Builder maxScore(Double v) { this.maxScore = v; return this; }
+            public Builder sources(List<String> v) { this.sources = v; return this; }
+
+            public CitationReference build() {
+                CitationReference r = new CitationReference();
+                r.setIndex(index);
+                r.setDocumentId(documentId);
+                r.setFileName(fileName);
+                r.setHitCount(hitCount);
+                r.setMaxScore(maxScore);
+                r.setSources(sources);
+                return r;
+            }
+        }
+    }
+
     public static class KnowledgeSearchResponseBuilder {
         private List<SearchResultItem> results;
         private Integer total;
         private String answer;
         private String processSummary;
         private List<ThinkingStep> thinkingSteps;
+        private String questionIntent;
+        private Double intentConfidence;
+        private List<CitationReference> citations;
 
         public KnowledgeSearchResponseBuilder results(List<SearchResultItem> results) {
             this.results = results;
@@ -155,6 +236,21 @@ public class KnowledgeSearchResponse {
             return this;
         }
 
+        public KnowledgeSearchResponseBuilder questionIntent(String questionIntent) {
+            this.questionIntent = questionIntent;
+            return this;
+        }
+
+        public KnowledgeSearchResponseBuilder intentConfidence(Double intentConfidence) {
+            this.intentConfidence = intentConfidence;
+            return this;
+        }
+
+        public KnowledgeSearchResponseBuilder citations(List<CitationReference> citations) {
+            this.citations = citations;
+            return this;
+        }
+
         public KnowledgeSearchResponse build() {
             KnowledgeSearchResponse response = new KnowledgeSearchResponse();
             response.setResults(results);
@@ -162,6 +258,9 @@ public class KnowledgeSearchResponse {
             response.setAnswer(answer);
             response.setProcessSummary(processSummary);
             response.setThinkingSteps(thinkingSteps);
+            response.setQuestionIntent(questionIntent);
+            response.setIntentConfidence(intentConfidence);
+            response.setCitations(citations);
             return response;
         }
     }

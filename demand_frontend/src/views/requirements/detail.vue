@@ -1403,14 +1403,14 @@ async function navigateAfterSubmit() {
 
     if (hasPending) {
       // 还有待办，跳转到"我的待办"列表
-      router.push({ path: '/requirements', query: { view: 'pending' } })
+      router.push({ path: '/requirements', query: { view: 'pending', _r: '1' } })
     } else {
       // 没有待办了，跳转到"全部需求"列表
-      router.push({ path: '/requirements', query: { view: 'all' } })
+      router.push({ path: '/requirements', query: { view: 'all', _r: '1' } })
     }
   } catch {
     // 如果查询失败，默认跳转到"我的待办"
-    router.push({ path: '/requirements', query: { view: 'pending' } })
+    router.push({ path: '/requirements', query: { view: 'pending', _r: '1' } })
   }
 }
 

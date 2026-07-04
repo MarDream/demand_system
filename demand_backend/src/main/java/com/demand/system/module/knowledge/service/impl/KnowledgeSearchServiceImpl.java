@@ -10,6 +10,7 @@ import com.demand.system.module.knowledge.entity.KnowledgeDocument;
 import com.demand.system.module.knowledge.mapper.KnowledgeChunkMapper;
 import com.demand.system.module.knowledge.mapper.KnowledgeDocumentMapper;
 import com.demand.system.module.knowledge.service.EmbeddingService;
+import com.demand.system.module.knowledge.service.IntentRecognizer;
 import com.demand.system.module.knowledge.service.KnowledgeSearchService;
 import com.demand.system.module.knowledge.service.RagAnswerService;
 import com.demand.system.module.knowledge.vectorstore.MilvusVectorStore;
@@ -33,6 +34,7 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
     private final MilvusVectorStore milvusVectorStore;
     private final KnowledgeConfig knowledgeConfig;
     private final RagAnswerService ragAnswerService;
+    private final IntentRecognizer intentRecognizer;
     private final RequirementMapper requirementMapper;
     private final KnowledgeDocumentMapper knowledgeDocumentMapper;
     private final KnowledgeChunkMapper knowledgeChunkMapper;
@@ -41,6 +43,7 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                                      MilvusVectorStore milvusVectorStore,
                                      KnowledgeConfig knowledgeConfig,
                                      RagAnswerService ragAnswerService,
+                                     IntentRecognizer intentRecognizer,
                                      RequirementMapper requirementMapper,
                                      KnowledgeDocumentMapper knowledgeDocumentMapper,
                                      KnowledgeChunkMapper knowledgeChunkMapper) {
@@ -48,6 +51,7 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         this.milvusVectorStore = milvusVectorStore;
         this.knowledgeConfig = knowledgeConfig;
         this.ragAnswerService = ragAnswerService;
+        this.intentRecognizer = intentRecognizer;
         this.requirementMapper = requirementMapper;
         this.knowledgeDocumentMapper = knowledgeDocumentMapper;
         this.knowledgeChunkMapper = knowledgeChunkMapper;
@@ -125,6 +129,18 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
             StringBuilder answer = new StringBuilder();
             String query = request.getQuery();
             String mode = request.getMode() != null ? request.getMode() : "hybrid";
+
+            // Step 0: 意图识别（不阻塞检索，异常降级）
+            IntentRecognizer.IntentResult intentResult = null;
+            try {
+                intentResult = intentRecognizer.recognize(query);
+                log.info("意图识别: query={}, intent={}, confidence={}",
+                        query, intentResult.intent(), intentResult.confidence());
+            } catch (Exception e) {
+                log.warn("意图识别失败，跳过: {}", e.getMessage());
+            }
+            final IntentRecognizer.IntentResult finalIntent = intentResult;
+
             List<KnowledgeSearchResponse.ThinkingStep> thinkingSteps = new ArrayList<>();
             try {
                 // Step 1: 问题解析
@@ -137,6 +153,15 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                 // Step 2: 检索
                 KnowledgeSearchResponse response = retrieve(request);
                 emitter.send(SseEmitter.event().name("results").data(response));
+
+                // 设置意图识别结果
+                if (finalIntent != null) {
+                    response.setQuestionIntent(finalIntent.intent());
+                    response.setIntentConfidence(finalIntent.confidence());
+                }
+
+                // 构建角标引用列表
+                response.setCitations(buildCitationReferences(response.getResults()));
 
                 int resultCount = response.getResults().size();
                 int uniqueDocs = (int) response.getResults().stream()
@@ -606,6 +631,49 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
 
     private boolean contains(String source, String target) {
         return source != null && target != null && !target.isBlank() && source.contains(target);
+    }
+
+    /**
+     * 构建角标引用列表：按 documentId 分组，按相关度降序，分配连续角标序号 [1] [2] ...
+     */
+    private List<KnowledgeSearchResponse.CitationReference> buildCitationReferences(
+            List<KnowledgeSearchResponse.SearchResultItem> results) {
+        if (results == null || results.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, List<KnowledgeSearchResponse.SearchResultItem>> byDoc = results.stream()
+                .filter(r -> r.getDocumentId() != null)
+                .collect(Collectors.groupingBy(KnowledgeSearchResponse.SearchResultItem::getDocumentId));
+
+        List<KnowledgeSearchResponse.CitationReference> refs = new ArrayList<>();
+        for (Map.Entry<Long, List<KnowledgeSearchResponse.SearchResultItem>> entry : byDoc.entrySet()) {
+            Long docId = entry.getKey();
+            List<KnowledgeSearchResponse.SearchResultItem> items = entry.getValue();
+
+            KnowledgeSearchResponse.SearchResultItem first = items.get(0);
+            double maxScore = items.stream()
+                    .mapToDouble(KnowledgeSearchResponse.SearchResultItem::getScore)
+                    .max()
+                    .orElse(0.0);
+
+            refs.add(KnowledgeSearchResponse.CitationReference.builder()
+                    .documentId(docId)
+                    .fileName(first.getFileName())
+                    .hitCount(items.size())
+                    .maxScore(maxScore)
+                    .build());
+        }
+
+        // 按 maxScore 降序
+        refs.sort((a, b) -> Double.compare(b.getMaxScore(), a.getMaxScore()));
+
+        // 重新连续编号
+        for (int i = 0; i < refs.size(); i++) {
+            refs.get(i).setIndex(i + 1);
+        }
+
+        return refs;
     }
 
     private String lower(String value) {

@@ -255,6 +255,40 @@
                         </div>
                       </div>
                     </div>
+
+                    <!-- 数据权限节点：仅当是需求管理菜单时才显示 -->
+                    <div v-if="node.key === 'menu:requirement' && selectedDataScopeOrgIds.length >= 0" class="data-scope-section">
+                      <div class="menu-permission-node is-nested">
+                        <div class="menu-permission-row data-scope-header" style="padding-left: 36px;">
+                          <el-button link class="expand-button" @click="toggleDataScopeExpand">
+                            <el-icon><component :is="dataScopeExpanded ? ArrowDown : ArrowRight" /></el-icon>
+                          </el-button>
+                          <span class="expand-placeholder" />
+                          <el-checkbox
+                            :model-value="allDataScopeOrgChecked"
+                            :indeterminate="dataScopeOrgIndeterminate"
+                            @change="handleAllDataScopeOrgCheck"
+                          >
+                            <span class="menu-name">数据权限</span>
+                            <el-tag size="small" effect="plain">组织范围</el-tag>
+                          </el-checkbox>
+                        </div>
+
+                        <div v-if="dataScopeExpanded" class="data-scope-org-tree">
+                          <el-tree
+                            ref="orgTreeRef"
+                            :data="orgTree"
+                            :props="{ label: 'name', children: 'children' }"
+                            node-key="id"
+                            show-checkbox
+                            check-strictly
+                            :default-checked-keys="selectedDataScopeOrgIds"
+                            empty-text="暂无组织数据"
+                            @check="handleOrgTreeCheck"
+                          />
+                        </div>
+                      </div>
+                    </div>
                 </div>
               </div>
 
@@ -485,6 +519,12 @@ const permissionSaving = ref(false)
 const loading = ref(false)
 const submitting = ref(false)
 const batchImporting = ref(false)
+
+// 组织架构数据 — 用于数据权限
+const orgTree = ref<any[]>([])
+const selectedDataScopeOrgIds = ref<number[]>([])
+const dataScopeOrgLoading = ref(false)
+
 const roles = ref<RoleItem[]>([])
 const roleGroups = ref<RoleGroupItem[]>([])
 const selectedRole = ref<RoleItem | null>(null)
@@ -998,11 +1038,32 @@ async function fetchRolePermissions(roleId: number) {
     // grantablePermissions 只存储当前用户可授权的权限
     grantablePermissions.value = grantable || []
     selectedPermissions.value = rolePermission?.permissionCodes || []
+    selectedDataScopeOrgIds.value = rolePermission?.dataScopeOrgIds || []
     expandedMenuKeys.value = defaultExpandedKeys(menuPermissionTree.value)
-  } catch (err) {
-    // 错误已由 request 拦截器弹 ElMessage 提示，这里只兜底避免错误向上冒泡触发 Vue 警告
+    // 加载组织树（仅在非超级管理员时加载）
+    if (rolePermission && !isSuperAdminRole(selectedRole.value)) {
+      await loadOrgTree()
+    }
+  } catch {
+    selectedPermissions.value = []
+    selectedDataScopeOrgIds.value = []
   } finally {
     permissionLoading.value = false
+  }
+}
+
+// 加载组织树（用于数据权限配置）
+async function loadOrgTree() {
+  if (orgTree.value.length > 0) return // 已加载过
+  dataScopeOrgLoading.value = true
+  try {
+    const { getOrgTree } = await import('@/api/modules/organization')
+    const res = await getOrgTree()
+    orgTree.value = Array.isArray(res) ? res : []
+  } catch {
+    console.warn('加载组织树失败')
+  } finally {
+    dataScopeOrgLoading.value = false
   }
 }
 
@@ -1072,11 +1133,15 @@ async function handleSavePermissions() {
   if (!selectedRole.value || !canGrantSelectedRole.value) return
   permissionSaving.value = true
   try {
-    await saveRolePermissions(selectedRole.value.id, selectedPermissions.value)
+    await saveRolePermissions(
+      selectedRole.value.id,
+      selectedPermissions.value,
+      selectedDataScopeOrgIds.value
+    )
     ElMessage.success('权限保存成功')
     await fetchRolePermissions(selectedRole.value.id)
   } catch (err) {
-    // 错误已由 request 拦截器弹 ElMessage 提示，这里只兜底避免错误向上冒泡触发 Vue 警告
+    // 错误已由 request 拦截器弹 ElMessage 提示
   } finally {
     permissionSaving.value = false
   }
@@ -1248,6 +1313,11 @@ function clearVisiblePermissions() {
   selectedPermissions.value = selectedPermissions.value.filter(code => !visible.has(code))
 }
 
+function clearAllPermissions() {
+  selectedPermissions.value = []
+  selectedDataScopeOrgIds.value = []
+}
+
 function selectedCount(items: PermissionOption[]) {
   const selected = new Set(selectedPermissions.value)
   return items.filter(item => selected.has(item.code)).length
@@ -1255,6 +1325,58 @@ function selectedCount(items: PermissionOption[]) {
 
 function isSuperAdminRole(role: RoleItem | null) {
   return !!role && SUPER_ADMIN_CODES.has(role.code)
+}
+
+// ===== 数据权限 - 组织树 =====
+const dataScopeExpanded = ref(false)
+const orgTreeRef = ref<any>(null)
+
+function toggleDataScopeExpand() {
+  dataScopeExpanded.value = !dataScopeExpanded.value
+}
+
+const allDataScopeOrgChecked = computed(() => {
+  const totalNodes = countOrgTreeNodes(orgTree.value)
+  return totalNodes > 0 && selectedDataScopeOrgIds.value.length === totalNodes
+})
+
+const dataScopeOrgIndeterminate = computed(() => {
+  const totalNodes = countOrgTreeNodes(orgTree.value)
+  return totalNodes > 0 && selectedDataScopeOrgIds.value.length > 0 && selectedDataScopeOrgIds.value.length < totalNodes
+})
+
+function handleAllDataScopeOrgCheck(checked: boolean) {
+  if (checked) {
+    selectedDataScopeOrgIds.value = getAllOrgIds(orgTree.value)
+  } else {
+    selectedDataScopeOrgIds.value = []
+  }
+}
+
+function handleOrgTreeCheck(_data: any, { checkedKeys }: { checkedKeys: number[] }) {
+  selectedDataScopeOrgIds.value = [...checkedKeys]
+}
+
+function countOrgTreeNodes(nodes: any[]): number {
+  let count = 0
+  for (const node of nodes) {
+    count++
+    if (node.children && node.children.length > 0) {
+      count += countOrgTreeNodes(node.children)
+    }
+  }
+  return count
+}
+
+function getAllOrgIds(nodes: any[]): number[] {
+  const ids: number[] = []
+  for (const node of nodes) {
+    ids.push(node.id)
+    if (node.children && node.children.length > 0) {
+      ids.push(...getAllOrgIds(node.children))
+    }
+  }
+  return ids
 }
 
 function buildMenuPermissionTree(items: MenuItem[], level: number): MenuPermissionNode[] {
@@ -2437,5 +2559,22 @@ function permissionName(code: string) {
 
 .sortable-chosen.role-item {
   cursor: grabbing !important;
+}
+
+/* ===== 数据权限 - 组织树 ===== */
+.data-scope-section {
+  margin-top: 4px;
+}
+.data-scope-header {
+  background: var(--el-fill-color-blank);
+  border-radius: 4px;
+}
+.data-scope-org-tree {
+  padding: 8px 0 8px 36px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.data-scope-org-tree .el-tree {
+  background: transparent;
 }
 </style>

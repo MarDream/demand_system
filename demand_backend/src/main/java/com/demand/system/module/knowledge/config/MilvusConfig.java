@@ -7,15 +7,29 @@ import org.springframework.context.annotation.Configuration;
 @ConfigurationProperties(prefix = "milvus")
 public class MilvusConfig {
 
+    // ==== Connection ====
     private String host = "localhost";
     private int port = 19530;
+
+    // ==== Collection ====
     private String collectionName = "knowledge_chunks";
+    /** event vector collection name */
+    private String eventsCollectionName = "knowledge_events";
+    /** entity vector collection name */
+    private String entitiesCollectionName = "knowledge_entities";
+
+    // ==== Index ====
     private String indexType = "HNSW";
     private String metricType = "COSINE";
+    private int dimension = 2048;
+
+    // ==== HNSW ====
     private int hnswM = 16;
     private int hnswEfConstruction = 256;
-    private int hnswEfSearch = 128;
-    private int dimension = 2048;
+    /** default efSearch for normal search */
+    private int hnswEfSearchDefault = 128;
+    /** high-recall efSearch for expansion phase */
+    private int hnswEfSearchHigh = 256;
 
     public String getHost() {
         return host;
@@ -39,6 +53,22 @@ public class MilvusConfig {
 
     public void setCollectionName(String collectionName) {
         this.collectionName = collectionName;
+    }
+
+    public String getEventsCollectionName() {
+        return eventsCollectionName;
+    }
+
+    public void setEventsCollectionName(String eventsCollectionName) {
+        this.eventsCollectionName = eventsCollectionName;
+    }
+
+    public String getEntitiesCollectionName() {
+        return entitiesCollectionName;
+    }
+
+    public void setEntitiesCollectionName(String entitiesCollectionName) {
+        this.entitiesCollectionName = entitiesCollectionName;
     }
 
     public String getIndexType() {
@@ -73,12 +103,20 @@ public class MilvusConfig {
         this.hnswEfConstruction = hnswEfConstruction;
     }
 
-    public int getHnswEfSearch() {
-        return hnswEfSearch;
+    public int getHnswEfSearchDefault() {
+        return hnswEfSearchDefault;
     }
 
-    public void setHnswEfSearch(int hnswEfSearch) {
-        this.hnswEfSearch = hnswEfSearch;
+    public void setHnswEfSearchDefault(int hnswEfSearchDefault) {
+        this.hnswEfSearchDefault = hnswEfSearchDefault;
+    }
+
+    public int getHnswEfSearchHigh() {
+        return hnswEfSearchHigh;
+    }
+
+    public void setHnswEfSearchHigh(int hnswEfSearchHigh) {
+        this.hnswEfSearchHigh = hnswEfSearchHigh;
     }
 
     public int getDimension() {

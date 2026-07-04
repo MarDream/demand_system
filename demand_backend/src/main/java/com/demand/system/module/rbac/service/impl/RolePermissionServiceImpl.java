@@ -1,6 +1,7 @@
 package com.demand.system.module.rbac.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.demand.system.common.cache.VisibleOrgCache;
 import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.Result;
 import com.demand.system.module.auth.security.SecurityUtils;
@@ -16,9 +17,11 @@ import com.demand.system.module.rbac.dto.RoleUpdateDTO;
 import com.demand.system.module.rbac.dto.RoleVO;
 import com.demand.system.module.rbac.entity.Role;
 import com.demand.system.module.rbac.entity.RoleGroup;
+import com.demand.system.module.rbac.entity.RoleDataScopeOrg;
 import com.demand.system.module.rbac.entity.SysPermission;
 import com.demand.system.module.rbac.entity.SysRolePermission;
 import com.demand.system.module.rbac.entity.UserRole;
+import com.demand.system.module.rbac.mapper.RoleDataScopeOrgMapper;
 import com.demand.system.module.rbac.mapper.RoleGroupMapper;
 import com.demand.system.module.rbac.mapper.RoleMapper;
 import com.demand.system.module.rbac.mapper.SysPermissionMapper;
@@ -48,14 +51,18 @@ public class RolePermissionServiceImpl implements RolePermissionService {
     private final SysRolePermissionMapper sysRolePermissionMapper;
     private final UserRoleMapper userRoleMapper;
     private final RbacPermissionResolver rbacPermissionResolver;
+    private final RoleDataScopeOrgMapper roleDataScopeOrgMapper;
+    private final VisibleOrgCache visibleOrgCache;
 
-    public RolePermissionServiceImpl(RoleMapper roleMapper, RoleGroupMapper roleGroupMapper, SysPermissionMapper sysPermissionMapper, SysRolePermissionMapper sysRolePermissionMapper, UserRoleMapper userRoleMapper, RbacPermissionResolver rbacPermissionResolver) {
+    public RolePermissionServiceImpl(RoleMapper roleMapper, RoleGroupMapper roleGroupMapper, SysPermissionMapper sysPermissionMapper, SysRolePermissionMapper sysRolePermissionMapper, UserRoleMapper userRoleMapper, RbacPermissionResolver rbacPermissionResolver, RoleDataScopeOrgMapper roleDataScopeOrgMapper, VisibleOrgCache visibleOrgCache) {
         this.roleMapper = roleMapper;
         this.roleGroupMapper = roleGroupMapper;
         this.sysPermissionMapper = sysPermissionMapper;
         this.sysRolePermissionMapper = sysRolePermissionMapper;
         this.userRoleMapper = userRoleMapper;
         this.rbacPermissionResolver = rbacPermissionResolver;
+        this.roleDataScopeOrgMapper = roleDataScopeOrgMapper;
+        this.visibleOrgCache = visibleOrgCache;
     }
 
     @Override
@@ -140,6 +147,8 @@ public class RolePermissionServiceImpl implements RolePermissionService {
                 .permissionCodes(List.copyOf(rolePermissions))
                 .grantablePermissionCodes(resolveGrantablePermissionCodes(currentRoles, currentPermissions))
                 .build();
+        Set<Long> dataScopeOrgIds = loadDataScopeOrgIds(roleId);
+        result.setDataScopeOrgIds(List.copyOf(dataScopeOrgIds));
         return Result.success(result);
     }
 
@@ -185,6 +194,22 @@ public class RolePermissionServiceImpl implements RolePermissionService {
                 sysRolePermissionMapper.insert(relation);
             }
         }
+
+        // 保存数据权限组织范围
+        if (request.getDataScopeOrgIds() != null) {
+            roleDataScopeOrgMapper.deleteByRoleId(role.getId());
+            if (!request.getDataScopeOrgIds().isEmpty()) {
+                LocalDateTime now2 = LocalDateTime.now();
+                for (Long orgId : request.getDataScopeOrgIds()) {
+                    RoleDataScopeOrg relation = new RoleDataScopeOrg(role.getId(), orgId);
+                    relation.setCreatedAt(now2);
+                    roleDataScopeOrgMapper.insert(relation);
+                }
+            }
+            // 清除已变更角色对应用户的 VisibleOrgCache
+            clearVisibleOrgCacheForRole(role.getId());
+        }
+
         return Result.success();
     }
 
@@ -420,5 +445,26 @@ public class RolePermissionServiceImpl implements RolePermissionService {
             }
         }
         return Result.success();
+    }
+
+    private Set<Long> loadDataScopeOrgIds(Long roleId) {
+        List<RoleDataScopeOrg> relations = roleDataScopeOrgMapper.selectList(
+                new LambdaQueryWrapper<RoleDataScopeOrg>()
+                        .eq(RoleDataScopeOrg::getRoleId, roleId));
+        return relations.stream()
+                .map(RoleDataScopeOrg::getOrgId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+    }
+
+    private void clearVisibleOrgCacheForRole(Long roleId) {
+        List<UserRole> userRoles = userRoleMapper.selectList(
+                new LambdaQueryWrapper<UserRole>()
+                        .eq(UserRole::getRoleId, roleId));
+        for (UserRole ur : userRoles) {
+            if (ur.getUserId() != null) {
+                visibleOrgCache.invalidate(ur.getUserId());
+            }
+        }
     }
 }
