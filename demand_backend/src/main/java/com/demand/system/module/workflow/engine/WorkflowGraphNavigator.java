@@ -127,4 +127,40 @@ public class WorkflowGraphNavigator {
         visited.remove(currentNodeId);
         return false;
     }
+
+    /**
+     * 从当前节点沿入边向前查找上一个 wait 节点（用于 previousNodeId 为空时的驳回目标定位）
+     */
+    public WorkflowNode resolveRollbackTarget(WorkflowGraphContext context, String currentNodeId, Requirement requirement) {
+        Set<String> visited = new LinkedHashSet<>();
+        return findPreviousWaitNode(context, currentNodeId, requirement, visited);
+    }
+
+    private WorkflowNode findPreviousWaitNode(WorkflowGraphContext context, String fromNodeId, Requirement requirement, Set<String> visited) {
+        if (!visited.add(fromNodeId)) {
+            return null;
+        }
+        for (WorkflowEdge edge : context.incoming(fromNodeId)) {
+            if (!conditionEvaluator.matches(edge, requirement)) {
+                continue;
+            }
+            WorkflowNode source = context.getNode(edge.getSourceNodeId());
+            if (source == null) continue;
+
+            if (WorkflowNodeUtils.isWaitNode(source.getNodeType()) && !"start".equalsIgnoreCase(source.getNodeType())) {
+                return source;
+            }
+            // 通过 pass-through 节点继续向上查找
+            if (WorkflowNodeUtils.isPassThroughNode(source.getNodeType())) {
+                WorkflowNode found = findPreviousWaitNode(context, source.getNodeId(), requirement, visited);
+                if (found != null) return found;
+            }
+        }
+        // 如果当前节点是开始节点，返回开始节点
+        WorkflowNode current = context.getNode(fromNodeId);
+        if (current != null && "start".equalsIgnoreCase(current.getNodeType())) {
+            return current;
+        }
+        return null;
+    }
 }

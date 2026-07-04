@@ -630,7 +630,9 @@
           :close-on-click-modal="false"
           @closed="resetApprovalDialog"
         >
-          <p class="approval-dialog-tip">提交到下一节点前，请补充审核信息。</p>
+          <p class="approval-dialog-tip">
+            提交到下一节点前{{ workflowRuntime.evaluationRequired ? '请补充审核信息' : '可补充审核信息（选填）' }}。
+          </p>
           <el-form-item
             v-if="workflowRuntime.evaluationRequired"
             label="评分"
@@ -790,6 +792,7 @@ import { downloadRequirementAttachment, uploadRequirementAttachment } from '@/ap
 import type { RelationItem } from '@/api/modules/relation'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
 import { workflowEngineApi, type AvailableTransition, type TransitionAssigneeCandidate, type WorkflowAvailableActions } from '@/api/modules/workflow-engine'
+import { getTabBadgeCounts } from '@/api/modules/statistics'
 import { getCountersignRecords, canCurrentUserCountersign, submitCountersignApproval, switchParallelBranch, type CountersignRecord, type ParallelBranch } from '@/api/modules/workflow'
 import type {
   Requirement,
@@ -1393,9 +1396,10 @@ async function executeTransition(extra?: { rating?: number; ratingDimensions?: R
 // 提交审核后智能跳转
 async function navigateAfterSubmit() {
   try {
-    // 检查当前用户还有多少待办
-    const pendingResult = await requirementApi.getMyRequirementPending({ pageNum: 1, pageSize: 1 })
-    const hasPending = pendingResult.total > 0
+    // 使用轻量接口检查当前用户还有多少待办
+    const res = await getTabBadgeCounts() as any
+    const counts = res?.data ?? res
+    const hasPending = (counts?.pending ?? 0) > 0
 
     if (hasPending) {
       // 还有待办，跳转到"我的待办"列表
@@ -1804,13 +1808,8 @@ async function handleStatusTransition() {
     return
   }
 
-  if (workflowRuntime.value.evaluationRequired) {
-    resetApprovalDialog()
-    approvalDialogVisible.value = true
-    return
-  }
-
-  await executeTransition()
+  resetApprovalDialog()
+  approvalDialogVisible.value = true
 }
 
 // 会签审批方法

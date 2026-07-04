@@ -83,4 +83,14 @@ public interface StatisticsMapper {
      * 抄送我的流程数：cc_user_ids 包含当前用户的需求（JSON_CONTAINS）
      */
     Long countCcByUserId(@Param("userId") Long userId);
+
+    /**
+     * 我的关注数量
+     */
+    Long countMyFollowsByUserId(@Param("userId") Long userId);
+
+    /**
+     * 我的草稿数量
+     */
+    Long countMyDraftsByUserId(@Param("userId") Long userId);
 }

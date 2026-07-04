@@ -364,11 +364,13 @@
           <if test='keyword != null and keyword != ""'>
             AND (r.title LIKE CONCAT('%', #{keyword}, '%') OR r.description LIKE CONCAT('%', #{keyword}, '%'))
           </if>
-        ORDER BY (
+        ORDER BY COALESCE((
           SELECT MAX(pt_sort.updated_at)
           FROM requirement_pending_tasks pt_sort
           WHERE pt_sort.requirement_id = r.id
-        ) DESC, r.id DESC
+            AND pt_sort.workflow_instance_id = wi.id
+            AND pt_sort.current_node_id = wi.current_node_id
+        ), r.updated_at) DESC, r.id DESC
     </select>
 
     <!-- 我的已办 - V2架构重构版（使用workflow_node_assignees关联表）

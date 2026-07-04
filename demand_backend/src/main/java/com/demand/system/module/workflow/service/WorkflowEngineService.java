@@ -625,20 +625,31 @@ public class WorkflowEngineService {
         WorkflowInstance instance = getRunningInstance(requirementId);
         requireWorkflowActive(instance);
 
-        if (instance.getPreviousNodeId() == null) {
+        WorkflowNode currentNode = getNode(instance.getWorkflowVersionId(), instance.getCurrentNodeId());
+        if ("start".equals(currentNode.getNodeType())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "已在开始节点，无法回退");
         }
-
-        WorkflowNode currentNode = getNode(instance.getWorkflowVersionId(), instance.getCurrentNodeId());
-        validatePermission(instance, requirementMapper.selectById(requirementId), currentNode, operatorId);
         if ("end".equals(currentNode.getNodeType())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "结束节点不可回退");
         }
+
+        // 如果 previousNodeId 为空（如迁移后），尝试从工作流图找到上一个节点
+        String targetNodeId = instance.getPreviousNodeId();
+        if (targetNodeId == null) {
+            WorkflowGraphContext context = runtimeLoader.loadContext(instance.getWorkflowVersionId());
+            WorkflowNode targetNode = graphNavigator.resolveRollbackTarget(context, instance.getCurrentNodeId(), requirementMapper.selectById(requirementId));
+            if (targetNode == null) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "无法确定回退目标节点");
+            }
+            targetNodeId = targetNode.getNodeId();
+        }
+
+        validatePermission(instance, requirementMapper.selectById(requirementId), currentNode, operatorId);
         if (!StringUtils.hasText(comment)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "驳回原因不能为空");
         }
 
-        WorkflowNode previousNode = getNode(instance.getWorkflowVersionId(), instance.getPreviousNodeId());
+        WorkflowNode targetNode = getNode(instance.getWorkflowVersionId(), targetNodeId);
 
         closeCurrentTransition(instance.getId());
 
@@ -647,8 +658,8 @@ public class WorkflowEngineService {
         rollbackTransition.setRequirementId(requirementId);
         rollbackTransition.setFromNodeId(instance.getCurrentNodeId());
         rollbackTransition.setFromNodeName(currentNode.getNodeName());
-        rollbackTransition.setToNodeId(instance.getPreviousNodeId());
-        rollbackTransition.setToNodeName(previousNode != null ? previousNode.getNodeName() : "");
+        rollbackTransition.setToNodeId(targetNodeId);
+        rollbackTransition.setToNodeName(targetNode != null ? targetNode.getNodeName() : "");
         rollbackTransition.setOperatorId(operatorId);
         rollbackTransition.setAction("rollback");
         rollbackTransition.setComment(comment);
@@ -660,12 +671,12 @@ public class WorkflowEngineService {
         instanceMapper.update(null, new LambdaUpdateWrapper<WorkflowInstance>()
             .eq(WorkflowInstance::getId, instance.getId())
             .eq(WorkflowInstance::getLockVersion, currentLockVersion)
-            .set(WorkflowInstance::getCurrentNodeId, instance.getPreviousNodeId())
+            .set(WorkflowInstance::getCurrentNodeId, targetNodeId)
             .set(WorkflowInstance::getPreviousNodeId, instance.getCurrentNodeId())
             .set(WorkflowInstance::getLockVersion, currentLockVersion + 1)
         );
 
-        String nodeStatusCode = resolveNodeStatusCode(previousNode);
+        String nodeStatusCode = resolveNodeStatusCode(targetNode);
         LambdaUpdateWrapper<Requirement> rollbackUpdate = new LambdaUpdateWrapper<Requirement>()
             .eq(Requirement::getId, requirementId)
             .set(Requirement::getStatus, resolveNodeStatusName(nodeStatusCode))
@@ -814,7 +825,7 @@ public class WorkflowEngineService {
 
         actions.setTransitions(transitions);
         actions.setCanTransition(canOperate && !transitions.isEmpty());
-        actions.setCanRollback(canOperate && instance.getPreviousNodeId() != null && !"end".equals(currentNode.getNodeType()));
+        actions.setCanRollback(canOperate && !"start".equals(currentNode.getNodeType()) && !"end".equals(currentNode.getNodeType()));
         actions.setCanCancel(canCancel);
 
         // 统一的评价配置解析（版本级别优先于节点级别）

@@ -153,4 +153,21 @@
         AND cc_user_ids IS NOT NULL AND JSON_CONTAINS(cc_user_ids, CAST(#{userId} AS JSON))
     </select>
 
+    <!-- 我的关注数量 -->
+    <select id="countMyFollowsByUserId" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM requirement_follows
+        WHERE user_id = #{userId}
+    </select>
+
+    <!-- 我的草稿数量 -->
+    <select id="countMyDraftsByUserId" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM requirements
+        WHERE deleted_at = 0
+          AND is_draft = 1
+          AND last_saved_at IS NOT NULL
+          AND creator_id = #{userId}
+    </select>
+
 </mapper>

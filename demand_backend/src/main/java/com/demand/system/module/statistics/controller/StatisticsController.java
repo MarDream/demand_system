@@ -70,6 +70,19 @@ public class StatisticsController {
         return Result.success(statisticsService.getWorkflowProcessStats(userId));
     }
 
+    /**
+     * Tab 角标计数（轻量版）
+     */
+    @GetMapping("/tab-badge-counts")
+    @PreAuthorize("isAuthenticated()")
+    public Result<Map<String, Long>> getTabBadgeCounts() {
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "未登录");
+        }
+        return Result.success(statisticsService.getTabBadgeCounts(userId));
+    }
+
     private Map<String, Object> pointToMap(BurndownPoint point) {
         Map<String, Object> map = new java.util.LinkedHashMap<>();
         map.put("date", point.getDate());

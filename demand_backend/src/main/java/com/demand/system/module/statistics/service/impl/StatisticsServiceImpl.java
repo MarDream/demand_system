@@ -201,4 +201,13 @@ public class StatisticsServiceImpl implements StatisticsService {
 
         return new WorkflowProcessStatsDTO(pending, processed, initiated, cc);
     }
+
+    @Override
+    public Map<String, Long> getTabBadgeCounts(Long userId) {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        counts.put("pending", pendingTaskMapper.countByUserId(userId));
+        counts.put("follows", statisticsMapper.countMyFollowsByUserId(userId));
+        counts.put("drafts", statisticsMapper.countMyDraftsByUserId(userId));
+        return counts;
+    }
 }

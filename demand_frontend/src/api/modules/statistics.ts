@@ -119,3 +119,14 @@ export interface WorkflowProcessStats {
 export function getWorkflowProcessStats() {
   return request.get<ApiResponse<WorkflowProcessStats>>('/v1/workflow/process-stats')
 }
+
+export interface TabBadgeCounts {
+  pending: number
+  follows: number
+  drafts: number
+}
+
+/** Tab 角标计数（轻量版，只返回 count 不走分页） */
+export function getTabBadgeCounts() {
+  return request.get<ApiResponse<TabBadgeCounts>>('/v1/tab-badge-counts')
+}

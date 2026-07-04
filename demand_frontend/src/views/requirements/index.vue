@@ -390,6 +390,7 @@ import type { TableInstance } from 'element-plus'
 import { Setting, View, Edit, Delete, ArrowDown, ArrowRight, Star, StarFilled, Close, Document, Bell, CircleCheck, EditPen, Search, Refresh } from '@element-plus/icons-vue'
 import { requirementApi, userApi } from '@/api'
 import { getMyRequirementPending, getMyRequirementDone, getMyRequirementFollows, exportRequirementExcel } from '@/api/modules/requirement'
+import { getTabBadgeCounts } from '@/api/modules/statistics'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
 import { workflowEngineApi, type CurrentNodeHandler } from '@/api/modules/workflow-engine'
 import type { Requirement, RequirementMyListQuery, RequirementQuery } from '@/types/requirement'
@@ -436,6 +437,12 @@ function invalidateViewCache(view: RequirementViewMode) {
       tabDataCache.delete(key)
     }
   })
+}
+
+// 待办操作后刷新，只清除待办视图缓存
+export function invalidatePendingCache() {
+  const view: RequirementViewMode = 'pending'
+  invalidateViewCache(view)
 }
 
 // 请求取消控制器：Tab切换或翻页时取消未完成的请求，避免竞态
@@ -630,14 +637,11 @@ function buildMyListParams(): RequirementMyListQuery {
 
 async function refreshViewCounts() {
   try {
-    const [drafts, pending, follows] = await Promise.all([
-      requirementApi.getMyRequirementDrafts({ pageNum: 1, pageSize: 1 }),
-      getMyRequirementPending({ pageNum: 1, pageSize: 1 }),
-      getMyRequirementFollows({ pageNum: 1, pageSize: 1 }),
-    ])
-    viewCounts.drafts = drafts.total
-    viewCounts.pending = pending.total
-    viewCounts.follows = follows.total
+    const res = await getTabBadgeCounts() as any
+    const counts = res?.data ?? res
+    viewCounts.pending = counts?.pending ?? 0
+    viewCounts.follows = counts?.follows ?? 0
+    viewCounts.drafts = counts?.drafts ?? 0
   } catch {
     // ignore count refresh failures
   }
@@ -1103,6 +1107,9 @@ onMounted(async () => {
   // 异步加载非关键数据（不阻塞页面渲染）
   refreshViewCounts()
 })
+
+// 暴露刷新方法给 detail.vue 在操作完成后调用
+defineExpose({ refreshViewCounts, invalidatePendingCache })
 
 watch(tableData, (rows) => {
   const validRowIds = new Set(
