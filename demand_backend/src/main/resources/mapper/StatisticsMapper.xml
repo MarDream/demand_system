@@ -41,10 +41,48 @@
         )
     </select>
 
+    <!-- 总需求数（带数据权限过滤）：登录用户可见的全部需求数（含草稿） -->
+    <select id="getTotalCountWithOrgFilter" resultType="int">
+        SELECT COUNT(DISTINCT r.id) FROM requirements r
+        WHERE r.deleted_at = 0
+        <if test="isSuperAdmin != true">
+            AND r.org_id IN
+            <foreach collection="visibleOrgIds" item="orgId" open="(" separator="," close=")">
+                #{orgId}
+            </foreach>
+        </if>
+        AND (
+            EXISTS (SELECT 1 FROM user_roles ur JOIN roles ro ON ur.role_id = ro.id WHERE ur.user_id = #{userId} AND ro.code = 'SUPER_ADMIN')
+            OR r.creator_id = #{userId}
+            OR EXISTS (SELECT 1 FROM workflow_instance_transitions wit WHERE wit.requirement_id = r.id AND wit.operator_id = #{userId})
+            OR EXISTS (SELECT 1 FROM workflow_instances wi JOIN workflow_nodes wn ON wi.workflow_version_id = wn.workflow_version_id AND wi.current_node_id = wn.node_id WHERE wi.requirement_id = r.id AND JSON_CONTAINS(wn.assignee_user_ids, CAST(#{userId} AS JSON)))
+            OR EXISTS (SELECT 1 FROM user_organizations uo WHERE uo.user_id = #{userId} AND uo.org_id = r.org_id)
+        )
+    </select>
+
     <!-- 进行中需求：处于开发中节点的需求 -->
     <select id="getInProgressCount" resultType="int">
         SELECT COUNT(DISTINCT r.id) FROM requirements r
         WHERE r.deleted_at = 0 AND (r.is_draft = 0 OR r.is_draft IS NULL) AND r.node_status = 'IN_DEVELOPMENT'
+        AND (
+            EXISTS (SELECT 1 FROM user_roles ur JOIN roles ro ON ur.role_id = ro.id WHERE ur.user_id = #{userId} AND ro.code = 'SUPER_ADMIN')
+            OR r.creator_id = #{userId}
+            OR EXISTS (SELECT 1 FROM workflow_instance_transitions wit WHERE wit.requirement_id = r.id AND wit.operator_id = #{userId})
+            OR EXISTS (SELECT 1 FROM workflow_instances wi JOIN workflow_nodes wn ON wi.workflow_version_id = wn.workflow_version_id AND wi.current_node_id = wn.node_id WHERE wi.requirement_id = r.id AND JSON_CONTAINS(wn.assignee_user_ids, CAST(#{userId} AS JSON)))
+            OR EXISTS (SELECT 1 FROM user_organizations uo WHERE uo.user_id = #{userId} AND uo.org_id = r.org_id)
+        )
+    </select>
+
+    <!-- 进行中需求（带数据权限过滤）：处于开发中节点的需求 -->
+    <select id="getInProgressCountWithOrgFilter" resultType="int">
+        SELECT COUNT(DISTINCT r.id) FROM requirements r
+        WHERE r.deleted_at = 0 AND (r.is_draft = 0 OR r.is_draft IS NULL) AND r.node_status = 'IN_DEVELOPMENT'
+        <if test="isSuperAdmin != true">
+            AND r.org_id IN
+            <foreach collection="visibleOrgIds" item="orgId" open="(" separator="," close=")">
+                #{orgId}
+            </foreach>
+        </if>
         AND (
             EXISTS (SELECT 1 FROM user_roles ur JOIN roles ro ON ur.role_id = ro.id WHERE ur.user_id = #{userId} AND ro.code = 'SUPER_ADMIN')
             OR r.creator_id = #{userId}
@@ -68,12 +106,53 @@
         )
     </select>
 
+    <!-- 已完成需求（带数据权限过滤）：节点状态走到结束状态（node_statuses.is_end = 1）的需求 -->
+    <select id="getCompletedCountWithOrgFilter" resultType="int">
+        SELECT COUNT(DISTINCT r.id) FROM requirements r
+        WHERE r.deleted_at = 0 AND (r.is_draft = 0 OR r.is_draft IS NULL)
+        AND r.node_status IN (SELECT code FROM node_statuses WHERE is_end = 1)
+        <if test="isSuperAdmin != true">
+            AND r.org_id IN
+            <foreach collection="visibleOrgIds" item="orgId" open="(" separator="," close=")">
+                #{orgId}
+            </foreach>
+        </if>
+        AND (
+            EXISTS (SELECT 1 FROM user_roles ur JOIN roles ro ON ur.role_id = ro.id WHERE ur.user_id = #{userId} AND ro.code = 'SUPER_ADMIN')
+            OR r.creator_id = #{userId}
+            OR EXISTS (SELECT 1 FROM workflow_instance_transitions wit WHERE wit.requirement_id = r.id AND wit.operator_id = #{userId})
+            OR EXISTS (SELECT 1 FROM workflow_instances wi JOIN workflow_nodes wn ON wi.workflow_version_id = wn.workflow_version_id AND wi.current_node_id = wn.node_id WHERE wi.requirement_id = r.id AND JSON_CONTAINS(wn.assignee_user_ids, CAST(#{userId} AS JSON)))
+            OR EXISTS (SELECT 1 FROM user_organizations uo WHERE uo.user_id = #{userId} AND uo.org_id = r.org_id)
+        )
+    </select>
+
     <!-- 已逾期需求：未走到结束状态且超过期望完成日期的需求 -->
     <select id="getOverdueCount" resultType="int">
         SELECT COUNT(DISTINCT r.id) FROM requirements r
         WHERE r.deleted_at = 0 AND (r.is_draft = 0 OR r.is_draft IS NULL)
         AND r.node_status NOT IN (SELECT code FROM node_statuses WHERE is_end = 1)
         AND r.due_date IS NOT NULL AND r.due_date &lt; CURDATE()
+        AND (
+            EXISTS (SELECT 1 FROM user_roles ur JOIN roles ro ON ur.role_id = ro.id WHERE ur.user_id = #{userId} AND ro.code = 'SUPER_ADMIN')
+            OR r.creator_id = #{userId}
+            OR EXISTS (SELECT 1 FROM workflow_instance_transitions wit WHERE wit.requirement_id = r.id AND wit.operator_id = #{userId})
+            OR EXISTS (SELECT 1 FROM workflow_instances wi JOIN workflow_nodes wn ON wi.workflow_version_id = wn.workflow_version_id AND wi.current_node_id = wn.node_id WHERE wi.requirement_id = r.id AND JSON_CONTAINS(wn.assignee_user_ids, CAST(#{userId} AS JSON)))
+            OR EXISTS (SELECT 1 FROM user_organizations uo WHERE uo.user_id = #{userId} AND uo.org_id = r.org_id)
+        )
+    </select>
+
+    <!-- 已逾期需求（带数据权限过滤）：未走到结束状态且超过期望完成日期的需求 -->
+    <select id="getOverdueCountWithOrgFilter" resultType="int">
+        SELECT COUNT(DISTINCT r.id) FROM requirements r
+        WHERE r.deleted_at = 0 AND (r.is_draft = 0 OR r.is_draft IS NULL)
+        AND r.node_status NOT IN (SELECT code FROM node_statuses WHERE is_end = 1)
+        AND r.due_date IS NOT NULL AND r.due_date &lt; CURDATE()
+        <if test="isSuperAdmin != true">
+            AND r.org_id IN
+            <foreach collection="visibleOrgIds" item="orgId" open="(" separator="," close=")">
+                #{orgId}
+            </foreach>
+        </if>
         AND (
             EXISTS (SELECT 1 FROM user_roles ur JOIN roles ro ON ur.role_id = ro.id WHERE ur.user_id = #{userId} AND ro.code = 'SUPER_ADMIN')
             OR r.creator_id = #{userId}

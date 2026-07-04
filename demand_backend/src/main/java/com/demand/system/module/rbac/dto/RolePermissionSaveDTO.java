@@ -11,6 +11,8 @@ public class RolePermissionSaveDTO {
 
     private List<String> permissionCodes;
 
+    private List<Long> dataScopeOrgIds;
+
     public Long getRoleId() {
         return roleId;
     }
@@ -25,5 +27,13 @@ public class RolePermissionSaveDTO {
 
     public void setPermissionCodes(List<String> permissionCodes) {
         this.permissionCodes = permissionCodes;
+    }
+
+    public List<Long> getDataScopeOrgIds() {
+        return dataScopeOrgIds;
+    }
+
+    public void setDataScopeOrgIds(List<Long> dataScopeOrgIds) {
+        this.dataScopeOrgIds = dataScopeOrgIds;
     }
 }

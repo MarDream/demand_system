@@ -65,8 +65,8 @@ export function getRolePermissions(roleId: number) {
   return request.get<RolePermissionInfo>(`/v1/rbac/roles/${roleId}/permissions`)
 }
 
-export function saveRolePermissions(roleId: number, permissionCodes: string[]) {
-  return request.put<void>(`/v1/rbac/roles/${roleId}/permissions`, { roleId, permissionCodes })
+export function saveRolePermissions(roleId: number, permissionCodes: string[], dataScopeOrgIds?: number[]) {
+  return request.put<void>(`/v1/rbac/roles/${roleId}/permissions`, { roleId, permissionCodes, dataScopeOrgIds })
 }
 
 export function getGrantablePermissions() {

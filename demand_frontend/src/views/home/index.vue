@@ -49,6 +49,7 @@
             :gradient-start="card.gradientStart"
             :gradient-end="card.gradientEnd"
             :trend="card.trend"
+            @click="router.push(card.route)"
           >
             <template #icon>
               <component :is="card.icon" />
@@ -453,10 +454,10 @@ const COLORS = {
 }
 
 const statCardsPro = computed(() => [
-  { icon: SvgIconTotal, label: '总需求数', value: statsData.value?.totalReqs ?? 0, tip: '全部需求', gradientStart: COLORS.accent, gradientEnd: COLORS.accentHover, trend: null },
-  { icon: SvgIconProgress, label: '进行中需求', value: statsData.value?.inProgressReqs ?? 0, tip: '开发中', gradientStart: COLORS.amber, gradientEnd: COLORS.amberHover, trend: null },
-  { icon: SvgIconDone, label: '已完成', value: statsData.value?.completedReqs ?? 0, tip: '已交付', gradientStart: COLORS.emerald, gradientEnd: COLORS.emeraldHover, trend: null },
-  { icon: SvgIconAlert, label: '已逾期', value: statsData.value?.overdueReqs ?? 0, tip: '超过截止日期', gradientStart: COLORS.red, gradientEnd: COLORS.redHover, trend: null },
+  { icon: SvgIconTotal, label: '总需求数', value: statsData.value?.totalReqs ?? 0, tip: '全部需求', gradientStart: COLORS.accent, gradientEnd: COLORS.accentHover, trend: null, route: { name: 'Requirements' } },
+  { icon: SvgIconProgress, label: '进行中需求', value: statsData.value?.inProgressReqs ?? 0, tip: '开发中', gradientStart: COLORS.amber, gradientEnd: COLORS.amberHover, trend: null, route: { name: 'Requirements', query: { view: 'pending' } } },
+  { icon: SvgIconDone, label: '已完成', value: statsData.value?.completedReqs ?? 0, tip: '已交付', gradientStart: COLORS.emerald, gradientEnd: COLORS.emeraldHover, trend: null, route: { name: 'Requirements', query: { view: 'done' } } },
+  { icon: SvgIconAlert, label: '已逾期', value: statsData.value?.overdueReqs ?? 0, tip: '超过截止日期', gradientStart: COLORS.red, gradientEnd: COLORS.redHover, trend: null, route: { name: 'Requirements', query: { view: 'all' } } },
 ])
 
 // 状态分布饼图

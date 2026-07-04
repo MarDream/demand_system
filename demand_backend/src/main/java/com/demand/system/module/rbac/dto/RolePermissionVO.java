@@ -9,6 +9,7 @@ public class RolePermissionVO {
     private String roleName;
     private List<String> permissionCodes;
     private List<String> grantablePermissionCodes;
+    private List<Long> dataScopeOrgIds;
 
     public Long getRoleId() {
         return roleId;
@@ -50,6 +51,14 @@ public class RolePermissionVO {
         this.grantablePermissionCodes = grantablePermissionCodes;
     }
 
+    public List<Long> getDataScopeOrgIds() {
+        return dataScopeOrgIds;
+    }
+
+    public void setDataScopeOrgIds(List<Long> dataScopeOrgIds) {
+        this.dataScopeOrgIds = dataScopeOrgIds;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -60,6 +69,7 @@ public class RolePermissionVO {
         private String roleName;
         private List<String> permissionCodes;
         private List<String> grantablePermissionCodes;
+        private List<Long> dataScopeOrgIds;
 
         public Builder roleId(Long roleId) {
             this.roleId = roleId;
@@ -86,6 +96,11 @@ public class RolePermissionVO {
             return this;
         }
 
+        public Builder dataScopeOrgIds(List<Long> dataScopeOrgIds) {
+            this.dataScopeOrgIds = dataScopeOrgIds;
+            return this;
+        }
+
         public RolePermissionVO build() {
             RolePermissionVO vo = new RolePermissionVO();
             vo.setRoleId(roleId);
@@ -93,6 +108,7 @@ public class RolePermissionVO {
             vo.setRoleName(roleName);
             vo.setPermissionCodes(permissionCodes);
             vo.setGrantablePermissionCodes(grantablePermissionCodes);
+            vo.setDataScopeOrgIds(dataScopeOrgIds);
             return vo;
         }
     }

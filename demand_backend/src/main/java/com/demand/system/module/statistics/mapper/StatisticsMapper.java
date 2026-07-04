@@ -30,9 +30,19 @@ public interface StatisticsMapper {
     int getTotalCount(@Param("userId") Long userId);
 
     /**
+     * 总需求数（带数据权限过滤）：登录用户可见的全部需求数（排除草稿）
+     */
+    int getTotalCountWithOrgFilter(@Param("userId") Long userId, @Param("visibleOrgIds") List<Long> visibleOrgIds, @Param("isSuperAdmin") boolean isSuperAdmin);
+
+    /**
      * 进行中需求：处于开发中节点的需求
      */
     int getInProgressCount(@Param("userId") Long userId);
+
+    /**
+     * 进行中需求（带数据权限过滤）：处于开发中节点的需求
+     */
+    int getInProgressCountWithOrgFilter(@Param("userId") Long userId, @Param("visibleOrgIds") List<Long> visibleOrgIds, @Param("isSuperAdmin") boolean isSuperAdmin);
 
     /**
      * 已完成需求：处于结束节点的需求
@@ -40,9 +50,19 @@ public interface StatisticsMapper {
     int getCompletedCount(@Param("userId") Long userId);
 
     /**
+     * 已完成需求（带数据权限过滤）：处于结束节点的需求
+     */
+    int getCompletedCountWithOrgFilter(@Param("userId") Long userId, @Param("visibleOrgIds") List<Long> visibleOrgIds, @Param("isSuperAdmin") boolean isSuperAdmin);
+
+    /**
      * 已逾期需求：未结束且超过期望完成日期的需求
      */
     int getOverdueCount(@Param("userId") Long userId);
+
+    /**
+     * 已逾期需求（带数据权限过滤）：未结束且超过期望完成日期的需求
+     */
+    int getOverdueCountWithOrgFilter(@Param("userId") Long userId, @Param("visibleOrgIds") List<Long> visibleOrgIds, @Param("isSuperAdmin") boolean isSuperAdmin);
 
     /**
      * 我的待办数量

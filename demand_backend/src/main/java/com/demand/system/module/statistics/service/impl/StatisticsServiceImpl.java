@@ -1,6 +1,8 @@
 package com.demand.system.module.statistics.service.impl;
 
+import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.requirement.mapper.RequirementPendingTaskMapper;
+import com.demand.system.module.requirement.service.impl.RequirementServiceImpl;
 import com.demand.system.module.statistics.dto.BurndownPoint;
 import com.demand.system.module.statistics.dto.CfdPoint;
 import com.demand.system.module.statistics.dto.DashboardData;
@@ -20,19 +22,24 @@ public class StatisticsServiceImpl implements StatisticsService {
 
     private final StatisticsMapper statisticsMapper;
     private final RequirementPendingTaskMapper pendingTaskMapper;
+    private final RequirementServiceImpl requirementService;
 
-    public StatisticsServiceImpl(StatisticsMapper statisticsMapper, RequirementPendingTaskMapper pendingTaskMapper) {
+    public StatisticsServiceImpl(StatisticsMapper statisticsMapper, RequirementPendingTaskMapper pendingTaskMapper, RequirementServiceImpl requirementService) {
         this.statisticsMapper = statisticsMapper;
         this.pendingTaskMapper = pendingTaskMapper;
+        this.requirementService = requirementService;
     }
 
     @Override
     public Map<String, Object> getDashboardData(Long projectId, Long userId) {
-        // 统计登录用户可见的所有需求（不限于项目）
-        int totalReqs = statisticsMapper.getTotalCount(userId);
-        int inProgressReqs = statisticsMapper.getInProgressCount(userId);
-        int completedReqs = statisticsMapper.getCompletedCount(userId);
-        int overdueReqs = statisticsMapper.getOverdueCount(userId);
+        List<String> currentRoleCodes = SecurityUtils.getCurrentUserRoles();
+        boolean isSuperAdmin = RequirementServiceImpl.isSuperAdmin(currentRoleCodes);
+        List<Long> visibleOrgIds = requirementService.resolveVisibleOrgIds(userId, isSuperAdmin);
+
+        int totalReqs = statisticsMapper.getTotalCountWithOrgFilter(userId, visibleOrgIds, isSuperAdmin);
+        int inProgressReqs = statisticsMapper.getInProgressCountWithOrgFilter(userId, visibleOrgIds, isSuperAdmin);
+        int completedReqs = statisticsMapper.getCompletedCountWithOrgFilter(userId, visibleOrgIds, isSuperAdmin);
+        int overdueReqs = statisticsMapper.getOverdueCountWithOrgFilter(userId, visibleOrgIds, isSuperAdmin);
         int myTodoCount = statisticsMapper.getMyTodoCount(userId);
 
         DashboardData data = DashboardData.builder()
