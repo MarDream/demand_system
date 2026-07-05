@@ -127,6 +127,23 @@
                 </el-option>
               </el-select>
             </el-form-item>
+            <el-form-item label="节点状态" class="filter-item filter-item--status">
+              <el-select v-model="filterForm.nodeStatus" placeholder="全部" clearable class="filter-select--status">
+                <el-option label="新建" value="DRAFT" />
+                <el-option label="待分析" value="PENDING_ANALYSIS" />
+                <el-option label="待确认" value="PENDING_CONFIRM" />
+                <el-option label="待评审" value="PENDING_REVIEW" />
+                <el-option label="开发中" value="IN_DEVELOPMENT" />
+                <el-option label="测试中" value="IN_TESTING" />
+                <el-option label="已上线" value="DEPLOYED" />
+                <el-option label="已验收" value="ACCEPTED" />
+                <el-option label="已取消" value="CANCELLED" />
+                <el-option label="已拒绝" value="REJECTED" />
+                <el-option label="打回" value="ROLLBACK" />
+                <el-option label="测试不通过" value="TEST_FAILED" />
+                <el-option label="验收不通过" value="ACCEPTANCE_FAILED" />
+              </el-select>
+            </el-form-item>
             <el-form-item label="状态" class="filter-item filter-item--status">
               <el-select v-model="filterForm.status" placeholder="全部" clearable class="filter-select--status">
                 <el-option label="新建" value="新建" />
@@ -595,6 +612,8 @@ const filterForm = reactive({
   status: '',
   assigneeId: undefined as number | undefined,
   keyword: '',
+  nodeStatus: '',
+  isOverdue: false,
 })
 
 // 时间筛选
@@ -630,6 +649,8 @@ function buildMyListParams(): RequirementMyListQuery {
     status: filterForm.status || undefined,
     assigneeId: filterForm.assigneeId,
     keyword: filterForm.keyword || undefined,
+    nodeStatus: filterForm.nodeStatus || undefined,
+    isOverdue: filterForm.isOverdue || undefined,
     pageNum: pagination.pageNum,
     pageSize: pagination.pageSize,
   }
@@ -720,6 +741,8 @@ async function fetchData() {
     if (filterForm.type) params.type = filterForm.type
     if (filterForm.priority) params.priority = filterForm.priority
     if (filterForm.status) params.status = filterForm.status
+    if (filterForm.nodeStatus) params.nodeStatus = filterForm.nodeStatus
+    if (filterForm.isOverdue) params.isOverdue = filterForm.isOverdue
     if (filterForm.assigneeId) params.assigneeId = filterForm.assigneeId
     if (filterForm.keyword) params.keyword = filterForm.keyword
 
@@ -813,6 +836,8 @@ function handleReset() {
   filterForm.type = ''
   filterForm.priority = ''
   filterForm.status = ''
+  filterForm.nodeStatus = ''
+  filterForm.isOverdue = false
   filterForm.assigneeId = undefined
   filterForm.keyword = ''
   timeDimension.value = 'createdAt'
@@ -1107,6 +1132,16 @@ onMounted(async () => {
     loadConfig(),
     loadColumnConfig(),
   ])
+
+  // 从 URL query 读取 nodeStatus / isOverdue 筛选条件（由仪表盘卡片点击传入）
+  const nodeStatusFromQuery = route.query.nodeStatus
+  const isOverdueFromQuery = route.query.isOverdue
+  if (nodeStatusFromQuery) {
+    filterForm.nodeStatus = String(nodeStatusFromQuery)
+  }
+  if (isOverdueFromQuery !== undefined && isOverdueFromQuery !== null) {
+    filterForm.isOverdue = isOverdueFromQuery === 'true' || isOverdueFromQuery === true
+  }
 
   // 加载主数据
   // detail.vue 操作完成后跳回时，检测刷新标记并清除缓存

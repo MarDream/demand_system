@@ -155,10 +155,10 @@ import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import { use } from 'echarts/core'
 import { SVGRenderer } from 'echarts/renderers'
 import { PieChart, BarChart, LineChart } from 'echarts/charts'
-import { TitleComponent, TooltipComponent, LegendComponent, GridComponent } from 'echarts/components'
+import { TitleComponent, TooltipComponent, LegendComponent, GridComponent, GraphicComponent } from 'echarts/components'
 import { getDistributionData, getDurationData } from '@/api/modules/statistics'
 
-use([SVGRenderer, PieChart, BarChart, LineChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent])
+use([SVGRenderer, PieChart, BarChart, LineChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent, GraphicComponent])
 
 // ── 列表字段设置：需求时长统计 ──
 const statAllColumns: ColumnDef[] = [

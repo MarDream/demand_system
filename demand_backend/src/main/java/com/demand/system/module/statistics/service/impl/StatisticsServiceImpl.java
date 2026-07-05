@@ -217,4 +217,9 @@ public class StatisticsServiceImpl implements StatisticsService {
         counts.put("drafts", statisticsMapper.countMyDraftsByUserId(userId));
         return counts;
     }
+
+    @Override
+    public List<String> getEndNodeStatusCodes() {
+        return statisticsMapper.getEndNodeStatusCodes();
+    }
 }

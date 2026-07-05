@@ -602,6 +602,7 @@ async function applyRequirementTemplate(typeCode?: string, force = false) {
     }
   } catch (error) {
     // 无模板或加载失败时使用默认空白描述
+    console.warn('[Template] 加载失败，使用默认空白描述', error)
   } finally {
     templateApplying.value = false
   }

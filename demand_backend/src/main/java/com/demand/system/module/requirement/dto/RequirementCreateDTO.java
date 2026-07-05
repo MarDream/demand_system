@@ -2,6 +2,7 @@ package com.demand.system.module.requirement.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -15,8 +16,10 @@ public class RequirementCreateDTO {
     private Long parentId;
 
     @NotBlank(message = "标题不能为空")
+    @Size(max = 200, message = "标题长度不能超过200字符")
     private String title;
 
+    @Size(max = 5000, message = "描述长度不能超过5000字符")
     private String description;
 
     private String type;

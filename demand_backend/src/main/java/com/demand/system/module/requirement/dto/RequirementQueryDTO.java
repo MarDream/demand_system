@@ -57,6 +57,28 @@ public class RequirementQueryDTO {
     /** 游标分页：上一页最后一条记录的 ID，用于深分页优化 */
     private String cursor;
 
+    /** 节点状态编码 (如 IN_DEVELOPMENT) */
+    private String nodeStatus;
+
+    /** 是否逾期 */
+    private Boolean isOverdue;
+
+    public String getNodeStatus() {
+        return nodeStatus;
+    }
+
+    public void setNodeStatus(String nodeStatus) {
+        this.nodeStatus = nodeStatus;
+    }
+
+    public Boolean getIsOverdue() {
+        return isOverdue;
+    }
+
+    public void setIsOverdue(Boolean overdue) {
+        isOverdue = overdue;
+    }
+
     public Long getProjectId() {
         return projectId;
     }

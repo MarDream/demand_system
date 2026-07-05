@@ -346,6 +346,7 @@ public class RequirementController {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:requirement:delete')")
     public Result<Void> delete(@PathVariable Long id) {
         Long userId = SecurityUtils.getCurrentUserId();
         if (userId == null) {
@@ -367,16 +368,19 @@ public class RequirementController {
     }
 
     @GetMapping("/{id}/history")
+    @PreAuthorize("isAuthenticated()")
     public Result<List<Map<String, Object>>> getHistory(@PathVariable Long id) {
         return Result.success(requirementService.getHistory(id));
     }
 
     @GetMapping("/{id}/comments")
+    @PreAuthorize("isAuthenticated()")
     public Result<List<RequirementCommentVO>> getComments(@PathVariable Long id) {
         return Result.success(requirementService.getComments(id));
     }
 
     @GetMapping("/{id}/approval-evaluations")
+    @PreAuthorize("isAuthenticated()")
     public Result<List<RequirementApprovalEvaluationVO>> getApprovalEvaluations(@PathVariable Long id) {
         return Result.success(requirementService.getApprovalEvaluations(id));
     }
@@ -406,16 +410,19 @@ public class RequirementController {
     }
 
     @GetMapping("/{id}/children")
+    @PreAuthorize("isAuthenticated()")
     public Result<List<Map<String, Object>>> getChildren(@PathVariable Long id) {
         return Result.success(requirementService.getChildren(id));
     }
 
     @GetMapping("/{id}/detail-batch")
+    @PreAuthorize("isAuthenticated()")
     public Result<RequirementDetailVO> getDetailBatch(@PathVariable Long id) {
         return Result.success(requirementService.getDetailBatch(id));
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
     public Result<RequirementVO> getDetail(@PathVariable Long id) {
         return Result.success(requirementService.getDetail(id));
     }

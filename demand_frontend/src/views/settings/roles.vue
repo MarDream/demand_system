@@ -257,13 +257,12 @@
                     </div>
 
                     <!-- 数据权限节点：仅当是需求管理菜单时才显示 -->
-                    <div v-if="node.key === 'menu:requirement' && selectedDataScopeOrgIds.length >= 0" class="data-scope-section">
+                    <div v-if="node.key === 'menu-2'" class="data-scope-section">
                       <div class="menu-permission-node is-nested">
                         <div class="menu-permission-row data-scope-header" style="padding-left: 36px;">
-                          <el-button link class="expand-button" @click="toggleDataScopeExpand">
+                          <button type="button" class="expand-button" @click.stop="toggleDataScopeExpand">
                             <el-icon><component :is="dataScopeExpanded ? ArrowDown : ArrowRight" /></el-icon>
-                          </el-button>
-                          <span class="expand-placeholder" />
+                          </button>
                           <el-checkbox
                             :model-value="allDataScopeOrgChecked"
                             :indeterminate="dataScopeOrgIndeterminate"
@@ -275,6 +274,14 @@
                         </div>
 
                         <div v-if="dataScopeExpanded" class="data-scope-org-tree">
+                          <el-alert
+                            v-if="!currentUserOrgId"
+                            type="warning"
+                            :closable="false"
+                            show-icon
+                            title="您尚未绑定组织架构，请先在个人设置中完成组织绑定后再配置数据权限。"
+                            style="margin-bottom: 12px;"
+                          />
                           <el-tree
                             ref="orgTreeRef"
                             :data="orgTree"
@@ -283,6 +290,7 @@
                             show-checkbox
                             check-strictly
                             :default-checked-keys="selectedDataScopeOrgIds"
+                            :disabled="!currentUserOrgId"
                             empty-text="暂无组织数据"
                             @check="handleOrgTreeCheck"
                           />
@@ -734,6 +742,7 @@ const allRoleGroupsExpanded = computed(() => {
 })
 
 const isCurrentSuperAdmin = computed(() => userStore.isSuperAdmin)
+const currentUserOrgId = computed(() => userStore.userInfo?.orgId ?? null)
 const canGrantSelectedRole = computed(() => {
   return !!selectedRole.value && !isSuperAdminRole(selectedRole.value) && (isCurrentSuperAdmin.value || !isSystemRole(selectedRole.value))
 })
@@ -1043,6 +1052,13 @@ async function fetchRolePermissions(roleId: number) {
     // 加载组织树（仅在非超级管理员时加载）
     if (rolePermission && !isSuperAdminRole(selectedRole.value)) {
       await loadOrgTree()
+      // 如果角色之前未设置过数据权限，则默认勾选当前用户所属组织及其所有子层级
+      if (selectedDataScopeOrgIds.value.length === 0 && orgTree.value.length > 0 && currentUserOrgId.value) {
+        const userOrgIds = collectUserOrgDescendantIds(orgTree.value, userStore.userInfo)
+        if (userOrgIds.length > 0) {
+          selectedDataScopeOrgIds.value = userOrgIds
+        }
+      }
     }
   } catch {
     selectedPermissions.value = []
@@ -1374,6 +1390,47 @@ function getAllOrgIds(nodes: any[]): number[] {
     ids.push(node.id)
     if (node.children && node.children.length > 0) {
       ids.push(...getAllOrgIds(node.children))
+    }
+  }
+  return ids
+}
+
+/**
+ * 收集用户所属组织节点及其所有子节点的ID
+ * @param orgTree 组织树
+ * @param userInfo 当前登录用户信息
+ * @returns 组织ID列表（包含用户所在节点及所有子孙节点）
+ */
+function collectUserOrgDescendantIds(orgTree: any[], userInfo: AuthUserInfo | null): number[] {
+  if (!userInfo?.orgId) return []
+  const userOrgId = userInfo.orgId
+  const found = findOrgNodeById(orgTree, userOrgId)
+  if (!found) return []
+  return collectOrgIdsAndDescendants(found)
+}
+
+/**
+ * 在组织树中递归查找指定ID的节点
+ */
+function findOrgNodeById(nodes: any[], targetId: number): any | null {
+  for (const node of nodes) {
+    if (node.id === targetId) return node
+    if (node.children && node.children.length > 0) {
+      const found = findOrgNodeById(node.children, targetId)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+/**
+ * 收集指定节点及所有子节点的ID
+ */
+function collectOrgIdsAndDescendants(node: any): number[] {
+  const ids: number[] = [node.id]
+  if (node.children && node.children.length > 0) {
+    for (const child of node.children) {
+      ids.push(...collectOrgIdsAndDescendants(child))
     }
   }
   return ids
@@ -2191,6 +2248,22 @@ function permissionName(code: string) {
   width: 24px;
   min-height: 24px;
   padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: inherit;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s, background 0.2s;
+}
+
+.expand-button:hover {
+  color: var(--color-primary);
+  background: var(--color-primary-light-9);
 }
 
 .expand-placeholder {
@@ -2563,17 +2636,42 @@ function permissionName(code: string) {
 
 /* ===== 数据权限 - 组织树 ===== */
 .data-scope-section {
-  margin-top: 4px;
+  margin: 2px 0 6px;
 }
+
+.data-scope-section .menu-permission-node {
+  border-bottom: 0;
+}
+
 .data-scope-header {
-  background: var(--el-fill-color-blank);
-  border-radius: 4px;
+  min-height: 36px;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: var(--spacing-sm);
+  padding-top: 4px;
+  padding-bottom: 4px;
+  background: #fff;
+  border-radius: var(--radius-sm);
 }
+
+.data-scope-header .expand-button {
+  justify-self: center;
+}
+
+.data-scope-header :deep(.el-checkbox) {
+  min-width: 0;
+  overflow: hidden;
+}
+
 .data-scope-org-tree {
-  padding: 8px 0 8px 36px;
-  max-height: 320px;
+  margin: 2px var(--spacing-md) 8px 72px;
+  padding: 8px 10px;
+  max-height: 260px;
   overflow-y: auto;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: #fbfdff;
 }
+
 .data-scope-org-tree .el-tree {
   background: transparent;
 }

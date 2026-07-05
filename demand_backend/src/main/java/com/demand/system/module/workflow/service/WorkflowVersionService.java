@@ -219,14 +219,20 @@ public class WorkflowVersionService {
                 userMapper.selectBatchIds(allUserIds).stream()
                         .collect(Collectors.toMap(User::getId, u -> u));
 
-        // 统计运行中实例数
+        // 统计运行中实例数（一次性 GROUP BY 查询，避免 N+1）
         Map<Long, Long> instanceCountMap = new HashMap<>();
-        for (WorkflowVersion version : versions) {
-            Long count = workflowInstanceMapper.selectCount(
-                    new LambdaQueryWrapper<WorkflowInstance>()
-                            .eq(WorkflowInstance::getWorkflowVersionId, version.getId())
-                            .eq(WorkflowInstance::getStatus, "running"));
-            instanceCountMap.put(version.getId(), count);
+        List<Long> versionIds = versions.stream()
+                .map(WorkflowVersion::getId)
+                .filter(Objects::nonNull)
+                .toList();
+        if (!versionIds.isEmpty()) {
+            for (Map<String, Object> row : workflowInstanceMapper.countRunningByVersionIds(versionIds)) {
+                Object versionIdObj = row.get("workflowVersionId");
+                Object cntObj = row.get("cnt");
+                if (versionIdObj instanceof Number v && cntObj instanceof Number c) {
+                    instanceCountMap.put(v.longValue(), c.longValue());
+                }
+            }
         }
 
         return versions.stream().map(version -> toVO(version, projectMap, userMap, instanceCountMap))

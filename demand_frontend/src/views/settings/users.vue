@@ -156,7 +156,7 @@
                 <template v-if="col.key === 'realName'" #default="{ row }">
                   <div class="member-cell">
                     <el-avatar :size="34" :src="row.avatar || undefined">{{ avatarText(row) }}</el-avatar>
-                    <div>
+                    <div class="member-info">
                       <div class="member-name">
                         {{ row.realName || row.username }}
                         <el-tag v-if="row.id === 1" size="small" type="primary">主管理员</el-tag>
@@ -659,7 +659,7 @@ interface UserForm {
 
 // ── 列表字段设置 ──
 const userAllColumns: ColumnDef[] = [
-  { key: 'realName', label: '姓名', group: '基础字段', minWidth: 220, fixed: false },
+  { key: 'realName', label: '姓名', group: '基础字段', minWidth: 220, align: 'left', fixed: false },
   { key: 'orgName', label: '所属组织', group: '基础字段', minWidth: 140 },
   { key: 'status', label: '账号状态', group: '基础字段', width: 140 },
   { key: 'systemRole', label: '角色', group: '基础字段', minWidth: 140 },
@@ -1869,6 +1869,18 @@ function resolveInitialOrgKey() {
   width: 100%;
 }
 
+.member-table :deep(.el-table__cell) {
+  vertical-align: middle;
+}
+
+.member-table :deep(.el-table__header th) {
+  height: 44px;
+}
+
+.member-table :deep(.el-table__body .el-table__row td) {
+  height: 56px;
+}
+
 .table-action-icons {
   display: flex;
   align-items: center;
@@ -1889,18 +1901,40 @@ function resolveInitialOrgKey() {
   min-width: 0;
 }
 
+.member-cell > .el-avatar {
+  flex-shrink: 0;
+  border: 1.5px solid var(--color-border-light);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.member-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  overflow: hidden;
+}
+
 .member-name {
+  min-width: 0;
   display: inline-flex;
   align-items: center;
-  gap: var(--spacing-sm);
+  gap: 6px;
   color: var(--color-text-primary);
+  font-size: 14px;
   font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
 }
 
 .member-sub {
-  margin-top: 2px;
   color: var(--color-text-placeholder);
   font-size: var(--font-size-xs);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .status-dot {

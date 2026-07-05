@@ -20,4 +20,10 @@ public interface StatisticsService {
      * 只返回待办、关注、草稿的数量，不走完整分页查询
      */
     Map<String, Long> getTabBadgeCounts(Long userId);
+
+    /**
+     * 查询所有标记为结束的节点状态码列表
+     * @return 结束状态的 code 列表 (如 [已上线, 已验收, 已取消, 已拒绝])
+     */
+    List<String> getEndNodeStatusCodes();
 }

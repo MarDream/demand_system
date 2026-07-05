@@ -11,6 +11,27 @@ import 'remixicon/fonts/remixicon.css'
 import { permission } from '@/directives/permission'
 import { setupDialogEnhancer } from '@/utils/dialogEnhancer'
 
+// ECharts 按需引入 graphic 组件（修复 [ECharts] Component graphic is used but not imported 报错）
+import * as echarts from 'echarts/core'
+import { GraphicComponent } from 'echarts/components'
+import { PieChart, BarChart } from 'echarts/charts'
+import { TitleComponent, TooltipComponent, LegendComponent, GridComponent } from 'echarts/components'
+import { LabelLayout, UniversalTransition } from 'echarts/features'
+import { CanvasRenderer } from 'echarts/renderers'
+
+echarts.use([
+  GraphicComponent,
+  PieChart,
+  BarChart,
+  TitleComponent,
+  TooltipComponent,
+  LegendComponent,
+  GridComponent,
+  LabelLayout,
+  UniversalTransition,
+  CanvasRenderer,
+])
+
 // 修复 zrender (ECharts 底层) 对 wheel/mousewheel 事件未标记 passive 的 Chrome Violation 警告
 // zrender 5.x 内部注册 scroll-blocking 事件时未传 { passive: true }，属于上游已知问题
 // 此补丁仅对 wheel/mousewheel/touchstart/touchmove 自动注入 passive，不影响其他事件

@@ -130,3 +130,8 @@ export interface TabBadgeCounts {
 export function getTabBadgeCounts() {
   return request.get<ApiResponse<TabBadgeCounts>>('/v1/tab-badge-counts')
 }
+
+/** 查询所有标记为结束的节点状态码列表 (is_end = 1) */
+export function getEndNodeStatuses() {
+  return request.get<ApiResponse<string[]>>('/v1/statistics/end-node-statuses')
+}

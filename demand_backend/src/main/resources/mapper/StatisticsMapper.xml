@@ -249,4 +249,12 @@
           AND creator_id = #{userId}
     </select>
 
+    <!-- 查询所有标记为结束的节点状态码列表 -->
+    <select id="getEndNodeStatusCodes" resultType="java.lang.String">
+        SELECT code
+        FROM node_statuses
+        WHERE is_end = 1
+        ORDER BY sort_order ASC
+    </select>
+
 </mapper>

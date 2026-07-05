@@ -1,6 +1,7 @@
 package com.demand.system.module.requirement.dto;
 
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -11,12 +12,16 @@ public class RequirementUpdateDTO {
     @NotNull(message = "需求ID不能为空")
     private Long id;
 
+    @Size(max = 200, message = "标题长度不能超过200")
     private String title;
 
+    @Size(max = 5000, message = "描述长度不能超过5000")
     private String description;
 
+    @Size(max = 50, message = "类型长度不能超过50")
     private String type;
 
+    @Size(max = 50, message = "优先级长度不能超过50")
     private String priority;
 
     private Long assigneeId;

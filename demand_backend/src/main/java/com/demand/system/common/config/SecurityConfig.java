@@ -30,6 +30,7 @@ import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -43,6 +44,23 @@ public class SecurityConfig {
 
     @Value("${jwt.secret}")
     private String jwtSecret;
+
+    /**
+     * S6 修复: 启动时校验 JWT Secret 长度，HMAC-SHA256 要求密钥至少 32 字节。
+     * 避免运行期才出现 WeakKeyException 导致鉴权不可用。
+     */
+    @PostConstruct
+    public void validateJwtSecret() {
+        if (jwtSecret == null || jwtSecret.isBlank()) {
+            throw new IllegalStateException("配置项 jwt.secret 不能为空");
+        }
+        int length = jwtSecret.getBytes(StandardCharsets.UTF_8).length;
+        if (length < 32) {
+            throw new IllegalStateException(
+                "配置项 jwt.secret 长度不足: 当前 " + length + " 字节, HMAC-SHA256 要求至少 32 字节。"
+                    + "请生成长度足够的随机字符串, 例如使用 openssl rand -base64 48");
+        }
+    }
 
     @Bean
     public JwtAuthenticationFilter jwtAuthenticationFilter(RbacPermissionResolver rbacPermissionResolver) {
@@ -81,7 +99,8 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .cors(cors -> cors.configurationSource(request -> {
                 var corsConfig = new org.springframework.web.cors.CorsConfiguration();
-                corsConfig.addAllowedOriginPattern("*");
+                // CORS 白名单由 CorsConfig Bean（CorsConfig.java）统一管理，
+                // 此处不再设置 allowedOriginPattern，避免与外部 CorsConfig 策略不一致。
                 corsConfig.addAllowedHeader("*");
                 corsConfig.addAllowedMethod("*");
                 corsConfig.setAllowCredentials(true);

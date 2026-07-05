@@ -113,4 +113,10 @@ public interface StatisticsMapper {
      * 我的草稿数量
      */
     Long countMyDraftsByUserId(@Param("userId") Long userId);
+
+    /**
+     * 查询所有标记为结束的节点状态码列表
+     * @return 结束状态的 code 列表
+     */
+    List<String> getEndNodeStatusCodes();
 }

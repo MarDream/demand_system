@@ -14,6 +14,12 @@ public class RequirementMyListQueryDTO {
 
     private String keyword;
 
+    /** 节点状态编码 (如 IN_DEVELOPMENT) */
+    private String nodeStatus;
+
+    /** 是否逾期 */
+    private Boolean isOverdue;
+
     private int pageNum = 1;
 
     private int pageSize = 10;
@@ -64,6 +70,22 @@ public class RequirementMyListQueryDTO {
 
     public void setKeyword(String keyword) {
         this.keyword = keyword;
+    }
+
+    public String getNodeStatus() {
+        return nodeStatus;
+    }
+
+    public void setNodeStatus(String nodeStatus) {
+        this.nodeStatus = nodeStatus;
+    }
+
+    public Boolean getIsOverdue() {
+        return isOverdue;
+    }
+
+    public void setIsOverdue(Boolean overdue) {
+        isOverdue = overdue;
     }
 
     public int getPageNum() {

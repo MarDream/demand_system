@@ -42,6 +42,8 @@
           <if test='projectId != null'> AND r.project_id = #{projectId} </if>
           <if test='type != null and type != ""'> AND r.type = #{type} </if>
           <if test='priority != null and priority != ""'> AND r.priority = #{priority} </if>
+          <if test='nodeStatus != null and nodeStatus != ""'> AND r.node_status = #{nodeStatus} </if>
+          <if test='isOverdue != null and isOverdue'> AND r.node_status NOT IN (SELECT code FROM node_statuses WHERE is_end = 1) AND r.due_date IS NOT NULL AND r.due_date &lt; CURDATE() </if>
           <if test='status != null and status != ""'> AND r.status = #{status} </if>
           <if test='assigneeId != null'> AND r.assignee_id = #{assigneeId} </if>
           <if test='keyword != null and keyword != ""'>
@@ -141,6 +143,8 @@
           <if test='projectId != null'> AND r.project_id = #{projectId} </if>
           <if test='type != null and type != ""'> AND r.type = #{type} </if>
           <if test='priority != null and priority != ""'> AND r.priority = #{priority} </if>
+          <if test='nodeStatus != null and nodeStatus != ""'> AND r.node_status = #{nodeStatus} </if>
+          <if test='isOverdue != null and isOverdue'> AND r.node_status NOT IN (SELECT code FROM node_statuses WHERE is_end = 1) AND r.due_date IS NOT NULL AND r.due_date &lt; CURDATE() </if>
           <if test='status != null and status != ""'> AND r.status = #{status} </if>
           <if test='assigneeId != null'> AND r.assignee_id = #{assigneeId} </if>
           <if test='keyword != null and keyword != ""'>
@@ -359,6 +363,8 @@
           <if test='projectId != null'> AND r.project_id = #{projectId} </if>
           <if test='type != null and type != ""'> AND r.type = #{type} </if>
           <if test='priority != null and priority != ""'> AND r.priority = #{priority} </if>
+          <if test='nodeStatus != null and nodeStatus != ""'> AND r.node_status = #{nodeStatus} </if>
+          <if test='isOverdue != null and isOverdue'> AND r.node_status NOT IN (SELECT code FROM node_statuses WHERE is_end = 1) AND r.due_date IS NOT NULL AND r.due_date &lt; CURDATE() </if>
           <if test='status != null and status != ""'> AND r.status = #{status} </if>
           <if test='assigneeId != null'> AND r.assignee_id = #{assigneeId} </if>
           <if test='keyword != null and keyword != ""'>
@@ -468,6 +474,8 @@
           <if test='projectId != null'> AND r.project_id = #{projectId} </if>
           <if test='type != null and type != ""'> AND r.type = #{type} </if>
           <if test='priority != null and priority != ""'> AND r.priority = #{priority} </if>
+          <if test='nodeStatus != null and nodeStatus != ""'> AND r.node_status = #{nodeStatus} </if>
+          <if test='isOverdue != null and isOverdue'> AND r.node_status NOT IN (SELECT code FROM node_statuses WHERE is_end = 1) AND r.due_date IS NOT NULL AND r.due_date &lt; CURDATE() </if>
           <if test='status != null and status != ""'> AND r.status = #{status} </if>
           <if test='assigneeId != null'> AND r.assignee_id = #{assigneeId} </if>
           <if test='keyword != null and keyword != ""'>

@@ -141,7 +141,7 @@ import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { SVGRenderer } from 'echarts/renderers'
 import { BarChart, LineChart, PieChart } from 'echarts/charts'
-import { GridComponent, LegendComponent, TitleComponent, TooltipComponent } from 'echarts/components'
+import { GridComponent, LegendComponent, TitleComponent, TooltipComponent, GraphicComponent } from 'echarts/components'
 import {
   getRatingDistribution,
   getRatingDimensionAverages,
@@ -153,7 +153,7 @@ import {
   type RatingTrendPoint,
 } from '@/api/modules/statistics'
 
-use([SVGRenderer, BarChart, LineChart, PieChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent])
+use([SVGRenderer, BarChart, LineChart, PieChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent, GraphicComponent])
 
 const router = useRouter()
 const chartInitOptions = { renderer: 'svg' as const }

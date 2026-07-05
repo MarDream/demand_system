@@ -34,6 +34,9 @@ logs/
 .DS_Store
 Thumbs.db
 
+# Windows nul 空设备文件（Git Bash 下执行 .bat 会意外生成）
+nul
+
 # Temp
 *.tmp
 *.temp

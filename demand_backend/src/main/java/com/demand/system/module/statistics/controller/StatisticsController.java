@@ -83,6 +83,16 @@ public class StatisticsController {
         return Result.success(statisticsService.getTabBadgeCounts(userId));
     }
 
+    /**
+     * 查询所有标记为结束的节点状态码列表
+     * 用于前端根据节点状态筛选"已完成"需求
+     */
+    @GetMapping("/statistics/end-node-statuses")
+    @PreAuthorize("isAuthenticated()")
+    public Result<List<String>> getEndNodeStatuses() {
+        return Result.success(statisticsService.getEndNodeStatusCodes());
+    }
+
     private Map<String, Object> pointToMap(BurndownPoint point) {
         Map<String, Object> map = new java.util.LinkedHashMap<>();
         map.put("date", point.getDate());

@@ -338,8 +338,8 @@ import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { SVGRenderer } from 'echarts/renderers'
 import { PieChart, BarChart } from 'echarts/charts'
-import { TitleComponent, TooltipComponent, LegendComponent, GridComponent } from 'echarts/components'
-import { getDashboardData, getDistributionData, getDurationData, getWorkflowProcessStats } from '@/api/modules/statistics'
+import { TitleComponent, TooltipComponent, LegendComponent, GridComponent, GraphicComponent } from 'echarts/components'
+import { getDashboardData, getDistributionData, getDurationData, getWorkflowProcessStats, getEndNodeStatuses } from '@/api/modules/statistics'
 import type { WorkflowProcessStats } from '@/api/modules/statistics'
 import { getRequirementList } from '@/api/modules/requirement'
 import { useUserStore } from '@/stores/modules/user'
@@ -348,7 +348,7 @@ import { requirementConfigApi } from '@/api/modules/requirementConfig'
 import { useRequirementTag } from '@/composables/useRequirementTag'
 import type { Requirement } from '@/types/requirement'
 
-use([SVGRenderer, PieChart, BarChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent])
+use([SVGRenderer, PieChart, BarChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent, GraphicComponent])
 
 const router = useRouter()
 const chartInitOptions = { renderer: 'svg' as const }
@@ -453,11 +453,32 @@ const COLORS = {
   redHover: '#EF4444',
 }
 
+// 已完成卡片路由：先获取结束状态列表，再构造带 nodeStatus 过滤的路由
+const endNodeStatusCodes = ref<string[]>([])
+const completedRoute = computed<Record<string, any>>(() => {
+  if (endNodeStatusCodes.value.length > 0) {
+    return { name: 'Requirements', query: { nodeStatus: endNodeStatusCodes.value.join(',') } }
+  }
+  // 兜底：先跳过去，前端 fetchData 会自动适配
+  return { name: 'Requirements', query: { view: 'done' } }
+})
+
+// 加载结束状态码列表
+async function loadEndNodeStatuses() {
+  try {
+    const res = await getEndNodeStatuses()
+    const codes = (res as any)?.data ?? res ?? []
+    endNodeStatusCodes.value = Array.isArray(codes) ? codes : []
+  } catch {
+    endNodeStatusCodes.value = []
+  }
+}
+
 const statCardsPro = computed(() => [
   { icon: SvgIconTotal, label: '总需求数', value: statsData.value?.totalReqs ?? 0, tip: '全部需求', gradientStart: COLORS.accent, gradientEnd: COLORS.accentHover, trend: null, route: { name: 'Requirements' } },
-  { icon: SvgIconProgress, label: '进行中需求', value: statsData.value?.inProgressReqs ?? 0, tip: '开发中', gradientStart: COLORS.amber, gradientEnd: COLORS.amberHover, trend: null, route: { name: 'Requirements', query: { view: 'pending' } } },
-  { icon: SvgIconDone, label: '已完成', value: statsData.value?.completedReqs ?? 0, tip: '已交付', gradientStart: COLORS.emerald, gradientEnd: COLORS.emeraldHover, trend: null, route: { name: 'Requirements', query: { view: 'done' } } },
-  { icon: SvgIconAlert, label: '已逾期', value: statsData.value?.overdueReqs ?? 0, tip: '超过截止日期', gradientStart: COLORS.red, gradientEnd: COLORS.redHover, trend: null, route: { name: 'Requirements', query: { view: 'all' } } },
+  { icon: SvgIconProgress, label: '进行中需求', value: statsData.value?.inProgressReqs ?? 0, tip: '开发中', gradientStart: COLORS.amber, gradientEnd: COLORS.amberHover, trend: null, route: { name: 'Requirements', query: { nodeStatus: 'IN_DEVELOPMENT' } } },
+  { icon: SvgIconDone, label: '已完成', value: statsData.value?.completedReqs ?? 0, tip: '已交付', gradientStart: COLORS.emerald, gradientEnd: COLORS.emeraldHover, trend: null, route: completedRoute },
+  { icon: SvgIconAlert, label: '已逾期', value: statsData.value?.overdueReqs ?? 0, tip: '超过截止日期', gradientStart: COLORS.red, gradientEnd: COLORS.redHover, trend: null, route: { name: 'Requirements', query: { isOverdue: 'true' } } },
 ])
 
 // 状态分布饼图
@@ -509,7 +530,7 @@ const pieOption = ref<any>({
     avoidLabelOverlap: false,
     itemStyle: {
       borderRadius: 6,
-      borderColor: 'var(--color-surface, #0f172a)',
+      borderColor: '#0f172a',
       borderWidth: 2.5,
     },
     label: { show: false },
@@ -524,8 +545,6 @@ const pieOption = ref<any>({
     },
     data: [] as { name: string; value: number }[],
   }],
-  // 中心文字：总数 + 标签
-  graphic: [] as any[],
 })
 
 function onPieHover(params: any) {
@@ -767,6 +786,7 @@ async function loadDistributionData() {
     const total = pieData.reduce((s, d) => s + d.value, 0)
     pieOption.value.series[0].data = pieData
     // 中心文字：总数 + 标签（graphic 实现）
+    // 注意：ECharts 5 不会解析 CSS 变量，必须使用扎实色值
     pieOption.value.graphic = [
       {
         type: 'text',
@@ -775,7 +795,7 @@ async function loadDistributionData() {
         style: {
           text: String(total),
           textAlign: 'center',
-          fill: 'var(--color-text-primary, #f1f5f9)',
+          fill: '#f1f5f9',
           fontSize: 32,
           fontWeight: 'bold',
           fontFamily: 'Inter, system-ui, sans-serif',
@@ -788,7 +808,7 @@ async function loadDistributionData() {
         style: {
           text: '需求总数',
           textAlign: 'center',
-          fill: 'var(--color-muted-text, #64748b)',
+          fill: '#64748b',
           fontSize: 13,
           fontFamily: 'Inter, system-ui, sans-serif',
         },
@@ -864,6 +884,7 @@ onMounted(async () => {
   loadDurationData()
   loadProjectRates()
   loadWorkflowStats()
+  loadEndNodeStatuses()
 })
 </script>
 

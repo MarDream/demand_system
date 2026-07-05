@@ -63,7 +63,15 @@ public class LlmProviderController {
     @GetMapping("/{id:\\d+}/api-key")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN')")
     public ResponseEntity<Map<String, Object>> getApiKey(@PathVariable Long id) {
-        return ResponseEntity.ok(Map.of("code", 200, "message", "操作成功", "data", Map.of("apiKey", providerService.getApiKey(id))));
+        // 仅返回 mask 后的值，不暴露完整 Key
+        String masked = providerService.getApiKey(id);
+        return ResponseEntity.ok(Map.of("code", 200, "message", "操作成功", "data", Map.of("apiKey", masked != null ? maskKey(masked) : "")));
+    }
+
+    private String maskKey(String key) {
+        if (key == null || key.isEmpty()) return "";
+        if (key.length() <= 8) return "****";
+        return key.substring(0, 3) + "****" + key.substring(key.length() - 4);
     }
 
     // ==================== Model ====================

@@ -124,6 +124,8 @@ export interface RequirementMyListQuery {
   status?: string
   assigneeId?: number
   keyword?: string
+  nodeStatus?: string
+  isOverdue?: boolean
   pageNum: number
   pageSize: number
 }
@@ -149,6 +151,8 @@ export interface RequirementQuery {
   type?: string
   priority?: string
   status?: string
+  nodeStatus?: string
+  isOverdue?: boolean
   assigneeId?: number
   iterationId?: number
   keyword?: string

@@ -2,6 +2,8 @@ package com.demand.system.module.llm.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.demand.system.common.exception.BusinessException;
+import com.demand.system.common.result.ErrorCode;
 import com.demand.system.module.knowledge.llm.LlmGateway;
 import com.demand.system.module.knowledge.llm.LlmGatewayConfig;
 import com.demand.system.module.llm.constant.LlmModelRole;
@@ -59,7 +61,7 @@ public class LlmProviderServiceImpl implements LlmProviderService {
     @Transactional
     public LlmProviderVO update(Long id, LlmProviderDTO dto) {
         LlmProvider entity = providerMapper.selectById(id);
-        if (entity == null) throw new RuntimeException("配置不存在");
+        if (entity == null) throw new BusinessException(ErrorCode.NOT_FOUND, "配置不存在");
 
         entity.setName(dto.getName());
         entity.setProtocol(dto.getProtocol());
@@ -84,7 +86,7 @@ public class LlmProviderServiceImpl implements LlmProviderService {
     @Override
     public void toggleEnabled(Long id) {
         LlmProvider entity = providerMapper.selectById(id);
-        if (entity == null) throw new RuntimeException("配置不存在");
+        if (entity == null) throw new BusinessException(ErrorCode.NOT_FOUND, "配置不存在");
         entity.setEnabled(!entity.getEnabled());
         providerMapper.updateById(entity);
     }
@@ -92,7 +94,7 @@ public class LlmProviderServiceImpl implements LlmProviderService {
     @Override
     public String getApiKey(Long id) {
         LlmProvider entity = providerMapper.selectById(id);
-        if (entity == null) throw new RuntimeException("配置不存在");
+        if (entity == null) throw new BusinessException(ErrorCode.NOT_FOUND, "配置不存在");
         return entity.getApiKey();
     }
 
@@ -102,7 +104,7 @@ public class LlmProviderServiceImpl implements LlmProviderService {
     @Transactional
     public LlmModelVO addModel(Long providerId, LlmModelDTO dto) {
         LlmProvider provider = providerMapper.selectById(providerId);
-        if (provider == null) throw new RuntimeException("接入组不存在");
+        if (provider == null) throw new BusinessException(ErrorCode.NOT_FOUND, "接入组不存在");
 
         if (Boolean.TRUE.equals(dto.getIsDefault())) {
             clearTypeDefaults(providerId, dto.getModelType());
@@ -119,7 +121,7 @@ public class LlmProviderServiceImpl implements LlmProviderService {
     @Transactional
     public LlmModelVO updateModel(Long modelId, LlmModelDTO dto) {
         LlmModel model = modelMapper.selectById(modelId);
-        if (model == null) throw new RuntimeException("模型不存在");
+        if (model == null) throw new BusinessException(ErrorCode.NOT_FOUND, "模型不存在");
 
         if (Boolean.TRUE.equals(dto.getIsDefault())) {
             clearTypeDefaults(model.getProviderId(), dto.getModelType());
@@ -148,7 +150,7 @@ public class LlmProviderServiceImpl implements LlmProviderService {
     @Override
     public void toggleModelEnabled(Long modelId) {
         LlmModel model = modelMapper.selectById(modelId);
-        if (model == null) throw new RuntimeException("模型不存在");
+        if (model == null) throw new BusinessException(ErrorCode.NOT_FOUND, "模型不存在");
         model.setEnabled(!model.getEnabled());
         modelMapper.updateById(model);
     }
@@ -157,7 +159,7 @@ public class LlmProviderServiceImpl implements LlmProviderService {
     @Transactional
     public void toggleModelDefault(Long modelId) {
         LlmModel model = modelMapper.selectById(modelId);
-        if (model == null) throw new RuntimeException("模型不存在");
+        if (model == null) throw new BusinessException(ErrorCode.NOT_FOUND, "模型不存在");
 
         if (Boolean.TRUE.equals(model.getIsDefault())) {
             // 取消默认
@@ -175,10 +177,10 @@ public class LlmProviderServiceImpl implements LlmProviderService {
     @Transactional
     public LlmTestResultVO testModel(Long modelId, LlmTestRequestDTO request) {
         LlmModel model = modelMapper.selectById(modelId);
-        if (model == null) throw new RuntimeException("模型不存在");
+        if (model == null) throw new BusinessException(ErrorCode.NOT_FOUND, "模型不存在");
 
         LlmProvider provider = providerMapper.selectById(model.getProviderId());
-        if (provider == null) throw new RuntimeException("接入组不存在");
+        if (provider == null) throw new BusinessException(ErrorCode.NOT_FOUND, "接入组不存在");
 
         LlmGatewayConfig.Provider gwProvider = buildGatewayProvider(provider, model);
 
@@ -257,7 +259,7 @@ public class LlmProviderServiceImpl implements LlmProviderService {
                             .last("LIMIT 1")
             );
         }
-        if (model == null) throw new RuntimeException("类型 [" + type + "] 下没有可用的模型配置");
+        if (model == null) throw new BusinessException(ErrorCode.NOT_FOUND, "类型 [" + type + "] 下没有可用的模型配置");
         return toModelVO(model);
     }
 
@@ -301,7 +303,7 @@ public class LlmProviderServiceImpl implements LlmProviderService {
     @Override
     public List<SniffedModelVO> sniffModels(Long id) {
         LlmProvider provider = providerMapper.selectById(id);
-        if (provider == null) throw new RuntimeException("接入组不存在");
+        if (provider == null) throw new BusinessException(ErrorCode.NOT_FOUND, "接入组不存在");
 
         LlmGatewayConfig.Provider gwProvider = buildGatewayProvider(provider, null);
 
