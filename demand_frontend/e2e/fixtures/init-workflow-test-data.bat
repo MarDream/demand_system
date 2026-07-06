@@ -14,7 +14,7 @@ echo 🔄 开始初始化工作流测试数据...
 echo.
 
 REM 检查 Docker 容器是否运行
-docker ps | findstr /C:"%MYSQL_CONTAINER%" >nul
+docker ps | findstr /C:"%MYSQL_CONTAINER%" >NUL
 if errorlevel 1 (
   echo ❌ MySQL 容器 '%MYSQL_CONTAINER%' 未运行
   exit /b 1

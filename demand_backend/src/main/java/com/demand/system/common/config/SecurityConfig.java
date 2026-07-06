@@ -97,16 +97,6 @@ public class SecurityConfig {
                                                    AccessDeniedHandler jwtAccessDeniedHandler) throws Exception {
         http
             .csrf(csrf -> csrf.disable())
-            .cors(cors -> cors.configurationSource(request -> {
-                var corsConfig = new org.springframework.web.cors.CorsConfiguration();
-                // CORS 白名单由 CorsConfig Bean（CorsConfig.java）统一管理，
-                // 此处不再设置 allowedOriginPattern，避免与外部 CorsConfig 策略不一致。
-                corsConfig.addAllowedHeader("*");
-                corsConfig.addAllowedMethod("*");
-                corsConfig.setAllowCredentials(true);
-                corsConfig.setMaxAge(3600L);
-                return corsConfig;
-            }))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(org.springframework.http.HttpMethod.OPTIONS).permitAll()

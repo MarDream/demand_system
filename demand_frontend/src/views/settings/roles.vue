@@ -196,8 +196,8 @@
                     <span class="menu-count">{{ selectedCount(node.allPermissions) }}/{{ node.allPermissions.length }}</span>
                   </div>
 
-                  <!-- 一级菜单的按钮始终展开显示 -->
-                  <div v-if="node.buttons.length" class="button-permission-grid" :style="{ marginLeft: `${34 + node.level * 18}px` }">
+                  <!-- 一级菜单的按钮跟随展开状态 -->
+                  <div v-if="expandedMenuKeys.includes(node.key) && node.buttons.length" class="button-permission-grid" :style="{ marginLeft: `${34 + node.level * 18}px` }">
                     <el-checkbox
                       v-for="button in node.buttons"
                       :key="button.code"
@@ -1049,15 +1049,20 @@ async function fetchRolePermissions(roleId: number) {
     selectedPermissions.value = rolePermission?.permissionCodes || []
     selectedDataScopeOrgIds.value = rolePermission?.dataScopeOrgIds || []
     expandedMenuKeys.value = defaultExpandedKeys(menuPermissionTree.value)
-    // 加载组织树（仅在非超级管理员时加载）
-    if (rolePermission && !isSuperAdminRole(selectedRole.value)) {
-      await loadOrgTree()
-      // 如果角色之前未设置过数据权限，则默认勾选当前用户所属组织及其所有子层级
+    // 加载组织树：超级管理员也需加载，以便展示完整组织层级树
+    await loadOrgTree()
+    if (!isSuperAdminRole(selectedRole.value)) {
+      // 普通角色：如果未设置过数据权限，则默认勾选当前用户所属组织及其所有子层级
       if (selectedDataScopeOrgIds.value.length === 0 && orgTree.value.length > 0 && currentUserOrgId.value) {
         const userOrgIds = collectUserOrgDescendantIds(orgTree.value, userStore.userInfo)
         if (userOrgIds.length > 0) {
           selectedDataScopeOrgIds.value = userOrgIds
         }
+      }
+    } else {
+      // 超级管理员：数据权限默认全选（所有组织节点）
+      if (orgTree.value.length > 0) {
+        selectedDataScopeOrgIds.value = getAllOrgIds(orgTree.value)
       }
     }
   } catch {

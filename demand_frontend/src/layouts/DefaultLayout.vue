@@ -101,9 +101,11 @@
         </div>
       </div>
       <div class="app-main">
-        <router-view v-slot="{ Component }">
+        <router-view v-slot="{ Component, route: viewRoute }">
           <transition name="fade" mode="out-in">
-            <component :is="Component" />
+            <div :key="viewRoute.path" class="view-wrapper">
+              <component :is="Component" />
+            </div>
           </transition>
         </router-view>
       </div>
@@ -571,6 +573,11 @@ async function handleLogout() {
   padding: 0;
   overflow: auto;
   background: var(--color-background);
+}
+
+// 视图包裹层（确保 Transition 内只有单根节点）
+.view-wrapper {
+  height: 100%;
 }
 
 // 通知

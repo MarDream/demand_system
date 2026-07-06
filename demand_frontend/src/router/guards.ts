@@ -1,6 +1,7 @@
 import type { Router } from 'vue-router'
 import NProgress from 'nprogress'
 import 'nprogress/nprogress.css'
+import { ElMessage } from 'element-plus'
 import { getToken, buildLoginPath } from '@/utils/auth'
 import { useUserStore } from '@/stores/modules/user'
 import { usePermission } from '@/composables/usePermission'
@@ -73,11 +74,13 @@ export function setupGuards(router: Router) {
       : []
 
     if (requiredRoles.length > 0 && !hasAnyRole(requiredRoles)) {
+      ElMessage.warning('您没有访问该页面的权限，请联系管理员')
       next('/dashboard')
       return
     }
 
     if (requiredPermissions.length > 0 && !hasAnyPermission(requiredPermissions)) {
+      ElMessage.warning('您没有访问该页面的权限，请联系管理员')
       next('/dashboard')
       return
     }

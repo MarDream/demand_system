@@ -1,6 +1,12 @@
 @echo off
+:: 防止在 Git Bash 中运行（Git Bash 不识别 NUL 设备，会创建 nul 空文件）
+if defined MSYSTEM (
+    echo [WARN] 检测到 Git Bash 环境，自动切换到 cmd.exe 执行...
+    cmd.exe /c "%~f0" %*
+    exit /b %errorlevel%
+)
 setlocal enabledelayedexpansion
-chcp 65001 >nul
+chcp 65001 >NUL
 
 :: ============================================================
 ::   需求管理系统 - 唯一启动入口
@@ -96,8 +102,8 @@ echo   后端端口 %BACKEND_PORT% 已监听，复用现有服务
 goto after_backend
 :start_backend
 echo   后台启动后端 ^(隐藏窗口^), 日志: logs\backend.log
-del /q "%BACKEND_PID%" >nul 2>&1
-powershell -NoProfile -Command "$p=Start-Process cmd -ArgumentList @('/c','chcp 65001>nul && set JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 && set MAVEN_OPTS=--enable-native-access=ALL-UNNAMED && set LOG_PATH=%LOG_DIR% && cd /d %ROOT_DIR%demand_backend && %MVN_CMD% spring-boot:run -Dspring-boot.run.profiles=dev -Dspring-boot.run.jvmArguments=\"--add-opens=jdk.unsupported/sun.misc=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow\"') -WindowStyle Hidden -RedirectStandardOutput '%BACKEND_LOG%' -RedirectStandardError '%BACKEND_ERR%' -PassThru; Set-Content -Path '%BACKEND_PID%' -Value $p.Id -Encoding ascii"
+del /q "%BACKEND_PID%" >NUL 2>&1
+powershell -NoProfile -Command "$p=Start-Process cmd -ArgumentList @('/c','chcp 65001>NUL && set JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 && set MAVEN_OPTS=--enable-native-access=ALL-UNNAMED && set LOG_PATH=%LOG_DIR% && cd /d %ROOT_DIR%demand_backend && %MVN_CMD% spring-boot:run -Dspring-boot.run.profiles=dev -Dspring-boot.run.jvmArguments=\"--add-opens=jdk.unsupported/sun.misc=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow\"') -WindowStyle Hidden -RedirectStandardOutput '%BACKEND_LOG%' -RedirectStandardError '%BACKEND_ERR%' -PassThru; Set-Content -Path '%BACKEND_PID%' -Value $p.Id -Encoding ascii"
 :after_backend
 
 :: 4) 启动前端
@@ -109,8 +115,8 @@ echo   前端端口 %FRONTEND_PORT% 已监听，复用现有服务
 goto after_frontend
 :start_frontend
 echo   后台启动前端 ^(隐藏窗口^), 日志: logs\frontend.log
-del /q "%FRONTEND_PID%" >nul 2>&1
-powershell -NoProfile -Command "$p=Start-Process cmd -ArgumentList @('/c','chcp 65001>nul && cd /d %ROOT_DIR%demand_frontend && npm run dev') -WindowStyle Hidden -RedirectStandardOutput '%FRONTEND_LOG%' -RedirectStandardError '%FRONTEND_ERR%' -PassThru; Set-Content -Path '%FRONTEND_PID%' -Value $p.Id -Encoding ascii"
+del /q "%FRONTEND_PID%" >NUL 2>&1
+powershell -NoProfile -Command "$p=Start-Process cmd -ArgumentList @('/c','chcp 65001>NUL && cd /d %ROOT_DIR%demand_frontend && npm run dev') -WindowStyle Hidden -RedirectStandardOutput '%FRONTEND_LOG%' -RedirectStandardError '%FRONTEND_ERR%' -PassThru; Set-Content -Path '%FRONTEND_PID%' -Value $p.Id -Encoding ascii"
 :after_frontend
 
 echo.
@@ -225,21 +231,21 @@ call :wait_healthy minio 9000 "MinIO"
 echo.
 echo [2/4] 启动后端...
 call :kill_by_port %BACKEND_PORT% 后端
-del /q "%BACKEND_PID%" >nul 2>&1
-powershell -NoProfile -Command "$p=Start-Process cmd -ArgumentList @('/c','chcp 65001>nul && set JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 && set MAVEN_OPTS=--enable-native-access=ALL-UNNAMED && set LOG_PATH=%LOG_DIR% && cd /d %ROOT_DIR%demand_backend && %MVN_CMD% spring-boot:run -Dspring-boot.run.profiles=dev -Dspring-boot.run.jvmArguments=\"--add-opens=jdk.unsupported/sun.misc=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow\"') -WindowStyle Hidden -RedirectStandardOutput '%BACKEND_LOG%' -RedirectStandardError '%BACKEND_ERR%' -PassThru; Set-Content -Path '%BACKEND_PID%' -Value $p.Id -Encoding ascii"
+del /q "%BACKEND_PID%" >NUL 2>&1
+powershell -NoProfile -Command "$p=Start-Process cmd -ArgumentList @('/c','chcp 65001>NUL && set JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 && set MAVEN_OPTS=--enable-native-access=ALL-UNNAMED && set LOG_PATH=%LOG_DIR% && cd /d %ROOT_DIR%demand_backend && %MVN_CMD% spring-boot:run -Dspring-boot.run.profiles=dev -Dspring-boot.run.jvmArguments=\"--add-opens=jdk.unsupported/sun.misc=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow\"') -WindowStyle Hidden -RedirectStandardOutput '%BACKEND_LOG%' -RedirectStandardError '%BACKEND_ERR%' -PassThru; Set-Content -Path '%BACKEND_PID%' -Value $p.Id -Encoding ascii"
 
 :: 等待后端就绪
 echo   等待后端就绪...
 set /a ITER=0
 :wait_backend
 set /a ITER+=1
-powershell -NoProfile -Command "try{$r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 http://127.0.0.1:%BACKEND_PORT%/v3/api-docs; if($r.StatusCode -eq 200){exit 0}else{exit 1}}catch{exit 1}" >nul 2>&1
+powershell -NoProfile -Command "try{$r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 http://127.0.0.1:%BACKEND_PORT%/v3/api-docs; if($r.StatusCode -eq 200){exit 0}else{exit 1}}catch{exit 1}" >NUL 2>&1
 if not errorlevel 1 goto backend_ready
 if %ITER% GEQ 60 (
     echo   ⚠️  后端 120 秒内未就绪，E2E 终止
     exit /b 1
 )
-timeout /t 2 /nobreak >nul
+timeout /t 2 /nobreak >NUL
 goto wait_backend
 :backend_ready
 echo   后端已就绪 ✓
@@ -248,21 +254,21 @@ echo   后端已就绪 ✓
 echo.
 echo [3/4] 启动前端（端口5176）...
 set "E2E_PORT=5176"
-del /q "%FRONTEND_PID%" >nul 2>&1
-powershell -NoProfile -Command "$p=Start-Process cmd -ArgumentList @('/c','chcp 65001>nul && cd /d %ROOT_DIR%demand_frontend && npm run dev -- --port %E2E_PORT% --host 0.0.0.0') -WindowStyle Hidden -RedirectStandardOutput '%FRONTEND_LOG%' -RedirectStandardError '%FRONTEND_ERR%' -PassThru; Set-Content -Path '%FRONTEND_PID%' -Value $p.Id -Encoding ascii"
+del /q "%FRONTEND_PID%" >NUL 2>&1
+powershell -NoProfile -Command "$p=Start-Process cmd -ArgumentList @('/c','chcp 65001>NUL && cd /d %ROOT_DIR%demand_frontend && npm run dev -- --port %E2E_PORT% --host 0.0.0.0') -WindowStyle Hidden -RedirectStandardOutput '%FRONTEND_LOG%' -RedirectStandardError '%FRONTEND_ERR%' -PassThru; Set-Content -Path '%FRONTEND_PID%' -Value $p.Id -Encoding ascii"
 
 :: 等待前端就绪
 echo   等待前端就绪...
 set /a ITER=0
 :wait_frontend
 set /a ITER+=1
-powershell -NoProfile -Command "try{$r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 http://127.0.0.1:%E2E_PORT%/; if($r.StatusCode -eq 200){exit 0}else{exit 1}}catch{exit 1}" >nul 2>&1
+powershell -NoProfile -Command "try{$r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 http://127.0.0.1:%E2E_PORT%/; if($r.StatusCode -eq 200){exit 0}else{exit 1}}catch{exit 1}" >NUL 2>&1
 if not errorlevel 1 goto frontend_ready
 if %ITER% GEQ 60 (
     echo   ⚠️  前端 120 秒内未就绪，E2E 终止
     exit /b 1
 )
-timeout /t 2 /nobreak >nul
+timeout /t 2 /nobreak >NUL
 goto wait_frontend
 :frontend_ready
 echo   前端已就绪 ✓
@@ -290,7 +296,7 @@ call :kill_by_pid_file "%BACKEND_PID%" 后端
 call :kill_by_port %BACKEND_PORT% 后端
 call :kill_by_pid_file "%FRONTEND_PID%" 前端
 call :kill_by_port %E2E_PORT% 前端
-docker compose -f "%COMPOSE_FILE%" down >nul 2>&1
+docker compose -f "%COMPOSE_FILE%" down >NUL 2>&1
 
 exit /b %E2E_RC%
 
@@ -322,17 +328,17 @@ if not exist "%PID_FILE%" goto :eof
 set "TARGET_PID="
 set /p TARGET_PID=<"%PID_FILE%"
 if defined TARGET_PID (
-    taskkill /F /T /PID %TARGET_PID% >nul 2>&1
+    taskkill /F /T /PID %TARGET_PID% >NUL 2>&1
     if not errorlevel 1 echo   已停止 %LABEL% PID %TARGET_PID%
 )
-del /q "%PID_FILE%" >nul 2>&1
+del /q "%PID_FILE%" >NUL 2>&1
 goto :eof
 
 :kill_by_port
 set "PORT=%~1"
 set "LABEL=%~2"
 for /f "tokens=*" %%i in ('powershell -NoProfile -Command "(Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue).OwningProcess | Select-Object -Unique"') do (
-    taskkill /F /T /PID %%i >nul 2>&1
+    taskkill /F /T /PID %%i >NUL 2>&1
     if not errorlevel 1 echo   已停止 %LABEL% 端口 %PORT% PID %%i
 )
 goto :eof
@@ -340,7 +346,7 @@ goto :eof
 :is_port_listening
 set "PORT=%~1"
 set "PORT_LISTENING=0"
-powershell -NoProfile -Command "if(Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue){exit 0}else{exit 1}" >nul 2>&1
+powershell -NoProfile -Command "if(Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue){exit 0}else{exit 1}" >NUL 2>&1
 if not errorlevel 1 set "PORT_LISTENING=1"
 goto :eof
 
@@ -349,9 +355,9 @@ set "CONTAINER_NAME=%~1"
 set "CONTAINER_READY=0"
 set "CONTAINER_STATUS="
 set "CONTAINER_HEALTH="
-for /f "tokens=*" %%s in ('docker inspect -f "{{.State.Status}}" %CONTAINER_NAME% 2^>nul') do set "CONTAINER_STATUS=%%s"
+for /f "tokens=*" %%s in ('docker inspect -f "{{.State.Status}}" %CONTAINER_NAME% 2^>NUL') do set "CONTAINER_STATUS=%%s"
 if not "%CONTAINER_STATUS%"=="running" goto :eof
-for /f "tokens=*" %%s in ('docker inspect -f "{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}" %CONTAINER_NAME% 2^>nul') do set "CONTAINER_HEALTH=%%s"
+for /f "tokens=*" %%s in ('docker inspect -f "{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}" %CONTAINER_NAME% 2^>NUL') do set "CONTAINER_HEALTH=%%s"
 if "%CONTAINER_HEALTH%"=="starting" goto :eof
 if "%CONTAINER_HEALTH%"=="unhealthy" goto :eof
 set "CONTAINER_READY=1"
@@ -373,13 +379,13 @@ echo   等待 %LABEL% (%NAME%:%PORT%) 就绪...
 set /a ITER=0
 :wait_healthy_loop
 set /a ITER+=1
-powershell -NoProfile -Command "try{$c=New-Object Net.Sockets.TcpClient;$c.BeginConnect('127.0.0.1',%PORT%,$null,$null)|Out-Null;$i=[Net.Sockets.TcpClient]::new();$i.Connect('127.0.0.1',%PORT%);$i.Close();exit 0}catch{exit 1}" >nul 2>&1
+powershell -NoProfile -Command "try{$c=New-Object Net.Sockets.TcpClient;$c.BeginConnect('127.0.0.1',%PORT%,$null,$null)|Out-Null;$i=[Net.Sockets.TcpClient]::new();$i.Connect('127.0.0.1',%PORT%);$i.Close();exit 0}catch{exit 1}" >NUL 2>&1
 if not errorlevel 1 goto wait_healthy_ok
 if %ITER% GEQ 30 (
     echo     ⚠️  %LABEL% 30 秒内未就绪，继续（不阻塞）
     goto :eof
 )
-timeout /t 1 /nobreak >nul
+timeout /t 1 /nobreak >NUL
 goto wait_healthy_loop
 :wait_healthy_ok
 echo     %LABEL% 已就绪 ✓
@@ -388,19 +394,19 @@ goto :eof
 :check_service
 set "NAME=%~1"
 set "PORT=%~2"
-docker ps -a --format "{{.Names}}" | findstr /C:"%NAME%" >nul 2>&1
+docker ps -a --format "{{.Names}}" | findstr /C:"%NAME%" >NUL 2>&1
 if errorlevel 1 (
     echo   ❌ %NAME% ^(端口 %PORT%^) - 容器不存在
     set /a FAILED+=1
     goto :eof
 )
-for /f "tokens=*" %%s in ('docker inspect -f "{{.State.Status}}" %NAME% 2^>nul') do set "STATUS=%%s"
+for /f "tokens=*" %%s in ('docker inspect -f "{{.State.Status}}" %NAME% 2^>NUL') do set "STATUS=%%s"
 if not "%STATUS%"=="running" (
     echo   ❌ %NAME% ^(端口 %PORT%^) - 容器未运行
     set /a FAILED+=1
     goto :eof
 )
-for /f "tokens=*" %%s in ('docker inspect -f "{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}" %NAME% 2^>nul') do set "HEALTH=%%s"
+for /f "tokens=*" %%s in ('docker inspect -f "{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}" %NAME% 2^>NUL') do set "HEALTH=%%s"
 if "%HEALTH%"=="healthy" (
     echo   ✅ %NAME% ^(端口 %PORT%^) - 连接正常
 ) else if "%HEALTH%"=="no-healthcheck" (

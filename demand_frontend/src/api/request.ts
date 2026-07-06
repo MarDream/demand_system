@@ -144,8 +144,27 @@ service.interceptors.response.use(
     }
 
     if (error.response?.status === 403) {
-      ElMessage.error(error.response?.data?.message || '登录状态已失效，请重新登录')
-      handleAuthExpired(currentPath)
+      const msg = error.response?.data?.message || error.message
+
+      // 后端返回 "Invalid CORS request" 表示 CORS 白名单拦截，这不是登录态问题。
+      // 应明确提示跨域配置错误，不踢回登录页。
+      if (msg === 'Invalid CORS request') {
+        const baseURL = import.meta.env.VITE_API_BASE_URL || '/api'
+        ElMessage.error(`跨域请求被拒绝，请检查前后端 CORS 配置（前端请求地址：${baseURL}）`)
+        return Promise.reject(error)
+      }
+
+      // 真正的 403 业务权限不足
+      ElMessage.error(msg || '请求被拒绝，无操作权限')
+      // 已登录用户的业务 403（如越权操作）只是拒绝操作，不踢出。
+      // 登录页面的 403（Invalid CORS）在上面已拦截，到这里的 403 即使是未登录用户
+      // 也由登录页的 catch 处理，不在此处调用 handleAuthExpired 以免误跳转。
+      return Promise.reject(error)
+    }
+
+    // 网络错误（包括 CORS 被浏览器拦截无法获取响应的情况）
+    if (!error.response) {
+      ElMessage.error('网络连接异常，请检查网络或后端服务是否正常')
       return Promise.reject(error)
     }
 
