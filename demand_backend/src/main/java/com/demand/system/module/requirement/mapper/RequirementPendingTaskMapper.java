@@ -65,6 +65,13 @@ public interface RequirementPendingTaskMapper extends BaseMapper<RequirementPend
     Long countByUserId(@Param("userId") Long userId);
 
     /**
+     * 统计用户的待办任务数量（带数据权限 org 过滤）
+     */
+    Long countByUserIdWithOrgFilter(@Param("userId") Long userId,
+                                    @Param("isSuperAdmin") boolean isSuperAdmin,
+                                    @Param("visibleOrgIds") List<Long> visibleOrgIds);
+
+    /**
      * 统计当前流程位置是否已有运行期待办记录
      */
     Long countByCurrentWorkflowPosition(@Param("requirementId") Long requirementId,

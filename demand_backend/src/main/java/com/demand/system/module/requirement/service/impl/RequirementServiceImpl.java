@@ -229,8 +229,7 @@ public class RequirementServiceImpl implements RequirementService {
         if (!isSuperAdmin) {
             List<Long> visibleOrgIds = resolveVisibleOrgIds(currentUserId, isSuperAdmin);
             if (visibleOrgIds.isEmpty()) {
-                // 方案A：用户未关联任何组织时，提示完善信息而非降级为只看自己创建的
-                throw new BusinessException(400, "您尚未关联组织，请联系管理员配置您的组织信息后再查看需求");
+                throw new BusinessException(400, "当前角色未配置数据权限，请联系管理员在角色管理中配置组织范围后再查看需求");
             } else {
                 wrapper.in(Requirement::getOrgId, visibleOrgIds);
             }
@@ -839,7 +838,8 @@ public class RequirementServiceImpl implements RequirementService {
     public PageResult<RequirementVO> listMyDrafts(RequirementMyListQueryDTO query, Long userId) {
         Page<Requirement> page = new Page<>(query.getPageNum(), query.getPageSize());
         var result = requirementMapper.selectMyDrafts(page, userId, null, null, query.getProjectId(),
-                query.getType(), query.getPriority(), query.getStatus(), query.getAssigneeId(), query.getKeyword());
+                query.getType(), query.getPriority(), query.getStatus(), query.getAssigneeId(), query.getKeyword(),
+                query.getNodeStatus(), query.getIsOverdue());
         List<RequirementVO> list = new ArrayList<>();
         for (Requirement r : result.getRecords()) {
             RequirementVO vo = new RequirementVO();
@@ -856,6 +856,15 @@ public class RequirementServiceImpl implements RequirementService {
     public PageResult<RequirementVO> listMyPending(RequirementMyListQueryDTO query, Long userId) {
         // 版本对齐已移除（ADR-002），在途实例始终按启动时锁定的版本执行
 
+        List<String> currentRoleCodes = SecurityUtils.getCurrentUserRoles();
+        boolean isSuperAdmin = isSuperAdmin(currentRoleCodes);
+        List<Long> visibleOrgIds = resolveVisibleOrgIds(userId, isSuperAdmin);
+
+        // 非超级管理员且未配置数据权限：返回空列表（与"全部需求"抛异常的策略保持一致——避免 my-pending 走"无权限"路径导致业务感知不一致）
+        if (!isSuperAdmin && visibleOrgIds.isEmpty()) {
+            return new PageResult<>(Collections.emptyList(), 0L, query.getPageNum(), query.getPageSize());
+        }
+
         Page<Requirement> page = new Page<>(query.getPageNum(), query.getPageSize());
         IPage<Requirement> result;
 
@@ -866,21 +875,22 @@ public class RequirementServiceImpl implements RequirementService {
 
             result = requirementMapper.selectMyPendingV2(page, userId, roleIds, orgIds,
                     query.getProjectId(), query.getType(), query.getPriority(),
-                    query.getStatus(), query.getAssigneeId(), query.getKeyword());
+                    query.getStatus(), query.getAssigneeId(), query.getKeyword(),
+                    query.getNodeStatus(), query.getIsOverdue(), isSuperAdmin, visibleOrgIds);
         } else if (USE_PENDING_TASK_OPTIMIZATION) {
             // 使用物化表优化查询
             result = requirementMapper.selectMyPendingOptimized(page, userId,
                     query.getProjectId(), query.getType(), query.getPriority(),
-                    query.getStatus(), query.getAssigneeId(), query.getKeyword());
+                    query.getStatus(), query.getAssigneeId(), query.getKeyword(),
+                    isSuperAdmin, visibleOrgIds);
         } else {
             // 使用原始复杂查询（兼容模式）
-            List<String> roleCodes = SecurityUtils.getCurrentUserRoles();
             List<Long> directOrgIds = resolveDirectOrgIds(userId);
             List<Long> scopedOrgIds = resolveScopedOrgIds(directOrgIds);
 
-            result = requirementMapper.selectMyPending(page, userId, roleCodes, directOrgIds, scopedOrgIds,
+            result = requirementMapper.selectMyPending(page, userId, currentRoleCodes, directOrgIds, scopedOrgIds,
                     query.getProjectId(), query.getType(), query.getPriority(), query.getStatus(), query.getAssigneeId(),
-                    query.getKeyword());
+                    query.getKeyword(), isSuperAdmin, visibleOrgIds);
         }
 
         List<RequirementVO> list = new ArrayList<>();
@@ -908,7 +918,7 @@ public class RequirementServiceImpl implements RequirementService {
         Page<Requirement> page = new Page<>(query.getPageNum(), query.getPageSize());
         var result = requirementMapper.selectMyFollows(page, userId, query.getProjectId(), query.getType(),
                 query.getPriority(), query.getStatus(), query.getAssigneeId(), query.getKeyword(), isSuperAdmin,
-                visibleOrgIds);
+                visibleOrgIds, query.getNodeStatus(), query.getIsOverdue());
         List<RequirementVO> list = new ArrayList<>();
         for (Requirement r : result.getRecords()) {
             RequirementVO vo = new RequirementVO();
@@ -927,6 +937,15 @@ public class RequirementServiceImpl implements RequirementService {
 
     @Override
     public PageResult<RequirementVO> listMyDone(RequirementMyListQueryDTO query, Long userId) {
+        List<String> currentRoleCodes = SecurityUtils.getCurrentUserRoles();
+        boolean isSuperAdmin = isSuperAdmin(currentRoleCodes);
+        List<Long> visibleOrgIds = resolveVisibleOrgIds(userId, isSuperAdmin);
+
+        // 非超级管理员且未配置数据权限：返回空列表
+        if (!isSuperAdmin && visibleOrgIds.isEmpty()) {
+            return new PageResult<>(Collections.emptyList(), 0L, query.getPageNum(), query.getPageSize());
+        }
+
         Page<Requirement> page = new Page<>(query.getPageNum(), query.getPageSize());
         IPage<Requirement> result;
 
@@ -937,16 +956,16 @@ public class RequirementServiceImpl implements RequirementService {
 
             result = requirementMapper.selectMyDoneV2(page, userId, roleIds, orgIds,
                     query.getProjectId(), query.getType(), query.getPriority(),
-                    query.getStatus(), query.getAssigneeId(), query.getKeyword());
+                    query.getStatus(), query.getAssigneeId(), query.getKeyword(),
+                    query.getNodeStatus(), query.getIsOverdue(), isSuperAdmin, visibleOrgIds);
         } else {
             // 使用旧查询（兼容模式）
-            List<String> roleCodes = SecurityUtils.getCurrentUserRoles();
             List<Long> directOrgIds = resolveDirectOrgIds(userId);
             List<Long> scopedOrgIds = resolveScopedOrgIds(directOrgIds);
 
-            result = requirementMapper.selectMyDone(page, userId, roleCodes, directOrgIds, scopedOrgIds,
+            result = requirementMapper.selectMyDone(page, userId, currentRoleCodes, directOrgIds, scopedOrgIds,
                     query.getProjectId(), query.getType(), query.getPriority(), query.getStatus(), query.getAssigneeId(),
-                    query.getKeyword());
+                    query.getKeyword(), isSuperAdmin, visibleOrgIds);
         }
 
         List<RequirementVO> list = new ArrayList<>();
@@ -1791,7 +1810,8 @@ public class RequirementServiceImpl implements RequirementService {
                 RequirementVO::setAssigneeName,
                 RequirementVO::setOpsFollowName,
                 RequirementVO::setMaintFollowName,
-                RequirementVO::setDepartmentName);
+                RequirementVO::setDepartmentName,
+                RequirementVO::setCreatorOrgName);
         // 列表页：currentHandlerName 用 assigneeName 替代（避免逐行查工作流引擎）
         // 详细的当前处理人在需求详情页按需加载
         for (RequirementVO vo : voList) {
@@ -1817,7 +1837,8 @@ public class RequirementServiceImpl implements RequirementService {
             BiConsumer<T, String> assigneeNameSetter,
             BiConsumer<T, String> opsFollowNameSetter,
             BiConsumer<T, String> maintFollowNameSetter,
-            BiConsumer<T, String> departmentNameSetter) {
+            BiConsumer<T, String> departmentNameSetter,
+            BiConsumer<T, String> creatorOrgNameSetter) {
         if (voList == null || voList.isEmpty() || records == null || records.isEmpty()) {
             return;
         }
@@ -1857,7 +1878,7 @@ public class RequirementServiceImpl implements RequirementService {
             T vo = voList.get(i);
             Requirement r = records.get(i);
 
-            // creatorName + departmentName
+            // creatorName + departmentName + creatorOrgName
             if (r.getCreatorId() != null) {
                 User creator = userMap.get(r.getCreatorId());
                 if (creator != null) {
@@ -1867,6 +1888,10 @@ public class RequirementServiceImpl implements RequirementService {
                         departmentNameSetter.accept(vo, orgNameMap.get(creator.getOrgId()));
                     } else if (creator.getDepartmentId() != null && orgNameMap.containsKey(creator.getDepartmentId())) {
                         departmentNameSetter.accept(vo, orgNameMap.get(creator.getDepartmentId()));
+                    }
+                    // 提出人所属组织名称（取自 creator.orgId 对应组织名）
+                    if (creator.getOrgId() != null && orgNameMap.containsKey(creator.getOrgId())) {
+                        creatorOrgNameSetter.accept(vo, orgNameMap.get(creator.getOrgId()));
                     }
                 }
             }
@@ -1906,7 +1931,8 @@ public class RequirementServiceImpl implements RequirementService {
                 RequirementListVO::setAssigneeName,
                 RequirementListVO::setOpsFollowName,
                 RequirementListVO::setMaintFollowName,
-                RequirementListVO::setDepartmentName);
+                RequirementListVO::setDepartmentName,
+                (vo, name) -> { /* 列表 VO 不暴露提出人所属组织，忽略 */ });
     }
 
     /**
@@ -2140,19 +2166,10 @@ public class RequirementServiceImpl implements RequirementService {
             return cached;
         }
 
-        // 1. 用户直属组织（含下级）
-        List<Long> directOrgIds = resolveDirectOrgIds(userId);
         Set<Long> result = new LinkedHashSet<>();
-        if (!directOrgIds.isEmpty()) {
-            result.addAll(orgHierarchyCache.getDescendantsBatch(directOrgIds));
-        }
 
-        // 2. 角色配置的数据权限组织（含下级）
-        //    若角色未配置 dataScopeOrgIds（列表为空），则默认等于用户自身直属组织（含下级）
+        // 角色配置的数据权限组织（含下级）—— 这是唯一的可见范围来源
         List<Long> roleOrgIds = resolveRoleDataScopeOrgIds(userId);
-        if (roleOrgIds.isEmpty()) {
-            roleOrgIds = directOrgIds;  // 默认：角色未配置时，等于用户自身组织
-        }
         if (!roleOrgIds.isEmpty()) {
             result.addAll(orgHierarchyCache.getDescendantsBatch(roleOrgIds));
         }
@@ -2398,13 +2415,21 @@ public class RequirementServiceImpl implements RequirementService {
                 ));
 
         List<Requirement> records;
+        // 非超级管理员且未配置数据权限：仅"我的草稿"有内容（按 userId 隔离），其它视图返回空
+        List<String> currentRoleCodes = SecurityUtils.getCurrentUserRoles();
+        boolean isSuperAdmin = isSuperAdmin(currentRoleCodes);
+        List<Long> visibleOrgIds = resolveVisibleOrgIds(currentUserId, isSuperAdmin);
+        if (!isSuperAdmin && visibleOrgIds.isEmpty() && !"drafts".equals(view)) {
+            return Collections.emptyList();
+        }
         switch (view) {
             case "drafts" -> {
                 RequirementMyListQueryDTO myQuery = buildMyListQuery(query);
                 Page<Requirement> page = new Page<>(1, 10000);
                 var result = requirementMapper.selectMyDrafts(page, currentUserId, null, null,
                         myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
-                        myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword());
+                        myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(),
+                        myQuery.getNodeStatus(), myQuery.getIsOverdue());
                 records = result.getRecords();
             }
             case "pending" -> {
@@ -2416,14 +2441,15 @@ public class RequirementServiceImpl implements RequirementService {
                     List<Long> orgIds = getUserOrgIds(currentUserId);
                     result = requirementMapper.selectMyPendingV2(page, currentUserId, roleIds, orgIds,
                             myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
-                            myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword());
+                            myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(),
+                            myQuery.getNodeStatus(), myQuery.getIsOverdue(), isSuperAdmin, visibleOrgIds);
                 } else {
-                    List<String> roleCodes = SecurityUtils.getCurrentUserRoles();
                     List<Long> directOrgIds = resolveDirectOrgIds(currentUserId);
                     List<Long> scopedOrgIds = resolveScopedOrgIds(directOrgIds);
-                    result = requirementMapper.selectMyPending(page, currentUserId, roleCodes, directOrgIds, scopedOrgIds,
+                    result = requirementMapper.selectMyPending(page, currentUserId, currentRoleCodes, directOrgIds, scopedOrgIds,
                             myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
-                            myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword());
+                            myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(),
+                            isSuperAdmin, visibleOrgIds);
                 }
                 records = result.getRecords();
             }
@@ -2436,27 +2462,25 @@ public class RequirementServiceImpl implements RequirementService {
                     List<Long> orgIds = getUserOrgIds(currentUserId);
                     result = requirementMapper.selectMyDoneV2(page, currentUserId, roleIds, orgIds,
                             myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
-                            myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword());
+                            myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(),
+                            myQuery.getNodeStatus(), myQuery.getIsOverdue(), isSuperAdmin, visibleOrgIds);
                 } else {
-                    List<String> roleCodes = SecurityUtils.getCurrentUserRoles();
                     List<Long> directOrgIds = resolveDirectOrgIds(currentUserId);
                     List<Long> scopedOrgIds = resolveScopedOrgIds(directOrgIds);
-                    result = requirementMapper.selectMyDone(page, currentUserId, roleCodes, directOrgIds, scopedOrgIds,
+                    result = requirementMapper.selectMyDone(page, currentUserId, currentRoleCodes, directOrgIds, scopedOrgIds,
                             myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
-                            myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword());
+                            myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(),
+                            isSuperAdmin, visibleOrgIds);
                 }
                 records = result.getRecords();
             }
             case "follows" -> {
                 RequirementMyListQueryDTO myQuery = buildMyListQuery(query);
-                List<String> currentRoleCodes = SecurityUtils.getCurrentUserRoles();
-                boolean isSuperAdmin = isSuperAdmin(currentRoleCodes);
-                List<Long> visibleOrgIds = resolveVisibleOrgIds(currentUserId, isSuperAdmin);
                 Page<Requirement> page = new Page<>(1, 10000);
                 var result = requirementMapper.selectMyFollows(page, currentUserId,
                         myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
                         myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(),
-                        isSuperAdmin, visibleOrgIds);
+                        isSuperAdmin, visibleOrgIds, myQuery.getNodeStatus(), myQuery.getIsOverdue());
                 records = result.getRecords();
             }
             default -> {
@@ -2483,7 +2507,7 @@ public class RequirementServiceImpl implements RequirementService {
         if (!isSuperAdmin) {
             List<Long> visibleOrgIds = resolveVisibleOrgIds(currentUserId, isSuperAdmin);
             if (visibleOrgIds.isEmpty()) {
-                throw new BusinessException(400, "您尚未关联组织，请联系管理员配置您的组织信息后再查看需求");
+                throw new BusinessException(400, "当前角色未配置数据权限，请联系管理员在角色管理中配置组织范围后再查看需求");
             } else {
                 wrapper.in(Requirement::getOrgId, visibleOrgIds);
             }

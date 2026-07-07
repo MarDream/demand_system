@@ -36,11 +36,30 @@ public class StatisticsServiceImpl implements StatisticsService {
         boolean isSuperAdmin = RequirementServiceImpl.isSuperAdmin(currentRoleCodes);
         List<Long> visibleOrgIds = requirementService.resolveVisibleOrgIds(userId, isSuperAdmin);
 
-        int totalReqs = statisticsMapper.getTotalCountWithOrgFilter(userId, visibleOrgIds, isSuperAdmin);
-        int inProgressReqs = statisticsMapper.getInProgressCountWithOrgFilter(userId, visibleOrgIds, isSuperAdmin);
-        int completedReqs = statisticsMapper.getCompletedCountWithOrgFilter(userId, visibleOrgIds, isSuperAdmin);
-        int overdueReqs = statisticsMapper.getOverdueCountWithOrgFilter(userId, visibleOrgIds, isSuperAdmin);
-        int myTodoCount = statisticsMapper.getMyTodoCount(userId);
+        // 非超级管理员且无可见组织时，统计数均为0
+        int totalReqs;
+        int inProgressReqs;
+        int completedReqs;
+        int overdueReqs;
+        if (!isSuperAdmin && visibleOrgIds.isEmpty()) {
+            totalReqs = 0;
+            inProgressReqs = 0;
+            completedReqs = 0;
+            overdueReqs = 0;
+        } else {
+            totalReqs = statisticsMapper.getTotalCountWithOrgFilter(userId, visibleOrgIds, isSuperAdmin);
+            inProgressReqs = statisticsMapper.getInProgressCountWithOrgFilter(userId, visibleOrgIds, isSuperAdmin);
+            completedReqs = statisticsMapper.getCompletedCountWithOrgFilter(userId, visibleOrgIds, isSuperAdmin);
+            overdueReqs = statisticsMapper.getOverdueCountWithOrgFilter(userId, visibleOrgIds, isSuperAdmin);
+        }
+        int myTodoCount;
+        if (!isSuperAdmin && visibleOrgIds.isEmpty()) {
+            // 非超级管理员且无数据权限：待办数也按 0 处理（与"全部需求"保持一致）
+            myTodoCount = 0;
+        } else {
+            // myTodoCount 是"我作为指派人的待办"统计，按 org 过滤（与"我的待办"列表保持一致）
+            myTodoCount = statisticsMapper.getMyTodoCountWithOrgFilter(userId, isSuperAdmin, visibleOrgIds);
+        }
 
         DashboardData data = DashboardData.builder()
                 .totalReqs(totalReqs)
@@ -61,9 +80,14 @@ public class StatisticsServiceImpl implements StatisticsService {
 
     @Override
     public Map<String, Object> getDistributionData(Long projectId) {
-        Map<String, Integer> statusDist = convertToMap(statisticsMapper.getStatusDistribution(projectId));
-        Map<String, Integer> typeDist = convertToMap(statisticsMapper.getTypeDistribution(projectId));
-        Map<String, Integer> priorityDist = convertToMap(statisticsMapper.getPriorityDistribution(projectId));
+        Long userId = SecurityUtils.getCurrentUserId();
+        List<String> currentRoleCodes = SecurityUtils.getCurrentUserRoles();
+        boolean isSuperAdmin = RequirementServiceImpl.isSuperAdmin(currentRoleCodes);
+        List<Long> visibleOrgIds = requirementService.resolveVisibleOrgIds(userId, isSuperAdmin);
+
+        Map<String, Integer> statusDist = convertToMap(statisticsMapper.getStatusDistributionWithOrgFilter(projectId, isSuperAdmin, visibleOrgIds));
+        Map<String, Integer> typeDist = convertToMap(statisticsMapper.getTypeDistributionWithOrgFilter(projectId, isSuperAdmin, visibleOrgIds));
+        Map<String, Integer> priorityDist = convertToMap(statisticsMapper.getPriorityDistributionWithOrgFilter(projectId, isSuperAdmin, visibleOrgIds));
 
         DistributionData data = DistributionData.builder()
                 .statusDist(statusDist)
@@ -82,7 +106,11 @@ public class StatisticsServiceImpl implements StatisticsService {
 
     @Override
     public List<Map<String, Object>> getDurationData(Long projectId) {
-        List<Map<String, Object>> rawList = statisticsMapper.getDurationData(projectId);
+        Long userId = SecurityUtils.getCurrentUserId();
+        List<String> currentRoleCodes = SecurityUtils.getCurrentUserRoles();
+        boolean isSuperAdmin = RequirementServiceImpl.isSuperAdmin(currentRoleCodes);
+        List<Long> visibleOrgIds = requirementService.resolveVisibleOrgIds(userId, isSuperAdmin);
+        List<Map<String, Object>> rawList = statisticsMapper.getDurationDataWithOrgFilter(projectId, isSuperAdmin, visibleOrgIds);
         List<Map<String, Object>> result = new ArrayList<>();
 
         for (Map<String, Object> row : rawList) {
@@ -103,7 +131,11 @@ public class StatisticsServiceImpl implements StatisticsService {
 
     @Override
     public List<BurndownPoint> getBurndownData(Long iterationId) {
-        List<Map<String, Object>> rawList = statisticsMapper.getBurndownData(iterationId);
+        Long userId = SecurityUtils.getCurrentUserId();
+        List<String> currentRoleCodes = SecurityUtils.getCurrentUserRoles();
+        boolean isSuperAdmin = RequirementServiceImpl.isSuperAdmin(currentRoleCodes);
+        List<Long> visibleOrgIds = requirementService.resolveVisibleOrgIds(userId, isSuperAdmin);
+        List<Map<String, Object>> rawList = statisticsMapper.getBurndownDataWithOrgFilter(iterationId, isSuperAdmin, visibleOrgIds);
         List<BurndownPoint> result = new ArrayList<>();
 
         int cumulativeTotal = 0;
@@ -132,7 +164,11 @@ public class StatisticsServiceImpl implements StatisticsService {
 
     @Override
     public List<CfdPoint> getCfdData(Long projectId) {
-        List<Map<String, Object>> rawList = statisticsMapper.getCfdData(projectId);
+        Long userId = SecurityUtils.getCurrentUserId();
+        List<String> currentRoleCodes = SecurityUtils.getCurrentUserRoles();
+        boolean isSuperAdmin = RequirementServiceImpl.isSuperAdmin(currentRoleCodes);
+        List<Long> visibleOrgIds = requirementService.resolveVisibleOrgIds(userId, isSuperAdmin);
+        List<Map<String, Object>> rawList = statisticsMapper.getCfdDataWithOrgFilter(projectId, isSuperAdmin, visibleOrgIds);
 
         // Group by date, accumulate counts per state per date
         Map<String, Map<String, Long>> dateStateCounts = new LinkedHashMap<>();
@@ -194,26 +230,39 @@ public class StatisticsServiceImpl implements StatisticsService {
 
     @Override
     public WorkflowProcessStatsDTO getWorkflowProcessStats(Long userId) {
-        // 待办数：从 requirement_pending_tasks 表统计
-        Long pending = pendingTaskMapper.countByUserId(userId);
+        List<String> currentRoleCodes = SecurityUtils.getCurrentUserRoles();
+        boolean isSuperAdmin = RequirementServiceImpl.isSuperAdmin(currentRoleCodes);
+        List<Long> visibleOrgIds = requirementService.resolveVisibleOrgIds(userId, isSuperAdmin);
 
-        // 已办数：我参与过的非草稿需求（从 workflow_instance_transition 或 requirement 表统计）
-        Long processed = statisticsMapper.countProcessedByUserId(userId);
+        // 非超级管理员且未配置数据权限：仅待办数（基于用户）有内容，已办/发起/抄送均为 0
+        boolean noDataScope = !isSuperAdmin && visibleOrgIds.isEmpty();
+        // 待办数：从 requirement_pending_tasks 表统计（按当前用户，带 org 过滤）
+        Long pending = noDataScope ? 0L : pendingTaskMapper.countByUserIdWithOrgFilter(userId, isSuperAdmin, visibleOrgIds);
 
-        // 我发起的：creator_id = userId 的非草稿需求
-        Long initiated = statisticsMapper.countInitiatedByUserId(userId);
+        // 已办数：我参与过的非草稿需求（带数据权限过滤）
+        Long processed = noDataScope ? 0L : statisticsMapper.countProcessedByUserIdWithOrgFilter(userId, isSuperAdmin, visibleOrgIds);
 
-        // 抄送我的：cc_user_ids 包含当前用户的需求
-        Long cc = statisticsMapper.countCcByUserId(userId);
+        // 我发起的：creator_id = userId 的非草稿需求（带数据权限过滤）
+        Long initiated = noDataScope ? 0L : statisticsMapper.countInitiatedByUserIdWithOrgFilter(userId, isSuperAdmin, visibleOrgIds);
+
+        // 抄送我的：cc_user_ids 包含当前用户的需求（带数据权限过滤）
+        Long cc = noDataScope ? 0L : statisticsMapper.countCcByUserIdWithOrgFilter(userId, isSuperAdmin, visibleOrgIds);
 
         return new WorkflowProcessStatsDTO(pending, processed, initiated, cc);
     }
 
     @Override
     public Map<String, Long> getTabBadgeCounts(Long userId) {
+        List<String> currentRoleCodes = SecurityUtils.getCurrentUserRoles();
+        boolean isSuperAdmin = RequirementServiceImpl.isSuperAdmin(currentRoleCodes);
+        List<Long> visibleOrgIds = requirementService.resolveVisibleOrgIds(userId, isSuperAdmin);
+
+        // 非超级管理员且未配置数据权限：所有 Tab 角标按 0 处理
+        boolean noDataScope = !isSuperAdmin && visibleOrgIds.isEmpty();
+
         Map<String, Long> counts = new LinkedHashMap<>();
-        counts.put("pending", pendingTaskMapper.countByUserId(userId));
-        counts.put("follows", statisticsMapper.countMyFollowsByUserId(userId));
+        counts.put("pending", noDataScope ? 0L : pendingTaskMapper.countByUserIdWithOrgFilter(userId, isSuperAdmin, visibleOrgIds));
+        counts.put("follows", noDataScope ? 0L : statisticsMapper.countMyFollowsByUserIdWithOrgFilter(userId, isSuperAdmin, visibleOrgIds));
         counts.put("drafts", statisticsMapper.countMyDraftsByUserId(userId));
         return counts;
     }

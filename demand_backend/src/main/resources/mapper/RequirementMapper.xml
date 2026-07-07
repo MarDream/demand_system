@@ -52,7 +52,7 @@
         ORDER BY r.updated_at DESC, r.id DESC
     </select>
 
-    <!-- 我的待办列表（基于工作流节点分配） -->
+    <!-- 我的待办列表（基于工作流节点分配，带数据权限过滤） -->
     <select id="selectMyPending" resultType="com.demand.system.module.requirement.entity.Requirement">
         SELECT DISTINCT r.*
         FROM requirements r
@@ -63,6 +63,12 @@
           AND wi.status = 'running'
           AND wn.assignee_type IS NOT NULL
           AND wn.assignee_type != ''
+          <if test='isSuperAdmin != true'>
+              AND r.org_id IN
+              <foreach collection='visibleOrgIds' item='orgId' open='(' separator=',' close=')'>
+                  #{orgId}
+              </foreach>
+          </if>
           <if test='projectId != null'> AND r.project_id = #{projectId} </if>
           <if test='type != null and type != ""'> AND r.type = #{type} </if>
           <if test='priority != null and priority != ""'> AND r.priority = #{priority} </if>
@@ -166,7 +172,7 @@
         ORDER BY rf.created_at DESC, rf.id DESC
     </select>
 
-    <!-- 我的已办 - 查询当前用户创建的已提交需求 或 审批过的需求，排除当前待我审批的需求
+    <!-- 我的已办 - 查询当前用户创建的已提交需求 或 审批过的需求，排除当前待我审批的需求（带数据权限过滤）
          @param userId 当前用户ID
          @param roleCodes 当前用户角色编码列表
          @param directOrgIds 当前用户直接所属组织ID列表
@@ -177,6 +183,12 @@
         FROM requirements r
         WHERE r.deleted_at = 0
           AND r.is_draft = 0
+          <if test='isSuperAdmin != true'>
+              AND r.org_id IN
+              <foreach collection='visibleOrgIds' item='orgId' open='(' separator=',' close=')'>
+                  #{orgId}
+              </foreach>
+          </if>
           <if test='projectId != null'> AND r.project_id = #{projectId} </if>
           <if test='type != null and type != ""'> AND r.type = #{type} </if>
           <if test='priority != null and priority != ""'> AND r.priority = #{priority} </if>
@@ -262,9 +274,7 @@
         ORDER BY r.updated_at DESC
     </select>
 
-    <!-- 我的待办 - 使用物化表优化（新版本）
-         @param userId 当前用户ID
-         @param keyword 关键词搜索（可选） -->
+    <!-- 我的待办 - 使用物化表优化（新版本，带数据权限过滤） -->
     <select id="selectMyPendingOptimized" resultType="com.demand.system.module.requirement.entity.Requirement">
         SELECT DISTINCT r.*
         FROM requirements r
@@ -272,6 +282,12 @@
         WHERE pt.user_id = #{userId}
           AND r.deleted_at = 0
           AND r.is_draft = 0
+          <if test='isSuperAdmin != true'>
+              AND r.org_id IN
+              <foreach collection='visibleOrgIds' item='orgId' open='(' separator=',' close=')'>
+                  #{orgId}
+              </foreach>
+          </if>
           <if test='projectId != null'> AND r.project_id = #{projectId} </if>
           <if test='type != null and type != ""'> AND r.type = #{type} </if>
           <if test='priority != null and priority != ""'> AND r.priority = #{priority} </if>
@@ -283,7 +299,7 @@
          ORDER BY pt.updated_at DESC, r.id DESC
     </select>
 
-    <!-- 我的待办 - 使用运行期待办物化表
+    <!-- 我的待办 - 使用运行期待办物化表（带数据权限过滤）
          运行时若前序节点指定了具体处理人，仅 pt.user_id 命中该用户；
          未指定具体处理人时，按角色、角色组、组织及子组织范围匹配。 -->
     <select id="selectMyPendingV2" resultType="com.demand.system.module.requirement.entity.Requirement">
@@ -292,6 +308,12 @@
         INNER JOIN workflow_instances wi ON r.workflow_instance_id = wi.id
         WHERE r.deleted_at = 0
           AND r.is_draft = 0
+          <if test='isSuperAdmin != true'>
+              AND r.org_id IN
+              <foreach collection='visibleOrgIds' item='orgId' open='(' separator=',' close=')'>
+                  #{orgId}
+              </foreach>
+          </if>
           AND wi.status = 'running'
           AND EXISTS (
             SELECT 1
@@ -379,7 +401,7 @@
         ), r.updated_at) DESC, r.id DESC
     </select>
 
-    <!-- 我的已办 - V2架构重构版（使用workflow_node_assignees关联表）
+    <!-- 我的已办 - V2架构重构版（使用workflow_node_assignees关联表，带数据权限过滤）
          性能提升：排除当前待办时使用索引JOIN而非JSON_CONTAINS
 
          性能优化（2026-06-26）：移除 DISTINCT
@@ -390,6 +412,12 @@
         FROM requirements r
         WHERE r.deleted_at = 0
           AND r.is_draft = 0
+          <if test='isSuperAdmin != true'>
+              AND r.org_id IN
+              <foreach collection='visibleOrgIds' item='orgId' open='(' separator=',' close=')'>
+                  #{orgId}
+              </foreach>
+          </if>
           AND (
             r.creator_id = #{userId}
             OR EXISTS (

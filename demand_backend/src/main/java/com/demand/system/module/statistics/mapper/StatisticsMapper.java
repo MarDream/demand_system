@@ -25,6 +25,21 @@ public interface StatisticsMapper {
     List<Map<String, Object>> getPriorityDistribution(@Param("projectId") Long projectId);
 
     /**
+     * 获取状态分布统计（带数据权限过滤）
+     */
+    List<Map<String, Object>> getStatusDistributionWithOrgFilter(@Param("projectId") Long projectId, @Param("isSuperAdmin") boolean isSuperAdmin, @Param("visibleOrgIds") List<Long> visibleOrgIds);
+
+    /**
+     * 获取需求类型分布统计（带数据权限过滤）
+     */
+    List<Map<String, Object>> getTypeDistributionWithOrgFilter(@Param("projectId") Long projectId, @Param("isSuperAdmin") boolean isSuperAdmin, @Param("visibleOrgIds") List<Long> visibleOrgIds);
+
+    /**
+     * 获取优先级分布统计（带数据权限过滤）
+     */
+    List<Map<String, Object>> getPriorityDistributionWithOrgFilter(@Param("projectId") Long projectId, @Param("isSuperAdmin") boolean isSuperAdmin, @Param("visibleOrgIds") List<Long> visibleOrgIds);
+
+    /**
      * 总需求数：登录用户可见的全部需求数（排除草稿）
      */
     int getTotalCount(@Param("userId") Long userId);
@@ -70,9 +85,9 @@ public interface StatisticsMapper {
     int getMyTodoCount(@Param("userId") Long userId);
 
     /**
-     * 需求趋势数据
+     * 我的待办数量（带数据权限过滤）
      */
-    List<Map<String, Object>> getTrendData(@Param("projectId") Long projectId);
+    int getMyTodoCountWithOrgFilter(@Param("userId") Long userId, @Param("isSuperAdmin") boolean isSuperAdmin, @Param("visibleOrgIds") List<Long> visibleOrgIds);
 
     /**
      * 需求耗时数据
@@ -80,14 +95,24 @@ public interface StatisticsMapper {
     List<Map<String, Object>> getDurationData(@Param("projectId") Long projectId);
 
     /**
-     * 燃尽图数据
+     * 需求趋势数据
      */
-    List<Map<String, Object>> getBurndownData(@Param("iterationId") Long iterationId);
+    List<Map<String, Object>> getTrendData(@Param("projectId") Long projectId);
 
     /**
-     * 累积流图数据
+     * 需求耗时数据（带数据权限过滤）
      */
-    List<Map<String, Object>> getCfdData(@Param("projectId") Long projectId);
+    List<Map<String, Object>> getDurationDataWithOrgFilter(@Param("projectId") Long projectId, @Param("isSuperAdmin") boolean isSuperAdmin, @Param("visibleOrgIds") List<Long> visibleOrgIds);
+
+    /**
+     * 燃尽图数据（带数据权限过滤）
+     */
+    List<Map<String, Object>> getBurndownDataWithOrgFilter(@Param("iterationId") Long iterationId, @Param("isSuperAdmin") boolean isSuperAdmin, @Param("visibleOrgIds") List<Long> visibleOrgIds);
+
+    /**
+     * 累积流图数据（带数据权限过滤）
+     */
+    List<Map<String, Object>> getCfdDataWithOrgFilter(@Param("projectId") Long projectId, @Param("isSuperAdmin") boolean isSuperAdmin, @Param("visibleOrgIds") List<Long> visibleOrgIds);
 
     /**
      * 已办流程数：用户参与过的流转记录对应的需求数（去重）
@@ -95,9 +120,19 @@ public interface StatisticsMapper {
     Long countProcessedByUserId(@Param("userId") Long userId);
 
     /**
+     * 已办流程数（带数据权限过滤）
+     */
+    Long countProcessedByUserIdWithOrgFilter(@Param("userId") Long userId, @Param("isSuperAdmin") boolean isSuperAdmin, @Param("visibleOrgIds") List<Long> visibleOrgIds);
+
+    /**
      * 我发起的流程数：creator_id = userId 的非草稿需求
      */
     Long countInitiatedByUserId(@Param("userId") Long userId);
+
+    /**
+     * 我发起的流程数（带数据权限过滤）
+     */
+    Long countInitiatedByUserIdWithOrgFilter(@Param("userId") Long userId, @Param("isSuperAdmin") boolean isSuperAdmin, @Param("visibleOrgIds") List<Long> visibleOrgIds);
 
     /**
      * 抄送我的流程数：cc_user_ids 包含当前用户的需求（JSON_CONTAINS）
@@ -105,9 +140,19 @@ public interface StatisticsMapper {
     Long countCcByUserId(@Param("userId") Long userId);
 
     /**
+     * 抄送我的流程数（带数据权限过滤）
+     */
+    Long countCcByUserIdWithOrgFilter(@Param("userId") Long userId, @Param("isSuperAdmin") boolean isSuperAdmin, @Param("visibleOrgIds") List<Long> visibleOrgIds);
+
+    /**
      * 我的关注数量
      */
     Long countMyFollowsByUserId(@Param("userId") Long userId);
+
+    /**
+     * 我的关注数量（带数据权限 org 过滤）
+     */
+    Long countMyFollowsByUserIdWithOrgFilter(@Param("userId") Long userId, @Param("isSuperAdmin") boolean isSuperAdmin, @Param("visibleOrgIds") List<Long> visibleOrgIds);
 
     /**
      * 我的草稿数量

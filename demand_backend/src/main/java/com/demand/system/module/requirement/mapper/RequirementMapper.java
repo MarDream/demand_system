@@ -35,7 +35,9 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                       @Param("priority") String priority,
                                       @Param("status") String status,
                                       @Param("assigneeId") Long assigneeId,
-                                      @Param("keyword") String keyword);
+                                      @Param("keyword") String keyword,
+                                      @Param("nodeStatus") String nodeStatus,
+                                      @Param("isOverdue") Boolean isOverdue);
 
     IPage<Requirement> selectMyPending(IPage<Requirement> page,
                                        @Param("userId") Long userId,
@@ -47,7 +49,9 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                        @Param("priority") String priority,
                                        @Param("status") String status,
                                        @Param("assigneeId") Long assigneeId,
-                                       @Param("keyword") String keyword);
+                                       @Param("keyword") String keyword,
+                                       @Param("isSuperAdmin") boolean isSuperAdmin,
+                                       @Param("visibleOrgIds") List<Long> visibleOrgIds);
 
     IPage<Requirement> selectMyFollows(IPage<Requirement> page,
                                        @Param("userId") Long userId,
@@ -58,7 +62,9 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                        @Param("assigneeId") Long assigneeId,
                                        @Param("keyword") String keyword,
                                        @Param("isSuperAdmin") boolean isSuperAdmin,
-                                       @Param("visibleOrgIds") List<Long> visibleOrgIds);
+                                       @Param("visibleOrgIds") List<Long> visibleOrgIds,
+                                       @Param("nodeStatus") String nodeStatus,
+                                       @Param("isOverdue") Boolean isOverdue);
 
     /**
      * 我的已办 - 查询当前用户创建的已提交需求 或 审批过的需求，排除当前待我审批的需求
@@ -78,7 +84,9 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                     @Param("priority") String priority,
                                     @Param("status") String status,
                                     @Param("assigneeId") Long assigneeId,
-                                    @Param("keyword") String keyword);
+                                    @Param("keyword") String keyword,
+                                    @Param("isSuperAdmin") boolean isSuperAdmin,
+                                    @Param("visibleOrgIds") List<Long> visibleOrgIds);
 
     /**
      * 我的待办 - 使用物化表优化（新版本）
@@ -92,7 +100,9 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                                 @Param("priority") String priority,
                                                 @Param("status") String status,
                                                 @Param("assigneeId") Long assigneeId,
-                                                @Param("keyword") String keyword);
+                                                @Param("keyword") String keyword,
+                                                @Param("isSuperAdmin") boolean isSuperAdmin,
+                                                @Param("visibleOrgIds") List<Long> visibleOrgIds);
 
     /**
      * 我的待办 - 使用运行期待办物化表判定当前处理权限。
@@ -107,7 +117,11 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                          @Param("priority") String priority,
                                          @Param("status") String status,
                                          @Param("assigneeId") Long assigneeId,
-                                         @Param("keyword") String keyword);
+                                         @Param("keyword") String keyword,
+                                         @Param("nodeStatus") String nodeStatus,
+                                         @Param("isOverdue") Boolean isOverdue,
+                                         @Param("isSuperAdmin") boolean isSuperAdmin,
+                                         @Param("visibleOrgIds") List<Long> visibleOrgIds);
 
     /**
      * 我的已办 - 查询当前用户创建或已处理的需求，并使用运行期待办物化表排除当前仍待我处理的需求。
@@ -121,5 +135,9 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                       @Param("priority") String priority,
                                       @Param("status") String status,
                                       @Param("assigneeId") Long assigneeId,
-                                      @Param("keyword") String keyword);
+                                      @Param("keyword") String keyword,
+                                      @Param("nodeStatus") String nodeStatus,
+                                      @Param("isOverdue") Boolean isOverdue,
+                                      @Param("isSuperAdmin") boolean isSuperAdmin,
+                                      @Param("visibleOrgIds") List<Long> visibleOrgIds);
 }

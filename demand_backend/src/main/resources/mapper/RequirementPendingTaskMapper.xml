@@ -112,12 +112,22 @@
         LIMIT #{limit}
     </select>
 
-    <!-- 统计用户的待办任务数量 -->
-    <select id="countByUserId" resultType="java.lang.Long">
+    <!-- 统计用户的待办任务数量（带数据权限过滤） -->
+    <select id="countByUserIdWithOrgFilter" resultType="java.lang.Long">
         SELECT COUNT(DISTINCT pt.requirement_id)
         FROM requirement_pending_tasks pt
         <include refid="pendingUserAccessJoins" />
+        JOIN requirements r ON r.id = pt.requirement_id AND r.deleted_at = 0 AND r.is_draft = 0
         WHERE <include refid="pendingUserAccessCondition" />
+        <if test="isSuperAdmin != true and visibleOrgIds != null and visibleOrgIds.size() > 0">
+            AND r.org_id IN
+            <foreach collection="visibleOrgIds" item="orgId" open="(" separator="," close=")">
+                #{orgId}
+            </foreach>
+        </if>
+        <if test="isSuperAdmin != true and (visibleOrgIds == null or visibleOrgIds.size() == 0)">
+            AND 1 = 0
+        </if>
     </select>
 
     <!-- 统计当前流程位置是否已有运行期待办记录 -->

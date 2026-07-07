@@ -94,6 +94,11 @@ public class RequirementVO {
 
     private String departmentName;
 
+    /**
+     * 提出人所属组织名称（取自提出人用户的 orgId 对应组织名）
+     */
+    private String creatorOrgName;
+
     private Integer childCount;
 
     // 权限相关字段
@@ -443,6 +448,14 @@ public class RequirementVO {
 
     public void setDepartmentName(String departmentName) {
         this.departmentName = departmentName;
+    }
+
+    public String getCreatorOrgName() {
+        return creatorOrgName;
+    }
+
+    public void setCreatorOrgName(String creatorOrgName) {
+        this.creatorOrgName = creatorOrgName;
     }
 
     public Integer getChildCount() {
