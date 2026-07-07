@@ -43,6 +43,7 @@
               <el-tag :type="statusTagType(detail.status)">{{ detail.status }}</el-tag>
             </el-descriptions-item>
             <el-descriptions-item label="提出人">{{ detail.creatorName || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="所属组织">{{ detail.creatorOrgName || '-' }}</el-descriptions-item>
             <el-descriptions-item label="当前处理人">{{ detail.currentHandlerName || detail.assigneeName || '-' }}</el-descriptions-item>
             <el-descriptions-item label="创建时间">{{ formatDate(detail.createdAt) }}</el-descriptions-item>
             <el-descriptions-item label="所属迭代">{{ detail.iterationId || '-' }}</el-descriptions-item>

@@ -34,6 +34,8 @@ export interface Requirement {
   createdAt: string
   updatedAt: string
   creatorName?: string
+  /** 提出人所属组织名称（取自 creator 用户的 orgId 对应组织） */
+  creatorOrgName?: string
   assigneeName?: string
   currentHandlerName?: string
   opsFollowName?: string

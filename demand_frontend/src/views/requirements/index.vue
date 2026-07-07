@@ -769,11 +769,10 @@ async function fetchData() {
     // 更新缓存
     setCache(cacheKey, { data: data.list, total: data.total, timestamp: Date.now() })
   } catch (err: any) {
-    // 请求被取消（Tab切换/翻页），不报错
+    // 请求被取消（Tab切换/翻页）或后端已有明确错误提示（拦截器已弹），静默忽略
     if (err?.name === 'AbortError' || err?.message?.includes('cancel')) {
       return
     }
-    ElMessage.error('获取需求列表失败')
   } finally {
     loading.value = false
   }

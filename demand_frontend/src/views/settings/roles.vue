@@ -288,8 +288,7 @@
                             :props="{ label: 'name', children: 'children' }"
                             node-key="id"
                             show-checkbox
-                            check-strictly
-                            :default-checked-keys="selectedDataScopeOrgIds"
+                            :default-checked-keys="leafCheckedOrgIds"
                             :disabled="!currentUserOrgId"
                             empty-text="暂无组织数据"
                             @check="handleOrgTreeCheck"
@@ -532,6 +531,12 @@ const batchImporting = ref(false)
 const orgTree = ref<any[]>([])
 const selectedDataScopeOrgIds = ref<number[]>([])
 const dataScopeOrgLoading = ref(false)
+
+// 非strict模式下，el-tree的default-checked-keys只应接收叶子节点ID
+// 父节点由叶子节点自动推导勾选
+const leafCheckedOrgIds = computed(() => {
+  return selectedDataScopeOrgIds.value.filter(id => !isOrgParentNode(orgTree.value, id))
+})
 
 const roles = ref<RoleItem[]>([])
 const roleGroups = ref<RoleGroupItem[]>([])
@@ -1047,23 +1052,15 @@ async function fetchRolePermissions(roleId: number) {
     // grantablePermissions 只存储当前用户可授权的权限
     grantablePermissions.value = grantable || []
     selectedPermissions.value = rolePermission?.permissionCodes || []
-    selectedDataScopeOrgIds.value = rolePermission?.dataScopeOrgIds || []
     expandedMenuKeys.value = defaultExpandedKeys(menuPermissionTree.value)
     // 加载组织树：超级管理员也需加载，以便展示完整组织层级树
     await loadOrgTree()
-    if (!isSuperAdminRole(selectedRole.value)) {
-      // 普通角色：如果未设置过数据权限，则默认勾选当前用户所属组织及其所有子层级
-      if (selectedDataScopeOrgIds.value.length === 0 && orgTree.value.length > 0 && currentUserOrgId.value) {
-        const userOrgIds = collectUserOrgDescendantIds(orgTree.value, userStore.userInfo)
-        if (userOrgIds.length > 0) {
-          selectedDataScopeOrgIds.value = userOrgIds
-        }
-      }
-    } else {
+    // 组织树加载后再赋值dataScopeOrgIds，确保leafCheckedOrgIds计算属性能正确过滤
+    // 直接使用后端返回值，不再自动填充默认值——允许角色无数据权限
+    selectedDataScopeOrgIds.value = rolePermission?.dataScopeOrgIds || []
+    if (isSuperAdminRole(selectedRole.value) && orgTree.value.length > 0) {
       // 超级管理员：数据权限默认全选（所有组织节点）
-      if (orgTree.value.length > 0) {
-        selectedDataScopeOrgIds.value = getAllOrgIds(orgTree.value)
-      }
+      selectedDataScopeOrgIds.value = getAllOrgIds(orgTree.value)
     }
   } catch {
     selectedPermissions.value = []
@@ -1357,24 +1354,34 @@ function toggleDataScopeExpand() {
 }
 
 const allDataScopeOrgChecked = computed(() => {
-  const totalNodes = countOrgTreeNodes(orgTree.value)
-  return totalNodes > 0 && selectedDataScopeOrgIds.value.length === totalNodes
+  const leafCount = countLeafNodes(orgTree.value)
+  if (leafCount === 0) return false
+  // selectedDataScopeOrgIds只存完全选中的节点
+  const selectedLeafCount = selectedDataScopeOrgIds.value.filter(id => !isOrgParentNode(orgTree.value, id)).length
+  return selectedLeafCount === leafCount
 })
 
 const dataScopeOrgIndeterminate = computed(() => {
-  const totalNodes = countOrgTreeNodes(orgTree.value)
-  return totalNodes > 0 && selectedDataScopeOrgIds.value.length > 0 && selectedDataScopeOrgIds.value.length < totalNodes
+  const leafCount = countLeafNodes(orgTree.value)
+  const selectedLeafCount = selectedDataScopeOrgIds.value.filter(id => !isOrgParentNode(orgTree.value, id)).length
+  return leafCount > 0 && selectedLeafCount > 0 && selectedLeafCount < leafCount
 })
 
 function handleAllDataScopeOrgCheck(checked: boolean) {
   if (checked) {
-    selectedDataScopeOrgIds.value = getAllOrgIds(orgTree.value)
+    // 全选：设置el-tree全选，然后取checkedKeys
+    orgTreeRef.value?.setCheckedKeys(getAllOrgIds(orgTree.value))
+    const checkedKeys = orgTreeRef.value?.getCheckedKeys() || []
+    selectedDataScopeOrgIds.value = [...checkedKeys]
   } else {
+    orgTreeRef.value?.setCheckedKeys([])
     selectedDataScopeOrgIds.value = []
   }
 }
 
-function handleOrgTreeCheck(_data: any, { checkedKeys }: { checkedKeys: number[] }) {
+function handleOrgTreeCheck(_data: any, { checkedKeys, halfCheckedKeys }: { checkedKeys: number[]; halfCheckedKeys: number[] }) {
+  // 非strict模式：checkedKeys含完全选中的节点（叶子+全选父节点），halfCheckedKeys含半选父节点
+  // 只保存完全选中的节点（checkedKeys），半选父节点不保存
   selectedDataScopeOrgIds.value = [...checkedKeys]
 }
 
@@ -1387,6 +1394,28 @@ function countOrgTreeNodes(nodes: any[]): number {
     }
   }
   return count
+}
+
+function countLeafNodes(nodes: any[]): number {
+  let count = 0
+  for (const node of nodes) {
+    if (!node.children || node.children.length === 0) {
+      count++
+    } else {
+      count += countLeafNodes(node.children)
+    }
+  }
+  return count
+}
+
+function isOrgParentNode(nodes: any[], targetId: number): boolean {
+  for (const node of nodes) {
+    if (node.id === targetId && node.children && node.children.length > 0) return true
+    if (node.children && node.children.length > 0) {
+      if (isOrgParentNode(node.children, targetId)) return true
+    }
+  }
+  return false
 }
 
 function getAllOrgIds(nodes: any[]): number[] {
