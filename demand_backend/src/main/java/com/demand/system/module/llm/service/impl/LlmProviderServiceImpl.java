@@ -298,6 +298,79 @@ public class LlmProviderServiceImpl implements LlmProviderService {
         return result;
     }
 
+    // ==================== Translate ====================
+
+    @Override
+    public String translateToEnglish(String chineseText) {
+        if (chineseText == null || chineseText.isBlank()) {
+            return null;
+        }
+
+        // 查找已启用的默认 Chat 模型
+        LlmModel defaultChatModel = modelMapper.selectOne(
+                new LambdaQueryWrapper<LlmModel>()
+                        .eq(LlmModel::getIsDefault, true)
+                        .eq(LlmModel::getEnabled, true)
+                        .notIn(LlmModel::getModelType, "embedding", "rerank")
+                        .last("LIMIT 1")
+        );
+        // fallback: 取第一个启用的非 embedding/rerank 模型
+        if (defaultChatModel == null) {
+            defaultChatModel = modelMapper.selectOne(
+                    new LambdaQueryWrapper<LlmModel>()
+                            .eq(LlmModel::getEnabled, true)
+                            .notIn(LlmModel::getModelType, "embedding", "rerank")
+                            .last("LIMIT 1")
+            );
+        }
+        if (defaultChatModel == null) {
+            return null;
+        }
+
+        LlmProvider provider = providerMapper.selectById(defaultChatModel.getProviderId());
+        if (provider == null || !Boolean.TRUE.equals(provider.getEnabled())) {
+            return null;
+        }
+
+        LlmGatewayConfig.Provider gwProvider = buildGatewayProvider(provider, defaultChatModel);
+
+        String systemPrompt = """
+                你是一个专业的中英文翻译助手。你的任务是将中文角色名称翻译为英文编码。
+                规则：
+                1. 将中文翻译为对应的英文单词或短语
+                2. 使用大写字母
+                3. 多个单词之间用下划线连接
+                4. 只输出翻译结果，不要输出任何解释或额外内容
+                5. 翻译要简洁、专业、符合软件工程命名习惯
+                例如：
+                - 产品经理 → PRODUCT_MANAGER
+                - 技术负责人 → TECH_LEAD
+                - 测试人员 → TESTER
+                - 运维工程师 → OPS_ENGINEER
+                - 需求评审人 → DEMAND_REVIEWER
+                """;
+
+        try {
+            LlmGateway.ChatResult result = llmGateway.chatWithProvider(
+                    gwProvider, systemPrompt, chineseText,
+                    java.math.BigDecimal.valueOf(0.1), 128
+            );
+            String content = result.getContent();
+            if (content != null && !content.isBlank()) {
+                // 清理可能的多余内容，只保留大写下划线格式
+                content = content.trim().replaceAll("[^A-Z0-9_]", "");
+                // 去除连续下划线和首尾下划线
+                content = content.replaceAll("_+", "_").replaceAll("^_|_$", "");
+                if (!content.isEmpty() && content.length() <= 50) {
+                    return content;
+                }
+            }
+        } catch (Exception e) {
+            // LLM 调用失败，返回 null 让前端走本地 fallback
+        }
+        return null;
+    }
+
     // ==================== Sniff ====================
 
     @Override

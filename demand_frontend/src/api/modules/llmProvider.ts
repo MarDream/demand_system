@@ -146,6 +146,9 @@ export const llmProviderApi = {
   // Chat Models (for RAG)
   listChatModels: () => request.get<ChatModelOption[]>('/v1/llm-providers/chat-models'),
 
+  // Translate (for role code generation)
+  translate: (text: string) => request.post<string | null>('/v1/llm-providers/translate', { text }, { timeout: 15000 }),
+
   // Sniff
   sniffModels: (id: number) =>
     request.post<SniffedModel[]>(`/v1/llm-providers/${id}/sniff-models`, null, { timeout: 30000 }),

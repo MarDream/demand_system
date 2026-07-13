@@ -376,12 +376,28 @@
           </el-select>
         </el-form-item>
         <el-form-item label="角色编码" prop="code">
-          <el-input
-            v-model="form.code"
-            placeholder="例如 PRODUCT_OWNER"
-            :disabled="!!editingRole"
-            @input="codeManuallyEdited = true"
-          />
+          <div style="display: flex; gap: 8px; width: 100%;">
+            <el-input
+              v-model="form.code"
+              placeholder="例如 PRODUCT_OWNER"
+              :disabled="!!editingRole"
+              style="flex: 1"
+              @input="codeManuallyEdited = true"
+            />
+            <el-tooltip
+              v-if="!editingRole"
+              :content="aiCodeGenerating ? 'AI 正在生成编码...' : 'AI 自动生成编码'"
+              placement="top"
+            >
+              <el-button
+                :loading="aiCodeGenerating"
+                :disabled="!form.name.trim() || !!editingRole"
+                @click="handleAiGenerateCode"
+              >
+                <el-icon v-if="!aiCodeGenerating"><MagicStick /></el-icon>
+              </el-button>
+            </el-tooltip>
+          </div>
         </el-form-item>
         <el-form-item label="角色说明" prop="description">
           <el-input v-model="form.description" type="textarea" :rows="4" placeholder="说明角色职责与使用范围" />
@@ -443,7 +459,7 @@
 <script setup lang="ts">
 import { computed, markRaw, onMounted, onUnmounted, reactive, ref, type Component } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { ArrowDown, ArrowLeft, ArrowRight, Search, Suitcase, Tickets, UserFilled, User, Tools, Plus, FolderOpened, Rank } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowLeft, ArrowRight, Search, Suitcase, Tickets, UserFilled, User, Tools, Plus, FolderOpened, Rank, MagicStick } from '@element-plus/icons-vue'
 import Sortable from 'sortablejs'
 import * as XLSX from 'xlsx'
 import PageContainer from '@/components/common/PageContainer.vue'
@@ -469,6 +485,8 @@ import {
   type RolePayload,
 } from '@/api/modules/role'
 import { getAllMenus, type MenuItem, type RoleItem } from '@/api/modules/menu'
+import { llmProviderApi } from '@/api/modules/llmProvider'
+import type { AuthUserInfo } from '@/api/modules/auth'
 
 interface PermissionOption {
   code: string
@@ -541,6 +559,8 @@ const leafCheckedOrgIds = computed(() => {
 const roles = ref<RoleItem[]>([])
 const roleGroups = ref<RoleGroupItem[]>([])
 const selectedRole = ref<RoleItem | null>(null)
+/** 当前选中的角色分组ID（用于新增角色时默认填充所属分组） */
+const selectedGroupId = ref<number | null>(null)
 const selectedPermissions = ref<string[]>([])
 const grantablePermissions = ref<string[]>([])
 const menuTree = ref<MenuItem[]>([])
@@ -567,6 +587,8 @@ const roleGroupFormRef = ref<FormInstance>()
 const roleGroupSubmitting = ref(false)
 const userStore = useUserStore()
 const codeManuallyEdited = ref(false)
+const aiCodeGenerating = ref(false)
+let codeDebounceTimer: ReturnType<typeof setTimeout> | null = null
 const roleGroupsRef = ref<HTMLElement | null>(null)
 let sortableGroupInstance: Sortable | null = null
 let sortableRoleInstances: Map<string, Sortable> = new Map()
@@ -827,6 +849,10 @@ onUnmounted(() => {
   }
   sortableRoleInstances.forEach(instance => instance.destroy())
   sortableRoleInstances.clear()
+  if (codeDebounceTimer) {
+    clearTimeout(codeDebounceTimer)
+    codeDebounceTimer = null
+  }
 })
 
 function initSortable() {
@@ -946,6 +972,7 @@ async function fetchRoles() {
 
 async function selectRole(role: RoleItem) {
   selectedRole.value = role
+  selectedGroupId.value = role.roleGroupId ?? null
   permissionKeyword.value = ''
   await fetchRolePermissions(role.id)
 }
@@ -953,6 +980,14 @@ async function selectRole(role: RoleItem) {
 function handleTreeNodeClick(data: RoleTreeNode) {
   if (data.type === 'role') {
     selectRole(data.data as RoleItem)
+  } else if (data.type === 'group') {
+    // 点击分组节点时记录当前分组（排除"默认"虚拟分组）
+    if (data.id === DEFAULT_ROLE_GROUP_KEY) {
+      selectedGroupId.value = null
+    } else {
+      const group = data.data as RoleGroupItem
+      selectedGroupId.value = group?.id ?? null
+    }
   }
 }
 
@@ -1097,6 +1132,8 @@ function openCreate() {
   editingRole.value = null
   codeManuallyEdited.value = false
   resetForm()
+  // 默认填充当前选中的角色分组
+  form.roleGroupId = selectedGroupId.value
   dialogVisible.value = true
 }
 
@@ -1709,8 +1746,64 @@ function validateRoleGroupNameUnique(_rule: unknown, value: string, callback: (e
 }
 
 function handleRoleNameInput() {
-  if (!editingRole.value && !codeManuallyEdited.value) {
-    form.code = generateRoleCode(form.name)
+  if (editingRole.value || codeManuallyEdited.value) return
+
+  // 先立即生成本地 fallback 编码，确保用户能即时看到
+  const localCode = generateRoleCode(form.name)
+  form.code = localCode
+
+  // 防抖调用 LLM 翻译，成功后覆盖本地编码
+  if (codeDebounceTimer) {
+    clearTimeout(codeDebounceTimer)
+  }
+  codeDebounceTimer = setTimeout(async () => {
+    const name = form.name.trim()
+    if (!name) return
+
+    // 仅对包含中文的角色名称尝试 LLM 翻译
+    if (!/[一-鿿]/.test(name)) return
+
+    try {
+      aiCodeGenerating.value = true
+      const result = await llmProviderApi.translate(name) as any
+      const translated = result?.data ?? result
+      if (translated && typeof translated === 'string' && /^[A-Z][A-Z0-9_]*$/.test(translated)) {
+        // LLM 翻译成功，覆盖本地编码（前提是用户没有在等待期间手动编辑编码）
+        if (!codeManuallyEdited.value) {
+          form.code = translated.slice(0, 50)
+        }
+      }
+    } catch {
+      // LLM 调用失败，保持本地 fallback 编码
+    } finally {
+      aiCodeGenerating.value = false
+    }
+  }, 800)
+}
+
+/** 手动点击 AI 按钮生成编码 */
+async function handleAiGenerateCode() {
+  const name = form.name.trim()
+  if (!name) return
+
+  try {
+    aiCodeGenerating.value = true
+    const result = await llmProviderApi.translate(name) as any
+    const translated = result?.data ?? result
+    if (translated && typeof translated === 'string' && /^[A-Z][A-Z0-9_]*$/.test(translated)) {
+      form.code = translated.slice(0, 50)
+      codeManuallyEdited.value = false
+    } else {
+      // LLM 返回空或格式不对，走本地 fallback
+      form.code = generateRoleCode(name)
+      ElMessage.info('未配置可用模型，已使用本地映射生成编码')
+    }
+  } catch {
+    // LLM 调用失败，走本地 fallback
+    form.code = generateRoleCode(name)
+    ElMessage.info('AI 服务暂不可用，已使用本地映射生成编码')
+  } finally {
+    aiCodeGenerating.value = false
   }
 }
 

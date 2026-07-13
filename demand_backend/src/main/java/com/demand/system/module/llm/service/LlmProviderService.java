@@ -28,6 +28,16 @@ public interface LlmProviderService {
     // Chat Models (for RAG)
     java.util.List<java.util.Map<String, Object>> listChatModels();
 
+    // Translate (for role code generation)
+    /**
+     * 使用已配置的默认 Chat 模型将中文文本翻译为英文。
+     * 若未配置可用模型则返回 null，由调用方走本地 fallback。
+     *
+     * @param chineseText 中文文本（如角色名称）
+     * @return 英文翻译结果（大写下划线格式），或 null 表示无可用模型
+     */
+    String translateToEnglish(String chineseText);
+
     // Sniff
     List<SniffedModelVO> sniffModels(Long id);
 }

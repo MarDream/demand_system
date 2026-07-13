@@ -151,6 +151,20 @@ public class LlmProviderController {
         return ResponseEntity.ok(Map.of("code", 200, "message", "操作成功", "data", providerService.listChatModels()));
     }
 
+    // ==================== Translate ====================
+
+    /**
+     * 使用已配置的大模型将中文文本翻译为英文编码（供角色编码生成等场景使用）。
+     * 若系统未配置可用模型，返回 data 为 null，由前端走本地映射 fallback。
+     */
+    @PostMapping("/translate")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Map<String, Object>> translate(@RequestBody Map<String, String> body) {
+        String text = body.get("text");
+        String result = providerService.translateToEnglish(text);
+        return ResponseEntity.ok(Map.of("code", 200, "message", "操作成功", "data", result));
+    }
+
     // ==================== Sniff ====================
 
     @PostMapping("/{id:\\d+}/sniff-models")
