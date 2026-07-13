@@ -588,7 +588,6 @@ const roleGroupSubmitting = ref(false)
 const userStore = useUserStore()
 const codeManuallyEdited = ref(false)
 const aiCodeGenerating = ref(false)
-let codeDebounceTimer: ReturnType<typeof setTimeout> | null = null
 const roleGroupsRef = ref<HTMLElement | null>(null)
 let sortableGroupInstance: Sortable | null = null
 let sortableRoleInstances: Map<string, Sortable> = new Map()
@@ -849,10 +848,6 @@ onUnmounted(() => {
   }
   sortableRoleInstances.forEach(instance => instance.destroy())
   sortableRoleInstances.clear()
-  if (codeDebounceTimer) {
-    clearTimeout(codeDebounceTimer)
-    codeDebounceTimer = null
-  }
 })
 
 function initSortable() {
@@ -1747,38 +1742,8 @@ function validateRoleGroupNameUnique(_rule: unknown, value: string, callback: (e
 
 function handleRoleNameInput() {
   if (editingRole.value || codeManuallyEdited.value) return
-
-  // 先立即生成本地 fallback 编码，确保用户能即时看到
-  const localCode = generateRoleCode(form.name)
-  form.code = localCode
-
-  // 防抖调用 LLM 翻译，成功后覆盖本地编码
-  if (codeDebounceTimer) {
-    clearTimeout(codeDebounceTimer)
-  }
-  codeDebounceTimer = setTimeout(async () => {
-    const name = form.name.trim()
-    if (!name) return
-
-    // 仅对包含中文的角色名称尝试 LLM 翻译
-    if (!/[一-鿿]/.test(name)) return
-
-    try {
-      aiCodeGenerating.value = true
-      const result = await llmProviderApi.translate(name) as any
-      const translated = result?.data ?? result
-      if (translated && typeof translated === 'string' && /^[A-Z][A-Z0-9_]*$/.test(translated)) {
-        // LLM 翻译成功，覆盖本地编码（前提是用户没有在等待期间手动编辑编码）
-        if (!codeManuallyEdited.value) {
-          form.code = translated.slice(0, 50)
-        }
-      }
-    } catch {
-      // LLM 调用失败，保持本地 fallback 编码
-    } finally {
-      aiCodeGenerating.value = false
-    }
-  }, 800)
+  // 仅使用本地映射生成编码，AI 翻译需手动点击按钮触发
+  form.code = generateRoleCode(form.name)
 }
 
 /** 手动点击 AI 按钮生成编码 */
