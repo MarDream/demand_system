@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demand.system.module.bitable.mapper.BitableCellMapper">
+
+    <!-- 批量查询记录的所有单元格值 -->
+    <select id="selectByRecordIds" resultType="com.demand.system.module.bitable.entity.BitableCellValue">
+        SELECT id, record_id, field_id, value_text, value_number, value_date, value_json,
+               created_at, updated_at
+        FROM `bitable_cell_values`
+        WHERE record_id IN
+        <foreach collection="recordIds" item="recordId" open="(" separator="," close=")">
+            #{recordId}
+        </foreach>
+    </select>
+
+    <!-- 查询指定记录和字段的单元格值 -->
+    <select id="selectByRecordAndField" resultType="com.demand.system.module.bitable.entity.BitableCellValue">
+        SELECT id, record_id, field_id, value_text, value_number, value_date, value_json,
+               created_at, updated_at
+        FROM `bitable_cell_values`
+        WHERE record_id = #{recordId}
+          AND field_id = #{fieldId}
+    </select>
+
+    <!-- 插入或更新单元格值（依赖 record_id + field_id 唯一索引） -->
+    <insert id="saveOrUpdateCell">
+        INSERT INTO `bitable_cell_values` (record_id, field_id, value_text, value_number, value_date, value_json)
+        VALUES (#{cell.recordId}, #{cell.fieldId}, #{cell.valueText}, #{cell.valueNumber}, #{cell.valueDate}, #{cell.valueJson})
+        ON DUPLICATE KEY UPDATE
+            value_text = #{cell.valueText},
+            value_number = #{cell.valueNumber},
+            value_date = #{cell.valueDate},
+            value_json = #{cell.valueJson},
+            updated_at = NOW()
+    </insert>
+
+    <!-- 物理删除指定记录的所有单元格值 -->
+    <delete id="deleteByRecordId">
+        DELETE FROM `bitable_cell_values`
+        WHERE record_id = #{recordId}
+    </delete>
+
+</mapper>

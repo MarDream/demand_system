@@ -3,6 +3,8 @@ package com.demand.system.module.knowledge.service.impl;
 import com.demand.system.module.knowledge.config.KnowledgeConfig;
 import com.demand.system.module.knowledge.llm.LlmGateway;
 import com.demand.system.module.knowledge.llm.LlmGatewayConfig;
+import com.demand.system.module.llm.constant.LlmApplicationCode;
+import com.demand.system.module.llm.service.LlmModelResolver;
 import com.demand.system.module.knowledge.service.EmbeddingService;
 import com.demand.system.module.knowledge.service.EventRerankerService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -32,19 +34,19 @@ public class EventRerankerServiceImpl implements EventRerankerService {
     private final KnowledgeConfig knowledgeConfig;
     private final EmbeddingService embeddingService;
     private final LlmGateway llmGateway;
-    private final LlmGatewayConfig llmGatewayConfig;
+    private final LlmModelResolver llmModelResolver;
     private final ObjectMapper objectMapper;
 
     public EventRerankerServiceImpl(
             KnowledgeConfig knowledgeConfig,
             EmbeddingService embeddingService,
             LlmGateway llmGateway,
-            LlmGatewayConfig llmGatewayConfig,
+            LlmModelResolver llmModelResolver,
             ObjectMapper objectMapper) {
         this.knowledgeConfig = knowledgeConfig;
         this.embeddingService = embeddingService;
         this.llmGateway = llmGateway;
-        this.llmGatewayConfig = llmGatewayConfig;
+        this.llmModelResolver = llmModelResolver;
         this.objectMapper = objectMapper;
     }
 
@@ -158,14 +160,16 @@ public class EventRerankerServiceImpl implements EventRerankerService {
      * @return LLM 认为最相关的 eventId 列表
      */
     private List<Long> llmRerank(String query, List<RankedEvent> candidates, int topK) {
-        LlmGatewayConfig.Provider provider = llmGatewayConfig.getLlmReranker();
-        if (provider.getBaseUrl() == null || provider.getBaseUrl().isBlank()) {
-            log.warn("LLM Reranker 未配置（baseUrl 为空），跳过 Level 3");
+        LlmModelResolver.ResolvedModel resolved = llmModelResolver.resolveFirst(LlmApplicationCode.KNOWLEDGE_EVENT_RERANK);
+        if (resolved == null) {
+            log.warn("LLM Reranker 未配置，跳过 Level 3");
             return candidates.stream()
                     .map(RankedEvent::getEventId)
                     .limit(topK)
                     .collect(Collectors.toList());
         }
+
+        LlmGatewayConfig.Provider provider = llmModelResolver.toGatewayProvider(resolved);
 
         // 取前 20 个候选发给 LLM，减少 prompt 长度和延迟
         List<RankedEvent> topCandidates = candidates.stream()

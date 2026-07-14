@@ -112,6 +112,7 @@ public class SecurityConfig {
                     "/v3/api-docs.yaml",
                     "/doc.html"
             ).permitAll()
+                .requestMatchers("/ws/**").permitAll()
                 .anyRequest().authenticated()
             )
             .exceptionHandling(eh -> eh

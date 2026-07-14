@@ -6,7 +6,9 @@ import com.demand.system.module.knowledge.config.KnowledgeConfig;
 import com.demand.system.module.knowledge.config.MilvusConfig;
 import com.demand.system.module.knowledge.dto.KnowledgeConfigVO;
 import com.demand.system.module.llm.entity.LlmModel;
+import com.demand.system.module.llm.constant.LlmApplicationCode;
 import com.demand.system.module.llm.entity.LlmProvider;
+import com.demand.system.module.llm.service.LlmModelResolver;
 import com.demand.system.module.llm.mapper.LlmModelMapper;
 import com.demand.system.module.llm.mapper.LlmProviderMapper;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -28,15 +30,18 @@ public class KnowledgeConfigController {
     private final MilvusConfig milvusConfig;
     private final LlmModelMapper llmModelMapper;
     private final LlmProviderMapper llmProviderMapper;
+    private final LlmModelResolver llmModelResolver;
 
     public KnowledgeConfigController(KnowledgeConfig knowledgeConfig,
                                      MilvusConfig milvusConfig,
                                      LlmModelMapper llmModelMapper,
-                                     LlmProviderMapper llmProviderMapper) {
+                                     LlmProviderMapper llmProviderMapper,
+                                     LlmModelResolver llmModelResolver) {
         this.knowledgeConfig = knowledgeConfig;
         this.milvusConfig = milvusConfig;
         this.llmModelMapper = llmModelMapper;
         this.llmProviderMapper = llmProviderMapper;
+        this.llmModelResolver = llmModelResolver;
     }
 
     /**
@@ -56,10 +61,10 @@ public class KnowledgeConfigController {
         vo.setMilvusDimension(milvusConfig.getDimension());
 
         // Embedding 状态
-        vo.setEmbedding(buildModelStatus("embedding", milvusConfig.getDimension()));
+        vo.setEmbedding(buildModelStatus(LlmApplicationCode.KNOWLEDGE_EMBEDDING, milvusConfig.getDimension()));
 
         // Reranker 状态
-        vo.setReranker(buildModelStatus("rerank", null));
+        vo.setReranker(buildModelStatus(LlmApplicationCode.KNOWLEDGE_RERANK, null));
 
         // Chat 状态
         vo.setChat(buildChatModelStatus());
@@ -92,25 +97,10 @@ public class KnowledgeConfigController {
 
     // ==================== 私有方法 ====================
 
-    private KnowledgeConfigVO.ModelStatus buildModelStatus(String modelType, Integer milvusDimension) {
-        // 查该类型下默认模型
-        LlmModel defaultModel = llmModelMapper.selectOne(
-                new LambdaQueryWrapper<LlmModel>()
-                        .eq(LlmModel::getModelType, modelType)
-                        .eq(LlmModel::getIsDefault, true)
-                        .eq(LlmModel::getEnabled, true)
-                        .last("LIMIT 1")
-        );
-
-        if (defaultModel == null) {
-            // fallback: 该类型下第一个启用模型
-            defaultModel = llmModelMapper.selectOne(
-                    new LambdaQueryWrapper<LlmModel>()
-                            .eq(LlmModel::getModelType, modelType)
-                            .eq(LlmModel::getEnabled, true)
-                            .last("LIMIT 1")
-            );
-        }
+    private KnowledgeConfigVO.ModelStatus buildModelStatus(String applicationCode, Integer milvusDimension) {
+        // 状态展示与实际业务调用保持一致：优先使用功能点绑定模型，再回退全局默认模型。
+        LlmModelResolver.ResolvedModel resolved = llmModelResolver.resolveFirst(applicationCode);
+        LlmModel defaultModel = resolved != null ? resolved.model() : null;
 
         if (defaultModel == null) {
             return KnowledgeConfigVO.ModelStatus.notConfigured();
@@ -128,7 +118,7 @@ public class KnowledgeConfigController {
         status.setTestError(defaultModel.getTestError());
 
         // 维度匹配检查（仅 embedding）
-        if ("embedding".equals(modelType) && milvusDimension != null && defaultModel.getDimension() != null) {
+        if ("embedding".equalsIgnoreCase(defaultModel.getModelType()) && milvusDimension != null && defaultModel.getDimension() != null) {
             status.setDimensionMatch(defaultModel.getDimension() == milvusDimension);
         }
 
@@ -136,20 +126,9 @@ public class KnowledgeConfigController {
     }
 
     private KnowledgeConfigVO.ModelStatus buildChatModelStatus() {
-        // 默认 Chat 模型
-        LlmModel defaultModel = llmModelMapper.selectDefaultChatModel();
-
-        if (defaultModel == null) {
-            // fallback: 任何非 embedding/rerank 的启用模型
-            defaultModel = llmModelMapper.selectOne(
-                    new LambdaQueryWrapper<LlmModel>()
-                            .eq(LlmModel::getEnabled, true)
-                            .notIn(LlmModel::getModelType, "embedding", "rerank")
-                            .orderByDesc(LlmModel::getIsDefault)
-                            .orderByAsc(LlmModel::getId)
-                            .last("LIMIT 1")
-            );
-        }
+        // 知识库问答使用独立的功能点模型配置。
+        LlmModelResolver.ResolvedModel resolved = llmModelResolver.resolveFirst(LlmApplicationCode.KNOWLEDGE_ANSWER);
+        LlmModel defaultModel = resolved != null ? resolved.model() : null;
 
         if (defaultModel == null) {
             return KnowledgeConfigVO.ModelStatus.notConfigured();

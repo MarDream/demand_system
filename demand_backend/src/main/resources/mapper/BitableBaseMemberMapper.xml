@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demand.system.module.bitable.mapper.BitableBaseMemberMapper">
+
+    <!-- 查询指定多维表格容器的所有成员 -->
+    <select id="selectByBaseId" resultType="com.demand.system.module.bitable.entity.BitableBaseMember">
+        SELECT id, base_id, user_id, role, created_at, updated_at
+        FROM `bitable_base_members`
+        WHERE base_id = #{baseId}
+        ORDER BY created_at ASC
+    </select>
+
+    <!-- 查询指定用户在指定多维表格容器中的成员记录 -->
+    <select id="selectByBaseAndUser" resultType="com.demand.system.module.bitable.entity.BitableBaseMember">
+        SELECT id, base_id, user_id, role, created_at, updated_at
+        FROM `bitable_base_members`
+        WHERE base_id = #{baseId}
+          AND user_id = #{userId}
+    </select>
+
+    <!-- 删除指定多维表格容器的所有成员 -->
+    <delete id="deleteByBaseId">
+        DELETE FROM `bitable_base_members`
+        WHERE base_id = #{baseId}
+    </delete>
+
+</mapper>

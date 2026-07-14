@@ -10,6 +10,8 @@ import com.demand.system.module.knowledge.entity.KnowledgeEntity;
 import com.demand.system.module.knowledge.entity.KnowledgeEventEntity;
 import com.demand.system.module.knowledge.llm.LlmGateway;
 import com.demand.system.module.knowledge.llm.LlmGatewayConfig;
+import com.demand.system.module.llm.constant.LlmApplicationCode;
+import com.demand.system.module.llm.service.LlmModelResolver;
 import com.demand.system.module.knowledge.mapper.KnowledgeEventMapper;
 import com.demand.system.module.knowledge.mapper.KnowledgeEntityMapper;
 import com.demand.system.module.knowledge.mapper.KnowledgeEventEntityMapper;
@@ -44,7 +46,7 @@ public class KnowledgeEventSearchServiceImpl implements KnowledgeEventSearchServ
     private final KnowledgeConfig knowledgeConfig;
     private final EmbeddingService embeddingService;
     private final LlmGateway llmGateway;
-    private final LlmGatewayConfig llmGatewayConfig;
+    private final LlmModelResolver llmModelResolver;
     private final MilvusVectorStore milvusVectorStore;
     private final KnowledgeEventMapper eventMapper;
     private final KnowledgeEntityMapper entityMapper;
@@ -55,7 +57,7 @@ public class KnowledgeEventSearchServiceImpl implements KnowledgeEventSearchServ
             KnowledgeConfig knowledgeConfig,
             EmbeddingService embeddingService,
             LlmGateway llmGateway,
-            LlmGatewayConfig llmGatewayConfig,
+            LlmModelResolver llmModelResolver,
             MilvusVectorStore milvusVectorStore,
             KnowledgeEventMapper eventMapper,
             KnowledgeEntityMapper entityMapper,
@@ -64,7 +66,7 @@ public class KnowledgeEventSearchServiceImpl implements KnowledgeEventSearchServ
         this.knowledgeConfig = knowledgeConfig;
         this.embeddingService = embeddingService;
         this.llmGateway = llmGateway;
-        this.llmGatewayConfig = llmGatewayConfig;
+        this.llmModelResolver = llmModelResolver;
         this.milvusVectorStore = milvusVectorStore;
         this.eventMapper = eventMapper;
         this.entityMapper = entityMapper;
@@ -522,12 +524,13 @@ public class KnowledgeEventSearchServiceImpl implements KnowledgeEventSearchServ
             return candidates;
         }
 
-        LlmGatewayConfig.Provider llmRerankerProvider = llmGatewayConfig.getLlmReranker();
-        if (llmRerankerProvider == null || llmRerankerProvider.getModel() == null
-                || llmRerankerProvider.getModel().isBlank()) {
-            log.warn("LLM reranker provider 未配置，跳过 LLM rerank");
+        LlmModelResolver.ResolvedModel resolved = llmModelResolver.resolveFirst(LlmApplicationCode.KNOWLEDGE_EVENT_RERANK);
+        if (resolved == null) {
+            log.warn("LLM reranker 应用配置未绑定可用模型，跳过 LLM rerank");
             return candidates;
         }
+
+        LlmGatewayConfig.Provider llmRerankerProvider = llmModelResolver.toGatewayProvider(resolved);
 
         // 只对 top-N 进行 LLM rerank 以减少 token 消耗
         int llmRerankCount = Math.min(candidates.size(), 10);

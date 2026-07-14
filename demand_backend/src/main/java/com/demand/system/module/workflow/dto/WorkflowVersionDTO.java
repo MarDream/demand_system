@@ -1,6 +1,8 @@
 package com.demand.system.module.workflow.dto;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 public class WorkflowVersionDTO {
 
@@ -43,6 +45,8 @@ public class WorkflowVersionDTO {
     private String knowledgeBaseName;
 
     private Boolean approvalEvaluationEnabled;
+
+    private List<WorkflowValidationIssue> validationIssues = new ArrayList<>();
 
     public Long getId() {
         return id;
@@ -202,5 +206,13 @@ public class WorkflowVersionDTO {
 
     public void setApprovalEvaluationEnabled(Boolean approvalEvaluationEnabled) {
         this.approvalEvaluationEnabled = approvalEvaluationEnabled;
+    }
+
+    public List<WorkflowValidationIssue> getValidationIssues() {
+        return validationIssues;
+    }
+
+    public void setValidationIssues(List<WorkflowValidationIssue> validationIssues) {
+        this.validationIssues = validationIssues == null ? new ArrayList<>() : validationIssues;
     }
 }

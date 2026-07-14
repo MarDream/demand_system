@@ -13,10 +13,15 @@ import com.demand.system.module.project.mapper.ProjectMemberMapper;
 import com.demand.system.module.project.service.ProjectService;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 @Service
 public class ProjectServiceImpl implements ProjectService {
+
+    private static final String PROJECT_CODE_PREFIX = "PRJ-";
+    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     private final ProjectMapper projectMapper;
     private final ProjectMemberMapper projectMemberMapper;
@@ -24,6 +29,29 @@ public class ProjectServiceImpl implements ProjectService {
     public ProjectServiceImpl(ProjectMapper projectMapper, ProjectMemberMapper projectMemberMapper) {
         this.projectMapper = projectMapper;
         this.projectMemberMapper = projectMemberMapper;
+    }
+
+    /**
+     * 生成项目编号: PRJ-YYYYMMDD-NNN
+     * NNN 为当天已有项目数+1
+     */
+    private String generateProjectCode() {
+        String datePart = LocalDate.now().format(DATE_FMT);
+        String prefix = PROJECT_CODE_PREFIX + datePart + "-";
+
+        LambdaQueryWrapper<Project> wrapper = new LambdaQueryWrapper<>();
+        wrapper.likeRight(Project::getProjectCode, prefix)
+               .orderByDesc(Project::getProjectCode)
+               .last("LIMIT 1");
+        Project last = projectMapper.selectOne(wrapper);
+
+        int seq = 1;
+        if (last != null && last.getProjectCode() != null) {
+            String code = last.getProjectCode();
+            String seqStr = code.substring(code.lastIndexOf('-') + 1);
+            seq = Integer.parseInt(seqStr) + 1;
+        }
+        return prefix + String.format("%03d", seq);
     }
 
     @Override
@@ -52,6 +80,9 @@ public class ProjectServiceImpl implements ProjectService {
     public void create(ProjectCreateDTO dto, Long creatorId) {
         Project project = new Project();
         project.setName(dto.getName());
+        // 项目编号：前端未传则自动生成，传了则使用前端值
+        project.setProjectCode(dto.getProjectCode() != null && !dto.getProjectCode().isBlank()
+                ? dto.getProjectCode() : generateProjectCode());
         project.setDescription(dto.getDescription());
         project.setCompanyId(dto.getCompanyId());
         project.setTeam(dto.getTeam());
@@ -69,6 +100,7 @@ public class ProjectServiceImpl implements ProjectService {
         Project project = new Project();
         project.setId(dto.getId());
         project.setName(dto.getName());
+        project.setProjectCode(dto.getProjectCode());
         project.setDescription(dto.getDescription());
         project.setCompanyId(dto.getCompanyId());
         project.setTeam(dto.getTeam());

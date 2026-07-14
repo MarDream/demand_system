@@ -91,4 +91,9 @@ public interface WorkflowConfigService {
     WorkflowValidationReport validateVersionReport(Long versionId);
 
     List<com.demand.system.module.workflow.dto.WorkflowValidationIssue> validateVersion(Long versionId);
+
+    /**
+     * 预校验工作流配置（不持久化）
+     */
+    WorkflowValidationReport validateConfig(WorkflowConfigDTO configDTO);
 }

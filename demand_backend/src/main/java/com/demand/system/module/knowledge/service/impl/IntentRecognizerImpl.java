@@ -3,10 +3,8 @@ package com.demand.system.module.knowledge.service.impl;
 import com.demand.system.module.knowledge.llm.LlmGateway;
 import com.demand.system.module.knowledge.llm.LlmGatewayConfig;
 import com.demand.system.module.knowledge.service.IntentRecognizer;
-import com.demand.system.module.llm.entity.LlmModel;
-import com.demand.system.module.llm.entity.LlmProvider;
-import com.demand.system.module.llm.mapper.LlmModelMapper;
-import com.demand.system.module.llm.mapper.LlmProviderMapper;
+import com.demand.system.module.llm.constant.LlmApplicationCode;
+import com.demand.system.module.llm.service.LlmModelResolver;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -43,17 +41,14 @@ public class IntentRecognizerImpl implements IntentRecognizer {
     private static final IntentResult FALLBACK = new IntentResult("通用问答", 0.5, null);
 
     private final LlmGateway llmGateway;
-    private final LlmModelMapper llmModelMapper;
-    private final LlmProviderMapper llmProviderMapper;
+    private final LlmModelResolver llmModelResolver;
     private final ObjectMapper objectMapper;
 
     public IntentRecognizerImpl(LlmGateway llmGateway,
-                                LlmModelMapper llmModelMapper,
-                                LlmProviderMapper llmProviderMapper,
+                                LlmModelResolver llmModelResolver,
                                 ObjectMapper objectMapper) {
         this.llmGateway = llmGateway;
-        this.llmModelMapper = llmModelMapper;
-        this.llmProviderMapper = llmProviderMapper;
+        this.llmModelResolver = llmModelResolver;
         this.objectMapper = objectMapper;
     }
 
@@ -134,30 +129,7 @@ public class IntentRecognizerImpl implements IntentRecognizer {
     }
 
     private LlmGatewayConfig.Provider resolveProvider() {
-        // 取一个启用的 Chat 模型用于意图识别
-        List<LlmModel> models = llmModelMapper.selectList(
-                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<LlmModel>()
-                        .eq(LlmModel::getEnabled, true)
-                        .notIn(LlmModel::getModelType, "embedding", "rerank")
-                        .orderByDesc(LlmModel::getIsDefault)
-                        .last("LIMIT 1")
-        );
-
-        if (models.isEmpty()) {
-            return null;
-        }
-
-        LlmModel model = models.get(0);
-        LlmProvider provider = llmProviderMapper.selectById(model.getProviderId());
-        if (provider == null || !Boolean.TRUE.equals(provider.getEnabled())) {
-            return null;
-        }
-
-        var chatProvider = new LlmGatewayConfig.Provider();
-        chatProvider.setProtocol(provider.getProtocol());
-        chatProvider.setBaseUrl(provider.getBaseUrl());
-        chatProvider.setApiKey(provider.getApiKey());
-        chatProvider.setModel(model.getModelId());
-        return chatProvider;
+        LlmModelResolver.ResolvedModel resolved = llmModelResolver.resolveFirst(LlmApplicationCode.KNOWLEDGE_INTENT);
+        return resolved == null ? null : llmModelResolver.toGatewayProvider(resolved);
     }
 }

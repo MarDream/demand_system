@@ -7,12 +7,14 @@ import com.demand.system.common.result.ErrorCode;
 import com.demand.system.module.knowledge.llm.LlmGateway;
 import com.demand.system.module.knowledge.llm.LlmGatewayConfig;
 import com.demand.system.module.llm.constant.LlmModelRole;
+import com.demand.system.module.llm.constant.LlmApplicationCode;
 import com.demand.system.module.llm.dto.*;
 import com.demand.system.module.llm.entity.LlmModel;
 import com.demand.system.module.llm.entity.LlmProvider;
 import com.demand.system.module.llm.mapper.LlmModelMapper;
 import com.demand.system.module.llm.mapper.LlmProviderMapper;
 import com.demand.system.module.llm.service.LlmProviderService;
+import com.demand.system.module.llm.service.LlmModelResolver;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,13 +28,16 @@ public class LlmProviderServiceImpl implements LlmProviderService {
     private final LlmProviderMapper providerMapper;
     private final LlmModelMapper modelMapper;
     private final LlmGateway llmGateway;
+    private final LlmModelResolver llmModelResolver;
 
     public LlmProviderServiceImpl(LlmProviderMapper providerMapper,
                                   LlmModelMapper modelMapper,
-                                  LlmGateway llmGateway) {
+                                  LlmGateway llmGateway,
+                                  LlmModelResolver llmModelResolver) {
         this.providerMapper = providerMapper;
         this.modelMapper = modelMapper;
         this.llmGateway = llmGateway;
+        this.llmModelResolver = llmModelResolver;
     }
 
     // ==================== Provider ====================
@@ -300,73 +305,46 @@ public class LlmProviderServiceImpl implements LlmProviderService {
 
     // ==================== Translate ====================
 
+    private static final String TRANSLATE_SYSTEM_PROMPT = """
+            你是一个专业的中英文翻译助手。你的任务是将中文角色名称翻译为英文编码。
+            规则：
+            1. 将中文翻译为对应的英文单词或短语
+            2. 使用大写字母
+            3. 多个单词之间用下划线连接
+            4. 只输出翻译结果，不要输出任何解释或额外内容
+            5. 翻译要简洁、专业、符合软件工程命名习惯
+            例如：
+            - 产品经理 → PRODUCT_MANAGER
+            - 技术负责人 → TECH_LEAD
+            - 测试人员 → TESTER
+            - 运维工程师 → OPS_ENGINEER
+            - 需求评审人 → DEMAND_REVIEWER
+            """;
+
     @Override
     public String translateToEnglish(String chineseText) {
         if (chineseText == null || chineseText.isBlank()) {
             return null;
         }
 
-        // 查找已启用的默认 Chat 模型
-        LlmModel defaultChatModel = modelMapper.selectOne(
-                new LambdaQueryWrapper<LlmModel>()
-                        .eq(LlmModel::getIsDefault, true)
-                        .eq(LlmModel::getEnabled, true)
-                        .notIn(LlmModel::getModelType, "embedding", "rerank")
-                        .last("LIMIT 1")
-        );
-        // fallback: 取第一个启用的非 embedding/rerank 模型
-        if (defaultChatModel == null) {
-            defaultChatModel = modelMapper.selectOne(
-                    new LambdaQueryWrapper<LlmModel>()
-                            .eq(LlmModel::getEnabled, true)
-                            .notIn(LlmModel::getModelType, "embedding", "rerank")
-                            .last("LIMIT 1")
-            );
-        }
-        if (defaultChatModel == null) {
-            return null;
-        }
-
-        LlmProvider provider = providerMapper.selectById(defaultChatModel.getProviderId());
-        if (provider == null || !Boolean.TRUE.equals(provider.getEnabled())) {
-            return null;
-        }
-
-        LlmGatewayConfig.Provider gwProvider = buildGatewayProvider(provider, defaultChatModel);
-
-        String systemPrompt = """
-                你是一个专业的中英文翻译助手。你的任务是将中文角色名称翻译为英文编码。
-                规则：
-                1. 将中文翻译为对应的英文单词或短语
-                2. 使用大写字母
-                3. 多个单词之间用下划线连接
-                4. 只输出翻译结果，不要输出任何解释或额外内容
-                5. 翻译要简洁、专业、符合软件工程命名习惯
-                例如：
-                - 产品经理 → PRODUCT_MANAGER
-                - 技术负责人 → TECH_LEAD
-                - 测试人员 → TESTER
-                - 运维工程师 → OPS_ENGINEER
-                - 需求评审人 → DEMAND_REVIEWER
-                """;
-
-        try {
-            LlmGateway.ChatResult result = llmGateway.chatWithProvider(
-                    gwProvider, systemPrompt, chineseText,
-                    java.math.BigDecimal.valueOf(0.1), 128
-            );
-            String content = result.getContent();
-            if (content != null && !content.isBlank()) {
-                // 清理可能的多余内容，只保留大写下划线格式
-                content = content.trim().replaceAll("[^A-Z0-9_]", "");
-                // 去除连续下划线和首尾下划线
-                content = content.replaceAll("_+", "_").replaceAll("^_|_$", "");
-                if (!content.isEmpty() && content.length() <= 50) {
-                    return content;
+        for (LlmModelResolver.ResolvedModel resolved : llmModelResolver.resolveCandidates(LlmApplicationCode.LLM_TRANSLATION)) {
+            try {
+                LlmGatewayConfig.Provider provider = llmModelResolver.toGatewayProvider(resolved);
+                LlmGateway.ChatResult chatResult = llmGateway.chatWithProvider(
+                        provider, TRANSLATE_SYSTEM_PROMPT, chineseText,
+                        java.math.BigDecimal.valueOf(0.1), 128
+                );
+                String content = chatResult.getContent();
+                if (content != null && !content.isBlank()) {
+                    content = content.trim().replaceAll("[^A-Z0-9_]", "");
+                    content = content.replaceAll("_+", "_").replaceAll("^_|_$", "");
+                    if (!content.isEmpty() && content.length() <= 50) {
+                        return content;
+                    }
                 }
+            } catch (Exception ignored) {
+                // 当前应用模型失败时继续尝试下一个兜底模型
             }
-        } catch (Exception e) {
-            // LLM 调用失败，返回 null 让前端走本地 fallback
         }
         return null;
     }

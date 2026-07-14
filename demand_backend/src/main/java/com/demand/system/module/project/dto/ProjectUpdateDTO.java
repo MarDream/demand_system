@@ -1,17 +1,17 @@
 package com.demand.system.module.project.dto;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 
 import java.time.LocalDate;
 
 public class ProjectUpdateDTO {
 
-    @NotNull(message = "项目ID不能为空")
     private Long id;
 
     @NotBlank(message = "项目名称不能为空")
     private String name;
+
+    private String projectCode;
 
     private String description;
 
@@ -43,6 +43,14 @@ public class ProjectUpdateDTO {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public String getProjectCode() {
+        return projectCode;
+    }
+
+    public void setProjectCode(String projectCode) {
+        this.projectCode = projectCode;
     }
 
     public String getDescription() {

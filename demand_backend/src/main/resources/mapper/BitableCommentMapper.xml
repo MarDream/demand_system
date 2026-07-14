@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demand.system.module.bitable.mapper.BitableCommentMapper">
+
+    <!-- 查询指定记录的所有未删除评论 -->
+    <select id="selectByRecordId" resultType="com.demand.system.module.bitable.entity.BitableComment">
+        SELECT id, record_id, table_id, user_id, content, quote_field_id,
+               parent_id, created_at, updated_at
+        FROM `bitable_comments`
+        WHERE record_id = #{recordId}
+          AND deleted_at = 0
+        ORDER BY created_at ASC
+    </select>
+
+    <!-- 查询指定数据表下的所有未删除评论 -->
+    <select id="selectByTableId" resultType="com.demand.system.module.bitable.entity.BitableComment">
+        SELECT id, record_id, table_id, user_id, content, quote_field_id,
+               parent_id, created_at, updated_at
+        FROM `bitable_comments`
+        WHERE table_id = #{tableId}
+          AND deleted_at = 0
+        ORDER BY created_at ASC
+    </select>
+
+</mapper>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demand.system.module.bitable.mapper.BitableFieldMapper">
+
+    <!-- 按数据表ID查询所有未删除的字段 -->
+    <select id="selectByTableId" resultType="com.demand.system.module.bitable.entity.BitableField">
+        SELECT id, table_id, name, field_type, config, required, ai_prompt,
+               is_ai_field, sort_order, width, created_at, updated_at
+        FROM `bitable_fields`
+        WHERE table_id = #{tableId}
+          AND deleted_at = 0
+        ORDER BY sort_order ASC, created_at ASC
+    </select>
+
+    <!-- 统计指定数据表下的字段数量 -->
+    <select id="countByTableId" resultType="int">
+        SELECT COUNT(*)
+        FROM `bitable_fields`
+        WHERE table_id = #{tableId}
+          AND deleted_at = 0
+    </select>
+
+    <!-- 更新字段排序 -->
+    <update id="updateSortOrder">
+        UPDATE `bitable_fields`
+        SET sort_order = #{sortOrder},
+            updated_at = NOW()
+        WHERE id = #{id}
+          AND deleted_at = 0
+    </update>
+
+</mapper>

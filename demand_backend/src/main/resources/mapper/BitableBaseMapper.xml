@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demand.system.module.bitable.mapper.BitableBaseMapper">
+
+    <!-- 查询某用户创建的所有多维表格容器 -->
+    <select id="selectByCreator" resultType="com.demand.system.module.bitable.entity.BitableBase">
+        SELECT id, name, description, icon, cover_color, project_id, creator_id,
+               is_template, sort_order, created_at, updated_at
+        FROM `bitable_bases`
+        WHERE creator_id = #{userId}
+          AND deleted_at = 0
+        ORDER BY sort_order ASC, created_at DESC
+    </select>
+
+    <!-- 查询某用户是成员的所有多维表格容器（去重） -->
+    <select id="selectByMember" resultType="com.demand.system.module.bitable.entity.BitableBase">
+        SELECT DISTINCT b.id, b.name, b.description, b.icon, b.cover_color,
+               b.project_id, b.creator_id, b.is_template, b.sort_order,
+               b.created_at, b.updated_at
+        FROM `bitable_bases` b
+        INNER JOIN `bitable_base_members` m ON m.base_id = b.id
+        WHERE m.user_id = #{userId}
+          AND b.deleted_at = 0
+        ORDER BY b.sort_order ASC, b.created_at DESC
+    </select>
+
+    <!-- 查询多维表格容器详情，包含数据表数量聚合 -->
+    <select id="selectDetailById" resultType="com.demand.system.module.bitable.entity.BitableBase">
+        SELECT b.id, b.name, b.description, b.icon, b.cover_color,
+               b.project_id, b.creator_id, b.is_template, b.sort_order,
+               b.created_at, b.updated_at,
+               COUNT(t.id) AS table_count
+        FROM `bitable_bases` b
+        LEFT JOIN `bitable_tables` t ON t.base_id = b.id AND t.deleted_at = 0
+        WHERE b.id = #{id}
+          AND b.deleted_at = 0
+        GROUP BY b.id
+    </select>
+
+</mapper>

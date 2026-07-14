@@ -9,6 +9,8 @@ public class ProjectCreateDTO {
     @NotBlank(message = "项目名称不能为空")
     private String name;
 
+    private String projectCode;
+
     private String description;
 
     private Long companyId;
@@ -29,6 +31,14 @@ public class ProjectCreateDTO {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public String getProjectCode() {
+        return projectCode;
+    }
+
+    public void setProjectCode(String projectCode) {
+        this.projectCode = projectCode;
     }
 
     public String getDescription() {

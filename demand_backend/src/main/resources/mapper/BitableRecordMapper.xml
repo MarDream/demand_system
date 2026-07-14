@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demand.system.module.bitable.mapper.BitableRecordMapper">
+
+    <!-- 按数据表ID分页查询未删除的记录行 -->
+    <select id="selectByTableId" resultType="com.demand.system.module.bitable.entity.BitableRecord">
+        SELECT id, table_id, sort_order, created_by, created_at, updated_by, updated_at, version
+        FROM `bitable_records`
+        WHERE table_id = #{tableId}
+          AND deleted_at = 0
+        ORDER BY sort_order ASC, created_at ASC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- 统计指定数据表下的记录行数量 -->
+    <select id="countByTableId" resultType="int">
+        SELECT COUNT(*)
+        FROM `bitable_records`
+        WHERE table_id = #{tableId}
+          AND deleted_at = 0
+    </select>
+
+    <!-- 物理删除指定数据表下的所有记录行（删除表时级联） -->
+    <delete id="deleteByTableId">
+        DELETE FROM `bitable_records`
+        WHERE table_id = #{tableId}
+    </delete>
+
+</mapper>

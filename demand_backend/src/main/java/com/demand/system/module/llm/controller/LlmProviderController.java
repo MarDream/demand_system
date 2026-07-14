@@ -162,7 +162,11 @@ public class LlmProviderController {
     public ResponseEntity<Map<String, Object>> translate(@RequestBody Map<String, String> body) {
         String text = body.get("text");
         String result = providerService.translateToEnglish(text);
-        return ResponseEntity.ok(Map.of("code", 200, "message", "操作成功", "data", result));
+        Map<String, Object> response = new java.util.LinkedHashMap<>();
+        response.put("code", 200);
+        response.put("message", "操作成功");
+        response.put("data", result);
+        return ResponseEntity.ok(response);
     }
 
     // ==================== Sniff ====================

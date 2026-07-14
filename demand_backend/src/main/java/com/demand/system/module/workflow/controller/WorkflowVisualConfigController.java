@@ -191,4 +191,13 @@ public class WorkflowVisualConfigController {
     public Result<List<com.demand.system.module.workflow.dto.WorkflowValidationIssue>> validateVersion(@PathVariable Long versionId) {
         return Result.success(workflowConfigService.validateVersion(versionId));
     }
+
+    /**
+     * 预校验工作流配置（不持久化，用于保存草稿前的提示）
+     */
+    @PostMapping("/workflows/validate-config")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
+    public Result<WorkflowValidationReport> validateConfig(@RequestBody WorkflowConfigDTO configDTO) {
+        return Result.success(workflowConfigService.validateConfig(configDTO));
+    }
 }

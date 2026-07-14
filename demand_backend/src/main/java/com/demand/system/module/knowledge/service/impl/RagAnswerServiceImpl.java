@@ -1,21 +1,17 @@
 package com.demand.system.module.knowledge.service.impl;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.ErrorCode;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse;
 import com.demand.system.module.knowledge.llm.LlmGateway;
 import com.demand.system.module.knowledge.llm.LlmGatewayConfig;
 import com.demand.system.module.knowledge.service.RagAnswerService;
-import com.demand.system.module.llm.entity.LlmModel;
-import com.demand.system.module.llm.entity.LlmProvider;
-import com.demand.system.module.llm.mapper.LlmModelMapper;
-import com.demand.system.module.llm.mapper.LlmProviderMapper;
+import com.demand.system.module.llm.constant.LlmApplicationCode;
+import com.demand.system.module.llm.service.LlmModelResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
@@ -53,15 +49,12 @@ public class RagAnswerServiceImpl implements RagAnswerService {
             """;
 
     private final LlmGateway llmGateway;
-    private final LlmModelMapper llmModelMapper;
-    private final LlmProviderMapper llmProviderMapper;
+    private final LlmModelResolver llmModelResolver;
 
     public RagAnswerServiceImpl(LlmGateway llmGateway,
-                               LlmModelMapper llmModelMapper,
-                               LlmProviderMapper llmProviderMapper) {
+                               LlmModelResolver llmModelResolver) {
         this.llmGateway = llmGateway;
-        this.llmModelMapper = llmModelMapper;
-        this.llmProviderMapper = llmProviderMapper;
+        this.llmModelResolver = llmModelResolver;
     }
 
     @Override
@@ -154,81 +147,39 @@ public class RagAnswerServiceImpl implements RagAnswerService {
      * 排除 embedding 和 rerank 类型，只取对话模型。
      */
     private List<ChatProviderResolution> resolveChatProviders() {
-        List<LlmModel> models = llmModelMapper.selectList(
-                new LambdaQueryWrapper<LlmModel>()
-                        .eq(LlmModel::getEnabled, true)
-                        .notIn(LlmModel::getModelType, "embedding", "rerank")
-                        .orderByDesc(LlmModel::getIsDefault)
-                        .orderByAsc(LlmModel::getId)
-        );
-
-        if (models.isEmpty()) {
+        List<LlmModelResolver.ResolvedModel> resolvedModels =
+                llmModelResolver.resolveCandidates(LlmApplicationCode.KNOWLEDGE_ANSWER);
+        if (resolvedModels.isEmpty()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "请先配置可用的 Chat 对话模型。");
         }
 
         List<ChatProviderResolution> resolutions = new ArrayList<>();
-        List<String> skippedReasons = new ArrayList<>();
-
-        for (LlmModel model : models) {
-            LlmProvider provider = llmProviderMapper.selectById(model.getProviderId());
-            if (provider == null) {
-                skippedReasons.add(String.format("模型[%s]接入组不存在", model.getModelId()));
-                continue;
-            }
-            if (!Boolean.TRUE.equals(provider.getEnabled())) {
-                skippedReasons.add(String.format("模型[%s]接入组[%s]未启用", model.getModelId(), provider.getName()));
-                continue;
-            }
-
-            LlmGatewayConfig.Provider chatProvider = new LlmGatewayConfig.Provider();
-            chatProvider.setProtocol(provider.getProtocol());
-            chatProvider.setBaseUrl(provider.getBaseUrl());
-            chatProvider.setApiKey(provider.getApiKey());
-            chatProvider.setModel(model.getModelId());
-
-            resolutions.add(new ChatProviderResolution(chatProvider, model.getTemperature(), model.getMaxTokens()));
+        for (LlmModelResolver.ResolvedModel resolved : resolvedModels) {
+            LlmGatewayConfig.Provider provider = llmModelResolver.toGatewayProvider(resolved);
+            resolutions.add(new ChatProviderResolution(
+                    provider,
+                    resolved.model().getTemperature(),
+                    resolved.model().getMaxTokens()
+            ));
         }
-
-        if (resolutions.isEmpty()) {
-            String detail = skippedReasons.isEmpty() ? "" : "（" + String.join("；", skippedReasons) + "）";
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "请先配置可用的 Chat 对话模型。" + detail);
-        }
-
-        if (!skippedReasons.isEmpty()) {
-            log.warn("Chat: 以下模型因配置问题被跳过: {}", String.join("；", skippedReasons));
-        }
-
-        log.info("Chat: 可用模型列表(默认优先): {}", resolutions.stream().map(r -> r.provider().getModel()).toList());
+        log.info("Chat: 应用[{}]可用模型列表(应用指定优先): {}",
+                LlmApplicationCode.KNOWLEDGE_ANSWER,
+                resolutions.stream().map(r -> r.provider().getModel()).toList());
         return resolutions;
     }
 
     private ChatProviderResolution buildProviderFromModel(Long modelId) {
-        LlmModel model = llmModelMapper.selectById(modelId);
-        if (model == null) {
-            throw new RuntimeException("所选问答模型不存在");
-        }
-        if (!Boolean.TRUE.equals(model.getEnabled())) {
-            throw new RuntimeException("所选问答模型未启用");
-        }
-        return buildProviderFromModelEntity(model);
-    }
-
-    private ChatProviderResolution buildProviderFromModelEntity(LlmModel model) {
-        LlmProvider provider = llmProviderMapper.selectById(model.getProviderId());
-        if (provider == null) {
-            throw new RuntimeException("所选模型的接入组不存在");
-        }
-        if (!Boolean.TRUE.equals(provider.getEnabled())) {
-            throw new RuntimeException("所选模型的接入组未启用");
+        LlmModelResolver.ResolvedModel resolved =
+                llmModelResolver.resolveModel(modelId, LlmApplicationCode.KNOWLEDGE_ANSWER);
+        if (resolved == null) {
+            throw new RuntimeException("所选问答模型不存在、未启用或类型不匹配");
         }
 
-        LlmGatewayConfig.Provider chatProvider = new LlmGatewayConfig.Provider();
-        chatProvider.setProtocol(provider.getProtocol());
-        chatProvider.setBaseUrl(provider.getBaseUrl());
-        chatProvider.setApiKey(provider.getApiKey());
-        chatProvider.setModel(model.getModelId());
-
-        return new ChatProviderResolution(chatProvider, model.getTemperature(), model.getMaxTokens());
+        return new ChatProviderResolution(
+                llmModelResolver.toGatewayProvider(resolved),
+                resolved.model().getTemperature(),
+                resolved.model().getMaxTokens()
+        );
     }
 
     /**

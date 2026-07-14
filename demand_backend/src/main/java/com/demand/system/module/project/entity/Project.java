@@ -15,6 +15,8 @@ public class Project {
 
     private String name;
 
+    private String projectCode;
+
     private String description;
 
     private Long companyId;
@@ -54,6 +56,14 @@ public class Project {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public String getProjectCode() {
+        return projectCode;
+    }
+
+    public void setProjectCode(String projectCode) {
+        this.projectCode = projectCode;
     }
 
     public String getDescription() {

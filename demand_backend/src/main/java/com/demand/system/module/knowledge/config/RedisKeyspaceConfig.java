@@ -26,7 +26,7 @@ public class RedisKeyspaceConfig {
     private static final Logger log = LoggerFactory.getLogger(RedisKeyspaceConfig.class);
 
     @Bean
-    public RedisMessageListenerContainer redisMessageListenerContainer(
+    public RedisMessageListenerContainer keyspaceListenerContainer(
             RedisConnectionFactory connectionFactory,
             DocumentTimeoutKeyListener listener) {
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();

@@ -180,7 +180,7 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
                     .eq(WorkflowNode::getWorkflowVersionId, existingVersion.getId()));
             List<WorkflowEdge> savedEdges = workflowEdgeMapper.selectList(new LambdaQueryWrapper<WorkflowEdge>()
                     .eq(WorkflowEdge::getWorkflowVersionId, existingVersion.getId()));
-            workflowGraphValidator.validateOrThrow(savedNodes, savedEdges);
+            List<WorkflowValidationIssue> issuesA = workflowGraphValidator.validate(savedNodes, savedEdges);
             WorkflowGraphCompiler.CompiledWorkflow compiled = workflowGraphCompiler.compile(existingVersion.getId(), savedNodes, savedEdges);
             existingVersion.setDefinition(compiled.definitionJson());
             existingVersion.setRuntimeHash(compiled.runtimeHash());
@@ -213,7 +213,9 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             workflowVersionMapper.updateById(existingVersion);
 
             log.info("更新工作流版本成功，projectId={}, versionId={}, status={}", normalizedProjectId, existingVersion.getId(), existingVersion.getActivationStatus());
-            return toVersionDTO(existingVersion);
+            WorkflowVersionDTO dto = toVersionDTO(existingVersion);
+            dto.setValidationIssues(issuesA);
+            return dto;
         }
 
         // 场景B：无 versionId → 新建草稿版本
@@ -249,7 +251,7 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
                 .eq(WorkflowNode::getWorkflowVersionId, draftVersion.getId()));
         List<WorkflowEdge> savedEdges = workflowEdgeMapper.selectList(new LambdaQueryWrapper<WorkflowEdge>()
                 .eq(WorkflowEdge::getWorkflowVersionId, draftVersion.getId()));
-        workflowGraphValidator.validateOrThrow(savedNodes, savedEdges);
+        List<WorkflowValidationIssue> issuesB = workflowGraphValidator.validate(savedNodes, savedEdges);
         WorkflowGraphCompiler.CompiledWorkflow compiled = workflowGraphCompiler.compile(draftVersion.getId(), savedNodes, savedEdges);
         draftVersion.setDefinition(compiled.definitionJson());
         draftVersion.setRuntimeHash(compiled.runtimeHash());
@@ -257,7 +259,9 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         workflowVersionMapper.updateById(draftVersion);
 
         log.info("新建工作流草稿成功，projectId={}, versionId={}, version={}", normalizedProjectId, draftVersion.getId(), draftVersion.getVersion());
-        return toVersionDTO(draftVersion);
+        WorkflowVersionDTO dto = toVersionDTO(draftVersion);
+        dto.setValidationIssues(issuesB);
+        return dto;
     }
 
     /**
@@ -430,8 +434,9 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         List<WorkflowEdge> edges = workflowEdgeMapper.selectList(new LambdaQueryWrapper<WorkflowEdge>()
                 .eq(WorkflowEdge::getWorkflowVersionId, draftVersion.getId()));
         WorkflowValidationReport validationReport = buildValidationReport(draftVersion, nodes, edges, false);
-        if (!validationReport.isCanSubmit()) {
-            throw new BusinessException(400, "工作流配置存在错误，请修复后再提交审核", validationReport);
+        // 任何校验问题（error/warning/info）都拦截提交审核
+        if (validationReport.getErrorCount() > 0 || validationReport.getWarningCount() > 0 || validationReport.getInfoCount() > 0) {
+            throw new BusinessException(400, "工作流配置存在异常，请修复后再提交审核", validationReport);
         }
 
         draftVersion.setActivationStatus("pending");
@@ -577,6 +582,53 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
     @Override
     public List<WorkflowValidationIssue> validateVersion(Long versionId) {
         return validateVersionReport(versionId).getIssues();
+    }
+
+    @Override
+    public WorkflowValidationReport validateConfig(WorkflowConfigDTO configDTO) {
+        // 基本结构校验，无效结构抛异常
+        validateConfigStructure(configDTO);
+
+        // 将 DTO 转换为临时实体以进行校验
+        List<WorkflowNode> tempNodes = configDTO.getNodes() == null ? List.of() :
+            configDTO.getNodes().stream().map(dto -> {
+                WorkflowNode node = new WorkflowNode();
+                node.setNodeId(dto.getNodeId());
+                node.setNodeType(dto.getNodeType());
+                node.setNodeName(dto.getNodeName());
+                node.setPositionX(dto.getPositionX());
+                node.setPositionY(dto.getPositionY());
+                node.setAssigneeType(dto.getAssigneeType());
+                node.setAssigneeRoleId(dto.getAssigneeRoleId());
+                node.setAssigneeRoleGroupId(dto.getAssigneeRoleGroupId());
+                node.setAssigneeOrgId(dto.getAssigneeOrgId());
+                node.setAssigneeUserIds(dto.getAssigneeUserIds());
+                node.setTimeoutHours(dto.getTimeoutHours());
+                node.setTimeoutAction(dto.getTimeoutAction());
+                node.setProperties(dto.getProperties());
+                return node;
+            }).toList();
+
+        List<WorkflowEdge> tempEdges = configDTO.getEdges() == null ? List.of() :
+            configDTO.getEdges().stream().map(dto -> {
+                WorkflowEdge edge = new WorkflowEdge();
+                edge.setEdgeId(dto.getEdgeId());
+                edge.setSourceNodeId(dto.getSourceNodeId());
+                edge.setTargetNodeId(dto.getTargetNodeId());
+                edge.setLabel(dto.getLabel());
+                edge.setCondition(dto.getCondition());
+                edge.setProperties(dto.getProperties());
+                return edge;
+            }).toList();
+
+        List<WorkflowValidationIssue> issues = workflowGraphValidator.validate(tempNodes, tempEdges);
+        WorkflowValidationReport report = new WorkflowValidationReport();
+        report.setVersion(StringUtils.hasText(configDTO.getVersion()) ? configDTO.getVersion() : null);
+        report.setVersionName(StringUtils.hasText(configDTO.getVersionName()) ? configDTO.getVersionName() : null);
+        report.setValidatedAt(LocalDateTime.now());
+        report.setIssues(issues);
+        report.computeSummary();
+        return report;
     }
 
     private WorkflowValidationReport buildValidationReport(WorkflowVersion version, List<WorkflowNode> nodes,

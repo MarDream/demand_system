@@ -8,10 +8,12 @@ import com.demand.system.module.knowledge.llm.LlmGatewayConfig;
 import com.demand.system.module.knowledge.service.EmbeddingService;
 import com.demand.system.module.knowledge.config.MilvusConfig;
 import com.demand.system.module.knowledge.vectorstore.MilvusVectorStore;
+import com.demand.system.module.llm.constant.LlmApplicationCode;
 import com.demand.system.module.llm.entity.LlmModel;
 import com.demand.system.module.llm.entity.LlmProvider;
 import com.demand.system.module.llm.mapper.LlmModelMapper;
 import com.demand.system.module.llm.mapper.LlmProviderMapper;
+import com.demand.system.module.llm.service.LlmModelResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -27,6 +29,7 @@ public class EmbeddingServiceImpl implements EmbeddingService {
     private final LlmGateway llmGateway;
     private final LlmModelMapper llmModelMapper;
     private final LlmProviderMapper llmProviderMapper;
+    private final LlmModelResolver llmModelResolver;
     private final MilvusConfig milvusConfig;
     private final MilvusVectorStore milvusVectorStore;
 
@@ -36,11 +39,13 @@ public class EmbeddingServiceImpl implements EmbeddingService {
     public EmbeddingServiceImpl(LlmGateway llmGateway,
                                 LlmModelMapper llmModelMapper,
                                 LlmProviderMapper llmProviderMapper,
+                                LlmModelResolver llmModelResolver,
                                 MilvusConfig milvusConfig,
                                 MilvusVectorStore milvusVectorStore) {
         this.llmGateway = llmGateway;
         this.llmModelMapper = llmModelMapper;
         this.llmProviderMapper = llmProviderMapper;
+        this.llmModelResolver = llmModelResolver;
         this.milvusConfig = milvusConfig;
         this.milvusVectorStore = milvusVectorStore;
     }
@@ -94,23 +99,9 @@ public class EmbeddingServiceImpl implements EmbeddingService {
 
     @Override
     public EmbeddingModelConfig getDefaultModelConfig() {
-        // 查默认 embedding 模型
-        LlmModel defaultModel = llmModelMapper.selectOne(
-                new LambdaQueryWrapper<LlmModel>()
-                        .eq(LlmModel::getModelType, "embedding")
-                        .eq(LlmModel::getIsDefault, true)
-                        .eq(LlmModel::getEnabled, true)
-                        .last("LIMIT 1")
-        );
-
-        if (defaultModel == null) {
-            defaultModel = llmModelMapper.selectOne(
-                    new LambdaQueryWrapper<LlmModel>()
-                            .eq(LlmModel::getModelType, "embedding")
-                            .eq(LlmModel::getEnabled, true)
-                            .last("LIMIT 1")
-            );
-        }
+        // 优先读取知识库向量化应用配置，再回退到 embedding 默认模型
+        LlmModelResolver.ResolvedModel resolved = llmModelResolver.resolveFirst(LlmApplicationCode.KNOWLEDGE_EMBEDDING);
+        LlmModel defaultModel = resolved != null ? resolved.model() : null;
 
         if (defaultModel == null) {
             return null;
@@ -152,64 +143,28 @@ public class EmbeddingServiceImpl implements EmbeddingService {
      * 同时校验接入组存在且已启用。
      */
     private List<LlmGatewayConfig.Provider> resolveAllProviders(String modelType, String label) {
-        // 1. 查出该类型下所有启用的模型，默认排前面
-        List<LlmModel> models = llmModelMapper.selectList(
-                new LambdaQueryWrapper<LlmModel>()
-                        .eq(LlmModel::getModelType, modelType)
-                        .eq(LlmModel::getEnabled, true)
-                        .orderByDesc(LlmModel::getIsDefault)
-                        .orderByAsc(LlmModel::getId)
-        );
-
-        if (models.isEmpty()) {
+        String applicationCode = "embedding".equalsIgnoreCase(modelType)
+                ? LlmApplicationCode.KNOWLEDGE_EMBEDDING
+                : LlmApplicationCode.KNOWLEDGE_RERANK;
+        List<LlmModelResolver.ResolvedModel> resolvedModels = llmModelResolver.resolveCandidates(applicationCode);
+        if (resolvedModels.isEmpty()) {
             throw missingModelConfig(modelType, label);
         }
 
-        // 2. 逐个校验接入组，构建 Provider 列表
         List<LlmGatewayConfig.Provider> providers = new ArrayList<>();
-        List<String> skippedReasons = new ArrayList<>();
-
-        for (LlmModel model : models) {
-            LlmProvider provider = llmProviderMapper.selectById(model.getProviderId());
-            if (provider == null) {
-                skippedReasons.add(String.format("模型[%s]接入组不存在", model.getModelId()));
-                continue;
-            }
-            if (!Boolean.TRUE.equals(provider.getEnabled())) {
-                skippedReasons.add(String.format("模型[%s]接入组[%s]未启用", model.getModelId(), provider.getName()));
-                continue;
-            }
-
-            LlmGatewayConfig.Provider gwProvider = new LlmGatewayConfig.Provider();
-            gwProvider.setProtocol(provider.getProtocol());
-            gwProvider.setBaseUrl(provider.getBaseUrl());
-            gwProvider.setApiKey(provider.getApiKey());
-            gwProvider.setModel(model.getModelId());
-            if (model.getDimension() != null) {
-                gwProvider.setDimension(String.valueOf(model.getDimension()));
-            }
-            providers.add(gwProvider);
-
-            // 缓存默认 embedding 模型的维度
-            if ("embedding".equals(modelType) && Boolean.TRUE.equals(model.getIsDefault()) && model.getDimension() != null) {
-                cachedEmbeddingDimension = model.getDimension();
-                checkDimensionCompatibility(model.getDimension());
+        for (LlmModelResolver.ResolvedModel resolved : resolvedModels) {
+            LlmGatewayConfig.Provider provider = llmModelResolver.toGatewayProvider(resolved);
+            providers.add(provider);
+            if ("embedding".equalsIgnoreCase(modelType) && resolved.model().getDimension() != null) {
+                if (cachedEmbeddingDimension < 0) {
+                    cachedEmbeddingDimension = resolved.model().getDimension();
+                    checkDimensionCompatibility(resolved.model().getDimension());
+                }
             }
         }
 
-        if (providers.isEmpty()) {
-            String detail = skippedReasons.isEmpty() ? "" : "（" + String.join("；", skippedReasons) + "）";
-            throw new BusinessException(
-                    ErrorCode.BAD_REQUEST,
-                    String.format("请先配置可用的%s。%s", label, detail)
-            );
-        }
-
-        if (!skippedReasons.isEmpty()) {
-            log.warn("{}: 以下模型因配置问题被跳过: {}", label, String.join("；", skippedReasons));
-        }
-
-        log.info("{}: 可用模型列表(默认优先): {}", label, providers.stream().map(LlmGatewayConfig.Provider::getModel).toList());
+        log.info("{}: 应用配置[{}]可用模型列表(应用指定优先): {}", label, applicationCode,
+                providers.stream().map(LlmGatewayConfig.Provider::getModel).toList());
         return providers;
     }
 
