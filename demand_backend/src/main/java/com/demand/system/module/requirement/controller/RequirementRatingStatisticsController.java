@@ -16,7 +16,7 @@ import java.util.Map;
  * 对应 ADR-002 Phase 2: 统计分析
  */
 @RestController
-@RequestMapping("/v1/statistics/rating")
+@RequestMapping("/api/v1/statistics/rating")
 public class RequirementRatingStatisticsController {
 
     @Autowired

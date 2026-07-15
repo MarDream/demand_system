@@ -594,6 +594,7 @@ import WorkflowCopyDialog from './components/WorkflowCopyDialog.vue'
 import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import { formatDate as formatDateTime } from '@/utils/format'
 import { resolveActiveMenuPath } from '@/utils/menuNavigation'
+import { resolveErrorMessage } from '@/utils/error'
 import { isWorkflowVersion, sameWorkflowVersion } from '@/utils/workflowVersion'
 import { usePermission } from '@/composables/usePermission'
 import {
@@ -987,7 +988,7 @@ async function loadVersions() {
       pagination.page = maxPage
     }
   } catch (error) {
-    ElMessage.error('加载工作流版本失败')
+    ElMessage.error(resolveErrorMessage(error, '加载工作流版本失败'))
     versions.value = []
   } finally {
     versionLoading.value = false
@@ -999,7 +1000,7 @@ async function loadApprovals() {
   try {
     approvals.value = await getWorkflowApprovals() || []
   } catch (error) {
-    ElMessage.error('加载工作流审核记录失败')
+    ElMessage.error(resolveErrorMessage(error, '加载工作流审核记录失败'))
     approvals.value = []
   } finally {
     approvalLoading.value = false
@@ -1010,7 +1011,8 @@ async function loadRequirementTypes() {
   try {
     const res = await requirementConfigApi.listTypes()
     requirementTypes.value = Array.isArray(res) ? res : []
-  } catch {
+  } catch (error) {
+    console.error(error)
     requirementTypes.value = []
   }
 }
@@ -1137,8 +1139,7 @@ async function handleToggleEvaluation(row: WorkflowVersionDTO) {
     ElMessage.success(enabled ? '评价已开启' : '评价已关闭')
     await loadVersions()
   } catch (error) {
-    const errorMsg = (error as any)?.response?.data?.message || (error as Error)?.message || '操作失败'
-    ElMessage.error(errorMsg)
+    ElMessage.error(resolveErrorMessage(error, '操作失败'))
   }
 }
 
@@ -1217,8 +1218,9 @@ async function openDetail(row: WorkflowApprovalDTO) {
   try {
     const version = await getVersionConfig(row.workflowVersionId)
     detailVersionConfig.value = version.config || null
-  } catch {
-    ElMessage.error('加载流程详情失败')
+  } catch (error) {
+    console.error(error)
+    ElMessage.error(resolveErrorMessage(error, '加载流程详情失败'))
   } finally {
     detailLoading.value = false
   }
@@ -1319,8 +1321,7 @@ async function confirmProcess() {
       detailTask.value = approvals.value.find(item => item.id === currentTask.value?.id) || null
     }
   } catch (error) {
-    const errorMsg = (error as any)?.response?.data?.message || (error as Error)?.message || '操作失败'
-    ElMessage.error(errorMsg)
+    ElMessage.error(resolveErrorMessage(error, '操作失败'))
   } finally {
     submitting.value = false
   }
@@ -1354,7 +1355,7 @@ async function handleExportWorkflow(row: WorkflowVersionDTO) {
     ElMessage.success('工作流已导出')
   }
   catch (error) {
-    ElMessage.error('导出失败')
+    ElMessage.error(resolveErrorMessage(error, '导出失败'))
     console.error(error)
   }
 }
@@ -1409,8 +1410,7 @@ function handleImportWorkflow() {
       if (error === 'cancel')
         return
 
-      const message = error?.response?.data?.message || error?.message || '导入失败'
-      ElMessage.error(message)
+      ElMessage.error(resolveErrorMessage(error, '导入失败'))
       console.error(error)
     }
   }

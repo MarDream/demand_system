@@ -20,6 +20,8 @@ public class RoleGroup {
 
     private Integer sortOrder;
 
+    private Integer isDefault;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
@@ -57,6 +59,14 @@ public class RoleGroup {
 
     public void setSortOrder(Integer sortOrder) {
         this.sortOrder = sortOrder;
+    }
+
+    public Integer getIsDefault() {
+        return isDefault;
+    }
+
+    public void setIsDefault(Integer isDefault) {
+        this.isDefault = isDefault;
     }
 
     public LocalDateTime getCreatedAt() {

@@ -19,6 +19,8 @@ public class BitableFieldUpdateDTO {
 
     private Integer width;
 
+    private String description;
+
     public String getName() {
         return name;
     }
@@ -73,5 +75,13 @@ public class BitableFieldUpdateDTO {
 
     public void setWidth(Integer width) {
         this.width = width;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
     }
 }

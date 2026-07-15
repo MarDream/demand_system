@@ -330,7 +330,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, h, defineComponent, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, type RouteLocationRaw } from 'vue-router'
 import { Document, List, ArrowRight } from '@element-plus/icons-vue'
 import StatCardPro from '@/components/common/StatCardPro.vue'
 import AppButton from '@/components/common/AppButton.vue'
@@ -455,7 +455,7 @@ const COLORS = {
 
 // 已完成卡片路由：先获取结束状态列表，再构造带 nodeStatus 过滤的路由
 const endNodeStatusCodes = ref<string[]>([])
-const completedRoute = computed<Record<string, any>>(() => {
+const completedRoute = computed<RouteLocationRaw>(() => {
   if (endNodeStatusCodes.value.length > 0) {
     return { name: 'Requirements', query: { nodeStatus: endNodeStatusCodes.value.join(',') } }
   }
@@ -477,7 +477,7 @@ async function loadEndNodeStatuses() {
 const statCardsPro = computed(() => [
   { icon: SvgIconTotal, label: '总需求数', value: statsData.value?.totalReqs ?? 0, tip: '全部需求', gradientStart: COLORS.accent, gradientEnd: COLORS.accentHover, trend: null, route: { name: 'Requirements' } },
   { icon: SvgIconProgress, label: '进行中需求', value: statsData.value?.inProgressReqs ?? 0, tip: '开发中', gradientStart: COLORS.amber, gradientEnd: COLORS.amberHover, trend: null, route: { name: 'Requirements', query: { nodeStatus: 'IN_DEVELOPMENT' } } },
-  { icon: SvgIconDone, label: '已完成', value: statsData.value?.completedReqs ?? 0, tip: '已交付', gradientStart: COLORS.emerald, gradientEnd: COLORS.emeraldHover, trend: null, route: completedRoute },
+  { icon: SvgIconDone, label: '已完成', value: statsData.value?.completedReqs ?? 0, tip: '已交付', gradientStart: COLORS.emerald, gradientEnd: COLORS.emeraldHover, trend: null, route: completedRoute.value },
   { icon: SvgIconAlert, label: '已逾期', value: statsData.value?.overdueReqs ?? 0, tip: '超过截止日期', gradientStart: COLORS.red, gradientEnd: COLORS.redHover, trend: null, route: { name: 'Requirements', query: { isOverdue: 'true' } } },
 ])
 

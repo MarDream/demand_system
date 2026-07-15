@@ -219,8 +219,8 @@ public class AssistantServiceImpl implements AssistantService {
                 emitter.send(SseEmitter.event().name("error").data(Map.of(
                         "message", e.getMessage() != null ? e.getMessage() : "操作助手响应失败"
                 )));
-            } catch (Exception ignored) {
-                // ignore client disconnect errors
+            } catch (Exception ex) {
+                log.debug("SSE 发送 error 事件失败(客户端可能已断开)", ex);
             }
             emitter.completeWithError(e);
         }

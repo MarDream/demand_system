@@ -113,6 +113,8 @@ import {
   type RequirementType,
 } from '@/api/modules/requirementConfig'
 import { normalizeText, stripPriorityPrefix } from '@/utils/format'
+import { ElMessage } from 'element-plus'
+import { resolveErrorMessage } from '@/utils/error'
 
 type RequirementFormModel = Partial<RequirementCreate & RequirementUpdate>
 
@@ -146,6 +148,7 @@ async function loadUsers() {
     const res = await userApi.getUserList({ pageNum: 1, pageSize: 100 }) as any
     userList.value = res.list
   } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '加载用户列表失败'))
   }
 }
 
@@ -155,6 +158,7 @@ async function loadIterations() {
     const res = await iterationApi.getIterationList(props.projectId) as any
     iterationList.value = res
   } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '加载迭代列表失败'))
   }
 }
 
@@ -175,6 +179,7 @@ async function loadConfigOptions() {
       name: stripPriorityPrefix(normalizeText(priority.name)),
     }))
   } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '加载配置选项失败'))
   }
 }
 

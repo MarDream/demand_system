@@ -165,7 +165,14 @@
                 <div class="message-bubble__role">
                   {{ message.role === 'user' ? '提问' : '检索回答' }}
                 </div>
-                <div class="message-bubble__content">{{ message.content }}</div>
+                <MarkdownContent
+                  v-if="message.role === 'assistant'"
+                  :content="message.content"
+                  :citations="message.citations"
+                  class="message-bubble__content"
+                  @citation-click="handleCitationClick(message, $event)"
+                />
+                <div v-else class="message-bubble__content">{{ message.content }}</div>
 
                 <div v-if="message.role === 'user'" class="message-bubble__actions">
                   <el-tooltip content="复制提问" placement="top">
@@ -496,19 +503,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowDown, ArrowLeft, ArrowRight, Delete, Document, DocumentCopy, Plus, RefreshRight, View } from '@element-plus/icons-vue'
 import PageContainer from '@/components/common/PageContainer.vue'
 import HighlightText from '@/components/common/HighlightText.vue'
+import MarkdownContent from '@/components/common/MarkdownContent.vue'
 import FilePreviewDialog from '@/components/document/FilePreviewDialog.vue'
 import { llmProviderApi, type ChatModelOption } from '@/api/modules/llmProvider'
 import { useKnowledgeStore } from '@/stores/knowledge'
 import { useCollapsibleSidebar } from '@/composables/useCollapsibleSidebar'
 import storage from '@/utils/storage'
 import { formatDate } from '@/utils/format'
-import { streamSearchKnowledge, type KnowledgeBase, type SearchMode, type SearchResponse, type SearchResultItem, getRagConfig, type RagConfig, type RagModelCandidate } from '@/api/modules/knowledge'
+import { streamSearchKnowledge, type KnowledgeBase, type SearchMode, type SearchResponse, type SearchResultItem, type CitationReference, getRagConfig, type RagConfig, type RagModelCandidate } from '@/api/modules/knowledge'
 
 interface RagThinkingStep {
   stepType?: 'query_parse' | 'retrieve' | 'rerank' | 'synthesize'
@@ -976,6 +984,32 @@ function handleSelectInsight(message: RagMessage) {
   activeInsightMessageId.value = message.id
 }
 
+function handleCitationClick(message: RagMessage, citationIndex: number) {
+  // 将当前消息设为 insight，使右侧面板显示其引用列表
+  activeInsightMessageId.value = message.id
+
+  const citation = message.citations?.[citationIndex]
+  if (!citation) return
+
+  // 等待右侧面板渲染完成后展开目标引用并滚动
+  nextTick(() => {
+    if (citation.documentId != null) {
+      expandedCitations.value.add(citation.documentId)
+      // 触发响应式更新
+      expandedCitations.value = new Set(expandedCitations.value)
+    }
+
+    // 滚动到对应的引用项
+    const citationList = document.querySelector('.citation-list') as HTMLElement
+    if (citationList) {
+      const items = citationList.querySelectorAll('.citation-item')
+      if (items[citationIndex]) {
+        items[citationIndex].scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    }
+  })
+}
+
 async function copyMessageContent(content: string) {
   try {
     await navigator.clipboard.writeText(content)
@@ -1047,7 +1081,9 @@ async function handleAsk() {
             streamAnswer: Boolean(selectedModel?.id),
             questionIntent: response.questionIntent ?? null,
             intentConfidence: response.intentConfidence ?? null,
-            citations: response.citations ?? buildCitations(response.results || [], question, response),
+            citations: response.citations?.length
+              ? buildCitationsFromBackend(response.citations, question)
+              : buildCitations(response.results || [], question),
           })
           session.messages.push(assistantMessage)
           session.updatedAt = assistantMessage.createdAt
@@ -1122,16 +1158,18 @@ async function handleAsk() {
         knowledgeBase.id,
         topK.value,
         selectedChatModel.value?.id
-      )
+      ) as SearchResponse | null
       const assistantMessage = createAssistantMessage({
         response,
         question,
         knowledgeBaseName: knowledgeBase.name,
         session,
         streamAnswer: false,
-        questionIntent: response.questionIntent ?? null,
-        intentConfidence: response.intentConfidence ?? null,
-        citations: response.citations ?? buildCitations(response.results || [], question, response),
+        questionIntent: response?.questionIntent ?? null,
+        intentConfidence: response?.intentConfidence ?? null,
+        citations: response?.citations?.length
+          ? buildCitationsFromBackend(response.citations, question)
+          : buildCitations(response?.results || [], question),
       })
       session.messages.push(assistantMessage)
       session.updatedAt = assistantMessage.createdAt
@@ -1266,7 +1304,7 @@ function createAssistantMessage(options: {
   streamAnswer: boolean
   questionIntent?: string | null
   intentConfidence?: number | null
-  citations?: CitationReference[]
+  citations?: RagCitation[]
 }): RagMessage {
   const response = options.response
   const content = options.streamAnswer ? '' : buildAnswerContent(response, options.question)
@@ -1453,7 +1491,7 @@ function buildThinkingStepsFallback(params: {
   ]
 }
 
-function buildCitations(results: SearchResultItem[], question: string) {
+function buildCitations(results: SearchResultItem[], question: string): RagCitation[] {
   // 若传入 results 为空，返回空
   if (!results?.length) return []
 

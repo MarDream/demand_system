@@ -25,7 +25,6 @@ public class NodeStatusService {
             Map.entry("DRAFT", "新建"),
             Map.entry("PENDING_ANALYSIS", "待分析"),
             Map.entry("PENDING_CONFIRM", "待确认"),
-            Map.entry("PENDING_REVIEW", "待评审"),
             Map.entry("IN_DEVELOPMENT", "开发中"),
             Map.entry("IN_TESTING", "测试中"),
             Map.entry("LIVE", "已上线"),

@@ -9,8 +9,9 @@ import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
+import org.springframework.web.socket.WebSocketHandler;
+import org.springframework.web.socket.WebSocketMessage;
 import org.springframework.web.socket.WebSocketSession;
-import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.io.IOException;
 import java.net.URI;
@@ -25,7 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * session 按 baseId 分组存储，使用 ConcurrentHashMap 保证线程安全。
  */
 @Component
-public class BitableWebSocketHandler extends TextWebSocketHandler {
+public class BitableWebSocketHandler implements WebSocketHandler {
 
     private static final Logger log = LoggerFactory.getLogger(BitableWebSocketHandler.class);
 
@@ -68,8 +69,12 @@ public class BitableWebSocketHandler extends TextWebSocketHandler {
     }
 
     @Override
-    protected void handleTextMessage(@NonNull WebSocketSession session,
-                                     @NonNull TextMessage message) throws Exception {
+    public void handleMessage(@NonNull WebSocketSession session,
+                              @NonNull WebSocketMessage<?> message) throws Exception {
+        if (!(message instanceof TextMessage textMessage)) {
+            return;
+        }
+
         Long baseId = extractBaseId(session);
         if (baseId == null) {
             return;
@@ -77,9 +82,9 @@ public class BitableWebSocketHandler extends TextWebSocketHandler {
 
         JsonNode node;
         try {
-            node = objectMapper.readTree(message.getPayload());
+            node = objectMapper.readTree(textMessage.getPayload());
         } catch (Exception e) {
-            log.warn("WebSocket 消息解析失败: sessionId={}, payload={}", session.getId(), message.getPayload());
+            log.warn("WebSocket 消息解析失败: sessionId={}, payload={}", session.getId(), textMessage.getPayload());
             session.sendMessage(new TextMessage("{\"type\":\"error\",\"message\":\"消息格式错误，需要 JSON\"}"));
             return;
         }
@@ -119,6 +124,11 @@ public class BitableWebSocketHandler extends TextWebSocketHandler {
     public void handleTransportError(@NonNull WebSocketSession session,
                                      @NonNull Throwable exception) {
         log.error("WebSocket 传输错误: sessionId={}", session.getId(), exception);
+    }
+
+    @Override
+    public boolean supportsPartialMessages() {
+        return false;
     }
 
     // ---- 内部消息处理 ----

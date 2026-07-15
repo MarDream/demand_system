@@ -375,6 +375,17 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item v-if="isDefaultRole" label="关联分组">
+          <el-select v-model="form.groupIds" multiple clearable collapse-tags collapse-tags-tooltip placeholder="选择关联分组（默认角色可关联多个分组）">
+            <el-option
+              v-for="group in availableRoleGroups"
+              :key="group.id"
+              :label="group.name"
+              :value="group.id"
+            />
+          </el-select>
+          <div v-if="isDefaultRole" class="form-tip">默认角色可同时关联到多个非默认分组，在角色树中会同时显示</div>
+        </el-form-item>
         <el-form-item label="角色编码" prop="code">
           <div style="display: flex; gap: 8px; width: 100%;">
             <el-input
@@ -467,6 +478,7 @@ import AppButton from '@/components/common/AppButton.vue'
 import { useCollapsibleSidebar } from '@/composables/useCollapsibleSidebar'
 import { useUserStore } from '@/stores/modules/user'
 import { exportToExcel } from '@/utils/excel'
+import { resolveErrorMessage } from '@/utils/error'
 import {
   createRoleGroup,
   createRole,
@@ -597,6 +609,7 @@ const form = reactive<RolePayload>({
   name: '',
   description: '',
   roleGroupId: null,
+  groupIds: [],
 })
 
 const roleGroupForm = reactive({
@@ -650,51 +663,32 @@ const filteredRoles = computed(() => {
 })
 
 const unassignedRoles = computed(() => {
-  return roles.value.filter(role => !role.roleGroupId)
+  return roles.value.filter(role => {
+    const gids = role.groupIds || []
+    return gids.length === 0
+  })
 })
 
 const roleTreeData = computed<RoleTreeNode[]>(() => {
   const keywordLower = keyword.value.trim().toLowerCase()
   const nodes: RoleTreeNode[] = []
 
-  // Add role groups with their roles as children
-  roleGroups.value.forEach(group => {
-    const groupRoles = roles.value.filter(role => role.roleGroupId === group.id)
-    const filteredRoles = keywordLower
-      ? groupRoles.filter(role =>
-          role.name.toLowerCase().includes(keywordLower) ||
-          role.code.toLowerCase().includes(keywordLower)
-        )
-      : groupRoles
+  // 角色名/编码搜索匹配函数
+  const matchesKeyword = (role: RoleItem) => {
+    if (!keywordLower) return true
+    return role.name.toLowerCase().includes(keywordLower) ||
+      role.code.toLowerCase().includes(keywordLower) ||
+      (role.description || '').toLowerCase().includes(keywordLower)
+  }
 
-    const groupNode: RoleTreeNode = {
-      id: `group-${group.id}`,
-      name: group.name,
-      type: 'group',
-      icon: RAW_FOLDER_OPENED_ICON,
-      data: group,
-      children: filteredRoles.map(role => ({
-        id: `role-${role.id}`,
-        name: role.name,
-        type: 'role',
-        icon: RAW_USER_ICON,
-        data: role,
-      })),
-    }
-    nodes.push(groupNode)
+  // 添加默认分组（未分配分组的角色）
+  const unassignedRoles = roles.value.filter(role => {
+    const gids = role.groupIds || []
+    return gids.length === 0
   })
-
-  // Add unassigned roles under "默认" group
-  const unassigned = roles.value.filter(role => !role.roleGroupId)
-  const filteredUnassigned = keywordLower
-    ? unassigned.filter(role =>
-        role.name.toLowerCase().includes(keywordLower) ||
-        role.code.toLowerCase().includes(keywordLower)
-      )
-    : unassigned
-
+  const filteredUnassigned = unassignedRoles.filter(matchesKeyword)
   if (filteredUnassigned.length > 0 || !keywordLower) {
-    nodes.unshift({
+    nodes.push({
       id: DEFAULT_ROLE_GROUP_KEY,
       name: '默认',
       type: 'group',
@@ -710,6 +704,33 @@ const roleTreeData = computed<RoleTreeNode[]>(() => {
     })
   }
 
+  // 添加各分组下的角色（按 groupIds 多归属显示）
+  roleGroups.value.forEach(group => {
+    const groupRoles = roles.value.filter(role => {
+      const gids = role.groupIds || []
+      return gids.includes(group.id)
+    })
+    const filteredRoles = groupRoles.filter(matchesKeyword)
+
+    if (filteredRoles.length > 0 || !keywordLower) {
+      const groupNode: RoleTreeNode = {
+        id: `group-${group.id}`,
+        name: group.name,
+        type: 'group',
+        icon: RAW_FOLDER_OPENED_ICON,
+        data: group,
+        children: filteredRoles.map(role => ({
+          id: `role-${role.id}`,
+          name: role.name,
+          type: 'role',
+          icon: RAW_USER_ICON,
+          data: role,
+        })),
+      }
+      nodes.push(groupNode)
+    }
+  })
+
   return nodes
 })
 
@@ -722,13 +743,24 @@ const roleGroupSections = computed<RoleGroupSection[]>(() => {
     groupedRoles.set(`role-group-${group.id}`, [])
   })
 
+  // 按 groupIds 分组
   filteredRoles.value.forEach((role) => {
-    const group = role.roleGroupId ? groupMap.get(role.roleGroupId) : null
-    const key = group ? `role-group-${group.id}` : DEFAULT_ROLE_GROUP_KEY
-    if (!groupedRoles.has(key)) {
-      groupedRoles.set(key, [])
+    const gids = role.groupIds || []
+    if (gids.length === 0) {
+      // 无分组角色归入默认
+      if (!groupedRoles.has(DEFAULT_ROLE_GROUP_KEY)) {
+        groupedRoles.set(DEFAULT_ROLE_GROUP_KEY, [])
+      }
+      groupedRoles.get(DEFAULT_ROLE_GROUP_KEY)!.push(role)
+    } else {
+      gids.forEach(gid => {
+        const key = `role-group-${gid}`
+        if (!groupedRoles.has(key)) {
+          groupedRoles.set(key, [])
+        }
+        groupedRoles.get(key)!.push(role)
+      })
     }
-    groupedRoles.get(key)!.push(role)
   })
 
   roleGroups.value.forEach((group) => {
@@ -768,6 +800,22 @@ const allRoleGroupsExpanded = computed(() => {
 })
 
 const isCurrentSuperAdmin = computed(() => userStore.isSuperAdmin)
+
+const isDefaultRole = computed(() => {
+  // 编辑角色时：根据角色实际 isDefault 判断
+  if (editingRole.value) return editingRole.value.isDefault === 1
+  // 新增角色时：根据所选主分组是否为默认分组判断
+  if (form.roleGroupId) {
+    const group = roleGroups.value.find(g => g.id === form.roleGroupId)
+    return group?.isDefault === 1
+  }
+  return false
+})
+
+const availableRoleGroups = computed(() => {
+  // 可选关联分组：排除自身主分组
+  return roleGroups.value.filter(g => g.id !== form.roleGroupId && g.isDefault !== 1)
+})
 const currentUserOrgId = computed(() => userStore.userInfo?.orgId ?? null)
 const canGrantSelectedRole = computed(() => {
   return !!selectedRole.value && !isSuperAdminRole(selectedRole.value) && (isCurrentSuperAdmin.value || !isSystemRole(selectedRole.value))
@@ -1139,6 +1187,7 @@ function openEdit(role: RoleItem) {
   form.code = role.code
   form.description = role.description || ''
   form.roleGroupId = role.roleGroupId ?? null
+  form.groupIds = role.groupIds || []
   dialogVisible.value = true
 }
 
@@ -1155,6 +1204,7 @@ async function handleSubmit() {
       name: form.name.trim(),
       description: form.description?.trim() || null,
       roleGroupId: form.roleGroupId || null,
+      groupIds: isDefaultRole.value ? (form.groupIds || []) : undefined,
     }
     const saved = editingRole.value
       ? await updateRole(editingRole.value.id, payload) as any
@@ -1274,8 +1324,8 @@ async function handleImportFileChange(event: Event) {
     } else {
       ElMessage.success(`导入完成：成功 ${successCount} 条`)
     }
-  } catch {
-    ElMessage.error('角色导入失败，请检查文件格式')
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '角色导入失败，请检查文件格式'))
   } finally {
     batchImporting.value = false
     input.value = ''
@@ -1637,6 +1687,7 @@ function resetForm() {
   form.name = ''
   form.description = ''
   form.roleGroupId = null
+  form.groupIds = []
   codeManuallyEdited.value = false
   formRef.value?.resetFields()
 }
@@ -1811,7 +1862,6 @@ function translateChineseRoleName(name: string) {
     项目经理: 'PROJECT_MANAGER',
     需求管理员: 'DEMAND_MANAGER',
     需求负责人: 'DEMAND_OWNER',
-    需求评审人: 'DEMAND_REVIEWER',
     开发负责人: 'DEVELOPMENT_LEAD',
     技术负责人: 'TECH_LEAD',
     测试负责人: 'QA_LEAD',
@@ -1871,7 +1921,7 @@ function permissionName(code: string) {
     'menu:settings:workflow': '工作流配置菜单',
     'menu:settings:role': '角色管理菜单',
     'menu:menu-management': '菜单管理菜单',
-    'menu:rag': 'RAG文档中心菜单',
+    'menu:document': '文档中心菜单',
     'menu:settings:llm': '模型配置菜单',
     'menu:requirement:view:all': '全部需求',
     'menu:requirement:view:pending': '我的待办',
@@ -1896,10 +1946,7 @@ function permissionName(code: string) {
     'button:project:export': '导出项目',
     'button:iteration:create': '新建迭代',
     'button:iteration:update': '编辑迭代',
-    'button:iteration:delete': '删除迭代',
-    'button:review:create': '发起评审',
-    'button:review:update': '编辑评审',
-    'button:review:submit': '提交评审',
+    'button:iteration:delete': '编辑迭代',
     'button:knowledge:create': '新建知识库',
     'button:knowledge:update': '编辑知识库',
     'button:knowledge:delete': '删除知识库',
@@ -1929,8 +1976,8 @@ function permissionName(code: string) {
     'button:requirement-template:update': '编辑需求模板',
     'button:requirement-template:delete': '删除需求模板',
     'button:requirement-template:toggle': '启停需求模板',
-    'button:rag:upload': '文档上传',
-    'button:rag:search': '文档搜索',
+    'button:document:upload': '文档上传',
+    'button:document:search': '文档搜索',
     'button:llm:create': '新增模型配置',
     'button:llm:update': '编辑模型配置',
     'button:llm:delete': '删除模型配置',

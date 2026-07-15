@@ -1,12 +1,12 @@
-version: '3.8'
-
 services:
   mysql:
     image: mysql:8.0
     container_name: mysql
     restart: unless-stopped
+    networks:
+      - demand-net
     ports:
-      - "3306:3306"
+      - "33060:3306"
     environment:
       MYSQL_ROOT_PASSWORD: admin123
       MYSQL_DATABASE: demand_system
@@ -27,6 +27,8 @@ services:
     image: redis:8.6-alpine
     container_name: redis
     restart: unless-stopped
+    networks:
+      - demand-net
     ports:
       - "6379:6379"
     volumes:
@@ -41,6 +43,8 @@ services:
     image: rabbitmq:management
     container_name: rabbitmq
     restart: unless-stopped
+    networks:
+      - demand-net
     ports:
       - "5672:5672"    # AMQP 端口
       - "15672:15672"  # 管理控制台
@@ -59,6 +63,8 @@ services:
     image: minio/minio:latest
     container_name: minio
     restart: unless-stopped
+    networks:
+      - demand-net
     ports:
       - "9000:9000"    # API 端口
       - "9001:9001"    # 控制台端口
@@ -78,6 +84,8 @@ services:
     image: elasticsearch:8.17.0
     container_name: elasticsearch
     restart: unless-stopped
+    networks:
+      - demand-net
     ports:
       - "9200:9200"    # HTTP API
       - "9300:9300"    # 节点间通信
@@ -97,6 +105,8 @@ services:
     image: quay.io/coreos/etcd:v3.5.5
     container_name: etcd
     restart: unless-stopped
+    networks:
+      - demand-net
     environment:
       ETCD_AUTO_COMPACTION_MODE: revision
       ETCD_AUTO_COMPACTION_RETENTION: "1000"
@@ -105,21 +115,27 @@ services:
     volumes:
       - etcd_data:/etcd
     command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    # etcd 无健康检查接口，使用 restart 策略保证可靠性
 
   milvus:
     image: milvusdb/milvus:v2.4.4
     container_name: milvus
     restart: unless-stopped
+    networks:
+      - demand-net
     ports:
       - "19530:19530"  # gRPC
       - "9091:9091"    # Health/Metrics
     depends_on:
-      - etcd
+      etcd:
+        condition: service_started
+      minio:
+        condition: service_healthy
     environment:
       ETCD_ENDPOINTS: etcd:2379
       MINIO_ADDRESS: minio:9000
-      MINIO_ACCESS_KEY_ID: minioadmin
-      MINIO_SECRET_ACCESS_KEY: minioadmin
+      MINIO_ACCESS_KEY_ID: admin
+      MINIO_SECRET_ACCESS_KEY: admin123456
     command: ["milvus", "run", "standalone"]
     volumes:
       - milvus_data:/var/lib/milvus
@@ -133,6 +149,8 @@ services:
     image: kkfileview:5.0.1
     container_name: kkfileview
     restart: unless-stopped
+    networks:
+      - demand-net
     ports:
       - "8012:8012"
     environment:
@@ -162,6 +180,18 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+
+networks:
+  demand-net:
+    driver: bridge
+    driver_opts:
+      # 优化桥接网络性能
+      com.docker.network.bridge.enable_icc: "true"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16
 
 volumes:
   mysql_data:

@@ -4,6 +4,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
+import java.util.List;
+
 public class RoleCreateDTO {
 
     @NotBlank(message = "角色编码不能为空")
@@ -19,6 +21,8 @@ public class RoleCreateDTO {
     private String description;
 
     private Long roleGroupId;
+
+    private List<Long> groupIds;
 
     public String getCode() {
         return code;
@@ -50,5 +54,13 @@ public class RoleCreateDTO {
 
     public void setRoleGroupId(Long roleGroupId) {
         this.roleGroupId = roleGroupId;
+    }
+
+    public List<Long> getGroupIds() {
+        return groupIds;
+    }
+
+    public void setGroupIds(List<Long> groupIds) {
+        this.groupIds = groupIds;
     }
 }

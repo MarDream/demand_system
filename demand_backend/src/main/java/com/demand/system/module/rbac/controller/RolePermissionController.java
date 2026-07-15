@@ -9,6 +9,7 @@ import com.demand.system.module.rbac.dto.RoleGroupVO;
 import com.demand.system.module.rbac.dto.RolePermissionSaveDTO;
 import com.demand.system.module.rbac.dto.RolePermissionVO;
 import com.demand.system.module.rbac.dto.RoleSortItem;
+import com.demand.system.module.rbac.dto.RoleTreeNodeVO;
 import com.demand.system.module.rbac.dto.RoleUpdateDTO;
 import com.demand.system.module.rbac.dto.RoleVO;
 import com.demand.system.module.rbac.service.RolePermissionService;
@@ -36,6 +37,12 @@ public class RolePermissionController {
     @GetMapping
     public Result<List<RoleVO>> listRoles() {
         return rolePermissionService.listRoles();
+    }
+
+    @Operation(summary = "查询角色分组树（含角色列表）")
+    @GetMapping("/tree")
+    public Result<List<RoleTreeNodeVO>> getRoleTree() {
+        return rolePermissionService.getRoleTree();
     }
 
     @Operation(summary = "查询角色组列表")

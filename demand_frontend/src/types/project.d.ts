@@ -1,6 +1,7 @@
 export interface Project {
   id: number
   name: string
+  projectCode?: string | null
   description: string | null
   companyId?: number | null
   team?: string | null

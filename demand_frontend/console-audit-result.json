@@ -1,0 +1,18 @@
+{
+  "base": "http://127.0.0.1:5170",
+  "tokenInjected": true,
+  "capturedAt": "2026-07-15T07:51:24.599Z",
+  "summary": {
+    "consoleErrorCount": 0,
+    "consoleWarningCount": 0,
+    "consoleDebugCount": 20,
+    "pageErrorCount": 0,
+    "failedRequestCount": 0,
+    "badResponseCount": 0
+  },
+  "consoleErrors": [],
+  "consoleWarnings": [],
+  "pageErrors": [],
+  "failedRequests": [],
+  "badResponses": []
+}

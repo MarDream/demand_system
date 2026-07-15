@@ -13,16 +13,19 @@ import com.demand.system.module.rbac.dto.RoleGroupVO;
 import com.demand.system.module.rbac.dto.RolePermissionSaveDTO;
 import com.demand.system.module.rbac.dto.RolePermissionVO;
 import com.demand.system.module.rbac.dto.RoleSortItem;
+import com.demand.system.module.rbac.dto.RoleTreeNodeVO;
 import com.demand.system.module.rbac.dto.RoleUpdateDTO;
 import com.demand.system.module.rbac.dto.RoleVO;
 import com.demand.system.module.rbac.entity.Role;
 import com.demand.system.module.rbac.entity.RoleGroup;
+import com.demand.system.module.rbac.entity.RoleGroupRelation;
 import com.demand.system.module.rbac.entity.RoleDataScopeOrg;
 import com.demand.system.module.rbac.entity.SysPermission;
 import com.demand.system.module.rbac.entity.SysRolePermission;
 import com.demand.system.module.rbac.entity.UserRole;
 import com.demand.system.module.rbac.mapper.RoleDataScopeOrgMapper;
 import com.demand.system.module.rbac.mapper.RoleGroupMapper;
+import com.demand.system.module.rbac.mapper.RoleGroupRelationMapper;
 import com.demand.system.module.rbac.mapper.RoleMapper;
 import com.demand.system.module.rbac.mapper.SysPermissionMapper;
 import com.demand.system.module.rbac.mapper.SysRolePermissionMapper;
@@ -34,7 +37,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -52,9 +57,10 @@ public class RolePermissionServiceImpl implements RolePermissionService {
     private final UserRoleMapper userRoleMapper;
     private final RbacPermissionResolver rbacPermissionResolver;
     private final RoleDataScopeOrgMapper roleDataScopeOrgMapper;
+    private final RoleGroupRelationMapper roleGroupRelationMapper;
     private final VisibleOrgCache visibleOrgCache;
 
-    public RolePermissionServiceImpl(RoleMapper roleMapper, RoleGroupMapper roleGroupMapper, SysPermissionMapper sysPermissionMapper, SysRolePermissionMapper sysRolePermissionMapper, UserRoleMapper userRoleMapper, RbacPermissionResolver rbacPermissionResolver, RoleDataScopeOrgMapper roleDataScopeOrgMapper, VisibleOrgCache visibleOrgCache) {
+    public RolePermissionServiceImpl(RoleMapper roleMapper, RoleGroupMapper roleGroupMapper, SysPermissionMapper sysPermissionMapper, SysRolePermissionMapper sysRolePermissionMapper, UserRoleMapper userRoleMapper, RbacPermissionResolver rbacPermissionResolver, RoleDataScopeOrgMapper roleDataScopeOrgMapper, RoleGroupRelationMapper roleGroupRelationMapper, VisibleOrgCache visibleOrgCache) {
         this.roleMapper = roleMapper;
         this.roleGroupMapper = roleGroupMapper;
         this.sysPermissionMapper = sysPermissionMapper;
@@ -62,13 +68,38 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         this.userRoleMapper = userRoleMapper;
         this.rbacPermissionResolver = rbacPermissionResolver;
         this.roleDataScopeOrgMapper = roleDataScopeOrgMapper;
+        this.roleGroupRelationMapper = roleGroupRelationMapper;
         this.visibleOrgCache = visibleOrgCache;
     }
 
     @Override
     public Result<List<RoleVO>> listRoles() {
         List<Role> roles = roleMapper.selectList(new LambdaQueryWrapper<Role>().orderByAsc(Role::getSortOrder).orderByAsc(Role::getId));
-        return Result.success(roles.stream().map(RoleVO::from).toList());
+        // 批量查询所有角色的关联分组
+        Map<Long, List<Long>> roleGroupMap = loadRoleGroupIdsMap(roles);
+        return Result.success(roles.stream().map(role -> {
+            RoleVO vo = RoleVO.from(role);
+            vo.setGroupIds(roleGroupMap.get(role.getId()));
+            return vo;
+        }).toList());
+    }
+
+    /**
+     * 批量加载角色关联分组ID
+     */
+    private Map<Long, List<Long>> loadRoleGroupIdsMap(List<Role> roles) {
+        if (roles.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> roleIds = roles.stream().map(Role::getId).toList();
+        List<RoleGroupRelation> relations = roleGroupRelationMapper.selectList(
+                new LambdaQueryWrapper<RoleGroupRelation>()
+                        .in(RoleGroupRelation::getRoleId, roleIds));
+        Map<Long, List<Long>> map = new LinkedHashMap<>();
+        for (RoleGroupRelation relation : relations) {
+            map.computeIfAbsent(relation.getRoleId(), k -> new ArrayList<>()).add(relation.getRoleGroupId());
+        }
+        return map;
     }
 
     @Override
@@ -85,12 +116,25 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         role.setDescription(trimToNull(request.getDescription()));
         role.setRoleGroupId(request.getRoleGroupId());
         role.setIsSystem(0);
+        // 判断是否默认角色：在默认分组下创建的角色自动标记为默认角色
+        boolean isDefaultGroup = false;
+        if (request.getRoleGroupId() != null) {
+            RoleGroup group = roleGroupMapper.selectById(request.getRoleGroupId());
+            isDefaultGroup = group != null && group.getIsDefault() != null && group.getIsDefault() == 1;
+        }
+        role.setIsDefault(isDefaultGroup ? 1 : 0);
         LocalDateTime now = LocalDateTime.now();
         role.setCreatedAt(now);
         role.setUpdatedAt(now);
         role.setDeletedAt(0);
         roleMapper.insert(role);
-        return Result.success(RoleVO.from(role));
+
+        // 写入关联分组
+        saveRoleGroupRelations(role.getId(), request.getRoleGroupId(), request.getGroupIds(), now);
+
+        RoleVO result = RoleVO.from(role);
+        result.setGroupIds(request.getGroupIds());
+        return Result.success(result);
     }
 
     @Override
@@ -99,6 +143,12 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         requireRoleManagement();
         Role role = getRole(request.getId());
         ensureMutableRole(role);
+
+        // 非默认角色不允许修改关联分组
+        boolean isDefaultRole = role.getIsDefault() != null && role.getIsDefault() == 1;
+        if (!isDefaultRole && request.getGroupIds() != null && !request.getGroupIds().isEmpty()) {
+            throw new BusinessException("非默认角色不能关联到多个分组");
+        }
 
         String code = normalizeCode(request.getCode());
         if (!Objects.equals(role.getCode(), code)) {
@@ -111,7 +161,15 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         role.setRoleGroupId(request.getRoleGroupId());
         role.setUpdatedAt(LocalDateTime.now());
         roleMapper.updateById(role);
-        return Result.success(RoleVO.from(role));
+
+        // 同步关联分组
+        if (request.getGroupIds() != null) {
+            saveRoleGroupRelations(role.getId(), request.getRoleGroupId(), request.getGroupIds(), LocalDateTime.now());
+        }
+
+        RoleVO result = RoleVO.from(role);
+        result.setGroupIds(request.getGroupIds());
+        return Result.success(result);
     }
 
     @Override
@@ -129,6 +187,7 @@ public class RolePermissionServiceImpl implements RolePermissionService {
 
         sysRolePermissionMapper.delete(new LambdaQueryWrapper<SysRolePermission>()
                 .eq(SysRolePermission::getRoleId, roleId));
+        roleGroupRelationMapper.deleteByRoleId(roleId);
         roleMapper.deleteById(roleId);
         return Result.success();
     }
@@ -349,10 +408,22 @@ public class RolePermissionServiceImpl implements RolePermissionService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Result<RoleGroupVO> createRoleGroup(RoleGroupCreateDTO request) {
+        // 如果创建的是默认分组，先取消现有默认分组的标记
+        if (request.getIsDefault() != null && request.getIsDefault() == 1) {
+            List<RoleGroup> existingDefault = roleGroupMapper.selectList(
+                    new LambdaQueryWrapper<RoleGroup>().eq(RoleGroup::getIsDefault, 1));
+            for (RoleGroup g : existingDefault) {
+                g.setIsDefault(0);
+                g.setUpdatedAt(LocalDateTime.now());
+                roleGroupMapper.updateById(g);
+            }
+        }
+
         RoleGroup group = new RoleGroup();
         group.setName(request.getName().trim());
         group.setDescription(trimToNull(request.getDescription()));
         group.setSortOrder(0);
+        group.setIsDefault(request.getIsDefault() != null ? request.getIsDefault() : 0);
         LocalDateTime now = LocalDateTime.now();
         group.setCreatedAt(now);
         group.setUpdatedAt(now);
@@ -367,6 +438,8 @@ public class RolePermissionServiceImpl implements RolePermissionService {
                     role.setRoleGroupId(group.getId());
                     role.setUpdatedAt(now);
                     roleMapper.updateById(role);
+                    // 同时写入关联表
+                    saveRoleGroupRelation(roleId, group.getId(), now);
                 }
             }
         }
@@ -406,6 +479,8 @@ public class RolePermissionServiceImpl implements RolePermissionService {
                 roleMapper.updateById(role);
             }
         }
+        // 删除关联表记录
+        roleGroupRelationMapper.deleteByRoleGroupId(roleGroupId);
         roleGroupMapper.deleteById(roleGroupId);
         return Result.success();
     }
@@ -438,10 +513,15 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         for (RoleSortItem item : items) {
             Role role = roleMapper.selectById(item.getId());
             if (role != null) {
+                boolean groupChanged = !Objects.equals(role.getRoleGroupId(), item.getRoleGroupId());
                 role.setRoleGroupId(item.getRoleGroupId());
                 role.setSortOrder(item.getSortOrder());
                 role.setUpdatedAt(now);
                 roleMapper.updateById(role);
+                // 主分组变更时同步关联表
+                if (groupChanged) {
+                    saveRoleGroupRelations(role.getId(), item.getRoleGroupId(), null, now);
+                }
             }
         }
         return Result.success();
@@ -466,5 +546,100 @@ public class RolePermissionServiceImpl implements RolePermissionService {
                 visibleOrgCache.invalidate(ur.getUserId());
             }
         }
+    }
+
+    // ========== 角色分组树 ==========
+
+    @Override
+    public Result<List<RoleTreeNodeVO>> getRoleTree() {
+        // 查询所有分组
+        List<RoleGroup> groups = roleGroupMapper.selectList(
+                new LambdaQueryWrapper<RoleGroup>().orderByAsc(RoleGroup::getSortOrder));
+        // 查询所有角色
+        List<Role> roles = roleMapper.selectList(
+                new LambdaQueryWrapper<Role>().orderByAsc(Role::getSortOrder).orderByAsc(Role::getId));
+        // 批量查询关联分组
+        Map<Long, List<Long>> roleGroupMap = loadRoleGroupIdsMap(roles);
+
+        List<RoleTreeNodeVO> result = new ArrayList<>();
+
+        // 默认分组（无分组角色）：作为第一个节点
+        List<RoleTreeNodeVO.RoleItemVO> unassignedRoles = roles.stream()
+                .filter(role -> {
+                    List<Long> gids = roleGroupMap.get(role.getId());
+                    return gids == null || gids.isEmpty();
+                })
+                .map(role -> buildRoleItemVO(role, roleGroupMap.get(role.getId())))
+                .toList();
+        RoleTreeNodeVO defaultNode = new RoleTreeNodeVO();
+        defaultNode.setGroupId(null);
+        defaultNode.setGroupName("默认");
+        defaultNode.setIsDefault(1);
+        defaultNode.setChildren(unassignedRoles);
+        result.add(defaultNode);
+
+        // 各分组节点
+        for (RoleGroup group : groups) {
+            List<RoleTreeNodeVO.RoleItemVO> groupRoles = roles.stream()
+                    .filter(role -> {
+                        List<Long> gids = roleGroupMap.get(role.getId());
+                        return gids != null && gids.contains(group.getId());
+                    })
+                    .map(role -> buildRoleItemVO(role, roleGroupMap.get(role.getId())))
+                    .toList();
+
+            RoleTreeNodeVO node = new RoleTreeNodeVO();
+            node.setGroupId(group.getId());
+            node.setGroupName(group.getName());
+            node.setIsDefault(group.getIsDefault());
+            node.setChildren(groupRoles);
+            result.add(node);
+        }
+
+        return Result.success(result);
+    }
+
+    private RoleTreeNodeVO.RoleItemVO buildRoleItemVO(Role role, List<Long> groupIds) {
+        RoleTreeNodeVO.RoleItemVO item = new RoleTreeNodeVO.RoleItemVO();
+        item.setId(role.getId());
+        item.setName(role.getName());
+        item.setCode(role.getCode());
+        item.setIsDefault(role.getIsDefault());
+        item.setGroupIds(groupIds != null ? groupIds : List.of());
+        return item;
+    }
+
+    // ========== 关联分组工具方法 ==========
+
+    /**
+     * 保存角色关联分组
+     * @param roleId 角色ID
+     * @param mainGroupId 主分组ID
+     * @param groupIds 额外关联分组ID列表（不含主分组）
+     * @param now 当前时间
+     */
+    private void saveRoleGroupRelations(Long roleId, Long mainGroupId, List<Long> groupIds, LocalDateTime now) {
+        // 删除旧的关联
+        roleGroupRelationMapper.deleteByRoleId(roleId);
+        // 插入主分组
+        if (mainGroupId != null) {
+            saveRoleGroupRelation(roleId, mainGroupId, now);
+        }
+        // 插入额外分组
+        if (groupIds != null) {
+            for (Long groupId : groupIds) {
+                if (!Objects.equals(groupId, mainGroupId)) {
+                    saveRoleGroupRelation(roleId, groupId, now);
+                }
+            }
+        }
+    }
+
+    private void saveRoleGroupRelation(Long roleId, Long groupId, LocalDateTime now) {
+        RoleGroupRelation relation = new RoleGroupRelation();
+        relation.setRoleId(roleId);
+        relation.setRoleGroupId(groupId);
+        relation.setCreatedAt(now);
+        roleGroupRelationMapper.insert(relation);
     }
 }

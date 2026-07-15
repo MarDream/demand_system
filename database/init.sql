@@ -26,6 +26,7 @@ CREATE TABLE `users` (
   `job_number` VARCHAR(20) DEFAULT NULL COMMENT '工号(A001~Z999, AA001...)',
   `org_id` INT UNSIGNED DEFAULT NULL COMMENT '所属组织ID',
   `status` ENUM('active', 'inactive') DEFAULT 'active' COMMENT '状态',
+  `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -217,6 +218,7 @@ DROP TABLE IF EXISTS `projects`;
 CREATE TABLE `projects` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `name` VARCHAR(200) NOT NULL COMMENT '项目名称',
+  `project_code` VARCHAR(64) DEFAULT NULL COMMENT '项目编码',
   `description` TEXT COMMENT '项目描述',
   `company_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '归属公司ID',
   `team` VARCHAR(200) DEFAULT NULL COMMENT '归属团队',
@@ -230,6 +232,7 @@ CREATE TABLE `projects` (
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
   PRIMARY KEY (`id`),
+  UNIQUE INDEX `uk_project_code` (`project_code`),
   INDEX `idx_creator_id` (`creator_id`),
   INDEX `idx_status` (`status`),
   INDEX `idx_deleted_at` (`deleted_at`),
@@ -315,20 +318,35 @@ DROP TABLE IF EXISTS `workflow_versions`;
 CREATE TABLE `workflow_versions` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `project_id` INT UNSIGNED NOT NULL COMMENT '项目ID',
+  `source_version_id` INT UNSIGNED DEFAULT NULL COMMENT '源版本ID',
   `version` VARCHAR(20) NOT NULL COMMENT '版本号',
   `name` VARCHAR(100) NOT NULL COMMENT '版本名称',
   `definition` JSON NOT NULL COMMENT '工作流定义JSON',
   `runtime_hash` VARCHAR(64) DEFAULT NULL COMMENT '启用时图结构哈希',
+  `config_hash` VARCHAR(64) DEFAULT NULL COMMENT '编辑配置哈希',
   `is_active` TINYINT DEFAULT 0 COMMENT '是否当前启用 0=否 1=是',
+  `is_template` TINYINT DEFAULT 0 COMMENT '是否模板 0=否 1=是',
+  `copy_count` INT DEFAULT 0 COMMENT '复制次数',
   `activation_status` VARCHAR(20) NOT NULL DEFAULT 'draft' COMMENT 'draft/pending/approved/active/inactive',
   `knowledge_base_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联知识库ID，流转附件自动入库目标',
+  `approval_evaluation_enabled` TINYINT(1) DEFAULT 0 COMMENT '是否开启审批评价',
   `activated_at` DATETIME DEFAULT NULL COMMENT '最近一次启用时间',
+  `deprecated_at` DATETIME DEFAULT NULL COMMENT '废弃时间',
+  `change_log` TEXT DEFAULT NULL COMMENT '版本变更说明',
+  `submitted_for_approval_at` DATETIME DEFAULT NULL COMMENT '提交审核时间',
+  `approved_at` DATETIME DEFAULT NULL COMMENT '审批通过时间',
+  `approved_by` INT UNSIGNED DEFAULT NULL COMMENT '审批人ID',
+  `approval_comment` TEXT DEFAULT NULL COMMENT '审批意见',
   `creator_id` INT UNSIGNED NOT NULL COMMENT '创建人ID',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   INDEX `idx_project_id` (`project_id`),
+  INDEX `idx_source_version_id` (`source_version_id`),
   INDEX `idx_is_active` (`is_active`),
+  INDEX `idx_activation_status` (`activation_status`),
+  INDEX `idx_is_template` (`is_template`),
   INDEX `idx_knowledge_base_id` (`knowledge_base_id`),
+  INDEX `idx_approved_by` (`approved_by`),
   UNIQUE INDEX `uk_project_version` (`project_id`, `version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工作流版本表';
 
@@ -532,6 +550,9 @@ CREATE TABLE `requirement_pending_tasks` (
   `requirement_id` INT UNSIGNED NOT NULL COMMENT '需求ID',
   `user_id` INT UNSIGNED NOT NULL COMMENT '待办用户ID',
   `assignee_type` VARCHAR(50) NOT NULL COMMENT '待办来源类型(SPECIFIED_USER/SPECIFIED_ROLE/SPECIFIED_ROLE_GROUP/SPECIFIED_ORG/PREV_APPROVER/CREATOR)',
+  `role_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '待办角色ID(SPECIFIED_ROLE时有效)',
+  `role_group_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '待办角色组ID(SPECIFIED_ROLE_GROUP时有效)',
+  `org_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '待办组织ID(SPECIFIED_ORG时有效)',
   `workflow_instance_id` BIGINT UNSIGNED NOT NULL COMMENT '工作流实例ID',
   `current_node_id` VARCHAR(100) NOT NULL COMMENT '当前节点ID',
   `current_node_name` VARCHAR(100) NOT NULL COMMENT '当前节点名称',
@@ -565,6 +586,234 @@ CREATE TABLE `requirement_pending_task_history` (
   INDEX `idx_user_assigned` (`user_id`, `assigned_at` DESC) COMMENT '用户的历史待办',
   INDEX `idx_completed` (`completed_at`) COMMENT '已完成待办'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='待办任务历史表';
+
+-- 29.1 角色数据权限-可见组织范围表
+DROP TABLE IF EXISTS `role_data_scope_orgs`;
+CREATE TABLE `role_data_scope_orgs` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `role_id` INT UNSIGNED NOT NULL COMMENT '角色ID',
+  `org_id` INT UNSIGNED NOT NULL COMMENT '组织ID（角色下用户可见的需求创建人所属组织范围）',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE INDEX `uk_role_org` (`role_id`, `org_id`) USING BTREE,
+  INDEX `idx_org_id` (`org_id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='角色数据权限-可见组织范围';
+
+-- 29.2 工作流版本迁移计划表
+DROP TABLE IF EXISTS `workflow_migration_plans`;
+CREATE TABLE `workflow_migration_plans` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `from_version_id` BIGINT NOT NULL COMMENT '源版本ID',
+  `to_version_id` BIGINT NOT NULL COMMENT '目标版本ID',
+  `project_id` BIGINT DEFAULT NULL COMMENT '项目ID',
+  `node_mapping` JSON DEFAULT NULL COMMENT '节点映射配置 [{fromNodeId,toNodeId,fromNodeName,toNodeName}]',
+  `status` VARCHAR(32) NOT NULL DEFAULT 'draft' COMMENT '状态: draft/pending/executing/completed/failed',
+  `total_instance_count` INT DEFAULT 0 COMMENT '受影响实例总数',
+  `migrated_count` INT DEFAULT 0 COMMENT '已迁移实例数',
+  `failed_count` INT DEFAULT 0 COMMENT '迁移失败实例数',
+  `operator_id` BIGINT DEFAULT NULL COMMENT '操作人ID',
+  `started_at` DATETIME DEFAULT NULL COMMENT '开始执行时间',
+  `completed_at` DATETIME DEFAULT NULL COMMENT '执行完成时间',
+  `remark` VARCHAR(500) DEFAULT NULL COMMENT '备注',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  INDEX `idx_from_version` (`from_version_id`),
+  INDEX `idx_to_version` (`to_version_id`),
+  INDEX `idx_status` (`status`),
+  INDEX `idx_project` (`project_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='工作流版本迁移计划';
+
+-- 29.3 工作流版本迁移日志表
+DROP TABLE IF EXISTS `workflow_migration_logs`;
+CREATE TABLE `workflow_migration_logs` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `from_version_id` BIGINT DEFAULT NULL COMMENT '源版本ID',
+  `to_version_id` BIGINT DEFAULT NULL COMMENT '目标版本ID',
+  `from_node_id` VARCHAR(64) DEFAULT NULL COMMENT '源节点ID',
+  `to_node_id` VARCHAR(64) DEFAULT NULL COMMENT '目标节点ID',
+  `from_node_name` VARCHAR(128) DEFAULT NULL COMMENT '源节点名称',
+  `to_node_name` VARCHAR(128) DEFAULT NULL COMMENT '目标节点名称',
+  `node_mapping_json` JSON DEFAULT NULL COMMENT '完整节点映射JSON',
+  `requirement_id` BIGINT DEFAULT NULL COMMENT '关联需求ID',
+  `instance_id` BIGINT DEFAULT NULL COMMENT '工作流实例ID',
+  `plan_id` BIGINT DEFAULT NULL COMMENT '关联迁移计划ID',
+  `migration_type` VARCHAR(32) DEFAULT NULL COMMENT '迁移类型',
+  `migration_status` VARCHAR(32) NOT NULL DEFAULT 'pending' COMMENT '迁移状态: pending/success/failed',
+  `error_message` TEXT DEFAULT NULL COMMENT '错误信息',
+  `operator_id` BIGINT DEFAULT NULL COMMENT '操作人ID',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  INDEX `idx_plan` (`plan_id`),
+  INDEX `idx_requirement` (`requirement_id`),
+  INDEX `idx_instance` (`instance_id`),
+  INDEX `idx_status` (`migration_status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='工作流版本迁移日志';
+
+-- 29.4 多维表格容器
+DROP TABLE IF EXISTS `bitable_bases`;
+CREATE TABLE `bitable_bases` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name` VARCHAR(200) NOT NULL COMMENT '表格名称',
+  `description` TEXT DEFAULT NULL COMMENT '描述',
+  `icon` VARCHAR(50) DEFAULT NULL COMMENT '图标标识',
+  `cover_color` VARCHAR(20) DEFAULT NULL COMMENT '封面颜色',
+  `project_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联项目ID(可选)',
+  `creator_id` BIGINT UNSIGNED NOT NULL COMMENT '创建人ID',
+  `is_template` TINYINT DEFAULT 0 COMMENT '是否模板: 0=否, 1=是',
+  `sort_order` INT DEFAULT 0 COMMENT '排序',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
+  PRIMARY KEY (`id`),
+  INDEX `idx_project_id` (`project_id`),
+  INDEX `idx_creator_id` (`creator_id`),
+  INDEX `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='多维表格容器';
+
+-- 29.5 多维表格-数据表
+DROP TABLE IF EXISTS `bitable_tables`;
+CREATE TABLE `bitable_tables` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `base_id` BIGINT UNSIGNED NOT NULL COMMENT '所属多维表格ID',
+  `name` VARCHAR(200) NOT NULL COMMENT '表名',
+  `description` TEXT DEFAULT NULL COMMENT '表描述',
+  `icon` VARCHAR(50) DEFAULT NULL COMMENT '图标',
+  `sort_order` INT DEFAULT 0 COMMENT '排序',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
+  PRIMARY KEY (`id`),
+  INDEX `idx_base_id` (`base_id`),
+  INDEX `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='多维表格-数据表';
+
+-- 29.6 多维表格-字段定义
+DROP TABLE IF EXISTS `bitable_fields`;
+CREATE TABLE `bitable_fields` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `table_id` BIGINT UNSIGNED NOT NULL COMMENT '所属数据表ID',
+  `name` VARCHAR(200) NOT NULL COMMENT '字段名',
+  `field_type` VARCHAR(30) NOT NULL COMMENT '字段类型: text/number/date/single_select/multi_select/user/check/auto_number/created_time/modified_time/created_user/modified_user/url/email/progress/rating/link/formula/attachment',
+  `config` JSON DEFAULT NULL COMMENT '字段配置(options/format/defaultValue/linkTargetTableId/formulaExpr等)',
+  `required` TINYINT DEFAULT 0 COMMENT '是否必填: 0=否, 1=是',
+  `ai_prompt` TEXT DEFAULT NULL COMMENT 'AI填充提示词(AI字段专用)',
+  `is_ai_field` TINYINT DEFAULT 0 COMMENT '是否AI自动填充字段: 0=否, 1=是',
+  `sort_order` INT DEFAULT 0 COMMENT '排序',
+  `width` INT DEFAULT 150 COMMENT '列宽(像素)',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
+  PRIMARY KEY (`id`),
+  INDEX `idx_table_id` (`table_id`),
+  INDEX `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='多维表格-字段定义';
+
+-- 29.7 多维表格-记录行
+DROP TABLE IF EXISTS `bitable_records`;
+CREATE TABLE `bitable_records` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `table_id` BIGINT UNSIGNED NOT NULL COMMENT '所属数据表ID',
+  `sort_order` INT DEFAULT 0 COMMENT '行排序',
+  `created_by` BIGINT UNSIGNED NOT NULL COMMENT '创建人ID',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_by` BIGINT UNSIGNED DEFAULT NULL COMMENT '最后修改人ID',
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '最后修改时间',
+  `version` INT DEFAULT 0 COMMENT '乐观锁版本号',
+  `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
+  PRIMARY KEY (`id`),
+  INDEX `idx_table_id` (`table_id`),
+  INDEX `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='多维表格-记录行';
+
+-- 29.8 多维表格-单元格值(EAV模式)
+DROP TABLE IF EXISTS `bitable_cell_values`;
+CREATE TABLE `bitable_cell_values` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `record_id` BIGINT UNSIGNED NOT NULL COMMENT '记录行ID',
+  `field_id` BIGINT UNSIGNED NOT NULL COMMENT '字段ID',
+  `value_text` TEXT DEFAULT NULL COMMENT '文本值',
+  `value_number` DECIMAL(20,4) DEFAULT NULL COMMENT '数值',
+  `value_date` DATE DEFAULT NULL COMMENT '日期值',
+  `value_json` JSON DEFAULT NULL COMMENT '复杂值(多选数组/关联ID列表/附件列表等)',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `uk_record_field` (`record_id`, `field_id`),
+  INDEX `idx_field_id` (`field_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='多维表格-单元格值';
+
+-- 29.9 多维表格-视图定义
+DROP TABLE IF EXISTS `bitable_views`;
+CREATE TABLE `bitable_views` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `table_id` BIGINT UNSIGNED NOT NULL COMMENT '所属数据表ID',
+  `name` VARCHAR(200) NOT NULL COMMENT '视图名称',
+  `view_type` VARCHAR(20) NOT NULL DEFAULT 'grid' COMMENT '视图类型: grid/kanban/gantt/calendar/gallery',
+  `sort_config` JSON DEFAULT NULL COMMENT '排序配置',
+  `filter_config` JSON DEFAULT NULL COMMENT '筛选配置',
+  `group_config` JSON DEFAULT NULL COMMENT '分组配置',
+  `column_config` JSON DEFAULT NULL COMMENT '列宽/顺序/冻结/隐藏配置',
+  `color_config` JSON DEFAULT NULL COMMENT '行颜色规则',
+  `sort_order` INT DEFAULT 0 COMMENT '视图排序',
+  `created_by` BIGINT UNSIGNED NOT NULL COMMENT '创建人ID',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
+  PRIMARY KEY (`id`),
+  INDEX `idx_table_id` (`table_id`),
+  INDEX `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='多维表格-视图定义';
+
+-- 29.10 多维表格-协作成员权限
+DROP TABLE IF EXISTS `bitable_base_members`;
+CREATE TABLE `bitable_base_members` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `base_id` BIGINT UNSIGNED NOT NULL COMMENT '多维表格ID',
+  `user_id` BIGINT UNSIGNED NOT NULL COMMENT '用户ID',
+  `role` VARCHAR(20) NOT NULL DEFAULT 'viewer' COMMENT '角色: owner/admin/editor/commenter/viewer',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '加入时间',
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `uk_base_user` (`base_id`, `user_id`),
+  INDEX `idx_user_id` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='多维表格-协作成员权限';
+
+-- 29.11 多维表格-行级评论
+DROP TABLE IF EXISTS `bitable_comments`;
+CREATE TABLE `bitable_comments` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `record_id` BIGINT UNSIGNED NOT NULL COMMENT '记录行ID',
+  `table_id` BIGINT UNSIGNED NOT NULL COMMENT '数据表ID',
+  `user_id` BIGINT UNSIGNED NOT NULL COMMENT '评论人ID',
+  `content` TEXT NOT NULL COMMENT '评论内容',
+  `quote_field_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '引用字段ID(单元格评论)',
+  `parent_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '回复评论ID',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '评论时间',
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
+  PRIMARY KEY (`id`),
+  INDEX `idx_record_id` (`record_id`),
+  INDEX `idx_table_id` (`table_id`),
+  INDEX `idx_parent_id` (`parent_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='多维表格-行级评论';
+
+-- 29.12 多维表格-操作历史审计
+DROP TABLE IF EXISTS `bitable_operations`;
+CREATE TABLE `bitable_operations` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `base_id` BIGINT UNSIGNED NOT NULL COMMENT '多维表格ID',
+  `table_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '数据表ID',
+  `user_id` BIGINT UNSIGNED NOT NULL COMMENT '操作人ID',
+  `operation_type` VARCHAR(30) NOT NULL COMMENT '操作类型: insert_record/update_cell/delete_record/add_field/update_field/delete_field/add_view/update_view/delete_view/add_table/delete_table/update_base',
+  `detail` JSON DEFAULT NULL COMMENT '操作详情(变更前后值)',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '操作时间',
+  PRIMARY KEY (`id`),
+  INDEX `idx_base_id` (`base_id`),
+  INDEX `idx_table_id` (`table_id`),
+  INDEX `idx_user_id` (`user_id`),
+  INDEX `idx_operation_type` (`operation_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='多维表格-操作历史审计';
+
+-- 30. 需求类型表 requirement_types
 -- =====================================================
 -- 三、需求表
 -- =====================================================
@@ -804,23 +1053,6 @@ CREATE TABLE `requirement_templates` (
   INDEX `idx_deleted_at` (`deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='需求模板表';
 
--- 41. 评审表 reviews
-DROP TABLE IF EXISTS `reviews`;
-CREATE TABLE `reviews` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `requirement_id` INT UNSIGNED NOT NULL COMMENT '需求ID',
-  `reviewer_id` INT UNSIGNED NOT NULL COMMENT '评审人ID',
-  `result` VARCHAR(50) NOT NULL COMMENT '评审结果(pass/reject/pending)',
-  `comment` TEXT COMMENT '评审意见',
-  `suggestions` TEXT COMMENT '改进建议',
-  `reviewed_at` DATETIME DEFAULT NULL COMMENT '评审时间',
-  PRIMARY KEY (`id`),
-  INDEX `idx_requirement_id` (`requirement_id`),
-  INDEX `idx_reviewer_id` (`reviewer_id`),
-  UNIQUE INDEX `uk_requirement_reviewer` (`requirement_id`, `reviewer_id`),
-  INDEX `idx_result` (`result`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='评审表';
-
 -- 42. 通知表 notifications
 DROP TABLE IF EXISTS `notifications`;
 CREATE TABLE `notifications` (
@@ -848,6 +1080,7 @@ CREATE TABLE `knowledge_bases` (
   `doc_count` INT UNSIGNED DEFAULT 0 COMMENT '文档数量',
   `chunk_count` INT UNSIGNED DEFAULT 0 COMMENT '分块数量',
   `status` VARCHAR(50) DEFAULT 'active' COMMENT '状态(active/archived)',
+  `is_default_for_requirements` TINYINT DEFAULT 0 COMMENT '是否为需求默认知识库(0=否,1=是)',
   `doc_timeout_minutes` INT DEFAULT 10 COMMENT '文档处理超时时间(分钟), 0=不超时',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -944,7 +1177,8 @@ CREATE TABLE `knowledge_chunks` (
   PRIMARY KEY (`id`),
   INDEX `idx_document_id` (`document_id`),
   INDEX `idx_knowledge_base_id` (`knowledge_base_id`),
-  INDEX `idx_vector_id` (`vector_id`)
+  INDEX `idx_vector_id` (`vector_id`),
+  INDEX `idx_document_deleted` (`document_id`, `deleted_at`) COMMENT '性能优化:按文档ID查询已存在分块'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='知识库文档分块表';
 
 -- 48. 节点状态全局字典表 node_statuses
@@ -963,6 +1197,44 @@ CREATE TABLE `node_statuses` (
   PRIMARY KEY (`id`),
   UNIQUE INDEX `uk_code` (`code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='节点状态全局字典';
+
+-- 48.1 AI助手会话表
+DROP TABLE IF EXISTS `assistant_sessions`;
+CREATE TABLE `assistant_sessions` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `user_id` BIGINT UNSIGNED NOT NULL COMMENT '所属用户ID',
+  `title` VARCHAR(120) NOT NULL COMMENT '会话标题',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
+  PRIMARY KEY (`id`),
+  INDEX `idx_user_id` (`user_id`),
+  INDEX `idx_deleted_at` (`deleted_at`),
+  INDEX `idx_user_updated_at` (`user_id`, `updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI助手会话';
+
+-- 48.2 AI助手消息表
+DROP TABLE IF EXISTS `assistant_messages`;
+CREATE TABLE `assistant_messages` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `session_id` BIGINT UNSIGNED NOT NULL COMMENT '会话ID',
+  `user_id` BIGINT UNSIGNED NOT NULL COMMENT '所属用户ID',
+  `role` VARCHAR(20) NOT NULL COMMENT '消息角色:user/assistant',
+  `content` LONGTEXT DEFAULT NULL COMMENT '消息正文',
+  `status` VARCHAR(20) DEFAULT 'completed' COMMENT '消息状态:streaming/completed/failed',
+  `intent` VARCHAR(100) DEFAULT NULL COMMENT '识别出的用户意图',
+  `page_context` JSON DEFAULT NULL COMMENT '页面上下文',
+  `actions` JSON DEFAULT NULL COMMENT '建议动作列表',
+  `sources` JSON DEFAULT NULL COMMENT '建议来源列表',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
+  PRIMARY KEY (`id`),
+  INDEX `idx_session_id` (`session_id`),
+  INDEX `idx_user_id` (`user_id`),
+  INDEX `idx_role` (`role`),
+  INDEX `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI助手消息';
 
 -- 49. 用户列配置表 user_column_configs
 DROP TABLE IF EXISTS `user_column_configs`;
@@ -1010,6 +1282,11 @@ CREATE TABLE `llm_models` (
   `test_duration` INT DEFAULT NULL COMMENT '最近测试耗时ms',
   `test_error` VARCHAR(500) DEFAULT NULL COMMENT '最近测试错误信息',
   `test_at` DATETIME DEFAULT NULL COMMENT '最近测试时间',
+  `test_content` MEDIUMTEXT DEFAULT NULL COMMENT '最近测试响应内容（完整响应文本）',
+  `test_prompt_tokens` INT DEFAULT NULL COMMENT '最近测试请求 Token 数',
+  `test_completion_tokens` INT DEFAULT NULL COMMENT '最近测试响应 Token 数',
+  `test_total_tokens` INT DEFAULT NULL COMMENT '最近测试总 Token 数',
+  `test_response_model` VARCHAR(200) DEFAULT NULL COMMENT '最近测试实际响应的模型名',
   `chunk_size` INT DEFAULT NULL COMMENT '文本分块大小(仅embedding模型使用)',
   `chunk_overlap` INT DEFAULT NULL COMMENT '文本分块重叠大小(仅embedding模型使用)',
   `search_top_k` INT DEFAULT NULL COMMENT '检索返回TopK(仅embedding模型使用)',
@@ -1019,6 +1296,38 @@ CREATE TABLE `llm_models` (
   INDEX `idx_provider_id` (`provider_id`),
   INDEX `idx_model_type` (`model_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='LLM模型实例';
+
+-- 52. LLM 功能点模型应用配置表 llm_applications
+DROP TABLE IF EXISTS `llm_applications`;
+CREATE TABLE `llm_applications` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `code` VARCHAR(100) NOT NULL COMMENT '功能点编码',
+  `name` VARCHAR(100) NOT NULL COMMENT '功能点名称',
+  `description` VARCHAR(255) DEFAULT NULL COMMENT '功能点说明',
+  `model_type` VARCHAR(50) NOT NULL DEFAULT 'chat' COMMENT '模型类型: chat/embedding/rerank',
+  `model_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '指定的模型实例ID',
+  `enabled` TINYINT NOT NULL DEFAULT 1 COMMENT '是否启用该功能点配置',
+  `sort_order` INT NOT NULL DEFAULT 0,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_llm_application_code` (`code`),
+  INDEX `idx_llm_application_model_id` (`model_id`),
+  INDEX `idx_llm_application_sort_order` (`sort_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='LLM 功能点模型应用配置';
+
+INSERT IGNORE INTO `llm_applications`
+  (`code`, `name`, `description`, `model_type`, `model_id`, `enabled`, `sort_order`)
+VALUES
+  ('assistant.chat', '智能助手对话', '右下角智能助手及页面上下文问答', 'chat', NULL, 1, 10),
+  ('knowledge.intent', '知识库意图识别', '知识库搜索前的问题意图识别与检索词归一化', 'chat', NULL, 1, 20),
+  ('knowledge.answer', '知识库问答', '基于检索结果生成知识库回答', 'chat', NULL, 1, 30),
+  ('knowledge.embedding', '知识库向量化', '文档切片及查询向量生成', 'embedding', NULL, 1, 40),
+  ('knowledge.rerank', '知识库重排', '知识库检索结果的模型重排', 'rerank', NULL, 1, 50),
+  ('knowledge.event-rerank', '知识事件 LLM 精排', '知识事件检索结果的 LLM 相关性精排', 'chat', NULL, 1, 60),
+  ('bitable.ai', '多维表格 AI', '多维表格字段、记录及模板的 AI 能力', 'chat', NULL, 1, 70),
+  ('llm.translation', '文本翻译', '角色编码及其他系统文本的英文转换', 'chat', NULL, 1, 80);
+
 -- =====================================================
 -- 初始化数据
 -- =====================================================
@@ -1030,36 +1339,35 @@ INSERT IGNORE INTO `positions` (`id`, `name`, `code`, `level`, `description`) VA
 (3, '测试工程师', 'QA', 2, '负责功能测试和质量保证');
 
 -- 用户数据(密码: admin123, BCrypt加密)
-INSERT INTO `users` (`id`, `username`, `password`, `real_name`, `email`, `phone`, `avatar`, `status`, `created_at`, `updated_at`, `deleted_at`) VALUES
+INSERT IGNORE INTO `users` (`id`, `username`, `password`, `real_name`, `email`, `phone`, `avatar`, `status`, `created_at`, `updated_at`, `deleted_at`) VALUES
 (1, 'admin', '$2b$12$.SPoAlnnJvD.VajrVmgCdeBTWE/DQ75Ym/P9dGL.3IzT4ewED9QVG', '系统管理员', 'admin@demand.com', NULL, NULL, 'active', NOW(), NOW(), 0);
 
 -- 用户组织关系
-INSERT INTO `user_organizations` (`user_id`, `region_id`, `department_id`, `system_role`, `manager_id`, `effective_date`) VALUES
-(1, 1, 1, 'admin', NULL, '2026-01-01');
+INSERT IGNORE INTO `user_organizations` (`user_id`, `region_id`, `department_id`, `system_role`, `manager_id`, `effective_date`) VALUES
+(1, 1, 7, 'admin', NULL, '2026-01-01');
 
 -- 角色数据
-INSERT INTO `roles` (`id`, `code`, `name`, `description`, `is_system`, `is_admin`) VALUES
+INSERT IGNORE INTO `roles` (`id`, `code`, `name`, `description`, `is_system`, `is_admin`) VALUES
 (1, 'SUPER_ADMIN', '超级管理员', '系统最高权限,可管理所有配置', 1, 1),
 (2, 'REGION_ADMIN', '区域管理员', '管理指定区域的部门和人员', 1, 0),
 (3, 'DEPT_ADMIN', '部门管理员', '管理指定部门的人员', 1, 0),
 (4, 'PRODUCT_MANAGER', '产品经理', '负责需求评审和验收', 0, 0),
 (5, 'PROJECT_MANAGER', '项目经理', '负责项目管理和迭代规划', 0, 0),
 (6, 'DEVELOPER', '开发人员', '负责需求开发', 0, 0),
-(7, 'TESTER', '测试人员', '负责需求测试', 0, 0),
-(8, 'REVIEWER', '评审人', '负责需求评审', 0, 0);
+(7, 'TESTER', '测试人员', '负责需求测试', 0, 0);
 
 -- 给admin用户分配超级管理员角色
-INSERT INTO `user_roles` (`user_id`, `role_id`, `project_id`) VALUES
+INSERT IGNORE INTO `user_roles` (`user_id`, `role_id`, `project_id`) VALUES
 (1, 1, NULL);
 
 -- 初始化统一组织数据
-INSERT INTO `sys_org` (`id`, `name`, `parent_id`, `org_type`, `code`, `description`, `sort_order`, `path`, `level`, `created_at`, `updated_at`, `deleted_at`) VALUES
+INSERT IGNORE INTO `sys_org` (`id`, `name`, `parent_id`, `org_type`, `code`, `description`, `sort_order`, `path`, `level`, `created_at`, `updated_at`, `deleted_at`) VALUES
 (1, '东莞市', NULL, 'region', 'HD', '东莞市区域', 1, '/1/', 0, NOW(), NOW(), 0),
 (5, '开普云科技有限公司', 1, 'company', 'KP01', '开普云科技有限公司', 1, '/1/5/', 1, NOW(), NOW(), 0),
 (7, '市民服务中心', 5, 'department', 'SM01', '市民服务中心', 1, '/1/5/7/', 2, NOW(), NOW(), 0);
 
 -- 需求类型数据
-INSERT INTO `requirement_types` (`code`, `name`, `color`, `sort_order`, `is_default`) VALUES
+INSERT IGNORE INTO `requirement_types` (`code`, `name`, `color`, `sort_order`, `is_default`) VALUES
 ('FEATURE', '功能', '#409EFF', 1, 1),
 ('OPTIMIZATION', '优化', '#67C23A', 2, 0),
 ('BUG', 'Bug', '#F56C6C', 3, 0),
@@ -1067,17 +1375,17 @@ INSERT INTO `requirement_types` (`code`, `name`, `color`, `sort_order`, `is_defa
 ('OPERATION', '运营', '#909399', 5, 0);
 
 -- 优先级数据
-INSERT INTO `priorities` (`code`, `name`, `color`, `level`, `sort_order`, `is_default`) VALUES
+INSERT IGNORE INTO `priorities` (`code`, `name`, `color`, `level`, `sort_order`, `is_default`) VALUES
 ('P0', 'P0-紧急', '#F56C6C', 0, 1, 0),
 ('P1', 'P1-高', '#E6A23C', 1, 2, 1),
 ('P2', 'P2-中', '#409EFF', 2, 3, 0),
 ('P3', 'P3-低', '#909399', 3, 4, 0);
 -- 演示项目
-INSERT INTO `projects` (`id`, `name`, `description`, `creator_id`, `status`, `created_at`, `updated_at`, `deleted_at`) VALUES
+INSERT IGNORE INTO `projects` (`id`, `name`, `description`, `creator_id`, `status`, `created_at`, `updated_at`, `deleted_at`) VALUES
 (1, '演示项目', '默认演示项目', 1, 'active', NOW(), NOW(), 0);
 
 -- 工作流状态(演示项目,合并为一次插入)
-INSERT INTO `workflow_states` (`project_id`, `name`, `color`, `is_final`, `sort_order`) VALUES
+INSERT IGNORE INTO `workflow_states` (`project_id`, `name`, `color`, `is_final`, `sort_order`) VALUES
 (1, '新建', '#409EFF', 0, 1),
 (1, '待评审', '#E6A23C', 0, 2),
 (1, '评审中', '#E6A23C', 0, 3),
@@ -1094,34 +1402,33 @@ INSERT INTO `workflow_states` (`project_id`, `name`, `color`, `is_final`, `sort_
 
 -- 工作流转换(演示项目,合并多次插入为一次)
 -- state 映射: 1=新建 2=待评审 3=评审中 4=已通过 5=开发中 6=测试中 7=已上线 8=已验收 9=已取消 10=已拒绝 11=打回 12=测试不通过 13=验收不通过
-INSERT INTO `workflow_transitions` (`project_id`, `from_state_id`, `to_state_id`, `allowed_roles`, `required_fields`, `conditions`) VALUES
+INSERT IGNORE INTO `workflow_transitions` (`project_id`, `from_state_id`, `to_state_id`, `allowed_roles`, `required_fields`, `conditions`) VALUES
 -- 新建 -> 待评审(创建人,产品经理) / 新建 -> 已取消(创建人)
-(1, 1, 2, '['创建人', '产品经理']', '[]', '{}'),
-(1, 1, 9, '['创建人']', '[]', '{}'),
+(1, 1, 2, '["创建人", "产品经理"]', '[]', '{}'),
+(1, 1, 9, '["创建人"]', '[]', '{}'),
 -- 待评审 -> 评审中(产品经理) / 待评审 -> 已取消(产品经理)
-(1, 2, 3, '['产品经理']', '[]', '{}'),
-(1, 2, 9, '['产品经理']', '[]', '{}'),
+(1, 2, 3, '["产品经理"]', '[]', '{}'),
+(1, 2, 9, '["产品经理"]', '[]', '{}'),
 -- 评审中 -> 已通过(评审人,required:评审意见) / 评审中 -> 已拒绝(评审人,required:评审意见)
-(1, 3, 4, '['评审人']', '['评审意见']', '{}'),
-(1, 3, 10, '['评审人']', '['评审意见']', '{}'),
+(1, 3, 4, '["评审人"]', '["评审意见"]', '{}'),
+(1, 3, 10, '["评审人"]', '["评审意见"]', '{}'),
 -- 已通过 -> 开发中(项目经理,required:所属迭代)
-(1, 4, 5, '['项目经理']', '['所属迭代']', '{}'),
+(1, 4, 5, '["项目经理"]', '["所属迭代"]', '{}'),
 -- 开发中 -> 测试中(开发人员,required:开发说明) / 开发中 -> 打回(开发人员)
-(1, 5, 6, '['开发人员']', '['开发说明']', '{}'),
-(1, 5, 11, '['开发人员']', '[]', '{}'),
+(1, 5, 6, '["开发人员"]', '["开发说明"]', '{}'),
+(1, 5, 11, '["开发人员"]', '[]', '{}'),
 -- 测试中 -> 已上线(测试人员,required:测试报告) / 测试中 -> 测试不通过(测试人员)
-(1, 6, 7, '['测试人员']', '['测试报告']', '{}'),
-(1, 6, 12, '['测试人员']', '[]', '{}'),
+(1, 6, 7, '["测试人员"]', '["测试报告"]', '{}'),
+(1, 6, 12, '["测试人员"]', '[]', '{}'),
 -- 已上线 -> 已验收(产品经理,required:验收结论) / 已上线 -> 验收不通过(产品经理)
-(1, 7, 8, '['产品经理']', '['验收结论']', '{}'),
-(1, 7, 13, '['产品经理']', '[]', '{}');
+(1, 7, 8, '["产品经理"]', '["验收结论"]', '{}'),
+(1, 7, 13, '["产品经理"]', '[]', '{}');
 
 -- 节点状态全局字典
 INSERT IGNORE INTO `node_statuses` (`code`, `name`, `color`, `sort_order`, `is_start`, `is_end`, `is_cancel`) VALUES
 ('DRAFT', '新建', '#409EFF', 1, 1, 0, 0),
 ('PENDING_ANALYSIS', '待分析', '#E6A23C', 2, 0, 0, 0),
 ('PENDING_CONFIRM', '待确认', '#E6A23C', 3, 0, 0, 0),
-('PENDING_REVIEW', '待评审', '#E6A23C', 4, 0, 0, 0),
 ('IN_DEVELOPMENT', '开发中', '#409EFF', 5, 0, 0, 0),
 ('IN_TESTING', '测试中', '#E6A23C', 6, 0, 0, 0),
 ('LIVE', '已上线', '#67C23A', 7, 0, 0, 0),
@@ -1136,7 +1443,7 @@ INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description
 (6,  'menu:settings:workflow',      '工作流配置菜单',     'MENU',   '系统设置-工作流配置', 1),
 (7,  'menu:settings:role',          '角色管理菜单',       'MENU',   '系统设置-角色管理', 1),
 (8,  'menu:menu-management',        '菜单管理菜单',       'MENU',   '系统设置-菜单管理', 1),
-(9,  'menu:rag',                    'RAG文档中心菜单',    'MENU',   'RAG文档中心入口', 1),
+(9,  'menu:document',               '文档中心菜单',         'MENU',   '文档中心和知识库管理入口', 1),
 (10, 'button:menu:create',          '新增菜单按钮',       'BUTTON', '菜单管理-新增', 1),
 (11, 'button:menu:update',          '编辑菜单按钮',       'BUTTON', '菜单管理-编辑', 1),
 (12, 'button:menu:delete',          '删除菜单按钮',       'BUTTON', '菜单管理-删除', 1),
@@ -1146,11 +1453,7 @@ INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description
 (16, 'button:user:delete',          '删除用户按钮',       'BUTTON', '用户管理-删除', 1),
 (17, 'button:role:create',          '新增角色按钮',       'BUTTON', '角色管理-新增', 1),
 (18, 'button:role:update',          '编辑角色按钮',       'BUTTON', '角色管理-编辑', 1),
-(23, 'button:role:delete',          '删除角色按钮',       'BUTTON', '角色管理-删除', 1),
-(24, 'button:role:grant',           '角色授权按钮',       'BUTTON', '角色管理-授权', 1),
 (28, 'button:workflow:config',      '工作流配置按钮',     'BUTTON', '工作流配置操作', 1),
-(29, 'button:rag:upload',           'RAG文档上传按钮',    'BUTTON', 'RAG-上传文档', 1),
-(30, 'button:rag:search',           'RAG文档搜索按钮',    'BUTTON', 'RAG-智能搜索', 1),
 (31, 'menu:settings:llm',           '模型配置菜单',       'MENU',   '系统设置-模型配置', 1),
 (32, 'button:llm-provider:create',  '新建模型提供商',     'BUTTON', 'LLM配置-新建提供商', 1),
 (33, 'button:llm-provider:update',  '编辑模型提供商',     'BUTTON', 'LLM配置-编辑提供商', 1),
@@ -1172,9 +1475,6 @@ INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description
 (55, 'button:iteration:create',     '新建迭代',           'BUTTON', '迭代管理-新建', 1),
 (56, 'button:iteration:update',     '编辑迭代',           'BUTTON', '迭代管理-编辑', 1),
 (57, 'button:iteration:delete',     '删除迭代',           'BUTTON', '迭代管理-删除', 1),
-(58, 'button:review:create',        '发起评审',           'BUTTON', '评审管理-发起', 1),
-(59, 'button:review:update',        '编辑评审',           'BUTTON', '评审管理-编辑', 1),
-(60, 'button:review:submit',        '提交评审',           'BUTTON', '评审管理-提交', 1),
 (61, 'button:knowledge:create',     '新建知识库',         'BUTTON', '知识库-新建', 1),
 (62, 'button:knowledge:update',     '编辑知识库',         'BUTTON', '知识库-编辑', 1),
 (63, 'button:knowledge:delete',     '删除知识库',         'BUTTON', '知识库-删除', 1),
@@ -1216,7 +1516,6 @@ INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description
 (116, 'button:requirement:countersign-approve', '会签通过','BUTTON','需求-会签通过', 1),
 (117, 'button:requirement:countersign-reject',  '会签驳回','BUTTON','需求-会签驳回', 1),
 (118, 'button:requirement:draft',   '保存需求草稿',       'BUTTON', '需求-保存草稿', 1),
-(119, 'button:review:view',         '查看评审详情',       'BUTTON', '评审-查看详情', 1),
 (120, 'button:iteration:view',      '查看迭代/燃尽图',    'BUTTON', '迭代-查看详情', 1),
 (121, 'button:relation:create',     '创建需求关联',       'BUTTON', '需求-创建关联', 1),
 (122, 'button:relation:delete',     '删除需求关联',       'BUTTON', '需求-删除关联', 1),
@@ -1228,18 +1527,17 @@ INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, 
 (1,  0, '仪表盘',       'MENU',      '/dashboard',              'Dashboard',          'views/dashboard/index.vue',                  'Odometer',     1, NULL,                          1, 1, 0),
 (2,  0, '需求管理',     'MENU',      '/requirements',           'Requirements',       'views/requirements/index.vue',                'Document',     2, NULL,                          1, 1, 0),
 (3,  0, '迭代管理',     'MENU',      '/iterations',             'Iterations',         'views/iterations/index.vue',                  'Calendar',     3, NULL,                          1, 1, 0),
-(4,  0, '评审管理',     'MENU',      '/reviews',                'Reviews',            'views/reviews/index.vue',                     'ChatDotRound', 4, NULL,                          1, 1, 0),
-(5,  0, '统计报表',     'MENU',      '/statistics',             'Statistics',         'views/statistics/index.vue',                  'TrendCharts',  5, NULL,                          1, 1, 0),
-(6,  0, 'RAG文档中心',  'MENU',      '/settings/rag',           'RagCenter',          'views/rag/index.vue',                          'Files',        7, 'menu:rag',                  1, 1, 0),
+(4,  0, '多维表格',     'MENU',      '/bitable',                'BitableList',        'views/bitable/index.vue',                     'Grid',         4, 'menu:bitable',               1, 1, 0),
 (7,  0, '系统配置',     'DIRECTORY', NULL,                        NULL,                  NULL,                                            'Setting',      6, 'menu:system-config',        1, 1, 0),
-(8,  0, '知识库管理',   'MENU',      '/settings/knowledge',     'KnowledgeBases',     'views/knowledge/index.vue',                   'Collection',   8, 'menu:rag',                  1, 1, 0),
+(8,  7, '知识库管理',   'MENU',      '/settings/knowledge',     'KnowledgeBases',     'views/knowledge/index.vue',                   'Collection',   8, 'menu:document',                  1, 1, 0),
+(6,  7, '文档中心',     'MENU',      '/settings/documents',     'Documents',          'views/rag/index.vue',                          'Files',        7, 'menu:document',                 1, 1, 0),
 (10, 0, '项目管理',     'MENU',      '/settings/projects',      'SettingsProjects',   'views/settings/projects.vue',                 'Folder',       9, 'menu:settings:project',     1, 1, 0),
 (11, 7, '用户管理',     'MENU',      '/settings/users',         'SettingsUsers',      'views/settings/users.vue',                    'User',         1, 'menu:settings:user',        1, 1, 0),
 (13, 7, '需求配置',     'MENU',      '/settings/requirements',  'SettingsRequirements','views/settings/requirements.vue',             'Setting',      4, 'menu:settings:requirement', 1, 1, 0),
 (14, 7, '工作流配置',   'MENU',      '/system/workflow-config', 'WorkflowConfig',     'views/system/workflow-config/index.vue',       'Share',        5, 'menu:settings:workflow',    1, 1, 0),
 (15, 7, '菜单管理',     'MENU',      '/settings/menus',         'MenuManagement',     'views/settings/menus.vue',                    'Menu',         6, 'menu:menu-management',      1, 1, 0),
 (17, 7, '角色管理',     'MENU',      '/settings/roles',         'RoleManage',         'views/settings/roles.vue',                    'UserFilled',   2, 'menu:settings:role',        1, 1, 0),
-(16, 0, '模型配置',     'MENU',      '/settings/llm',           'LlmConfig',          'views/settings/llm.vue',                       'MagicStick',  10, 'menu:settings:llm',         1, 1, 0);
+(16, 7, '模型配置',     'MENU',      '/settings/llm',           'LlmConfig',          'views/settings/llm.vue',                       'MagicStick',   7, 'menu:settings:llm',         1, 1, 0),
 (20, 15, '新增菜单',     'BUTTON',    NULL, NULL, NULL, NULL, 1, 'button:menu:create',  1, 1, 0),
 (21, 15, '编辑菜单',     'BUTTON',    NULL, NULL, NULL, NULL, 2, 'button:menu:update',  1, 1, 0),
 (22, 15, '删除菜单',     'BUTTON',    NULL, NULL, NULL, NULL, 3, 'button:menu:delete',  1, 1, 0),
@@ -1268,7 +1566,7 @@ INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, 
 (81, 2, '我的已办视图',  'BUTTON',    NULL, NULL, NULL, NULL,12, 'menu:requirement:view:done', 1, 1, 0),
 (82, 2, '我的草稿视图',  'BUTTON',    NULL, NULL, NULL, NULL,13, 'menu:requirement:view:draft', 1, 1, 0),
 (83, 2, '批量删除需求',  'BUTTON',    NULL, NULL, NULL, NULL,14, 'button:requirement:batch-delete', 1, 1, 0),
-(84, 2, '我的关注',      'BUTTON',    NULL, NULL, NULL, NULL,15, 'menu:requirement:view:follow', 1, 1, 0);
+(84, 2, '我的关注',      'BUTTON',    NULL, NULL, NULL, NULL,15, 'menu:requirement:view:follow', 1, 1, 0),
 (50, 10, '新建项目',     'BUTTON',    NULL, NULL, NULL, NULL, 1, 'button:project:create',  1, 1, 0),
 (51, 10, '编辑项目',     'BUTTON',    NULL, NULL, NULL, NULL, 2, 'button:project:update',  1, 1, 0),
 (52, 10, '删除项目',     'BUTTON',    NULL, NULL, NULL, NULL, 3, 'button:project:delete',  1, 1, 0),
@@ -1277,9 +1575,10 @@ INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, 
 (55, 3, '新建迭代',      'BUTTON',    NULL, NULL, NULL, NULL, 1, 'button:iteration:create', 1, 1, 0),
 (56, 3, '编辑迭代',      'BUTTON',    NULL, NULL, NULL, NULL, 2, 'button:iteration:update', 1, 1, 0),
 (57, 3, '删除迭代',      'BUTTON',    NULL, NULL, NULL, NULL, 3, 'button:iteration:delete', 1, 1, 0),
--- 评审管理下的按钮
-(58, 4, '发起评审',      'BUTTON',    NULL, NULL, NULL, NULL, 1, 'button:review:create',  1, 1, 0),
-(59, 4, '编辑评审',      'BUTTON',    NULL, NULL, NULL, NULL, 2, 'button:review:update',  1, 1, 0),
+-- 多维表格下的按钮
+(58, 4, '新建多维表格',  'BUTTON',    NULL, NULL, NULL, NULL, 1, 'button:bitable:create',  1, 1, 0),
+(59, 4, '编辑多维表格',  'BUTTON',    NULL, NULL, NULL, NULL, 2, 'button:bitable:update',  1, 1, 0),
+(60, 4, '删除多维表格',  'BUTTON',    NULL, NULL, NULL, NULL, 3, 'button:bitable:delete',  1, 1, 0),
 -- 知识库下的按钮
 (61, 8, '新建知识库',    'BUTTON',    NULL, NULL, NULL, NULL, 1, 'button:knowledge:create',  1, 1, 0),
 (62, 8, '编辑知识库',    'BUTTON',    NULL, NULL, NULL, NULL, 2, 'button:knowledge:update',  1, 1, 0),
@@ -1338,18 +1637,23 @@ INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_
 (1, 119, 1), (1, 120, 1),
 (1, 121, 1), (1, 122, 1),
 (1, 123, 1), (1, 124, 1);
+-- SUPER_ADMIN 新增多维表格菜单与按钮权限
+INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_by`) VALUES
+(1, 4, 1), (1, 58, 1), (1, 59, 1), (1, 60, 1);
 
 -- 业务角色授权需求管理视图权限,
+INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_by`) VALUES
 -- 产品经理: 全部需求 + 我的草稿 + 我的关注 + 新建需求 + 导出 + 批量删除
-(4, 79), (4, 82), (4, 93), (4, 40), (4, 43), (4, 83),
+(4, 79, 1), (4, 82, 1), (4, 93, 1), (4, 40, 1), (4, 43, 1), (4, 83, 1),
 -- 项目经理: 全部需求 + 我的待办 + 我的已办 + 我的草稿 + 我的关注 + 新建需求 + 导出 + 批量删除
-(5, 79), (5, 80), (5, 81), (5, 82), (5, 93), (5, 40), (5, 43), (5, 83),
+(5, 79, 1), (5, 80, 1), (5, 81, 1), (5, 82, 1), (5, 93, 1), (5, 40, 1), (5, 43, 1), (5, 83, 1),
 -- 开发人员: 我的待办 + 我的已办 + 我的关注 + 导出
-(6, 80), (6, 81), (6, 93), (6, 43),
+(6, 80, 1), (6, 81, 1), (6, 93, 1), (6, 43, 1),
 -- 测试人员: 我的待办 + 我的已办 + 我的关注 + 导出
-(7, 80), (7, 81), (7, 93), (7, 43),
--- 评审人: 全部需求 + 我的待办 + 我的已办 + 我的关注 + 导出
-(8, 79), (8, 80), (8, 81), (8, 93), (8, 43);
+(7, 80, 1), (7, 81, 1), (7, 93, 1), (7, 43, 1),
+-- 业务角色授多维表格主菜单(产品/项目可建改,开发/测试只读)
+(4, 4, 1), (5, 4, 1), (6, 4, 1), (7, 4, 1),
+(4, 58, 1), (4, 59, 1), (5, 58, 1), (5, 59, 1);
 
 -- 初始化待办任务物化表数据（从已有工作流实例生成）
 INSERT IGNORE INTO requirement_pending_tasks (
@@ -1394,12 +1698,12 @@ CROSS JOIN (
     wn2.assignee_user_ids,
     '$[*]' COLUMNS (user_id INT PATH '$')
   ) AS user_ids ON wn2.assignee_type = 'SPECIFIED_USER'
-  LEFT JOIN role_user ru ON wn2.assignee_type = 'SPECIFIED_ROLE'
+  LEFT JOIN user_roles ru ON wn2.assignee_type = 'SPECIFIED_ROLE'
                          AND ru.role_id = wn2.assignee_role_id
   LEFT JOIN roles rg ON wn2.assignee_type = 'SPECIFIED_ROLE_GROUP'
                      AND rg.role_group_id = wn2.assignee_role_group_id
                      AND rg.deleted_at = 0
-  LEFT JOIN role_user rgu ON rgu.role_id = rg.id
+  LEFT JOIN user_roles rgu ON rgu.role_id = rg.id
   LEFT JOIN user_organizations ou ON wn2.assignee_type = 'SPECIFIED_ORG'
                                    AND ou.org_id = wn2.assignee_org_id
   LEFT JOIN (

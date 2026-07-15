@@ -353,6 +353,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import QRCode from 'qrcode'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { resolveErrorMessage } from '@/utils/error'
 import { Loading, View, Download, Share, RefreshRight, Delete, Document, Search, Upload, CircleClose } from '@element-plus/icons-vue'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppDialog from '@/components/common/AppDialog.vue'
@@ -538,8 +539,8 @@ async function handleRetry(doc: KnowledgeDocument) {
     await retryDocuments(kbId, [doc.id])
     ElMessage.success(`已提交重传任务`)
     await fetchDocumentList()
-  } catch {
-    ElMessage.error('重传失败')
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '重传失败'))
   }
 }
 
@@ -566,8 +567,7 @@ async function handleSkip(doc: KnowledgeDocument) {
     ElMessage.success('已跳过索引，文件已转为存储状态')
     await fetchDocumentList()
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : '跳过失败'
-    ElMessage.error(msg)
+    ElMessage.error(resolveErrorMessage(err, '跳过失败'))
   }
 }
 
@@ -611,8 +611,7 @@ async function handleBatchDownload() {
     URL.revokeObjectURL(url)
     ElMessage.success('下载成功')
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : '下载失败'
-    ElMessage.error(msg)
+    ElMessage.error(resolveErrorMessage(err, '下载失败'))
   } finally {
     batchDownloading.value = false
   }
@@ -683,8 +682,8 @@ async function handleDownload(doc: KnowledgeDocument) {
     anchor.remove()
     window.URL.revokeObjectURL(url)
     await fetchDocumentList()
-  } catch {
-    ElMessage.error('下载失败')
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '下载失败'))
   }
 }
 
@@ -746,8 +745,8 @@ async function generateCurrentShareLink() {
     } catch {
       ElMessage.warning('分享链接已生成，请手动复制')
     }
-  } catch {
-    ElMessage.error('生成分享链接失败')
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '生成分享链接失败'))
   }
 }
 
@@ -756,8 +755,8 @@ async function copyCurrentShareLink() {
   try {
     await navigator.clipboard.writeText(currentShareLink.value)
     ElMessage.success('链接已复制')
-  } catch {
-    ElMessage.error('复制失败')
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '复制失败'))
   }
 }
 

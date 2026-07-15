@@ -4,6 +4,7 @@ import type { Project, ProjectImportResult, ProjectMember } from '@/types/projec
 
 export interface ProjectPayload {
   name: string
+  projectCode?: string | null
   description?: string | null
   companyId?: number | null
   team?: string | null

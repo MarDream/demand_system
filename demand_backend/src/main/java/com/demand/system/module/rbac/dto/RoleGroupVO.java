@@ -8,6 +8,7 @@ public class RoleGroupVO {
     private String name;
     private String description;
     private Integer sortOrder;
+    private Integer isDefault;
 
     public Long getId() {
         return id;
@@ -41,12 +42,21 @@ public class RoleGroupVO {
         this.sortOrder = sortOrder;
     }
 
+    public Integer getIsDefault() {
+        return isDefault;
+    }
+
+    public void setIsDefault(Integer isDefault) {
+        this.isDefault = isDefault;
+    }
+
     public static RoleGroupVO from(RoleGroup roleGroup) {
         RoleGroupVO vo = new RoleGroupVO();
         vo.setId(roleGroup.getId());
         vo.setName(roleGroup.getName());
         vo.setDescription(roleGroup.getDescription());
         vo.setSortOrder(roleGroup.getSortOrder());
+        vo.setIsDefault(roleGroup.getIsDefault());
         return vo;
     }
 }

@@ -170,6 +170,23 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * 判断异常消息是否包含 LLM API 调用相关的特征前缀。
+     * 这些异常来自 LlmGateway 的远程 API 调用（Chat / Embedding / Reranker / 嗅探模型列表等），
+     * 需要给用户返回更友好的错误提示，而非暴露技术细节。
+     */
+    private boolean isLlmApiException(String message) {
+        if (message == null) return false;
+        return message.contains("LLM API调用失败")
+                || message.contains("OpenAI Chat调用失败")
+                || message.contains("Anthropic Chat调用失败")
+                || message.contains("Chat调用失败")
+                || message.contains("LLM API流式调用失败")
+                || message.contains("获取模型列表失败")
+                || message.contains("Embedding调用失败")
+                || message.contains("Reranker调用失败");
+    }
+
+    /**
      * 清理错误信息中的敏感内容
      */
     private String sanitizeErrorMessage(String message) {
@@ -256,12 +273,17 @@ public class GlobalExceptionHandler {
         boolean isProduction = Arrays.stream(environment.getActiveProfiles())
                 .anyMatch(profile -> "prod".equalsIgnoreCase(profile) || "production".equalsIgnoreCase(profile));
 
+        // LLM API 调用异常：无论是否生产环境，都返回友好提示，不暴露远程 API 的技术细节
+        String message = e.getMessage();
+        if (message != null && isLlmApiException(message)) {
+            return "接入组API连接异常，请检查接入组地址或API Key配置";
+        }
+
         if (isProduction) {
             return "服务器内部错误，请联系管理员";
         }
 
         // 即使在开发环境，也要清理敏感信息
-        String message = e.getMessage();
         if (message == null) {
             return "服务器内部错误，请联系管理员";
         }

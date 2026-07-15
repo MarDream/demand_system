@@ -3,8 +3,6 @@ package com.demand.system.common.enums;
 public enum RequirementStatus {
 
     NEW("新建"),
-    PENDING_REVIEW("待评审"),
-    REVIEWING("评审中"),
     APPROVED("已通过"),
     IN_DEVELOPMENT("开发中"),
     TESTING("测试中"),

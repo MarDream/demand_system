@@ -233,6 +233,7 @@
 import { onMounted, ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { resolveErrorMessage } from '@/utils/error'
 import { MoreFilled, Star } from '@element-plus/icons-vue'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppDialog from '@/components/common/AppDialog.vue'
@@ -363,7 +364,7 @@ async function confirmMigrate() {
     )
     showMigrateDialog.value = false
   } catch (err: any) {
-    ElMessage.error(err?.message || '迁移失败')
+    ElMessage.error(resolveErrorMessage(err, '迁移失败'))
   } finally {
     migrating.value = false
   }
@@ -395,7 +396,7 @@ async function handleSetDefault(kb: KnowledgeBase) {
     store.fetchAllBases()
   } catch (err: any) {
     if (err !== 'cancel') {
-      ElMessage.error(err?.message || '设置失败')
+      ElMessage.error(resolveErrorMessage(err, '设置失败'))
     }
   }
 }
@@ -412,7 +413,7 @@ async function handleUnsetDefault(kb: KnowledgeBase) {
     store.fetchAllBases()
   } catch (err: any) {
     if (err !== 'cancel') {
-      ElMessage.error(err?.message || '取消失败')
+      ElMessage.error(resolveErrorMessage(err, '取消失败'))
     }
   }
 }
@@ -457,7 +458,7 @@ async function handleDelete(kb: KnowledgeBase) {
     await store.removeBase(kb.id)
     ElMessage.success('删除成功')
   } catch (err: any) {
-    ElMessage.error(err?.message || '删除失败')
+    ElMessage.error(resolveErrorMessage(err, '删除失败'))
   } finally {
     if (deletingId.value === kb.id) {
       deletingId.value = null

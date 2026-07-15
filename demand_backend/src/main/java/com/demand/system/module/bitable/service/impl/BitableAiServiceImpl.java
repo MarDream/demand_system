@@ -140,7 +140,9 @@ public class BitableAiServiceImpl implements BitableAiService {
             if (start >= 0 && end > start) {
                 try {
                     return objectMapper.readValue(cleaned.substring(start, end + 1), AiBuildTableResult.class);
-                } catch (Exception ignored) {}
+                } catch (Exception ex) {
+                    log.debug("JSON 片段提取失败，尝试下一个候选区间", ex);
+                }
             }
             throw new BusinessException("AI 生成的表结构格式异常，请重试");
         }

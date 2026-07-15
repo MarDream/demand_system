@@ -9,6 +9,22 @@ export interface RoleGroupItem {
   name: string
   description?: string | null
   sortOrder?: number | null
+  isDefault?: number | null
+}
+
+export interface RoleTreeNode {
+  groupId: number | null
+  groupName: string
+  isDefault: number
+  children: RoleTreeItem[]
+}
+
+export interface RoleTreeItem {
+  id: number
+  name: string
+  code: string
+  isDefault: number
+  groupIds: number[]
 }
 
 export interface RolePayload {
@@ -16,6 +32,7 @@ export interface RolePayload {
   name: string
   description?: string | null
   roleGroupId?: number | null
+  groupIds?: number[] | null
 }
 
 export interface RoleGroupSortItem {
@@ -33,11 +50,15 @@ export function getRoleList() {
   return request.get<RoleItem[]>('/v1/rbac/roles')
 }
 
+export function getRoleTree() {
+  return request.get<RoleTreeNode[]>('/v1/rbac/roles/tree')
+}
+
 export function getRoleGroups() {
   return request.get<RoleGroupItem[]>('/v1/rbac/roles/groups')
 }
 
-export function createRoleGroup(data: { name: string; description?: string | null; roleIds?: number[] }) {
+export function createRoleGroup(data: { name: string; description?: string | null; roleIds?: number[]; isDefault?: number }) {
   return request.post<RoleGroupItem>('/v1/rbac/roles/groups', data)
 }
 

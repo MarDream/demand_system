@@ -1,0 +1,38 @@
+{
+  "timestamp": "2026-07-13T11:15:26.149Z",
+  "target": "http://127.0.0.1:8081",
+  "modules": [
+    "AUTH",
+    "PROJ",
+    "REQ",
+    "ITER",
+    "WF",
+    "KB",
+    "FILE",
+    "USER",
+    "NOTIF",
+    "RATE",
+    "LLM",
+    "BITABLE",
+    "CFG",
+    "ORG",
+    "META"
+  ],
+  "summary": {
+    "passed": 29,
+    "skipped": 4,
+    "failed": 2
+  },
+  "failures": [
+    {
+      "module": "RATE",
+      "name": "P0-RATE-001 rating trend",
+      "detail": "BUG(500): ### Error querying database.  Cause: \r\n### The error may exist in com\r\n### The error may involve defaultParameterMap\r\n##"
+    },
+    {
+      "module": "BITABLE",
+      "name": "P0-BITABLE-001 bases",
+      "detail": "BUG: ### Error querying database.  Cause: \r\n### The error may exist in file [\r\n### The error may involve defaultParameterMap\r"
+    }
+  ]
+}

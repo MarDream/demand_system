@@ -25,6 +25,16 @@ public class LlmModel {
     private Integer testDuration;
     private String testError;
     private LocalDateTime testAt;
+    /** 最近测试响应内容（完整响应文本） */
+    private String testContent;
+    /** 最近测试请求 Token 数 */
+    private Integer testPromptTokens;
+    /** 最近测试响应 Token 数 */
+    private Integer testCompletionTokens;
+    /** 最近测试总 Token 数 */
+    private Integer testTotalTokens;
+    /** 最近测试实际响应的模型名 */
+    private String testResponseModel;
     private Integer chunkSize;
     private Integer chunkOverlap;
     private Integer searchTopK;
@@ -67,6 +77,16 @@ public class LlmModel {
     public void setTestError(String testError) { this.testError = testError; }
     public LocalDateTime getTestAt() { return testAt; }
     public void setTestAt(LocalDateTime testAt) { this.testAt = testAt; }
+    public String getTestContent() { return testContent; }
+    public void setTestContent(String testContent) { this.testContent = testContent; }
+    public Integer getTestPromptTokens() { return testPromptTokens; }
+    public void setTestPromptTokens(Integer testPromptTokens) { this.testPromptTokens = testPromptTokens; }
+    public Integer getTestCompletionTokens() { return testCompletionTokens; }
+    public void setTestCompletionTokens(Integer testCompletionTokens) { this.testCompletionTokens = testCompletionTokens; }
+    public Integer getTestTotalTokens() { return testTotalTokens; }
+    public void setTestTotalTokens(Integer testTotalTokens) { this.testTotalTokens = testTotalTokens; }
+    public String getTestResponseModel() { return testResponseModel; }
+    public void setTestResponseModel(String testResponseModel) { this.testResponseModel = testResponseModel; }
     public Integer getChunkSize() { return chunkSize; }
     public void setChunkSize(Integer chunkSize) { this.chunkSize = chunkSize; }
     public Integer getChunkOverlap() { return chunkOverlap; }

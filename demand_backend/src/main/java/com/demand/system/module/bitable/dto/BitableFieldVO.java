@@ -27,6 +27,8 @@ public class BitableFieldVO {
 
     private Integer width;
 
+    private String description;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
@@ -109,6 +111,14 @@ public class BitableFieldVO {
 
     public void setWidth(Integer width) {
         this.width = width;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
     }
 
     public LocalDateTime getCreatedAt() {

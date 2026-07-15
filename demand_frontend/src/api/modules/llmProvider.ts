@@ -42,6 +42,16 @@ export interface LlmModel {
   testDuration: number | null
   testError: string | null
   testAt: string | null
+  /** 最近测试响应内容（完整响应文本） */
+  testContent: string | null
+  /** 最近测试请求 Token 数 */
+  testPromptTokens: number | null
+  /** 最近测试响应 Token 数 */
+  testCompletionTokens: number | null
+  /** 最近测试总 Token 数 */
+  testTotalTokens: number | null
+  /** 最近测试实际响应的模型名 */
+  testResponseModel: string | null
   /** 文本分块大小（仅 embedding 模型使用） */
   chunkSize?: number | null
   /** 文本分块重叠大小（仅 embedding 模型使用） */
@@ -101,6 +111,27 @@ export interface SniffedModel {
   inferredType: string
 }
 
+
+export interface LlmApplication {
+  id: number
+  code: string
+  name: string
+  description?: string | null
+  modelType: 'chat' | 'embedding' | 'rerank' | string
+  modelId?: number | null
+  modelName?: string | null
+  modelCode?: string | null
+  providerName?: string | null
+  modelAvailable: boolean
+  enabled: boolean
+  sortOrder: number
+}
+
+export interface LlmApplicationUpdateForm {
+  modelId: number | null
+  enabled?: boolean
+}
+
 export interface ChatModelOption {
   id: number
   providerId: number
@@ -142,6 +173,11 @@ export const llmProviderApi = {
 
   // Roles
   getRoles: () => request.get<string[]>('/v1/llm-providers/models/roles'),
+
+  // 应用功能点模型配置
+  listApplications: () => request.get<LlmApplication[]>('/v1/llm-applications'),
+  updateApplication: (code: string, data: LlmApplicationUpdateForm) =>
+    request.put<LlmApplication>(`/v1/llm-applications/${encodeURIComponent(code)}`, data),
 
   // Chat Models (for RAG)
   listChatModels: () => request.get<ChatModelOption[]>('/v1/llm-providers/chat-models'),

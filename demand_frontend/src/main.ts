@@ -3,6 +3,10 @@ import { createPinia } from 'pinia'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
+import VxeUIAll from 'vxe-pc-ui'
+import 'vxe-pc-ui/lib/style.css'
+import VxeUITable from 'vxe-table'
+import 'vxe-table/lib/style.css'
 import App from './App.vue'
 import router from './router'
 import '@/styles/global.scss'
@@ -10,6 +14,7 @@ import '@/styles/column-config.scss'
 import 'remixicon/fonts/remixicon.css'
 import { permission } from '@/directives/permission'
 import { setupDialogEnhancer } from '@/utils/dialogEnhancer'
+import { ElMessage } from 'element-plus'
 
 // ECharts 按需引入 graphic 组件（修复 [ECharts] Component graphic is used but not imported 报错）
 import * as echarts from 'echarts/core'
@@ -52,6 +57,22 @@ const app = createApp(App)
 app.use(createPinia())
 app.use(router)
 app.use(ElementPlus, { locale: zhCn })
+app.use(VxeUIAll)
+app.use(VxeUITable)
 app.directive('permission', permission)
+
+// C3: 全局错误边界 - 兜底渲染期未捕获异常，避免整页白屏
+// 注意：生产构建已通过 vite esbuild.drop 剥离 console，此处 console.error 仅在 dev 可见；
+// 用户侧反馈依赖 ElMessage（不被剥离）。节流 3s 避免同一异常连续刷屏。
+let lastErrorToastAt = 0
+app.config.errorHandler = (err, _instance, info) => {
+  console.error('[GlobalErrorHandler]', err, info)
+  const now = Date.now()
+  if (now - lastErrorToastAt > 3000) {
+    lastErrorToastAt = now
+    ElMessage.error('页面发生异常，请刷新后重试')
+  }
+}
+
 app.mount('#app')
 setupDialogEnhancer()

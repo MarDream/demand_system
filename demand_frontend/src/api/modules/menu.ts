@@ -76,6 +76,8 @@ export interface RoleItem {
   roleGroupId?: number | null
   sortOrder?: number | null
   isSystem: number
+  isDefault?: number | null
+  groupIds?: number[] | null
 }
 
 export function getRoleList() {

@@ -3,13 +3,14 @@ package com.demand.system.module.bitable.converter;
 import com.demand.system.module.bitable.dto.*;
 import com.demand.system.module.bitable.entity.*;
 import org.mapstruct.Mapper;
+import org.mapstruct.ReportingPolicy;
 
 import java.util.List;
 
 /**
  * 多维表格 MapStruct 转换器
  */
-@Mapper(componentModel = "spring")
+@Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface BitableConverter {
 
     // ==================== Base ====================

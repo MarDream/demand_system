@@ -2,6 +2,7 @@ import axios from 'axios'
 import type { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios'
 import { ElMessage } from 'element-plus'
 import type { ApiResponse } from '@/types/api'
+import { resolveErrorMessage } from '@/utils/error'
 import {
   getToken,
   setToken,
@@ -144,7 +145,7 @@ service.interceptors.response.use(
     }
 
     if (error.response?.status === 403) {
-      const msg = error.response?.data?.message || error.message
+      const msg = resolveErrorMessage(error, '请求被拒绝，无操作权限')
 
       // 后端返回 "Invalid CORS request" 表示 CORS 白名单拦截，这不是登录态问题。
       // 应明确提示跨域配置错误，不踢回登录页。
@@ -155,11 +156,11 @@ service.interceptors.response.use(
       }
 
       // 真正的 403 业务权限不足
-      ElMessage.error(msg || '请求被拒绝，无操作权限')
+      ElMessage.error(msg)
       // 已登录用户的业务 403（如越权操作）只是拒绝操作，不踢出。
       // 登录页面的 403（Invalid CORS）在上面已拦截，到这里的 403 即使是未登录用户
       // 也由登录页的 catch 处理，不在此处调用 handleAuthExpired 以免误跳转。
-      return Promise.reject(error)
+      return Promise.reject(Object.assign(new Error(msg), { code: 403 }))
     }
 
     // 网络错误（包括 CORS 被浏览器拦截无法获取响应的情况）
@@ -168,8 +169,10 @@ service.interceptors.response.use(
       return Promise.reject(error)
     }
 
-    ElMessage.error(error.message || '网络异常')
-    return Promise.reject(error)
+    // 其他 HTTP 错误：提取后端返回的 message，而非暴露 HTTP 状态码
+    const msg = resolveErrorMessage(error, '网络异常')
+    ElMessage.error(msg)
+    return Promise.reject(Object.assign(new Error(msg), { code: error.response?.status }))
   },
 )
 

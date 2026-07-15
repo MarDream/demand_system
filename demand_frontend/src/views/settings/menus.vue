@@ -181,6 +181,7 @@ import PageContainer from '@/components/common/PageContainer.vue'
 import TableCard from '@/components/common/TableCard.vue'
 import IconPicker from '@/components/common/IconPicker.vue'
 import { createMenu, deleteMenu, getAllMenus, updateMenu, batchSortMenu, type MenuItem, type MenuPayload, type MenuSortItem, getRoleList, getGrantablePermissions, getRolePermissions, saveRolePermissions, type RoleItem } from '@/api/modules/menu'
+import { resolveErrorMessage } from '@/utils/error'
 
 const iconMap: Record<string, Component> = {}
 for (const [name, comp] of Object.entries(ElementPlusIcons)) {
@@ -358,8 +359,8 @@ async function handleSortEnd(evt: SortableEvent) {
     await batchSortMenu(sortItems)
     ElMessage.success('排序已保存')
     await fetchMenus()
-  } catch {
-    ElMessage.error('排序保存失败')
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '排序保存失败'))
     await fetchMenus()
   }
 }

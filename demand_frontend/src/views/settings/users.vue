@@ -619,6 +619,7 @@ import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
 import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import { formatDate as formatDateTime } from '@/utils/format'
 import { getRoleList } from '@/api/modules/role'
+import { resolveErrorMessage } from '@/utils/error'
 import type { RoleItem } from '@/api/modules/menu'
 import { useUserStore } from '@/stores/modules/user'
 import { useCollapsibleSidebar } from '@/composables/useCollapsibleSidebar'
@@ -1032,6 +1033,7 @@ async function loadOrgData() {
       expandedKeys.value = new Set(orgTree.value.map(n => `org-${n.id}`))
     }
   } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '加载组织树失败'))
   }
 }
 
@@ -1222,7 +1224,7 @@ async function handleStatusChange(row: UserInfo, value: boolean) {
     ElMessage.success(`${statusText}成功`)
   } catch (error: any) {
     if (error !== 'cancel') {
-      ElMessage.error(`${statusText}失败`)
+      ElMessage.error(resolveErrorMessage(error, `${statusText}失败`))
     }
   }
 }

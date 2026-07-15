@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demand.system.module.workflow.mapper.WorkflowInstanceMapper">
+
+    <!-- 按版本ID分组统计运行中的实例数 -->
+    <select id="countRunningByVersionIds" resultType="java.util.Map">
+        SELECT workflow_version_id AS workflowVersionId, COUNT(*) AS cnt
+        FROM workflow_instances
+        WHERE workflow_version_id IN
+        <foreach collection="versionIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        AND status = 'running'
+        GROUP BY workflow_version_id
+    </select>
+
+</mapper>

@@ -111,6 +111,7 @@
       </div>
     </div>
   </div>
+  <SystemAssistant v-if="userStore.userInfo" />
   <OrgBindDialog v-if="userStore.needOrgBind" />
 </template>
 
@@ -126,6 +127,7 @@ import { Fold, Expand, Bell } from '@element-plus/icons-vue'
 import { isRemixIcon } from '@/components/common/RemixIconData'
 import Breadcrumb from '@/components/layout/Breadcrumb.vue'
 import OrgBindDialog from '@/components/OrgBindDialog.vue'
+import SystemAssistant from '@/components/assistant/SystemAssistant.vue'
 import { formatDate } from '@/utils/format'
 import { resolveActiveMenuPath } from '@/utils/menuNavigation'
 import { getNotificationList, markAsRead } from '@/api/modules/notification'

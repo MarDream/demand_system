@@ -404,7 +404,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { TableInstance } from 'element-plus'
-import { Setting, View, Edit, Delete, ArrowDown, ArrowRight, Star, StarFilled, Close, Document, Bell, CircleCheck, EditPen, Search, Refresh } from '@element-plus/icons-vue'
+import { Setting, View, Edit, Delete, ArrowDown, ArrowRight, Star, StarFilled, Document, Bell, CircleCheck, EditPen, Search, Refresh } from '@element-plus/icons-vue'
 import { requirementApi, userApi } from '@/api'
 import { getMyRequirementPending, getMyRequirementDone, getMyRequirementFollows, exportRequirementExcel } from '@/api/modules/requirement'
 import { getTabBadgeCounts } from '@/api/modules/statistics'
@@ -413,6 +413,7 @@ import { workflowEngineApi, type CurrentNodeHandler } from '@/api/modules/workfl
 import type { Requirement, RequirementMyListQuery, RequirementQuery } from '@/types/requirement'
 import type { User } from '@/types/user'
 import { normalizeText, formatDate, stripPriorityPrefix } from '@/utils/format'
+import { resolveErrorMessage } from '@/utils/error'
 import { usePermission } from '@/composables/usePermission'
 import { useRequirementTag } from '@/composables/useRequirementTag'
 import { useUserStore } from '@/stores/modules/user'
@@ -601,7 +602,7 @@ async function loadFilterUsers() {
     const res = await userApi.getFilterUsers() as any
     filterUserList.value = res || []
   } catch (error) {
-    // ignore
+    console.error(error)
   }
 }
 
@@ -1139,7 +1140,8 @@ onMounted(async () => {
     filterForm.nodeStatus = String(nodeStatusFromQuery)
   }
   if (isOverdueFromQuery !== undefined && isOverdueFromQuery !== null) {
-    filterForm.isOverdue = isOverdueFromQuery === 'true' || isOverdueFromQuery === true
+    const overdueValue = Array.isArray(isOverdueFromQuery) ? isOverdueFromQuery[0] : isOverdueFromQuery
+    filterForm.isOverdue = String(overdueValue) === 'true'
   }
 
   // 加载主数据

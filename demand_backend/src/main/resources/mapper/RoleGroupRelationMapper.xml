@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demand.system.module.rbac.mapper.RoleGroupRelationMapper">
+
+    <!-- 根据角色ID列表查询所有关联的分组ID -->
+    <select id="selectGroupIdsByRoleId" resultType="java.lang.Long">
+        SELECT role_group_id FROM role_group_relations WHERE role_id = #{roleId}
+    </select>
+
+    <!-- 根据角色ID列表查询所有关联的分组ID -->
+    <select id="selectGroupIdsByRoleIds" resultType="map">
+        SELECT role_id, role_group_id FROM role_group_relations WHERE role_id IN
+        <foreach collection="roleIds" item="roleId" open="(" separator="," close=")">
+            #{roleId}
+        </foreach>
+    </select>
+
+    <!-- 删除角色下的所有关联分组 -->
+    <delete id="deleteByRoleId">
+        DELETE FROM role_group_relations WHERE role_id = #{roleId}
+    </delete>
+
+    <!-- 删除角色组下的所有关联 -->
+    <delete id="deleteByRoleGroupId">
+        DELETE FROM role_group_relations WHERE role_group_id = #{roleGroupId}
+    </delete>
+
+</mapper>

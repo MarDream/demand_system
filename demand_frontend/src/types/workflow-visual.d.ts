@@ -104,6 +104,8 @@ export interface WorkflowVersionDTO {
   knowledgeBaseId?: number
   knowledgeBaseName?: string
   approvalEvaluationEnabled?: boolean
+  /** 保存时后端返回的校验问题列表 */
+  validationIssues?: WorkflowValidationIssue[]
 }
 
 export interface WorkflowVersionMetaUpdateDTO {

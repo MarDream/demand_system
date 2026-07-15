@@ -5,6 +5,8 @@
       <p class="config-desc">管理大模型接入组和模型实例，支持 OpenAI 和 Anthropic 协议</p>
     </div>
 
+    <el-tabs v-model="activeTab" class="llm-tabs">
+      <el-tab-pane label="接入组与模型" name="providers">
     <!-- 知识库配置状态卡片 -->
     <div v-if="ragConfig" class="rag-status-bar">
       <div class="rag-status-item">
@@ -39,69 +41,90 @@
       </div>
     </div>
 
-    <div class="config-layout">
+    <div class="config-layout" :style="providerPanel.styleVars">
       <!-- 左侧：接入组列表 -->
-      <div class="provider-panel">
-        <div class="panel-header">
-          <span class="panel-title">接入组</span>
-          <AppButton :icon="Plus" size="small" type="primary" permission="button:llm-provider:create" @click="openCreateProvider">新增</AppButton>
-        </div>
-        <div class="provider-list" v-loading="loading">
-          <div
-            v-for="p in providers"
-            :key="p.id"
-            class="provider-item"
-            :class="{ 'is-selected': selectedProviderId === p.id }"
-            @click="selectedProviderId = p.id!"
-          >
-            <div class="provider-item-main">
-              <div class="provider-item-left">
-                <div class="provider-name">
-                  <span>{{ p.name }}</span>
-                  <el-tag :type="p.protocol === 'openai' ? 'primary' : 'warning'" size="small">
-                    {{ p.protocol === 'openai' ? 'OpenAI' : 'Anthropic' }}
-                  </el-tag>
-                </div>
-                <div class="provider-meta">{{ p.baseUrl }}</div>
-              </div>
-              <div class="provider-item-right">
-                <span v-permission="'button:llm-provider:update'">
-                  <el-switch
-                    :model-value="p.enabled"
-                    size="small"
-                    @change="handleToggleProvider(p)"
-                    @click.stop
-                  />
-                </span>
-                <div class="provider-count">{{ p.models?.length ?? 0 }} 个模型{{ providerValidCount(p) > 0 ? `，有效 ${providerValidCount(p)} 个` : '' }}</div>
-              </div>
-            </div>
-            <div class="provider-item-actions" @click.stop>
-              <el-tooltip content="嗅探模型" placement="top">
-                <span v-permission="'button:llm-provider:test'">
-                  <el-icon class="action-icon" style="color: var(--color-warning);" @click="handleSniff(p)"><Search /></el-icon>
-                </span>
+      <div class="provider-panel" :class="{ 'is-collapsed': providerPanel.collapsed }">
+        <div class="provider-panel__inner">
+          <div class="panel-header">
+            <span class="panel-title">接入组</span>
+            <div class="panel-header-actions">
+              <el-tooltip content="折叠侧边栏" placement="top">
+                <el-icon class="panel-collapse-btn" @click="providerPanel.toggle"><Fold /></el-icon>
               </el-tooltip>
-              <el-tooltip content="查看密钥" placement="top">
-                <span v-permission="'button:llm-provider:update'">
-                  <el-icon class="action-icon" @click="handleViewApiKey(p)"><View /></el-icon>
-                </span>
-              </el-tooltip>
-              <el-tooltip content="编辑" placement="top">
-                <span v-permission="'button:llm-provider:update'">
-                  <el-icon class="action-icon primary" @click="openEditProvider(p)"><EditPen /></el-icon>
-                </span>
-              </el-tooltip>
-              <el-tooltip content="删除" placement="top">
-                <span v-permission="'button:llm-provider:delete'">
-                  <el-icon class="action-icon danger" @click="handleDeleteProvider(p)"><Delete /></el-icon>
-                </span>
-              </el-tooltip>
+              <AppButton :icon="Plus" size="small" type="primary" permission="button:llm-provider:create" @click="openCreateProvider">新增</AppButton>
             </div>
           </div>
-          <el-empty v-if="!loading && providers.length === 0" description="暂无接入组" />
+          <div class="provider-list" v-loading="loading">
+            <div
+              v-for="p in providers"
+              :key="p.id"
+              class="provider-item"
+              :class="{ 'is-selected': selectedProviderId === p.id }"
+              @click="selectedProviderId = p.id!"
+            >
+              <div class="provider-item-main">
+                <div class="provider-item-left">
+                  <div class="provider-name">
+                    <span>{{ p.name }}</span>
+                    <el-tag :type="p.protocol === 'openai' ? 'primary' : 'warning'" size="small">
+                      {{ p.protocol === 'openai' ? 'OpenAI' : 'Anthropic' }}
+                    </el-tag>
+                  </div>
+                  <div class="provider-meta">{{ p.baseUrl }}</div>
+                </div>
+                <div class="provider-item-right">
+                  <span v-permission="'button:llm-provider:update'">
+                    <el-switch
+                      :model-value="p.enabled"
+                      size="small"
+                      @change="handleToggleProvider(p)"
+                      @click.stop
+                    />
+                  </span>
+                  <div class="provider-count">{{ p.models?.length ?? 0 }} 个模型{{ providerValidCount(p) > 0 ? `，有效 ${providerValidCount(p)} 个` : '' }}</div>
+                </div>
+              </div>
+              <div class="provider-item-actions" @click.stop>
+                <el-tooltip content="嗅探模型" placement="top">
+                  <span v-permission="'button:llm-provider:test'">
+                    <el-icon class="action-icon" style="color: var(--color-warning);" @click="handleSniff(p)"><Search /></el-icon>
+                  </span>
+                </el-tooltip>
+                <el-tooltip content="查看密钥" placement="top">
+                  <span v-permission="'button:llm-provider:update'">
+                    <el-icon class="action-icon" @click="handleViewApiKey(p)"><View /></el-icon>
+                  </span>
+                </el-tooltip>
+                <el-tooltip content="编辑" placement="top">
+                  <span v-permission="'button:llm-provider:update'">
+                    <el-icon class="action-icon primary" @click="openEditProvider(p)"><EditPen /></el-icon>
+                  </span>
+                </el-tooltip>
+                <el-tooltip content="删除" placement="top">
+                  <span v-permission="'button:llm-provider:delete'">
+                    <el-icon class="action-icon danger" @click="handleDeleteProvider(p)"><Delete /></el-icon>
+                  </span>
+                </el-tooltip>
+              </div>
+            </div>
+            <el-empty v-if="!loading && providers.length === 0" description="暂无接入组" />
+          </div>
         </div>
       </div>
+
+      <!-- 可拖拽分隔条 -->
+      <div class="provider-panel__resizer" @mousedown="providerPanel.startResize" @dblclick="providerPanel.toggle" />
+
+      <!-- 折叠时的展开按钮 -->
+      <button
+        v-if="providerPanel.collapsed"
+        class="provider-panel__expand-btn"
+        type="button"
+        title="展开侧边栏"
+        @click="providerPanel.toggle"
+      >
+        <el-icon><ArrowRight /></el-icon>
+      </button>
 
       <!-- 右侧：模型管理 -->
       <div class="model-panel">
@@ -544,49 +567,127 @@
         </div>
 
         <!-- 完整测试结果 -->
-        <template v-if="testDetailModel.testResult">
+        <template v-if="testDetailModel.testContent || testDetailModel.testResponseModel || testDetailModel.testPromptTokens != null">
           <div class="test-detail-section">
             <div class="test-detail-section-title">响应详情</div>
             <div class="test-detail-grid">
-              <div v-if="testDetailModel.testResult.model" class="test-detail-item">
+              <div v-if="testDetailModel.testResponseModel" class="test-detail-item">
                 <span class="test-detail-label">响应模型</span>
-                <span class="test-detail-value">{{ testDetailModel.testResult.model }}</span>
+                <span class="test-detail-value">{{ testDetailModel.testResponseModel }}</span>
               </div>
-              <div v-if="testDetailModel.testResult.promptTokens != null" class="test-detail-item">
+              <div v-if="testDetailModel.testPromptTokens != null" class="test-detail-item">
                 <span class="test-detail-label">Prompt Tokens</span>
-                <span class="test-detail-value">{{ testDetailModel.testResult.promptTokens }}</span>
+                <span class="test-detail-value">{{ testDetailModel.testPromptTokens }}</span>
               </div>
-              <div v-if="testDetailModel.testResult.completionTokens != null" class="test-detail-item">
+              <div v-if="testDetailModel.testCompletionTokens != null" class="test-detail-item">
                 <span class="test-detail-label">Completion Tokens</span>
-                <span class="test-detail-value">{{ testDetailModel.testResult.completionTokens }}</span>
+                <span class="test-detail-value">{{ testDetailModel.testCompletionTokens }}</span>
               </div>
-              <div v-if="testDetailModel.testResult.totalTokens != null" class="test-detail-item">
+              <div v-if="testDetailModel.testTotalTokens != null" class="test-detail-item">
                 <span class="test-detail-label">Total Tokens</span>
-                <span class="test-detail-value">{{ testDetailModel.testResult.totalTokens }}</span>
+                <span class="test-detail-value">{{ testDetailModel.testTotalTokens }}</span>
               </div>
             </div>
           </div>
 
           <!-- 响应内容 -->
-          <div v-if="testDetailModel.testResult.content" class="test-detail-section">
+          <div v-if="testDetailModel.testContent" class="test-detail-section">
             <div class="test-detail-section-title">响应内容</div>
-            <div class="test-detail-content-box">{{ testDetailModel.testResult.content }}</div>
+            <div class="test-detail-content-box">{{ testDetailModel.testContent }}</div>
           </div>
         </template>
 
         <!-- 无完整结果提示 -->
         <div v-else-if="testDetailModel.testAt" class="test-detail-section">
-          <el-alert type="info" :closable="false" description="当前会话未缓存完整测试结果，请重新测试以查看详情" />
+          <el-alert type="info" :closable="false" description="该测试结果未包含完整响应内容，请重新测试以查看详情" />
         </div>
       </template>
     </el-drawer>
+      </el-tab-pane>
+
+      <el-tab-pane label="模型应用" name="applications">
+        <div class="application-panel" v-loading="applicationsLoading">
+          <div class="application-intro">
+            <div>
+              <h3>功能点模型应用</h3>
+              <p>为不同业务功能单独指定默认模型；未指定时会自动回退到对应类型的全局默认模型。</p>
+            </div>
+            <el-tag type="info">共 {{ applications.length }} 个功能点</el-tag>
+          </div>
+
+          <el-alert
+            title="模型选择只影响对应功能点，不会修改接入组或模型本身的全局默认标记。"
+            type="info"
+            :closable="false"
+            show-icon
+            class="application-alert"
+          />
+
+          <div class="application-grid">
+            <div v-for="application in applications" :key="application.code" class="application-card">
+              <div class="application-card-header">
+                <div>
+                  <div class="application-name">{{ application.name }}</div>
+                  <div class="application-code">{{ application.code }}</div>
+                </div>
+                <el-switch
+                  v-model="application.enabled"
+                  :loading="savingApplicationCode === application.code"
+                  @change="saveApplication(application)"
+                />
+              </div>
+              <p class="application-description">{{ application.description }}</p>
+              <el-form label-position="top" size="default">
+                <el-form-item label="默认模型">
+                  <el-select
+                    v-model="application.modelId"
+                    clearable
+                    filterable
+                    style="width: 100%"
+                    :disabled="!application.enabled || savingApplicationCode === application.code"
+                    :placeholder="applicationModelOptions(application).length ? '请选择模型' : '暂无可用模型'"
+                    @change="saveApplication(application)"
+                  >
+                    <el-option
+                      v-for="option in applicationModelOptions(application)"
+                      :key="option.modelId"
+                      :label="`${option.providerName} / ${option.name} (${option.modelId})`"
+                      :value="option.id"
+                    />
+                  </el-select>
+                </el-form-item>
+              </el-form>
+              <div class="application-current">
+                <template v-if="!application.enabled">
+                  <el-tag type="warning" size="small">已停用</el-tag>
+                  <span>该功能点不会调用 LLM</span>
+                </template>
+                <template v-else-if="application.modelName && application.modelAvailable">
+                  <el-tag type="success" size="small">已绑定</el-tag>
+                  <span>{{ application.providerName }} / {{ application.modelName }}</span>
+                </template>
+                <template v-else-if="application.modelId">
+                  <el-tag type="danger" size="small">不可用</el-tag>
+                  <span>模型不存在、未启用或接入组未启用</span>
+                </template>
+                <template v-else>
+                  <el-tag type="info" size="small">自动回退</el-tag>
+                  <span>使用对应类型的全局默认模型</span>
+                </template>
+              </div>
+            </div>
+          </div>
+          <el-empty v-if="!applicationsLoading && applications.length === 0" description="暂无模型应用配置" />
+        </div>
+      </el-tab-pane>
+    </el-tabs>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Loading, View, Hide, Setting, EditPen, Delete, Connection, Search, Document } from '@element-plus/icons-vue'
+import { Plus, Loading, View, Hide, Setting, EditPen, Delete, Connection, Search, Document, ArrowLeft, ArrowRight, Fold } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
   llmProviderApi,
@@ -595,12 +696,15 @@ import {
   type LlmModel,
   type LlmModelForm,
   type SniffedModel,
+  type LlmApplication,
 } from '@/api/modules/llmProvider'
 import { getRagConfig, type RagConfig } from '@/api/modules/knowledge'
+import { resolveErrorMessage } from '@/utils/error'
 import AppButton from '@/components/common/AppButton.vue'
 import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
 import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import { usePermission } from '@/composables/usePermission'
+import { useCollapsibleSidebar } from '@/composables/useCollapsibleSidebar'
 
 // ==================== 列字段设置 ====================
 
@@ -637,15 +741,19 @@ const {
   defaultKeys: llmModelDefaultKeys,
 })
 
+const activeTab = ref<'providers' | 'applications'>('providers')
 const loading = ref(false)
+const applicationsLoading = ref(false)
+const savingApplicationCode = ref<string | null>(null)
+const applications = ref<LlmApplication[]>([])
 const submitting = ref(false)
 const providers = ref<LlmProvider[]>([])
 const selectedProviderId = ref<number | null>(null)
 
 // Computed
-const selectedProvider = computed(() =>
-  providers.value.find(p => p.id === selectedProviderId.value) ?? null
-)
+const selectedProvider = computed(() => {
+  return providers.value.find(p => p.id === selectedProviderId.value) ?? null
+})
 const selectedProviderModels = computed(() => {
   const models = selectedProvider.value?.models ?? []
   // 默认模型排在最前面，其余按 id 升序
@@ -659,6 +767,16 @@ const selectedProviderModels = computed(() => {
 
 // RAG 配置状态
 const ragConfig = ref<RagConfig | null>(null)
+
+// 使用与用户管理一致的侧边栏收缩方案
+const providerPanel = useCollapsibleSidebar({
+  defaultWidth: 340,
+  minWidth: 280,
+  maxWidth: 500,
+  widthVar: '--provider-panel-width',
+  resizerWidth: 4,
+  resizerWidthVar: '--provider-panel-resizer-width',
+})
 
 // 模型类型快捷筛选
 const modelTypeFilter = ref('all')
@@ -821,6 +939,7 @@ onMounted(() => {
   loadColumnConfig()
   loadRoles()
   loadRagConfig()
+  loadApplications()
 })
 
 // ==================== Data ====================
@@ -834,7 +953,8 @@ async function loadProviders() {
     if (providers.value.length > 0 && selectedProviderId.value === null) {
       selectedProviderId.value = providers.value[0].id!
     }
-  } catch {
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '加载模型接入组失败'))
     providers.value = []
   } finally {
     loading.value = false
@@ -847,8 +967,64 @@ async function loadRagConfig() {
   try {
     const res = await getRagConfig() as any
     ragConfig.value = res?.data ?? res ?? null
-  } catch {
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '加载 RAG 配置失败'))
     ragConfig.value = null
+  }
+}
+
+async function loadApplications() {
+  applicationsLoading.value = true
+  try {
+    const res = await llmProviderApi.listApplications() as any
+    applications.value = res?.data ?? res ?? []
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '加载模型应用失败'))
+    applications.value = []
+  } finally {
+    applicationsLoading.value = false
+  }
+}
+
+function applicationModelOptions(application: LlmApplication) {
+  const result: Array<{ id: number; providerName: string; name: string; modelId: string; modelType: string }> = []
+  for (const provider of providers.value) {
+    if (!provider.enabled) continue
+    for (const model of provider.models ?? []) {
+      if (!model.enabled || model.id == null) continue
+      const isChat = application.modelType === 'chat'
+      const compatible = isChat
+        ? model.modelType !== 'embedding' && model.modelType !== 'rerank'
+        : model.modelType === application.modelType
+      if (!compatible) continue
+      result.push({
+        id: model.id,
+        providerName: provider.name,
+        name: model.name,
+        modelId: model.modelId,
+        modelType: model.modelType,
+      })
+    }
+  }
+  return result
+}
+
+async function saveApplication(application: LlmApplication) {
+  savingApplicationCode.value = application.code
+  try {
+    const res = await llmProviderApi.updateApplication(application.code, {
+      modelId: application.modelId ?? null,
+      enabled: application.enabled,
+    }) as any
+    const updated = res?.data ?? res
+    const index = applications.value.findIndex(item => item.code === application.code)
+    if (index >= 0 && updated) applications.value[index] = updated
+    ElMessage.success('模型应用配置已保存')
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '保存模型应用配置失败'))
+    await loadApplications()
+  } finally {
+    savingApplicationCode.value = null
   }
 }
 
@@ -909,8 +1085,8 @@ async function handleProviderSubmit() {
     }
     providerDialogVisible.value = false
     await loadProviders()
-  } catch {
-    ElMessage.error(editingProviderId.value ? '更新失败' : '创建失败')
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, editingProviderId.value ? '更新失败' : '创建失败'))
   } finally {
     submitting.value = false
   }
@@ -921,8 +1097,8 @@ async function handleToggleProvider(row: LlmProvider) {
     await llmProviderApi.toggle(row.id!)
     ElMessage.success(row.enabled ? '已停用' : '已启用')
     await loadProviders()
-  } catch {
-    ElMessage.error('操作失败')
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '操作失败'))
   }
 }
 
@@ -935,8 +1111,8 @@ async function handleDeleteProvider(row: LlmProvider) {
       selectedProviderId.value = providers.value.find(p => p.id !== row.id)?.id ?? null
     }
     await loadProviders()
-  } catch {
-    ElMessage.error('删除失败')
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '删除失败'))
   }
 }
 
@@ -946,8 +1122,8 @@ async function toggleApiKeyVisible() {
       const res = await llmProviderApi.getApiKey(editingProviderId.value) as any
       const data = res?.data ?? res
       providerForm.apiKey = data.apiKey ?? ''
-    } catch {
-      ElMessage.error('获取 API Key 失败')
+    } catch (error) {
+      ElMessage.error(resolveErrorMessage(error, '获取 API Key 失败'))
       return
     }
   }
@@ -959,8 +1135,8 @@ async function handleViewApiKey(row: LlmProvider) {
     const res = await llmProviderApi.getApiKey(row.id!) as any
     const data = res?.data ?? res
     ElMessageBox.alert(data.apiKey ?? '', 'API Key', { confirmButtonText: '关闭' })
-  } catch {
-    ElMessage.error('获取失败')
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '获取失败'))
   }
 }
 
@@ -1026,8 +1202,8 @@ async function handleModelSubmit() {
     }
     modelDialogVisible.value = false
     await loadProviders()
-  } catch {
-    ElMessage.error(editingModelId.value ? '更新失败' : '创建失败')
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, editingModelId.value ? '更新失败' : '创建失败'))
   } finally {
     submitting.value = false
   }
@@ -1038,8 +1214,8 @@ async function handleToggleModel(_provider: LlmProvider, model: LlmModel) {
     await llmProviderApi.toggleModel(model.providerId, model.id!)
     ElMessage.success(model.enabled ? '已停用' : '已启用')
     await loadProviders()
-  } catch {
-    ElMessage.error('操作失败')
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '操作失败'))
   }
 }
 
@@ -1048,8 +1224,8 @@ async function handleToggleDefault(_provider: LlmProvider, model: LlmModel) {
     await llmProviderApi.toggleDefault(model.providerId, model.id!)
     ElMessage.success(model.isDefault ? '已取消默认' : '已设为默认')
     await loadProviders()
-  } catch {
-    ElMessage.error('操作失败')
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '操作失败'))
   }
 }
 
@@ -1060,8 +1236,8 @@ async function handleDeleteModel(model: LlmModel) {
     ElMessage.success('删除成功')
     selectedModelRows.value = selectedModelRows.value.filter(m => m.id !== model.id)
     await loadProviders()
-  } catch {
-    ElMessage.error('删除失败')
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '删除失败'))
   }
 }
 
@@ -1132,7 +1308,7 @@ async function handleTestModel(model: LlmModel) {
     if (error?.message === 'timeout') {
       ElMessage.error(`${model.name} 测试超时 (>120s)`)
     } else {
-      ElMessage.error(`${model.name} 请求失败`)
+      ElMessage.error(resolveErrorMessage(error, `${model.name} 请求失败`))
     }
   } finally {
     delete testingModels[model.id!]
@@ -1237,22 +1413,8 @@ async function testModelWithTimeout(model: LlmModel, timeout: number = 120000): 
     if (error?.message === 'timeout') {
       return { success: false, timeout: true, errorMessage: `超时 (>${timeout / 1000}s)` }
     }
-    return { success: false, timeout: false, errorMessage: getBatchTestErrorMessage(error) }
+    return { success: false, timeout: false, errorMessage: resolveErrorMessage(error, '连接失败') }
   }
-}
-
-function getBatchTestErrorMessage(error: unknown): string {
-  const requestError = error as {
-    message?: string
-    response?: {
-      data?: string | { message?: string }
-    }
-  }
-  const data = requestError.response?.data
-  if (typeof data === 'string' && data.trim()) return data
-  if (typeof data === 'object' && data?.message?.trim()) return data.message
-  if (requestError.message?.trim()) return requestError.message
-  return '连接失败'
 }
 
 function formatDuration(ms: number): string {
@@ -1367,28 +1529,8 @@ function formatCreatedDate(val: number | null): string {
 }
 
 function formatSniffError(error: unknown): string {
-  const message = getRequestErrorMessage(error)
+  const message = resolveErrorMessage(error, '')
   return message ? `嗅探模型失败：${message}` : '嗅探模型失败，请检查接入配置'
-}
-
-function getRequestErrorMessage(error: unknown): string {
-  const requestError = error as {
-    message?: string
-    response?: {
-      data?: string | { message?: string }
-    }
-  }
-  const data = requestError.response?.data
-  if (typeof data === 'string' && data.trim()) {
-    return data
-  }
-  if (typeof data === 'object' && data?.message?.trim()) {
-    return data.message
-  }
-  if (requestError.message?.trim()) {
-    return requestError.message
-  }
-  return ''
 }
 
 async function handleSniffImport() {
@@ -1422,8 +1564,8 @@ async function handleSniffImport() {
     ElMessage.success(`成功导入 ${imported} 个模型`)
     sniffDialogVisible.value = false
     await loadProviders()
-  } catch {
-    ElMessage.error('导入模型失败')
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '导入模型失败'))
   } finally {
     submitting.value = false
   }
@@ -1448,22 +1590,71 @@ async function handleSniffImport() {
 // ==================== 两栏布局 ====================
 .config-layout {
   flex: 1;
-  display: flex;
-  gap: 16px;
+  display: grid;
+  grid-template-columns: var(--provider-panel-width, 340px) var(--provider-panel-resizer-width, 4px) minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
+  position: relative;
 }
 
 // ==================== 左侧接入组面板 ====================
 .provider-panel {
-  width: 340px;
-  flex-shrink: 0;
   display: flex;
-  flex-direction: column;
   background: #fff;
   border-radius: 12px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
   overflow: hidden;
+
+  &.is-collapsed {
+    display: none;
+  }
+
+  .provider-panel__inner {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+  }
+}
+
+// 可拖拽分隔条
+.provider-panel__resizer {
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+  align-self: stretch;
+  z-index: 1;
+
+  &:hover,
+  &:active {
+    background: var(--color-accent);
+  }
+}
+
+// 折叠时的展开按钮
+.provider-panel__expand-btn {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-left: 0;
+  border-radius: 0 6px 6px 0;
+  background: #fff;
+  cursor: pointer;
+  z-index: 2;
+  box-shadow: 2px 0 6px rgba(0, 0, 0, 0.06);
+
+  &:hover {
+    background: #f5f7fa;
+  }
 }
 
 .panel-header {
@@ -1479,6 +1670,26 @@ async function handleSniffImport() {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.panel-collapse-btn {
+  font-size: 15px;
+  cursor: pointer;
+  color: #9ca3af;
+  padding: 4px;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+
+  &:hover {
+    color: #6b7280;
+    background: #f3f4f6;
+  }
 }
 
 .panel-header-right {
@@ -1581,6 +1792,10 @@ async function handleSniffImport() {
   border-radius: 12px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
   overflow: hidden;
+  min-width: 0;
+  /* 显式指定 grid-column：当 sidebar 折叠（display: none）时，
+     防止 main 被错位放到第二个 track 而被压缩到 0 宽 */
+  grid-column: 3;
 }
 
 .model-empty {
@@ -2047,4 +2262,89 @@ async function handleSniffImport() {
     background-color: #f0f7ff;
   }
 }
+
+
+.llm-tabs {
+  margin-top: 16px;
+}
+
+.application-panel {
+  min-height: 360px;
+}
+
+.application-intro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 8px 0 16px;
+}
+
+.application-intro h3 {
+  margin: 0 0 6px;
+  color: var(--el-text-color-primary);
+  font-size: 18px;
+}
+
+.application-intro p,
+.application-description {
+  margin: 0;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.application-alert {
+  margin-bottom: 16px;
+}
+
+.application-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+  gap: 16px;
+}
+
+.application-card {
+  padding: 18px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 8px;
+  background: var(--el-bg-color);
+}
+
+.application-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.application-name {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
+
+.application-code {
+  margin-top: 3px;
+  color: var(--el-text-color-placeholder);
+  font-size: 12px;
+}
+
+.application-card .el-form {
+  margin-top: 16px;
+}
+
+.application-card .el-form-item {
+  margin-bottom: 10px;
+}
+
+.application-current {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
 </style>

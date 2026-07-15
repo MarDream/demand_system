@@ -63,22 +63,6 @@ public class LlmGateway {
     // ==================== Embedding ====================
 
     /**
-     * @deprecated Embedding 模型必须由上层服务从数据库模型配置解析后传入 Provider，禁止回退 YML 固定配置。
-     */
-    @Deprecated(forRemoval = true)
-    public List<float[]> embed(List<String> texts) {
-        throw new UnsupportedOperationException("Embedding 模型必须从数据库模型配置读取，请使用 embedWithProvider(provider, texts)");
-    }
-
-    /**
-     * @deprecated Embedding 模型必须由上层服务从数据库模型配置解析后传入 Provider，禁止回退 YML 固定配置。
-     */
-    @Deprecated(forRemoval = true)
-    public float[] embed(String text) {
-        throw new UnsupportedOperationException("Embedding 模型必须从数据库模型配置读取，请使用 embedWithProvider(provider, text)");
-    }
-
-    /**
      * 使用指定的 Provider 配置调用 Embedding 接口，
      * 支持从数据库动态选择模型（而非绑定 YAML 配置）。
      */
@@ -113,14 +97,6 @@ public class LlmGateway {
     }
 
     // ==================== Reranker ====================
-
-    /**
-     * @deprecated Reranker 模型必须由上层服务从数据库模型配置解析后传入 Provider，禁止回退 YML 固定配置。
-     */
-    @Deprecated(forRemoval = true)
-    public List<Double> rerank(String query, List<String> documents) {
-        throw new UnsupportedOperationException("Reranker 模型必须从数据库模型配置读取，请使用 rerankWithProvider(provider, query, documents)");
-    }
 
     /**
      * 使用指定的 Provider 配置调用 Reranker 接口，
@@ -281,28 +257,14 @@ public class LlmGateway {
                 String candidate = text.substring(start, end + 1);
                 objectMapper.readTree(candidate);
                 return candidate;
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                log.debug("JSON 候选片段解析失败，将返回空结果", e);
+            }
         }
         return "{\"events\":[],\"entities\":[]}";
     }
 
     // ==================== Chat (RAG Answer Generation) ====================
-
-    /**
-     * @deprecated Chat 模型必须由上层服务从数据库模型配置解析后传入 Provider，禁止回退 YML 固定配置。
-     */
-    @Deprecated(forRemoval = true)
-    public String chat(String systemPrompt, String userMessage) {
-        throw new UnsupportedOperationException("Chat 模型必须从数据库模型配置读取，请使用 chatWithProvider(...)");
-    }
-
-    /**
-     * @deprecated Chat 模型必须由上层服务从数据库模型配置解析后传入 Provider，禁止回退 YML 固定配置。
-     */
-    @Deprecated(forRemoval = true)
-    public void streamChat(String systemPrompt, String userMessage, Consumer<String> tokenConsumer) {
-        throw new UnsupportedOperationException("Chat 模型必须从数据库模型配置读取，请使用 streamChatWithProvider(...)");
-    }
 
     // ==================== Core HTTP Call ====================
 

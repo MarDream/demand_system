@@ -100,6 +100,7 @@ import { getPublicShareContext, type PublicShareContext } from '@/api/modules/pu
 import { getOfficePreviewUrl } from '@/api/modules/preview'
 import { PREVIEW_IMAGE_SET, PREVIEW_SUPPORTED_EXTENSION_SET, PREVIEW_TEXT_SET, normalizeFileExtension } from '@/constants/knowledgeDocument'
 import { formatDate } from '@/utils/format'
+import { resolveErrorMessage } from '@/utils/error'
 import { clampProgress, computeOfficePreviewProgress, fetchBlobWithProgress, fetchTextWithProgress } from '@/utils/previewLoading'
 
 const PREVIEW_LOADING_MIN_DURATION = 500
@@ -204,7 +205,7 @@ async function loadShare(token: string) {
       }
     }
   } catch (error: any) {
-    errorMessage.value = error?.message || '分享链接无法访问'
+    errorMessage.value = resolveErrorMessage(error, '分享链接无法访问')
     endPreviewLoading()
   } finally {
     pageLoadingProgress.value = 100

@@ -2,6 +2,8 @@ package com.demand.system.module.rbac.dto;
 
 import com.demand.system.module.rbac.entity.Role;
 
+import java.util.List;
+
 public class RoleVO {
 
     private Long id;
@@ -11,6 +13,8 @@ public class RoleVO {
     private Long roleGroupId;
     private Integer sortOrder;
     private Integer isSystem;
+    private Integer isDefault;
+    private List<Long> groupIds;
 
     public Long getId() {
         return id;
@@ -68,6 +72,22 @@ public class RoleVO {
         this.isSystem = isSystem;
     }
 
+    public Integer getIsDefault() {
+        return isDefault;
+    }
+
+    public void setIsDefault(Integer isDefault) {
+        this.isDefault = isDefault;
+    }
+
+    public List<Long> getGroupIds() {
+        return groupIds;
+    }
+
+    public void setGroupIds(List<Long> groupIds) {
+        this.groupIds = groupIds;
+    }
+
     public static RoleVO from(Role role) {
         RoleVO vo = new RoleVO();
         vo.setId(role.getId());
@@ -77,6 +97,7 @@ public class RoleVO {
         vo.setRoleGroupId(role.getRoleGroupId());
         vo.setSortOrder(role.getSortOrder());
         vo.setIsSystem(role.getIsSystem());
+        vo.setIsDefault(role.getIsDefault());
         return vo;
     }
 }

@@ -305,15 +305,28 @@
                 </el-form-item>
 
                 <el-form-item v-if="nodeForm.assigneeType === 'SPECIFIED_ROLE'" label="指定角色">
-                  <el-select v-model="nodeForm.assigneeRoleId" placeholder="请选择角色" :loading="assigneeOptionsLoading">
-                    <el-option
-                      v-for="role in roleSelectOptions"
-                      :key="role.id"
-                      :label="role.name"
-                      :value="role.id"
-                      :disabled="role.disabled"
-                    />
-                  </el-select>
+                  <el-tree-select
+                    v-model="nodeForm.assigneeRoleId"
+                    :data="roleTreeSelectOptions"
+                    :props="{ label: 'groupName', value: 'groupId', children: 'children' }"
+                    placeholder="请选择角色"
+                    :loading="assigneeOptionsLoading"
+                    filterable
+                    clearable
+                    node-key="groupId"
+                    check-strictly
+                    @change="handleRoleTreeSelectChange"
+                  >
+                    <template #default="{ data }">
+                      <span v-if="data.groupId !== undefined">
+                        <span v-if="data.groupId === null">[默认] {{ data.groupName }}</span>
+                        <span v-else>{{ data.groupName }}</span>
+                      </span>
+                      <span v-else>
+                        {{ data.name }} <span class="role-code-hint">[{{ data.code }}]</span>
+                      </span>
+                    </template>
+                  </el-tree-select>
                 </el-form-item>
 
                 <el-form-item v-if="nodeForm.assigneeType === 'SPECIFIED_ROLE_GROUP'" label="指定角色组">
@@ -522,6 +535,7 @@ const submitting = ref(false)
 const configDirty = ref(false)
 const versionHistory = ref<WorkflowVersionDTO[]>([])
 const roleList = ref<Array<{ id: number; name: string; code: string }>>([])
+const roleTreeSelectOptions = ref<Array<{ groupId: number | null; groupName: string; children: Array<{ id: number; name: string; code: string; isDefault: number }> }>>([])
 const roleGroupList = ref<Array<{ id: number; name: string }>>([])
 const allUserList = ref<Array<{ id: number; realName: string; username: string }>>([])
 const knowledgeBases = ref<KnowledgeBase[]>([])
@@ -2411,6 +2425,19 @@ const handleDrawerClose = () => {
   selectedEdge.value = null
 }
 
+/**
+ * 角色树选择器变更处理：当选中叶子节点（角色ID）时才赋值
+ */
+function handleRoleTreeSelectChange(val: any) {
+  // el-tree-select 的 check-strictly 模式下，点击父节点会选中父节点
+  // 但我们只需要叶子节点（角色ID），所以需要判断
+  if (typeof val === 'number') {
+    nodeForm.assigneeRoleId = val
+  } else {
+    nodeForm.assigneeRoleId = undefined as any
+  }
+}
+
 // ========== 抽屉拖拽调整宽度 ==========
 function onResizeStart(e: MouseEvent) {
   isResizing.value = true
@@ -2598,15 +2625,29 @@ onMounted(() => {
 async function loadRoleAndUserList() {
   assigneeOptionsLoading.value = true
   try {
-    const [rolesRes, roleGroupsRes, usersRes, orgTreeRes, kbRes]: any[] = await Promise.all([
+    const [rolesRes, roleGroupsRes, roleTreeRes, usersRes, orgTreeRes, kbRes]: any[] = await Promise.all([
       roleApi.getRoleList(),
       roleApi.getRoleGroups(),
+      roleApi.getRoleTree(),
       userApi.getUserList({ pageNum: 1, pageSize: 999 }),
       userApi.getOrgTree(),
       getAllKnowledgeBases()
     ])
     roleList.value = (rolesRes?.data ?? rolesRes ?? [])
     roleGroupList.value = (roleGroupsRes?.data ?? roleGroupsRes ?? [])
+    // 构建角色树选择器数据
+    const roleTree = (roleTreeRes?.data ?? roleTreeRes ?? [])
+    roleTreeSelectOptions.value = roleTree.map((node: any) => ({
+      groupId: node.groupId,
+      groupName: node.groupName,
+      isDefault: node.isDefault,
+      children: (node.children || []).map((role: any) => ({
+        id: role.id,
+        name: role.name,
+        code: role.code,
+        isDefault: role.isDefault,
+      }))
+    }))
     allUserList.value = (usersRes?.list ?? [])
     orgTreeData.value = (orgTreeRes?.data ?? orgTreeRes ?? [])
     knowledgeBases.value = Array.isArray(kbRes) ? kbRes : (kbRes?.data ?? [])

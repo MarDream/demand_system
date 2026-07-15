@@ -132,6 +132,13 @@ export function validateWorkflowVersion(versionId: number) {
   return request.post<WorkflowValidationIssue[]>(`/v1/workflows/versions/${versionId}/validate`) as unknown as Promise<WorkflowValidationIssue[]>
 }
 
+/**
+ * 预校验工作流配置（不持久化，用于保存草稿前的提示）
+ */
+export function validateWorkflowConfig(config: WorkflowConfigDTO) {
+  return request.post<WorkflowValidationReport>('/v1/workflows/validate-config', config) as unknown as Promise<WorkflowValidationReport>
+}
+
 export function markLegacyWorkflowRequirements() {
   return request.post<WorkflowMigrationReport>('/v1/admin/workflow-migration/mark-legacy') as unknown as Promise<WorkflowMigrationReport>
 }

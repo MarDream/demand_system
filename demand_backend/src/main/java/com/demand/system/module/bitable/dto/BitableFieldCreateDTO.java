@@ -23,6 +23,8 @@ public class BitableFieldCreateDTO {
 
     private Integer width = 150;
 
+    private String description;
+
     public String getName() {
         return name;
     }
@@ -77,5 +79,13 @@ public class BitableFieldCreateDTO {
 
     public void setWidth(Integer width) {
         this.width = width;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
     }
 }

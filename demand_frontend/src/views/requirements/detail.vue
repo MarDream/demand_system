@@ -195,51 +195,16 @@
         <el-tab-pane name="history">
           <template #label>
             <span class="detail-tab-label">
-              <el-icon><Histogram /></el-icon>
-              <span>流转历史 ({{ history.length }})</span>
-            </span>
-          </template>
-          <el-empty v-if="history.length === 0" description="暂无流转历史" :image-size="60" />
-          <el-timeline v-else class="requirement-history-timeline">
-            <el-timeline-item
-              v-for="item in history"
-              :key="item.id"
-              :timestamp="formatDate(item.createdAt)"
-              placement="top"
-            >
-              <div class="history-item">
-                <div class="history-item__title">
-                  <strong>{{ item.operatorName || '系统' }}</strong>
-                  <el-tag size="small" effect="plain">{{ item.fieldName || '流转记录' }}</el-tag>
-                </div>
-                <div class="history-item__content">
-                  <span>{{ item.oldValue || '-' }}</span>
-                  <span class="history-item__arrow">-&gt;</span>
-                  <span>{{ item.newValue || '-' }}</span>
-                </div>
-                <div v-if="item.comment" class="history-item__comment">
-                  <el-icon class="comment-icon"><ChatDotRound /></el-icon>
-                  <span class="comment-text">{{ item.comment }}</span>
-                </div>
-              </div>
-            </el-timeline-item>
-          </el-timeline>
-        </el-tab-pane>
-
-        <!-- 审核记录 -->
-        <el-tab-pane name="approvals">
-          <template #label>
-            <span class="detail-tab-label">
               <el-icon><ChatLineRound /></el-icon>
-              <span>审核记录 ({{ approvalEvaluations.length }})</span>
+              <span>流转历史 ({{ approvalEvaluations.length }})</span>
             </span>
           </template>
           <div class="approval-evaluations-section">
             <div class="section-header">
-              <h3>审核记录</h3>
+              <h3>流转历史</h3>
               <span class="section-hint">按时间倒序展示提交、通过、驳回与取消意见</span>
             </div>
-            <el-empty v-if="sortedApprovalEvaluations.length === 0" description="暂无审核记录" :image-size="60" />
+            <el-empty v-if="sortedApprovalEvaluations.length === 0" description="暂无流转历史" :image-size="60" />
             <div v-else class="approval-evaluation-list">
               <div
                 v-for="item in sortedApprovalEvaluations"
@@ -787,7 +752,7 @@
 import { computed, ref, onMounted, watch, type Ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeftBold, ArrowRightBold, Document, Picture, List, Histogram, ChatLineRound, ChatDotRound, View, Download, Edit, Delete, ZoomIn, ZoomOut, RefreshLeft, CircleCheck } from '@element-plus/icons-vue'
+import { ArrowLeftBold, ArrowRightBold, Document, Picture, List, ChatLineRound, ChatDotRound, View, Download, Edit, Delete, ZoomIn, ZoomOut, RefreshLeft, CircleCheck } from '@element-plus/icons-vue'
 import { requirementApi, projectApi, relationApi } from '@/api'
 import { downloadRequirementAttachment, uploadRequirementAttachment } from '@/api/modules/file'
 import type { RelationItem } from '@/api/modules/relation'
@@ -800,10 +765,10 @@ import type {
   RequirementApprovalEvaluation,
   RequirementAttachment,
   RequirementComment,
-  RequirementHistory,
   RequirementUpdate, RequirementDetailVO,
 } from '@/types/requirement'
 import { normalizeText, formatDate, formatFileSize, getFileExt, stripPriorityPrefix } from '@/utils/format'
+import { resolveErrorMessage } from '@/utils/error'
 import AppButton from '@/components/common/AppButton.vue'
 import { usePermission } from '@/composables/usePermission'
 import { useRequirementTag } from '@/composables/useRequirementTag'
@@ -923,7 +888,6 @@ const currentUserId = computed(() => {
 const id = Number(route.params.id)
 const loading = ref(false)
 const detail = ref<Requirement | null>(null)
-const history = ref<RequirementHistory[]>([])
 const relatedRequirements = ref<any[]>([])
 const comments = ref<RequirementComment[]>([])
 const approvalEvaluations = ref<RequirementApprovalEvaluation[]>([])
@@ -1163,11 +1127,6 @@ function resetWorkflowMeta() {
   workflowPanelCollapsed.value = false
 }
 
-function resolveErrorMessage(error: unknown, fallback: string) {
-  const message = (error as any)?.response?.data?.message || (error as any)?.message
-  return typeof message === 'string' && message.trim() ? message : fallback
-}
-
 // Fetch detail
 async function fetchDetail() {
   loading.value = true
@@ -1240,45 +1199,6 @@ async function loadWorkflowMeta() {
   }
 
   resetWorkflowMeta()
-}
-
-// Fetch history
-async function fetchHistory() {
-  try {
-    if (detail.value?.workflowInstanceId) {
-      const transitions = await workflowEngineApi.getTransitionHistory(id)
-      history.value = Array.isArray(transitions)
-        ? transitions.map((item: any) => {
-            // 修复 P1：action=proxy_approve 标记为"代审批"以便审计追踪
-            const fieldName = item.action === 'rollback'
-              ? '流程驳回'
-              : item.action === 'cancel'
-                ? '流程取消'
-                : item.action === 'proxy_approve'
-                  ? '代审批'
-                  : '流程流转'
-            return {
-              id: item.id,
-              requirementId: item.requirementId,
-              operatorId: item.operatorId,
-              operatorName: item.operatorName,
-              action: item.action,
-              fieldName,
-              oldValue: item.fromNodeName || item.fromNodeId || '开始',
-              newValue: item.toNodeName || item.toNodeId || (item.durationDisplay ? `已处理（${item.durationDisplay}）` : '完成'),
-              comment: item.comment,
-              createdAt: item.createdAt,
-            }
-          })
-        : []
-      return
-    }
-
-    const res = await requirementApi.getRequirementHistory(id)
-    history.value = Array.isArray(res) ? res : []
-  } catch {
-    history.value = []
-  }
 }
 
 // Fetch children
@@ -1826,7 +1746,7 @@ async function openCountersignDialog(nodeId: string) {
     currentCountersignRecords.value = recordsRes || []
     canCountersign.value = canRes || false
   } catch (error) {
-    ElMessage.error('获取会签信息失败')
+    ElMessage.error(resolveErrorMessage(error, '获取会签信息失败'))
   } finally {
     countersignDialogLoading.value = false
   }
@@ -1853,7 +1773,7 @@ async function submitCountersign(status: 'approved' | 'rejected') {
     countersignDialogVisible.value = false
     countersignRating.value = 0
     countersignComment.value = ''
-    await Promise.all([fetchDetail(), fetchHistory(), fetchApprovalEvaluations()])
+    await Promise.all([fetchDetail(), fetchApprovalEvaluations()])
   } catch (error) {
     ElMessage.error(resolveErrorMessage(error, '提交会签审批失败'))
   }
@@ -1971,7 +1891,7 @@ async function confirmAndExecute(
     transitionLoading.value = true
     await action(value)
     ElMessage.success(successMsg)
-    await Promise.all([fetchDetail(), fetchHistory(), fetchApprovalEvaluations()])
+    await Promise.all([fetchDetail(), fetchApprovalEvaluations()])
   } catch (error: any) {
     if (error === 'cancel' || error?.action === 'cancel') return
     ElMessage.error(resolveErrorMessage(error, errorMsg))
@@ -2037,8 +1957,7 @@ async function initializePage() {
     // 业务 403（无权查看等）由 request.ts 拦截器统一弹过 ElMessage.error，
     // 这里静默避免重复提示；其他错误（网络异常/500 等）仍弹消息
     if (error?.code !== 403) {
-      const msg = error?.message || '加载需求详情失败'
-      ElMessage.error(msg)
+      ElMessage.error(resolveErrorMessage(error, '加载需求详情失败'))
     }
     loading.value = false
     return
@@ -2047,7 +1966,6 @@ async function initializePage() {
   // Populate data from batch response
   if (batchData) {
     detail.value = batchData.requirement
-    history.value = (batchData.history || []) as any
     children.value = (batchData.children || []) as any
     relatedRequirements.value = (batchData.relations || []) as any
     comments.value = (batchData.comments || []) as any

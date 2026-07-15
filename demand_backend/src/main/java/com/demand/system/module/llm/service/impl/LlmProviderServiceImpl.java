@@ -205,7 +205,7 @@ public class LlmProviderServiceImpl implements LlmProviderService {
                         .durationMs(duration)
                         .model(model.getModelId())
                         .build();
-                updateTestResult(modelId, true, (int) duration, null);
+                updateTestResult(modelId, true, (int) duration, null, result.getContent(), null, null, null, model.getModelId());
             } else if (isModelType(model, "rerank")) {
                 List<Double> scores = llmGateway.rerankWithProvider(
                         gwProvider,
@@ -219,7 +219,7 @@ public class LlmProviderServiceImpl implements LlmProviderService {
                         .durationMs(duration)
                         .model(model.getModelId())
                         .build();
-                updateTestResult(modelId, true, (int) duration, null);
+                updateTestResult(modelId, true, (int) duration, null, result.getContent(), null, null, null, model.getModelId());
             } else {
                 LlmGateway.ChatResult chatResult = llmGateway.chatWithProvider(gwProvider, systemPrompt, request.getUserMessage());
                 result = LlmTestResultVO.builder()
@@ -231,7 +231,10 @@ public class LlmProviderServiceImpl implements LlmProviderService {
                         .totalTokens(chatResult.getTotalTokens())
                         .model(chatResult.getModel())
                         .build();
-                updateTestResult(modelId, true, (int) chatResult.getDurationMs(), null);
+                updateTestResult(modelId, true, (int) chatResult.getDurationMs(), null,
+                        chatResult.getContent(), chatResult.getPromptTokens(),
+                        chatResult.getCompletionTokens(), chatResult.getTotalTokens(),
+                        chatResult.getModel());
             }
         } catch (Exception e) {
             result = LlmTestResultVO.builder()
@@ -240,7 +243,7 @@ public class LlmProviderServiceImpl implements LlmProviderService {
                     .build();
 
             long duration = System.currentTimeMillis() - start;
-            updateTestResult(modelId, false, (int) duration, e.getMessage());
+            updateTestResult(modelId, false, (int) duration, e.getMessage(), null, null, null, null, null);
         }
 
         return result;
@@ -435,12 +438,19 @@ public class LlmProviderServiceImpl implements LlmProviderService {
         return "general";
     }
 
-    private void updateTestResult(Long modelId, boolean success, int duration, String error) {
+    private void updateTestResult(Long modelId, boolean success, int duration, String error,
+                                           String content, Integer promptTokens, Integer completionTokens,
+                                           Integer totalTokens, String responseModel) {
         LlmModel update = new LlmModel();
         update.setId(modelId);
         update.setTestSuccess(success);
         update.setTestDuration(duration);
         update.setTestError(error);
+        update.setTestContent(content);
+        update.setTestPromptTokens(promptTokens);
+        update.setTestCompletionTokens(completionTokens);
+        update.setTestTotalTokens(totalTokens);
+        update.setTestResponseModel(responseModel);
         update.setTestAt(LocalDateTime.now());
         modelMapper.updateById(update);
     }

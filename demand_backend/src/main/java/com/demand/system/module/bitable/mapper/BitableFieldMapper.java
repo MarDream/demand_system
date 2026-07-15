@@ -36,4 +36,19 @@ public interface BitableFieldMapper extends BaseMapper<BitableField> {
      * @param sortOrder 排序值
      */
     void updateSortOrder(@Param("id") Long id, @Param("sortOrder") Integer sortOrder);
+
+    /**
+     * 查询指定数据表下字段的最大排序值
+     *
+     * @param tableId 数据表ID
+     * @return 最大排序值，无字段时返回 null
+     */
+    Integer selectMaxSortOrderByTableId(@Param("tableId") Long tableId);
+
+    /**
+     * 批量更新字段排序（CASE WHEN 单条 SQL）
+     *
+     * @param list 包含 id 和 sortOrder 的映射列表
+     */
+    void batchUpdateSortOrder(@Param("list") java.util.List<java.util.Map<String, Object>> list);
 }

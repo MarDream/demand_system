@@ -32,6 +32,8 @@ public class BitableField {
 
     private Integer width;
 
+    private String description;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 
@@ -119,6 +121,14 @@ public class BitableField {
 
     public void setWidth(Integer width) {
         this.width = width;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
     }
 
     public LocalDateTime getCreatedAt() {

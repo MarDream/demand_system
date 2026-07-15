@@ -9,6 +9,7 @@ import com.demand.system.module.rbac.dto.RoleGroupVO;
 import com.demand.system.module.rbac.dto.RolePermissionSaveDTO;
 import com.demand.system.module.rbac.dto.RolePermissionVO;
 import com.demand.system.module.rbac.dto.RoleSortItem;
+import com.demand.system.module.rbac.dto.RoleTreeNodeVO;
 import com.demand.system.module.rbac.dto.RoleUpdateDTO;
 import com.demand.system.module.rbac.dto.RoleVO;
 
@@ -19,6 +20,8 @@ public interface RolePermissionService {
     Result<List<RoleVO>> listRoles();
 
     Result<List<RoleGroupVO>> listRoleGroups();
+
+    Result<List<RoleTreeNodeVO>> getRoleTree();
 
     Result<RoleGroupVO> createRoleGroup(RoleGroupCreateDTO request);
 

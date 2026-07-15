@@ -83,6 +83,8 @@ import {
   type RequirementType,
 } from '@/api/modules/requirementConfig'
 import { normalizeText, stripPriorityPrefix } from '@/utils/format'
+import { ElMessage } from 'element-plus'
+import { resolveErrorMessage } from '@/utils/error'
 
 interface FilterValue {
   type?: string
@@ -159,6 +161,7 @@ async function loadConfigOptions() {
       name: stripPriorityPrefix(normalizeText(priority.name)),
     }))
   } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '加载筛选配置失败'))
   }
 }
 

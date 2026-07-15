@@ -65,6 +65,10 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-mail</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
 
         <!-- MyBatis-Plus -->
         <dependency>
@@ -236,6 +240,13 @@
             <groupId>com.github.ben-manes.caffeine</groupId>
             <artifactId>caffeine</artifactId>
             <version>3.1.8</version>
+        </dependency>
+
+        <!-- JEXL 表达式引擎（多维表格公式字段计算） -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-jexl3</artifactId>
+            <version>3.3</version>
         </dependency>
 
         <!-- gpt-tokenizer：token 级分块依赖（cl100k_base，jtokkit 实现） -->

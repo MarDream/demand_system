@@ -28,12 +28,6 @@ public class AssistantOperationCatalogServiceImpl implements AssistantOperationC
             new CatalogItem("iteration.manage", "迭代管理", "/iterations", null,
                     "进入迭代管理页，查看迭代排期、容量和状态。",
                     List.of("迭代", "迭代管理", "排期", "版本计划", "sprint")),
-            new CatalogItem("review.manage", "评审管理", "/reviews", null,
-                    "进入评审管理页，查看需求评审、结论和待处理事项。",
-                    List.of("评审", "评审管理", "review", "需求评审")),
-            new CatalogItem("statistics.view", "统计报表", "/statistics", null,
-                    "进入统计报表页查看需求、迭代与交付数据。",
-                    List.of("统计", "报表", "数据分析", "看数据", "指标")),
             new CatalogItem("knowledge.rag", "RAG文档中心", "/settings/rag", "menu:rag",
                     "进入 RAG 文档中心，上传文档并进行智能检索。",
                     List.of("rag", "文档中心", "知识问答", "智能检索", "上传文档")),
@@ -158,22 +152,22 @@ public class AssistantOperationCatalogServiceImpl implements AssistantOperationC
 
     private List<CatalogMatch> defaultMatchesByContext(AssistantPageContext pageContext) {
         if (pageContext == null) {
-            return List.of(new CatalogMatch(CATALOG.get(1), 1), new CatalogMatch(CATALOG.get(2), 1), new CatalogMatch(CATALOG.get(4), 1));
+            return List.of(new CatalogMatch(CATALOG.get(1), 1), new CatalogMatch(CATALOG.get(2), 1), new CatalogMatch(CATALOG.get(3), 1));
         }
         String route = pageContext.getRoute() == null ? "" : pageContext.getRoute();
         if (route.startsWith("/requirements")) {
             return List.of(new CatalogMatch(CATALOG.get(0), 10), new CatalogMatch(CATALOG.get(1), 9), new CatalogMatch(CATALOG.get(2), 7));
         }
         if (route.startsWith("/iterations")) {
-            return List.of(new CatalogMatch(CATALOG.get(2), 10), new CatalogMatch(CATALOG.get(1), 7), new CatalogMatch(CATALOG.get(4), 6));
+            return List.of(new CatalogMatch(CATALOG.get(2), 10), new CatalogMatch(CATALOG.get(1), 7), new CatalogMatch(CATALOG.get(3), 6));
         }
         if (route.startsWith("/settings/knowledge") || route.startsWith("/settings/rag")) {
-            return List.of(new CatalogMatch(CATALOG.get(6), 10), new CatalogMatch(CATALOG.get(5), 9), new CatalogMatch(CATALOG.get(8), 6));
+            return List.of(new CatalogMatch(CATALOG.get(4), 10), new CatalogMatch(CATALOG.get(3), 9), new CatalogMatch(CATALOG.get(6), 6));
         }
         if (route.startsWith("/system/workflow-config")) {
-            return List.of(new CatalogMatch(CATALOG.get(7), 10), new CatalogMatch(CATALOG.get(8), 8), new CatalogMatch(CATALOG.get(9), 6));
+            return List.of(new CatalogMatch(CATALOG.get(5), 10), new CatalogMatch(CATALOG.get(6), 8), new CatalogMatch(CATALOG.get(7), 6));
         }
-        return List.of(new CatalogMatch(CATALOG.get(1), 3), new CatalogMatch(CATALOG.get(2), 2), new CatalogMatch(CATALOG.get(4), 2));
+        return List.of(new CatalogMatch(CATALOG.get(1), 3), new CatalogMatch(CATALOG.get(2), 2), new CatalogMatch(CATALOG.get(3), 2));
     }
 
     private boolean canAccess(CatalogItem item, List<String> permissions, boolean superAdmin) {

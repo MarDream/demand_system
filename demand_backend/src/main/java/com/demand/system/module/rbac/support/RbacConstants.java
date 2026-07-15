@@ -52,11 +52,16 @@ public final class RbacConstants {
     public static final String PERMISSION_MENU_DASHBOARD = "menu:dashboard";
     public static final String PERMISSION_MENU_REQUIREMENT = "menu:requirement";
     public static final String PERMISSION_MENU_ITERATION = "menu:iteration";
+    public static final String PERMISSION_MENU_BITABLE = "menu:bitable";
+    public static final String PERMISSION_BUTTON_BITABLE_CREATE = "button:bitable:create";
+    public static final String PERMISSION_BUTTON_BITABLE_UPDATE = "button:bitable:update";
+    public static final String PERMISSION_BUTTON_BITABLE_DELETE = "button:bitable:delete";
 
     public static final List<String> ALL_PERMISSION_CODES = List.of(
             PERMISSION_MENU_DASHBOARD,
             PERMISSION_MENU_REQUIREMENT,
             PERMISSION_MENU_ITERATION,
+            PERMISSION_MENU_BITABLE,
             PERMISSION_MENU_SYSTEM_CONFIG,
             PERMISSION_MENU_SETTINGS_PROJECT,
             PERMISSION_MENU_SETTINGS_USER,
@@ -97,6 +102,9 @@ public final class RbacConstants {
             "button:requirement:comment",
             "button:requirement:rollback",
             "button:requirement:cancel",
-            "button:requirement:batch-delete"
+            "button:requirement:batch-delete",
+            PERMISSION_BUTTON_BITABLE_CREATE,
+            PERMISSION_BUTTON_BITABLE_UPDATE,
+            PERMISSION_BUTTON_BITABLE_DELETE
     );
 }

@@ -1,20 +1,20 @@
 package com.demand.system.common.util;
 
+import com.demand.system.common.cache.UserLocalCache;
 import com.demand.system.module.user.entity.User;
-import com.demand.system.module.user.mapper.UserMapper;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 /**
- * 用户名称解析工具，提供带缓存的 getUserNameById 查询
+ * 用户名称解析工具，通过二级缓存（L1: Caffeine + L2: Redis）查询用户信息
  */
 @Component
 public class UserNameResolver {
 
-    private final UserMapper userMapper;
+    private final UserLocalCache userLocalCache;
 
-    public UserNameResolver(UserMapper userMapper) {
-        this.userMapper = userMapper;
+    public UserNameResolver(UserLocalCache userLocalCache) {
+        this.userLocalCache = userLocalCache;
     }
 
     /**
@@ -28,7 +28,7 @@ public class UserNameResolver {
         if (userId == null) {
             return fallback;
         }
-        User user = userMapper.selectById(userId);
+        User user = userLocalCache.getUserById(userId);
         if (user == null) {
             return fallback;
         }

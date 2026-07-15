@@ -1,11 +1,10 @@
 package com.demand.system.module.bitable.controller;
 
-import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.Result;
 import com.demand.system.module.auth.security.SecurityUtils;
-import com.demand.system.module.bitable.entity.BitableTable;
-import com.demand.system.module.bitable.mapper.BitableTableMapper;
+import com.demand.system.module.bitable.dto.BitableTableVO;
 import com.demand.system.module.bitable.service.BitableImportExportService;
+import com.demand.system.module.bitable.service.BitableTableService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -16,7 +15,6 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 多维表格导入导出 Controller
@@ -26,12 +24,12 @@ import java.util.Map;
 public class BitableImportExportController {
 
     private final BitableImportExportService importExportService;
-    private final BitableTableMapper tableMapper;
+    private final BitableTableService tableService;
 
     public BitableImportExportController(BitableImportExportService importExportService,
-                                           BitableTableMapper tableMapper) {
+                                           BitableTableService tableService) {
         this.importExportService = importExportService;
-        this.tableMapper = tableMapper;
+        this.tableService = tableService;
     }
 
     /**
@@ -40,10 +38,7 @@ public class BitableImportExportController {
     @GetMapping("/tables/{tableId}/export/excel")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<byte[]> exportExcel(@PathVariable Long tableId) {
-        BitableTable table = tableMapper.selectById(tableId);
-        if (table == null) {
-            throw new BusinessException("数据表不存在");
-        }
+        BitableTableVO table = tableService.getTableById(tableId);
 
         byte[] data = importExportService.exportTableToExcel(tableId);
         String fileName = table.getName() + ".xlsx";
@@ -61,10 +56,7 @@ public class BitableImportExportController {
     @GetMapping("/tables/{tableId}/export/csv")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<byte[]> exportCsv(@PathVariable Long tableId) {
-        BitableTable table = tableMapper.selectById(tableId);
-        if (table == null) {
-            throw new BusinessException("数据表不存在");
-        }
+        BitableTableVO table = tableService.getTableById(tableId);
 
         byte[] data = importExportService.exportTableToCsv(tableId);
         String fileName = table.getName() + ".csv";
@@ -88,7 +80,7 @@ public class BitableImportExportController {
             List<Long> ids = importExportService.importFromExcel(tableId, file.getBytes(), userId);
             return Result.success(ids);
         } catch (IOException e) {
-            throw new BusinessException("读取上传文件失败: " + e.getMessage());
+            throw new com.demand.system.common.exception.BusinessException("读取上传文件失败: " + e.getMessage());
         }
     }
 
@@ -105,7 +97,7 @@ public class BitableImportExportController {
             List<Long> ids = importExportService.importFromCsv(tableId, csvContent, userId);
             return Result.success(ids);
         } catch (IOException e) {
-            throw new BusinessException("读取上传文件失败: " + e.getMessage());
+            throw new com.demand.system.common.exception.BusinessException("读取上传文件失败: " + e.getMessage());
         }
     }
 }

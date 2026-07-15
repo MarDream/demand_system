@@ -28,6 +28,8 @@ public class Role {
 
     private Integer isAdmin;
 
+    private Integer isDefault;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
@@ -97,6 +99,14 @@ public class Role {
 
     public void setIsAdmin(Integer isAdmin) {
         this.isAdmin = isAdmin;
+    }
+
+    public Integer getIsDefault() {
+        return isDefault;
+    }
+
+    public void setIsDefault(Integer isDefault) {
+        this.isDefault = isDefault;
     }
 
     public LocalDateTime getCreatedAt() {

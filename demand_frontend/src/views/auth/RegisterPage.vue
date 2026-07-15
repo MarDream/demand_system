@@ -135,6 +135,7 @@ import { register } from '@/api/modules/auth'
 import { getOrgTree } from '@/api/modules/organization'
 import { getPositionList } from '@/api/modules/user'
 import type { OrgNode, Position } from '@/types/user'
+import { resolveErrorMessage } from '@/utils/error'
 
 const router = useRouter()
 const registerFormRef = ref<FormInstance>()
@@ -214,6 +215,7 @@ const loadRegionsAndDepartments = async () => {
     regions.value = flat.filter(n => n.orgType === 'region' || n.orgType === 'company' || n.orgType === 'bureau')
     departments.value = flat.filter(n => n.orgType === 'department')
   } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '加载组织信息失败'))
   }
 }
 
@@ -223,6 +225,7 @@ const loadPositions = async () => {
     const data = res?.data ?? res as Position[]
     positions.value = data || []
   } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '加载岗位信息失败'))
   }
 }
 
@@ -246,7 +249,7 @@ const handleRegister = async () => {
         ElMessage.success('注册成功，请登录')
         router.push('/login')
       } catch (error: any) {
-        ElMessage.error(error.response?.data?.message || '注册失败，请稍后重试')
+        ElMessage.error(resolveErrorMessage(error, '注册失败，请稍后重试'))
       } finally {
         loading.value = false
       }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { resolveErrorMessage } from '@/utils/error'
 import type { MigrationPlanVO, NodeMappingVO, MigrationPreviewVO, MigrationResultDTO } from '@/types/workflow-visual'
 import {
   createMigrationPlan,
@@ -64,7 +65,7 @@ async function loadVersions() {
     const data = await getVersionHistory(projectId.value)
     availableVersions.value = data || []
   } catch (e: any) {
-    ElMessage.error('加载版本列表失败: ' + (e.message || '未知错误'))
+    ElMessage.error(resolveErrorMessage(e, '加载版本列表失败'))
   }
 }
 
@@ -73,7 +74,7 @@ async function loadPlans() {
   try {
     plans.value = await listMigrationPlans(projectId.value) || []
   } catch (e: any) {
-    ElMessage.error('加载迁移计划失败: ' + (e.message || '未知错误'))
+    ElMessage.error(resolveErrorMessage(e, '加载迁移计划失败'))
   } finally {
     loading.value = false
   }
@@ -102,7 +103,7 @@ async function handleCreatePlan() {
     ElMessage.success('迁移计划已创建')
     await loadPlans()
   } catch (e: any) {
-    ElMessage.error('创建迁移计划失败: ' + (e.message || '未知错误'))
+    ElMessage.error(resolveErrorMessage(e, '创建迁移计划失败'))
   }
 }
 
@@ -122,7 +123,7 @@ async function selectPlan(planId: number) {
     // 加载日志
     logs.value = await listMigrationLogs(planId) || []
   } catch (e: any) {
-    ElMessage.error('加载迁移计划失败: ' + (e.message || '未知错误'))
+    ElMessage.error(resolveErrorMessage(e, '加载迁移计划失败'))
   }
 }
 
@@ -148,7 +149,7 @@ async function handleSaveMapping() {
     editableMapping.value = plan.nodeMapping || []
     ElMessage.success('节点映射已保存')
   } catch (e: any) {
-    ElMessage.error('保存映射失败: ' + (e.message || '未知错误'))
+    ElMessage.error(resolveErrorMessage(e, '保存映射失败'))
   }
 }
 
@@ -160,7 +161,7 @@ async function handlePreview() {
     currentStep.value = 3
     ElMessage.success('预检完成')
   } catch (e: any) {
-    ElMessage.error('预检失败: ' + (e.message || '未知错误'))
+    ElMessage.error(resolveErrorMessage(e, '预检失败'))
   }
 }
 
@@ -187,7 +188,7 @@ async function handleExecute() {
     await selectPlan(selectedPlanId.value!)
     await loadPlans()
   } catch (e: any) {
-    ElMessage.error('执行迁移失败: ' + (e.message || '未知错误'))
+    ElMessage.error(resolveErrorMessage(e, '执行迁移失败'))
   } finally {
     executing.value = false
   }

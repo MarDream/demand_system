@@ -188,13 +188,34 @@
     </el-tabs>
 
     <!-- 类型对话框 -->
-    <el-dialog v-model="typeDialogVisible" :title="editingType ? '编辑需求类型' : '新增需求类型'" width="500px" class="settings-form-dialog">
+    <el-dialog v-model="typeDialogVisible" :title="editingType ? '编辑需求类型' : '新增需求类型'" width="500px" class="settings-form-dialog" @close="resetTypeForm">
       <el-form ref="typeFormRef" :model="typeForm" :rules="typeRules" label-width="100px">
         <el-form-item label="名称" prop="name">
-          <el-input v-model="typeForm.name" placeholder="请输入类型名称" />
+          <el-input v-model="typeForm.name" placeholder="请输入类型名称" @input="handleTypeNameInput" />
         </el-form-item>
         <el-form-item label="编码" prop="code">
-          <el-input v-model="typeForm.code" placeholder="如: FEATURE" />
+          <div style="display: flex; gap: 8px; width: 100%;">
+            <el-input
+              v-model="typeForm.code"
+              placeholder="如: FEATURE"
+              :disabled="!!editingType"
+              style="flex: 1"
+              @input="typeCodeManuallyEdited = true"
+            />
+            <el-tooltip
+              v-if="!editingType"
+              :content="typeCodeAiGenerating ? 'AI 正在生成编码...' : 'AI 自动生成编码'"
+              placement="top"
+            >
+              <el-button
+                :loading="typeCodeAiGenerating"
+                :disabled="!typeForm.name.trim() || !!editingType"
+                @click="handleTypeAiGenerateCode"
+              >
+                <el-icon v-if="!typeCodeAiGenerating"><MagicStick /></el-icon>
+              </el-button>
+            </el-tooltip>
+          </div>
         </el-form-item>
         <el-form-item label="颜色" prop="color">
           <el-color-picker v-model="typeForm.color" show-alpha />
@@ -291,18 +312,20 @@
 import { ref, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { Plus, Rank, Operation, EditPen, Delete, Document, Setting } from '@element-plus/icons-vue'
+import { Plus, Rank, Operation, EditPen, Delete, Document, Setting, MagicStick } from '@element-plus/icons-vue'
 import { requirementConfigApi, type RequirementType, type Priority, type SortItem } from '@/api/modules/requirementConfig'
 import { nodeStatusApi, type NodeStatus, type SortItem as NodeStatusSortItem } from '@/api/modules/workflow-engine'
 import { listActiveWorkflowVersions } from '@/api/modules/workflow-visual'
 import type { WorkflowVersionDTO } from '@/types/workflow-visual'
 import { normalizeText } from '@/utils/format'
+import { resolveErrorMessage } from '@/utils/error'
 import Sortable, { type SortableEvent } from 'sortablejs'
 import AppButton from '@/components/common/AppButton.vue'
 import Toolbar from '@/components/common/Toolbar.vue'
 import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
 import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import RequirementTemplateManager from '@/views/settings/requirement-templates/index.vue'
+import { llmProviderApi } from '@/api/modules/llmProvider'
 
 // ── 列表字段设置：需求类型表 ──
 const typeAllColumns: ColumnDef[] = [
@@ -431,7 +454,7 @@ const loadActiveWorkflowVersions = async () => {
     const list = Array.isArray(res) ? res : res?.data || []
     activeWorkflowVersions.value = list.filter((v: WorkflowVersionDTO) => v.activationStatus === 'active' && v.isActive === 1)
   } catch (error) {
-    ElMessage.warning('加载可绑定工作流失败，请稍后刷新重试')
+    ElMessage.warning(resolveErrorMessage(error, '加载可绑定工作流失败，请稍后刷新重试'))
     activeWorkflowVersions.value = []
   }
 }
@@ -454,6 +477,9 @@ const typeForm = ref({
   isDefault: false,
   workflowVersionId: null as number | null
 })
+
+const typeCodeManuallyEdited = ref(false)
+const typeCodeAiGenerating = ref(false)
 
 const typeRules: FormRules = {
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
@@ -485,6 +511,7 @@ const loadTypes = async () => {
     const list = Array.isArray(res) ? res : res?.data || []
     types.value = list.map((t: RequirementType) => ({ ...t, name: normalizeText(t.name) }))
   } catch (error) {
+    console.error(error)
   }
 }
 
@@ -494,11 +521,13 @@ const loadPriorities = async () => {
     const list = Array.isArray(res) ? res : res?.data || []
     priorities.value = list.map((p: Priority) => ({ ...p, name: normalizeText(p.name) }))
   } catch (error) {
+    console.error(error)
   }
 }
 
 const openTypeDialog = (type?: RequirementType) => {
   editingType.value = type || null
+  typeCodeManuallyEdited.value = !!type
   if (type) {
     typeForm.value = {
       name: type.name,
@@ -528,8 +557,13 @@ const saveType = async () => {
       try {
         if (editingType.value?.id) {
           await requirementConfigApi.updateType(editingType.value.id, typeForm.value as RequirementType)
-          // 同步绑定工作流
-          await requirementConfigApi.bindWorkflow(editingType.value.code, typeForm.value.workflowVersionId)
+          // 工作流绑定变更时才同步
+          const originalVersionId = editingType.value.workflowVersionId ?? null
+          const newVersionId = typeForm.value.workflowVersionId
+          if (originalVersionId !== newVersionId) {
+            // 使用原始编码，因为数据库还没更新成新编码
+            await requirementConfigApi.bindWorkflow(editingType.value.code, newVersionId)
+          }
           ElMessage.success('更新成功')
         } else {
           await requirementConfigApi.createType(typeForm.value as RequirementType)
@@ -538,7 +572,7 @@ const saveType = async () => {
         typeDialogVisible.value = false
         loadTypes()
       } catch (error) {
-        ElMessage.error('保存失败')
+        ElMessage.error(resolveErrorMessage(error, '保存失败'))
       }
     }
   })
@@ -551,7 +585,7 @@ const deleteType = async (id: number) => {
     ElMessage.success('删除成功')
     loadTypes()
   } catch (error) {
-    ElMessage.error('删除失败')
+    ElMessage.error(resolveErrorMessage(error, '删除失败'))
   }
 }
 
@@ -594,7 +628,7 @@ const savePriority = async () => {
         priorityDialogVisible.value = false
         loadPriorities()
       } catch (error) {
-        ElMessage.error('保存失败')
+        ElMessage.error(resolveErrorMessage(error, '保存失败'))
       }
     }
   })
@@ -607,7 +641,7 @@ const deletePriority = async (id: number) => {
     ElMessage.success('删除成功')
     loadPriorities()
   } catch (error) {
-    ElMessage.error('删除失败')
+    ElMessage.error(resolveErrorMessage(error, '删除失败'))
   }
 }
 
@@ -640,7 +674,7 @@ const initTypeSortable = () => {
           ElMessage.success('排序已保存')
           loadTypes()
         } catch (error) {
-          ElMessage.error('排序保存失败')
+          ElMessage.error(resolveErrorMessage(error, '排序保存失败'))
           loadTypes() // 恢复原始顺序
         }
       }
@@ -676,7 +710,7 @@ const initPrioritySortable = () => {
           ElMessage.success('排序已保存')
           loadPriorities()
         } catch (error) {
-          ElMessage.error('排序保存失败')
+          ElMessage.error(resolveErrorMessage(error, '排序保存失败'))
           loadPriorities() // 恢复原始顺序
         }
       }
@@ -710,7 +744,7 @@ const initNodeStatusSortable = () => {
           ElMessage.success('排序已保存')
           await loadNodeStatuses()
         } catch (error) {
-          ElMessage.error('排序保存失败')
+          ElMessage.error(resolveErrorMessage(error, '排序保存失败'))
           await loadNodeStatuses()
         }
       }
@@ -744,6 +778,7 @@ const loadNodeStatuses = async () => {
     const res = await nodeStatusApi.list() as any
     nodeStatuses.value = Array.isArray(res) ? res : res?.data || []
   } catch (error) {
+    console.error(error)
   }
 }
 
@@ -780,7 +815,7 @@ const saveNodeStatus = async () => {
         nodeStatusDialogVisible.value = false
         loadNodeStatuses()
       } catch (error) {
-        ElMessage.error('保存失败')
+        ElMessage.error(resolveErrorMessage(error, '保存失败'))
       }
     }
   })
@@ -793,8 +828,117 @@ const deleteNodeStatus = async (id: number) => {
     ElMessage.success('删除成功')
     loadNodeStatuses()
   } catch (error) {
-    ElMessage.error('删除失败')
+    ElMessage.error(resolveErrorMessage(error, '删除失败'))
   }
+}
+
+/** 手动点击 AI 按钮生成需求类型编码 */
+async function handleTypeAiGenerateCode() {
+  const name = typeForm.value.name.trim()
+  if (!name) return
+
+  try {
+    typeCodeAiGenerating.value = true
+    const result = await llmProviderApi.translate(name) as any
+    const translated = result?.data ?? result
+    if (translated && typeof translated === 'string' && /^[A-Z][A-Z0-9_]*$/.test(translated)) {
+      typeForm.value.code = translated.slice(0, 50)
+      typeCodeManuallyEdited.value = false
+    } else {
+      typeForm.value.code = generateTypeCode(name)
+      ElMessage.info('未配置可用模型，已使用本地映射生成编码')
+    }
+  } catch {
+    typeForm.value.code = generateTypeCode(name)
+    ElMessage.info('AI 服务暂不可用，已使用本地映射生成编码')
+  } finally {
+    typeCodeAiGenerating.value = false
+  }
+}
+
+/** 本地映射生成需求类型编码 */
+function generateTypeCode(name: string) {
+  const normalized = name.trim()
+  if (!normalized) return ''
+  const ascii = normalized
+    .replace(/([a-z])([A-Z])/g, '$1_$2')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toUpperCase()
+  if (/^[A-Z][A-Z0-9_]*$/.test(ascii)) {
+    return ascii.slice(0, 50)
+  }
+  const translated = translateChineseTypeName(normalized)
+  if (translated) {
+    return translated.slice(0, 50)
+  }
+  return `TYPE_${shortHash(normalized)}`.slice(0, 50)
+}
+
+function translateChineseTypeName(name: string) {
+  const exactMap: Record<string, string> = {
+    '功能需求': 'FEATURE',
+    '功能': 'FEATURE',
+    '需求': 'REQUIREMENT',
+    '缺陷': 'BUG',
+    '故障': 'INCIDENT',
+    '优化': 'OPTIMIZATION',
+    '改进': 'IMPROVEMENT',
+    '重构': 'REFACTOR',
+    '技术债务': 'TECH_DEBT',
+    '任务': 'TASK',
+    '子任务': 'SUBTASK',
+    '史诗': 'EPIC',
+    '用户故事': 'USER_STORY',
+    '调研': 'RESEARCH',
+    '测试': 'TEST',
+    '文档': 'DOCUMENTATION',
+    '配置': 'CONFIG',
+    '安全': 'SECURITY',
+  }
+  if (exactMap[name]) return exactMap[name]
+
+  const segments: Array<[RegExp, string]> = [
+    [/功能|特性/g, 'FEATURE'],
+    [/缺陷|bug|BUG|故障/g, 'BUG'],
+    [/优化/g, 'OPTIMIZATION'],
+    [/改进/g, 'IMPROVEMENT'],
+    [/重构/g, 'REFACTOR'],
+    [/技术/g, 'TECH'],
+    [/任务/g, 'TASK'],
+    [/史诗/g, 'EPIC'],
+    [/调研|研究/g, 'RESEARCH'],
+    [/测试/g, 'TEST'],
+    [/文档/g, 'DOCUMENTATION'],
+    [/配置/g, 'CONFIG'],
+    [/安全/g, 'SECURITY'],
+    [/需求/g, 'REQUIREMENT'],
+  ]
+  const parts = segments
+    .filter(([pattern]) => pattern.test(name))
+    .map(([, word]) => word)
+  return Array.from(new Set(parts)).join('_')
+}
+
+function shortHash(value: string) {
+  let hash = 0
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash + value.charCodeAt(index)) >>> 0
+  }
+  return hash.toString(36).toUpperCase().padStart(6, '0')
+}
+
+/** 输入名称时本地映射生成编码 */
+function handleTypeNameInput() {
+  if (editingType.value || typeCodeManuallyEdited.value) return
+  typeForm.value.code = generateTypeCode(typeForm.value.name)
+}
+
+/** 关闭类型弹窗时重置 AI 生成状态 */
+function resetTypeForm() {
+  typeCodeManuallyEdited.value = false
+  typeCodeAiGenerating.value = false
+  typeFormRef.value?.resetFields()
 }
 
 const initializePage = async () => {

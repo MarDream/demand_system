@@ -15,6 +15,8 @@ public class RoleGroupCreateDTO {
 
     private List<Long> roleIds;
 
+    private Integer isDefault;
+
     public String getName() {
         return name;
     }
@@ -37,5 +39,13 @@ public class RoleGroupCreateDTO {
 
     public void setRoleIds(List<Long> roleIds) {
         this.roleIds = roleIds;
+    }
+
+    public Integer getIsDefault() {
+        return isDefault;
+    }
+
+    public void setIsDefault(Integer isDefault) {
+        this.isDefault = isDefault;
     }
 }

@@ -90,7 +90,6 @@ start-all.bat down
 | requirement | 需求管理 |
 | workflow | 工作流 (StateMachine + PermissionEngine, 位于 workflow/engine/) |
 | iteration | 迭代管理 |
-| review | 评审管理 |
 | project | 项目管理 |
 | user | 用户组织 |
 | relation | 需求关联 |

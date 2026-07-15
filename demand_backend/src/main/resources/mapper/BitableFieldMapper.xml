@@ -5,7 +5,7 @@
     <!-- 按数据表ID查询所有未删除的字段 -->
     <select id="selectByTableId" resultType="com.demand.system.module.bitable.entity.BitableField">
         SELECT id, table_id, name, field_type, config, required, ai_prompt,
-               is_ai_field, sort_order, width, created_at, updated_at
+               is_ai_field, sort_order, width, description, created_at, updated_at
         FROM `bitable_fields`
         WHERE table_id = #{tableId}
           AND deleted_at = 0
@@ -27,6 +27,30 @@
             updated_at = NOW()
         WHERE id = #{id}
           AND deleted_at = 0
+    </update>
+
+    <!-- 查询指定数据表下字段的最大排序值 -->
+    <select id="selectMaxSortOrderByTableId" resultType="java.lang.Integer">
+        SELECT MAX(sort_order)
+        FROM `bitable_fields`
+        WHERE table_id = #{tableId}
+          AND deleted_at = 0
+    </select>
+
+    <!-- 批量更新字段排序（CASE WHEN 单条 SQL） -->
+    <update id="batchUpdateSortOrder">
+        UPDATE `bitable_fields`
+        SET sort_order = CASE id
+            <foreach collection="list" item="item">
+                WHEN #{item.id} THEN #{item.sortOrder}
+            </foreach>
+            END,
+            updated_at = NOW()
+        WHERE id IN
+        <foreach collection="list" item="item" open="(" separator="," close=")">
+            #{item.id}
+        </foreach>
+        AND deleted_at = 0
     </update>
 
 </mapper>

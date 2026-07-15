@@ -16,7 +16,10 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 多维表格-字段定义 Service 实现
@@ -56,14 +59,8 @@ public class BitableFieldServiceImpl implements BitableFieldService {
         field.setTableId(tableId);
 
         // 设置 sortOrder: 当前最大 + 1
-        int currentMaxOrder = 0;
-        List<BitableField> existing = fieldMapper.selectByTableId(tableId);
-        for (BitableField f : existing) {
-            if (f.getSortOrder() != null && f.getSortOrder() > currentMaxOrder) {
-                currentMaxOrder = f.getSortOrder();
-            }
-        }
-        field.setSortOrder(currentMaxOrder + 1);
+        Integer maxOrder = fieldMapper.selectMaxSortOrderByTableId(tableId);
+        field.setSortOrder(maxOrder != null ? maxOrder + 1 : 1);
 
         fieldMapper.insert(field);
         return field.getId();
@@ -108,6 +105,9 @@ public class BitableFieldServiceImpl implements BitableFieldService {
         if (dto.getWidth() != null) {
             wrapper.set("width", dto.getWidth());
         }
+        if (dto.getDescription() != null) {
+            wrapper.set("description", dto.getDescription());
+        }
         fieldMapper.update(null, wrapper);
     }
 
@@ -132,8 +132,13 @@ public class BitableFieldServiceImpl implements BitableFieldService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void sortFields(Long tableId, List<Long> fieldIds) {
+        List<Map<String, Object>> sortList = new ArrayList<>();
         for (int i = 0; i < fieldIds.size(); i++) {
-            fieldMapper.updateSortOrder(fieldIds.get(i), i + 1);
+            Map<String, Object> item = new HashMap<>();
+            item.put("id", fieldIds.get(i));
+            item.put("sortOrder", i + 1);
+            sortList.add(item);
         }
+        fieldMapper.batchUpdateSortOrder(sortList);
     }
 }

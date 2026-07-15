@@ -4,6 +4,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
+import java.util.List;
+
 public class RoleUpdateDTO {
 
     private Long id;
@@ -21,6 +23,8 @@ public class RoleUpdateDTO {
     private String description;
 
     private Long roleGroupId;
+
+    private List<Long> groupIds;
 
     public Long getId() {
         return id;
@@ -60,5 +64,13 @@ public class RoleUpdateDTO {
 
     public void setRoleGroupId(Long roleGroupId) {
         this.roleGroupId = roleGroupId;
+    }
+
+    public List<Long> getGroupIds() {
+        return groupIds;
+    }
+
+    public void setGroupIds(List<Long> groupIds) {
+        this.groupIds = groupIds;
     }
 }

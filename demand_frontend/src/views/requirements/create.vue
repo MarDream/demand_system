@@ -331,7 +331,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UploadRequestOptions } from 'element-plus'
 import {
-  Plus, Delete, Search, Upload, Document, DocumentCopy, Picture, VideoCamera, Folder, View
+  Plus, Delete, Search, Document
 } from '@element-plus/icons-vue'
 import { IsleEditor, IsleEditorToolbar, RichTextKit } from '@isle-editor/vue3'
 import { addLocale } from '@isle-editor/core'
@@ -432,7 +432,8 @@ import { downloadRequirementAttachment, uploadRequirementAttachment } from '@/ap
 import { usePermission } from '@/composables/usePermission'
 import type { RelationItem } from '@/api/modules/relation'
 import { buildRichTextImagePreviewUrl, hydrateRichTextImageHtml, serializeRichTextImageHtml } from '@/utils/richTextFileImage'
-import { formatDate, formatFileSize, getFileExt, normalizeText, stripPriorityPrefix } from '@/utils/format'
+import { formatDate, getFileExt, normalizeText, stripPriorityPrefix } from '@/utils/format'
+import { resolveErrorMessage } from '@/utils/error'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import FilePreviewDialog from '@/components/document/FilePreviewDialog.vue'
@@ -477,8 +478,19 @@ const relatedRequirements = ref<EditableRelationItem[]>([])
 
 // Requirement config types and priorities
 const configTypes = ref<any[]>([])
+// 全量需求类型（含未绑定工作流的），用于在无可用类型时区分原因
+const allConfigTypes = ref<any[]>([])
 const configPriorities = ref<any[]>([])
 const templateApplying = ref(false)
+
+// 无可用需求类型时的原因文案；为空表示存在可用类型
+const noAvailableTypeReason = computed(() => {
+  if (configTypes.value.length > 0) return ''
+  if (allConfigTypes.value.length === 0) {
+    return '系统尚未配置需求类型，请联系系统管理员配置需求类型后重试'
+  }
+  return '需求类型未绑定启用的工作流，请联系系统管理员绑定启用的工作流后重试'
+})
 
 function isDescriptionEmpty(html: string) {
   const text = html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim()
@@ -1082,11 +1094,6 @@ function normalizeNumberValue(value?: number) {
   return typeof value === 'number' ? value : undefined
 }
 
-function resolveErrorMessage(error: unknown, fallback: string) {
-  const message = (error as any)?.response?.data?.message || (error as any)?.message
-  return typeof message === 'string' && message.trim() ? message : fallback
-}
-
 function isProjectExpired(project: { status?: string | null; endDate?: string | null }) {
   if (project.status === 'expired') return true
   if (!project.endDate) return false
@@ -1305,6 +1312,10 @@ async function chooseNextNode(options: NextNodeOption[]) {
 }
 
 async function handleSaveDraft() {
+  if (noAvailableTypeReason.value) {
+    ElMessage.warning({ message: noAvailableTypeReason.value, duration: 5000 })
+    return
+  }
   if (!(await validateForms())) return
 
   const hadExistingRequirement = isEditMode.value
@@ -1324,6 +1335,10 @@ async function handleSaveDraft() {
 
 // Submit
 async function handleSubmit() {
+  if (noAvailableTypeReason.value) {
+    ElMessage.warning({ message: noAvailableTypeReason.value, duration: 5000 })
+    return
+  }
   if (!(await validateForms())) return
 
   const hadExistingRequirement = isEditMode.value
@@ -1391,13 +1406,16 @@ function handleCancel() {
 
 async function loadConfig() {
   try {
-    const [typesRes, prioritiesRes] = await Promise.all([
+    const [typesRes, prioritiesRes, allTypesRes] = await Promise.all([
       requirementConfigApi.listAvailableTypes(),
       requirementConfigApi.listPriorities(),
+      requirementConfigApi.listTypes(),
     ])
     const typeList = Array.isArray(typesRes) ? typesRes : (typesRes as any).data || []
     const priorityList = Array.isArray(prioritiesRes) ? prioritiesRes : (prioritiesRes as any).data || []
+    const allTypeList = Array.isArray(allTypesRes) ? allTypesRes : (allTypesRes as any).data || []
     configTypes.value = typeList.map((t: any) => ({ ...t, name: normalizeText(t.name) }))
+    allConfigTypes.value = allTypeList.map((t: any) => ({ ...t, name: normalizeText(t.name) }))
     configPriorities.value = priorityList.map((p: any) => ({ ...p, name: stripPriorityPrefix(normalizeText(p.name)) }))
     if (!isEditMode.value) {
       // 设置默认需求类型

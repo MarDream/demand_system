@@ -8,7 +8,7 @@
   >
     <div class="dc-header">
       <h2>文档中心</h2>
-      <AppButton type="primary" permission="button:rag:upload" @click="showUploadDialog = true">上传文档</AppButton>
+      <AppButton type="primary" permission="button:document:upload" @click="showUploadDialog = true">上传文档</AppButton>
     </div>
 
     <!-- 拖拽覆盖层 -->

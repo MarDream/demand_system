@@ -193,6 +193,7 @@ import {
   type WorkflowCopyRequest
 } from '@/api/modules/workflow'
 import { formatDate as formatDateUtil } from '@/utils/format'
+import { resolveErrorMessage } from '@/utils/error'
 
 interface Props {
   projectId?: number
@@ -298,7 +299,7 @@ const loadTemplates = async () => {
     }
   } catch (error) {
     console.error('加载模板列表失败:', error)
-    ElMessage.error('加载模板列表失败')
+    ElMessage.error(resolveErrorMessage(error, '加载模板列表失败'))
   } finally {
     loading.value = false
   }
@@ -337,6 +338,7 @@ const checkNameConflict = async () => {
   } catch (error) {
     nameStatus.value = 'idle'
     console.error('检查名称冲突失败:', error)
+    ElMessage.error(resolveErrorMessage(error, '检查名称冲突失败'))
   }
 }
 
@@ -376,7 +378,7 @@ const handleCreate = async () => {
       handleClose()
     } catch (error: any) {
       console.error('复制工作流失败:', error)
-      ElMessage.error(error.message || '复制工作流失败')
+      ElMessage.error(resolveErrorMessage(error, '复制工作流失败'))
     } finally {
       creating.value = false
     }

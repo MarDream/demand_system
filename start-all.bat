@@ -101,6 +101,8 @@ if not "%PORT_LISTENING%"=="1" goto start_backend
 echo   后端端口 %BACKEND_PORT% 已监听，复用现有服务
 goto after_backend
 :start_backend
+echo   释放后端端口 %BACKEND_PORT%（避免残留进程导致端口冲突）...
+call :kill_by_port %BACKEND_PORT% 后端
 echo   后台启动后端 ^(隐藏窗口^), 日志: logs\backend.log
 del /q "%BACKEND_PID%" >NUL 2>&1
 powershell -NoProfile -Command "$p=Start-Process cmd -ArgumentList @('/c','chcp 65001>NUL && set JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 && set MAVEN_OPTS=--enable-native-access=ALL-UNNAMED && set LOG_PATH=%LOG_DIR% && cd /d %ROOT_DIR%demand_backend && %MVN_CMD% spring-boot:run -Dspring-boot.run.profiles=dev -Dspring-boot.run.jvmArguments=\"--add-opens=jdk.unsupported/sun.misc=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow\"') -WindowStyle Hidden -RedirectStandardOutput '%BACKEND_LOG%' -RedirectStandardError '%BACKEND_ERR%' -PassThru; Set-Content -Path '%BACKEND_PID%' -Value $p.Id -Encoding ascii"

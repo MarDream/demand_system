@@ -1,2 +1,6 @@
 export { useAppStore } from './modules/app'
 export { useUserStore } from './modules/user'
+export { useBitableStore } from './bitable'
+export { useAssistantStore } from './assistant'
+export { useDocumentStore } from './document'
+export { useKnowledgeStore } from './knowledge'

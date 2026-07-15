@@ -21,6 +21,11 @@ public class LlmModelVO {
     private Integer testDuration;
     private String testError;
     private LocalDateTime testAt;
+    private String testContent;
+    private Integer testPromptTokens;
+    private Integer testCompletionTokens;
+    private Integer testTotalTokens;
+    private String testResponseModel;
     private Integer chunkSize;
     private Integer chunkOverlap;
     private Integer searchTopK;
@@ -61,6 +66,16 @@ public class LlmModelVO {
     public void setTestError(String testError) { this.testError = testError; }
     public LocalDateTime getTestAt() { return testAt; }
     public void setTestAt(LocalDateTime testAt) { this.testAt = testAt; }
+    public String getTestContent() { return testContent; }
+    public void setTestContent(String testContent) { this.testContent = testContent; }
+    public Integer getTestPromptTokens() { return testPromptTokens; }
+    public void setTestPromptTokens(Integer testPromptTokens) { this.testPromptTokens = testPromptTokens; }
+    public Integer getTestCompletionTokens() { return testCompletionTokens; }
+    public void setTestCompletionTokens(Integer testCompletionTokens) { this.testCompletionTokens = testCompletionTokens; }
+    public Integer getTestTotalTokens() { return testTotalTokens; }
+    public void setTestTotalTokens(Integer testTotalTokens) { this.testTotalTokens = testTotalTokens; }
+    public String getTestResponseModel() { return testResponseModel; }
+    public void setTestResponseModel(String testResponseModel) { this.testResponseModel = testResponseModel; }
     public Integer getChunkSize() { return chunkSize; }
     public void setChunkSize(Integer chunkSize) { this.chunkSize = chunkSize; }
     public Integer getChunkOverlap() { return chunkOverlap; }

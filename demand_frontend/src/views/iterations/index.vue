@@ -168,6 +168,7 @@ import Toolbar from '@/components/common/Toolbar.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
 import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
+import { resolveErrorMessage } from '@/utils/error'
 
 // ── 列表字段设置 ──
 const iterationAllColumns: ColumnDef[] = [
@@ -379,11 +380,6 @@ const viewBurndown = async (row: Iteration) => {
 
   await nextTick()
   renderBurndownChart()
-}
-
-function resolveErrorMessage(error: unknown, fallback: string) {
-  const message = (error as any)?.response?.data?.message || (error as any)?.message
-  return typeof message === 'string' && message.trim() ? message : fallback
 }
 
 const disposeBurndownChart = () => {

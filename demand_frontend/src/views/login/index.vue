@@ -16,6 +16,7 @@
           <el-input
             v-model="loginForm.username"
             placeholder="请输入用户名"
+            aria-label="用户名"
             size="large"
             :prefix-icon="User"
           />
@@ -25,6 +26,7 @@
             v-model="loginForm.password"
             type="password"
             placeholder="请输入密码"
+            aria-label="密码"
             size="large"
             show-password
             :prefix-icon="Lock"

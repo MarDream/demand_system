@@ -108,6 +108,7 @@ import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import { IsleEditor, IsleEditorToolbar, RichTextKit } from '@isle-editor/vue3'
 import Image from '@tiptap/extension-image'
 import '@isle-editor/vue3/dist/style.css'
+import { resolveErrorMessage } from '@/utils/error'
 
 const props = defineProps<{
   preselectedTypeCode?: string
@@ -210,6 +211,7 @@ async function loadConfigTypes() {
     const list = Array.isArray(res) ? res : res?.data || []
     configTypes.value = list
   } catch (error) {
+    console.error(error)
   }
 }
 
@@ -218,7 +220,7 @@ async function loadTemplates() {
   try {
     templates.value = await getAllRequirementTemplates()
   } catch (error) {
-    ElMessage.error('加载模板列表失败')
+    ElMessage.error(resolveErrorMessage(error, '加载模板列表失败'))
   } finally {
     loading.value = false
   }
@@ -319,7 +321,7 @@ async function handleSave() {
     dialogVisible.value = false
     loadTemplates()
   } catch (error) {
-    ElMessage.error('保存失败')
+    ElMessage.error(resolveErrorMessage(error, '保存失败'))
   } finally {
     saving.value = false
   }
@@ -335,7 +337,7 @@ async function handleSetDefault(row: RequirementTemplate) {
     ElMessage.success('已设为默认模板')
     loadTemplates()
   } catch (error) {
-    ElMessage.error('操作失败')
+    ElMessage.error(resolveErrorMessage(error, '操作失败'))
   }
 }
 
@@ -346,7 +348,7 @@ async function handleToggleStatus(row: RequirementTemplate) {
     ElMessage.success(newStatus === 1 ? '已启用' : '已禁用')
     loadTemplates()
   } catch (error) {
-    ElMessage.error('操作失败')
+    ElMessage.error(resolveErrorMessage(error, '操作失败'))
   }
 }
 
@@ -360,7 +362,7 @@ async function handleDelete(row: RequirementTemplate) {
     loadTemplates()
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('删除失败')
+      ElMessage.error(resolveErrorMessage(error, '删除失败'))
     }
   }
 }

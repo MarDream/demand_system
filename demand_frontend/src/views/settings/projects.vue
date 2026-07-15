@@ -44,6 +44,9 @@
       <template #table>
         <el-table :data="projectList" v-loading="loading" border>
         <el-table-column v-if="isColumnVisible('name')" prop="name" label="项目名称" min-width="200" show-overflow-tooltip />
+        <el-table-column v-if="isColumnVisible('projectCode')" prop="projectCode" label="项目编号" min-width="160">
+          <template #default="{ row }">{{ row.projectCode || '-' }}</template>
+        </el-table-column>
         <el-table-column v-if="isColumnVisible('team')" prop="team" label="归属团队" min-width="120">
           <template #default="{ row }">{{ row.team || '-' }}</template>
         </el-table-column>
@@ -102,6 +105,9 @@
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
         <el-form-item label="项目名称" prop="name">
           <el-input v-model="form.name" placeholder="请输入项目名称" />
+        </el-form-item>
+        <el-form-item label="项目编号" prop="projectCode">
+          <el-input v-model="form.projectCode" placeholder="留空则自动生成" />
         </el-form-item>
         <el-form-item label="归属公司" prop="companyId">
           <el-select
@@ -202,10 +208,12 @@ import AppButton from '@/components/common/AppButton.vue'
 import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
 import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import { formatDate } from '@/utils/format'
+import { resolveErrorMessage } from '@/utils/error'
 
 // ── 列表字段设置 ──
 const projectAllColumns: ColumnDef[] = [
   { key: 'name', label: '项目名称', group: '基础字段', minWidth: 200 },
+  { key: 'projectCode', label: '项目编号', group: '基础字段', minWidth: 160 },
   { key: 'team', label: '归属团队', group: '基础字段', minWidth: 120 },
   { key: 'leaderId', label: '负责人', group: '人员', minWidth: 100 },
   { key: 'contactPhone', label: '联系电话', group: '基础字段', minWidth: 130 },
@@ -215,7 +223,7 @@ const projectAllColumns: ColumnDef[] = [
   { key: 'createdAt', label: '创建时间', group: '人员', minWidth: 160 },
   { key: 'operations', label: '操作', minWidth: 100 },
 ]
-const projectDefaultKeys = ['name', 'team', 'leaderId', 'contactPhone', 'startDate', 'endDate', 'status', 'createdAt', 'operations']
+const projectDefaultKeys = ['name', 'projectCode', 'team', 'leaderId', 'contactPhone', 'startDate', 'endDate', 'status', 'createdAt', 'operations']
 
 const {
   showColumnConfig,
@@ -286,6 +294,7 @@ const importInputRef = ref<HTMLInputElement>()
 
 const form = reactive({
   name: '',
+  projectCode: '',
   description: '',
   companyId: null as number | null,
   team: '',
@@ -410,6 +419,7 @@ async function loadOrgData() {
       syncTeamWithCompany(true)
     }
   } catch (error) {
+    console.error(error)
     orgTree.value = []
     companyOptions.value = []
   }
@@ -418,6 +428,7 @@ async function loadOrgData() {
     const users = await userApi.getUserList({ pageNum: 1, pageSize: 9999 })
     userList.value = ((users as any)?.list ?? [])
   } catch (error) {
+    console.error(error)
     userList.value = []
   }
 }
@@ -440,6 +451,7 @@ function handleExport() {
   }
   const exportData = projectList.value.map((item) => ({
     项目名称: item.name,
+    项目编号: item.projectCode || '',
     归属团队: item.team || '',
     负责人: getLeaderName(item.leaderId),
     联系电话: item.contactPhone || '',
@@ -526,6 +538,7 @@ function handleEdit(row: any) {
   isEdit.value = true
   editId.value = row.id
   form.name = row.name
+  form.projectCode = row.projectCode || ''
   form.description = row.description || ''
   form.companyId = row.companyId || null
   form.team = row.team || ''
@@ -560,6 +573,7 @@ async function handleSubmit() {
     const resolvedTeam = resolveTeamValue(form.companyId, form.team, true)
     const payload: any = {
       name: form.name,
+      projectCode: form.projectCode || null,
       description: form.description,
       companyId: form.companyId,
       team: resolvedTeam || null,
@@ -587,6 +601,7 @@ async function handleSubmit() {
 
 function resetForm() {
   form.name = ''
+  form.projectCode = ''
   form.description = ''
   form.companyId = null
   form.team = ''
