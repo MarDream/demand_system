@@ -33,6 +33,10 @@ import com.demand.system.module.rbac.entity.UserRole;
 import com.demand.system.module.rbac.mapper.RoleMapper;
 import com.demand.system.module.rbac.mapper.RoleGroupMapper;
 import com.demand.system.module.rbac.mapper.UserRoleMapper;
+import com.demand.system.module.requirement.mapper.RequirementTypeMapper;
+import com.demand.system.module.requirement.entity.RequirementTypeConfig;
+import com.demand.system.module.workflow.engine.WorkflowDefinitionEngine;
+import com.demand.system.module.workflow.engine.WorkflowVersionResolver;
 import com.demand.system.module.workflow.dto.AssigneeCandidateDTO;
 import com.demand.system.module.workflow.dto.ParallelBranchVO;
 import com.demand.system.module.workflow.dto.AvailableTransitionDTO;
@@ -131,6 +135,9 @@ public class WorkflowEngineService {
     private final RequirementPendingTaskSyncService pendingTaskSyncService;
     private final RequirementPendingTaskMapper pendingTaskMapper;
     private final UserNameResolver userNameResolver;
+    private final WorkflowVersionResolver workflowVersionResolver;
+    private final WorkflowDefinitionEngine workflowDefinitionEngine;
+    private final RequirementTypeMapper requirementTypeMapper;
 
     public WorkflowEngineService(WorkflowInstanceMapper instanceMapper, WorkflowInstanceTransitionMapper transitionMapper,
                                WorkflowNodeMapper nodeMapper, WorkflowEdgeMapper edgeMapper,
@@ -151,7 +158,10 @@ public class WorkflowEngineService {
                                KnowledgeBaseMapper knowledgeBaseMapper,
                                @Lazy RequirementPendingTaskSyncService pendingTaskSyncService,
                                RequirementPendingTaskMapper pendingTaskMapper,
-                               UserNameResolver userNameResolver) {
+                               UserNameResolver userNameResolver,
+                               WorkflowVersionResolver workflowVersionResolver,
+                               WorkflowDefinitionEngine workflowDefinitionEngine,
+                               RequirementTypeMapper requirementTypeMapper) {
         this.instanceMapper = instanceMapper;
         this.transitionMapper = transitionMapper;
         this.nodeMapper = nodeMapper;
@@ -179,6 +189,9 @@ public class WorkflowEngineService {
         this.pendingTaskSyncService = pendingTaskSyncService;
         this.pendingTaskMapper = pendingTaskMapper;
         this.userNameResolver = userNameResolver;
+        this.workflowVersionResolver = workflowVersionResolver;
+        this.workflowDefinitionEngine = workflowDefinitionEngine;
+        this.requirementTypeMapper = requirementTypeMapper;
     }
 
     /**
@@ -329,6 +342,19 @@ public class WorkflowEngineService {
             throw conflictException(instance.getId());
         }
 
+        // 处理需求类型变更（当 newType 非空且与当前类型不同时）
+        boolean typeChanged = StringUtils.hasText(request.getNewType())
+                && !request.getNewType().equals(requirement.getType());
+        if (typeChanged) {
+            handleTypeChange(request, instance, requirement, operatorId);
+            // 类型变更后重新加载需求和实例
+            requirement = requirementMapper.selectById(request.getRequirementId());
+            instance = instanceMapper.selectOne(
+                    new LambdaQueryWrapper<WorkflowInstance>()
+                            .eq(WorkflowInstance::getRequirementId, request.getRequirementId())
+            );
+        }
+
         WorkflowGraphContext context = runtimeLoader.loadContext(instance.getWorkflowVersionId());
         WorkflowNode currentNode = context.getNode(instance.getCurrentNodeId());
         WorkflowNode targetNode = context.getNode(request.getToNodeId());
@@ -457,6 +483,160 @@ public class WorkflowEngineService {
         if (!matched) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "所选处理人不属于目标节点候选人");
         }
+    }
+
+    /**
+     * 处理需求类型变更：修改需求类型并重置工作流实例为新类型绑定的工作流版本。
+     * <p>流程：
+     * 1. 校验当前节点是否允许修改类型（allowModifyType）
+     * 2. 校验新类型是否有效且有活跃工作流版本
+     * 3. 关闭当前流转记录
+     * 4. 重置工作流实例到新工作流的初始节点
+     * 5. 修改需求的 type/status/nodeStatus
+     * 6. 记录流转历史（保留原始流转记录）
+     */
+    @Transactional
+    protected void handleTypeChange(FlowTransitionRequest request, WorkflowInstance instance,
+                                     Requirement requirement, Long operatorId) {
+        WorkflowGraphContext oldContext = runtimeLoader.loadContext(instance.getWorkflowVersionId());
+        WorkflowNode currentNode = oldContext.getNode(instance.getCurrentNodeId());
+        if (currentNode == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "当前流程节点不存在");
+        }
+
+        // 1. 校验当前节点是否允许修改类型
+        if (!WorkflowNodeUtils.readBooleanProperty(currentNode, "allowModifyType", false)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "当前节点不允许修改工单类型");
+        }
+
+        String newType = request.getNewType();
+        String oldType = requirement.getType();
+
+        // 2. 校验新类型是否已绑定活跃工作流版本
+        RequirementTypeConfig newTypeConfig = requirementTypeMapper.selectByCode(newType);
+        if (newTypeConfig == null || newTypeConfig.getWorkflowVersionId() == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "目标工单类型不存在或未绑定工作流");
+        }
+
+        WorkflowVersion newVersion = workflowVersionMapper.selectById(newTypeConfig.getWorkflowVersionId());
+        if (newVersion == null || newVersion.getIsActive() == null
+                || newVersion.getIsActive() != 1 || !"active".equals(newVersion.getActivationStatus())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "目标工单类型绑定的工作流未启用");
+        }
+
+        // 解析新工作流的初始 wait 节点（startEvent 之后的第一个 userTask）
+        String initialNodeId = resolveInitialWaitNodeId(newVersion.getId());
+        if (initialNodeId == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "目标工单类型的工作流配置异常，缺少初始节点");
+        }
+
+        // 3. 关闭当前流转记录
+        closeCurrentTransition(instance.getId());
+
+        // 4. 记录类型变更流转记录（保留原始流转记录）
+        WorkflowInstanceTransition typeChangeTransition = new WorkflowInstanceTransition();
+        typeChangeTransition.setInstanceId(instance.getId());
+        typeChangeTransition.setRequirementId(request.getRequirementId());
+        typeChangeTransition.setFromNodeId(instance.getCurrentNodeId());
+        typeChangeTransition.setFromNodeName(currentNode != null ? currentNode.getNodeName() : "");
+        typeChangeTransition.setToNodeId(initialNodeId);
+        typeChangeTransition.setToNodeName(resolveNodeNameById(newVersion.getId(), initialNodeId));
+        typeChangeTransition.setOperatorId(operatorId);
+        typeChangeTransition.setAction("type_change");
+        typeChangeTransition.setComment("工单类型变更：" + oldType + " -> " + newType
+                + (StringUtils.hasText(request.getComment()) ? "（" + request.getComment() + "）" : ""));
+        typeChangeTransition.setStartedAt(LocalDateTime.now());
+        typeChangeTransition.setAttachmentIds(extractAttachmentIds(request.getAttachments()));
+        transitionMapper.insert(typeChangeTransition);
+
+        // 5. 重置工作流实例到新版本
+        Integer currentLockVersion = instance.getLockVersion() == null ? 0 : instance.getLockVersion();
+        int updated = instanceMapper.update(null, new LambdaUpdateWrapper<WorkflowInstance>()
+                .eq(WorkflowInstance::getId, instance.getId())
+                .eq(WorkflowInstance::getLockVersion, currentLockVersion)
+                .set(WorkflowInstance::getWorkflowVersionId, newVersion.getId())
+                .set(WorkflowInstance::getCurrentNodeId, initialNodeId)
+                .set(WorkflowInstance::getPreviousNodeId, findStartNodeId(newVersion.getId()))
+                .set(WorkflowInstance::getStatus, "running")
+                .set(WorkflowInstance::getLockVersion, currentLockVersion + 1)
+        );
+        if (updated <= 0) {
+            throw conflictException(instance.getId());
+        }
+
+        // 6. 更新需求类型和状态
+        String nodeStatusCode = resolveNodeStatusCodeByNodeId(newVersion.getId(), initialNodeId);
+        LambdaUpdateWrapper<Requirement> reqUpdate = new LambdaUpdateWrapper<Requirement>()
+                .eq(Requirement::getId, request.getRequirementId())
+                .set(Requirement::getType, newType)
+                .set(Requirement::getStatus, resolveNodeStatusName(nodeStatusCode))
+                .set(Requirement::getNodeStatus, nodeStatusCode);
+        requirementMapper.update(null, reqUpdate);
+
+        // 记录需求历史变更
+        RequirementHistory history = new RequirementHistory();
+        history.setRequirementId(request.getRequirementId());
+        history.setOperatorId(operatorId);
+        history.setFieldName("type");
+        history.setOldValue(oldType);
+        history.setNewValue(newType);
+        history.setCreatedAt(LocalDateTime.now());
+        requirementHistoryMapper.insert(history);
+
+        // 同步待办
+        pendingTaskSyncService.syncPendingTasks(request.getRequirementId(), null);
+
+        log.info("需求类型变更: requirementId={}, oldType={}, newType={}, newVersionId={}, initialNodeId={}",
+                request.getRequirementId(), oldType, newType, newVersion.getId(), initialNodeId);
+    }
+
+    /**
+     * 解析工作流版本中 startEvent 之后的第一个 wait 节点 ID
+     */
+    private String resolveInitialWaitNodeId(Long workflowVersionId) {
+        WorkflowGraphContext context = runtimeLoader.loadContext(workflowVersionId);
+        WorkflowNode startNode = context.nodesById().values().stream()
+                .filter(node -> "start".equalsIgnoreCase(node.getNodeType()))
+                .findFirst()
+                .orElse(null);
+        if (startNode == null) {
+            return null;
+        }
+        List<WorkflowNode> targets = graphNavigator.resolveAvailableTargets(context, startNode.getNodeId(), null);
+        return targets.isEmpty() ? null : targets.get(0).getNodeId();
+    }
+
+    /**
+     * 查找工作流版本中的 start 节点 ID
+     */
+    private String findStartNodeId(Long workflowVersionId) {
+        WorkflowGraphContext context = runtimeLoader.loadContext(workflowVersionId);
+        return context.nodesById().values().stream()
+                .filter(node -> "start".equalsIgnoreCase(node.getNodeType()))
+                .map(WorkflowNode::getNodeId)
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * 根据节点 ID 解析节点状态码
+     */
+    private String resolveNodeStatusCodeByNodeId(Long workflowVersionId, String nodeId) {
+        WorkflowGraphContext context = runtimeLoader.loadContext(workflowVersionId);
+        WorkflowNode node = context.getNode(nodeId);
+        if (node == null) {
+            return null;
+        }
+        return resolveNodeStatusCode(node);
+    }
+
+    /**
+     * 根据节点 ID 解析节点名称
+     */
+    private String resolveNodeNameById(Long workflowVersionId, String nodeId) {
+        WorkflowGraphContext context = runtimeLoader.loadContext(workflowVersionId);
+        WorkflowNode node = context.getNode(nodeId);
+        return node != null && StringUtils.hasText(node.getNodeName()) ? node.getNodeName() : "";
     }
 
     /**
@@ -857,6 +1037,43 @@ public class WorkflowEngineService {
         if (parallelActive) {
             actions.setParallelBranches(parallelBranchService.listByRequirementId(requirementId));
         }
+
+        // 节点是否允许修改需求类型
+        boolean canModifyType = canOperate && WorkflowNodeUtils.readBooleanProperty(currentNode, "allowModifyType", false);
+        actions.setCanModifyType(canModifyType);
+
+        // 筛选有活跃工作流版本且与当前类型不同的类型列表
+        if (canModifyType) {
+            List<RequirementTypeConfig> allTypes = requirementTypeMapper.selectList(
+                    new LambdaQueryWrapper<RequirementTypeConfig>()
+                            .orderByAsc(RequirementTypeConfig::getSortOrder)
+            );
+            List<WorkflowAvailableActionsDTO.RequirementTypeOption> typeOptions = new ArrayList<>();
+            for (RequirementTypeConfig config : allTypes) {
+                // 跳过当前类型
+                if (Objects.equals(config.getCode(), requirement.getType())) {
+                    continue;
+                }
+                // 跳过未绑定工作流版本或绑定版本未激活的
+                if (config.getWorkflowVersionId() == null) {
+                    continue;
+                }
+                WorkflowVersion typeVersion = workflowVersionMapper.selectById(config.getWorkflowVersionId());
+                if (typeVersion == null || typeVersion.getIsActive() == null
+                        || typeVersion.getIsActive() != 1 || !"active".equals(typeVersion.getActivationStatus())) {
+                    continue;
+                }
+                WorkflowAvailableActionsDTO.RequirementTypeOption option = new WorkflowAvailableActionsDTO.RequirementTypeOption();
+                option.setCode(config.getCode());
+                option.setName(config.getName());
+                option.setColor(config.getColor());
+                typeOptions.add(option);
+            }
+            actions.setAvailableTypes(typeOptions);
+        } else {
+            actions.setAvailableTypes(Collections.emptyList());
+        }
+
         return actions;
     }
 

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.ErrorCode;
 import com.demand.system.module.assistant.dto.AssistantAction;
+import com.demand.system.module.assistant.dto.AssistantSource;
 import com.demand.system.module.assistant.dto.AssistantChatRequest;
 import com.demand.system.module.assistant.dto.AssistantMessageVO;
 import com.demand.system.module.assistant.dto.AssistantOperationAdvice;
@@ -17,6 +18,9 @@ import com.demand.system.module.assistant.service.AssistantOperationCatalogServi
 import com.demand.system.module.assistant.service.AssistantService;
 import com.demand.system.module.assistant.validator.AssistantActionValidator;
 import com.demand.system.module.auth.security.SecurityUtils;
+import com.demand.system.module.knowledge.dto.KnowledgeSearchRequest;
+import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse;
+import com.demand.system.module.knowledge.service.KnowledgeSearchService;
 import com.demand.system.module.knowledge.llm.LlmGateway;
 import com.demand.system.module.knowledge.llm.LlmGatewayConfig;
 import com.demand.system.module.llm.constant.LlmApplicationCode;
@@ -46,19 +50,22 @@ public class AssistantServiceImpl implements AssistantService {
     private final AssistantActionValidator actionValidator;
     private final LlmGateway llmGateway;
     private final LlmModelResolver llmModelResolver;
+    private final KnowledgeSearchService knowledgeSearchService;
 
     public AssistantServiceImpl(AssistantSessionMapper sessionMapper,
                                 AssistantMessageMapper messageMapper,
                                 AssistantOperationCatalogService catalogService,
                                 AssistantActionValidator actionValidator,
                                 LlmGateway llmGateway,
-                                LlmModelResolver llmModelResolver) {
+                                LlmModelResolver llmModelResolver,
+                                KnowledgeSearchService knowledgeSearchService) {
         this.sessionMapper = sessionMapper;
         this.messageMapper = messageMapper;
         this.catalogService = catalogService;
         this.actionValidator = actionValidator;
         this.llmGateway = llmGateway;
         this.llmModelResolver = llmModelResolver;
+        this.knowledgeSearchService = knowledgeSearchService;
     }
 
     @Override
@@ -127,26 +134,34 @@ public class AssistantServiceImpl implements AssistantService {
         userMessage.setPageContext(request.getPageContext());
         messageMapper.insert(userMessage);
 
-        AssistantOperationAdvice advice = catalogService.advise(userContent, request.getPageContext(), permissions, superAdmin);
-        List<AssistantAction> validatedActions = actionValidator.sanitize(advice.getActions(), permissions, superAdmin);
-        advice.setActions(validatedActions);
-
         AssistantMessage assistantMessage = new AssistantMessage();
         assistantMessage.setSessionId(sessionId);
         assistantMessage.setUserId(userId);
         assistantMessage.setRole("assistant");
         assistantMessage.setContent("");
         assistantMessage.setStatus("streaming");
-        assistantMessage.setIntent(advice.getIntent());
-        assistantMessage.setActions(validatedActions);
-        assistantMessage.setSources(advice.getSources());
         assistantMessage.setPageContext(request.getPageContext());
         messageMapper.insert(assistantMessage);
 
-        updateSessionAfterInteraction(session, advice.getSessionTitle());
-
         SseEmitter emitter = new SseEmitter(STREAM_TIMEOUT_MS);
-        CompletableFuture.runAsync(() -> doStreamReply(emitter, advice, userContent, request.getPageContext(), userMessage.getId(), assistantMessage));
+        if (request.getKnowledgeBaseId() != null) {
+            // 知识库检索问答分支：跨全部或指定知识库做 RAG 问答
+            assistantMessage.setIntent("knowledge_qa");
+            messageMapper.updateById(assistantMessage);
+            updateSessionAfterInteraction(session, buildPreview(userContent));
+            CompletableFuture.runAsync(() -> doStreamKnowledgeReply(emitter, request, userContent, userMessage.getId(), assistantMessage));
+        } else {
+            // 通用操作导航分支（原有逻辑）
+            AssistantOperationAdvice advice = catalogService.advise(userContent, request.getPageContext(), permissions, superAdmin);
+            List<AssistantAction> validatedActions = actionValidator.sanitize(advice.getActions(), permissions, superAdmin);
+            advice.setActions(validatedActions);
+            assistantMessage.setIntent(advice.getIntent());
+            assistantMessage.setActions(validatedActions);
+            assistantMessage.setSources(advice.getSources());
+            messageMapper.updateById(assistantMessage);
+            updateSessionAfterInteraction(session, advice.getSessionTitle());
+            CompletableFuture.runAsync(() -> doStreamReply(emitter, advice, userContent, request.getPageContext(), userMessage.getId(), assistantMessage, request.getLlmModelId()));
+        }
         return emitter;
     }
 
@@ -155,7 +170,8 @@ public class AssistantServiceImpl implements AssistantService {
                                String userMessage,
                                com.demand.system.module.assistant.dto.AssistantPageContext pageContext,
                                Long userMessageId,
-                               AssistantMessage assistantMessage) {
+                               AssistantMessage assistantMessage,
+                               Long llmModelId) {
         StringBuilder answer = new StringBuilder();
         try {
             emitter.send(SseEmitter.event().name("meta").data(Map.of(
@@ -169,7 +185,7 @@ public class AssistantServiceImpl implements AssistantService {
                     "sources", advice.getSources()
             )));
 
-            ResolvedChatModel chatModel = resolveChatModel();
+            ResolvedChatModel chatModel = resolveChatModel(llmModelId);
             if (chatModel != null) {
                 String systemPrompt = buildSystemPrompt(pageContext, advice);
                 String finalFallbackAnswer = advice.getFallbackAnswer();
@@ -226,6 +242,99 @@ public class AssistantServiceImpl implements AssistantService {
         }
     }
 
+    /**
+     * 知识库检索问答流式回复：检索全部/指定知识库，生成答案并逐字推送，
+     * 命中的文档以 sources 形式返回给前端用于展示"依据"。
+     */
+    private void doStreamKnowledgeReply(SseEmitter emitter,
+                                         AssistantChatRequest request,
+                                         String userMessage,
+                                         Long userMessageId,
+                                         AssistantMessage assistantMessage) {
+        StringBuilder answer = new StringBuilder();
+        try {
+            emitter.send(SseEmitter.event().name("meta").data(Map.of(
+                    "sessionId", assistantMessage.getSessionId(),
+                    "userMessageId", userMessageId,
+                    "assistantMessageId", assistantMessage.getId()
+            )));
+
+            Long rawKbId = request.getKnowledgeBaseId();
+            // -1 表示全部知识库，传 null 给检索服务表示不限定
+            Long searchKbId = (rawKbId != null && rawKbId == -1L) ? null : rawKbId;
+
+            KnowledgeSearchRequest searchRequest = new KnowledgeSearchRequest();
+            searchRequest.setQuery(userMessage);
+            searchRequest.setKnowledgeBaseId(searchKbId);
+            searchRequest.setMode("hybrid");
+            searchRequest.setTopK(10);
+            searchRequest.setLlmModelId(request.getLlmModelId());
+
+            KnowledgeSearchResponse searchResponse = knowledgeSearchService.search(searchRequest);
+
+            List<AssistantSource> sources = mapCitationsToSources(searchResponse.getCitations(), rawKbId);
+            assistantMessage.setSources(sources);
+            assistantMessage.setIntent("knowledge_qa");
+
+            // 先下发 actions（携带命中文档 sources），让前端展示"依据"
+            emitter.send(SseEmitter.event().name("actions").data(Map.of(
+                    "intent", "knowledge_qa",
+                    "actions", List.of(),
+                    "sources", sources
+            )));
+
+            String answerText = (searchResponse.getAnswer() != null && !searchResponse.getAnswer().isBlank())
+                    ? searchResponse.getAnswer()
+                    : "未在所选知识库中找到相关内容，建议换个问法，或切换到其它知识库范围后再试。";
+            streamFallbackText(emitter, answer, answerText);
+
+            assistantMessage.setContent(answer.toString());
+            assistantMessage.setStatus("completed");
+            messageMapper.updateById(assistantMessage);
+
+            emitter.send(SseEmitter.event().name("done").data(toMessageVO(assistantMessage)));
+            emitter.complete();
+        } catch (Exception e) {
+            log.warn("assistant knowledge qa stream failed, sessionId={}", assistantMessage.getSessionId(), e);
+            String fallback = "知识库检索问答失败：" + (e.getMessage() != null ? e.getMessage() : "请稍后重试");
+            if (answer.length() == 0) {
+                answer.append(fallback);
+            }
+            assistantMessage.setContent(answer.toString());
+            assistantMessage.setStatus("failed");
+            assistantMessage.setIntent("knowledge_qa");
+            messageMapper.updateById(assistantMessage);
+            try {
+                emitter.send(SseEmitter.event().name("error").data(Map.of("message", fallback)));
+            } catch (Exception ex) {
+                log.debug("SSE 发送 error 事件失败(客户端可能已断开)", ex);
+            }
+            emitter.completeWithError(e);
+        }
+    }
+
+    private List<AssistantSource> mapCitationsToSources(List<KnowledgeSearchResponse.CitationReference> citations, Long rawKbId) {
+        if (citations == null || citations.isEmpty()) {
+            return List.of();
+        }
+        List<AssistantSource> sources = new ArrayList<>();
+        for (KnowledgeSearchResponse.CitationReference citation : citations) {
+            AssistantSource source = new AssistantSource();
+            source.setCode("knowledge_document");
+            source.setTitle(citation.getFileName());
+            if (rawKbId != null && rawKbId != -1L) {
+                source.setPath("/settings/knowledge/" + rawKbId);
+            } else {
+                source.setPath("/settings/knowledge");
+            }
+            int hitCount = citation.getHitCount() != null ? citation.getHitCount() : 0;
+            double maxScore = citation.getMaxScore() != null ? citation.getMaxScore() : 0d;
+            source.setReason("命中 " + hitCount + " 个片段，相关度 " + Math.round(maxScore * 100) + "%");
+            sources.add(source);
+        }
+        return sources;
+    }
+
     private void pushDelta(SseEmitter emitter, StringBuilder answer, String token) {
         if (token == null || token.isEmpty()) {
             return;
@@ -249,9 +358,15 @@ public class AssistantServiceImpl implements AssistantService {
         }
     }
 
-    private ResolvedChatModel resolveChatModel() {
+    private ResolvedChatModel resolveChatModel(Long llmModelId) {
         try {
-            LlmModelResolver.ResolvedModel resolved = llmModelResolver.resolveFirst(LlmApplicationCode.ASSISTANT_CHAT);
+            LlmModelResolver.ResolvedModel resolved = null;
+            if (llmModelId != null) {
+                resolved = llmModelResolver.resolveModel(llmModelId, LlmApplicationCode.ASSISTANT_CHAT);
+            }
+            if (resolved == null) {
+                resolved = llmModelResolver.resolveFirst(LlmApplicationCode.ASSISTANT_CHAT);
+            }
             if (resolved == null) {
                 return null;
             }

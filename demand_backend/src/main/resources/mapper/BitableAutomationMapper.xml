@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demand.system.module.bitable.mapper.BitableAutomationMapper">
+
+    <!-- 按多维表格ID查询自动化规则列表 -->
+    <select id="selectByBaseId" resultType="com.demand.system.module.bitable.entity.BitableAutomation">
+        SELECT id, base_id, table_id, name, status, trigger_type, trigger_config,
+               action_type, action_config, created_by, created_at, updated_at
+        FROM `bitable_automations`
+        WHERE base_id = #{baseId}
+          AND deleted_at = 0
+        ORDER BY created_at DESC
+    </select>
+
+    <!-- 按数据表ID和状态查询自动化规则列表 -->
+    <select id="selectByTableIdAndStatus" resultType="com.demand.system.module.bitable.entity.BitableAutomation">
+        SELECT id, base_id, table_id, name, status, trigger_type, trigger_config,
+               action_type, action_config, created_by, created_at, updated_at
+        FROM `bitable_automations`
+        WHERE table_id = #{tableId}
+          AND status = #{status}
+          AND deleted_at = 0
+        ORDER BY created_at DESC
+    </select>
+
+</mapper>

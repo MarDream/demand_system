@@ -13,6 +13,8 @@ export interface FlowTransitionRequest {
   attachments?: RequirementAttachment[]
   /** 本次流转选择的处理人ID（从前端候选人列表中选择的具体用户） */
   selectedAssigneeId?: number | null
+  /** 变更后的需求类型编码（仅在当前节点允许修改类型时生效） */
+  newType?: string | null
 }
 
 export interface TransitionAssigneeCandidate {
@@ -74,6 +76,16 @@ export interface WorkflowAvailableActions {
    *  false 时表示工作流被管理员停用，canTransition/canRollback/canCancel 都会是 false，
    *  前端应隐藏操作按钮并提示"工作流已停用"。 */
   workflowActive?: boolean | null
+  /** 当前节点是否允许修改需求类型 */
+  canModifyType?: boolean | null
+  /** 可选的类型列表（用于前端类型选择器下拉） */
+  availableTypes?: RequirementTypeOption[] | null
+}
+
+export interface RequirementTypeOption {
+  code: string
+  name: string
+  color?: string | null
 }
 
 export interface TransitionVO {

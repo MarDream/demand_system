@@ -24,6 +24,8 @@ public class BitableTable {
 
     private Integer sortOrder;
 
+    private Long defaultViewId;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 
@@ -79,6 +81,14 @@ public class BitableTable {
 
     public void setSortOrder(Integer sortOrder) {
         this.sortOrder = sortOrder;
+    }
+
+    public Long getDefaultViewId() {
+        return defaultViewId;
+    }
+
+    public void setDefaultViewId(Long defaultViewId) {
+        this.defaultViewId = defaultViewId;
     }
 
     public LocalDateTime getCreatedAt() {

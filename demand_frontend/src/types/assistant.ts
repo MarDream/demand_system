@@ -49,6 +49,15 @@ export interface AssistantSession {
 export interface AssistantChatRequest {
   message: string
   pageContext?: AssistantPageContext
+  /**
+   * 知识库问答范围：
+   * - null/undefined：通用操作助手（不检索知识库）
+   * - -1：全部知识库（跨库 RAG 问答）
+   * - 具体正值：仅检索指定知识库
+   */
+  knowledgeBaseId?: number | null
+  /** 指定聊天模型 ID，null/undefined 由后端自动选取默认模型 */
+  llmModelId?: number | null
 }
 
 export interface AssistantMetaPayload {

@@ -82,19 +82,19 @@ export const routes: RouteRecordRaw[] = [
         path: 'settings/knowledge',
         name: 'KnowledgeBases',
         component: () => import('@/views/knowledge/index.vue'),
-        meta: { title: '知识库管理', icon: 'Collection', requiredPermissions: ['menu:document'] },
+        meta: { title: '知识库管理', icon: 'Collection', requiredPermissions: ['menu:knowledge'] },
       },
       {
         path: 'settings/knowledge/:id',
         name: 'KnowledgeDetail',
         component: () => import('@/views/knowledge/detail.vue'),
-        meta: { title: '知识库详情', hidden: true, activeMenu: '/settings/knowledge', requiredPermissions: ['menu:document'] },
+        meta: { title: '知识库详情', hidden: true, activeMenu: '/settings/knowledge', requiredPermissions: ['menu:knowledge'] },
       },
       {
         path: 'settings/knowledge/search',
         name: 'KnowledgeSearch',
         component: () => import('@/views/knowledge/search.vue'),
-        meta: { title: '全局语义检索', hidden: true, activeMenu: '/settings/knowledge', requiredPermissions: ['menu:document'] },
+        meta: { title: '全局语义检索', hidden: true, activeMenu: '/settings/knowledge', requiredPermissions: ['menu:knowledge'] },
       },
       {
         path: 'settings',

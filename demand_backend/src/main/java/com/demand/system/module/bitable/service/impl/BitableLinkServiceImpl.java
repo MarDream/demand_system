@@ -13,6 +13,7 @@ import com.demand.system.module.bitable.mapper.BitableCellMapper;
 import com.demand.system.module.bitable.mapper.BitableFieldMapper;
 import com.demand.system.module.bitable.mapper.BitableRecordMapper;
 import com.demand.system.module.bitable.service.BitableLinkService;
+import com.demand.system.module.bitable.util.BitableJsonUtils;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
@@ -20,8 +21,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -104,9 +107,11 @@ public class BitableLinkServiceImpl implements BitableLinkService {
         if (field == null) {
             throw new BusinessException("字段不存在");
         }
-        if (!"link".equals(field.getFieldType())) {
+        if (!("link".equals(field.getFieldType()) || "bidirectional_link".equals(field.getFieldType()))) {
             throw new BusinessException("字段不是关联类型");
         }
+
+        List<Long> oldTargetRecordIds = getLinkedRecordIds(fieldId, recordId);
 
         // 验证当前记录存在
         BitableRecord record = recordMapper.selectById(recordId);
@@ -128,6 +133,8 @@ public class BitableLinkServiceImpl implements BitableLinkService {
         cell.setFieldId(fieldId);
         cell.setValueJson(valueJson);
         cellMapper.saveOrUpdateCell(cell);
+
+        syncBidirectionalReverseLinks(field, recordId, oldTargetRecordIds, targetRecordIds != null ? targetRecordIds : Collections.emptyList());
     }
 
     @Override
@@ -144,6 +151,68 @@ public class BitableLinkServiceImpl implements BitableLinkService {
             // 如果解析失败，尝试兼容旧格式
             return Collections.emptyList();
         }
+    }
+
+
+    private void syncBidirectionalReverseLinks(BitableField field, Long recordId, List<Long> oldTargetIds, List<Long> newTargetIds) {
+        if (!"bidirectional_link".equals(field.getFieldType())) {
+            return;
+        }
+        Long reverseFieldId = parseReverseFieldId(field);
+        if (reverseFieldId == null) {
+            return;
+        }
+        Set<Long> oldSet = new LinkedHashSet<>(oldTargetIds == null ? Collections.emptyList() : oldTargetIds);
+        Set<Long> newSet = new LinkedHashSet<>(newTargetIds == null ? Collections.emptyList() : newTargetIds);
+
+        for (Long targetId : newSet) {
+            List<Long> reverseIds = new ArrayList<>(getLinkedRecordIds(reverseFieldId, targetId));
+            if (!reverseIds.contains(recordId)) {
+                reverseIds.add(recordId);
+                saveLinkCell(reverseFieldId, targetId, reverseIds);
+            }
+        }
+        for (Long removedTargetId : oldSet) {
+            if (newSet.contains(removedTargetId)) {
+                continue;
+            }
+            List<Long> reverseIds = new ArrayList<>(getLinkedRecordIds(reverseFieldId, removedTargetId));
+            if (reverseIds.remove(recordId)) {
+                saveLinkCell(reverseFieldId, removedTargetId, reverseIds);
+            }
+        }
+    }
+
+    private void saveLinkCell(Long fieldId, Long recordId, List<Long> targetRecordIds) {
+        BitableCellValue cell = new BitableCellValue();
+        cell.setRecordId(recordId);
+        cell.setFieldId(fieldId);
+        cell.setValueJson(BitableJsonUtils.toJsonString(targetRecordIds));
+        cellMapper.saveOrUpdateCell(cell);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Long parseReverseFieldId(BitableField field) {
+        Object parsed = BitableJsonUtils.parseJson(field.getConfig());
+        if (!(parsed instanceof Map)) {
+            return null;
+        }
+        Map<String, Object> config = (Map<String, Object>) parsed;
+        Object raw = config.get("reverseFieldId");
+        if (raw == null) {
+            raw = config.get("bidirectionalFieldId");
+        }
+        if (raw instanceof Number number) {
+            return number.longValue();
+        }
+        if (raw instanceof String str && !str.isBlank()) {
+            try {
+                return Long.parseLong(str);
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     /**

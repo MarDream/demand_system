@@ -2,6 +2,9 @@ package com.demand.system.module.file.storage;
 
 import io.minio.*;
 import io.minio.http.Method;
+import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -11,7 +14,7 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class MinioStorageService {
 
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(MinioStorageService.class);
+    private static final Logger log = LoggerFactory.getLogger(MinioStorageService.class);
 
     private final MinioClient minioClient;
 
@@ -34,11 +37,30 @@ public class MinioStorageService {
     @Value("${minio.secret-key}")
     private String secretKey;
 
+    /**
+     * 初始化时检查 bucket 是否存在，不存在则自动创建。
+     */
+    @PostConstruct
+    public void init() {
+        try {
+            boolean exists = minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucketName).build());
+            if (!exists) {
+                minioClient.makeBucket(MakeBucketArgs.builder().bucket(bucketName).build());
+                log.info("MinIO bucket 自动创建成功: {}", bucketName);
+            } else {
+                log.info("MinIO bucket 已存在: {}", bucketName);
+            }
+        } catch (Exception e) {
+            log.warn("MinIO bucket 初始化检查失败（暂不影响后续上传，但上传时可能报 bucket 不存在）: bucket={}, error={}", bucketName, e.getMessage());
+        }
+    }
+
     public String getBucketName() {
         return bucketName;
     }
 
     public String upload(InputStream inputStream, String fileName, String contentType) throws Exception {
+        ensureBucketExists();
         minioClient.putObject(PutObjectArgs.builder()
                 .bucket(bucketName)
                 .object(fileName)
@@ -46,6 +68,21 @@ public class MinioStorageService {
                 .contentType(contentType)
                 .build());
         return endpoint + "/" + bucketName + "/" + fileName;
+    }
+
+    /**
+     * 确保 bucket 存在，不存在则自动创建（上传前的兜底检查）。
+     */
+    private void ensureBucketExists() {
+        try {
+            boolean exists = minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucketName).build());
+            if (!exists) {
+                minioClient.makeBucket(MakeBucketArgs.builder().bucket(bucketName).build());
+                log.info("MinIO bucket 自动创建成功（上传前兜底）: {}", bucketName);
+            }
+        } catch (Exception e) {
+            log.warn("MinIO bucket 检查失败: {}", e.getMessage());
+        }
     }
 
     public InputStream download(String fileName) throws Exception {

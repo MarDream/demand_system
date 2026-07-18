@@ -6,6 +6,7 @@ import com.demand.system.module.bitable.dto.BitableBaseCreateDTO;
 import com.demand.system.module.bitable.dto.BitableBaseMemberVO;
 import com.demand.system.module.bitable.dto.BitableBaseUpdateDTO;
 import com.demand.system.module.bitable.dto.BitableBaseVO;
+import com.demand.system.module.bitable.service.BitableAuthorizationService;
 import com.demand.system.module.bitable.service.BitableBaseMemberService;
 import com.demand.system.module.bitable.service.BitableBaseService;
 import jakarta.validation.Valid;
@@ -24,11 +25,14 @@ public class BitableBaseController {
 
     private final BitableBaseService bitableBaseService;
     private final BitableBaseMemberService bitableBaseMemberService;
+    private final BitableAuthorizationService authorizationService;
 
     public BitableBaseController(BitableBaseService bitableBaseService,
-                                 BitableBaseMemberService bitableBaseMemberService) {
+                                 BitableBaseMemberService bitableBaseMemberService,
+                                 BitableAuthorizationService authorizationService) {
         this.bitableBaseService = bitableBaseService;
         this.bitableBaseMemberService = bitableBaseMemberService;
+        this.authorizationService = authorizationService;
     }
 
     @GetMapping("/bases")
@@ -42,6 +46,8 @@ public class BitableBaseController {
     @GetMapping("/bases/{id}")
     @PreAuthorize("isAuthenticated()")
     public Result<BitableBaseVO> getBaseById(@PathVariable Long id) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        authorizationService.checkReadPermission(id, userId);
         BitableBaseVO vo = bitableBaseService.getBaseById(id);
         return Result.success(vo);
     }
@@ -57,6 +63,8 @@ public class BitableBaseController {
     @PutMapping("/bases/{id}")
     @PreAuthorize("isAuthenticated()")
     public Result<Void> updateBase(@PathVariable Long id, @RequestBody BitableBaseUpdateDTO dto) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        authorizationService.checkOwnerPermission(id, userId);
         bitableBaseService.updateBase(id, dto);
         return Result.success();
     }
@@ -64,13 +72,19 @@ public class BitableBaseController {
     @DeleteMapping("/bases/{id}")
     @PreAuthorize("isAuthenticated()")
     public Result<Void> deleteBase(@PathVariable Long id) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        authorizationService.checkOwnerPermission(id, userId);
         bitableBaseService.deleteBase(id);
+        // 删除后清除角色缓存
+        authorizationService.clearRoleCache(id);
         return Result.success();
     }
 
     @GetMapping("/bases/{baseId}/members")
     @PreAuthorize("isAuthenticated()")
     public Result<List<BitableBaseMemberVO>> listMembers(@PathVariable Long baseId) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        authorizationService.checkReadPermission(baseId, userId);
         List<BitableBaseMemberVO> list = bitableBaseMemberService.listMembers(baseId);
         return Result.success(list);
     }
@@ -78,15 +92,19 @@ public class BitableBaseController {
     @PostMapping("/bases/{baseId}/members")
     @PreAuthorize("isAuthenticated()")
     public Result<Void> addMember(@PathVariable Long baseId, @RequestBody Map<String, Object> body) {
-        Long userId = parseLong(body.get("userId"));
+        Long userId = SecurityUtils.getCurrentUserId();
+        authorizationService.checkManagePermission(baseId, userId);
+        Long targetUserId = parseLong(body.get("userId"));
         String role = (String) body.get("role");
-        if (userId == null) {
+        if (targetUserId == null) {
             return Result.fail("userId 不能为空");
         }
         if (role == null || role.isBlank()) {
             return Result.fail("role 不能为空");
         }
-        bitableBaseMemberService.addMember(baseId, userId, role);
+        bitableBaseMemberService.addMember(baseId, targetUserId, role);
+        // 清除新成员的角色缓存
+        authorizationService.clearRoleCache(baseId, targetUserId);
         return Result.success();
     }
 
@@ -95,18 +113,26 @@ public class BitableBaseController {
     public Result<Void> updateMemberRole(@PathVariable Long baseId,
                                          @PathVariable Long userId,
                                          @RequestBody Map<String, Object> body) {
+        Long currentUserId = SecurityUtils.getCurrentUserId();
+        authorizationService.checkManagePermission(baseId, currentUserId);
         String role = (String) body.get("role");
         if (role == null || role.isBlank()) {
             return Result.fail("role 不能为空");
         }
         bitableBaseMemberService.updateMemberRole(baseId, userId, role);
+        // 清除被修改成员的角色缓存
+        authorizationService.clearRoleCache(baseId, userId);
         return Result.success();
     }
 
     @DeleteMapping("/bases/{baseId}/members/{userId}")
     @PreAuthorize("isAuthenticated()")
     public Result<Void> removeMember(@PathVariable Long baseId, @PathVariable Long userId) {
+        Long currentUserId = SecurityUtils.getCurrentUserId();
+        authorizationService.checkManagePermission(baseId, currentUserId);
         bitableBaseMemberService.removeMember(baseId, userId);
+        // 清除被移除成员的角色缓存
+        authorizationService.clearRoleCache(baseId, userId);
         return Result.success();
     }
 

@@ -38,6 +38,13 @@ public class FlowTransitionRequest {
      */
     private Long selectedAssigneeId;
 
+    /**
+     * 变更后的需求类型编码（仅在当前节点允许修改类型时生效）。
+     * 非空时：流转同时修改需求的类型，并重置工作流实例为新类型绑定的工作流版本。
+     * 原始流转记录保留不变。
+     */
+    private String newType;
+
     public Long getRequirementId() {
         return requirementId;
     }
@@ -116,5 +123,13 @@ public class FlowTransitionRequest {
 
     public void setSelectedAssigneeId(Long selectedAssigneeId) {
         this.selectedAssigneeId = selectedAssigneeId;
+    }
+
+    public String getNewType() {
+        return newType;
+    }
+
+    public void setNewType(String newType) {
+        this.newType = newType;
     }
 }

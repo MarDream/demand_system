@@ -1,9 +1,9 @@
 import request from '@/api/request'
-import type { ApiResponse } from '@/types/api'
+import type { ApiResponse, PageResult } from '@/types/api'
 import type { Iteration, IterationFormData } from '@/types/iteration'
 
-export function getIterationList(projectId: number) {
-  return request.get<ApiResponse<Iteration[]>>(`/v1/projects/${projectId}/iterations`)
+export function getIterationList(projectId: number, params?: { name?: string; status?: string; pageNum?: number; pageSize?: number }) {
+  return request.get<ApiResponse<PageResult<Iteration>>>(`/v1/projects/${projectId}/iterations`, { params })
 }
 
 export function getIterationById(id: number) {

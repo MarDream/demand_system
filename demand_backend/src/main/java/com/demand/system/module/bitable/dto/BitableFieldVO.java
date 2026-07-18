@@ -15,7 +15,7 @@ public class BitableFieldVO {
 
     private String fieldType;
 
-    private String config;
+    private Object config;
 
     private Integer required;
 
@@ -65,11 +65,11 @@ public class BitableFieldVO {
         this.fieldType = fieldType;
     }
 
-    public String getConfig() {
+    public Object getConfig() {
         return config;
     }
 
-    public void setConfig(String config) {
+    public void setConfig(Object config) {
         this.config = config;
     }
 

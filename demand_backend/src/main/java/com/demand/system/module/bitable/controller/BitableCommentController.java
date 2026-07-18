@@ -3,6 +3,7 @@ package com.demand.system.module.bitable.controller;
 import com.demand.system.common.result.Result;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.bitable.dto.BitableCommentVO;
+import com.demand.system.module.bitable.service.BitableAuthorizationService;
 import com.demand.system.module.bitable.service.BitableCommentService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -18,14 +19,20 @@ import java.util.Map;
 public class BitableCommentController {
 
     private final BitableCommentService bitableCommentService;
+    private final BitableAuthorizationService authorizationService;
 
-    public BitableCommentController(BitableCommentService bitableCommentService) {
+    public BitableCommentController(BitableCommentService bitableCommentService,
+                                    BitableAuthorizationService authorizationService) {
         this.bitableCommentService = bitableCommentService;
+        this.authorizationService = authorizationService;
     }
 
     @GetMapping("/records/{recordId}/comments")
     @PreAuthorize("isAuthenticated()")
     public Result<List<BitableCommentVO>> listComments(@PathVariable Long recordId) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        Long baseId = authorizationService.getBaseIdByRecordId(recordId);
+        authorizationService.checkReadPermission(baseId, userId);
         List<BitableCommentVO> list = bitableCommentService.listComments(recordId);
         return Result.success(list);
     }
@@ -41,9 +48,11 @@ public class BitableCommentController {
         if (tableId == null) {
             return Result.fail("tableId 不能为空");
         }
+        Long userId = SecurityUtils.getCurrentUserId();
+        Long baseId = authorizationService.getBaseIdByRecordId(recordId);
+        authorizationService.checkWritePermission(baseId, userId);
         Long quoteFieldId = parseLong(body.get("quoteFieldId"));
         Long parentId = parseLong(body.get("parentId"));
-        Long userId = SecurityUtils.getCurrentUserId();
         Long id = bitableCommentService.createComment(recordId, tableId, content, quoteFieldId, parentId, userId);
         return Result.success(id);
     }
@@ -51,6 +60,9 @@ public class BitableCommentController {
     @DeleteMapping("/comments/{id}")
     @PreAuthorize("isAuthenticated()")
     public Result<Void> deleteComment(@PathVariable Long id) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        Long baseId = authorizationService.getBaseIdByCommentId(id);
+        authorizationService.checkWritePermission(baseId, userId);
         bitableCommentService.deleteComment(id);
         return Result.success();
     }

@@ -3,6 +3,7 @@ package com.demand.system.module.bitable.converter;
 import com.demand.system.module.bitable.dto.*;
 import com.demand.system.module.bitable.entity.*;
 import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
 import org.mapstruct.ReportingPolicy;
 
 import java.util.List;
@@ -33,16 +34,31 @@ public interface BitableConverter {
 
     // ==================== Field ====================
 
+    @Mapping(target = "config", expression = "java(com.demand.system.module.bitable.util.BitableJsonUtils.toJsonString(dto.getConfig()))")
     BitableField toField(BitableFieldCreateDTO dto);
 
+    @Mapping(target = "config", expression = "java(com.demand.system.module.bitable.util.BitableJsonUtils.parseJson(field.getConfig()))")
     BitableFieldVO toFieldVO(BitableField field);
 
     List<BitableFieldVO> toFieldVOList(List<BitableField> list);
 
     // ==================== View ====================
 
+    @Mapping(target = "sortConfig", expression = "java(com.demand.system.module.bitable.util.BitableJsonUtils.toJsonString(dto.getSortConfig()))")
+    @Mapping(target = "filterConfig", expression = "java(com.demand.system.module.bitable.util.BitableJsonUtils.toJsonString(dto.getFilterConfig()))")
+    @Mapping(target = "groupConfig", expression = "java(com.demand.system.module.bitable.util.BitableJsonUtils.toJsonString(dto.getGroupConfig()))")
+    @Mapping(target = "columnConfig", expression = "java(com.demand.system.module.bitable.util.BitableJsonUtils.toJsonString(dto.getColumnConfig()))")
+    @Mapping(target = "colorConfig", expression = "java(com.demand.system.module.bitable.util.BitableJsonUtils.toJsonString(dto.getColorConfig()))")
+    @Mapping(target = "config", expression = "java(com.demand.system.module.bitable.util.BitableJsonUtils.toJsonString(dto.getConfig()))")
     BitableView toView(BitableViewCreateDTO dto);
 
+    @Mapping(target = "sortConfig", expression = "java(com.demand.system.module.bitable.util.BitableJsonUtils.parseJson(view.getSortConfig()))")
+    @Mapping(target = "filterConfig", expression = "java(com.demand.system.module.bitable.util.BitableJsonUtils.parseJson(view.getFilterConfig()))")
+    @Mapping(target = "groupConfig", expression = "java(com.demand.system.module.bitable.util.BitableJsonUtils.parseJson(view.getGroupConfig()))")
+    @Mapping(target = "columnConfig", expression = "java(com.demand.system.module.bitable.util.BitableJsonUtils.parseJson(view.getColumnConfig()))")
+    @Mapping(target = "colorConfig", expression = "java(com.demand.system.module.bitable.util.BitableJsonUtils.parseJson(view.getColorConfig()))")
+    @Mapping(target = "config", expression = "java(com.demand.system.module.bitable.util.BitableJsonUtils.parseJson(view.getConfig()))")
+    @Mapping(target = "isDefault", ignore = true)
     BitableViewVO toViewVO(BitableView view);
 
     List<BitableViewVO> toViewVOList(List<BitableView> list);
@@ -58,6 +74,7 @@ public interface BitableConverter {
 
     // ==================== CellValue ====================
 
+    @Mapping(target = "valueJson", expression = "java(com.demand.system.module.bitable.util.BitableJsonUtils.parseJson(cell.getValueJson()))")
     BitableCellValueVO toCellValueVO(BitableCellValue cell);
 
     List<BitableCellValueVO> toCellValueVOList(List<BitableCellValue> list);

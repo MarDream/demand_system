@@ -13,7 +13,7 @@ public class BitableFieldCreateDTO {
     @NotBlank(message = "字段类型不能为空")
     private String fieldType;
 
-    private String config;
+    private Object config;
 
     private Integer required = 0;
 
@@ -41,11 +41,11 @@ public class BitableFieldCreateDTO {
         this.fieldType = fieldType;
     }
 
-    public String getConfig() {
+    public Object getConfig() {
         return config;
     }
 
-    public void setConfig(String config) {
+    public void setConfig(Object config) {
         this.config = config;
     }
 

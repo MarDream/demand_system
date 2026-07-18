@@ -2,6 +2,8 @@ package com.demand.system.module.bitable.service;
 
 import com.demand.system.module.bitable.dto.BitableRecordCreateDTO;
 import com.demand.system.module.bitable.dto.BitableRecordVO;
+import com.demand.system.module.bitable.dto.RecordGroupVO;
+import com.demand.system.module.bitable.dto.RecordQueryDTO;
 import com.demand.system.common.result.PageResult;
 
 import java.util.List;
@@ -76,4 +78,22 @@ public interface BitableRecordService {
      * @return 更新后的版本号
      */
     Integer updateCell(Long recordId, Long fieldId, Object value, Integer version, Long userId);
+
+    /**
+     * 带筛选排序分组的记录查询
+     *
+     * @param tableId 数据表ID
+     * @param query   查询参数（含筛选/排序/分组/视图ID）
+     * @return 分页结果
+     */
+    PageResult<BitableRecordVO> queryRecords(Long tableId, RecordQueryDTO query);
+
+    /**
+     * 带分组的记录查询
+     *
+     * @param tableId 数据表ID
+     * @param query   查询参数（含筛选/排序/分组字段ID）
+     * @return 分组结果列表
+     */
+    List<RecordGroupVO> queryGroupedRecords(Long tableId, RecordQueryDTO query);
 }

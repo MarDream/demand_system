@@ -218,7 +218,7 @@
 
     <!-- Table -->
     <TableCard class="requirement-table-card">
-      <template #table>
+      <template #table="{ height }">
         <el-table
           ref="tableRef"
           v-loading="loading"
@@ -228,6 +228,7 @@
           border
           stripe
           fit
+          :height="height"
         >
           <template #empty>
             <el-empty description="暂无需求数据" :image-size="80">
@@ -1203,6 +1204,9 @@ watch(tableData, (rows) => {
 .requirements-page {
   padding: 10px 14px 14px;
   gap: 8px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
 
 .requirement-control-card {
@@ -1216,6 +1220,7 @@ watch(tableData, (rows) => {
 }
 
 .requirement-table-card {
+  flex: 1;
   margin-top: 0;
 
   :deep(.el-card__body) {

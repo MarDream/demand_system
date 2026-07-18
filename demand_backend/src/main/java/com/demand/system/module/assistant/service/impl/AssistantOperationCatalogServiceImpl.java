@@ -28,10 +28,10 @@ public class AssistantOperationCatalogServiceImpl implements AssistantOperationC
             new CatalogItem("iteration.manage", "迭代管理", "/iterations", null,
                     "进入迭代管理页，查看迭代排期、容量和状态。",
                     List.of("迭代", "迭代管理", "排期", "版本计划", "sprint")),
-            new CatalogItem("knowledge.rag", "RAG文档中心", "/settings/rag", "menu:rag",
-                    "进入 RAG 文档中心，上传文档并进行智能检索。",
+            new CatalogItem("knowledge.rag", "文档中心", "/settings/documents", "menu:document",
+                    "进入文档中心，上传文档并进行智能检索。",
                     List.of("rag", "文档中心", "知识问答", "智能检索", "上传文档")),
-            new CatalogItem("knowledge.manage", "知识库管理", "/settings/knowledge", "menu:rag",
+            new CatalogItem("knowledge.manage", "知识库管理", "/settings/knowledge", "menu:knowledge",
                     "进入知识库管理页维护知识库、文档和搜索范围。",
                     List.of("知识库", "知识库管理", "文档库", "知识检索")),
             new CatalogItem("workflow.config", "工作流配置", "/system/workflow-config", "menu:settings:workflow",
@@ -161,7 +161,7 @@ public class AssistantOperationCatalogServiceImpl implements AssistantOperationC
         if (route.startsWith("/iterations")) {
             return List.of(new CatalogMatch(CATALOG.get(2), 10), new CatalogMatch(CATALOG.get(1), 7), new CatalogMatch(CATALOG.get(3), 6));
         }
-        if (route.startsWith("/settings/knowledge") || route.startsWith("/settings/rag")) {
+        if (route.startsWith("/settings/knowledge") || route.startsWith("/settings/documents")) {
             return List.of(new CatalogMatch(CATALOG.get(4), 10), new CatalogMatch(CATALOG.get(3), 9), new CatalogMatch(CATALOG.get(6), 6));
         }
         if (route.startsWith("/system/workflow-config")) {

@@ -48,10 +48,45 @@
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
-            <el-button text @click="toggleAssistantFullscreen">{{ assistantFullscreen ? '退出全屏' : '全屏' }}</el-button>
-            <el-button text @click="handleCreateSession">新会话</el-button>
-            <el-button text @click="assistantStore.close()">关闭</el-button>
+            <el-tooltip :content="assistantFullscreen ? '退出全屏' : '全屏'" placement="bottom">
+              <el-button
+                class="assistant-tool-button"
+                text
+                circle
+                :aria-label="assistantFullscreen ? '退出全屏' : '全屏'"
+                @click="toggleAssistantFullscreen"
+              >
+                <el-icon>
+                  <ScaleToOriginal v-if="assistantFullscreen" />
+                  <FullScreen v-else />
+                </el-icon>
+              </el-button>
+            </el-tooltip>
+            <el-tooltip content="新会话" placement="bottom">
+              <el-button
+                class="assistant-tool-button"
+                text
+                circle
+                aria-label="新会话"
+                @click="handleCreateSession"
+              >
+                <el-icon><Plus /></el-icon>
+              </el-button>
+            </el-tooltip>
           </el-space>
+
+          <el-tooltip content="关闭" placement="bottom">
+            <el-button
+              class="assistant-panel__close-btn"
+              text
+              circle
+              aria-label="关闭"
+              @mousedown.stop
+              @click="assistantStore.close()"
+            >
+              <el-icon><Close /></el-icon>
+            </el-button>
+          </el-tooltip>
         </div>
       </template>
 
@@ -203,7 +238,85 @@
                 @keydown.enter.exact.prevent="handleSend"
               />
               <div class="assistant-composer__footer">
-                <span class="assistant-composer__tip">Enter 发送，Shift + Enter 换行，Esc 关闭面板</span>
+                <div class="assistant-composer__scope">
+                  <el-tooltip content="选择知识库问答范围：通用助手不检索知识库；全部/指定知识库会基于知识库内容回答" placement="top">
+                    <el-select
+                      v-model="selectedKbScope"
+                      size="small"
+                      class="assistant-composer__scope-select"
+                      :disabled="sending"
+                    >
+                      <template #prefix>
+                        <el-icon class="assistant-composer__scope-icon"><Document /></el-icon>
+                      </template>
+                      <el-option label="通用助手" :value="null" />
+                      <el-option label="全部知识库" :value="-1" />
+                      <el-option
+                        v-for="kb in knowledgeBases"
+                        :key="kb.id"
+                        :label="kb.name"
+                        :value="kb.id"
+                      />
+                    </el-select>
+                  </el-tooltip>
+
+                  <el-popover
+                    v-model:visible="modelPopoverVisible"
+                    trigger="click"
+                    placement="top-start"
+                    width="480"
+                    popper-class="assistant-model-popover"
+                  >
+                    <template #reference>
+                      <button
+                        type="button"
+                        class="assistant-composer__model-btn"
+                        :disabled="!availableChatModels.length || sending"
+                      >
+                        <el-icon><Cpu /></el-icon>
+                        <span>{{ selectedModelDisplay }}</span>
+                        <el-icon class="assistant-composer__model-arrow"><ArrowDown /></el-icon>
+                      </button>
+                    </template>
+                    <div class="assistant-model-menu">
+                      <div class="assistant-model-menu__title">选择模型</div>
+                      <div class="assistant-model-menu__panels">
+                        <div class="assistant-model-menu__providers">
+                          <div class="assistant-model-menu__label">接入组</div>
+                          <button
+                            v-for="group in groupedChatModels"
+                            :key="group.providerName"
+                            type="button"
+                            class="assistant-model-menu__provider"
+                            :class="{ 'is-active': selectedProvider === group.providerName }"
+                            @click="selectedProvider = group.providerName"
+                          >
+                            <span class="assistant-model-menu__provider-name">{{ group.providerName }}</span>
+                            <span class="assistant-model-menu__provider-count">{{ group.items.length }}</span>
+                          </button>
+                        </div>
+                        <div class="assistant-model-menu__models">
+                          <div class="assistant-model-menu__label">模型</div>
+                          <button
+                            v-for="model in currentProviderModels"
+                            :key="model.id"
+                            type="button"
+                            class="assistant-model-menu__model"
+                            :class="{ 'is-active': selectedLlmModelId === model.id }"
+                            @click="handleModelSelect(model.id)"
+                          >
+                            <div class="assistant-model-menu__model-main">
+                              <div class="assistant-model-menu__model-name">{{ model.name }}</div>
+                              <div class="assistant-model-menu__model-id">{{ model.modelId }}</div>
+                            </div>
+                            <span class="assistant-model-menu__check">{{ selectedLlmModelId === model.id ? '✓' : '' }}</span>
+                          </button>
+                          <el-empty v-if="!currentProviderModels.length" description="该接入组暂无可用模型" :image-size="56" />
+                        </div>
+                      </div>
+                    </div>
+                  </el-popover>
+                </div>
                 <el-button type="primary" :loading="sending" @click="handleSend">
                   发送
                   <el-icon class="el-icon--right"><Promotion /></el-icon>
@@ -219,14 +332,17 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { CSSProperties } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ChatDotRound, Delete, Promotion, ArrowDown } from '@element-plus/icons-vue'
+import { ChatDotRound, Cpu, Delete, Document, Promotion, ArrowDown, FullScreen, ScaleToOriginal, Plus, Close } from '@element-plus/icons-vue'
 import MarkdownContent from '@/components/common/MarkdownContent.vue'
 import AssistantAvatar from '@/components/assistant/avatars/AssistantAvatar.vue'
 import { useAssistantStore } from '@/stores/assistant'
 import { useAssistantContext } from '@/composables/useAssistantContext'
+import { getAllKnowledgeBases, type KnowledgeBase } from '@/api/modules/knowledge'
+import { llmProviderApi, type ChatModelOption } from '@/api/modules/llmProvider'
 import type { AssistantPageContext, AssistantSource } from '@/types/assistant'
 
 type PathMatchType = 'current-page' | 'current-menu' | 'related' | 'none'
@@ -239,6 +355,111 @@ const { visible, sessions, activeSessionId, messages, sending, initialized } = s
 const draft = ref('')
 const messageListRef = ref<HTMLDivElement | null>(null)
 const assistantFullscreen = ref(false)
+
+// ===== 知识库问答范围 =====
+// null = 通用助手（不检索知识库）；-1 = 全部知识库；具体值 = 指定知识库
+const knowledgeBases = ref<KnowledgeBase[]>([])
+const selectedKbScope = ref<number | null>(null)
+
+async function loadKnowledgeBases() {
+  try {
+    const res = await getAllKnowledgeBases() as unknown as KnowledgeBase[] | { data?: KnowledgeBase[] }
+    const list = Array.isArray(res) ? res : (res as { data?: KnowledgeBase[] })?.data || []
+    knowledgeBases.value = list
+  } catch {
+    // 加载失败不阻断助手基础功能
+  }
+}
+
+// ===== 聊天模型选择 =====
+interface AssistantModelOption {
+  id: number
+  providerId: number
+  providerName: string
+  name: string
+  label: string
+  modelId: string
+  isDefault: boolean
+}
+
+const availableChatModels = ref<AssistantModelOption[]>([])
+const selectedLlmModelId = ref<number | null>(null)
+const modelPopoverVisible = ref(false)
+const selectedProvider = ref<string>('')
+
+const selectedChatModel = computed<AssistantModelOption | null>(() => {
+  if (selectedLlmModelId.value == null) return null
+  return availableChatModels.value.find(item => item.id === selectedLlmModelId.value) || null
+})
+
+const groupedChatModels = computed(() => {
+  const groups = new Map<string, AssistantModelOption[]>()
+  availableChatModels.value.forEach((model) => {
+    const providerName = model.providerName || '未命名提供商'
+    if (!groups.has(providerName)) groups.set(providerName, [])
+    groups.get(providerName)!.push(model)
+  })
+  return Array.from(groups.entries()).map(([providerName, items]) => ({ providerName, items }))
+})
+
+const currentProviderModels = computed<AssistantModelOption[]>(() => {
+  if (!selectedProvider.value) {
+    if (groupedChatModels.value.length > 0) {
+      selectedProvider.value = groupedChatModels.value[0].providerName
+    }
+    return []
+  }
+  const group = groupedChatModels.value.find(g => g.providerName === selectedProvider.value)
+  return group ? group.items : []
+})
+
+const selectedModelDisplay = computed(() => {
+  if (!selectedChatModel.value) {
+    return availableChatModels.value.length ? '选择模型' : '未配置模型'
+  }
+  return compactModelName(selectedChatModel.value)
+})
+
+function compactModelName(model: AssistantModelOption) {
+  const source = (model.name || model.modelId || model.label).trim()
+  const compact = source.replace(/^(gpt|claude|glm|qwen|deepseek|gemini)[-_:\s]*/i, '').trim()
+  return compact || source
+}
+
+async function loadAvailableLlmModels() {
+  try {
+    const res = await llmProviderApi.listChatModels() as any
+    const models = (res?.data ?? res ?? []) as ChatModelOption[]
+    availableChatModels.value = models
+      .map((model) => ({
+        id: model.id,
+        providerId: model.providerId,
+        providerName: model.providerName,
+        name: model.name,
+        label: `${model.providerName} / ${model.name}`,
+        modelId: model.modelId,
+        isDefault: model.isDefault
+      }))
+      .sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.label.localeCompare(b.label, 'zh-CN'))
+
+    if (!availableChatModels.value.length) {
+      selectedLlmModelId.value = null
+      return
+    }
+    const stillExists = availableChatModels.value.some(item => item.id === selectedLlmModelId.value)
+    if (!stillExists) {
+      selectedLlmModelId.value = availableChatModels.value.find(item => item.isDefault)?.id || availableChatModels.value[0].id
+    }
+  } catch {
+    availableChatModels.value = []
+    selectedLlmModelId.value = null
+  }
+}
+
+function handleModelSelect(modelId: number) {
+  selectedLlmModelId.value = modelId
+  modelPopoverVisible.value = false
+}
 
 // ===== 浮标头像切换 =====
 type AvatarVariant = 'default' | 'girl' | 'fox' | 'cat' | 'elf'
@@ -284,17 +505,32 @@ function setAvatarVariant(variant: AvatarVariant) {
 
 // ===== 拖拽浮标 =====
 const fabRef = ref<HTMLButtonElement | null>(null)
-const fabPos = ref({ x: 0, y: 0 })
-const fabInitialized = ref(false)
+
+const FAB_SIZE = 48
+const FAB_MARGIN = 16
+const FAB_DEFAULT_OFFSET = 28
+
+function getDefaultFabPosition() {
+  if (typeof window === 'undefined') {
+    return { x: FAB_MARGIN, y: FAB_MARGIN }
+  }
+  return {
+    x: Math.max(FAB_MARGIN, window.innerWidth - FAB_SIZE - FAB_DEFAULT_OFFSET),
+    y: Math.max(FAB_MARGIN, window.innerHeight - FAB_SIZE - FAB_DEFAULT_OFFSET),
+  }
+}
+
+const fabPos = ref(getDefaultFabPosition())
+const fabInitialized = ref(typeof window !== 'undefined')
 const isDragging = ref(false)
 const dragStartPos = ref({ x: 0, y: 0 })
 const dragOffset = ref({ x: 0, y: 0 })
 const hasMoved = ref(false)
 
-const FAB_SIZE = 48
-const FAB_MARGIN = 16
-
 function clampPosition(x: number, y: number) {
+  if (typeof window === 'undefined') {
+    return { x, y }
+  }
   const maxX = window.innerWidth - FAB_SIZE - FAB_MARGIN
   const maxY = window.innerHeight - FAB_SIZE - FAB_MARGIN
   return {
@@ -304,20 +540,21 @@ function clampPosition(x: number, y: number) {
 }
 
 function initFabPosition() {
-  if (fabInitialized.value) return
-  fabPos.value = {
-    x: window.innerWidth - FAB_SIZE - 28,
-    y: window.innerHeight - FAB_SIZE - 28,
+  if (!fabInitialized.value) {
+    fabPos.value = getDefaultFabPosition()
+    fabInitialized.value = true
+    return
   }
-  fabInitialized.value = true
+  fabPos.value = clampPosition(fabPos.value.x, fabPos.value.y)
 }
 
-const fabStyle = computed(() => ({
+const fabStyle = computed<CSSProperties>(() => ({
   left: `${fabPos.value.x}px`,
   top: `${fabPos.value.y}px`,
   right: 'auto',
   bottom: 'auto',
-  transition: isDragging.value ? 'none' : 'left 0.3s ease, top 0.3s ease',
+  visibility: fabInitialized.value ? 'visible' : 'hidden',
+  transition: !fabInitialized.value || isDragging.value ? 'none' : 'left 0.3s ease, top 0.3s ease',
 }))
 
 function onFabDragStart(e: MouseEvent | TouchEvent) {
@@ -380,12 +617,14 @@ function handleFabClick() {
   handleOpen()
 }
 
+function handleFabResize() {
+  fabPos.value = clampPosition(fabPos.value.x, fabPos.value.y)
+}
+
 onMounted(() => {
   window.addEventListener('keydown', handleGlobalKeydown)
   initFabPosition()
-  window.addEventListener('resize', () => {
-    fabPos.value = clampPosition(fabPos.value.x, fabPos.value.y)
-  })
+  window.addEventListener('resize', handleFabResize)
 })
 
 const composerPlaceholder = computed(() => {
@@ -692,6 +931,12 @@ async function ensureReady() {
 async function handleOpen() {
   assistantStore.open()
   await ensureReady()
+  if (knowledgeBases.value.length === 0) {
+    await loadKnowledgeBases()
+  }
+  if (availableChatModels.value.length === 0) {
+    await loadAvailableLlmModels()
+  }
 }
 
 async function handleCreateSession() {
@@ -734,6 +979,8 @@ async function submitMessage(message: string, clearDraft = false) {
   await assistantStore.sendMessage({
     message: content,
     pageContext: currentPageContext.value,
+    knowledgeBaseId: selectedKbScope.value,
+    llmModelId: selectedLlmModelId.value,
   })
 }
 
@@ -809,6 +1056,11 @@ watch(visible, async (opened) => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleGlobalKeydown)
+  window.removeEventListener('resize', handleFabResize)
+  document.removeEventListener('mousemove', onFabDragMove)
+  document.removeEventListener('mouseup', onFabDragEnd)
+  document.removeEventListener('touchmove', onFabDragMove)
+  document.removeEventListener('touchend', onFabDragEnd)
 })
 </script>
 
@@ -887,18 +1139,54 @@ onBeforeUnmount(() => {
 }
 
 .assistant-panel__header {
+  position: relative;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 18px 20px 16px;
+  padding: 18px 56px 16px 20px;
   border-bottom: 1px solid #e8ebf0;
   background: #fff;
   cursor: move;
 }
 
+.assistant-panel__close-btn {
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 18px;
+  color: #4e5969;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    color: #f56c6c;
+    background: #fef0f0;
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
+}
+
 .assistant-panel__tools {
   cursor: default;
+}
+
+.assistant-tool-button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-size: 16px;
+  color: #4e5969;
+
+  &:hover {
+    color: #409eff;
+    background: #ecf5ff;
+  }
 }
 
 .assistant-panel__title {
@@ -1297,6 +1585,166 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 
+.assistant-composer__scope {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.assistant-composer__scope-select {
+  width: 172px;
+  flex-shrink: 0;
+}
+
+.assistant-composer__scope-icon {
+  color: #409eff;
+}
+
+.assistant-composer__model-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid #dcdfe6;
+  border-radius: 8px;
+  background: #fff;
+  color: #1f2329;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+  flex-shrink: 0;
+}
+
+.assistant-composer__model-btn:hover:not(:disabled) {
+  border-color: #409eff;
+  color: #409eff;
+}
+
+.assistant-composer__model-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.assistant-composer__model-arrow {
+  font-size: 10px;
+  color: #86909c;
+}
+
+/* 模型选择两级菜单 */
+.assistant-model-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.assistant-model-menu__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #86909c;
+}
+
+.assistant-model-menu__panels {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 12px;
+  max-height: 340px;
+}
+
+.assistant-model-menu__providers,
+.assistant-model-menu__models {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+}
+
+.assistant-model-menu__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #86909c;
+  padding: 0 2px;
+  margin-bottom: 2px;
+}
+
+.assistant-model-menu__provider,
+.assistant-model-menu__model {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #f7f8fa;
+  color: #1f2329;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  transition: background 0.18s, border-color 0.18s;
+}
+
+.assistant-model-menu__provider:hover,
+.assistant-model-menu__model:hover {
+  background: #ecf5ff;
+}
+
+.assistant-model-menu__provider.is-active {
+  background: #ecf5ff;
+  border-color: #409eff;
+}
+
+.assistant-model-menu__model.is-active {
+  background: #ecf5ff;
+  border-color: #409eff;
+}
+
+.assistant-model-menu__provider-name {
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assistant-model-menu__provider-count {
+  font-size: 11px;
+  color: #86909c;
+  flex-shrink: 0;
+}
+
+.assistant-model-menu__model-main {
+  min-width: 0;
+}
+
+.assistant-model-menu__model-name {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.assistant-model-menu__model-id {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #86909c;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assistant-model-menu__check {
+  flex-shrink: 0;
+  color: #409eff;
+  font-weight: 700;
+}
+
+.assistant-model-menu__models {
+  border-left: 1px solid #e8ebf0;
+  padding-left: 12px;
+}
+
 .assistant-composer__tip {
   font-size: 12px;
   color: #86909c;
@@ -1336,3 +1784,4 @@ onBeforeUnmount(() => {
   }
 }
 </style>
+

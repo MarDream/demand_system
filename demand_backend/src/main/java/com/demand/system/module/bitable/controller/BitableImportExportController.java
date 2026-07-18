@@ -1,8 +1,10 @@
 package com.demand.system.module.bitable.controller;
 
+import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.Result;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.bitable.dto.BitableTableVO;
+import com.demand.system.module.bitable.service.BitableAuthorizationService;
 import com.demand.system.module.bitable.service.BitableImportExportService;
 import com.demand.system.module.bitable.service.BitableTableService;
 import org.springframework.http.HttpHeaders;
@@ -25,11 +27,14 @@ public class BitableImportExportController {
 
     private final BitableImportExportService importExportService;
     private final BitableTableService tableService;
+    private final BitableAuthorizationService authorizationService;
 
     public BitableImportExportController(BitableImportExportService importExportService,
-                                           BitableTableService tableService) {
+                                         BitableTableService tableService,
+                                         BitableAuthorizationService authorizationService) {
         this.importExportService = importExportService;
         this.tableService = tableService;
+        this.authorizationService = authorizationService;
     }
 
     /**
@@ -38,6 +43,9 @@ public class BitableImportExportController {
     @GetMapping("/tables/{tableId}/export/excel")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<byte[]> exportExcel(@PathVariable Long tableId) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        Long baseId = authorizationService.getBaseIdByTableId(tableId);
+        authorizationService.checkReadPermission(baseId, userId);
         BitableTableVO table = tableService.getTableById(tableId);
 
         byte[] data = importExportService.exportTableToExcel(tableId);
@@ -56,6 +64,9 @@ public class BitableImportExportController {
     @GetMapping("/tables/{tableId}/export/csv")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<byte[]> exportCsv(@PathVariable Long tableId) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        Long baseId = authorizationService.getBaseIdByTableId(tableId);
+        authorizationService.checkReadPermission(baseId, userId);
         BitableTableVO table = tableService.getTableById(tableId);
 
         byte[] data = importExportService.exportTableToCsv(tableId);
@@ -76,11 +87,13 @@ public class BitableImportExportController {
     public Result<List<Long>> importExcel(@PathVariable Long tableId,
                                            @RequestParam("file") MultipartFile file) {
         Long userId = SecurityUtils.getCurrentUserId();
+        Long baseId = authorizationService.getBaseIdByTableId(tableId);
+        authorizationService.checkWritePermission(baseId, userId);
         try {
             List<Long> ids = importExportService.importFromExcel(tableId, file.getBytes(), userId);
             return Result.success(ids);
         } catch (IOException e) {
-            throw new com.demand.system.common.exception.BusinessException("读取上传文件失败: " + e.getMessage());
+            throw new BusinessException("读取上传文件失败: " + e.getMessage());
         }
     }
 
@@ -92,12 +105,14 @@ public class BitableImportExportController {
     public Result<List<Long>> importCsv(@PathVariable Long tableId,
                                          @RequestParam("file") MultipartFile file) {
         Long userId = SecurityUtils.getCurrentUserId();
+        Long baseId = authorizationService.getBaseIdByTableId(tableId);
+        authorizationService.checkWritePermission(baseId, userId);
         try {
             String csvContent = new String(file.getBytes(), StandardCharsets.UTF_8);
             List<Long> ids = importExportService.importFromCsv(tableId, csvContent, userId);
             return Result.success(ids);
         } catch (IOException e) {
-            throw new com.demand.system.common.exception.BusinessException("读取上传文件失败: " + e.getMessage());
+            throw new BusinessException("读取上传文件失败: " + e.getMessage());
         }
     }
 }

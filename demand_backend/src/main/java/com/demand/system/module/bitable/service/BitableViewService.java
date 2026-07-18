@@ -43,4 +43,29 @@ public interface BitableViewService {
      * @param id 视图ID
      */
     void deleteView(Long id);
+
+    /**
+     * 复制视图（不复制记录）
+     *
+     * @param viewId 源视图ID
+     * @param userId 操作者ID
+     * @return 新视图的 ID
+     */
+    Long duplicateView(Long viewId, Long userId);
+
+    /**
+     * 获取单个视图详情
+     *
+     * @param viewId 视图ID
+     * @return 视图详情
+     */
+    BitableViewVO getViewById(Long viewId);
+
+    /**
+     * 设置默认视图
+     *
+     * @param tableId 数据表ID
+     * @param viewId  要设为默认的视图ID
+     */
+    void setDefaultView(Long tableId, Long viewId);
 }

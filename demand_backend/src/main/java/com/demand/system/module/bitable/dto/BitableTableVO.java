@@ -19,6 +19,8 @@ public class BitableTableVO {
 
     private Integer sortOrder;
 
+    private Long defaultViewId;
+
     private Integer recordCount;
 
     private Integer fieldCount;
@@ -73,6 +75,14 @@ public class BitableTableVO {
 
     public void setSortOrder(Integer sortOrder) {
         this.sortOrder = sortOrder;
+    }
+
+    public Long getDefaultViewId() {
+        return defaultViewId;
+    }
+
+    public void setDefaultViewId(Long defaultViewId) {
+        this.defaultViewId = defaultViewId;
     }
 
     public Integer getRecordCount() {

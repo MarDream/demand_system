@@ -68,6 +68,28 @@ public class WorkflowAvailableActionsDTO {
      *  表示工作流被管理员停用，不允许执行任何流转操作。 */
     private Boolean workflowActive;
 
+    /** 当前节点是否允许修改需求类型（读取节点 properties.allowModifyType） */
+    private Boolean canModifyType;
+
+    /** 可选的类型列表（用于前端类型选择器下拉，仅当 canModifyType=true 时非空） */
+    private List<RequirementTypeOption> availableTypes;
+
+    /**
+     * 需求类型选项（仅用于前端下拉选择）
+     */
+    public static class RequirementTypeOption {
+        private String code;
+        private String name;
+        private String color;
+
+        public String getCode() { return code; }
+        public void setCode(String code) { this.code = code; }
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+        public String getColor() { return color; }
+        public void setColor(String color) { this.color = color; }
+    }
+
     public Boolean getCanTransition() {
         return canTransition;
     }
@@ -258,5 +280,21 @@ public class WorkflowAvailableActionsDTO {
 
     public void setWorkflowActive(Boolean workflowActive) {
         this.workflowActive = workflowActive;
+    }
+
+    public Boolean getCanModifyType() {
+        return canModifyType;
+    }
+
+    public void setCanModifyType(Boolean canModifyType) {
+        this.canModifyType = canModifyType;
+    }
+
+    public List<RequirementTypeOption> getAvailableTypes() {
+        return availableTypes;
+    }
+
+    public void setAvailableTypes(List<RequirementTypeOption> availableTypes) {
+        this.availableTypes = availableTypes;
     }
 }

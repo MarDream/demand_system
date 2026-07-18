@@ -17,7 +17,7 @@ public class CellUpdateDTO {
 
     private LocalDate valueDate;
 
-    private String valueJson;
+    private Object valueJson;
 
     public Integer getVersion() {
         return version;
@@ -51,11 +51,11 @@ public class CellUpdateDTO {
         this.valueDate = valueDate;
     }
 
-    public String getValueJson() {
+    public Object getValueJson() {
         return valueJson;
     }
 
-    public void setValueJson(String valueJson) {
+    public void setValueJson(Object valueJson) {
         this.valueJson = valueJson;
     }
 }

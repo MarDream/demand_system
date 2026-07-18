@@ -37,4 +37,13 @@ public interface BitableFormulaService {
      * @return 目标字段值列表
      */
     List<Object> calculateLookup(Long fieldId, Long recordId, Long targetFieldId);
+
+    /**
+     * 校验公式（不落库），返回解析结果
+     *
+     * @param formula 公式表达式
+     * @param tableId 数据表ID（用于查找字段名对应的字段ID）
+     * @return 校验结果，包含 valid、errorType、referencedFieldIds、resultType 等
+     */
+    Map<String, Object> validateFormula(String formula, Long tableId);
 }

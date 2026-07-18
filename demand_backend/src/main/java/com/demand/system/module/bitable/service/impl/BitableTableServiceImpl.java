@@ -92,8 +92,16 @@ public class BitableTableServiceImpl implements BitableTableService {
         defaultView.setName("默认视图");
         defaultView.setViewType("grid");
         defaultView.setSortOrder(0);
+        defaultView.setVersion(0);
         defaultView.setCreatedBy(userId);
         viewMapper.insert(defaultView);
+
+        // 设置默认视图ID
+        table.setDefaultViewId(defaultView.getId());
+        UpdateWrapper<BitableTable> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("id", table.getId())
+                .set("default_view_id", defaultView.getId());
+        tableMapper.update(null, updateWrapper);
 
         return table.getId();
     }

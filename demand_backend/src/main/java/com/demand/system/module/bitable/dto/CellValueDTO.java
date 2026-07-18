@@ -14,7 +14,7 @@ public class CellValueDTO {
 
     private LocalDate valueDate;
 
-    private String valueJson;
+    private Object valueJson;
 
     public String getValueText() {
         return valueText;
@@ -40,11 +40,11 @@ public class CellValueDTO {
         this.valueDate = valueDate;
     }
 
-    public String getValueJson() {
+    public Object getValueJson() {
         return valueJson;
     }
 
-    public void setValueJson(String valueJson) {
+    public void setValueJson(Object valueJson) {
         this.valueJson = valueJson;
     }
 }

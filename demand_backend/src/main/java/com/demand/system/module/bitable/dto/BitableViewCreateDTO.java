@@ -13,15 +13,17 @@ public class BitableViewCreateDTO {
     @NotBlank(message = "视图类型不能为空")
     private String viewType;
 
-    private String sortConfig;
+    private Object sortConfig;
 
-    private String filterConfig;
+    private Object filterConfig;
 
-    private String groupConfig;
+    private Object groupConfig;
 
-    private String columnConfig;
+    private Object columnConfig;
 
-    private String colorConfig;
+    private Object colorConfig;
+
+    private Object config;
 
     public String getName() {
         return name;
@@ -39,43 +41,51 @@ public class BitableViewCreateDTO {
         this.viewType = viewType;
     }
 
-    public String getSortConfig() {
+    public Object getSortConfig() {
         return sortConfig;
     }
 
-    public void setSortConfig(String sortConfig) {
+    public void setSortConfig(Object sortConfig) {
         this.sortConfig = sortConfig;
     }
 
-    public String getFilterConfig() {
+    public Object getFilterConfig() {
         return filterConfig;
     }
 
-    public void setFilterConfig(String filterConfig) {
+    public void setFilterConfig(Object filterConfig) {
         this.filterConfig = filterConfig;
     }
 
-    public String getGroupConfig() {
+    public Object getGroupConfig() {
         return groupConfig;
     }
 
-    public void setGroupConfig(String groupConfig) {
+    public void setGroupConfig(Object groupConfig) {
         this.groupConfig = groupConfig;
     }
 
-    public String getColumnConfig() {
+    public Object getColumnConfig() {
         return columnConfig;
     }
 
-    public void setColumnConfig(String columnConfig) {
+    public void setColumnConfig(Object columnConfig) {
         this.columnConfig = columnConfig;
     }
 
-    public String getColorConfig() {
+    public Object getColorConfig() {
         return colorConfig;
     }
 
-    public void setColorConfig(String colorConfig) {
+    public void setColorConfig(Object colorConfig) {
         this.colorConfig = colorConfig;
+    }
+
+    public Object getConfig() {
+        return config;
+    }
+
+    public void setConfig(Object config) {
+        this.config = config;
     }
 }

@@ -44,4 +44,28 @@ public enum MemberRole {
         }
         return null;
     }
+
+    /**
+     * 获取角色等级数值，用于层级比较
+     * OWNER=5, ADMIN=4, EDITOR=3, COMMENTER=2, VIEWER=1
+     */
+    public int getLevel() {
+        return switch (this) {
+            case OWNER -> 5;
+            case ADMIN -> 4;
+            case EDITOR -> 3;
+            case COMMENTER -> 2;
+            case VIEWER -> 1;
+        };
+    }
+
+    /**
+     * 判断当前角色是否达到指定角色的最低等级
+     *
+     * @param required 需要的最低角色
+     * @return 当前角色等级 >= 要求角色等级
+     */
+    public boolean isAtLeast(MemberRole required) {
+        return this.getLevel() >= required.getLevel();
+    }
 }

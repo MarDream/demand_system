@@ -1,8 +1,27 @@
 <template>
-  <PageContainer title="迭代管理">
+  <PageContainer title="迭代管理" class="iterations-page">
     <TableCard>
       <template #toolbar>
         <Toolbar>
+          <template #left>
+            <el-form :inline="true" :model="queryParams" class="iteration-filter-form">
+              <el-form-item label="迭代名称" class="iteration-filter__item">
+                <el-input v-model="queryParams.name" placeholder="输入迭代名称" clearable />
+              </el-form-item>
+              <el-form-item label="状态" class="iteration-filter__item">
+                <el-select v-model="queryParams.status" placeholder="全部" clearable>
+                  <el-option label="未开始" value="not_started" />
+                  <el-option label="进行中" value="in_progress" />
+                  <el-option label="已完成" value="completed" />
+                  <el-option label="已关闭" value="closed" />
+                </el-select>
+              </el-form-item>
+              <el-form-item class="iteration-filter__actions">
+                <el-button type="primary" @click="handleSearch">搜索</el-button>
+                <el-button @click="handleReset">重置</el-button>
+              </el-form-item>
+            </el-form>
+          </template>
           <template #right>
             <el-tooltip content="列表字段设置">
               <el-button link :icon="Setting" @click="openColumnConfig" />
@@ -12,8 +31,8 @@
         </Toolbar>
       </template>
 
-      <template #table>
-        <el-table :data="iterations" border>
+      <template #table="{ height }">
+        <el-table :data="iterations" v-loading="loading" border :height="height">
         <el-table-column v-if="isColumnVisible('name')" prop="name" label="迭代名称" min-width="180" />
         <el-table-column v-if="isColumnVisible('startDate')" label="开始日期" width="120">
           <template #default="{ row }">
@@ -58,6 +77,18 @@
           </template>
         </el-table-column>
         </el-table>
+      </template>
+
+      <template #pagination>
+        <el-pagination
+          v-model:current-page="pageNum"
+          v-model:page-size="pageSize"
+          :total="total"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next"
+          @size-change="loadIterations"
+          @current-change="loadIterations"
+        />
       </template>
     </TableCard>
 
@@ -148,7 +179,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, nextTick, computed, watch, reactive, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { EditPen, Delete, TrendCharts, Setting } from '@element-plus/icons-vue'
@@ -210,6 +241,18 @@ const projectId = computed(() => {
 })
 const iterations = ref<Iteration[]>([])
 const requirementOptions = ref<IterationRequirementOption[]>([])
+const loading = ref(false)
+
+// 分页
+const pageNum = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
+
+// 筛选
+const queryParams = reactive({
+  name: '',
+  status: '',
+})
 
 // 对话框
 const dialogVisible = ref(false)
@@ -274,12 +317,34 @@ const getProgressColor = (progress: number | undefined) => {
 
 // 加载数据
 const loadIterations = async () => {
+  loading.value = true
   try {
-    iterations.value = (await getIterationList(projectId.value)) as unknown as Iteration[]
+    const res: any = await getIterationList(projectId.value, {
+      name: queryParams.name || undefined,
+      status: queryParams.status || undefined,
+      pageNum: pageNum.value,
+      pageSize: pageSize.value,
+    })
+    iterations.value = res?.list ?? []
+    total.value = res?.total ?? 0
   } catch (error) {
     iterations.value = []
+    total.value = 0
     ElMessage.error(resolveErrorMessage(error, '迭代数据加载失败'))
+  } finally {
+    loading.value = false
   }
+}
+
+function handleSearch() {
+  pageNum.value = 1
+  loadIterations()
+}
+
+function handleReset() {
+  queryParams.name = ''
+  queryParams.status = ''
+  handleSearch()
 }
 
 const loadRequirementOptions = async () => {
@@ -453,5 +518,55 @@ watch(projectId, () => {
   .mb-4 {
     margin-bottom: 16px;
   }
+}
+
+.iterations-page {
+  :deep(.app-table-card__toolbar) {
+    margin-bottom: 10px;
+  }
+}
+
+.iteration-filter-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+
+  :deep(.el-form-item) {
+    margin: 0;
+  }
+
+  :deep(.el-form-item__label) {
+    height: 30px;
+    padding-right: 6px;
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 30px;
+    white-space: nowrap;
+  }
+
+  :deep(.el-input__wrapper),
+  :deep(.el-select__wrapper) {
+    min-height: 30px;
+    height: 30px;
+  }
+
+  :deep(.el-button) {
+    height: 30px;
+    padding: 0 12px;
+    font-size: 12px;
+  }
+}
+
+.iteration-filter__item {
+  :deep(.el-input),
+  :deep(.el-select) {
+    width: 180px;
+  }
+}
+
+.iteration-filter__actions {
+  margin-left: 2px !important;
 }
 </style>

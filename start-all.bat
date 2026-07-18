@@ -1,10 +1,20 @@
 @echo off
-:: 防止在 Git Bash 中运行（Git Bash 不识别 NUL 设备，会创建 nul 空文件）
-if defined MSYSTEM (
-    echo [WARN] 检测到 Git Bash 环境，自动切换到 cmd.exe 执行...
+:: 防止在 Git Bash/MINGW/Msys 中运行（不识别 NUL 设备，会创建 nul 空文件）
+:: 多维度检测非 cmd 环境：MSYSTEM / TERM=cygwin/xterm / SHELL 包含 bash
+set "_NON_CMD=0"
+if defined MSYSTEM set "_NON_CMD=1"
+if "%TERM%"=="cygwin" set "_NON_CMD=1"
+if "%TERM%"=="xterm" set "_NON_CMD=1"
+if "%_NON_CMD%"=="1" (
+    echo [WARN] 检测到非 cmd.exe 环境（Git Bash / MSYS2 / Cygwin），自动切换到 cmd.exe 执行...
+    :: 清理已生成的 nul 文件
+    if exist "%~dp0nul" del /q "%~dp0nul" >NUL 2>&1
     cmd.exe /c "%~f0" %*
     exit /b %errorlevel%
 )
+:: 清理可能存在的历史 nul 残留
+if exist "%~dp0\nul" del /q "%~dp0\nul" 2>nul
+if exist "%~dp0demand_backend\nul" del /q "%~dp0demand_backend\nul" 2>nul
 setlocal enabledelayedexpansion
 chcp 65001 >NUL
 

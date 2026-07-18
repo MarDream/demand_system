@@ -30,7 +30,11 @@ public class BitableView {
 
     private String colorConfig;
 
+    private String config;
+
     private Integer sortOrder;
+
+    private Integer version;
 
     private Long createdBy;
 
@@ -115,12 +119,28 @@ public class BitableView {
         this.colorConfig = colorConfig;
     }
 
+    public String getConfig() {
+        return config;
+    }
+
+    public void setConfig(String config) {
+        this.config = config;
+    }
+
     public Integer getSortOrder() {
         return sortOrder;
     }
 
     public void setSortOrder(Integer sortOrder) {
         this.sortOrder = sortOrder;
+    }
+
+    public Integer getVersion() {
+        return version;
+    }
+
+    public void setVersion(Integer version) {
+        this.version = version;
     }
 
     public Long getCreatedBy() {

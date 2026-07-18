@@ -1,5 +1,6 @@
 package com.demand.system.module.iteration.controller;
 
+import com.demand.system.common.result.PageResult;
 import com.demand.system.common.result.Result;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.iteration.dto.IterationCreateDTO;
@@ -25,9 +26,12 @@ public class IterationController {
 
     @GetMapping("/projects/{id}/iterations")
     @PreAuthorize("isAuthenticated()")
-    public Result<List<IterationVO>> listByProject(@PathVariable Long id) {
-        List<IterationVO> list = iterationService.listByProject(id);
-        return Result.success(list);
+    public Result<PageResult<IterationVO>> listByProject(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "1") int pageNum,
+            @RequestParam(defaultValue = "10") int pageSize) {
+        PageResult<IterationVO> result = iterationService.listByProject(id, pageNum, pageSize);
+        return Result.success(result);
     }
 
     @GetMapping("/iterations/{id}")

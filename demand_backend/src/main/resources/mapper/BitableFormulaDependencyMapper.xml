@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demand.system.module.bitable.mapper.BitableFormulaDependencyMapper">
+
+    <!-- 查询指定公式字段的所有依赖 -->
+    <select id="selectByFormulaFieldId" resultType="com.demand.system.module.bitable.entity.BitableFormulaDependency">
+        SELECT id, formula_field_id, dependency_field_id, dependency_kind, created_at
+        FROM `bitable_formula_dependencies`
+        WHERE formula_field_id = #{formulaFieldId}
+    </select>
+
+    <!-- 查询依赖指定字段的所有公式字段ID -->
+    <select id="selectFormulaFieldIdsByDependencyFieldId" resultType="java.lang.Long">
+        SELECT formula_field_id
+        FROM `bitable_formula_dependencies`
+        WHERE dependency_field_id = #{dependencyFieldId}
+    </select>
+
+    <!-- 删除指定公式字段的所有依赖 -->
+    <delete id="deleteByFormulaFieldId">
+        DELETE FROM `bitable_formula_dependencies`
+        WHERE formula_field_id = #{formulaFieldId}
+    </delete>
+
+    <!-- 批量插入依赖关系 -->
+    <insert id="batchInsert">
+        INSERT INTO `bitable_formula_dependencies` (formula_field_id, dependency_field_id, dependency_kind)
+        VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{item.formulaFieldId}, #{item.dependencyFieldId}, #{item.dependencyKind})
+        </foreach>
+    </insert>
+
+    <!-- 查询所有公式依赖关系（用于全局循环检测） -->
+    <select id="selectAllDependencies" resultType="com.demand.system.module.bitable.entity.BitableFormulaDependency">
+        SELECT id, formula_field_id, dependency_field_id, dependency_kind, created_at
+        FROM `bitable_formula_dependencies`
+    </select>
+
+</mapper>

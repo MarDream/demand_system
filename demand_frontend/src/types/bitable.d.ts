@@ -2,17 +2,18 @@
 export type FieldType =
   | 'text' | 'number' | 'date' | 'date_range'
   | 'single_select' | 'multi_select'
-  | 'user' | 'department'
-  | 'check' | 'auto_number'
-  | 'created_time' | 'modified_time' | 'created_user' | 'modified_user'
-  | 'url' | 'email' | 'phone'
-  | 'progress' | 'rating'
-  | 'link' | 'rollup' | 'lookup'
+  | 'user' | 'group' | 'department'
+  | 'checkbox' | 'check' | 'auto_number'
+  | 'created_time' | 'last_modified_time' | 'modified_time'
+  | 'created_by' | 'modified_by' | 'created_user' | 'modified_user'
+  | 'url' | 'email' | 'phone' | 'location' | 'barcode' | 'currency'
+  | 'process' | 'button' | 'progress' | 'rating'
+  | 'link' | 'bidirectional_link' | 'rollup' | 'lookup'
   | 'formula' | 'attachment'
   | 'ai_text' | 'ai_select'
 
 // 视图类型
-export type ViewType = 'grid' | 'kanban' | 'gantt' | 'calendar' | 'gallery'
+export type ViewType = 'grid' | 'kanban' | 'gantt' | 'calendar' | 'gallery' | 'form'
 
 // 成员角色
 export type MemberRole = 'owner' | 'admin' | 'editor' | 'commenter' | 'viewer'
@@ -24,8 +25,31 @@ export interface FieldConfig {
   defaultValue?: unknown
   linkTargetTableId?: number  // link 字段目标表
   formulaExpr?: string  // formula 表达式
-  precision?: number  // number 小数位
-  symbol?: string  // rating 符号
+  precision?: number  // number/currency 小数位
+  symbol?: string  // rating/currency 符号
+  prefix?: string
+  suffix?: string
+  maxRating?: number
+  progressFormat?: 'percent' | 'value'
+  linkDisplayFieldId?: number
+  reverseFieldId?: number
+  linkFieldId?: number
+  targetFieldId?: number
+  lookupFieldId?: number
+  rollupFieldId?: number
+  aggregation?: 'count' | 'sum' | 'average' | 'min' | 'max'
+  digits?: number
+  length?: number
+  dateFormat?: string
+  formHidden?: boolean
+  formPlaceholder?: string
+  allowMultiple?: boolean
+  allowedFileTypes?: string[]
+  maxFiles?: number
+  countryCode?: string
+  barcodeMode?: string
+  processNodes?: { label: string; color?: string }[]
+  button?: { label?: string; color?: string; actionType?: string; actionId?: number }
 }
 
 // 多维表格 Base
@@ -53,6 +77,7 @@ export interface BitableTable {
   description?: string
   icon?: string
   sortOrder: number
+  defaultViewId?: number
   recordCount?: number
   fieldCount?: number
   createdAt: string
@@ -66,6 +91,7 @@ export interface BitableField {
   name: string
   fieldType: FieldType
   config?: FieldConfig
+  description?: string
   required: boolean
   aiPrompt?: string
   isAiField: boolean
@@ -102,6 +128,20 @@ export interface CellValue {
   displayText?: string
 }
 
+// 视图统一配置
+export interface ViewConfig {
+  schemaVersion: number
+  columnOrder?: number[]
+  hiddenFieldIds?: number[]
+  frozenFieldIds?: number[]
+  fieldWidths?: Record<number, number>
+  rowHeight?: 'compact' | 'medium' | 'tall'
+  card?: { coverFieldId?: number; visibleFieldIds?: number[] }
+  calendar?: { startFieldId?: number; endFieldId?: number; titleFieldId?: number; colorFieldId?: number }
+  gantt?: { startFieldId?: number; endFieldId?: number; dependencyFieldId?: number; milestoneFieldId?: number }
+  form?: { fieldOrder?: number[]; hiddenFieldIds?: number[]; requiredFieldIds?: number[]; descriptions?: Record<number, string>; successMessage?: string; redirectUrl?: string }
+}
+
 // 视图
 export interface BitableView {
   id: number
@@ -114,6 +154,9 @@ export interface BitableView {
   columnConfig?: ColumnItem[]
   colorConfig?: unknown
   sortOrder: number
+  version: number
+  config?: ViewConfig
+  isDefault?: boolean
   createdBy: number
   createdAt: string
   updatedAt: string
@@ -199,6 +242,7 @@ export interface BitableFieldCreateDTO {
   name: string
   fieldType: FieldType
   config?: FieldConfig
+  description?: string
   required?: boolean
   aiPrompt?: string
   isAiField?: boolean
@@ -220,4 +264,47 @@ export interface CellUpdateDTO {
 export interface BitableViewCreateDTO {
   name: string
   viewType: ViewType
+  config?: ViewConfig
+}
+
+// 自动化规则
+export interface BitableAutomation {
+  id: number
+  baseId: number
+  tableId?: number
+  name: string
+  status: 'enabled' | 'disabled'
+  triggerType: string
+  triggerConfig?: any
+  actionType: string
+  actionConfig?: any
+  createdBy: number
+  lastRunStatus?: string
+  lastRunAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+/** 记录查询参数DTO（支持筛选、排序、分组） */
+export interface RecordQueryDTO {
+  pageNum?: number
+  pageSize?: number
+  /** 筛选配置，支持简单数组或嵌套逻辑格式 */
+  filterConfig?: FilterItem[] | { logic: 'and' | 'or'; rules: FilterItem[] }
+  /** 排序配置，格式：[{fieldId, direction}] */
+  sortConfig?: SortItem[]
+  /** 分组字段ID */
+  groupByFieldId?: number
+  /** 视图ID（如果传入，自动从视图配置加载筛选/排序） */
+  viewId?: number
+}
+
+/** 分组查询结果 */
+export interface RecordGroupVO {
+  /** 分组键值 */
+  groupKey: string
+  /** 分组内的记录列表 */
+  records: BitableRecord[]
+  /** 分组内记录数 */
+  count: number
 }

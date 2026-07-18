@@ -614,6 +614,30 @@
             />
           </el-form-item>
           <el-form-item
+            v-if="workflowRuntime.canModifyType && workflowRuntime.availableTypes && workflowRuntime.availableTypes.length > 0"
+            label="工单类型"
+          >
+            <el-select
+              v-model="selectedNewType"
+              placeholder="选择变更后的工单类型（选填）"
+              style="width: 100%"
+              clearable
+            >
+              <el-option
+                v-for="opt in workflowRuntime.availableTypes"
+                :key="opt.code"
+                :label="opt.name"
+                :value="opt.code"
+              >
+                <span v-if="opt.color" :style="{ color: opt.color }">● </span>
+                {{ opt.name }}
+              </el-option>
+            </el-select>
+            <div class="approval-dialog-tip" style="margin-top: 4px; font-size: 12px;">
+              变更工单类型后将按照新类型的工作流从初始节点开始流转
+            </div>
+          </el-form-item>
+          <el-form-item
             label="审核意见"
             :required="isCommentRequired"
             :error="approvalCommentError"
@@ -917,6 +941,7 @@ const workflowRuntime = ref<WorkflowAvailableActions>({
 const usingUnifiedEngine = ref(false)
 const selectedTransitionTargetId = ref<string | number | null>(null)
 const selectedTransitionAssigneeId = ref<number | null>(null)
+const selectedNewType = ref<string | null>(null)
 const bindingProjectId = ref<number | null>(null)
 const transitionLoading = ref(false)
 const workflowPanelCollapsed = ref(false)
@@ -1123,6 +1148,7 @@ function resetWorkflowMeta() {
   usingUnifiedEngine.value = false
   selectedTransitionTargetId.value = null
   selectedTransitionAssigneeId.value = null
+  selectedNewType.value = null
   bindingProjectId.value = null
   workflowPanelCollapsed.value = false
 }
@@ -1261,6 +1287,7 @@ function resetApprovalDialog() {
   approvalRating.value = 0
   approvalComment.value = ''
   approvalAttachments.value = []
+  selectedNewType.value = null
 }
 
 function resetSupplementDialog() {
@@ -1284,7 +1311,7 @@ function downloadAttachmentFile(file: RequirementAttachment) {
   downloadRequirementAttachment(file)
 }
 
-async function executeTransition(extra?: { rating?: number; ratingDimensions?: Record<string, number>; comment?: string; attachments?: RequirementAttachment[] }) {
+async function executeTransition(extra?: { rating?: number; ratingDimensions?: Record<string, number>; comment?: string; attachments?: RequirementAttachment[]; newType?: string }) {
   transitionLoading.value = true
   try {
     await workflowEngineApi.transition({
@@ -1299,6 +1326,8 @@ async function executeTransition(extra?: { rating?: number; ratingDimensions?: R
       lockVersion: workflowRuntime.value.lockVersion ?? undefined,
       // 流转时选择的处理人（传给后端用于更新 assignee_id 和待办同步）
       selectedAssigneeId: selectedTransitionAssigneeId.value,
+      // 流转时修改需求类型
+      newType: extra?.newType,
     })
     ElMessage.success('提交审核成功')
     selectedTransitionTargetId.value = null
@@ -1817,10 +1846,21 @@ async function confirmApprovalTransition() {
     ElMessage.warning('当前节点要求必须上传附件')
     return
   }
+  // 校验类型变更是否选择
+  if (workflowRuntime.value.canModifyType && selectedNewType.value && selectedNewType.value !== detail.value?.type) {
+    // 类型变更属于不可逆操作，弹窗确认
+    const confirmed = await ElMessageBox.confirm(
+      '变更工单类型后将按照新类型的工作流从初始节点开始流转，当前流转记录将保留。确定要变更吗？',
+      '确认类型变更',
+      { confirmButtonText: '确定变更', cancelButtonText: '取消', type: 'warning' }
+    ).catch(() => false)
+    if (!confirmed) return
+  }
   await executeTransition({
     rating: workflowRuntime.value.evaluationRequired ? approvalRating.value : undefined,
     comment: approvalComment.value.trim() || undefined,
     attachments: approvalAttachments.value.length > 0 ? approvalAttachments.value : undefined,
+    newType: selectedNewType.value || undefined,
   })
 }
 

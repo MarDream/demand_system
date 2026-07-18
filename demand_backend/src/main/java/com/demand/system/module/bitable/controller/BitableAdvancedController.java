@@ -8,6 +8,7 @@ import com.demand.system.module.bitable.dto.FormulaEvaluateRequest;
 import com.demand.system.module.bitable.dto.GanttViewData;
 import com.demand.system.module.bitable.dto.GalleryViewData;
 import com.demand.system.module.bitable.dto.LinkRecordsRequest;
+import com.demand.system.module.bitable.service.BitableAuthorizationService;
 import com.demand.system.module.bitable.service.BitableAdvancedViewService;
 import com.demand.system.module.bitable.service.BitableFormulaService;
 import com.demand.system.module.bitable.service.BitableLinkService;
@@ -30,13 +31,16 @@ public class BitableAdvancedController {
     private final BitableAdvancedViewService advancedViewService;
     private final BitableLinkService linkService;
     private final BitableFormulaService formulaService;
+    private final BitableAuthorizationService authorizationService;
 
     public BitableAdvancedController(BitableAdvancedViewService advancedViewService,
                                      BitableLinkService linkService,
-                                     BitableFormulaService formulaService) {
+                                     BitableFormulaService formulaService,
+                                     BitableAuthorizationService authorizationService) {
         this.advancedViewService = advancedViewService;
         this.linkService = linkService;
         this.formulaService = formulaService;
+        this.authorizationService = authorizationService;
     }
 
     // ==================== 高级视图 ====================
@@ -48,6 +52,9 @@ public class BitableAdvancedController {
     @PreAuthorize("isAuthenticated()")
     public Result<GanttViewData> getGanttView(@PathVariable Long viewId,
                                               @RequestParam Long tableId) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        Long baseId = authorizationService.getBaseIdByViewId(viewId);
+        authorizationService.checkReadPermission(baseId, userId);
         GanttViewData data = advancedViewService.getGanttView(viewId, tableId);
         return Result.success(data);
     }
@@ -59,6 +66,9 @@ public class BitableAdvancedController {
     @PreAuthorize("isAuthenticated()")
     public Result<CalendarViewData> getCalendarView(@PathVariable Long viewId,
                                                     @RequestParam Long tableId) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        Long baseId = authorizationService.getBaseIdByViewId(viewId);
+        authorizationService.checkReadPermission(baseId, userId);
         CalendarViewData data = advancedViewService.getCalendarView(viewId, tableId);
         return Result.success(data);
     }
@@ -70,6 +80,9 @@ public class BitableAdvancedController {
     @PreAuthorize("isAuthenticated()")
     public Result<GalleryViewData> getGalleryView(@PathVariable Long viewId,
                                                   @RequestParam Long tableId) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        Long baseId = authorizationService.getBaseIdByViewId(viewId);
+        authorizationService.checkReadPermission(baseId, userId);
         GalleryViewData data = advancedViewService.getGalleryView(viewId, tableId);
         return Result.success(data);
     }
@@ -84,6 +97,9 @@ public class BitableAdvancedController {
     public Result<List<BitableRecordVO>> listLinkableRecords(@PathVariable Long tableId,
                                                              @RequestParam(required = false) String keyword,
                                                              @RequestParam(required = false, defaultValue = "50") Integer pageSize) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        Long baseId = authorizationService.getBaseIdByTableId(tableId);
+        authorizationService.checkReadPermission(baseId, userId);
         List<BitableRecordVO> records = linkService.listLinkableRecords(tableId, keyword, pageSize);
         return Result.success(records);
     }
@@ -96,6 +112,8 @@ public class BitableAdvancedController {
     public Result<Void> linkRecords(@PathVariable Long fieldId,
                                     @Valid @RequestBody LinkRecordsRequest request) {
         Long userId = SecurityUtils.getCurrentUserId();
+        Long baseId = authorizationService.getBaseIdByFieldId(fieldId);
+        authorizationService.checkWritePermission(baseId, userId);
         linkService.linkRecords(fieldId, request.getRecordId(), request.getTargetRecordIds(), userId);
         return Result.success();
     }
@@ -107,6 +125,9 @@ public class BitableAdvancedController {
     @PreAuthorize("isAuthenticated()")
     public Result<List<Long>> getLinkedRecordIds(@PathVariable Long fieldId,
                                                  @PathVariable Long recordId) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        Long baseId = authorizationService.getBaseIdByFieldId(fieldId);
+        authorizationService.checkReadPermission(baseId, userId);
         List<Long> ids = linkService.getLinkedRecordIds(fieldId, recordId);
         return Result.success(ids);
     }
@@ -120,6 +141,9 @@ public class BitableAdvancedController {
     @PreAuthorize("isAuthenticated()")
     public Result<Object> evaluateFormula(@PathVariable Long recordId,
                                           @Valid @RequestBody FormulaEvaluateRequest request) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        Long baseId = authorizationService.getBaseIdByRecordId(recordId);
+        authorizationService.checkReadPermission(baseId, userId);
         Object result = formulaService.evaluateFormula(request.getFormula(), request.getFieldValues());
         return Result.success(result);
     }

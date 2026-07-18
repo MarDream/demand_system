@@ -575,11 +575,16 @@ async function handleLogout() {
   padding: 0;
   overflow: auto;
   background: var(--color-background);
+  display: flex;
+  flex-direction: column;
 }
 
 // 视图包裹层（确保 Transition 内只有单根节点）
 .view-wrapper {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 // 通知

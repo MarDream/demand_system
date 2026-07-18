@@ -129,7 +129,7 @@ test.describe('知识库问答 - E2E 测试', () => {
     })
 
     test('should RAG 工作台加载并显示三栏布局', async ({ page }) => {
-      await page.goto('/settings/rag')
+      await page.goto('/settings/documents')
       await page.waitForLoadState('networkidle', { timeout: 10000 })
       await page.waitForTimeout(3000)
       
@@ -143,7 +143,7 @@ test.describe('知识库问答 - E2E 测试', () => {
     })
 
     test('should RAG 工作台显示知识库列表', async ({ page }) => {
-      await page.goto('/settings/rag')
+      await page.goto('/settings/documents')
       await page.waitForLoadState('networkidle', { timeout: 10000 })
       await page.waitForTimeout(2000)
       
@@ -153,7 +153,7 @@ test.describe('知识库问答 - E2E 测试', () => {
     })
 
     test('should 选择知识库后卡片高亮', async ({ page }) => {
-      await page.goto('/settings/rag')
+      await page.goto('/settings/documents')
       await page.waitForLoadState('networkidle', { timeout: 10000 })
       await page.waitForTimeout(2000)
       
@@ -164,7 +164,7 @@ test.describe('知识库问答 - E2E 测试', () => {
     })
 
     test('should RAG 工作台检索参数控件可见', async ({ page }) => {
-      await page.goto('/settings/rag')
+      await page.goto('/settings/documents')
       await page.waitForLoadState('networkidle', { timeout: 10000 })
       await page.waitForTimeout(2000)
       
@@ -174,7 +174,7 @@ test.describe('知识库问答 - E2E 测试', () => {
     })
 
     test('should 侧边栏收起/展开', async ({ page }) => {
-      await page.goto('/settings/rag')
+      await page.goto('/settings/documents')
       await page.waitForLoadState('networkidle', { timeout: 10000 })
       await page.waitForTimeout(2000)
       
@@ -246,7 +246,7 @@ test.describe('知识库问答 - E2E 测试', () => {
     })
 
     test('should 从 RAG 工作台跳转到模型配置', async ({ page }) => {
-      await page.goto('/settings/rag')
+      await page.goto('/settings/documents')
       await page.waitForLoadState('networkidle', { timeout: 10000 })
       await page.waitForTimeout(2000)
       
@@ -256,7 +256,7 @@ test.describe('知识库问答 - E2E 测试', () => {
     })
 
     test('should 从 RAG 工作台跳转到知识库管理', async ({ page }) => {
-      await page.goto('/settings/rag')
+      await page.goto('/settings/documents')
       await page.waitForLoadState('networkidle', { timeout: 10000 })
       await page.waitForTimeout(2000)
       

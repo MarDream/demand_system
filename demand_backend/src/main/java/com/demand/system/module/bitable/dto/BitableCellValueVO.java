@@ -21,7 +21,7 @@ public class BitableCellValueVO {
 
     private LocalDate valueDate;
 
-    private String valueJson;
+    private Object valueJson;
 
     private LocalDateTime createdAt;
 
@@ -75,11 +75,11 @@ public class BitableCellValueVO {
         this.valueDate = valueDate;
     }
 
-    public String getValueJson() {
+    public Object getValueJson() {
         return valueJson;
     }
 
-    public void setValueJson(String valueJson) {
+    public void setValueJson(Object valueJson) {
         this.valueJson = valueJson;
     }
 

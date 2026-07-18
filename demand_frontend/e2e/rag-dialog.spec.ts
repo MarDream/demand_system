@@ -17,7 +17,7 @@ test.describe('RAG 对话功能测试', () => {
     await page.getByPlaceholder('请输入密码').fill('admin123')
     await page.getByRole('button', { name: '登 录' }).click()
     await page.waitForURL(/\/dashboard/, { timeout: 15000 })
-    await page.goto('/settings/rag')
+    await page.goto('/settings/documents')
     await page.waitForLoadState('networkidle', { timeout: 10000 })
     await page.waitForTimeout(2000)
   })

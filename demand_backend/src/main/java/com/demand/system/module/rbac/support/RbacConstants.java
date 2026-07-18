@@ -20,7 +20,8 @@ public final class RbacConstants {
     public static final String PERMISSION_MENU_SETTINGS_WORKFLOW = "menu:settings:workflow";
     public static final String PERMISSION_MENU_SETTINGS_ROLE = "menu:settings:role";
     public static final String PERMISSION_MENU_MANAGEMENT = "menu:menu-management";
-    public static final String PERMISSION_MENU_RAG = "menu:rag";
+    public static final String PERMISSION_MENU_DOCUMENT = "menu:document";
+    public static final String PERMISSION_MENU_KNOWLEDGE = "menu:knowledge";
 
     public static final String PERMISSION_BUTTON_MENU_CREATE = "button:menu:create";
     public static final String PERMISSION_BUTTON_MENU_UPDATE = "button:menu:update";
@@ -69,7 +70,8 @@ public final class RbacConstants {
             PERMISSION_MENU_SETTINGS_WORKFLOW,
             PERMISSION_MENU_SETTINGS_ROLE,
             PERMISSION_MENU_MANAGEMENT,
-            PERMISSION_MENU_RAG,
+            PERMISSION_MENU_DOCUMENT,
+            PERMISSION_MENU_KNOWLEDGE,
             PERMISSION_BUTTON_MENU_CREATE,
             PERMISSION_BUTTON_MENU_UPDATE,
             PERMISSION_BUTTON_MENU_DELETE,

@@ -15,6 +15,8 @@ import 'remixicon/fonts/remixicon.css'
 import { permission } from '@/directives/permission'
 import { setupDialogEnhancer } from '@/utils/dialogEnhancer'
 import { ElMessage } from 'element-plus'
+// 注册多维表格自定义单元格渲染器（进度条 / 彩色标签 / 复选框 / 评分星级）
+import '@/utils/bitableCellRenderers'
 
 // ECharts 按需引入 graphic 组件（修复 [ECharts] Component graphic is used but not imported 报错）
 import * as echarts from 'echarts/core'

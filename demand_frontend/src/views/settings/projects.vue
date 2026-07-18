@@ -41,8 +41,8 @@
         </Toolbar>
       </template>
 
-      <template #table>
-        <el-table :data="projectList" v-loading="loading" border>
+      <template #table="{ height }">
+        <el-table :data="projectList" v-loading="loading" border :height="height">
         <el-table-column v-if="isColumnVisible('name')" prop="name" label="项目名称" min-width="200" show-overflow-tooltip />
         <el-table-column v-if="isColumnVisible('projectCode')" prop="projectCode" label="项目编号" min-width="160">
           <template #default="{ row }">{{ row.projectCode || '-' }}</template>
@@ -621,12 +621,18 @@ onMounted(() => {
 
 <style lang="scss" scoped>
 .project-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+
   :deep(.app-table-card__toolbar) {
     margin-bottom: 10px;
   }
 }
 
 .project-table-card {
+  flex: 1;
+
   :deep(.el-card__body) {
     padding: 14px;
   }

@@ -54,7 +54,7 @@ const pathPermissions: Record<string, () => boolean> = {
   '/system/workflow-config': () => hasAnyRole(['admin', 'workflow:config']) || hasPermission('menu:settings:workflow'),
   '/settings/menus': () => hasPermission('menu:menu-management') || hasAnyPermission(['button:menu:create', 'button:menu:update', 'button:menu:delete']),
   '/settings/documents': () => hasPermission('menu:document'),
-  '/settings/knowledge': () => hasPermission('menu:document'),
+  '/settings/knowledge': () => hasPermission('menu:knowledge'),
   '/settings/llm': () => hasPermission('menu:settings:llm') || hasPermission('menu:system-config'),
 }
 

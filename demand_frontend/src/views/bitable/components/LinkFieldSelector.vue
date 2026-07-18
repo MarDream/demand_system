@@ -19,13 +19,19 @@
       </el-input>
 
       <el-table
+        ref="tableRef"
         :data="filteredRecords"
+        row-key="id"
         style="width: 100%"
         max-height="400"
         @selection-change="handleSelectionChange"
       >
-        <el-table-column type="selection" width="50" />
-        <el-table-column prop="title" label="记录标题" />
+        <el-table-column type="selection" width="50" reserve-selection />
+        <el-table-column label="记录标题">
+          <template #default="{ row }">
+            {{ recordTitle(row) }}
+          </template>
+        </el-table-column>
       </el-table>
     </div>
 
@@ -37,10 +43,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { Search } from '@element-plus/icons-vue'
 import type { BitableRecord } from '@/types/bitable'
-import { listRecords } from '@/api/modules/bitable'
+import { listLinkableRecords } from '@/api/modules/bitable'
 
 const props = defineProps<{
   visible: boolean
@@ -57,19 +63,30 @@ const internalVisible = ref(props.visible)
 const keyword = ref('')
 const records = ref<BitableRecord[]>([])
 const selectedRows = ref<BitableRecord[]>([])
+const tableRef = ref<any>(null)
 
 watch(() => props.visible, (v) => {
   internalVisible.value = v
   if (v && props.targetTableId) {
     loadRecords()
+  } else {
+    selectedRows.value = []
   }
+})
+
+watch(() => props.selectedIds, () => {
+  if (internalVisible.value) syncSelectedRows()
+})
+
+watch(keyword, () => {
+  if (internalVisible.value && props.targetTableId) loadRecords()
 })
 
 async function loadRecords() {
   if (!props.targetTableId) return
   try {
-    const result = await listRecords(props.targetTableId, { pageNum: 1, pageSize: 100 })
-    records.value = result.list
+    records.value = await listLinkableRecords(props.targetTableId, { keyword: keyword.value || undefined, pageSize: 100 })
+    await syncSelectedRows()
   } catch {
     records.value = []
   }
@@ -78,11 +95,21 @@ async function loadRecords() {
 const filteredRecords = computed(() => {
   if (!keyword.value) return records.value
   const kw = keyword.value.toLowerCase()
-  return records.value.filter((r) => {
-    const title = (r.cells && Object.values(r.cells)[0]?.valueText) || ''
-    return title.toLowerCase().includes(kw)
-  })
+  return records.value.filter((r) => recordTitle(r).toLowerCase().includes(kw))
 })
+
+function recordTitle(record: BitableRecord) {
+  const firstCell = record.cells ? Object.values(record.cells)[0] : undefined
+  return firstCell?.valueText || String(firstCell?.valueNumber ?? firstCell?.valueDate ?? record.id)
+}
+
+async function syncSelectedRows() {
+  await nextTick()
+  tableRef.value?.clearSelection?.()
+  const selected = records.value.filter((record) => props.selectedIds.includes(record.id))
+  selectedRows.value = selected
+  selected.forEach((record) => tableRef.value?.toggleRowSelection?.(record, true))
+}
 
 function handleSelectionChange(rows: BitableRecord[]) {
   selectedRows.value = rows

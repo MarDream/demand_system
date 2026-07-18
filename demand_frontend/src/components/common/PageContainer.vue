@@ -76,6 +76,7 @@ const showHeader = computed(() => {
   flex-direction: column;
   gap: var(--spacing-md);
   min-height: 100%;
+  flex: 1;
 }
 
 .app-page--card {
@@ -130,7 +131,11 @@ const showHeader = computed(() => {
 }
 
 .app-page__content {
+  flex: 1;
+  min-height: 0;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .app-page__footer {

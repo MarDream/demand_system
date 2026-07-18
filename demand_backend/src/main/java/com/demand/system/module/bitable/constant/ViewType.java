@@ -9,7 +9,8 @@ public enum ViewType {
     KANBAN("kanban", "看板"),
     GANTT("gantt", "甘特"),
     CALENDAR("calendar", "日历"),
-    GALLERY("gallery", "画廊");
+    GALLERY("gallery", "画廊"),
+    FORM("form", "表单");
 
     private final String code;
     private final String label;

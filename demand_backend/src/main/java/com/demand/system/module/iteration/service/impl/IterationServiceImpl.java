@@ -2,8 +2,10 @@ package com.demand.system.module.iteration.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.ErrorCode;
+import com.demand.system.common.result.PageResult;
 import com.demand.system.module.iteration.dto.IterationCreateDTO;
 import com.demand.system.module.iteration.dto.IterationUpdateDTO;
 import com.demand.system.module.iteration.dto.IterationVO;
@@ -32,18 +34,19 @@ public class IterationServiceImpl implements IterationService {
     }
 
     @Override
-    public List<IterationVO> listByProject(Long projectId) {
+    public PageResult<IterationVO> listByProject(Long projectId, int pageNum, int pageSize) {
+        Page<Iteration> page = new Page<>(pageNum, pageSize);
         LambdaQueryWrapper<Iteration> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Iteration::getProjectId, projectId)
                 .eq(Iteration::getDeletedAt, 0)
                 .orderByDesc(Iteration::getCreatedAt);
 
-        List<Iteration> iterations = iterationMapper.selectList(wrapper);
+        Page<Iteration> result = iterationMapper.selectPage(page, wrapper);
         List<IterationVO> voList = new ArrayList<>();
-        for (Iteration it : iterations) {
+        for (Iteration it : result.getRecords()) {
             voList.add(buildVO(it));
         }
-        return voList;
+        return new PageResult<>(voList, result.getTotal(), pageNum, pageSize);
     }
 
     @Override

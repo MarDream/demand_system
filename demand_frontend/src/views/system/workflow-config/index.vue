@@ -1,5 +1,5 @@
 <template>
-  <PageContainer :title="pageTitle">
+  <PageContainer :title="pageTitle" class="workflow-config-page">
     <div class="workflow-management-page">
       <el-card shadow="never" class="overview-card">
         <div class="overview-header">
@@ -1430,12 +1430,56 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  flex: 1;
+  min-height: 0;
 }
 
-.overview-card,
+.workflow-config-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+
+  :deep(.app-page__content) {
+    min-height: 0;
+  }
+}
+
+.overview-card {
+  flex-shrink: 0;
+}
+
 .management-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+
   :deep(.el-card__body) {
     padding: 20px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  :deep(.el-tabs) {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  :deep(.el-tabs__content) {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  :deep(.el-tab-pane) {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
   }
 }
 
@@ -1558,10 +1602,15 @@ onMounted(() => {
   margin-top: -8px;
 }
 
+.approval-table {
+  flex: 1;
+}
+
 .pagination-container {
   margin-top: 16px;
   display: flex;
   justify-content: flex-end;
+  flex-shrink: 0;
 }
 
 .summary-chip {
@@ -1594,6 +1643,7 @@ onMounted(() => {
    表格样式：紧凑自适应 + 居中对齐 + 行高舒适
    ============================================ */
 .workflow-table {
+  flex: 1;
   --el-table-border-color: var(--color-border, #e2e8f0);
   --el-table-header-bg-color: var(--color-surface-alt, #f8fafc);
   --el-table-row-hover-bg-color: rgba(59, 130, 246, 0.04);
