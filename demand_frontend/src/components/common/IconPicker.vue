@@ -1,22 +1,21 @@
 <template>
-  <el-popover
-    v-model:visible="visible"
-    :width="520"
-    trigger="click"
-    placement="bottom-start"
-    :teleported="false"
-    :persistent="false"
-    @show="emit('update:visible', true)"
-    @hide="emit('update:visible', false)"
-  >
-    <template #reference>
-      <el-input
-        :model-value="modelValue"
-        placeholder="选择图标"
-        readonly
-        style="cursor: pointer"
-        @click="visible = true"
-      >
+  <div ref="rootRef" class="icon-picker-wrapper">
+    <el-popover
+      v-model:visible="visible"
+      :width="520"
+      trigger="manual"
+      placement="bottom-start"
+      :teleported="false"
+      :persistent="false"
+    >
+      <template #reference>
+        <el-input
+          :model-value="modelValue"
+          placeholder="选择图标"
+          readonly
+          style="cursor: pointer"
+          @click="visible = !visible"
+        >
         <template #prefix>
           <template v-if="modelValue">
             <i v-if="isRemixIcon(modelValue)" :class="modelValue" style="margin-right: 4px; font-size: 16px;" />
@@ -100,10 +99,11 @@
       </div>
     </div>
   </el-popover>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, type Component } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, type Component } from 'vue'
 import * as ElementPlusIcons from '@element-plus/icons-vue'
 import { iconCategories } from './IconPickerData'
 import { remixIconCategories, isRemixIcon } from './RemixIconData'
@@ -114,10 +114,26 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
-  'update:visible': [value: boolean]
 }>()
 
 const visible = ref(false)
+const rootRef = ref<HTMLElement>()
+
+function handleOutsideClick(e: MouseEvent) {
+  if (!visible.value) return
+  const el = rootRef.value
+  if (el && !el.contains(e.target as Node)) {
+    visible.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('mousedown', handleOutsideClick)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('mousedown', handleOutsideClick)
+})
 const keyword = ref('')
 const activeSource = ref<'element' | 'remix'>('element')
 const activeCategory = ref('全部')
@@ -184,6 +200,9 @@ function handleClear() {
 </script>
 
 <style scoped>
+.icon-picker-wrapper {
+  width: 100%;
+}
 .icon-picker {
   max-height: 440px;
   display: flex;

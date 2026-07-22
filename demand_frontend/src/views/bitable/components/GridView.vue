@@ -21,11 +21,16 @@
       @edit-closed="handleEditClosed"
     />
     <el-empty v-else-if="!loading" description="暂无字段，请先添加字段" />
+    <!-- 新增记录行：即使表中尚无任何记录，也能新增首行（右键菜单需先有行，故提供此常驻入口） -->
+    <div v-if="tableColumns.length" class="grid-add-row" @click="emit('rowInsert')">
+      <i class="ri-add-line" />
+      <span>新建记录</span>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, reactive, nextTick } from 'vue'
+import { computed, ref, reactive, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { BitableField, BitableRecord, BitableTable } from '@/types/bitable'
 
@@ -120,30 +125,24 @@ const tableColumns = computed(() => {
     if (!isReadonly) {
       switch (field.fieldType) {
         case 'date': {
-          // 飞书日期字段默认含时间，使用 datetime + 完整 valueFormat
-          // 修复：transfer(废弃) -> popupConfig.transfer；增加 valueFormat 让面板能解析已有值
+          // 存储层 bitable_cell_values.value_date 为 DATE 类型，前端统一使用 date(仅日期) 编辑器，
+          // 避免提交 "yyyy-MM-dd HH:mm:ss" 被后端 LocalDate.parse 解析失败导致保存报错。
+          // 修复：废弃的 transfer 已改为 popupConfig.transfer
           column.editRender = {
             name: 'VxeDatePicker',
             props: {
-              placeholder: '选择日期时间',
-              type: 'datetime',
-              valueFormat: 'yyyy-MM-dd HH:mm:ss',
-              labelFormat: 'yyyy-MM-dd HH:mm',
+              placeholder: '选择日期',
+              type: 'date',
+              valueFormat: 'yyyy-MM-dd',
+              labelFormat: 'yyyy-MM-dd',
               popupConfig: { transfer: true },
-              autoClose: true,
               clearable: true,
               editable: true,
             },
           }
-          // 同步展示格式（让非编辑态也按 labelFormat 显示）
-          column.cellRender = {
-            name: 'VxeDatePicker',
-            props: {
-              type: 'datetime',
-              valueFormat: 'yyyy-MM-dd HH:mm:ss',
-              labelFormat: 'yyyy-MM-dd HH:mm',
-            },
-          }
+          // 展示用自定义只读渲染器（文本 + 图标），不把 VxeDatePicker 当作 display 渲染器，
+          // 以避免在大量单元格中渲染完整日期选择器引发的渲染异常/卡顿
+          column.cellRender = { name: 'BitableDate' }
           break
         }
         case 'single_select':
@@ -181,13 +180,12 @@ const tableColumns = computed(() => {
           // 进度条展示 + 数字编辑（0-100）
           column.cellRender = { name: 'BitableProgress' }
           column.editRender = {
-            name: 'VxeInput',
+            name: 'VxeNumberInput',
             props: {
-              type: 'number',
+              type: 'integer',
               min: 0,
               max: 100,
               placeholder: '0-100',
-              digits: 0,
               align: 'right',
             },
           }
@@ -210,9 +208,9 @@ const tableColumns = computed(() => {
         case 'number':
         case 'currency': {
           column.editRender = {
-            name: 'VxeInput',
+            name: 'VxeNumberInput',
             props: {
-              type: 'number',
+              type: 'float',
               placeholder: '',
               digits: config.precision ?? 2,
               align: 'right',
@@ -247,8 +245,16 @@ const tableColumns = computed(() => {
 })
 
 // 构建行数据
-const recordData = computed(() => {
-  return props.records.map((record) => {
+// 重要：recordData 必须是“稳定引用”的 ref，而非 computed。
+// 若用 computed，每次响应式 tick 都会生成全新的 row 对象；vxe-table 在 cell 编辑时
+// 会通过 setCellValue 就地修改 row，从而再次触发 computed 重建 → 新对象 → 重新渲染 →
+// 重新进入编辑态，形成无限渲染循环（表现即“闪退/卡死”）。
+// 改为：仅在 props.records / props.fields 引用真正变化时（如 loadRecords 重载）才重建数组，
+// 编辑过程中的 setCellValue 只是就地改同一批对象，不会触发重建，避免循环。
+const recordData = ref<Record<string, any>[]>([])
+
+function buildRecordData() {
+  recordData.value = props.records.map((record) => {
     const row: Record<string, any> = {
       _recordId: record.id,
       _recordVersion: record.version,
@@ -326,7 +332,14 @@ const recordData = computed(() => {
     })
     return row
   })
-})
+}
+
+// 仅在 records / fields 引用变化（重载、加列等）时重建；编辑期间 setCellValue 就地修改不触发
+watch(
+  () => [props.records, props.fields],
+  () => buildRecordData(),
+  { immediate: true },
+)
 
 function handleCellClick(params: { row: Record<string, any>; column: any }) {
   const { row, column } = params
@@ -681,6 +694,47 @@ function handleHeaderDragend({ startIndex, endIndex, columns }: any) {
     .vxe-date-picker {
       width: 100%;
     }
+  }
+
+  // 新建记录行（常驻底部入口）
+  .grid-add-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 14px;
+    cursor: pointer;
+    color: var(--color-text-secondary, #64748B);
+    font-size: 13px;
+    border-top: 1px solid var(--color-border, #e0e0e0);
+    transition: background 0.15s ease, color 0.15s ease;
+
+    i {
+      font-size: 16px;
+    }
+
+    &:hover {
+      background: var(--color-surface-variant, rgba(0, 0, 0, 0.04));
+      color: var(--color-primary, #2563EB);
+    }
+  }
+
+  // 日期单元格展示
+  :deep(.bitable-date-cell) {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    min-height: 22px;
+  }
+  :deep(.bitable-date-cell__icon) {
+    font-size: 14px;
+    color: var(--color-text-placeholder, #94A3B8);
+    flex-shrink: 0;
+  }
+  :deep(.bitable-date-cell__text) {
+    font-size: 13px;
+    color: var(--color-text, #1f2937);
+    font-variant-numeric: tabular-nums;
   }
 }
 </style>

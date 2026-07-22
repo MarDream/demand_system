@@ -50,8 +50,10 @@
       <div class="header">
         <div class="header-left">
           <el-icon class="hamburger" @click="appStore.toggleSidebar">
-            <Fold v-if="sidebarOpened" />
-            <Expand v-else />
+            <transition name="icon-rotate" mode="out-in">
+              <Fold v-if="sidebarOpened" key="fold" />
+              <Expand v-else key="expand" />
+            </transition>
           </el-icon>
           <Breadcrumb />
         </div>
@@ -601,6 +603,22 @@ async function handleLogout() {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+// 图标旋转过渡
+.icon-rotate-enter-active,
+.icon-rotate-leave-active {
+  transition: all 0.2s var(--ease-standard);
+}
+
+.icon-rotate-enter-from {
+  opacity: 0;
+  transform: rotate(-90deg);
+}
+
+.icon-rotate-leave-to {
+  opacity: 0;
+  transform: rotate(90deg);
 }
 
 // 通知弹窗

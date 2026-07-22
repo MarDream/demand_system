@@ -6,6 +6,7 @@ import type {
   AssistantMessage,
   AssistantMetaPayload,
   AssistantSession,
+  ThinkingStep,
 } from '@/types/assistant'
 
 export function getAssistantSessions() {
@@ -27,6 +28,7 @@ export function deleteAssistantSession(sessionId: number) {
 export interface AssistantStreamHandlers {
   onMeta?: (payload: AssistantMetaPayload) => void
   onActions?: (payload: AssistantActionPayload) => void
+  onThinkingSteps?: (steps: ThinkingStep[]) => void
   onDelta?: (delta: string) => void
   onDone?: (message: AssistantMessage) => void
   onError?: (message: string) => void
@@ -109,6 +111,8 @@ function handleStreamEvent(eventBlock: string, handlers: AssistantStreamHandlers
     handlers.onMeta?.(parsed as AssistantMetaPayload)
   } else if (eventName === 'actions') {
     handlers.onActions?.(parsed as AssistantActionPayload)
+  } else if (eventName === 'thinkingSteps') {
+    handlers.onThinkingSteps?.(parsed as ThinkingStep[])
   } else if (eventName === 'done') {
     handlers.onDone?.(parsed as AssistantMessage)
   }

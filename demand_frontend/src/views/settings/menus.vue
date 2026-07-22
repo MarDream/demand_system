@@ -51,11 +51,18 @@
               <template #default="{ row }">{{ row.permissionCode || '-' }}</template>
             </el-table-column>
             <el-table-column v-if="isColumnVisible('sortOrder')" prop="sortOrder" label="排序" width="80" align="center" />
-            <el-table-column v-if="isColumnVisible('enabled')" prop="enabled" label="状态" width="90">
+            <el-table-column v-if="isColumnVisible('enabled')" prop="enabled" label="状态" width="110">
               <template #default="{ row }">
-                <el-tag size="small" :type="row.enabled === 1 ? 'success' : 'info'">
-                  {{ row.enabled === 1 ? '启用' : '停用' }}
-                </el-tag>
+                <el-switch
+                  v-model="row.enabled"
+                  :active-value="1"
+                  :inactive-value="0"
+                  inline-prompt
+                  active-text="启用"
+                  inactive-text="停用"
+                  :disabled="!canUpdateMenu"
+                  :before-change="() => toggleEnabled(row)"
+                />
               </template>
             </el-table-column>
             <el-table-column v-if="isColumnVisible('operations')" label="操作" width="160" align="center" header-align="center" fixed="right">
@@ -180,6 +187,7 @@ import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import PageContainer from '@/components/common/PageContainer.vue'
 import TableCard from '@/components/common/TableCard.vue'
 import IconPicker from '@/components/common/IconPicker.vue'
+import { usePermission } from '@/composables/usePermission'
 import { createMenu, deleteMenu, getAllMenus, updateMenu, batchSortMenu, type MenuItem, type MenuPayload, type MenuSortItem, getRoleList, getGrantablePermissions, getRolePermissions, saveRolePermissions, type RoleItem } from '@/api/modules/menu'
 import { resolveErrorMessage } from '@/utils/error'
 
@@ -278,6 +286,41 @@ const {
 
 function isColumnVisible(key: string) {
   return visibleColumns.value.some((c) => c.key === key)
+}
+
+const { hasPermission } = usePermission()
+const canUpdateMenu = computed(() => hasPermission('button:menu:update'))
+
+function buildMenuPayload(row: MenuItem): MenuPayload {
+  return {
+    parentId: row.parentId,
+    name: row.name,
+    menuType: row.menuType,
+    path: row.path,
+    routeName: row.routeName,
+    component: row.component,
+    icon: row.icon,
+    sortOrder: row.sortOrder,
+    permissionCode: row.permissionCode,
+    visible: row.visible,
+    enabled: row.enabled,
+    keepAlive: row.keepAlive,
+    remark: row.remark,
+  }
+}
+
+async function toggleEnabled(row: MenuItem): Promise<boolean> {
+  const next = row.enabled === 1 ? 0 : 1
+  const payload = buildMenuPayload(row)
+  payload.enabled = next
+  try {
+    await updateMenu(row.id, payload)
+    ElMessage.success(next === 1 ? '已启用' : '已停用')
+    return true
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '状态更新失败'))
+    return false
+  }
 }
 
 onMounted(() => {

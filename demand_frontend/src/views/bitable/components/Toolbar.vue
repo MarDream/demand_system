@@ -1,13 +1,14 @@
 <template>
   <div class="bitable-toolbar">
-    <!-- 表名（可编辑） -->
+    <!-- 左侧：表名 + 视图选择器 -->
     <div class="bitable-toolbar__left">
+      <!-- 表名（可编辑） -->
       <el-input
         v-if="editingName"
         ref="nameInputRef"
         v-model="tempName"
         size="small"
-        style="width: 240px;"
+        style="width: 200px;"
         @blur="handleNameBlur"
         @keyup.enter="handleNameBlur"
         @keyup.escape="cancelEdit"
@@ -16,100 +17,102 @@
         <el-icon class="bitable-toolbar__name-icon"><Document /></el-icon>
         {{ table?.name || '未选择表' }}
       </span>
+
+      <!-- 视图选择器下拉 -->
+      <el-dropdown trigger="click" class="view-selector" @command="handleViewSelectorCommand">
+        <span class="view-selector__trigger">
+          <el-icon class="view-selector__icon"><component :is="getViewIcon(activeView?.viewType || 'grid')" /></el-icon>
+          <span class="view-selector__name">{{ activeView?.name || '选择视图' }}</span>
+          <el-icon class="view-selector__arrow"><ArrowDown /></el-icon>
+        </span>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item
+              v-for="view in views"
+              :key="view.id"
+              :command="{ type: 'switch', viewId: view.id }"
+              :class="{ 'is-active': view.id === activeViewId }"
+            >
+              <el-icon><component :is="getViewIcon(view.viewType)" /></el-icon>
+              <span>{{ view.name }}</span>
+              <el-tag v-if="view.isDefault" size="small" type="warning" class="view-selector__default-tag">默认</el-tag>
+            </el-dropdown-item>
+            <el-dropdown-item divided :command="{ type: 'manage' }">
+              <el-icon><View /></el-icon> 管理视图
+            </el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
+
+      <!-- 新建视图按钮 -->
+      <el-dropdown trigger="click" @command="(type: string) => emit('createView', type as ViewType)">
+        <el-button size="small" class="view-create-btn">
+          <el-icon><Plus /></el-icon> 新建视图
+        </el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="grid"><el-icon><Grid /></el-icon> 表格视图</el-dropdown-item>
+            <el-dropdown-item command="kanban"><el-icon><Menu /></el-icon> 看板视图</el-dropdown-item>
+            <el-dropdown-item command="gantt"><el-icon><ArrowRight /></el-icon> 甘特视图</el-dropdown-item>
+            <el-dropdown-item command="calendar"><el-icon><Calendar /></el-icon> 日历视图</el-dropdown-item>
+            <el-dropdown-item command="gallery"><el-icon><Picture /></el-icon> 画廊视图</el-dropdown-item>
+            <el-dropdown-item command="form"><el-icon><Tickets /></el-icon> 表单视图</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
     </div>
 
-    <!-- 视图 Tab 栏 + 操作按钮 -->
+    <!-- 中间：高频操作 -->
+    <div class="bitable-toolbar__center">
+      <el-button size="small" type="primary" @click="emit('addField')">
+        <el-icon><Plus /></el-icon> 添加字段
+      </el-button>
+    </div>
+
+    <!-- 右侧：中低频操作 -->
     <div class="bitable-toolbar__right">
-      <!-- 视图 Tab 栏 -->
-      <div class="view-tabs">
-        <div class="view-tabs__scroll">
-          <div
-            v-for="view in views"
-            :key="view.id"
-            class="view-tab"
-            :class="{ 'view-tab--active': view.id === activeViewId }"
-            @click="emit('viewSwitch', view.id)"
-          >
-            <el-icon class="view-tab__icon"><component :is="getViewIcon(view.viewType)" /></el-icon>
-            <span class="view-tab__name">{{ view.name }}</span>
-            <el-dropdown trigger="click" @command="(cmd: string) => handleViewCommand(cmd, view)">
-              <span class="view-tab__more" @click.stop>
-                <el-icon><ArrowDown /></el-icon>
-              </span>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="rename">
-                    <el-icon><Edit /></el-icon> 重命名
-                  </el-dropdown-item>
-                  <el-dropdown-item command="duplicate">
-                    <el-icon><CopyDocument /></el-icon> 复制视图
-                  </el-dropdown-item>
-                  <el-dropdown-item command="setDefault" :disabled="view.isDefault">
-                    <el-icon><Star /></el-icon> 设为默认
-                  </el-dropdown-item>
-                  <el-dropdown-item command="delete" :disabled="view.isDefault" divided>
-                    <el-icon><Delete /></el-icon> 删除视图
-                  </el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-          </div>
-        </div>
+      <!-- 导入/导出 -->
+      <el-dropdown trigger="click" @command="handleImportExportCommand">
+        <el-button size="small">
+          <el-icon><Upload /></el-icon> 导入/导出 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+        </el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="import"><el-icon><Upload /></el-icon> 导入数据</el-dropdown-item>
+            <el-dropdown-item command="export"><el-icon><Download /></el-icon> 导出数据</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
 
-        <!-- 新建视图按钮 -->
-        <el-dropdown trigger="click" @command="(type: string) => emit('createView', type as ViewType)">
-          <span class="view-tabs__add">
-            <el-icon><Plus /></el-icon>
-          </span>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="grid">
-                <el-icon><Grid /></el-icon> 表格视图
-              </el-dropdown-item>
-              <el-dropdown-item command="kanban">
-                <el-icon><Menu /></el-icon> 看板视图
-              </el-dropdown-item>
-              <el-dropdown-item command="gantt">
-                <el-icon><ArrowRight /></el-icon> 甘特视图
-              </el-dropdown-item>
-              <el-dropdown-item command="calendar">
-                <el-icon><Calendar /></el-icon> 日历视图
-              </el-dropdown-item>
-              <el-dropdown-item command="gallery">
-                <el-icon><Picture /></el-icon> 画廊视图
-              </el-dropdown-item>
-              <el-dropdown-item command="form">
-                <el-icon><Tickets /></el-icon> 表单视图
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
+      <!-- AI 助手 -->
+      <el-dropdown trigger="click" @command="handleAiCommand">
+        <el-button size="small">
+          <el-icon><MagicStick /></el-icon> AI 助手 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+        </el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="aiFill"><el-icon><EditPen /></el-icon> AI 填充</el-dropdown-item>
+            <el-dropdown-item command="aiClassify"><el-icon><DataAnalysis /></el-icon> AI 分类</el-dropdown-item>
+            <el-dropdown-item command="aiSummarize"><el-icon><Reading /></el-icon> AI 总结</el-dropdown-item>
+            <el-dropdown-item command="aiBuildTable"><el-icon><Grid /></el-icon> AI 建表</el-dropdown-item>
+            <el-dropdown-item divided command="aiChat"><el-icon><ChatDotRound /></el-icon> AI 面板</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
 
-        <!-- 视图管理按钮 -->
-        <el-button size="small" link class="view-tabs__manage" @click="viewDialogVisible = true">
-          <el-icon><View /></el-icon>
+      <!-- 更多 -->
+      <el-dropdown trigger="click" @command="handleMoreCommand">
+        <el-button size="small">
+          <el-icon><MoreFilled /></el-icon> 更多 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
         </el-button>
-      </div>
-
-      <el-divider direction="vertical" />
-
-      <el-button-group>
-        <el-button size="small" @click="emit('addField')">
-          <el-icon><Plus /></el-icon> 添加字段
-        </el-button>
-        <el-button size="small" @click="emit('openFieldConfig')">
-          <el-icon><Setting /></el-icon> 字段配置
-        </el-button>
-        <el-button size="small" @click="emit('openImportExport')">
-          <el-icon><Upload /></el-icon> 导入/导出
-        </el-button>
-        <el-button size="small" @click="emit('openComments')">
-          <el-icon><ChatDotRound /></el-icon> 评论
-        </el-button>
-        <el-button size="small" @click="emit('openMembers')">
-          <el-icon><User /></el-icon> 成员
-        </el-button>
-      </el-button-group>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="comments"><el-icon><ChatDotRound /></el-icon> 评论</el-dropdown-item>
+            <el-dropdown-item command="members"><el-icon><User /></el-icon> 成员管理</el-dropdown-item>
+            <el-dropdown-item command="fieldConfig"><el-icon><Setting /></el-icon> 字段配置</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
     </div>
 
     <!-- 视图管理弹窗 -->
@@ -170,7 +173,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, computed } from 'vue'
 import {
   Plus,
   Setting,
@@ -186,6 +189,7 @@ import {
   User,
   MagicStick,
   Upload,
+  Download,
   Tickets,
   Edit,
   CopyDocument,
@@ -194,6 +198,7 @@ import {
   EditPen,
   DataAnalysis,
   Reading,
+  MoreFilled,
 } from '@element-plus/icons-vue'
 import type { BitableTable, BitableView, ViewType } from '@/types/bitable'
 
@@ -227,9 +232,10 @@ const tempName = ref('')
 const nameInputRef = ref<HTMLElement | null>(null)
 const viewDialogVisible = ref(false)
 
-// 视图重命名（Tab 右键菜单触发）
-const editingViewId = ref<number | null>(null)
-const editingViewName = ref('')
+// 当前活动视图
+const activeView = computed(() => {
+  return props.views.find(v => v.id === props.activeViewId) || props.views[0] || null
+})
 
 // 视图类型图标映射
 const viewTypeIconMap: Record<string, any> = {
@@ -286,8 +292,24 @@ function getViewIcon(type: string) {
   return viewTypeIconMap[type] || Document
 }
 
-// 字段捷径命令处理
-function handleShortcutCommand(command: string) {
+// 视图选择器命令处理
+function handleViewSelectorCommand(cmd: { type: string; viewId?: number }) {
+  if (cmd.type === 'switch' && cmd.viewId) {
+    emit('viewSwitch', cmd.viewId)
+  } else if (cmd.type === 'manage') {
+    viewDialogVisible.value = true
+  }
+}
+
+// 导入/导出命令处理
+function handleImportExportCommand(command: string) {
+  if (command === 'import' || command === 'export') {
+    emit('openImportExport')
+  }
+}
+
+// AI 助手命令处理
+function handleAiCommand(command: string) {
   switch (command) {
     case 'aiFill':
       emit('openAiFill')
@@ -304,11 +326,27 @@ function handleShortcutCommand(command: string) {
     case 'aiChat':
       emit('openAiPanel')
       break
-    case 'openFieldConfig':
+  }
+}
+
+// 更多命令处理
+function handleMoreCommand(command: string) {
+  switch (command) {
+    case 'comments':
+      emit('openComments')
+      break
+    case 'members':
+      emit('openMembers')
+      break
+    case 'fieldConfig':
       emit('openFieldConfig')
       break
   }
 }
+
+// 视图重命名（Tab 右键菜单触发）
+const editingViewId = ref<number | null>(null)
+const editingViewName = ref('')
 
 // 视图 Tab 右键菜单命令处理
 function handleViewCommand(cmd: string, view: BitableView) {
@@ -358,7 +396,7 @@ function cancelRename() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--spacing-sm);
+  gap: 8px;
   padding: 8px 16px;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
@@ -367,7 +405,9 @@ function cancelRename() {
   .bitable-toolbar__left {
     display: flex;
     align-items: center;
-    gap: var(--spacing-sm);
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
   }
 
   .bitable-toolbar__name {
@@ -381,6 +421,8 @@ function cancelRename() {
     padding: 4px 8px;
     border-radius: var(--radius-sm);
     transition: background-color 0.2s ease;
+    white-space: nowrap;
+    flex-shrink: 0;
 
     &:hover {
       background: var(--color-surface-alt);
@@ -392,137 +434,65 @@ function cancelRename() {
     }
   }
 
+  .bitable-toolbar__center {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
   .bitable-toolbar__right {
     display: flex;
     align-items: center;
-    gap: var(--spacing-sm);
+    gap: 8px;
+    flex-shrink: 0;
   }
 }
 
-// 视图 Tab 栏
-.view-tabs {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  background: var(--color-background);
-  border-radius: var(--radius-sm);
-  padding: 2px;
-  border: 1px solid var(--color-border);
-}
-
-.view-tabs__scroll {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  overflow-x: auto;
-  max-width: 480px;
-
-  &::-webkit-scrollbar {
-    display: none;
-  }
-}
-
-.view-tab {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border-radius: 4px;
-  cursor: pointer;
-  white-space: nowrap;
-  font-size: 13px;
-  color: var(--color-text-secondary);
-  transition: all 0.15s ease;
-  position: relative;
-  user-select: none;
-
-  &:hover {
-    background: var(--color-surface-alt);
+// 视图选择器
+.view-selector {
+  .view-selector__trigger {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+    background: var(--color-background);
+    cursor: pointer;
+    font-size: 13px;
     color: var(--color-text-primary);
+    transition: all 0.15s ease;
+    white-space: nowrap;
 
-    .view-tab__more {
-      opacity: 1;
-    }
-  }
-
-  &--active {
-    background: var(--color-surface);
-    color: var(--el-color-primary);
-    font-weight: 500;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-
-    &::after {
-      content: '';
-      position: absolute;
-      bottom: -2px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 60%;
-      height: 2px;
-      background: var(--el-color-primary);
-      border-radius: 1px;
-    }
-
-    .view-tab__icon {
+    &:hover {
+      border-color: var(--el-color-primary);
       color: var(--el-color-primary);
     }
   }
 
-  .view-tab__icon {
+  .view-selector__icon {
     font-size: 14px;
     flex-shrink: 0;
   }
 
-  .view-tab__name {
-    max-width: 100px;
+  .view-selector__name {
+    max-width: 120px;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  .view-tab__more {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 16px;
-    height: 16px;
-    border-radius: 3px;
-    opacity: 0;
-    transition: opacity 0.15s;
+  .view-selector__arrow {
     font-size: 12px;
-    margin-left: 2px;
-
-    &:hover {
-      background: var(--color-border);
-    }
+    color: var(--color-text-secondary);
+    flex-shrink: 0;
   }
 }
 
-.view-tabs__add {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 4px;
-  cursor: pointer;
-  color: var(--color-text-secondary);
-  transition: all 0.15s ease;
+// 新建视图按钮
+.view-create-btn {
   flex-shrink: 0;
-
-  &:hover {
-    background: var(--color-surface-alt);
-    color: var(--el-color-primary);
-  }
-}
-
-.view-tabs__manage {
-  color: var(--color-text-secondary);
-  font-size: 16px;
-  padding: 4px;
-
-  &:hover {
-    color: var(--el-color-primary);
-  }
 }
 
 // 视图管理弹窗
@@ -572,6 +542,18 @@ function cancelRename() {
   display: flex;
   align-items: center;
   gap: 2px;
+  flex-shrink: 0;
+}
+
+// 下拉菜单中当前选中项高亮
+:deep(.el-dropdown-menu__item.is-active) {
+  color: var(--el-color-primary);
+  background-color: var(--el-color-primary-light-9);
+}
+
+// 默认标签
+.view-selector__default-tag {
+  margin-left: 4px;
   flex-shrink: 0;
 }
 </style>

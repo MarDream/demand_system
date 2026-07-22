@@ -27,6 +27,19 @@ public class AssistantChatRequest {
      */
     private Long llmModelId;
 
+    /**
+     * 知识库检索模式，仅在知识库问答时生效。
+     * hybrid：混合检索（语义+关键词）
+     * semantic：纯语义检索
+     * keyword：纯关键词检索
+     */
+    private String mode;
+
+    /**
+     * 知识库检索召回片段数量，仅在知识库问答时生效。
+     */
+    private Integer topK;
+
     public String getMessage() {
         return message;
     }
@@ -57,5 +70,21 @@ public class AssistantChatRequest {
 
     public void setLlmModelId(Long llmModelId) {
         this.llmModelId = llmModelId;
+    }
+
+    public String getMode() {
+        return mode;
+    }
+
+    public void setMode(String mode) {
+        this.mode = mode;
+    }
+
+    public Integer getTopK() {
+        return topK;
+    }
+
+    public void setTopK(Integer topK) {
+        this.topK = topK;
     }
 }

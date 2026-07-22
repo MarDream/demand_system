@@ -210,6 +210,11 @@ export const useAssistantStore = defineStore('assistant', () => {
           target.actions = payload.actions || []
           target.sources = payload.sources || []
         },
+        onThinkingSteps(steps) {
+          const target = messages.value.find(item => String(item.id) === assistantTempId)
+          if (!target) return
+          target.thinkingSteps = steps
+        },
         onDelta(delta) {
           const target = messages.value.find(item => String(item.id) === assistantTempId)
           if (!target) return

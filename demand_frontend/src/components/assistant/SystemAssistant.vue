@@ -206,6 +206,27 @@
                       </div>
                     </div>
                   </div>
+
+                  <div
+                    v-if="message.role === 'assistant' && message.thinkingSteps?.length"
+                    class="assistant-message__thinking"
+                  >
+                    <div class="assistant-section-title">思维链</div>
+                    <div class="assistant-thinking-steps">
+                      <div
+                        v-for="(step, index) in message.thinkingSteps"
+                        :key="index"
+                        class="assistant-thinking-step"
+                        :class="`assistant-thinking-step--${step.stepType}`"
+                      >
+                        <div class="assistant-thinking-step__header">
+                          <span class="assistant-thinking-step__title">{{ step.title }}</span>
+                          <span v-if="step.score != null" class="assistant-thinking-step__score">{{ Math.round(step.score * 100) }}%</span>
+                        </div>
+                        <div v-if="step.detail" class="assistant-thinking-step__detail">{{ step.detail }}</div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -258,6 +279,31 @@
                         :value="kb.id"
                       />
                     </el-select>
+                  </el-tooltip>
+
+                  <el-tooltip v-if="selectedKbScope != null" content="检索模式" placement="top">
+                    <el-select
+                      v-model="searchMode"
+                      size="small"
+                      style="width: 120px"
+                      :disabled="sending"
+                    >
+                      <el-option label="混合检索" value="hybrid" />
+                      <el-option label="语义检索" value="semantic" />
+                      <el-option label="关键词" value="keyword" />
+                    </el-select>
+                  </el-tooltip>
+
+                  <el-tooltip v-if="selectedKbScope != null" content="召回片段数量" placement="top">
+                    <el-input-number
+                      v-model="topK"
+                      size="small"
+                      :min="1"
+                      :max="50"
+                      :step="5"
+                      :disabled="sending"
+                      style="width: 100px"
+                    />
                   </el-tooltip>
 
                   <el-popover
@@ -360,6 +406,10 @@ const assistantFullscreen = ref(false)
 // null = 通用助手（不检索知识库）；-1 = 全部知识库；具体值 = 指定知识库
 const knowledgeBases = ref<KnowledgeBase[]>([])
 const selectedKbScope = ref<number | null>(null)
+
+// ===== RAG 检索参数 =====
+const searchMode = ref<'hybrid' | 'semantic' | 'keyword'>('hybrid')
+const topK = ref<number>(10)
 
 async function loadKnowledgeBases() {
   try {
@@ -981,6 +1031,8 @@ async function submitMessage(message: string, clearDraft = false) {
     pageContext: currentPageContext.value,
     knowledgeBaseId: selectedKbScope.value,
     llmModelId: selectedLlmModelId.value,
+    mode: selectedKbScope.value != null ? searchMode.value : undefined,
+    topK: selectedKbScope.value != null ? topK.value : undefined,
   })
 }
 
@@ -1782,6 +1834,69 @@ onBeforeUnmount(() => {
   .assistant-message__bubble {
     width: 100%;
   }
+}
+
+.assistant-message__thinking {
+  margin-top: 12px;
+  padding: 12px;
+  background: #f7f9fc;
+  border-radius: 8px;
+  border: 1px solid #e8ebf0;
+}
+
+.assistant-thinking-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.assistant-thinking-step {
+  padding: 8px 12px;
+  background: #fff;
+  border-radius: 6px;
+  border-left: 3px solid #409eff;
+}
+
+.assistant-thinking-step--query_parse {
+  border-left-color: #67c23a;
+}
+
+.assistant-thinking-step--retrieve {
+  border-left-color: #409eff;
+}
+
+.assistant-thinking-step--rerank {
+  border-left-color: #e6a23c;
+}
+
+.assistant-thinking-step--synthesize {
+  border-left-color: #f56c6c;
+}
+
+.assistant-thinking-step__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  font-size: 13px;
+  color: #1d2129;
+  margin-bottom: 4px;
+}
+
+.assistant-thinking-step__title {
+  flex: 1;
+}
+
+.assistant-thinking-step__score {
+  font-size: 12px;
+  color: #86909c;
+  font-weight: 500;
+}
+
+.assistant-thinking-step__detail {
+  font-size: 12px;
+  color: #4e5969;
+  line-height: 1.6;
 }
 </style>
 

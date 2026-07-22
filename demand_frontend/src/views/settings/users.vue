@@ -167,8 +167,16 @@
                 </template>
                 <template v-else-if="col.key === 'orgName'" #default="{ row }">{{ orgName(row.orgId) || '-' }}</template>
                 <template v-else-if="col.key === 'status'" #default="{ row }">
-                  <span class="status-dot" :class="{ 'is-disabled': row.status !== 'active' }" />
-                  {{ row.status === 'active' ? '正常' : '停用' }}
+                  <el-switch
+                    v-model="row.status"
+                    active-value="active"
+                    inactive-value="disabled"
+                    inline-prompt
+                    active-text="启用"
+                    inactive-text="停用"
+                    :disabled="!canToggleUser"
+                    :before-change="() => toggleUserStatus(row)"
+                  />
                 </template>
                 <template v-else-if="col.key === 'systemRole'" #default="{ row }">{{ row.systemRole || '-' }}</template>
                 <template v-else-if="col.key === 'jobNumber'" #default="{ row }">{{ row.jobNumber || '-' }}</template>
@@ -188,10 +196,6 @@
                         <el-dropdown-item v-if="hasPermission('button:user:update')" command="reset">
                           <el-icon><Key /></el-icon>
                           重置密码
-                        </el-dropdown-item>
-                        <el-dropdown-item v-if="hasPermission('button:user:update')" command="toggle">
-                          <el-icon><SwitchButton /></el-icon>
-                          {{ row.status === 'active' ? '停用' : '启用' }}
                         </el-dropdown-item>
                         <el-dropdown-item v-if="hasPermission('button:user:delete')" command="delete" divided>
                           <el-icon><Delete /></el-icon>
@@ -495,10 +499,14 @@
           <el-input :model-value="editJobNumber" disabled placeholder="系统自动生成" />
         </el-form-item>
         <el-form-item v-if="isEdit" label="状态" prop="status">
-          <el-radio-group v-model="form.status">
-            <el-radio value="active">启用</el-radio>
-            <el-radio value="disabled">停用</el-radio>
-          </el-radio-group>
+          <el-switch
+            v-model="form.status"
+            active-value="active"
+            inactive-value="disabled"
+            inline-prompt
+            active-text="启用"
+            inactive-text="停用"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -1210,22 +1218,26 @@ async function handleResetPassword(row: UserInfo) {
   }
 }
 
-async function handleStatusChange(row: UserInfo, value: boolean) {
-  const newStatus = value ? 'active' : 'disabled'
-  const statusText = value ? '启用' : '停用'
+const canToggleUser = computed(() => hasPermission('button:user:update'))
+
+async function toggleUserStatus(row: UserInfo): Promise<boolean> {
+  const nextActive = row.status !== 'active'
+  const newStatus = nextActive ? 'active' : 'disabled'
+  const statusText = nextActive ? '启用' : '停用'
   try {
-    await ElMessageBox.confirm(`确定要${statusText}成员“${row.realName || row.username}”吗？`, '状态切换', {
+    await ElMessageBox.confirm(`确定要${statusText}成员"${row.realName || row.username}"吗？`, '状态切换', {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
       type: 'warning',
     })
     await userApi.updateUser(row.id, { status: newStatus })
-    row.status = newStatus
     ElMessage.success(`${statusText}成功`)
+    return true
   } catch (error: any) {
     if (error !== 'cancel') {
       ElMessage.error(resolveErrorMessage(error, `${statusText}失败`))
     }
+    return false
   }
 }
 
@@ -1286,10 +1298,6 @@ async function handleSubmit() {
 function handleUserCommand(command: string, row: UserInfo) {
   if (command === 'reset') {
     handleResetPassword(row)
-    return
-  }
-  if (command === 'toggle') {
-    handleStatusChange(row, row.status !== 'active')
     return
   }
   if (command === 'delete') {

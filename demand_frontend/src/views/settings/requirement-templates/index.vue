@@ -2,11 +2,18 @@
   <el-table :data="templates" border v-loading="loading">
     <el-table-column v-if="isColumnVisible('requirementTypeName')" prop="requirementTypeName" label="需求类型" width="150" />
     <el-table-column v-if="isColumnVisible('templateName')" prop="templateName" label="模板名称" min-width="200" />
-      <el-table-column v-if="isColumnVisible('isActive')" prop="isActive" label="状态" width="100">
+      <el-table-column v-if="isColumnVisible('isActive')" prop="isActive" label="状态" width="110">
         <template #default="{ row }">
-          <el-tag :type="row.isActive === 1 ? 'success' : 'info'">
-            {{ row.isActive === 1 ? '启用' : '禁用' }}
-          </el-tag>
+          <el-switch
+            v-model="row.isActive"
+            :active-value="1"
+            :inactive-value="0"
+            inline-prompt
+            active-text="启用"
+            inactive-text="禁用"
+            :disabled="!canToggleTemplate"
+            :before-change="() => toggleTemplateStatus(row)"
+          />
         </template>
       </el-table-column>
       <el-table-column v-if="isColumnVisible('isDefault')" prop="isDefault" label="默认" width="80" align="center">
@@ -25,14 +32,6 @@
             @click="handleSetDefault(row)"
           >
             {{ row.isDefault === 1 ? '已是默认' : '设为默认' }}
-          </AppButton>
-          <AppButton
-            size="small"
-            :type="row.isActive === 1 ? 'warning' : 'success'"
-            permission="button:requirement-template:toggle"
-            @click="handleToggleStatus(row)"
-          >
-            {{ row.isActive === 1 ? '禁用' : '启用' }}
           </AppButton>
           <AppButton size="small" type="danger" permission="button:requirement-template:delete" @click="handleDelete(row)">删除</AppButton>
         </template>
@@ -105,6 +104,7 @@ import type { RequirementTemplate, RequirementTemplateSave, TemplateSection } fr
 import AppButton from '@/components/common/AppButton.vue'
 import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
 import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
+import { usePermission } from '@/composables/usePermission'
 import { IsleEditor, IsleEditorToolbar, RichTextKit } from '@isle-editor/vue3'
 import Image from '@tiptap/extension-image'
 import '@isle-editor/vue3/dist/style.css'
@@ -341,14 +341,18 @@ async function handleSetDefault(row: RequirementTemplate) {
   }
 }
 
-async function handleToggleStatus(row: RequirementTemplate) {
+const { hasPermission } = usePermission()
+const canToggleTemplate = computed(() => hasPermission('button:requirement-template:toggle'))
+
+async function toggleTemplateStatus(row: RequirementTemplate): Promise<boolean> {
   const newStatus = row.isActive === 1 ? 0 : 1
   try {
     await toggleRequirementTemplateStatus(row.id!, newStatus)
     ElMessage.success(newStatus === 1 ? '已启用' : '已禁用')
-    loadTemplates()
+    return true
   } catch (error) {
     ElMessage.error(resolveErrorMessage(error, '操作失败'))
+    return false
   }
 }
 

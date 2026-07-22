@@ -4,6 +4,9 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse.CitationReference;
+import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse.ThinkingStep;
+
 public class AssistantMessageVO {
 
     private Long id;
@@ -15,6 +18,10 @@ public class AssistantMessageVO {
     private AssistantPageContext pageContext;
     private List<AssistantAction> actions = new ArrayList<>();
     private List<AssistantSource> sources = new ArrayList<>();
+    private List<ThinkingStep> thinkingSteps;
+    private String processSummary;
+    private Integer retrievedCount;
+    private List<CitationReference> citations;
     private LocalDateTime createdAt;
 
     public Long getId() {
@@ -95,5 +102,37 @@ public class AssistantMessageVO {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public List<ThinkingStep> getThinkingSteps() {
+        return thinkingSteps;
+    }
+
+    public void setThinkingSteps(List<ThinkingStep> thinkingSteps) {
+        this.thinkingSteps = thinkingSteps;
+    }
+
+    public String getProcessSummary() {
+        return processSummary;
+    }
+
+    public void setProcessSummary(String processSummary) {
+        this.processSummary = processSummary;
+    }
+
+    public Integer getRetrievedCount() {
+        return retrievedCount;
+    }
+
+    public void setRetrievedCount(Integer retrievedCount) {
+        this.retrievedCount = retrievedCount;
+    }
+
+    public List<CitationReference> getCitations() {
+        return citations;
+    }
+
+    public void setCitations(List<CitationReference> citations) {
+        this.citations = citations;
     }
 }

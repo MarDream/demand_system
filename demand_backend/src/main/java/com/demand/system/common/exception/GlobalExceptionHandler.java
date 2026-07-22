@@ -10,6 +10,7 @@ import org.springframework.core.env.Environment;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.DisabledException;
 import org.springframework.validation.FieldError;
@@ -26,11 +27,35 @@ import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    /**
+     * 业务错误码 -> HTTP 状态码映射。
+     * 此前所有 BusinessException 都被 @ResponseStatus(HttpStatus.OK) 强制为 200，
+     * 导致网关/监控系统无法区分成功与失败、前端也无法依赖 HTTP 状态。
+     * 这里让 HTTP 状态码与业务错误码对齐，同时保留 body.code 作为细分码，
+     * 前端既有依赖 body.code 的判错逻辑无需改动。
+     */
+    private static final Map<Integer, HttpStatus> STATUS_BY_CODE = Map.ofEntries(
+            Map.entry(ErrorCode.BAD_REQUEST, HttpStatus.BAD_REQUEST),
+            Map.entry(ErrorCode.UNAUTHORIZED, HttpStatus.UNAUTHORIZED),
+            Map.entry(ErrorCode.FORBIDDEN, HttpStatus.FORBIDDEN),
+            Map.entry(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND),
+            Map.entry(ErrorCode.CONFLICT, HttpStatus.CONFLICT),
+            Map.entry(410, HttpStatus.GONE),
+            Map.entry(ErrorCode.BUSINESS_ERROR, HttpStatus.INTERNAL_SERVER_ERROR),
+            Map.entry(ErrorCode.INTERNAL_ERROR, HttpStatus.INTERNAL_SERVER_ERROR),
+            Map.entry(ErrorCode.VALIDATION_ERROR, HttpStatus.BAD_REQUEST),
+            Map.entry(ErrorCode.DATABASE_ERROR, HttpStatus.INTERNAL_SERVER_ERROR),
+            Map.entry(ErrorCode.FILE_ERROR, HttpStatus.INTERNAL_SERVER_ERROR),
+            Map.entry(ErrorCode.CONCURRENT_ERROR, HttpStatus.CONFLICT),
+            Map.entry(ErrorCode.NULL_POINTER_ERROR, HttpStatus.INTERNAL_SERVER_ERROR)
+    );
 
     private final Environment environment;
 
@@ -39,13 +64,13 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(BusinessException.class)
-    @ResponseStatus(HttpStatus.OK)
-    public Result<Object> handleBusinessException(BusinessException e) {
+    public ResponseEntity<Result<Object>> handleBusinessException(BusinessException e) {
         logExceptionWithContext("Business exception", e);
-        if (e.getData() != null) {
-            return new Result<>(e.getErrorCode(), e.getMessage(), e.getData());
-        }
-        return Result.fail(e.getErrorCode(), e.getMessage());
+        HttpStatus status = resolveHttpStatus(e.getErrorCode());
+        Result<Object> body = (e.getData() != null)
+                ? new Result<>(e.getErrorCode(), e.getMessage(), e.getData())
+                : Result.fail(e.getErrorCode(), e.getMessage());
+        return ResponseEntity.status(status).body(body);
     }
 
     /**
@@ -167,6 +192,14 @@ public class GlobalExceptionHandler {
     public Result<Void> handleException(Exception e) {
         logExceptionWithContext("Unexpected exception", e);
         return Result.fail(ErrorCode.INTERNAL_ERROR, resolveUnexpectedErrorMessage(e));
+    }
+
+    /**
+     * 将业务错误码映射为真实 HTTP 状态码。
+     * 未命中映射（如各模块自定义码）一律按 500 处理，避免把未知错误当作成功。
+     */
+    private HttpStatus resolveHttpStatus(int errorCode) {
+        return STATUS_BY_CODE.getOrDefault(errorCode, HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
     /**

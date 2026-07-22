@@ -18,11 +18,14 @@ import com.demand.system.module.bitable.entity.BitableCellValue;
 import com.demand.system.module.bitable.entity.BitableComment;
 import com.demand.system.module.bitable.entity.BitableField;
 import com.demand.system.module.bitable.entity.BitableRecord;
+import com.demand.system.module.bitable.entity.BitableTable;
 import com.demand.system.module.bitable.mapper.BitableCellMapper;
 import com.demand.system.module.bitable.mapper.BitableCommentMapper;
 import com.demand.system.module.bitable.mapper.BitableFieldMapper;
 import com.demand.system.module.bitable.mapper.BitableRecordMapper;
+import com.demand.system.module.bitable.mapper.BitableTableMapper;
 import com.demand.system.module.bitable.service.BitableAutomationService;
+import com.demand.system.module.bitable.service.BitableCollaborationService;
 import com.demand.system.module.bitable.service.BitableFormulaService;
 import com.demand.system.module.bitable.service.BitableLinkService;
 import com.demand.system.module.bitable.service.BitableRecordService;
@@ -33,8 +36,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -52,33 +58,39 @@ public class BitableRecordServiceImpl implements BitableRecordService {
     private final BitableCellMapper cellMapper;
     private final BitableCommentMapper commentMapper;
     private final BitableFieldMapper fieldMapper;
+    private final BitableTableMapper tableMapper;
     private final BitableFormulaService formulaService;
     private final BitableLinkService linkService;
     private final BitableViewService viewService;
     private final BitableConverter converter;
     private final UserNameResolver userNameResolver;
     private final BitableAutomationService automationService;
+    private final BitableCollaborationService collaborationService;
 
     public BitableRecordServiceImpl(BitableRecordMapper recordMapper,
                                     BitableCellMapper cellMapper,
                                     BitableCommentMapper commentMapper,
                                     BitableFieldMapper fieldMapper,
+                                    BitableTableMapper tableMapper,
                                     BitableFormulaService formulaService,
                                     BitableLinkService linkService,
                                     BitableViewService viewService,
                                     BitableConverter converter,
                                     UserNameResolver userNameResolver,
-                                    @Lazy BitableAutomationService automationService) {
+                                    @Lazy BitableAutomationService automationService,
+                                    BitableCollaborationService collaborationService) {
         this.recordMapper = recordMapper;
         this.cellMapper = cellMapper;
         this.commentMapper = commentMapper;
         this.fieldMapper = fieldMapper;
+        this.tableMapper = tableMapper;
         this.formulaService = formulaService;
         this.linkService = linkService;
         this.viewService = viewService;
         this.converter = converter;
         this.userNameResolver = userNameResolver;
         this.automationService = automationService;
+        this.collaborationService = collaborationService;
     }
 
     @Override
@@ -276,8 +288,44 @@ public class BitableRecordServiceImpl implements BitableRecordService {
     private void copyCellValue(CellValueDTO source, BitableCellValue target) {
         target.setValueText(source.getValueText());
         target.setValueNumber(source.getValueNumber());
-        target.setValueDate(source.getValueDate());
+        target.setValueDate(parseFlexibleDate(source.getValueDate()));
         target.setValueJson(BitableJsonUtils.toJsonString(source.getValueJson()));
+    }
+
+    /**
+     * 将前端提交的日期值（字符串/ LocalDate / LocalDateTime）安全解析为 LocalDate。
+     * 兼容 "yyyy-MM-dd" 与 "yyyy-MM-dd HH:mm:ss" 两种格式；空值/非法值返回 null，不抛异常。
+     * 说明：当前 bitable_cell_values.value_date 为 DATE 类型，仅保留日期部分。
+     */
+    private static LocalDate parseFlexibleDate(Object date) {
+        if (date == null) {
+            return null;
+        }
+        if (date instanceof LocalDate ld) {
+            return ld;
+        }
+        if (date instanceof LocalDateTime ldt) {
+            return ldt.toLocalDate();
+        }
+        if (date instanceof String s) {
+            String text = s.trim();
+            if (text.isEmpty()) {
+                return null;
+            }
+            // 先尝试纯日期
+            try {
+                return LocalDate.parse(text, DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+            } catch (Exception ignored) {
+                // 再尝试带时间的格式，仅保留日期部分
+                try {
+                    return LocalDateTime.parse(text, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")).toLocalDate();
+                } catch (Exception e) {
+                    log.warn("无法解析的日期值: {}", text);
+                    return null;
+                }
+            }
+        }
+        return null;
     }
 
     private BitableCellValueVO toCellValueVO(BitableCellValue cell) {
@@ -592,6 +640,7 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         // 3. 插入或更新 CellValue。关联字段走 LinkService，保证双向关联反向同步。
         if (isLinkFieldType(field.getFieldType())) {
             linkService.linkRecords(fieldId, recordId, extractLongListFromUpdateValue(value), userId);
+            broadcastCellUpdated(existing.getTableId(), recordId, fieldId, value, version + 1, userId);
             return version + 1;
         }
 
@@ -613,12 +662,7 @@ public class BitableRecordServiceImpl implements BitableRecordService {
                 }
             }
             if (map.containsKey("valueDate")) {
-                Object date = map.get("valueDate");
-                if (date instanceof String) {
-                    cell.setValueDate(java.time.LocalDate.parse((String) date));
-                } else if (date instanceof java.time.LocalDate) {
-                    cell.setValueDate((java.time.LocalDate) date);
-                }
+                cell.setValueDate(parseFlexibleDate(map.get("valueDate")));
             }
             if (map.containsKey("valueJson")) {
                 cell.setValueJson(BitableJsonUtils.toJsonString(map.get("valueJson")));
@@ -640,7 +684,35 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         }
 
         // 4. 返回新版本号
+        broadcastCellUpdated(existing.getTableId(), recordId, fieldId, value, version + 1, userId);
         return version + 1;
+    }
+
+    /**
+     * 写库成功后广播单元格更新（事务提交后执行，确保其他客户端读到的是已提交的新值）。
+     * <p>
+     * 统一由 REST 写库路径广播，WS 上行不再二次写库，消除单用户编辑的 version 乐观锁竞态。
+     */
+    private void broadcastCellUpdated(Long tableId, Long recordId, Long fieldId, Object value, Integer newVersion, Long userId) {
+        Long baseId;
+        BitableTable table = tableMapper.selectById(tableId);
+        if (table == null) {
+            log.warn("广播单元格更新失败：table 不存在 tableId={}", tableId);
+            return;
+        }
+        baseId = table.getBaseId();
+
+        // 仅在事务中注册 afterCommit；无事务时直接广播。
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    collaborationService.handleCellUpdate(baseId, tableId, recordId, fieldId, value, newVersion, userId);
+                }
+            });
+        } else {
+            collaborationService.handleCellUpdate(baseId, tableId, recordId, fieldId, value, newVersion, userId);
+        }
     }
 
     // ==================== 筛选/排序/分组查询 ====================

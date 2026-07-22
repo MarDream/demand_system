@@ -266,15 +266,30 @@ public class AssistantServiceImpl implements AssistantService {
             KnowledgeSearchRequest searchRequest = new KnowledgeSearchRequest();
             searchRequest.setQuery(userMessage);
             searchRequest.setKnowledgeBaseId(searchKbId);
-            searchRequest.setMode("hybrid");
-            searchRequest.setTopK(10);
+            searchRequest.setMode(request.getMode() != null ? request.getMode() : "hybrid");
+            searchRequest.setTopK(request.getTopK() != null ? request.getTopK() : 10);
             searchRequest.setLlmModelId(request.getLlmModelId());
 
             KnowledgeSearchResponse searchResponse = knowledgeSearchService.search(searchRequest);
 
+            // 发送思维链步骤（RAG 检索过程）
+            if (searchResponse.getThinkingSteps() != null && !searchResponse.getThinkingSteps().isEmpty()) {
+                emitter.send(SseEmitter.event().name("thinkingSteps").data(searchResponse.getThinkingSteps()));
+            }
+
             List<AssistantSource> sources = mapCitationsToSources(searchResponse.getCitations(), rawKbId);
             assistantMessage.setSources(sources);
             assistantMessage.setIntent("knowledge_qa");
+
+            // 保存 RAG 检索结果到消息实体
+            assistantMessage.setThinkingSteps(searchResponse.getThinkingSteps());
+            assistantMessage.setProcessSummary(searchResponse.getProcessSummary());
+            // retrievedCount 从 results 或 citations 计算
+            Integer retrievedCount = (searchResponse.getResults() != null)
+                ? searchResponse.getResults().size()
+                : (searchResponse.getCitations() != null ? searchResponse.getCitations().size() : 0);
+            assistantMessage.setRetrievedCount(retrievedCount);
+            assistantMessage.setCitations(searchResponse.getCitations());
 
             // 先下发 actions（携带命中文档 sources），让前端展示"依据"
             emitter.send(SseEmitter.event().name("actions").data(Map.of(
@@ -485,6 +500,10 @@ public class AssistantServiceImpl implements AssistantService {
         vo.setPageContext(message.getPageContext());
         vo.setActions(message.getActions() == null ? List.of() : message.getActions());
         vo.setSources(message.getSources() == null ? List.of() : message.getSources());
+        vo.setThinkingSteps(message.getThinkingSteps());
+        vo.setProcessSummary(message.getProcessSummary());
+        vo.setRetrievedCount(message.getRetrievedCount());
+        vo.setCitations(message.getCitations());
         vo.setCreatedAt(message.getCreatedAt());
         return vo;
     }

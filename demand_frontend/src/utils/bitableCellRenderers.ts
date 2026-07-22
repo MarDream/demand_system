@@ -180,8 +180,29 @@ VxeUI.renderer.add('BitableRate', {
   },
 })
 
+/**
+ * BitableDate - 日期单元格展示
+ * cellRender: 显示日历图标 + 日期文本（只读展示，编辑交给 VxeDatePicker）
+ * 仅做展示，避免把 VxeDatePicker 当作 display 渲染器带来的渲染异常/闪退
+ */
+VxeUI.renderer.add('BitableDate', {
+  renderTableDefault(_renderOpts: RenderOptions, params: RenderParams) {
+    const { row, column } = params
+    const raw = row[column.field as string]
+    const str = raw == null || raw === '' ? '' : String(raw)
+    if (!str) {
+      return h('span', { class: 'bitable-cell-empty' }, '')
+    }
+    return h('div', { class: 'bitable-date-cell' }, [
+      h('i', { class: 'ri-calendar-line bitable-date-cell__icon' }),
+      h('span', { class: 'bitable-date-cell__text' }, str),
+    ])
+  },
+})
+
 // 显式导出以便类型推导
 export const BitableProgressRenderer = 'BitableProgress'
 export const BitableSelectTagRenderer = 'BitableSelectTag'
 export const BitableCheckboxRenderer = 'BitableCheckbox'
 export const BitableRateRenderer = 'BitableRate'
+export const BitableDateRenderer = 'BitableDate'

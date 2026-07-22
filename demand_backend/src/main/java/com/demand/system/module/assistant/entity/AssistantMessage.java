@@ -15,6 +15,9 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
 
+import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse.CitationReference;
+import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse.ThinkingStep;
+
 @TableName(value = "assistant_messages", autoResultMap = true)
 public class AssistantMessage {
 
@@ -41,6 +44,20 @@ public class AssistantMessage {
 
     @TableField(typeHandler = JacksonTypeHandler.class)
     private List<AssistantSource> sources;
+
+    /** 思维链步骤（RAG 问答时填充） */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private List<ThinkingStep> thinkingSteps;
+
+    /** 检索过程摘要（RAG 问答时填充） */
+    private String processSummary;
+
+    /** 命中的片段数量（RAG 问答时填充） */
+    private Integer retrievedCount;
+
+    /** 引用文档列表（RAG 问答时填充） */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private List<CitationReference> citations;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
@@ -129,6 +146,38 @@ public class AssistantMessage {
 
     public void setSources(List<AssistantSource> sources) {
         this.sources = sources;
+    }
+
+    public List<ThinkingStep> getThinkingSteps() {
+        return thinkingSteps;
+    }
+
+    public void setThinkingSteps(List<ThinkingStep> thinkingSteps) {
+        this.thinkingSteps = thinkingSteps;
+    }
+
+    public String getProcessSummary() {
+        return processSummary;
+    }
+
+    public void setProcessSummary(String processSummary) {
+        this.processSummary = processSummary;
+    }
+
+    public Integer getRetrievedCount() {
+        return retrievedCount;
+    }
+
+    public void setRetrievedCount(Integer retrievedCount) {
+        this.retrievedCount = retrievedCount;
+    }
+
+    public List<CitationReference> getCitations() {
+        return citations;
+    }
+
+    public void setCitations(List<CitationReference> citations) {
+        this.citations = citations;
     }
 
     public LocalDateTime getCreatedAt() {

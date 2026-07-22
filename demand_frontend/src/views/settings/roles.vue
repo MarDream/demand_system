@@ -2046,6 +2046,7 @@ function permissionName(code: string) {
 }
 
 .role-page {
+  height: calc(100vh - 148px);
   min-height: calc(100vh - 148px);
   display: grid;
   grid-template-columns: var(--role-sidebar-width, 360px) var(--role-sidebar-resizer-width, 4px) minmax(0, 1fr);
@@ -2268,12 +2269,18 @@ function permissionName(code: string) {
   /* 显式指定 grid-column：当 sidebar 折叠（display: none）时，
      防止 main 被错位放到第二个 track 而被压缩到 0 宽 */
   grid-column: 3;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .role-detail {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
+  gap: var(--spacing-sm);
+  flex: 1;
+  min-height: 0;
 }
 
 .detail-header,
@@ -2289,7 +2296,7 @@ function permissionName(code: string) {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 700;
   color: var(--color-text-primary);
 }
@@ -2309,7 +2316,8 @@ function permissionName(code: string) {
 .detail-description {
   margin: 0;
   color: var(--color-text-secondary);
-  line-height: 1.7;
+  line-height: 1.5;
+  font-size: var(--font-size-sm);
 }
 
 .role-actions-bar {
@@ -2317,16 +2325,21 @@ function permissionName(code: string) {
   align-items: center;
   gap: var(--spacing-sm);
   flex-wrap: wrap;
-  padding: var(--spacing-sm) 0 var(--spacing-md);
+  padding: 2px 0 var(--spacing-sm);
 }
 
 .permission-panel {
-  padding-top: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding-top: var(--spacing-sm);
   border-top: 1px solid var(--color-border);
 }
 
 .panel-head {
-  margin-bottom: var(--spacing-md);
+  flex-shrink: 0;
+  margin-bottom: var(--spacing-sm);
 }
 
 .panel-head h3 {
@@ -2342,9 +2355,13 @@ function permissionName(code: string) {
 }
 
 .permission-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
+  padding-right: var(--spacing-xs);
 }
 
 .permission-toolbar .el-input {

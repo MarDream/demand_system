@@ -578,10 +578,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import { resolveErrorMessage } from '@/utils/error'
 import { ArrowLeft, Plus, Delete, Edit, CopyDocument, ArrowRight, MagicStick } from '@element-plus/icons-vue'
 import { useCollapsibleSidebar } from '@/composables/useCollapsibleSidebar'
+import { useToast } from '@/composables/useToast'
 import TableSidebar from './components/TableSidebar.vue'
 import Toolbar from './components/Toolbar.vue'
 import GridView from './components/GridView.vue'
@@ -642,6 +643,7 @@ import type {
 
 const route = useRoute()
 const router = useRouter()
+const toast = useToast()
 
 const baseId = Number(route.params.baseId)
 const base = ref<BitableBase | null>(null)
@@ -833,7 +835,6 @@ function isReadonlyFieldType(type?: string) {
 // WebSocket 实时协作
 const {
   connect: wsConnect,
-  sendCellUpdate,
   onCellUpdated,
   onConflict,
 } = useBitableWebSocket(baseId)
@@ -903,7 +904,7 @@ async function loadBase() {
   try {
     base.value = await getBase(baseId)
   } catch (e: any) {
-    ElMessage.error(resolveErrorMessage(e, '加载多维表格失败'))
+    toast.error(resolveErrorMessage(e, '加载多维表格失败'))
   }
 }
 
@@ -912,7 +913,7 @@ async function loadTables() {
     const res = await listTables(baseId)
     tables.value = Array.isArray(res) ? res : (res as any).data || []
   } catch (e: any) {
-    ElMessage.error(resolveErrorMessage(e, '加载数据表失败'))
+    toast.error(resolveErrorMessage(e, '加载数据表失败'))
   }
 }
 
@@ -929,7 +930,7 @@ async function loadViews(tableId: number) {
     const res = await listViews(tableId)
     views.value = Array.isArray(res) ? res : []
   } catch (e: any) {
-    ElMessage.error(resolveErrorMessage(e, '加载视图失败'))
+    toast.error(resolveErrorMessage(e, '加载视图失败'))
   }
 }
 
@@ -958,7 +959,7 @@ async function loadFields(tableId: number) {
     const rawFields = Array.isArray(res) ? res : (res as any).data || []
     fields.value = rawFields.map(normalizeField)
   } catch (e: any) {
-    ElMessage.error(resolveErrorMessage(e, '加载字段失败'))
+    toast.error(resolveErrorMessage(e, '加载字段失败'))
   }
 }
 
@@ -981,7 +982,7 @@ async function loadRecords(tableId: number) {
       records.value = res.list || []
     }
   } catch (e: any) {
-    ElMessage.error(resolveErrorMessage(e, '加载记录失败'))
+    toast.error(resolveErrorMessage(e, '加载记录失败'))
   } finally {
     loadingRecords.value = false
   }
@@ -990,19 +991,19 @@ async function loadRecords(tableId: number) {
 async function handleCreateTable(name: string) {
   try {
     const newId = await createTable(baseId, { name })
-    ElMessage.success('创建成功')
+    toast.success('创建成功')
     const newTableId = typeof newId === 'number' ? newId : Number(newId)
     tables.value.push({ id: newTableId, name, baseId } as BitableTable)
     handleSelectTable(newTableId)
   } catch (e: any) {
-    ElMessage.error(resolveErrorMessage(e, '创建失败'))
+    toast.error(resolveErrorMessage(e, '创建失败'))
   }
 }
 
 async function handleDeleteTable(tableId: number) {
   try {
     await deleteTable(tableId)
-    ElMessage.success('删除成功')
+    toast.success('删除成功')
     tables.value = tables.value.filter((t) => t.id !== tableId)
     if (activeTableId.value === tableId) {
       if (tables.value.length > 0) {
@@ -1014,7 +1015,7 @@ async function handleDeleteTable(tableId: number) {
       }
     }
   } catch (e: any) {
-    ElMessage.error(resolveErrorMessage(e, '删除失败'))
+    toast.error(resolveErrorMessage(e, '删除失败'))
   }
 }
 
@@ -1037,11 +1038,11 @@ function removeOption(idx: number) {
 
 async function submitAddField() {
   if (!addFieldForm.value.name.trim()) {
-    ElMessage.warning('请输入字段名称')
+    toast.warning('请输入字段名称')
     return
   }
   if (!activeTableId.value) {
-    ElMessage.warning('请先选择数据表')
+    toast.warning('请先选择数据表')
     return
   }
   savingField.value = true
@@ -1067,11 +1068,11 @@ async function submitAddField() {
       data.aiPrompt = ''
     }
     await createField(activeTableId.value, data)
-    ElMessage.success('添加成功')
+    toast.success('添加成功')
     await loadFields(activeTableId.value)
     addFieldDialogVisible.value = false
   } catch (e: any) {
-    ElMessage.error(resolveErrorMessage(e, '添加失败'))
+    toast.error(resolveErrorMessage(e, '添加失败'))
   } finally {
     savingField.value = false
   }
@@ -1099,13 +1100,13 @@ async function handleCreateView(viewType: ViewType) {
   try {
     const viewName = getViewTypeName(viewType) + '视图'
     const newView = await createView(activeTableId.value, { name: viewName, viewType })
-    ElMessage.success('创建成功')
+    toast.success('创建成功')
     await loadViews(activeTableId.value)
     const newId = typeof newView === 'object' ? (newView as any).id : Number(newView)
     activeViewId.value = newId
     router.replace({ query: { ...route.query, viewId: String(newId) } })
   } catch (e: any) {
-    ElMessage.error(resolveErrorMessage(e, '创建视图失败'))
+    toast.error(resolveErrorMessage(e, '创建视图失败'))
   }
 }
 
@@ -1114,32 +1115,32 @@ async function handleRenameView(viewId: number, name: string) {
   if (!view) return
   try {
     await updateView(viewId, { name, version: view.version })
-    ElMessage.success('重命名成功')
+    toast.success('重命名成功')
     await loadViews(activeTableId.value!)
   } catch (e: any) {
-    ElMessage.error(resolveErrorMessage(e, '重命名失败'))
+    toast.error(resolveErrorMessage(e, '重命名失败'))
   }
 }
 
 async function handleDuplicateView(viewId: number) {
   try {
     const newId = await duplicateView(viewId)
-    ElMessage.success('复制成功')
+    toast.success('复制成功')
     await loadViews(activeTableId.value!)
     activeViewId.value = newId
     router.replace({ query: { ...route.query, viewId: String(newId) } })
   } catch (e: any) {
-    ElMessage.error(resolveErrorMessage(e, '复制视图失败'))
+    toast.error(resolveErrorMessage(e, '复制视图失败'))
   }
 }
 
 async function handleSetDefaultView(tableId: number, viewId: number) {
   try {
     await setDefaultView(tableId, viewId)
-    ElMessage.success('已设为默认视图')
+    toast.success('已设为默认视图')
     await loadViews(activeTableId.value!)
   } catch (e: any) {
-    ElMessage.error(resolveErrorMessage(e, '设置默认视图失败'))
+    toast.error(resolveErrorMessage(e, '设置默认视图失败'))
   }
 }
 
@@ -1153,14 +1154,14 @@ async function handleDeleteView(viewId: number) {
       type: 'warning',
     })
     await deleteView(viewId)
-    ElMessage.success('删除成功')
+    toast.success('删除成功')
     await loadViews(activeTableId.value!)
     if (activeViewId.value === viewId) {
       setActiveView()
     }
   } catch (e: any) {
     if (e !== 'cancel') {
-      ElMessage.error(resolveErrorMessage(e, '删除视图失败'))
+      toast.error(resolveErrorMessage(e, '删除视图失败'))
     }
   }
 }
@@ -1195,14 +1196,24 @@ async function handleCellChange(data: { rowId: number; fieldId: number; newValue
       updateData.valueText = String(data.newValue ?? '')
     }
     const newVersion: number = await updateCell(data.rowId, data.fieldId, updateData)
+    // 关键修复：就地更新本地单元格值 + 版本号，不再整表 reload。
+    // 原因：原逻辑每次保存都 loadRecords() 全量重载 :data；当用户紧接着编辑下一格时，
+    // 异步 reload 会在该格编辑进行中替换 :data，vxe-table 在“编辑态 + 数据替换”下会卡死/无限渲染（闪退）。
+    // 改为就地写回 cells（与 WS onCellUpdated 的就地修改保持一致），彻底消除该竞态。
     record.version = newVersion
-    ElMessage.success('更新成功')
-    if (activeTableId.value) {
-      sendCellUpdate(activeTableId.value, data.rowId, data.fieldId, data.newValue, newVersion)
-      await loadRecords(activeTableId.value)
+    record.cells = record.cells || {}
+    record.cells[data.fieldId] = {
+      fieldId: data.fieldId,
+      ...(updateData.valueText !== undefined ? { valueText: updateData.valueText } : {}),
+      ...(updateData.valueNumber !== undefined ? { valueNumber: updateData.valueNumber } : {}),
+      ...(updateData.valueDate !== undefined ? { valueDate: updateData.valueDate } : {}),
+      ...(updateData.valueJson !== undefined ? { valueJson: updateData.valueJson } : {}),
     }
+    toast.success('已保存')
+    // 不再通过 WS 上行 sendCellUpdate：后端 REST updateCell 写库成功后已统一广播（afterCommit），
+    // 否则会触发 WS handler 二次广播/重复操作日志，且原 WS 路径会重复写库导致 version 乐观锁竞态（单用户编辑也 409）。
   } catch (e: any) {
-    ElMessage.error(resolveErrorMessage(e, '更新失败'))
+    toast.error(resolveErrorMessage(e, '更新失败'))
   }
 }
 
@@ -1229,10 +1240,10 @@ async function handleLinkConfirm(ids: number[]) {
       recordId: currentLinkRecordId.value,
       targetRecordIds: ids,
     })
-    ElMessage.success('关联成功')
+    toast.success('关联成功')
     if (activeTableId.value) await loadRecords(activeTableId.value)
   } catch (e: any) {
-    ElMessage.error(resolveErrorMessage(e, '关联失败'))
+    toast.error(resolveErrorMessage(e, '关联失败'))
   } finally {
     linkSelectorVisible.value = false
   }
@@ -1257,19 +1268,19 @@ function handleRenameField(fieldId: number) {
 function handleRenameConfirm() {
   const name = renameFieldName.value.trim()
   if (!name) {
-    ElMessage.warning('字段名称不能为空')
+    toast.warning('字段名称不能为空')
     return
   }
   if (renameFieldId.value === null) return
   savingField.value = true
   updateField(renameFieldId.value, { name })
     .then(() => {
-      ElMessage.success('重命名成功')
+      toast.success('重命名成功')
       renameFieldDialogVisible.value = false
       if (activeTableId.value) loadFields(activeTableId.value)
     })
     .catch((e: any) => {
-      ElMessage.error(resolveErrorMessage(e, '重命名失败'))
+      toast.error(resolveErrorMessage(e, '重命名失败'))
     })
     .finally(() => {
       savingField.value = false
@@ -1391,7 +1402,7 @@ function handleLookupLinkFieldChange(fieldId?: number) {
 
 async function saveFieldConfig() {
   if (!editingFieldId.value || !editingField.value) {
-    ElMessage.warning('请选择要编辑的字段')
+    toast.warning('请选择要编辑的字段')
     return
   }
   savingFieldConfig.value = true
@@ -1482,12 +1493,12 @@ async function saveFieldConfig() {
 
     data.config = config
     await updateField(editingFieldId.value, data)
-    ElMessage.success('配置保存成功')
+    toast.success('配置保存成功')
     if (activeTableId.value) {
       await loadFields(activeTableId.value)
     }
   } catch (e: any) {
-    ElMessage.error(resolveErrorMessage(e, '保存配置失败'))
+    toast.error(resolveErrorMessage(e, '保存配置失败'))
   } finally {
     savingFieldConfig.value = false
   }
@@ -1512,10 +1523,10 @@ async function handleCopyField(field: BitableField) {
       required: field.required,
     }
     await createField(activeTableId.value, data)
-    ElMessage.success('复制成功')
+    toast.success('复制成功')
     await loadFields(activeTableId.value)
   } catch (e: any) {
-    ElMessage.error(resolveErrorMessage(e, '复制字段失败'))
+    toast.error(resolveErrorMessage(e, '复制字段失败'))
   }
 }
 
@@ -1527,7 +1538,7 @@ async function handleDeleteField(field: BitableField) {
       type: 'warning',
     })
     await deleteField(field.id)
-    ElMessage.success('删除成功')
+    toast.success('删除成功')
     if (editingFieldId.value === field.id) {
       editingFieldId.value = null
     }
@@ -1536,7 +1547,7 @@ async function handleDeleteField(field: BitableField) {
     }
   } catch (e: any) {
     if (e !== 'cancel') {
-      ElMessage.error(resolveErrorMessage(e, '删除字段失败'))
+      toast.error(resolveErrorMessage(e, '删除字段失败'))
     }
   }
 }
@@ -1571,10 +1582,10 @@ async function handleCloneField(fieldId: number) {
       width: original.width,
     }
     await createField(activeTableId.value, data)
-    ElMessage.success('克隆成功')
+    toast.success('克隆成功')
     await loadFields(activeTableId.value)
   } catch (e: any) {
-    ElMessage.error(resolveErrorMessage(e, '克隆失败'))
+    toast.error(resolveErrorMessage(e, '克隆失败'))
   } finally {
     savingField.value = false
   }
@@ -1589,7 +1600,7 @@ async function handleHeaderDragend(fieldOrder: { fieldId: number; newIndex: numb
     await sortFields(activeTableId.value, sortedFieldIds)
     await loadFields(activeTableId.value)
   } catch (e: any) {
-    ElMessage.error(resolveErrorMessage(e, '排序失败'))
+    toast.error(resolveErrorMessage(e, '排序失败'))
   }
 }
 
@@ -1602,10 +1613,10 @@ async function handleRowInsert(data?: { position?: 'above' | 'below'; rowId?: nu
       cells[data.fieldId] = { valueText: data.groupValue === '__ungrouped__' ? '' : data.groupValue }
     }
     await createRecord(activeTableId.value, { cells })
-    ElMessage.success('添加成功')
+    toast.success('记录已添加')
     await loadRecords(activeTableId.value)
   } catch (e: any) {
-    ElMessage.error(resolveErrorMessage(e, '添加失败'))
+    toast.error(resolveErrorMessage(e, '添加失败'))
   }
 }
 
@@ -1614,11 +1625,11 @@ async function handleFormSubmit(cells: BitableRecordCreateDTO['cells']) {
   savingField.value = true
   try {
     await createRecord(activeTableId.value, { cells })
-    ElMessage.success('提交成功')
+    toast.success('提交成功')
     formViewRef.value?.reset()
     await loadRecords(activeTableId.value)
   } catch (e: any) {
-    ElMessage.error(resolveErrorMessage(e, '提交失败'))
+    toast.error(resolveErrorMessage(e, '提交失败'))
   } finally {
     savingField.value = false
   }
@@ -1627,10 +1638,10 @@ async function handleFormSubmit(cells: BitableRecordCreateDTO['cells']) {
 async function handleRowDelete(rowId: number) {
   try {
     await deleteRecord(rowId)
-    ElMessage.success('删除成功')
+    toast.success('删除成功')
     records.value = records.value.filter((r) => r.id !== rowId)
   } catch (e: any) {
-    ElMessage.error(resolveErrorMessage(e, '删除失败'))
+    toast.error(resolveErrorMessage(e, '删除失败'))
   }
 }
 
@@ -1644,7 +1655,7 @@ async function handleCardMove(data: { recordId: number; fieldId: number; fromGro
   if (!record || !activeTableId.value) return
   const selectField = fields.value.find((f) => f.id === data.fieldId)
   if (!selectField) {
-    ElMessage.warning('未找到可分组字段')
+    toast.warning('未找到可分组字段')
     return
   }
   try {
@@ -1654,16 +1665,16 @@ async function handleCardMove(data: { recordId: number; fieldId: number; fromGro
     }
     const newVersion: number = await updateCell(data.recordId, selectField.id, updateData)
     record.version = newVersion
-    ElMessage.success('卡片已移动')
+    toast.success('卡片已移动')
     await loadRecords(activeTableId.value)
   } catch (e: any) {
-    ElMessage.error(resolveErrorMessage(e, '移动卡片失败'))
+    toast.error(resolveErrorMessage(e, '移动卡片失败'))
   }
 }
 
 function handleOpenComments() {
   if (!records.value.length) {
-    ElMessage.warning('暂无记录，请先添加数据')
+    toast.warning('暂无记录，请先添加数据')
     return
   }
   commentRecordId.value = records.value[0].id
@@ -1709,11 +1720,11 @@ async function handleConvertToAiField(fieldId: number) {
       type: 'warning',
     })
     await updateField(fieldId, { fieldType: 'ai_text', isAiField: true } as any)
-    ElMessage.success('转换成功')
+    toast.success('转换成功')
     if (activeTableId.value) loadFields(activeTableId.value)
   } catch (e: any) {
     if (e !== 'cancel') {
-      ElMessage.error(resolveErrorMessage(e, '转换失败'))
+      toast.error(resolveErrorMessage(e, '转换失败'))
     }
   }
 }

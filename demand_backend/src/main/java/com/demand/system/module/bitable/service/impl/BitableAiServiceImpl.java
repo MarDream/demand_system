@@ -237,7 +237,7 @@ public class BitableAiServiceImpl implements BitableAiService {
                 cellValue.setValueText(fillValue);
             }
         } else if ("date".equals(targetField.getFieldType())) {
-            cellValue.setValueDate(java.time.LocalDate.parse(fillValue));
+            cellValue.setValueDate(fillValue);
         } else {
             cellValue.setValueText(fillValue);
         }

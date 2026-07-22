@@ -775,7 +775,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, watch, type Ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import { ArrowLeftBold, ArrowRightBold, Document, Picture, List, ChatLineRound, ChatDotRound, View, Download, Edit, Delete, ZoomIn, ZoomOut, RefreshLeft, CircleCheck } from '@element-plus/icons-vue'
 import { requirementApi, projectApi, relationApi } from '@/api'
 import { downloadRequirementAttachment, uploadRequirementAttachment } from '@/api/modules/file'
@@ -796,6 +796,7 @@ import { resolveErrorMessage } from '@/utils/error'
 import AppButton from '@/components/common/AppButton.vue'
 import { usePermission } from '@/composables/usePermission'
 import { useRequirementTag } from '@/composables/useRequirementTag'
+import { useToast } from '@/composables/useToast'
 import { useUserStore } from '@/stores/modules/user'
 import { hydrateRichTextImageHtml, buildRichTextImagePreviewUrl } from '@/utils/richTextFileImage'
 import { IsleEditor, IsleEditorToolbar, RichTextKit } from '@isle-editor/vue3'
@@ -895,6 +896,7 @@ addLocale('zh', {
 const route = useRoute()
 const router = useRouter()
 const { hasAnyPermission, hasPermission } = usePermission()
+const toast = useToast()
 const {
   statusTagType,
   priorityTagType,
@@ -1065,7 +1067,7 @@ let commentDragDepth = 0
 
 async function insertCommentImageFile(file: File) {
   if (!file.type.startsWith('image/')) {
-    ElMessage.warning('仅支持图片文件: ' + file.name)
+    toast.warning('仅支持图片文件: ' + file.name)
     return
   }
   let processedFile = file
@@ -1075,17 +1077,17 @@ async function insertCommentImageFile(file: File) {
   }
   try {
     commentImageUploading.value = true
-    ElMessage.info(`上传图片中: ${processedFile.name}`)
+    toast.info(`上传图片中: ${processedFile.name}`)
     const attachment = await uploadRequirementAttachment(processedFile)
     const src = attachment.fileId ? buildRichTextImagePreviewUrl(attachment.fileId) : attachment.url
     if (src && commentEditorInstance.value) {
       const safeAlt = processedFile.name.replace(/"/g, '&quot;')
       const editor = commentEditorInstance.value
       editor.chain().focus().setImage({ src, alt: safeAlt, width: 400 }).run()
-      ElMessage.success(`图片 ${processedFile.name} 已插入`)
+      toast.success(`图片 ${processedFile.name} 已插入`)
     }
   } catch (error) {
-    ElMessage.error(resolveErrorMessage(error, `图片 ${processedFile.name} 插入失败`))
+    toast.error(resolveErrorMessage(error, `图片 ${processedFile.name} 插入失败`))
   } finally {
     commentImageUploading.value = false
   }
@@ -1161,7 +1163,7 @@ async function fetchDetail() {
     detail.value = res
     await Promise.all([loadProjectName(), loadWorkflowMeta()])
   } catch {
-    ElMessage.error('获取需求详情失败')
+    toast.error('获取需求详情失败')
   } finally {
     loading.value = false
   }
@@ -1329,7 +1331,7 @@ async function executeTransition(extra?: { rating?: number; ratingDimensions?: R
       // 流转时修改需求类型
       newType: extra?.newType,
     })
-    ElMessage.success('提交审核成功')
+    toast.success('需求已更新')
     selectedTransitionTargetId.value = null
     approvalDialogVisible.value = false
     resetApprovalDialog()
@@ -1337,7 +1339,7 @@ async function executeTransition(extra?: { rating?: number; ratingDimensions?: R
     // 智能跳转：检查待办数量决定跳转目标
     await navigateAfterSubmit()
   } catch (error) {
-    ElMessage.error(resolveErrorMessage(error, '状态流转失败'))
+    toast.error('操作失败，请重试')
   } finally {
     transitionLoading.value = false
   }
@@ -1427,7 +1429,7 @@ async function handleAttachmentDownload(attachment: RequirementAttachment) {
   try {
     await downloadRequirementAttachment(attachment)
   } catch {
-    ElMessage.error('附件下载失败')
+    toast.error('附件下载失败')
   }
 }
 
@@ -1449,7 +1451,7 @@ function canPreviewAttachment(attachment: RequirementAttachment) {
 
 function handleAttachmentPreview(attachment: RequirementAttachment) {
   if (!canPreviewAttachment(attachment)) {
-    ElMessage.warning('该附件暂不支持预览')
+    toast.warning('该附件暂不支持预览')
     return
   }
   previewFile.value = attachment
@@ -1729,29 +1731,29 @@ function handleSplit() {
 async function handleDelete() {
   try {
     await requirementApi.deleteRequirement(id)
-    ElMessage.success('删除成功')
+    toast.success('需求已删除')
     router.push({ name: 'Requirements' })
   } catch {
-    ElMessage.error('删除失败')
+    toast.error('删除失败')
   }
 }
 
 async function handleStatusTransition() {
   if (!isWorkflowActive.value) {
-    ElMessage.warning('当前工作流已停用，暂不支持提交审核')
+    toast.warning('当前工作流已停用，暂不支持提交审核')
     return
   }
   if (!selectedTransitionTargetId.value) {
-    ElMessage.warning('请选择目标节点')
+    toast.warning('请选择目标节点')
     return
   }
   if (requiresSingleTransitionAssignee.value && !selectedTransitionAssigneeId.value) {
-    ElMessage.warning('请选择处理人')
+    toast.warning('请选择处理人')
     return
   }
 
   if (workflowRuntime.value.countersignPending) {
-    ElMessage.warning('会签尚未完成，请先完成会签审批')
+    toast.warning('会签尚未完成，请先完成会签审批')
     if (workflowRuntime.value.currentNodeId) {
       await openCountersignDialog(workflowRuntime.value.currentNodeId)
     }
@@ -1775,7 +1777,7 @@ async function openCountersignDialog(nodeId: string) {
     currentCountersignRecords.value = recordsRes || []
     canCountersign.value = canRes || false
   } catch (error) {
-    ElMessage.error(resolveErrorMessage(error, '获取会签信息失败'))
+    toast.error(resolveErrorMessage(error, '获取会签信息失败'))
   } finally {
     countersignDialogLoading.value = false
   }
@@ -1798,13 +1800,13 @@ async function submitCountersign(status: 'approved' | 'rejected') {
       rating: countersignRating.value || undefined,
       comment: countersignComment.value.trim() || undefined,
     })
-    ElMessage.success(status === 'approved' ? '会签通过' : '会签已驳回')
+    toast.success(status === 'approved' ? '会签通过' : '会签已驳回')
     countersignDialogVisible.value = false
     countersignRating.value = 0
     countersignComment.value = ''
     await Promise.all([fetchDetail(), fetchApprovalEvaluations()])
   } catch (error) {
-    ElMessage.error(resolveErrorMessage(error, '提交会签审批失败'))
+    toast.error(resolveErrorMessage(error, '提交会签审批失败'))
   }
 }
 
@@ -1824,26 +1826,26 @@ async function handleSwitchParallelBranch(branchId: number) {
   }
   try {
     await switchParallelBranch(id, branchId)
-    ElMessage.success('已切换并行分支')
+    toast.success('已切换并行分支')
     await fetchDetail()
   } catch (error) {
-    ElMessage.error(resolveErrorMessage(error, '切换并行分支失败'))
+    toast.error(resolveErrorMessage(error, '切换并行分支失败'))
   }
 }
 
 async function confirmApprovalTransition() {
   // 工作流版本启用评价时，评分必填
   if (workflowRuntime.value.evaluationRequired && (!approvalRating.value || approvalRating.value < 1)) {
-    ElMessage.warning('请选择 1-5 星评价')
+    toast.warning('请选择 1-5 星评价')
     return
   }
   // 修复 P2：节点要求必填意见时，前端先校验
   if (isCommentRequired.value && !approvalComment.value.trim()) {
-    ElMessage.warning('当前节点要求必须填写意见')
+    toast.warning('当前节点要求必须填写意见')
     return
   }
   if (isAttachmentRequired.value && approvalAttachments.value.length === 0) {
-    ElMessage.warning('当前节点要求必须上传附件')
+    toast.warning('当前节点要求必须上传附件')
     return
   }
   // 校验类型变更是否选择
@@ -1867,11 +1869,11 @@ async function confirmApprovalTransition() {
 async function submitSupplement() {
   const content = supplementContent.value.trim()
   if (!supplementTarget.value?.id) {
-    ElMessage.warning('未找到原审核记录')
+    toast.warning('未找到原审核记录')
     return
   }
   if (!content) {
-    ElMessage.warning('请输入补充意见')
+    toast.warning('请输入补充意见')
     return
   }
 
@@ -1881,12 +1883,12 @@ async function submitSupplement() {
       content,
       attachments: supplementAttachments.value.length > 0 ? supplementAttachments.value : undefined,
     })
-    ElMessage.success('补充意见已提交')
+    toast.success('补充意见已提交')
     supplementDialogVisible.value = false
     resetSupplementDialog()
     await fetchApprovalEvaluations()
   } catch (error) {
-    ElMessage.error(resolveErrorMessage(error, '提交补充意见失败'))
+    toast.error(resolveErrorMessage(error, '提交补充意见失败'))
   } finally {
     supplementSubmitting.value = false
   }
@@ -1894,7 +1896,7 @@ async function submitSupplement() {
 
 async function handleRollback() {
   if (!isWorkflowActive.value) {
-    ElMessage.warning('当前工作流已停用，暂不支持驳回')
+    toast.warning('当前工作流已停用，暂不支持驳回')
     return
   }
   await confirmAndExecute(
@@ -1907,7 +1909,7 @@ async function handleRollback() {
 
 async function handleCancel() {
   if (!isWorkflowActive.value) {
-    ElMessage.warning('当前工作流已停用，暂不支持取消')
+    toast.warning('当前工作流已停用，暂不支持取消')
     return
   }
   await confirmAndExecute(
@@ -1930,11 +1932,11 @@ async function confirmAndExecute(
     const { value } = await ElMessageBox.prompt(message, title, opts)
     transitionLoading.value = true
     await action(value)
-    ElMessage.success(successMsg)
+    toast.success(successMsg)
     await Promise.all([fetchDetail(), fetchApprovalEvaluations()])
   } catch (error: any) {
     if (error === 'cancel' || error?.action === 'cancel') return
-    ElMessage.error(resolveErrorMessage(error, errorMsg))
+    toast.error(resolveErrorMessage(error, errorMsg))
   } finally {
     transitionLoading.value = false
   }
@@ -1943,7 +1945,7 @@ async function confirmAndExecute(
 async function submitCommentRich() {
   const html = commentEditorInstance.value?.getHTML?.() || ''
   if (!hasMeaningfulCommentContent(html)) {
-    ElMessage.warning('请输入评论内容')
+    toast.warning('请输入评论内容')
     return
   }
   const content = html.trim()
@@ -1951,11 +1953,11 @@ async function submitCommentRich() {
   commentSubmitting.value = true
   try {
     await requirementApi.createRequirementComment(id, { content })
-    ElMessage.success('评论已提交')
+    toast.success('评论已提交')
     resetCommentDraft()
     await fetchComments()
   } catch (error) {
-    ElMessage.error(resolveErrorMessage(error, '评论提交失败'))
+    toast.error(resolveErrorMessage(error, '评论提交失败'))
   } finally {
     commentSubmitting.value = false
   }
@@ -1994,10 +1996,10 @@ async function initializePage() {
       loadProjectOptions(),
     ])
   } catch (error: any) {
-    // 业务 403（无权查看等）由 request.ts 拦截器统一弹过 ElMessage.error，
+    // 业务 403（无权查看等）由 request.ts 拦截器统一弹过 toast.error，
     // 这里静默避免重复提示；其他错误（网络异常/500 等）仍弹消息
     if (error?.code !== 403) {
-      ElMessage.error(resolveErrorMessage(error, '加载需求详情失败'))
+      toast.error(resolveErrorMessage(error, '加载需求详情失败'))
     }
     loading.value = false
     return

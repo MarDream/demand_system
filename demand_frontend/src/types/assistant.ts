@@ -24,6 +24,23 @@ export interface AssistantPageContext {
 
 export type AssistantMessageId = number | string
 
+export interface ThinkingStep {
+  stepType: string
+  title: string
+  detail: string
+  score?: number
+  metadata?: Record<string, any>
+}
+
+export interface CitationReference {
+  index?: number
+  documentId?: number
+  fileName?: string
+  hitCount?: number
+  maxScore?: number
+  sources?: string[]
+}
+
 export interface AssistantMessage {
   id: AssistantMessageId
   sessionId: number
@@ -34,6 +51,10 @@ export interface AssistantMessage {
   pageContext?: AssistantPageContext | null
   actions: AssistantAction[]
   sources: AssistantSource[]
+  thinkingSteps?: ThinkingStep[]
+  processSummary?: string | null
+  retrievedCount?: number | null
+  citations?: CitationReference[]
   createdAt?: string
 }
 
@@ -58,6 +79,18 @@ export interface AssistantChatRequest {
   knowledgeBaseId?: number | null
   /** 指定聊天模型 ID，null/undefined 由后端自动选取默认模型 */
   llmModelId?: number | null
+  /**
+   * 知识库检索模式（仅知识库问答时生效）：
+   * - hybrid：混合检索（语义+关键词，默认）
+   * - semantic：纯语义检索
+   * - keyword：纯关键词检索
+   */
+  mode?: 'hybrid' | 'semantic' | 'keyword'
+  /**
+   * 知识库检索召回片段数量（仅知识库问答时生效）
+   * 默认 10
+   */
+  topK?: number
 }
 
 export interface AssistantMetaPayload {

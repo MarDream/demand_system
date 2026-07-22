@@ -19,6 +19,8 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -53,8 +55,12 @@ class GlobalExceptionHandlerTest {
     @Test
     void testHandleBusinessException() {
         BusinessException exception = new BusinessException(ErrorCode.BUSINESS_ERROR, "业务错误");
-        Result<Object> result = handler.handleBusinessException(exception);
+        ResponseEntity<Result<Object>> response = handler.handleBusinessException(exception);
 
+        // P1 修复：HTTP 状态码应与 errorCode 对齐（BUSINESS_ERROR=500 -> 500）
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+        Result<Object> result = response.getBody();
+        assertNotNull(result);
         assertEquals(ErrorCode.BUSINESS_ERROR, result.getCode());
         assertEquals("业务错误", result.getMessage());
         assertNull(result.getData());
@@ -64,11 +70,37 @@ class GlobalExceptionHandlerTest {
     void testHandleBusinessExceptionWithData() {
         Object data = new Object();
         BusinessException exception = new BusinessException(ErrorCode.BUSINESS_ERROR, "业务错误", data);
-        Result<Object> result = handler.handleBusinessException(exception);
+        ResponseEntity<Result<Object>> response = handler.handleBusinessException(exception);
 
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+        Result<Object> result = response.getBody();
+        assertNotNull(result);
         assertEquals(ErrorCode.BUSINESS_ERROR, result.getCode());
         assertEquals("业务错误", result.getMessage());
         assertEquals(data, result.getData());
+    }
+
+    @Test
+    void testHandleBusinessException_MapsHttpStatusByErrorCode() {
+        // P1 修复验证：业务异常应根据 errorCode 返回对应的真实 HTTP 状态码，
+        // 不再统一返回 200，以便网关/监控系统区分成功与失败。
+        assertStatus(ErrorCode.BAD_REQUEST, HttpStatus.BAD_REQUEST);
+        assertStatus(ErrorCode.UNAUTHORIZED, HttpStatus.UNAUTHORIZED);
+        assertStatus(ErrorCode.FORBIDDEN, HttpStatus.FORBIDDEN);
+        assertStatus(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND);
+        assertStatus(ErrorCode.CONFLICT, HttpStatus.CONFLICT);
+        assertStatus(ErrorCode.VALIDATION_ERROR, HttpStatus.BAD_REQUEST);
+        assertStatus(ErrorCode.DATABASE_ERROR, HttpStatus.INTERNAL_SERVER_ERROR);
+        assertStatus(ErrorCode.FILE_ERROR, HttpStatus.INTERNAL_SERVER_ERROR);
+        assertStatus(ErrorCode.CONCURRENT_ERROR, HttpStatus.CONFLICT);
+        assertStatus(ErrorCode.BUSINESS_ERROR, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+    private void assertStatus(int errorCode, HttpStatus expected) {
+        BusinessException exception = new BusinessException(errorCode, "错误信息");
+        ResponseEntity<Result<Object>> response = handler.handleBusinessException(exception);
+        assertEquals(expected, response.getStatusCode(), "errorCode=" + errorCode + " 应映射到 " + expected);
+        assertEquals(errorCode, response.getBody().getCode());
     }
 
     @Test

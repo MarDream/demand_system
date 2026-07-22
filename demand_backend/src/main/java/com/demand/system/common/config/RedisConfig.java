@@ -84,6 +84,12 @@ public class RedisConfig {
      * 配置 RedisMessageListenerContainer
      * <p>
      * 用于订阅 Redis pub/sub channel，转发消息到 WebSocket sessions。
+     *
+     * 说明：默认的 LettuceConnectionFactory 开启 shareNativeConnection=true，
+     * 阻塞式订阅（psubscribe）会占用那条共享原生连接，导致 RedisTemplate 普通命令拿不到连接、
+     * 后端表现像"假死"。已在 application-dev.yml 中设置
+     * spring.data.redis.lettuce.share-native-connection=false 关闭原生连接共享，
+     * 使订阅与普通命令在连接层面隔离。
      */
     @Bean
     public RedisMessageListenerContainer redisMessageListenerContainer(RedisConnectionFactory connectionFactory) {

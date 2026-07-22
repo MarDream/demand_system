@@ -366,7 +366,7 @@ public class RequirementServiceImpl implements RequirementService {
     public RequirementVO getDetail(Long id) {
         Requirement r = requirementMapper.selectById(id);
         if (r == null) {
-            throw new BusinessException("需求不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "需求不存在");
         }
         requireViewPermission(r, "无权查看该需求");
         RequirementVO vo = new RequirementVO();
@@ -437,7 +437,7 @@ public class RequirementServiceImpl implements RequirementService {
     public void update(RequirementUpdateDTO dto, Long userId) {
         Requirement existing = requirementMapper.selectById(dto.getId());
         if (existing == null) {
-            throw new BusinessException("需求不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "需求不存在");
         }
 
         Long operatorId = userId;
@@ -655,7 +655,7 @@ public class RequirementServiceImpl implements RequirementService {
         }
         Requirement existing = requirementMapper.selectById(dto.getId());
         if (existing == null) {
-            throw new BusinessException("需求不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "需求不存在");
         }
         if (!Boolean.TRUE.equals(existing.getIsDraft())) {
             throw new BusinessException(400, "当前需求不是草稿");
@@ -719,7 +719,7 @@ public class RequirementServiceImpl implements RequirementService {
     public List<NextNodeOptionDTO> getNextNodes(Long requirementId, Long userId) {
         Requirement requirement = requirementMapper.selectById(requirementId);
         if (requirement == null) {
-            throw new BusinessException("需求不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "需求不存在");
         }
         if (!Boolean.TRUE.equals(requirement.getIsDraft())) {
             throw new BusinessException(400, "仅草稿支持查询下一环节");
@@ -763,7 +763,7 @@ public class RequirementServiceImpl implements RequirementService {
     public RequirementVO submit(Long requirementId, RequirementSubmitDTO dto, Long userId) {
         Requirement requirement = requirementMapper.selectById(requirementId);
         if (requirement == null) {
-            throw new BusinessException("需求不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "需求不存在");
         }
         requireProjectSelection(requirement.getProjectId());
         if (!Boolean.TRUE.equals(requirement.getIsDraft())) {
@@ -989,7 +989,7 @@ public class RequirementServiceImpl implements RequirementService {
     public void follow(Long requirementId, Long userId) {
         Requirement requirement = requirementMapper.selectById(requirementId);
         if (requirement == null) {
-            throw new BusinessException("需求不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "需求不存在");
         }
         if (!canViewRequirement(requirement, userId)) {
             throw new BusinessException(403, "无权关注该需求");
@@ -1019,7 +1019,7 @@ public class RequirementServiceImpl implements RequirementService {
     public void delete(Long id, Long userId) {
         Requirement requirement = requirementMapper.selectById(id);
         if (requirement == null) {
-            throw new BusinessException("需求不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "需求不存在");
         }
 
         // 草稿状态：仅创建人可以删除
@@ -1074,7 +1074,7 @@ public class RequirementServiceImpl implements RequirementService {
         // 修复 P0：使用自定义 SQL 绕过 @TableLogic 过滤，查询包含已删除记录
         Requirement existing = requirementMapper.selectByIdIncludeDeleted(id);
         if (existing == null) {
-            throw new BusinessException("需求不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "需求不存在");
         }
 
         // 检查删除状态
@@ -1246,7 +1246,7 @@ public class RequirementServiceImpl implements RequirementService {
     private Requirement ensureRequirementExists(Long requirementId) {
         Requirement requirement = requirementMapper.selectById(requirementId);
         if (requirement == null) {
-            throw new BusinessException("需求不存在");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "需求不存在");
         }
         return requirement;
     }
