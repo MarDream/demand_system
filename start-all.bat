@@ -9,6 +9,9 @@ if "%_NON_CMD%"=="1" (
     echo [WARN] 检测到非 cmd.exe 环境（Git Bash / MSYS2 / Cygwin），自动切换到 cmd.exe 执行...
     :: 清理已生成的 nul 文件
     if exist "%~dp0nul" del /q "%~dp0nul" >NUL 2>&1
+    :: 清除继承的环境变量，防止递归调用
+    set MSYSTEM=
+    set TERM=
     cmd.exe /c "%~f0" %*
     exit /b %errorlevel%
 )

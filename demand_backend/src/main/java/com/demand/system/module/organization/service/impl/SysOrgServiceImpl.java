@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.ErrorCode;
+import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.organization.dto.*;
 import com.demand.system.module.organization.entity.SysOrg;
 import com.demand.system.module.organization.mapper.SysOrgMapper;
@@ -37,8 +38,35 @@ public class SysOrgServiceImpl implements SysOrgService {
         List<SysOrg> all = sysOrgMapper.selectList(
                 new LambdaQueryWrapper<SysOrg>().orderByAsc(SysOrg::getSortOrder).orderByAsc(SysOrg::getId)
         );
+
+        // 非超管用户只看到自己组织及子孙节点
+        if (!SecurityUtils.isSuperAdmin()) {
+            Long currentUserOrgId = getCurrentUserOrgId();
+            if (currentUserOrgId != null) {
+                // 获取当前用户组织及所有子孙组织ID
+                List<Long> visibleOrgIds = getDescendantIds(currentUserOrgId);
+                // 过滤只保留可见组织
+                all = all.stream()
+                        .filter(org -> visibleOrgIds.contains(org.getId()))
+                        .collect(Collectors.toList());
+            } else {
+                // 无组织归属的非超管，返回空树
+                all = List.of();
+            }
+        }
+
         List<SysOrgVO> voList = all.stream().map(this::toVO).collect(Collectors.toList());
         return buildTree(voList);
+    }
+
+    /**
+     * 获取当前登录用户的 orgId
+     */
+    private Long getCurrentUserOrgId() {
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) return null;
+        User user = userMapper.selectById(userId);
+        return user != null ? user.getOrgId() : null;
     }
 
     @Override

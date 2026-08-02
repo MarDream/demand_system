@@ -323,7 +323,7 @@
                         <span v-else>{{ data.groupName }}</span>
                       </span>
                       <span v-else>
-                        {{ data.name }} <span class="role-code-hint">[{{ data.code }}]</span>
+                        {{ data.name }}
                       </span>
                     </template>
                   </el-tree-select>

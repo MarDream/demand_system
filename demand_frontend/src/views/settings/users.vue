@@ -458,32 +458,24 @@
 
         <el-divider content-position="left">组织信息</el-divider>
 
-        <template v-if="isEdit && isSuperAdmin">
-          <el-form-item label="所属组织" prop="orgId">
-            <el-tree-select
-              v-model="form.orgId"
-              :data="orgTree"
-              :props="{ label: 'name', value: 'id', children: 'children' }"
-              placeholder="请选择组织"
-              clearable
-              check-strictly
-              style="width: 100%"
-            >
-              <template #default="{ data }">
-                <span class="department-option">
-                  <el-icon><component :is="orgIcon(data.orgType)" /></el-icon>
-                  {{ data.name }}
-                  <el-tag size="small" :type="data.orgType === 'department' || data.orgType === 'group' ? 'info' : 'warning'" style="margin-left: 4px;">{{ ORG_TYPE_LABELS[data.orgType] || data.orgType }}</el-tag>
-                </span>
-              </template>
-            </el-tree-select>
-          </el-form-item>
-        </template>
-        <template v-else>
-          <el-form-item label="所属组织">
-            <span class="org-chain-text">{{ createOrgChainText }}</span>
-          </el-form-item>
-        </template>
+        <el-form-item label="所属组织" prop="orgId">
+          <el-tree-select
+            v-model="form.orgId"
+            :data="orgTree"
+            :props="{ label: 'name', value: 'id', children: 'children' }"
+            placeholder="请选择组织"
+            check-strictly
+            style="width: 100%"
+          >
+            <template #default="{ data }">
+              <span class="department-option">
+                <el-icon><component :is="orgIcon(data.orgType)" /></el-icon>
+                {{ data.name }}
+                <el-tag size="small" :type="data.orgType === 'department' || data.orgType === 'group' ? 'info' : 'warning'" style="margin-left: 4px;">{{ ORG_TYPE_LABELS[data.orgType] || data.orgType }}</el-tag>
+              </span>
+            </template>
+          </el-tree-select>
+        </el-form-item>
         <el-form-item label="角色" prop="roleId">
           <el-select v-model="form.roleId" placeholder="请选择角色" clearable style="width: 100%">
             <el-option
@@ -978,6 +970,9 @@ const rules: FormRules = {
     { required: true, message: '请输入手机号', trigger: 'blur' },
     { validator: validatePhone, trigger: 'blur' },
   ],
+  orgId: [
+    { required: true, message: '请选择所属组织', trigger: 'change' },
+  ],
 }
 
 const departmentRules: FormRules = {
@@ -1244,6 +1239,10 @@ async function toggleUserStatus(row: UserInfo): Promise<boolean> {
 async function handleSubmit() {
   if (!formRef.value) return
   await formRef.value.validate()
+  if (!form.orgId) {
+    ElMessage.warning('请选择所属组织')
+    return
+  }
   submitting.value = true
 
   try {

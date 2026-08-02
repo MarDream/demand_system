@@ -23,6 +23,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.demand.system.module.auth.security.SecurityUtils;
+
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -56,18 +58,26 @@ public class UserServiceImpl implements UserService {
                 .eq(query.getStatus() != null, User::getStatus, query.getStatus())
                 .orderByDesc(User::getCreatedAt);
 
-        if (query.getOrgId() != null) {
-            List<Long> orgIds = sysOrgService.getDescendantIds(query.getOrgId());
-            orgIds.add(query.getOrgId());
-            // 同时包含无组织归属的超级管理员用户
-            Set<Long> superAdminIds = collectSuperAdminUserIds();
+        // 确定有效的 orgId 过滤范围
+        Long effectiveOrgId = resolveEffectiveOrgId(query.getOrgId());
+
+        if (effectiveOrgId != null) {
+            List<Long> orgIds = sysOrgService.getDescendantIds(effectiveOrgId);
+            orgIds.add(effectiveOrgId);
+            // 同时包含无组织归属的超级管理员用户（已绑定组织的超管不兜底，避免泄漏到无关组织列表）
+            Set<Long> superAdminIds = filterUnassignedSuperAdminIds(collectSuperAdminUserIds());
             if (!superAdminIds.isEmpty()) {
                 wrapper.and(w -> w.in(User::getOrgId, orgIds)
                         .or().in(User::getId, superAdminIds));
             } else {
                 wrapper.in(User::getOrgId, orgIds);
             }
+        } else if (!SecurityUtils.isSuperAdmin()) {
+            // 非超管且无 orgId 归属：只能看到自己
+            Long currentUserId = SecurityUtils.getCurrentUserId();
+            wrapper.eq(User::getId, currentUserId);
         } else {
+            // 超管无 orgId 过滤，可查看所有用户
             // Fallback to old fields for backward compatibility
             if (query.getRegionId() != null) {
                 List<Long> orgIds = sysOrgService.getDescendantIds(query.getRegionId());
@@ -89,21 +99,45 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public List<Map<String, Object>> listActiveUsers() {
-        // 第一步：拉取所有有组织或超级管理员角色的活跃用户
-        LambdaQueryWrapper<User> orgBound = new LambdaQueryWrapper<User>()
+        LambdaQueryWrapper<User> baseWrapper = new LambdaQueryWrapper<User>()
                 .eq(User::getStatus, User.STATUS_ACTIVE)
-                .and(w -> w.isNotNull(User::getOrgId)
-                        .or().isNotNull(User::getRegionId)
-                        .or().isNotNull(User::getDepartmentId))
                 .select(User::getId, User::getUsername, User::getRealName)
                 .orderByAsc(User::getUsername);
 
-        Set<Long> superAdminIds = collectSuperAdminUserIds();
-        if (!superAdminIds.isEmpty()) {
-            orgBound.or().in(User::getId, superAdminIds);
+        // 非超管按组织范围过滤
+        if (!SecurityUtils.isSuperAdmin()) {
+            Long currentUserOrgId = getCurrentUserOrgId();
+            if (currentUserOrgId != null) {
+                List<Long> orgIds = sysOrgService.getDescendantIds(currentUserOrgId);
+                orgIds.add(currentUserOrgId);
+                baseWrapper.and(w -> w.in(User::getOrgId, orgIds));
+            } else {
+                // 无组织归属的非超管只能看到自己
+                Long currentUserId = SecurityUtils.getCurrentUserId();
+                baseWrapper.eq(User::getId, currentUserId);
+                return userMapper.selectList(baseWrapper).stream()
+                        .map(u -> {
+                            Map<String, Object> m = new HashMap<>();
+                            m.put("id", u.getId());
+                            m.put("username", u.getUsername());
+                            m.put("realName", u.getRealName());
+                            return m;
+                        })
+                        .toList();
+            }
+        } else {
+            // 超管：拉取所有有组织或超级管理员角色的活跃用户
+            baseWrapper.and(w -> w.isNotNull(User::getOrgId)
+                    .or().isNotNull(User::getRegionId)
+                    .or().isNotNull(User::getDepartmentId));
+
+            Set<Long> superAdminIds = collectSuperAdminUserIds();
+            if (!superAdminIds.isEmpty()) {
+                baseWrapper.or().in(User::getId, superAdminIds);
+            }
         }
 
-        return userMapper.selectList(orgBound).stream()
+        return userMapper.selectList(baseWrapper).stream()
                 .map(u -> {
                     Map<String, Object> m = new HashMap<>();
                     m.put("id", u.getId());
@@ -112,6 +146,54 @@ public class UserServiceImpl implements UserService {
                     return m;
                 })
                 .toList();
+    }
+
+    /**
+     * 确定有效的 orgId 过滤范围。
+     * <p>
+     * - 超管：使用请求中指定的 orgId（可为 null 表示查全部）
+     * - 非超管：如果请求指定了 orgId，校验是否在自己组织范围内；
+     *           如果未指定，自动使用当前用户的 orgId
+     * - 非超管且无组织归属：返回 null（调用方会限制为只能看到自己）
+     */
+    private Long resolveEffectiveOrgId(Long requestedOrgId) {
+        if (SecurityUtils.isSuperAdmin()) {
+            return requestedOrgId;
+        }
+
+        // 获取当前用户的 orgId
+        Long currentUserOrgId = getCurrentUserOrgId();
+
+        if (requestedOrgId == null) {
+            // 非超管未指定 orgId，自动使用自己的 orgId
+            return currentUserOrgId;
+        }
+
+        // 非超管指定了 orgId，校验是否在自己组织范围内
+        if (currentUserOrgId == null) {
+            // 当前用户无组织归属，不允许查看其他组织
+            return null;
+        }
+
+        // 检查请求的 orgId 是否是当前用户组织或其子孙
+        List<Long> allowedOrgIds = sysOrgService.getDescendantIds(currentUserOrgId);
+        allowedOrgIds.add(currentUserOrgId);
+        if (allowedOrgIds.contains(requestedOrgId)) {
+            return requestedOrgId;
+        }
+
+        // 请求的 orgId 不在自己范围内，回退到自己的 orgId
+        return currentUserOrgId;
+    }
+
+    /**
+     * 获取当前登录用户的 orgId
+     */
+    private Long getCurrentUserOrgId() {
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) return null;
+        User user = userMapper.selectById(userId);
+        return user != null ? user.getOrgId() : null;
     }
 
     /** 收集所有 SUPER_ADMIN 角色关联的用户ID */
@@ -141,6 +223,34 @@ public class UserServiceImpl implements UserService {
         } catch (Exception e) {
             return Set.of();
         }
+    }
+
+    /**
+     * 从给定的超管用户ID集合中筛选出真正"无组织归属"的用户ID。
+     * <p>
+     * 列表按组织筛选时，本应只展示该组织下的用户；但为避免未分配组织的超管
+     * 在任何组织视图都看不到自己，特此将其兜底带出。已绑定组织的超管
+     * （orgId/regionId/departmentId 任一非空）不参与兜底，避免其泄漏到
+     * 无关组织列表中。
+     */
+    private Set<Long> filterUnassignedSuperAdminIds(Set<Long> superAdminIds) {
+        if (superAdminIds == null || superAdminIds.isEmpty()) {
+            return Set.of();
+        }
+        List<User> bound = userMapper.selectList(
+                new LambdaQueryWrapper<User>()
+                        .in(User::getId, superAdminIds)
+                        .nested(w -> w.isNotNull(User::getOrgId)
+                                .or().isNotNull(User::getRegionId)
+                                .or().isNotNull(User::getDepartmentId))
+                        .select(User::getId));
+        Set<Long> boundIds = bound.stream()
+                .map(User::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        return superAdminIds.stream()
+                .filter(id -> !boundIds.contains(id))
+                .collect(Collectors.toSet());
     }
 
     @Override

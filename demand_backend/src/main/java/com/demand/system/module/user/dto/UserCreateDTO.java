@@ -2,6 +2,7 @@ package com.demand.system.module.user.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 
 public class UserCreateDTO {
@@ -26,6 +27,7 @@ public class UserCreateDTO {
 
     private Long departmentId;
 
+    @NotNull(message = "请选择所属组织")
     private Long orgId;
 
     public String getUsername() {

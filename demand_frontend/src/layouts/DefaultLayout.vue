@@ -1,5 +1,6 @@
 <template>
-  <div class="layout-container">
+  <div class="default-layout-root">
+    <div class="layout-container">
     <div
       class="sidebar"
       :class="{ 'sidebar--collapsed': !sidebarOpened }"
@@ -115,6 +116,7 @@
   </div>
   <SystemAssistant v-if="userStore.userInfo" />
   <OrgBindDialog v-if="userStore.needOrgBind" />
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -327,6 +329,12 @@ async function handleLogout() {
 </script>
 
 <style lang="scss" scoped>
+// 外层包裹器：确保 Transition 内的组件只有单一元素根节点
+.default-layout-root {
+  height: 100vh;
+  overflow: hidden;
+}
+
 .layout-container {
   height: 100vh;
   display: flex;

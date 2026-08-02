@@ -92,9 +92,11 @@ export interface BitableField {
   fieldType: FieldType
   config?: FieldConfig
   description?: string
-  required: boolean
+  /** 后端为 Integer(tinyint)，实际返回 0/1 */
+  required: boolean | number
   aiPrompt?: string
-  isAiField: boolean
+  /** 后端为 Integer(tinyint)，实际返回 0/1 */
+  isAiField: boolean | number
   sortOrder: number
   width: number
   createdAt: string
@@ -243,9 +245,11 @@ export interface BitableFieldCreateDTO {
   fieldType: FieldType
   config?: FieldConfig
   description?: string
-  required?: boolean
+  /** 后端为 Integer(tinyint)，接受 0/1 或 boolean */
+  required?: boolean | number
   aiPrompt?: string
-  isAiField?: boolean
+  /** 后端为 Integer(tinyint)，接受 0/1 或 boolean */
+  isAiField?: boolean | number
   width?: number
 }
 

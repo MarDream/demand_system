@@ -1064,7 +1064,8 @@ async function submitAddField() {
       data.config = { ...(data.config || {}), prefix: autoNumberPrefix.value, digits: 4 }
     }
     if (addFieldForm.value.fieldType === 'ai_text' || addFieldForm.value.fieldType === 'ai_select') {
-      data.isAiField = true
+      // 后端 isAiField 为 Integer(tinyint)，传 1 而非 boolean true
+      data.isAiField = 1
       data.aiPrompt = ''
     }
     await createField(activeTableId.value, data)
@@ -1293,7 +1294,7 @@ function selectFieldForEdit(field: BitableField) {
   editForm.value.name = field.name
   editForm.value.description = ''
   editForm.value.width = field.width || 200
-  editForm.value.required = field.required || false
+  editForm.value.required = Boolean(field.required)
   editForm.value.defaultValue = ''
   editForm.value.defaultNumber = 0
   editForm.value.defaultDate = ''
@@ -1410,7 +1411,8 @@ async function saveFieldConfig() {
     const data: any = {
       name: editForm.value.name,
       width: editForm.value.width,
-      required: editForm.value.required,
+      // 后端 required 为 Integer(tinyint)，前端 editForm.required 是 boolean，需转为 0/1
+      required: editForm.value.required ? 1 : 0,
     }
 
     const config: any = {}
@@ -1483,7 +1485,8 @@ async function saveFieldConfig() {
     // AI 字段捷径配置
     if (editingField.value.fieldType === 'ai_text' || editingField.value.fieldType === 'ai_select') {
       data.aiPrompt = editForm.value.aiPrompt
-      data.isAiField = true
+      // 后端 isAiField 为 Integer(tinyint)，传 1 而非 boolean true
+      data.isAiField = 1
       config.sourceFieldIds = editForm.value.sourceFieldIds
       config.autoCompute = editForm.value.autoCompute
       if (editingField.value.fieldType === 'ai_select') {
@@ -1520,7 +1523,8 @@ async function handleCopyField(field: BitableField) {
       fieldType: field.fieldType,
       config: field.config ? JSON.parse(JSON.stringify(field.config)) : undefined,
       width: field.width,
-      required: field.required,
+      // 后端 required 为 Integer(tinyint)，field.required 运行时可能是 0/1 或 boolean，统一转 0/1
+      required: field.required ? 1 : 0,
     }
     await createField(activeTableId.value, data)
     toast.success('复制成功')
