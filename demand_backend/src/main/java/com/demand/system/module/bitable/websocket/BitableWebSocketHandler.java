@@ -15,15 +15,14 @@ import org.springframework.web.socket.WebSocketSession;
 
 import java.io.IOException;
 import java.net.URI;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 多维表格 WebSocket Handler
- * <p>
- * 管理 /ws/bitable/{baseId} 的连接，处理 cell_update / cursor_move 消息。
- * session 按 baseId 分组存储，使用 ConcurrentHashMap 保证线程安全。
+ * 多维表格 WebSocket Handler。
+ * 管理在线协作者，并处理 cell_update / cursor_move 消息。
  */
 @Component
 public class BitableWebSocketHandler implements WebSocketHandler {
@@ -32,10 +31,6 @@ public class BitableWebSocketHandler implements WebSocketHandler {
 
     private final BitableCollaborationService collaborationService;
     private final ObjectMapper objectMapper;
-
-    /**
-     * baseId → sessions 映射，线程安全
-     */
     private final Map<Long, Set<WebSocketSession>> sessionsByBaseId = new ConcurrentHashMap<>();
 
     public BitableWebSocketHandler(BitableCollaborationService collaborationService,
@@ -45,7 +40,7 @@ public class BitableWebSocketHandler implements WebSocketHandler {
     }
 
     /**
-     * 获取 baseId 对应的所有 session（供 Redis 订阅器转发消息使用）
+     * 获取 baseId 对应的所有 session（供 Redis 订阅器转发消息使用）。
      */
     public Set<WebSocketSession> getSessions(Long baseId) {
         return sessionsByBaseId.getOrDefault(baseId, Set.of());
@@ -54,23 +49,22 @@ public class BitableWebSocketHandler implements WebSocketHandler {
     @Override
     public void afterConnectionEstablished(@NonNull WebSocketSession session) {
         Long baseId = extractBaseId(session);
-        if (baseId == null) {
-            log.warn("WebSocket 连接缺少 baseId，关闭 session: {}", session.getId());
-            try {
-                session.close(CloseStatus.BAD_DATA);
-            } catch (IOException e) {
-                log.error("关闭无效 WebSocket session 失败: {}", session.getId(), e);
-            }
+        Long userId = sessionAttribute(session, "userId", Long.class);
+        if (baseId == null || userId == null) {
+            log.warn("WebSocket 连接缺少 baseId 或认证用户，关闭 session: {}", session.getId());
+            closeQuietly(session, CloseStatus.POLICY_VIOLATION);
             return;
         }
-        sessionsByBaseId.computeIfAbsent(baseId, k -> ConcurrentHashMap.newKeySet()).add(session);
-        log.info("WebSocket 连接建立: baseId={}, sessionId={}, 当前连接数={}",
-                baseId, session.getId(), sessionsByBaseId.get(baseId).size());
+
+        sessionsByBaseId.computeIfAbsent(baseId, key -> ConcurrentHashMap.newKeySet()).add(session);
+        log.info("WebSocket 连接建立: baseId={}, userId={}, sessionId={}, 当前连接数={}",
+                baseId, userId, session.getId(), sessionsByBaseId.get(baseId).size());
+        broadcastPresence(baseId);
     }
 
     @Override
     public void handleMessage(@NonNull WebSocketSession session,
-                              @NonNull WebSocketMessage<?> message) throws Exception {
+                              @NonNull WebSocketMessage<?> message) {
         if (!(message instanceof TextMessage textMessage)) {
             return;
         }
@@ -84,8 +78,8 @@ public class BitableWebSocketHandler implements WebSocketHandler {
         try {
             node = objectMapper.readTree(textMessage.getPayload());
         } catch (Exception e) {
-            log.warn("WebSocket 消息解析失败: sessionId={}, payload={}", session.getId(), textMessage.getPayload());
-            session.sendMessage(new TextMessage("{\"type\":\"error\",\"message\":\"消息格式错误，需要 JSON\"}"));
+            log.warn("WebSocket 消息解析失败: sessionId={}", session.getId());
+            sendError(session, "消息格式错误，需要 JSON");
             return;
         }
 
@@ -95,8 +89,7 @@ public class BitableWebSocketHandler implements WebSocketHandler {
             case "cursor_move" -> handleCursorMove(session, baseId, node);
             default -> {
                 log.warn("未知 WebSocket 消息类型: type={}, sessionId={}", type, session.getId());
-                session.sendMessage(new TextMessage(
-                        "{\"type\":\"error\",\"message\":\"未知消息类型: " + type + "\"}"));
+                sendError(session, "未知消息类型: " + type);
             }
         }
     }
@@ -108,6 +101,7 @@ public class BitableWebSocketHandler implements WebSocketHandler {
         if (baseId == null) {
             return;
         }
+
         Set<WebSocketSession> sessions = sessionsByBaseId.get(baseId);
         if (sessions != null) {
             sessions.remove(session);
@@ -115,9 +109,10 @@ public class BitableWebSocketHandler implements WebSocketHandler {
                 sessionsByBaseId.remove(baseId);
             }
         }
-        log.info("WebSocket 连接关闭: baseId={}, sessionId={}, status={}, 剩余连接数={}",
-                baseId, session.getId(), status,
+        log.info("WebSocket 连接关闭: baseId={}, userId={}, sessionId={}, status={}, 剩余连接数={}",
+                baseId, sessionAttribute(session, "userId", Long.class), session.getId(), status,
                 sessions != null ? sessions.size() : 0);
+        broadcastPresence(baseId);
     }
 
     @Override
@@ -131,18 +126,16 @@ public class BitableWebSocketHandler implements WebSocketHandler {
         return false;
     }
 
-    // ---- 内部消息处理 ----
-
     private void handleCellUpdate(WebSocketSession session, Long baseId, JsonNode node) {
         Long tableId = node.has("tableId") ? node.get("tableId").asLong() : null;
         Long recordId = node.has("recordId") ? node.get("recordId").asLong() : null;
         Long fieldId = node.has("fieldId") ? node.get("fieldId").asLong() : null;
         Object value = node.has("value") ? objectMapper.convertValue(node.get("value"), Object.class) : null;
         Integer version = node.has("version") ? node.get("version").asInt() : null;
-        Long userId = 1L; // TODO: 从 WebSocket session attributes 中获取认证用户
+        Long userId = sessionAttribute(session, "userId", Long.class);
 
-        if (tableId == null || recordId == null || fieldId == null) {
-            sendError(session, "cell_update 缺少必填字段 tableId/recordId/fieldId");
+        if (tableId == null || recordId == null || fieldId == null || userId == null) {
+            sendError(session, "cell_update 缺少必填字段或用户身份");
             return;
         }
 
@@ -159,68 +152,120 @@ public class BitableWebSocketHandler implements WebSocketHandler {
         Long tableId = node.has("tableId") ? node.get("tableId").asLong() : null;
         Long recordId = node.has("recordId") ? node.get("recordId").asLong() : null;
         Long fieldId = node.has("fieldId") ? node.get("fieldId").asLong() : null;
+        Long userId = sessionAttribute(session, "userId", Long.class);
+        String userName = sessionAttribute(session, "userName", String.class);
 
-        if (tableId == null || recordId == null || fieldId == null) {
+        if (tableId == null || recordId == null || fieldId == null || userId == null) {
             return;
         }
 
-        // 构造广播消息，广播给除发送者外的其他客户端
+        Map<String, Object> cursorMessage = new LinkedHashMap<>();
+        cursorMessage.put("type", "cursor_moved");
+        cursorMessage.put("userId", userId);
+        cursorMessage.put("userName", userName);
+        cursorMessage.put("tableId", tableId);
+        cursorMessage.put("recordId", recordId);
+        cursorMessage.put("fieldId", fieldId);
+        broadcastExcept(baseId, session.getId(), cursorMessage);
+    }
+
+    /**
+     * 将当前 base 下真实在线用户广播给所有客户端。同一用户打开多个标签页只显示一次。
+     */
+    private void broadcastPresence(Long baseId) {
+        Set<WebSocketSession> sessions = sessionsByBaseId.get(baseId);
+        if (sessions == null || sessions.isEmpty()) {
+            return;
+        }
+
+        Map<Long, Map<String, Object>> uniqueUsers = new LinkedHashMap<>();
+        for (WebSocketSession session : sessions) {
+            if (!session.isOpen()) {
+                continue;
+            }
+            Long userId = sessionAttribute(session, "userId", Long.class);
+            if (userId == null || uniqueUsers.containsKey(userId)) {
+                continue;
+            }
+            Map<String, Object> user = new LinkedHashMap<>();
+            user.put("id", userId);
+            user.put("name", sessionAttribute(session, "userName", String.class));
+            user.put("avatar", sessionAttribute(session, "avatar", String.class));
+            uniqueUsers.put(userId, user);
+        }
+
+        Map<String, Object> message = new LinkedHashMap<>();
+        message.put("type", "presence_updated");
+        message.put("users", uniqueUsers.values());
+        broadcast(baseId, message);
+    }
+
+    private void broadcast(Long baseId, Object message) {
+        broadcastExcept(baseId, null, message);
+    }
+
+    private void broadcastExcept(Long baseId, String excludedSessionId, Object message) {
+        Set<WebSocketSession> sessions = sessionsByBaseId.get(baseId);
+        if (sessions == null) {
+            return;
+        }
         try {
-            Map<String, Object> cursorMsg = new java.util.LinkedHashMap<>();
-            cursorMsg.put("type", "cursor_moved");
-            cursorMsg.put("userId", 1L); // TODO: 从 session 获取真实用户
-            cursorMsg.put("userName", "用户");
-            cursorMsg.put("tableId", tableId);
-            cursorMsg.put("recordId", recordId);
-            cursorMsg.put("fieldId", fieldId);
-
-            String payload = objectMapper.writeValueAsString(cursorMsg);
-            TextMessage textMessage = new TextMessage(payload);
-
-            Set<WebSocketSession> sessions = sessionsByBaseId.get(baseId);
-            if (sessions != null) {
-                for (WebSocketSession s : sessions) {
-                    if (s.isOpen() && !s.getId().equals(session.getId())) {
-                        s.sendMessage(textMessage);
-                    }
+            String payload = objectMapper.writeValueAsString(message);
+            for (WebSocketSession session : sessions) {
+                if (session.isOpen() && !session.getId().equals(excludedSessionId)) {
+                    sendText(session, payload);
                 }
             }
         } catch (Exception e) {
-            log.error("广播 cursor_move 失败: baseId={}", baseId, e);
+            log.error("广播 WebSocket 消息失败: baseId={}", baseId, e);
         }
     }
 
-    // ---- 工具方法 ----
-
-    /**
-     * 从 WebSocket session URI 中提取 baseId 路径参数
-     */
     private Long extractBaseId(WebSocketSession session) {
         URI uri = session.getUri();
         if (uri == null) {
             return null;
         }
-        String path = uri.getPath();
-        // path 格式: /ws/bitable/{baseId}
-        String[] segments = path.split("/");
+        String[] segments = uri.getPath().split("/");
         if (segments.length >= 3 && "bitable".equals(segments[segments.length - 2])) {
             try {
                 return Long.parseLong(segments[segments.length - 1]);
             } catch (NumberFormatException e) {
                 log.warn("无效的 baseId: {}", segments[segments.length - 1]);
-                return null;
             }
         }
         return null;
     }
 
+    private <T> T sessionAttribute(WebSocketSession session, String key, Class<T> type) {
+        Object value = session.getAttributes().get(key);
+        return type.isInstance(value) ? type.cast(value) : null;
+    }
+
     private void sendError(WebSocketSession session, String message) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", "error");
+        payload.put("message", message);
         try {
+            sendText(session, objectMapper.writeValueAsString(payload));
+        } catch (Exception e) {
+            log.warn("发送错误消息失败: sessionId={}", session.getId(), e);
+        }
+    }
+
+    private void sendText(WebSocketSession session, String payload) throws IOException {
+        synchronized (session) {
             if (session.isOpen()) {
-                session.sendMessage(new TextMessage("{\"type\":\"error\",\"message\":\"" + message + "\"}"));
+                session.sendMessage(new TextMessage(payload));
             }
+        }
+    }
+
+    private void closeQuietly(WebSocketSession session, CloseStatus status) {
+        try {
+            session.close(status);
         } catch (IOException e) {
-            log.warn("发送错误消息失败: sessionId={}", session.getId());
+            log.warn("关闭 WebSocket session 失败: {}", session.getId(), e);
         }
     }
 }

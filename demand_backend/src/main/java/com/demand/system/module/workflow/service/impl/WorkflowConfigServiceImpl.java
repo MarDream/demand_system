@@ -24,6 +24,8 @@ import com.demand.system.module.workflow.mapper.WorkflowInstanceMapper;
 import com.demand.system.module.workflow.mapper.WorkflowNodeMapper;
 import com.demand.system.module.workflow.mapper.WorkflowNodePermissionMapper;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
+import com.demand.system.module.workflow.mapper.WorkflowDefinitionMapper;
+import com.demand.system.module.workflow.entity.WorkflowDefinition;
 import com.demand.system.module.workflow.service.WorkflowConfigService;
 import com.demand.system.module.workflow.dto.WorkflowValidationIssue;
 import com.demand.system.module.workflow.dto.WorkflowValidationReport;
@@ -47,6 +49,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -57,6 +60,7 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
     private static final String GLOBAL_WORKFLOW_NAME = "全局流程";
 
     private final WorkflowVersionMapper workflowVersionMapper;
+    private final WorkflowDefinitionMapper workflowDefinitionMapper;
     private final WorkflowNodeMapper workflowNodeMapper;
     private final WorkflowEdgeMapper workflowEdgeMapper;
     private final WorkflowApprovalMapper workflowApprovalMapper;
@@ -69,7 +73,8 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
     private final WorkflowActivationService workflowActivationService;
     private final KnowledgeBaseMapper knowledgeBaseMapper;
 
-    public WorkflowConfigServiceImpl(WorkflowVersionMapper workflowVersionMapper, WorkflowNodeMapper workflowNodeMapper,
+    public WorkflowConfigServiceImpl(WorkflowVersionMapper workflowVersionMapper, WorkflowDefinitionMapper workflowDefinitionMapper,
+                                   WorkflowNodeMapper workflowNodeMapper,
                                    WorkflowEdgeMapper workflowEdgeMapper, WorkflowApprovalMapper workflowApprovalMapper,
                                    WorkflowInstanceMapper workflowInstanceMapper, WorkflowNodePermissionMapper workflowNodePermissionMapper,
                                    ProjectMapper projectMapper, SysUserMapper sysUserMapper,
@@ -77,6 +82,7 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
                                    WorkflowActivationService workflowActivationService,
                                    KnowledgeBaseMapper knowledgeBaseMapper) {
         this.workflowVersionMapper = workflowVersionMapper;
+        this.workflowDefinitionMapper = workflowDefinitionMapper;
         this.workflowNodeMapper = workflowNodeMapper;
         this.workflowEdgeMapper = workflowEdgeMapper;
         this.workflowApprovalMapper = workflowApprovalMapper;
@@ -165,6 +171,8 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
                 validateVersionMeta(existingVersion.getProjectId(), existingVersion.getId(), targetVersion, targetName);
                 existingVersion.setVersion(targetVersion);
                 existingVersion.setName(targetName);
+                existingVersion.setWorkflowDefinitionId(resolveOrCreateDefinition(
+                        existingVersion.getProjectId(), targetName, existingVersion.getCreatorId()));
             }
 
             // 删除旧节点和连线
@@ -513,6 +521,8 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
 
         version.setVersion(targetVersion);
         version.setName(targetName);
+        version.setWorkflowDefinitionId(resolveOrCreateDefinition(
+                version.getProjectId(), targetName, version.getCreatorId()));
 
         // 更新知识库绑定关系
         if (updateDTO.getKnowledgeBaseId() != null) {
@@ -957,6 +967,7 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             if (!WorkflowVersionUtils.isValid(normalized)) {
                 throw new BusinessException("版本号格式需为正整数或 1.0.0");
             }
+            String normalizedName = normalizeVersionName(versionName);
             boolean duplicate = workflowVersionMapper.selectList(
                             new LambdaQueryWrapper<WorkflowVersion>()
                                     .eq(WorkflowVersion::getProjectId, projectId))
@@ -965,10 +976,12 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
                         if (excludeVersionId != null && item.getId().equals(excludeVersionId)) {
                             return false;
                         }
-                        return WorkflowVersionUtils.sameVersion(item.getVersion(), normalized);
+                        String itemName = normalizeVersionName(item.getName());
+                        return Objects.equals(itemName, normalizedName)
+                                && WorkflowVersionUtils.sameVersion(item.getVersion(), normalized);
                     });
             if (duplicate) {
-                throw new BusinessException("版本号 V" + normalized + " 已存在，请重新输入");
+                throw new BusinessException("工作流“" + normalizedName + "”下版本号 V" + normalized + " 已存在，请重新输入");
             }
         } else {
             throw new BusinessException("版本号不能为空");
@@ -1011,6 +1024,8 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         String draftName = versionName != null ? versionName : "草稿版本 v" + draftVersion;
         WorkflowVersion newVersion = new WorkflowVersion();
         newVersion.setProjectId(projectId);
+        // 关联到工作流定义（缺失则按 (projectId, name) 建立，与历史回填逻辑一致）
+        newVersion.setWorkflowDefinitionId(resolveOrCreateDefinition(projectId, draftName, currentUserId));
         newVersion.setVersion(draftVersion);
         newVersion.setName(draftName);
         newVersion.setDefinition("{\"nodes\":[],\"edges\":[]}");
@@ -1020,6 +1035,30 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         newVersion.setCreatedAt(LocalDateTime.now());
         workflowVersionMapper.insert(newVersion);
         return newVersion;
+    }
+
+    /**
+     * 按 (projectId, name) 解析或创建工作流定义，返回定义ID。
+     * <p>
+     * 用于新建版本时关联工作流定义。与 {@code WorkflowDefinitionServiceImpl#backfill} 的分组策略一致，
+     * 历史上同一 (projectId, name) 的版本被视为同一工作流的多个版本。
+     */
+    private Long resolveOrCreateDefinition(Long projectId, String name, Long currentUserId) {
+        String definitionName = StringUtils.hasText(name) ? name.trim() : "未命名工作流";
+        WorkflowDefinition existing = workflowDefinitionMapper.selectOne(
+                new LambdaQueryWrapper<WorkflowDefinition>()
+                        .eq(WorkflowDefinition::getProjectId, projectId)
+                        .eq(WorkflowDefinition::getName, definitionName)
+                        .last("LIMIT 1"));
+        if (existing != null) {
+            return existing.getId();
+        }
+        WorkflowDefinition def = new WorkflowDefinition();
+        def.setName(definitionName);
+        def.setProjectId(projectId);
+        def.setCreatorId(currentUserId);
+        workflowDefinitionMapper.insert(def);
+        return def.getId();
     }
 
     private String normalizeVersion(String version) {
@@ -1051,6 +1090,15 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
     private WorkflowVersionDTO toVersionDTO(WorkflowVersion version) {
         WorkflowVersionDTO dto = new WorkflowVersionDTO();
         BeanUtils.copyProperties(version, dto);
+        dto.setVersion(normalizeVersion(version.getVersion()));
+
+        // 填充工作流定义名称（workflowDefinitionId 已由 copyProperties 拷贝）
+        if (version.getWorkflowDefinitionId() != null) {
+            WorkflowDefinition def = workflowDefinitionMapper.selectById(version.getWorkflowDefinitionId());
+            if (def != null) {
+                dto.setWorkflowDefinitionName(def.getName());
+            }
+        }
 
         if (version.getCreatorId() != null) {
             SysUser user = sysUserMapper.selectById(version.getCreatorId());
@@ -1093,7 +1141,7 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         WorkflowVersion version = workflowVersionMapper.selectById(approval.getWorkflowVersionId());
         if (version != null) {
             dto.setProjectId(version.getProjectId());
-            dto.setVersion(version.getVersion());
+            dto.setVersion(normalizeVersion(version.getVersion()));
             dto.setVersionName(version.getName());
 
             if (WorkflowVersionResolver.GLOBAL_PROJECT_ID.equals(version.getProjectId())) {

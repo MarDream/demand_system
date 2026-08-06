@@ -47,6 +47,13 @@ public class RequirementConfigController {
         return configService.bindWorkflow(typeCode, workflowVersionId);
     }
 
+    @PutMapping("/types/{id}/enabled")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:requirement-config:update')")
+    @Operation(summary = "启用/禁用需求类型", description = "开启时若绑定工作流已禁用则拒绝")
+    public Result<Void> updateTypeEnabled(@PathVariable Long id, @RequestParam boolean enabled) {
+        return configService.updateTypeEnabled(id, enabled);
+    }
+
     @GetMapping("/projects/{projectId}/create-form")
     @PreAuthorize("isAuthenticated()")
     @Operation(summary = "获取新建需求表单配置")

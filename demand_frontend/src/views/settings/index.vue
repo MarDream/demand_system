@@ -40,7 +40,6 @@ const cardMeta: Record<string, { description: string; color: string; buttonType:
   '/settings/requirements': { description: '管理系统需求类型和优先级配置', color: 'var(--color-muted-text)', buttonType: '' },
   '/system/workflow-config': { description: '在系统设置中维护工作流与审批配置', color: '#8E44AD', buttonType: 'primary' },
   '/settings/menus': { description: '维护菜单、按钮以及角色授权能力', color: 'var(--color-danger)', buttonType: 'danger' },
-  '/settings/documents': { description: '上传文档并进行智能检索与问答', color: '#16A085', buttonType: 'success' },
   '/settings/knowledge': { description: '创建和管理知识库，配置文档索引', color: '#2C3E50', buttonType: '' },
   '/settings/llm': { description: '配置文档知识库可用的大模型参数和密钥', color: '#9B59B6', buttonType: 'primary' },
 }
@@ -53,7 +52,6 @@ const pathPermissions: Record<string, () => boolean> = {
   '/settings/requirements': () => hasPermission('menu:settings:requirement') || hasPermission('menu:system-config'),
   '/system/workflow-config': () => hasAnyRole(['admin', 'workflow:config']) || hasPermission('menu:settings:workflow'),
   '/settings/menus': () => hasPermission('menu:menu-management') || hasAnyPermission(['button:menu:create', 'button:menu:update', 'button:menu:delete']),
-  '/settings/documents': () => hasPermission('menu:document'),
   '/settings/knowledge': () => hasPermission('menu:knowledge'),
   '/settings/llm': () => hasPermission('menu:settings:llm') || hasPermission('menu:system-config'),
 }

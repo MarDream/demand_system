@@ -28,7 +28,7 @@ export function getRequirementList(params: RequirementQuery) {
 /**
  * 导出需求列表为 Excel 文件
  * @param params   检索条件（与列表查询共用 RequirementQuery）
- * @param view     视图类型：all / drafts / pending / done / follows
+ * @param view     视图类型：all / drafts / pending / done / follows / cc
  * @param columns  导出列配置：key 数组，决定导出哪些字段及顺序；不传则后端使用默认全量列
  * @param signal   可选的 AbortSignal，用于取消正在进行的导出请求
  * @returns Blob 文件流
@@ -71,6 +71,10 @@ export function getMyRequirementPending(params: RequirementMyListQuery) {
 
 export function getMyRequirementFollows(params: RequirementMyListQuery) {
   return request.get<ApiResponse<PageResult<Requirement>>>('/v1/requirements/my-follows', { params }) as unknown as Promise<PageResult<Requirement>>
+}
+
+export function getMyRequirementCc(params: RequirementMyListQuery) {
+  return request.get<ApiResponse<PageResult<Requirement>>>('/v1/requirements/my-cc', { params }) as unknown as Promise<PageResult<Requirement>>
 }
 
 /**

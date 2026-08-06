@@ -19,9 +19,14 @@ public class AssistantMessageVO {
     private List<AssistantAction> actions = new ArrayList<>();
     private List<AssistantSource> sources = new ArrayList<>();
     private List<ThinkingStep> thinkingSteps;
+    private List<AssistantTask> tasks;
     private String processSummary;
     private Integer retrievedCount;
     private List<CitationReference> citations;
+    private String reasoning;
+    private Integer inputTokens;
+    private Integer outputTokens;
+    private Integer totalTokens;
     private LocalDateTime createdAt;
 
     public Long getId() {
@@ -112,6 +117,14 @@ public class AssistantMessageVO {
         this.thinkingSteps = thinkingSteps;
     }
 
+    public List<AssistantTask> getTasks() {
+        return tasks;
+    }
+
+    public void setTasks(List<AssistantTask> tasks) {
+        this.tasks = tasks;
+    }
+
     public String getProcessSummary() {
         return processSummary;
     }
@@ -134,5 +147,37 @@ public class AssistantMessageVO {
 
     public void setCitations(List<CitationReference> citations) {
         this.citations = citations;
+    }
+
+    public String getReasoning() {
+        return reasoning;
+    }
+
+    public void setReasoning(String reasoning) {
+        this.reasoning = reasoning;
+    }
+
+    public Integer getInputTokens() {
+        return inputTokens;
+    }
+
+    public void setInputTokens(Integer inputTokens) {
+        this.inputTokens = inputTokens;
+    }
+
+    public Integer getOutputTokens() {
+        return outputTokens;
+    }
+
+    public void setOutputTokens(Integer outputTokens) {
+        this.outputTokens = outputTokens;
+    }
+
+    public Integer getTotalTokens() {
+        return totalTokens;
+    }
+
+    public void setTotalTokens(Integer totalTokens) {
+        this.totalTokens = totalTokens;
     }
 }

@@ -7,7 +7,7 @@ import jakarta.validation.constraints.Size;
 public class WorkflowVersionMetaUpdateDTO {
 
     @NotBlank(message = "版本号不能为空")
-    @Pattern(regexp = "^[1-9]\\d*(?:\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*))?$", message = "版本号格式需为正整数或 1.0.0")
+    @Pattern(regexp = "^[vV]?[1-9]\\d*(?:\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*))?$", message = "版本号格式需为正整数或 1.0.0")
     @Size(max = 20, message = "版本号不能超过20个字符")
     private String version;
 

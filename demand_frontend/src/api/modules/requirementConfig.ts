@@ -7,10 +7,14 @@ export interface RequirementType {
   color?: string
   sortOrder?: number
   isDefault?: boolean
+  /** 是否启用：false=禁用（不可用于新建需求），true=启用。工作流禁用时联动置 false */
+  enabled?: boolean
   /** 绑定的工作流版本ID（NULL=未绑定，该类型不可用于新建需求） */
   workflowVersionId?: number | null
   createdAt?: string
   updatedAt?: string
+  /** 行内切换启用状态的 loading（仅前端UI使用，不提交后端） */
+  _enabledLoading?: boolean
 }
 
 export interface Priority {
@@ -23,6 +27,8 @@ export interface Priority {
   isDefault?: boolean
   createdAt?: string
   updatedAt?: string
+  /** 行内切换默认的 loading 状态（仅前端UI使用，不提交后端） */
+  _defaultLoading?: boolean
 }
 
 export interface SortItem {
@@ -61,6 +67,10 @@ export const requirementConfigApi = {
     request.put(`/v1/requirement-config/types/${typeCode}/workflow`, null, {
       params: workflowVersionId != null ? { workflowVersionId } : undefined,
     }),
+
+  /** 启用/禁用需求类型。开启时若绑定工作流已禁用则后端拒绝 */
+  updateTypeEnabled: (id: number, enabled: boolean) =>
+    request.put(`/v1/requirement-config/types/${id}/enabled`, null, { params: { enabled } }),
 
   // 优先级
   listPriorities: () => request.get<Priority[]>('/v1/requirement-config/priorities'),

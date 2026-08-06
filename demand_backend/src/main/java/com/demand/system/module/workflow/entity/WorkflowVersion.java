@@ -14,6 +14,9 @@ public class WorkflowVersion {
 
     private Long projectId;
 
+    /** 所属工作流定义ID */
+    private Long workflowDefinitionId;
+
     private Integer sourceVersionId;
 
     private String version;
@@ -70,6 +73,14 @@ public class WorkflowVersion {
 
     public void setProjectId(Long projectId) {
         this.projectId = projectId;
+    }
+
+    public Long getWorkflowDefinitionId() {
+        return workflowDefinitionId;
+    }
+
+    public void setWorkflowDefinitionId(Long workflowDefinitionId) {
+        this.workflowDefinitionId = workflowDefinitionId;
     }
 
     public Integer getSourceVersionId() {

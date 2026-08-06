@@ -5,122 +5,96 @@
     :breadcrumb="false"
   >
     <div class="kb-page">
-      <el-row :gutter="16" class="kb-overview">
-        <el-col :xs="12" :md="6" v-for="item in overviewCards" :key="item.label">
-          <el-card shadow="hover" class="overview-card">
-            <div class="overview-label">{{ item.label }}</div>
-            <div class="overview-value">{{ item.value }}</div>
-            <div class="overview-tip">{{ item.tip }}</div>
-          </el-card>
-        </el-col>
-      </el-row>
+      <!-- 概览卡片 -->
+      <div class="kb-overview">
+        <div class="kb-overview__card" v-for="item in overviewCards" :key="item.label">
+          <div class="kb-overview__icon" :style="{ background: item.color }">
+            <el-icon><component :is="item.icon" /></el-icon>
+          </div>
+          <div class="kb-overview__body">
+            <div class="kb-overview__label">{{ item.label }}</div>
+            <div class="kb-overview__value">{{ item.value }}</div>
+            <div class="kb-overview__tip">{{ item.tip }}</div>
+          </div>
+        </div>
+      </div>
 
-      <el-card class="kb-panel" shadow="never">
+      <!-- 工具栏 + 列表 -->
+      <div class="kb-shell">
         <div class="kb-toolbar">
-          <div class="kb-toolbar__main">
+          <div class="kb-toolbar__search-group">
             <el-input
               v-model="keyword"
-              placeholder="搜索知识库名称或描述"
+              placeholder="搜索名称或描述…"
               clearable
               class="kb-toolbar__search"
+              :prefix-icon="Search"
             />
-            <el-segmented v-model="statusFilter" :options="statusOptions" class="kb-toolbar__filter" />
+            <el-segmented v-model="statusFilter" :options="statusOptions" class="kb-toolbar__seg" />
           </div>
-
           <div class="kb-toolbar__actions">
-            <el-button @click="store.fetchAllBases()" :loading="store.loading">刷新</el-button>
+            <el-button text @click="store.fetchAllBases()" :loading="store.loading" class="kb-toolbar__refresh">
+              <el-icon><Refresh /></el-icon>
+            </el-button>
             <AppButton type="primary" permission="button:knowledge:create" @click="openCreateDialog">新建知识库</AppButton>
           </div>
         </div>
 
-        <el-row v-if="filteredKnowledgeBases.length > 0" :gutter="20">
-          <el-col v-for="kb in filteredKnowledgeBases" :key="kb.id" :xs="24" :sm="12" :md="8" :xl="6">
-            <el-card class="kb-card" shadow="hover" @click="goToDetail(kb.id)">
-              <template #header>
-                <div class="kb-header">
-                  <div class="kb-header__main">
-                    <span class="kb-name">{{ kb.name }}</span>
-                    <!-- 默认知识库标识 -->
-                    <el-tag v-if="kb.isDefaultForRequirements" type="warning" size="small">
-                      <el-icon><Star /></el-icon> 默认存储库
-                    </el-tag>
-                    <el-tag size="small" :type="kb.status === 'active' ? 'success' : 'info'">
-                      {{ kb.status === 'active' ? '活跃' : '已归档' }}
-                    </el-tag>
-                  </div>
-                  <el-dropdown trigger="click" @command="(cmd: string) => handleCommand(cmd, kb)" @click.stop>
-                    <el-icon class="more-btn"><MoreFilled /></el-icon>
-                    <template #dropdown>
-                      <el-dropdown-menu>
-                        <el-dropdown-item v-if="hasPermission('button:knowledge:update')" command="edit" :disabled="deletingId === kb.id">编辑</el-dropdown-item>
-                        <!-- 设置/取消默认 -->
-                        <el-dropdown-item
-                          v-if="hasPermission('button:knowledge:manage') && !kb.isDefaultForRequirements"
-                          command="setDefault"
-                          divided
-                        >
-                          设为需求文件默认存储库
-                        </el-dropdown-item>
-                        <el-dropdown-item
-                          v-if="hasPermission('button:knowledge:manage') && kb.isDefaultForRequirements"
-                          command="unsetDefault"
-                          divided
-                        >
-                          取消默认存储库
-                        </el-dropdown-item>
-                        <el-dropdown-item v-if="hasPermission('button:knowledge:migrate')" command="migrate" :disabled="!kb.docCount || deletingId === kb.id" divided>
-                          迁移文档
-                        </el-dropdown-item>
-                        <el-dropdown-item v-if="hasPermission('button:knowledge:delete')" command="delete" :disabled="deletingId === kb.id" divided>
-                          <span class="text-danger">删除</span>
-                        </el-dropdown-item>
-                      </el-dropdown-menu>
-                    </template>
-                  </el-dropdown>
-                </div>
-              </template>
-              <p class="kb-desc">{{ kb.description || '暂无描述' }}</p>
-              <div class="kb-stats">
-                <div class="kb-stat">
-                  <span class="kb-stat__value">{{ kb.docCount }}</span>
-                  <span class="kb-stat__label">文档</span>
-                </div>
-                <div class="kb-stat">
-                  <span class="kb-stat__value">{{ kb.chunkCount }}</span>
-                  <span class="kb-stat__label">分块</span>
-                </div>
+        <div class="kb-grid" v-if="filteredKnowledgeBases.length > 0">
+          <div class="kb-card" v-for="kb in filteredKnowledgeBases" :key="kb.id" @click="goToDetail(kb.id)">
+            <div class="kb-card__head">
+              <div class="kb-card__name-row">
+                <span class="kb-card__dot" :class="`is-${kb.status}`"></span>
+                <span class="kb-card__name">{{ kb.name }}</span>
               </div>
-              <div class="kb-footer">
-                <span class="kb-creator">创建人：{{ kb.creatorName || '未知' }}</span>
+              <div class="kb-card__badges">
+                <span v-if="kb.isDefaultForRequirements" class="kb-card__badge is-star">
+                  <el-icon><Star /></el-icon> 默认
+                </span>
+                <span class="kb-card__badge" :class="kb.status === 'active' ? 'is-active' : 'is-archived'">
+                  {{ kb.status === 'active' ? '活跃' : '已归档' }}
+                </span>
               </div>
-              <div class="kb-actions" @click.stop>
-                <el-button size="small" @click="goToDetail(kb.id)">进入知识库</el-button>
-                <AppButton size="small" type="primary" permission="button:knowledge:update" :disabled="deletingId === kb.id" @click="openEditDialog(kb)">
-                  编辑
-                </AppButton>
-                <AppButton
-                  v-if="kb.docCount > 0"
-                  size="small"
-                  type="warning"
-                  permission="button:knowledge:migrate"
-                  :disabled="deletingId === kb.id"
-                  @click="openMigrateDialog(kb)"
-                >
-                  迁移文档
-                </AppButton>
-                <AppButton size="small" type="danger" plain permission="button:knowledge:delete" :disabled="deletingId === kb.id" @click="handleDelete(kb)">
-                  删除
-                </AppButton>
-              </div>
-            </el-card>
-          </el-col>
-        </el-row>
+            </div>
+
+            <p class="kb-card__desc">{{ kb.description || '暂无描述' }}</p>
+
+            <div class="kb-card__stats">
+              <span class="kb-card__stat"><strong>{{ kb.docCount }}</strong> 文档</span>
+              <span class="kb-card__divider"></span>
+              <span class="kb-card__stat"><strong>{{ kb.chunkCount }}</strong> 分块</span>
+              <span class="kb-card__divider"></span>
+              <span class="kb-card__stat">{{ kb.creatorName || '未知' }}</span>
+            </div>
+
+            <div class="kb-card__actions" @click.stop>
+              <el-button size="small" type="primary" plain @click="goToDetail(kb.id)">进入</el-button>
+              <el-dropdown trigger="click" @command="(cmd: string) => handleCommand(cmd, kb)">
+                <el-button size="small" text circle class="kb-card__more-btn">
+                  <el-icon><MoreFilled /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item v-if="hasPermission('button:knowledge:update')" command="edit" :disabled="deletingId === kb.id">编辑信息</el-dropdown-item>
+                    <el-dropdown-item v-if="hasPermission('button:knowledge:manage') && !kb.isDefaultForRequirements" command="setDefault" divided>设为默认存储库</el-dropdown-item>
+                    <el-dropdown-item v-if="hasPermission('button:knowledge:manage') && kb.isDefaultForRequirements" command="unsetDefault" divided>取消默认存储库</el-dropdown-item>
+                    <el-dropdown-item v-if="hasPermission('button:knowledge:migrate')" command="migrate" :disabled="!kb.docCount || deletingId === kb.id" divided>迁移文档</el-dropdown-item>
+                    <el-dropdown-item v-if="hasPermission('button:knowledge:delete')" command="delete" :disabled="deletingId === kb.id" divided>
+                      <span class="text-danger">删除知识库</span>
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </div>
+          </div>
+        </div>
 
         <el-empty
           v-else
-          :description="keyword || statusFilter !== 'all' ? '未找到符合条件的知识库' : '暂无知识库，点击右上角创建'"
+          :description="keyword || statusFilter !== 'all' ? '未找到符合条件的知识库' : '暂无知识库，点击右上角「新建知识库」开始'"
+          :image-size="80"
         />
-      </el-card>
+      </div>
     </div>
 
     <!-- 新建/编辑对话框 -->
@@ -234,7 +208,7 @@ import { onMounted, ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { resolveErrorMessage } from '@/utils/error'
-import { MoreFilled, Star } from '@element-plus/icons-vue'
+import { Collection, DataBoard, DocumentChecked, Files, MoreFilled, Refresh, Search, Star } from '@element-plus/icons-vue'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppDialog from '@/components/common/AppDialog.vue'
 import AppButton from '@/components/common/AppButton.vue'
@@ -294,10 +268,10 @@ const overviewCards = computed(() => {
   const docs = store.knowledgeBases.reduce((sum, item) => sum + (item.docCount || 0), 0)
   const chunks = store.knowledgeBases.reduce((sum, item) => sum + (item.chunkCount || 0), 0)
   return [
-    { label: '知识库总数', value: total, tip: '当前已接入的知识空间' },
-    { label: '活跃知识库', value: active, tip: '可被检索和更新的知识库' },
-    { label: '文档总量', value: docs, tip: '所有知识库累计文档数' },
-    { label: '分块总量', value: chunks, tip: '向量检索使用的文本分块' },
+    { label: '知识库总数', value: total, tip: '已接入的知识空间', icon: 'Collection', color: 'linear-gradient(135deg, #2563eb, #6366f1)' },
+    { label: '活跃知识库', value: active, tip: '可被检索和更新的知识库', icon: 'DocumentChecked', color: 'linear-gradient(135deg, #22c55e, #16a34a)' },
+    { label: '文档总量', value: docs, tip: '所有知识库累计文档数', icon: 'Files', color: 'linear-gradient(135deg, #f59e0b, #d97706)' },
+    { label: '分块总量', value: chunks, tip: '向量检索使用的文本分块', icon: 'DataBoard', color: 'linear-gradient(135deg, #8b5cf6, #7c3aed)' },
   ]
 })
 
@@ -495,194 +469,368 @@ async function handleSubmit() {
 .kb-page {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
+  gap: 24px;
 }
 
+/* ---- 概览卡片 ---- */
 .kb-overview {
-  margin-bottom: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
 }
 
-.overview-card {
-  border-radius: var(--radius-lg);
+.kb-overview__card {
+  position: relative;
+  display: flex;
+  gap: 14px;
+  padding: 18px 20px;
+  border-radius: 14px;
   border: 1px solid var(--color-border);
+  background: var(--color-bg-white);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  overflow: hidden;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    opacity: 0.04;
+    pointer-events: none;
+  }
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(31, 35, 41, 0.08);
+  }
 }
 
-.overview-label {
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
+.kb-overview__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  flex-shrink: 0;
+  color: #fff;
+  font-size: 18px;
 }
 
-.overview-value {
-  margin-top: 6px;
-  font-size: 28px;
-  line-height: 1.2;
-  font-weight: 700;
-  color: var(--color-text-primary);
+.kb-overview__body {
+  min-width: 0;
 }
 
-.overview-tip {
-  margin-top: 6px;
+.kb-overview__label {
   font-size: 12px;
+  font-weight: 500;
   color: var(--color-text-placeholder);
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
 }
 
-.kb-panel {
-  border-radius: var(--radius-lg);
+.kb-overview__value {
+  margin-top: 2px;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.kb-overview__tip {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+/* ---- 面板 + 工具栏 ---- */
+.kb-shell {
   border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-bg-white);
+  overflow: hidden;
 }
 
 .kb-toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: var(--spacing-md);
-  margin-bottom: var(--spacing-md);
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
 }
 
-.kb-toolbar__main {
+.kb-toolbar__search-group {
   display: flex;
   align-items: center;
-  gap: var(--spacing-md);
+  gap: 12px;
   flex: 1;
   min-width: 0;
   flex-wrap: wrap;
 }
 
 .kb-toolbar__search {
-  max-width: 360px;
-  flex: 1 1 260px;
+  max-width: 300px;
+  flex: 1 1 220px;
+}
+
+.kb-toolbar__seg {
+  flex-shrink: 0;
 }
 
 .kb-toolbar__actions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: var(--spacing-sm);
-  flex-wrap: wrap;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.kb-toolbar__refresh {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--color-text-placeholder);
+  font-size: 16px;
+}
+
+/* ---- 卡片网格 ---- */
+.kb-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  padding: 16px;
 }
 
 .kb-card {
-  margin-bottom: 20px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 18px 20px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-white);
   cursor: pointer;
-  border-radius: var(--radius-lg);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(31, 35, 41, 0.07);
+    border-color: #d0d7e2;
+  }
 }
 
-.kb-card:hover {
-  transform: translateY(-2px);
-}
-
-.kb-header {
+.kb-card__head {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: var(--spacing-sm);
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
-.kb-header__main {
+.kb-card__name-row {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 8px;
   min-width: 0;
+  flex: 1;
 }
 
-.kb-name {
+.kb-card__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--color-text-placeholder);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+
+  &.is-active { background: #22c55e; box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15); }
+  &.is-archived { background: #a1a1aa; }
+  &.is-default { background: #f59e0b; }
+}
+
+.kb-card__name {
+  font-size: 15px;
   font-weight: 600;
-  font-size: 16px;
   color: var(--color-text-primary);
-  word-break: break-word;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.more-btn {
-  cursor: pointer;
-  color: var(--color-text-placeholder);
+.kb-card__badges {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
 }
 
-.kb-desc {
-  color: var(--color-text-secondary);
+.kb-card__badge {
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+
+  &.is-star {
+    background: #fef3c7;
+    color: #92400e;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    .el-icon { font-size: 11px; }
+  }
+  &.is-active {
+    background: #dcfce7;
+    color: #166534;
+  }
+  &.is-archived {
+    background: #f4f4f5;
+    color: #71717a;
+  }
+}
+
+.kb-card__desc {
+  flex: 1;
+  margin: 0 0 12px;
   font-size: 13px;
-  line-height: 1.7;
-  margin: 0 0 14px;
-  min-height: 44px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 
-.kb-stats {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 14px;
-}
-
-.kb-stat {
-  padding: 12px;
-  border-radius: 10px;
+/* 统计行 */
+.kb-card__stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border-radius: 8px;
   background: var(--color-surface-alt);
   border: 1px solid var(--color-border);
-}
-
-.kb-stat__value {
-  display: block;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--color-text-primary);
-}
-
-.kb-stat__label {
-  display: block;
-  margin-top: 4px;
   font-size: 12px;
   color: var(--color-text-secondary);
-}
-
-.kb-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.kb-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid var(--color-border);
   flex-wrap: wrap;
 }
 
-.kb-creator {
-  color: var(--color-text-placeholder);
-  font-size: 12px;
+.kb-card__stat {
+  white-space: nowrap;
+  strong {
+    font-weight: 600;
+    color: var(--color-text-primary);
+    font-variant-numeric: tabular-nums;
+  }
 }
 
-.text-danger {
-  color: var(--color-danger);
+.kb-card__divider {
+  width: 1px;
+  height: 14px;
+  background: var(--color-border);
+  flex-shrink: 0;
+}
+
+/* 操作行 */
+.kb-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.kb-card__more-btn {
+  width: 28px;
+  height: 28px;
+  color: var(--color-text-placeholder);
+  font-size: 16px;
+}
+
+/* ---- 迁移弹窗 ---- */
+.migrate-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.migrate-source {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
+}
+
+.migrate-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-placeholder);
+}
+
+.migrate-code {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary);
 }
 
 .migrate-hint {
-  font-size: var(--font-size-xs);
-  color: var(--color-muted-text);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+}
+
+.migrate-form {
   margin-top: 4px;
 }
 
 .migrate-impact {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid #fde68a;
+  background: #fffbeb;
+
+  &__title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #92400e;
+    margin-bottom: 8px;
+  }
+}
+
+.migrate-list {
   list-style: none;
   padding: 0;
   margin: 0;
-  font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
+  font-size: 12px;
   line-height: 1.8;
+  color: var(--color-text-secondary);
 
   li {
-    padding: 4px 0;
+    padding: 2px 0;
+    &::before { content: '• '; color: #f59e0b; }
   }
 
   code {
-    background: var(--color-surface-alt);
-    padding: 1px 6px;
-    border-radius: var(--radius-sm);
-    font-size: 12px;
-    color: var(--color-text-primary);
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: #fef3c7;
+    font-size: 11px;
+    color: #92400e;
+  }
+}
+
+.text-danger { color: var(--color-danger); }
+
+/* ---- 响应式 ---- */
+@media (max-width: 1024px) {
+  .kb-overview {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
@@ -691,18 +839,19 @@ async function handleSubmit() {
     flex-direction: column;
     align-items: stretch;
   }
-
-  .kb-toolbar__main,
-  .kb-toolbar__actions {
-    width: 100%;
+  .kb-toolbar__search-group {
+    flex-direction: column;
   }
+  .kb-toolbar__search { max-width: none; }
+}
 
-  .kb-toolbar__actions {
-    justify-content: flex-start;
+@media (max-width: 640px) {
+  .kb-overview {
+    grid-template-columns: 1fr;
   }
-
-  .kb-toolbar__search {
-    max-width: none;
+  .kb-grid {
+    grid-template-columns: 1fr;
+    padding: 12px;
   }
 }
 </style>

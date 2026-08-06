@@ -10,6 +10,7 @@ import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import com.demand.system.module.assistant.dto.AssistantAction;
 import com.demand.system.module.assistant.dto.AssistantPageContext;
 import com.demand.system.module.assistant.dto.AssistantSource;
+import com.demand.system.module.assistant.dto.AssistantTask;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -49,6 +50,10 @@ public class AssistantMessage {
     @TableField(typeHandler = JacksonTypeHandler.class)
     private List<ThinkingStep> thinkingSteps;
 
+    /** 任务列表（检索过程，对标 WorkBuddy 任务列表） */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private List<AssistantTask> tasks;
+
     /** 检索过程摘要（RAG 问答时填充） */
     private String processSummary;
 
@@ -58,6 +63,18 @@ public class AssistantMessage {
     /** 引用文档列表（RAG 问答时填充） */
     @TableField(typeHandler = JacksonTypeHandler.class)
     private List<CitationReference> citations;
+
+    /** 深度思考内容（LLM reasoning，可为 null） */
+    private String reasoning;
+
+    /** 输入（提示词）token 数，由 LLM usage 统计 */
+    private Integer inputTokens;
+
+    /** 输出（生成）token 数，由 LLM usage 统计 */
+    private Integer outputTokens;
+
+    /** 总 token 数 */
+    private Integer totalTokens;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
@@ -156,6 +173,14 @@ public class AssistantMessage {
         this.thinkingSteps = thinkingSteps;
     }
 
+    public List<AssistantTask> getTasks() {
+        return tasks;
+    }
+
+    public void setTasks(List<AssistantTask> tasks) {
+        this.tasks = tasks;
+    }
+
     public String getProcessSummary() {
         return processSummary;
     }
@@ -178,6 +203,38 @@ public class AssistantMessage {
 
     public void setCitations(List<CitationReference> citations) {
         this.citations = citations;
+    }
+
+    public String getReasoning() {
+        return reasoning;
+    }
+
+    public void setReasoning(String reasoning) {
+        this.reasoning = reasoning;
+    }
+
+    public Integer getInputTokens() {
+        return inputTokens;
+    }
+
+    public void setInputTokens(Integer inputTokens) {
+        this.inputTokens = inputTokens;
+    }
+
+    public Integer getOutputTokens() {
+        return outputTokens;
+    }
+
+    public void setOutputTokens(Integer outputTokens) {
+        this.outputTokens = outputTokens;
+    }
+
+    public Integer getTotalTokens() {
+        return totalTokens;
+    }
+
+    public void setTotalTokens(Integer totalTokens) {
+        this.totalTokens = totalTokens;
     }
 
     public LocalDateTime getCreatedAt() {

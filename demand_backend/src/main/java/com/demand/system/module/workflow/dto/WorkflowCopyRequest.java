@@ -17,7 +17,7 @@ public class WorkflowCopyRequest {
     @Size(max = 100, message = "工作流名称长度不能超过100个字符")
     private String newName;
 
-    @Schema(description = "新版本号（可选，不填则自动生成）", example = "v2.0")
+    @Schema(description = "新版本号（可选，不填则自动生成）", example = "2.0.0")
     @Size(max = 20, message = "版本号长度不能超过20个字符")
     private String newVersion;
 

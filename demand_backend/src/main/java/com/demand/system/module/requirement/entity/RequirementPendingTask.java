@@ -29,6 +29,11 @@ public class RequirementPendingTask {
     private Long requirementId;
 
     /**
+     * 任务类型：APPROVAL=可操作审批待办，CC_READ_ONLY=只读抄送查阅待办
+     */
+    private String taskType = "APPROVAL";
+
+    /**
      * 待办用户ID
      * - SPECIFIED_USER/SPECIFIED_USER 有选中人时：存选中用户的ID
      * - SPECIFIED_USER 无选中人时：存所有候选人的 user_id
@@ -129,6 +134,14 @@ public class RequirementPendingTask {
 
     public void setRequirementId(Long requirementId) {
         this.requirementId = requirementId;
+    }
+
+    public String getTaskType() {
+        return taskType;
+    }
+
+    public void setTaskType(String taskType) {
+        this.taskType = taskType;
     }
 
     public Long getUserId() {

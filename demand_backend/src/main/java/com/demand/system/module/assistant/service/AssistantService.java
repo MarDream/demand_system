@@ -2,6 +2,7 @@ package com.demand.system.module.assistant.service;
 
 import com.demand.system.module.assistant.dto.AssistantChatRequest;
 import com.demand.system.module.assistant.dto.AssistantMessageVO;
+import com.demand.system.module.assistant.dto.AssistantRegenerateRequest;
 import com.demand.system.module.assistant.dto.AssistantSessionCreateDTO;
 import com.demand.system.module.assistant.dto.AssistantSessionVO;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -19,4 +20,6 @@ public interface AssistantService {
     void deleteSession(Long sessionId);
 
     SseEmitter streamMessage(Long sessionId, AssistantChatRequest request);
+
+    SseEmitter regenerateMessage(Long sessionId, AssistantRegenerateRequest request);
 }

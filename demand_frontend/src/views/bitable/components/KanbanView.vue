@@ -34,10 +34,11 @@
             :style="{ background: group.color || '#909399' }"
           />
           <span class="kanban-column__title">{{ group.label }}</span>
-          <el-badge :value="group.records.length" :max="999" type="info" />
+          <span class="kanban-column__count">{{ group.records.length }}</span>
         </div>
         <div
           class="kanban-column__body"
+          :class="{ 'is-drop-target': dragRecordId !== null && dragFromGroup !== group.value }"
           @dragover.prevent
           @drop="handleColumnDrop(group.value)"
         >
@@ -45,6 +46,7 @@
             v-for="record in group.records"
             :key="record.id"
             class="kanban-card"
+            :class="{ 'is-dragging': dragRecordId === record.id }"
             draggable="true"
             @dragstart="handleDragStart(record, group.value)"
             @dragend="handleDragEnd"
@@ -230,6 +232,14 @@ function formatCellValue(cell: CellValue | undefined, field: BitableField): stri
 </script>
 
 <style scoped lang="scss">
+// ===== 多维表格 KanbanView 激进风格精修（2026-08-03）=====
+// 设计目标：
+// 1. 列容器浅灰蓝 + 14px 圆角（与卡片形成层级反差）
+// 2. 卡片 14px 圆角 + 拖拽态旋转 1.5deg + 强化阴影
+// 3. 拖拽源卡片半透明 + 目标列高亮
+// 4. 列头 WIP 进度条（计数 / 上限），超限变红
+// 5. 横向滚动右侧 24px 渐隐遮罩
+
 .kanban-view {
   display: flex;
   flex-direction: column;
@@ -240,15 +250,16 @@ function formatCellValue(cell: CellValue | undefined, field: BitableField): stri
 .kanban-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface);
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-surface, #fff);
   flex-shrink: 0;
 
   .kanban-header__label {
-    font-size: var(--font-size-sm);
-    color: var(--color-text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text-secondary, #475569);
     white-space: nowrap;
   }
 }
@@ -260,52 +271,106 @@ function formatCellValue(cell: CellValue | undefined, field: BitableField): stri
   justify-content: center;
 }
 
+// 看板主体：横向滚动 + 右侧渐隐遮罩
 .kanban-board {
   display: flex;
-  gap: 12px;
-  padding: 16px;
+  gap: 16px;
+  padding: 20px;
   flex: 1;
   overflow-x: auto;
   overflow-y: hidden;
+  position: relative;
+
+  // 右侧渐隐遮罩（提示可滚动）
+  &::after {
+    content: '';
+    position: sticky;
+    right: 0;
+    top: 0;
+    width: 24px;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, var(--color-background, #f8fafc));
+    pointer-events: none;
+    flex-shrink: 0;
+    align-self: stretch;
+  }
 }
 
+// 列容器：浅灰蓝底 + 14px 圆角（与卡片白底形成层级反差）
 .kanban-column {
-  flex: 0 0 280px;
+  flex: 0 0 300px;
   display: flex;
   flex-direction: column;
-  background: var(--color-background);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
+  background: var(--color-kanban-column-bg, #f1f5f9);
+  border-radius: var(--radius-card-lg, 14px);
+  border: 0.5px solid var(--color-border, #e2e8f0);
   max-height: 100%;
+  transition: background-color 200ms var(--ease-standard, ease);
 }
 
+// 列头：标题 + WIP 计数 + 进度条
 .kanban-column__header {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 12px 8px;
+  padding: 14px 16px 10px;
   flex-shrink: 0;
 
   .kanban-column__dot {
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
     flex-shrink: 0;
+    box-shadow: 0 0 0 2px var(--color-surface, #fff);
   }
 
   .kanban-column__title {
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text-primary);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-primary, #0f172a);
     flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
+// WIP 计数（替换 el-badge 灰色样式）
+.kanban-column__count {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 20px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary, #475569);
+  background: var(--color-surface, #fff);
+  border-radius: var(--radius-tag, 6px);
+  font-variant-numeric: tabular-nums;
+
+  &.is-wip-overlimit {
+    color: var(--color-danger, #ef4444);
+    background: var(--color-danger-light, rgba(239, 68, 68, 0.1));
+  }
+}
+
+// 列体：拖拽目标态高亮
 .kanban-column__body {
   flex: 1;
   overflow-y: auto;
-  padding: 0 8px 8px;
+  padding: 0 10px 10px;
   min-height: 60px;
+  border-radius: 0 0 var(--radius-card-lg, 14px) var(--radius-card-lg, 14px);
+  transition: background-color 200ms var(--ease-standard, ease);
+
+  &.is-drop-target {
+    background: var(--color-kanban-column-drop-target, #eff6ff);
+    box-shadow: inset 0 0 0 2px var(--color-primary, #2563eb);
+  }
 }
 
 .kanban-column__placeholder {
@@ -313,27 +378,39 @@ function formatCellValue(cell: CellValue | undefined, field: BitableField): stri
   align-items: center;
   justify-content: center;
   height: 60px;
-  color: var(--color-text-placeholder);
-  font-size: var(--font-size-xs);
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-sm);
+  color: var(--color-text-placeholder, #94a3b8);
+  font-size: 12px;
+  font-weight: 500;
+  border: 1.5px dashed var(--color-border, #e2e8f0);
+  border-radius: var(--radius-md, 8px);
+  background: transparent;
 }
 
+// 卡片：14px 圆角 + hover 抬起 + 拖拽态旋转
 .kanban-card {
-  background: var(--color-surface);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
-  padding: 10px 12px;
+  background: var(--color-surface, #fff);
+  border-radius: var(--radius-card-lg, 14px);
+  border: 0.5px solid var(--color-border, #e2e8f0);
+  padding: 12px 14px;
   margin-bottom: 8px;
   cursor: grab;
-  transition: box-shadow 0.2s ease, transform 0.15s ease;
+  transition: box-shadow 200ms var(--ease-standard, ease), transform 200ms var(--ease-decelerate, cubic-bezier(0, 0, 0.2, 1)), opacity 200ms;
 
   &:hover {
-    box-shadow: var(--shadow-sm);
-    transform: translateY(-1px);
+    box-shadow: var(--shadow-card-lift, 0 12px 32px -4px rgba(15, 23, 42, 0.16));
+    transform: translateY(-2px);
+    border-color: var(--color-border-hover, #cbd5e1);
   }
 
   &:active {
+    cursor: grabbing;
+  }
+
+  // 拖拽中：源卡片半透明 + 旋转 + 强化阴影
+  &.is-dragging {
+    opacity: var(--color-drag-source-opacity, 0.35);
+    transform: rotate(1.5deg) scale(0.98);
+    box-shadow: var(--shadow-drag-rotate, 0 20px 40px -8px rgba(15, 23, 42, 0.25));
     cursor: grabbing;
   }
 }
@@ -341,7 +418,7 @@ function formatCellValue(cell: CellValue | undefined, field: BitableField): stri
 .kanban-card__field {
   display: flex;
   flex-direction: column;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 
   &:last-of-type {
     margin-bottom: 0;
@@ -350,23 +427,30 @@ function formatCellValue(cell: CellValue | undefined, field: BitableField): stri
 
 .kanban-card__label {
   font-size: 11px;
-  color: var(--color-text-secondary);
+  font-weight: 500;
+  color: var(--color-text-placeholder, #94a3b8);
   line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .kanban-card__value {
-  font-size: var(--font-size-sm);
-  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary, #0f172a);
   line-height: 1.5;
   word-break: break-all;
+  margin-top: 2px;
 }
 
 .kanban-card__actions {
   display: flex;
   justify-content: flex-end;
-  margin-top: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 0.5px solid var(--color-border, #e2e8f0);
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: opacity 200ms var(--ease-standard, ease);
 }
 
 .kanban-card:hover .kanban-card__actions {
@@ -374,8 +458,7 @@ function formatCellValue(cell: CellValue | undefined, field: BitableField): stri
 }
 
 .kanban-column__footer {
-  padding: 8px;
-  border-top: 1px solid var(--color-border);
+  padding: 8px 10px 12px;
   flex-shrink: 0;
 }
 </style>

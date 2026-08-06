@@ -26,15 +26,15 @@
     >
       <template #header>
         <div class="assistant-panel__header">
-          <div>
+          <div class="assistant-panel__title-block">
             <div class="assistant-panel__title">AI 操作助手</div>
-            <div class="assistant-panel__subtitle">结合当前页面、系统菜单和模型能力，为你提供入口导航与操作建议</div>
+            <div class="assistant-panel__subtitle" :title="assistantSubtitle">结合当前页面、系统菜单和模型能力，为你提供入口导航与操作建议</div>
           </div>
-          <el-space class="assistant-panel__tools" alignment="start" wrap>
-            <el-tag v-if="currentPageContext.pageTitle" type="info" effect="plain">当前页面：{{ currentPageContext.pageTitle }}</el-tag>
-            <el-tag type="success" effect="plain">Ctrl/⌘ + K</el-tag>
+          <el-space class="assistant-panel__tools" alignment="center" :size="6">
+            <el-tag v-if="currentPageContext.pageTitle" type="info" effect="plain" size="small" class="assistant-meta-tag">当前页面：{{ currentPageContext.pageTitle }}</el-tag>
+            <el-tag type="success" effect="plain" size="small" class="assistant-meta-tag">Ctrl/⌘ + K</el-tag>
             <el-dropdown trigger="click" @command="handleAvatarCommand">
-              <el-tag class="assistant-avatar-tag" type="warning" effect="plain">
+              <el-tag class="assistant-avatar-tag" type="warning" effect="plain" size="small">
                 头像：{{ avatarVariantLabel }}
                 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
               </el-tag>
@@ -48,6 +48,17 @@
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
+            <el-tooltip content="新会话" placement="bottom">
+              <el-button
+                class="assistant-tool-button"
+                text
+                circle
+                aria-label="新会话"
+                @click="handleCreateSession"
+              >
+                <el-icon><Plus /></el-icon>
+              </el-button>
+            </el-tooltip>
             <el-tooltip :content="assistantFullscreen ? '退出全屏' : '全屏'" placement="bottom">
               <el-button
                 class="assistant-tool-button"
@@ -60,17 +71,6 @@
                   <ScaleToOriginal v-if="assistantFullscreen" />
                   <FullScreen v-else />
                 </el-icon>
-              </el-button>
-            </el-tooltip>
-            <el-tooltip content="新会话" placement="bottom">
-              <el-button
-                class="assistant-tool-button"
-                text
-                circle
-                aria-label="新会话"
-                @click="handleCreateSession"
-              >
-                <el-icon><Plus /></el-icon>
               </el-button>
             </el-tooltip>
           </el-space>
@@ -93,25 +93,61 @@
       <div class="assistant-panel" :class="{ 'assistant-panel--fullscreen': assistantFullscreen }">
         <div class="assistant-panel__body">
           <aside class="assistant-session-list">
-            <div class="assistant-session-list__header">会话</div>
-            <div v-if="sessions.length === 0" class="assistant-session-list__empty">暂无会话</div>
-            <button
-              v-for="session in sessions"
-              :key="session.id"
-              type="button"
-              class="assistant-session-item"
-              :class="{ 'is-active': session.id === activeSessionId }"
-              @click="handleSelectSession(session.id)"
-            >
-              <div class="assistant-session-item__title">{{ session.title || '新会话' }}</div>
-              <div class="assistant-session-item__preview">{{ session.lastMessagePreview || '等待提问…' }}</div>
-              <div class="assistant-session-item__footer">
-                <span>{{ formatTime(session.lastMessageAt || session.updatedAt) }}</span>
-                <el-icon class="assistant-session-item__delete" @click.stop="handleDeleteSession(session.id)">
-                  <Delete />
-                </el-icon>
+            <div class="assistant-session-list__header">
+              <el-icon class="assistant-session-list__header-icon"><Folder /></el-icon>
+              <span>会话</span>
+              <el-tooltip content="新会话" placement="right">
+                <button type="button" class="assistant-session-list__new-btn" @click="handleCreateSession">
+                  <el-icon><Plus /></el-icon>
+                </button>
+              </el-tooltip>
+            </div>
+
+            <!-- 搜索框 -->
+            <div class="assistant-session-list__search">
+              <el-input
+                v-model="sessionSearchKeyword"
+                size="small"
+                placeholder="搜索会话…"
+                :prefix-icon="Search"
+                clearable
+                class="session-search-input"
+              />
+            </div>
+
+            <!-- 会议列表滚动区 -->
+            <div class="assistant-session-list__scrollable">
+              <div v-if="filteredSessionGroups.length === 0 && sessions.length === 0" class="assistant-session-list__empty">暂无会话</div>
+              <div v-else-if="filteredSessionGroups.length === 0" class="assistant-session-list__empty">无匹配会话</div>
+              <div
+                v-for="group in filteredSessionGroups"
+                :key="group.key"
+                class="assistant-session-group"
+              >
+                <div class="assistant-session-group__label">{{ group.label }}</div>
+                <div
+                  v-for="session in group.items"
+                  :key="session.id"
+                  class="assistant-session-item"
+                  :class="{ 'is-active': session.id === activeSessionId }"
+                  @click="handleSelectSession(session.id)"
+                >
+                  <span class="assistant-session-item__title">{{ session.title || '新会话' }}</span>
+                  <span class="assistant-session-item__time">{{ formatSessionTime(session.lastMessageAt || session.updatedAt) }}</span>
+                  <el-icon
+                    class="assistant-session-item__delete"
+                    @click.stop="handleDeleteSession(session.id)"
+                  >
+                    <Delete />
+                  </el-icon>
+                </div>
               </div>
-            </button>
+            </div>
+
+            <!-- 底部信息 -->
+            <div class="assistant-session-list__footer">
+              {{ sessions.length }} 个会话
+            </div>
           </aside>
 
           <section class="assistant-chat">
@@ -142,20 +178,97 @@
                 v-for="message in messages"
                 :key="String(message.id)"
                 class="assistant-message"
-                :class="`assistant-message--${message.role}`"
+                :class="[`assistant-message--${message.role}`, { 'is-streaming': message.status === 'streaming' }]"
               >
-                <div class="assistant-message__meta">
-                  <span>{{ message.role === 'assistant' ? 'AI助手' : '我' }}</span>
-                  <span v-if="message.createdAt">{{ formatTime(message.createdAt) }}</span>
+                <div v-if="message.role === 'assistant'" class="assistant-message__avatar">
+                  <AssistantAvatar :variant="avatarVariant" />
                 </div>
-                <div class="assistant-message__bubble">
-                  <MarkdownContent
-                    v-if="message.role === 'assistant'"
-                    class="assistant-message__content assistant-message__content--assistant"
-                    :content="message.content || (message.status === 'streaming' ? '正在思考中…' : '')"
+
+                <div class="assistant-message__main">
+                  <div v-if="message.role === 'user'" class="assistant-message__bubble assistant-message__bubble--user">
+                    <div class="assistant-message__content assistant-message__content--user">{{ message.content }}</div>
+                  </div>
+
+                  <div v-else class="assistant-message__bubble assistant-message__bubble--assistant">
+                    <!-- 流式生成中：动态提示 + 闪烁光标 -->
+                    <div v-if="message.status === 'streaming' && !message.content" class="assistant-streaming-hint">
+                      <span class="assistant-streaming-hint__text">{{ streamingHintText }}</span>
+                      <span class="assistant-streaming-hint__dots">
+                        <span class="dot" /><span class="dot" /><span class="dot" />
+                      </span>
+                    </div>
+                    <MarkdownContent
+                      v-else
+                      class="assistant-message__content assistant-message__content--assistant"
+                      :content="message.content || ''"
+                    />
+                    <!-- 流式输出中，内容末尾闪烁光标 -->
+                    <span v-if="message.status === 'streaming' && message.content" class="assistant-streaming-cursor">|</span>
+                  </div>
+
+                  <div
+                    v-if="message.role === 'assistant' && message.reasoning"
+                    class="assistant-reasoning"
+                  >
+                    <button
+                      type="button"
+                      class="assistant-reasoning__header"
+                      :class="{ 'is-open': reasoningFoldState[String(message.id)] || message.status === 'streaming' }"
+                      @click="toggleReasoningFold(message)"
+                    >
+                      <el-icon class="assistant-reasoning__icon"><MagicStick /></el-icon>
+                      <span class="assistant-reasoning__label">{{ message.status === 'streaming' ? '深度思考中…' : '已深度思考' }}</span>
+                      <!-- 折叠态下显示推理内容预览（前 60 字） -->
+                      <span
+                        v-if="!isReasoningOpen(message) && message.status !== 'streaming'"
+                        class="assistant-reasoning__preview"
+                      >{{ reasoningPreview(message.reasoning) }}</span>
+                      <el-icon class="assistant-reasoning__arrow" :class="{ 'is-open': isReasoningOpen(message) || message.status === 'streaming' }">
+                        <ArrowDown />
+                      </el-icon>
+                    </button>
+                    <div v-show="isReasoningOpen(message) || message.status === 'streaming'" class="assistant-reasoning__body">
+                      <div class="assistant-reasoning__content">{{ message.reasoning }}</div>
+                    </div>
+                  </div>
+
+                  <!-- 任务列表（检索过程，对标 WorkBuddy） -->
+                  <AssistantTaskPanel
+                    v-if="message.role === 'assistant' && message.tasks?.length"
+                    :tasks="message.tasks"
+                    :is-streaming="message.status === 'streaming'"
+                    class="assistant-message__task-panel"
                   />
-                  <div v-else class="assistant-message__content assistant-message__content--user">
-                    {{ message.content }}
+
+                  <div
+                    v-if="message.role === 'assistant' && message.thinkingSteps?.length"
+                    class="assistant-thinking-fold"
+                  >
+                    <button
+                      type="button"
+                      class="assistant-thinking-fold__header"
+                      @click="toggleThinkingFold(message)"
+                    >
+                      <span class="assistant-thinking-fold__dot" />
+                      <span class="assistant-thinking-fold__label">思考过程（{{ message.thinkingSteps.length }} 步）</span>
+                      <el-icon class="assistant-thinking-fold__arrow" :class="{ 'is-open': thinkingFoldState[String(message.id)] }">
+                        <ArrowDown />
+                      </el-icon>
+                    </button>
+                    <div v-show="thinkingFoldState[String(message.id)]" class="assistant-thinking-fold__body">
+                      <div
+                        v-for="(step, index) in message.thinkingSteps"
+                        :key="index"
+                        class="assistant-thinking-step"
+                        :class="`assistant-thinking-step--${step.stepType}`"
+                      >
+                        <div class="assistant-thinking-step__header">
+                          <span class="assistant-thinking-step__title">{{ step.title }}</span>
+                          <span v-if="step.score != null" class="assistant-thinking-step__score">{{ Math.round(step.score * 100) }}%</span>
+                        </div>
+                        <div v-if="step.detail" class="assistant-thinking-step__detail">{{ step.detail }}</div>
+                      </div>
+                    </div>
                   </div>
 
                   <div
@@ -193,10 +306,10 @@
                         v-for="source in message.sources"
                         :key="`${source.code}-${source.path}-${source.title}`"
                         class="assistant-source-chip"
-                        :class="[`is-${resolveSourceMatch(source)}`, { 'is-clickable': source.path }]"
+                        :class="[`is-${resolveSourceMatch(source)}`, { 'is-clickable': isSourceClickable(source), 'is-previewable': source.code === 'knowledge_document' && source.documentId }]"
                         :title="buildSourceTooltip(source)"
-                        :role="source.path ? 'button' : undefined"
-                        :tabindex="source.path ? 0 : undefined"
+                        :role="isSourceClickable(source) ? 'link' : undefined"
+                        :tabindex="isSourceClickable(source) ? 0 : undefined"
                         @click="handleSourceNavigate(source)"
                         @keydown.enter.prevent="handleSourceNavigate(source)"
                         @keydown.space.prevent="handleSourceNavigate(source)"
@@ -207,31 +320,89 @@
                     </div>
                   </div>
 
-                  <div
-                    v-if="message.role === 'assistant' && message.thinkingSteps?.length"
-                    class="assistant-message__thinking"
-                  >
-                    <div class="assistant-section-title">思维链</div>
-                    <div class="assistant-thinking-steps">
-                      <div
-                        v-for="(step, index) in message.thinkingSteps"
-                        :key="index"
-                        class="assistant-thinking-step"
-                        :class="`assistant-thinking-step--${step.stepType}`"
+                  <div v-if="message.role === 'assistant'" class="assistant-message__toolbar">
+                    <el-tooltip content="复制回答" placement="top">
+                      <button
+                        type="button"
+                        class="assistant-message__tool-btn"
+                        :disabled="!message.content"
+                        @click="handleCopyMessage(message)"
                       >
-                        <div class="assistant-thinking-step__header">
-                          <span class="assistant-thinking-step__title">{{ step.title }}</span>
-                          <span v-if="step.score != null" class="assistant-thinking-step__score">{{ Math.round(step.score * 100) }}%</span>
-                        </div>
-                        <div v-if="step.detail" class="assistant-thinking-step__detail">{{ step.detail }}</div>
-                      </div>
-                    </div>
+                        <el-icon><CopyDocument /></el-icon>
+                      </button>
+                    </el-tooltip>
+                    <el-tooltip content="重新生成" placement="top">
+                      <button
+                        type="button"
+                        class="assistant-message__tool-btn"
+                        :disabled="sending || message.status === 'streaming'"
+                        @click="handleRegenerate(message)"
+                      >
+                        <el-icon><RefreshRight /></el-icon>
+                      </button>
+                    </el-tooltip>
+                    <span v-if="message.totalTokens != null && message.status !== 'streaming'" class="assistant-message__tokens" :title="`输入 ${message.inputTokens ?? 0} · 输出 ${message.outputTokens ?? 0} · 总计 ${message.totalTokens}`">
+                      ↑{{ message.inputTokens ?? 0 }} · ↓{{ message.outputTokens ?? 0 }} · {{ message.totalTokens }} tokens
+                    </span>
+                    <span v-else-if="message.status === 'streaming'" class="assistant-message__tokens is-streaming">
+                      <span class="assistant-message__tokens-pulse" />
+                      {{ streamingStatusLabel }}
+                    </span>
+                    <span v-if="message.createdAt" class="assistant-message__time">{{ formatTime(message.createdAt) }}</span>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div class="assistant-composer">
+            <!-- 流式状态条：模型调用过程动态显示（对标 WorkBuddy 等待模型响应） -->
+            <Transition name="stream-hud">
+              <div v-if="sending" class="assistant-stream-hud" :class="streamHudVariantClass">
+                <span class="assistant-stream-hud__pulse" aria-hidden="true">
+                  <span class="assistant-stream-hud__pulse-dot" />
+                  <span class="assistant-stream-hud__pulse-ring" />
+                </span>
+                <span class="assistant-stream-hud__label">
+                  <template v-if="streamHudPhaseLabel">
+                    {{ streamHudPhaseLabel }}
+                  </template>
+                  <template v-else>
+                    等待模型响应
+                  </template>
+                </span>
+                <span v-if="streamHudModelLabel" class="assistant-stream-hud__model">
+                  · {{ streamHudModelLabel }}
+                </span>
+                <button
+                  type="button"
+                  class="assistant-stream-hud__stop"
+                  title="停止生成"
+                  @click="handleStop"
+                >
+                  <el-icon><VideoPause /></el-icon>
+                  <span>停止</span>
+                </button>
+              </div>
+            </Transition>
+
+            <div
+              class="assistant-composer"
+              @dragover.prevent
+              @drop.prevent="handleFileDrop"
+              @paste="handlePaste"
+            >
+              <div v-if="attachedFiles.length" class="assistant-composer__files">
+                <div
+                  v-for="attached in attachedFiles"
+                  :key="attached.uid"
+                  class="assistant-file-card"
+                  :class="{ 'is-uploading': attached.uploading }"
+                >
+                  <span class="assistant-file-card__icon">{{ getFileIconName(attached.contentType) }}</span>
+                  <span class="assistant-file-card__name">{{ attached.name }}</span>
+                  <span class="assistant-file-card__size">{{ formatBytes(attached.size) }}</span>
+                  <button type="button" class="assistant-file-card__remove" @click="removeAttachedFile(attached.uid)">&times;</button>
+                </div>
+              </div>
               <div v-if="composerQuestions.length" class="assistant-composer__quick-asks">
                 <div class="assistant-section-title">快捷提问</div>
                 <div class="assistant-chip-list assistant-chip-list--compact">
@@ -258,11 +429,34 @@
                 :placeholder="composerPlaceholder"
                 @keydown.enter.exact.prevent="handleSend"
               />
+              <!-- 教育性提示：根据当前场景给出轻量化指引（对标 WorkBuddy 友好提示） -->
+              <div v-if="currentModeHint" class="assistant-composer__hint">
+                <el-icon class="assistant-composer__hint-icon"><InfoFilled /></el-icon>
+                <span>{{ currentModeHint }}</span>
+              </div>
               <div class="assistant-composer__footer">
                 <div class="assistant-composer__scope">
-                  <el-tooltip content="选择知识库问答范围：通用助手不检索知识库；全部/指定知识库会基于知识库内容回答" placement="top">
+                  <el-tooltip content="添加文件（支持拖拽、粘贴或点击上传）" placement="top">
+                    <button
+                      type="button"
+                      class="assistant-composer__file-btn"
+                      :disabled="sending"
+                      @click="triggerFileSelect"
+                    >
+                      <el-icon><FolderAdd /></el-icon>
+                    </button>
+                  </el-tooltip>
+                  <input
+                    ref="fileInputRef"
+                    type="file"
+                    multiple
+                    hidden
+                    @change="handleFileInputChange"
+                  />
+
+                  <el-tooltip content="选择知识库问答范围：通用助手可开启联网搜索并整合本地知识库；全部/指定知识库会基于知识库内容回答" placement="top">
                     <el-select
-                      v-model="selectedKbScope"
+                      v-model="selectedScopeKey"
                       size="small"
                       class="assistant-composer__scope-select"
                       :disabled="sending"
@@ -270,7 +464,7 @@
                       <template #prefix>
                         <el-icon class="assistant-composer__scope-icon"><Document /></el-icon>
                       </template>
-                      <el-option label="通用助手" :value="null" />
+                      <el-option label="通用助手" :value="SCOPE_GENERAL" />
                       <el-option label="全部知识库" :value="-1" />
                       <el-option
                         v-for="kb in knowledgeBases"
@@ -279,6 +473,24 @@
                         :value="kb.id"
                       />
                     </el-select>
+                  </el-tooltip>
+
+                  <el-tooltip
+                    v-if="selectedKbScope == null"
+                    content="开启后：轻量检索全部本地知识库 + 大模型联网搜索，综合给出结果"
+                    placement="top"
+                  >
+                    <div class="assistant-composer__websearch">
+                      <el-icon class="assistant-composer__websearch-icon"><Link /></el-icon>
+                      <el-switch
+                        v-model="webSearchEnabled"
+                        size="small"
+                        :disabled="sending"
+                        inline-prompt
+                        active-text="联网"
+                        inactive-text="联网"
+                      />
+                    </div>
                   </el-tooltip>
 
                   <el-tooltip v-if="selectedKbScope != null" content="检索模式" placement="top">
@@ -363,7 +575,11 @@
                     </div>
                   </el-popover>
                 </div>
-                <el-button type="primary" :loading="sending" @click="handleSend">
+                <el-button v-if="sending" type="danger" @click="handleStop">
+                  停止
+                  <el-icon class="el-icon--right"><VideoPause /></el-icon>
+                </el-button>
+                <el-button v-else type="primary" :disabled="!draft.trim()" @click="handleSend">
                   发送
                   <el-icon class="el-icon--right"><Promotion /></el-icon>
                 </el-button>
@@ -373,23 +589,36 @@
         </div>
       </div>
     </el-dialog>
+
+    <!-- 文档预览弹窗 -->
+    <FilePreviewDialog
+      v-if="previewFile"
+      v-model="previewVisible"
+      :file-name="previewFile.fileName"
+      :file-type="previewFile.fileType"
+      :knowledge-base-id="previewFile.knowledgeBaseId"
+      :document-id="previewFile.documentId"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ChatDotRound, Cpu, Delete, Document, Promotion, ArrowDown, FullScreen, ScaleToOriginal, Plus, Close } from '@element-plus/icons-vue'
+import { ChatDotRound, CopyDocument, Cpu, Delete, Document, FolderAdd, InfoFilled, MagicStick, Promotion, ArrowDown, FullScreen, RefreshRight, ScaleToOriginal, Plus, Close, VideoPause, Link, Search, Folder } from '@element-plus/icons-vue'
 import MarkdownContent from '@/components/common/MarkdownContent.vue'
 import AssistantAvatar from '@/components/assistant/avatars/AssistantAvatar.vue'
+import AssistantTaskPanel from '@/components/assistant/AssistantTaskPanel.vue'
+import { getToken } from '@/utils/auth'
 import { useAssistantStore } from '@/stores/assistant'
 import { useAssistantContext } from '@/composables/useAssistantContext'
 import { getAllKnowledgeBases, type KnowledgeBase } from '@/api/modules/knowledge'
 import { llmProviderApi, type ChatModelOption } from '@/api/modules/llmProvider'
-import type { AssistantPageContext, AssistantSource } from '@/types/assistant'
+import type { AssistantFileAttachment, AssistantMessage, AssistantPageContext, AssistantSource } from '@/types/assistant'
+import FilePreviewDialog from '@/components/document/FilePreviewDialog.vue'
 
 type PathMatchType = 'current-page' | 'current-menu' | 'related' | 'none'
 
@@ -401,15 +630,272 @@ const { visible, sessions, activeSessionId, messages, sending, initialized } = s
 const draft = ref('')
 const messageListRef = ref<HTMLDivElement | null>(null)
 const assistantFullscreen = ref(false)
+const assistantSubtitle = '结合当前页面、系统菜单和模型能力，为你提供入口导航与操作建议'
+
+// ===== 会话搜索与分组 =====
+const sessionSearchKeyword = ref('')
+
+interface SessionGroup {
+  key: string
+  label: string
+  items: typeof sessions.value
+}
+
+const filteredSessionGroups = computed<SessionGroup[]>(() => {
+  const keyword = sessionSearchKeyword.value.trim().toLowerCase()
+  let filtered = sessions.value
+  if (keyword) {
+    filtered = sessions.value.filter(s =>
+      (s.title || '').toLowerCase().includes(keyword) ||
+      (s.lastMessagePreview || '').toLowerCase().includes(keyword),
+    )
+  }
+
+  // 按日期分组：今天、昨天、本周、更早
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const yesterday = new Date(today.getTime() - 86400000)
+  const weekAgo = new Date(today.getTime() - 7 * 86400000)
+
+  const groups: Record<string, SessionGroup> = {
+    today: { key: 'today', label: '今天', items: [] },
+    yesterday: { key: 'yesterday', label: '昨天', items: [] },
+    thisWeek: { key: 'thisWeek', label: '本周', items: [] },
+    earlier: { key: 'earlier', label: '更早', items: [] },
+  }
+
+  for (const s of filtered) {
+    const t = new Date(s.lastMessageAt || s.updatedAt || s.createdAt || '')
+    if (isNaN(t.getTime())) {
+      groups.earlier.items.push(s)
+    } else if (t >= today) {
+      groups.today.items.push(s)
+    } else if (t >= yesterday) {
+      groups.yesterday.items.push(s)
+    } else if (t >= weekAgo) {
+      groups.thisWeek.items.push(s)
+    } else {
+      groups.earlier.items.push(s)
+    }
+  }
+
+  return Object.values(groups).filter(g => g.items.length > 0)
+})
+
+function formatSessionTime(value?: string | null) {
+  if (!value) return ''
+  const d = new Date(value)
+  if (isNaN(d.getTime())) return ''
+  const now = new Date()
+  const diffMs = now.getTime() - d.getTime()
+  const diffMins = Math.floor(diffMs / 60000)
+  if (diffMins < 1) return '刚刚'
+  if (diffMins < 60) return `${diffMins}分钟前`
+  const diffHours = Math.floor(diffMins / 60)
+  if (diffHours < 24) return `${diffHours}小时前`
+  const md = `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
+  if (d.getFullYear() !== now.getFullYear()) return `${d.getFullYear()}/${md}`
+  return md
+}
 
 // ===== 知识库问答范围 =====
 // null = 通用助手（不检索知识库）；-1 = 全部知识库；具体值 = 指定知识库
+// 注意：el-option.value 不允许 null（prop validator 拒绝），故 UI 绑定到 selectedScopeKey
+//（'general' | -1 | kb.id），再由 watcher 同步到 selectedKbScope（number | null）。
+const SCOPE_GENERAL = '__assistant_general__'
+type ScopeKey = typeof SCOPE_GENERAL | -1 | number
 const knowledgeBases = ref<KnowledgeBase[]>([])
 const selectedKbScope = ref<number | null>(null)
+const selectedScopeKey = ref<ScopeKey>(SCOPE_GENERAL)
+
+// UI 变化 → 内部状态
+watch(selectedScopeKey, (key) => {
+  selectedKbScope.value = key === SCOPE_GENERAL ? null : (key as number)
+})
+
+// 内部状态变化 → UI（兜底，避免外部代码直接改 selectedKbScope 时 UI 不同步）
+watch(selectedKbScope, (val) => {
+  const expected: ScopeKey = val === null ? SCOPE_GENERAL : val
+  if (selectedScopeKey.value !== expected) {
+    selectedScopeKey.value = expected
+  }
+})
 
 // ===== RAG 检索参数 =====
 const searchMode = ref<'hybrid' | 'semantic' | 'keyword'>('hybrid')
 const topK = ref<number>(10)
+
+// ===== 联网搜索（仅通用助手模式生效）=====
+const webSearchEnabled = ref<boolean>(false)
+
+// ===== 文档预览 =====
+const previewVisible = ref(false)
+const previewFile = ref<{
+  fileName: string
+  fileType: string
+  knowledgeBaseId: number
+  documentId: number
+} | null>(null)
+
+function openSourcePreview(source: AssistantSource) {
+  if (!source.documentId || !source.knowledgeBaseId) return
+  const fileName = source.title || 'document'
+  // 从文件名推断文件类型供预览组件使用
+  const fileType = fileName.includes('.') ? fileName.split('.').pop()?.toLowerCase() || 'pdf' : 'pdf'
+  previewFile.value = {
+    fileName,
+    fileType,
+    knowledgeBaseId: source.knowledgeBaseId,
+    documentId: source.documentId,
+  }
+  previewVisible.value = true
+}
+
+// ===== 文件上传（拖拽 / 粘贴 / 点击选择）=====
+interface AttachedFile {
+  uid: string
+  file: File
+  fileId?: number
+  name: string
+  size: number
+  contentType: string
+  extractedText?: string
+  uploading: boolean
+}
+const attachedFiles = reactive<AttachedFile[]>([])
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+const READABLE_EXTENSIONS = /\.(txt|md|json|xml|html?|css|jsx?|tsx?|java|py|go|rs|cpp|c|h|hpp|yml|yaml|toml|csv|log|sql|vue|svelte|env|cfg|ini|sh|bat|ps1)$/i
+const IMAGE_EXTENSIONS = /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/i
+
+function triggerFileSelect() {
+  fileInputRef.value?.click()
+}
+
+function handleFileInputChange(e: Event) {
+  const target = e.target as HTMLInputElement
+  if (target.files) {
+    processFiles(Array.from(target.files))
+    target.value = '' // reset for re-upload same file
+  }
+}
+
+function handleFileDrop(e: DragEvent) {
+  e.preventDefault()
+  const items = e.dataTransfer?.files
+  if (items) {
+    processFiles(Array.from(items))
+  }
+}
+
+function handlePaste(e: ClipboardEvent) {
+  const items = e.clipboardData?.items
+  if (!items) return
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
+    if (item.kind === 'file') {
+      const file = item.getAsFile()
+      if (file) processFiles([file])
+    }
+  }
+}
+
+function processFiles(newFiles: File[]) {
+  for (const file of newFiles) {
+    if (file.size > MAX_FILE_SIZE) {
+      ElMessage.warning(`文件 ${file.name} 超过 10MB 限制，已跳过`)
+      continue
+    }
+    const uid = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
+    const attached: AttachedFile = {
+      uid,
+      file,
+      name: file.name,
+      size: file.size,
+      contentType: file.type || 'application/octet-stream',
+      uploading: true,
+    }
+    attachedFiles.push(attached)
+    uploadAndExtract(attached)
+  }
+}
+
+async function uploadAndExtract(attached: AttachedFile) {
+  const file = attached.file
+  try {
+    // 文本文件：客户端读取内容
+    if (READABLE_EXTENSIONS.test(file.name) || file.type.startsWith('text/')) {
+      try {
+        const text = await readFileAsText(file)
+        attached.extractedText = text
+      } catch {
+        // 读取失败则跳过内容提取
+      }
+    }
+    // 上传到文件服务
+    const baseURL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+    const token = getToken() || ''
+    const formData = new FormData()
+    formData.append('file', file)
+    const uploadRes = await fetch(`${baseURL}/v1/files/upload`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    })
+    if (uploadRes.ok) {
+      const result = await uploadRes.json()
+      attached.fileId = result?.data?.fileId || result?.fileId
+    }
+  } catch {
+    // 上传失败也不阻断，fileId 为空时后端只在线展示文件名
+  } finally {
+    attached.uploading = false
+  }
+}
+
+function readFileAsText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      let text = reader.result as string
+      // 限制 50KB 字符
+      if (text.length > 50000) text = text.slice(0, 50000) + '\n…[已截断]'
+      resolve(text)
+    }
+    reader.onerror = () => reject(new Error('读取失败'))
+    reader.readAsText(file)
+  })
+}
+
+function removeAttachedFile(uid: string) {
+  const idx = attachedFiles.findIndex(f => f.uid === uid)
+  if (idx >= 0) attachedFiles.splice(idx, 1)
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / 1024 / 1024).toFixed(1) + ' MB'
+}
+
+function getFileIconName(ct: string) {
+  if (ct.startsWith('image/')) return '🖼'
+  if (ct.startsWith('text/')) return '📄'
+  if (ct.includes('pdf')) return '📕'
+  if (ct.includes('word') || ct.includes('document')) return '📝'
+  if (ct.includes('sheet') || ct.includes('excel') || ct.includes('csv')) return '📊'
+  return '📎'
+}
+
+function buildAttachmentsForRequest(): AssistantFileAttachment[] {
+  return attachedFiles.map(f => ({
+    fileId: f.fileId || 0,
+    name: f.name,
+    size: f.size,
+    contentType: f.contentType,
+    extractedText: f.extractedText || null,
+  }))
+}
 
 async function loadKnowledgeBases() {
   try {
@@ -678,11 +1164,29 @@ onMounted(() => {
 })
 
 const composerPlaceholder = computed(() => {
+  if (selectedKbScope.value == null && webSearchEnabled.value) {
+    return '联网搜索已开启，可问任何问题，也可结合本地知识库综合回答'
+  }
   const title = currentPageContext.value.pageTitle
   if (title) {
-    return `例如：我在“${title}”页面想完成什么操作？`
+    return `例如：我在"${title}"页面想完成什么操作？`
   }
   return '请输入你的问题，例如：如何新建需求？去哪里配置工作流？'
+})
+
+/** 教育性提示：根据当前场景给出轻量化指引（仅在有内容时显示） */
+const currentModeHint = computed(() => {
+  if (selectedKbScope.value != null) {
+    const scope = selectedKbScope.value === -1 ? '全部知识库' : (knowledgeBases.value.find(k => k.id === selectedKbScope.value)?.name || '指定知识库')
+    return `回答仅基于「${scope}」内容生成，未命中片段将明确标注`
+  }
+  if (webSearchEnabled.value) {
+    return '联网结果仅供参考，关键事实请结合本地资料二次核对'
+  }
+  if (draft.value.trim().length > 0) {
+    return '能力不是开越多越好，无关的关掉，省 Token 又少干扰'
+  }
+  return ''
 })
 
 const recommendedQuestions = computed(() => buildRecommendedQuestions(currentPageContext.value))
@@ -818,14 +1322,6 @@ function buildRecommendedQuestions(pageContext: AssistantPageContext) {
     ]
   }
 
-  if (route.startsWith('/settings/documents') || entityType === 'documents') {
-    return [
-      '如何上传文档到文档中心？',
-      '如何让系统基于文档做智能检索？',
-      '文档中心和知识库管理有什么区别？',
-    ]
-  }
-
   if (route.startsWith('/system/workflow') || entityType === 'workflow') {
     return [
       '如何配置一个新的工作流？',
@@ -949,6 +1445,8 @@ function resolvePathMatchLabel(targetPath?: string) {
 }
 
 function resolveSourceMatchLabel(source: AssistantSource) {
+  if (source.code === 'web_search') return '联网来源'
+  if (source.code === 'knowledge_document') return '知识库依据'
   const match = resolveSourceMatch(source)
   if (match === 'current-page') return '当前页依据'
   if (match === 'current-menu') return '当前菜单依据'
@@ -963,6 +1461,11 @@ function buildSourceTooltip(source: AssistantSource) {
     source.reason || '系统根据页面上下文与功能目录生成了这条建议。',
   ].filter(Boolean)
   return segments.join('\n')
+}
+
+function isSourceClickable(source: AssistantSource) {
+  if (source.code === 'knowledge_document' && source.documentId && source.knowledgeBaseId) return true
+  return !!source.path
 }
 
 function toggleAssistantFullscreen() {
@@ -1026,6 +1529,9 @@ async function submitMessage(message: string, clearDraft = false) {
     draft.value = ''
   }
 
+  // 发送前捕获文件列表，发送后清空
+  const files = attachedFiles.length ? buildAttachmentsForRequest() : undefined
+
   await assistantStore.sendMessage({
     message: content,
     pageContext: currentPageContext.value,
@@ -1033,7 +1539,12 @@ async function submitMessage(message: string, clearDraft = false) {
     llmModelId: selectedLlmModelId.value,
     mode: selectedKbScope.value != null ? searchMode.value : undefined,
     topK: selectedKbScope.value != null ? topK.value : undefined,
+    webSearch: selectedKbScope.value == null ? webSearchEnabled.value : undefined,
+    files,
   })
+
+  // 发送后清除文件
+  attachedFiles.splice(0, attachedFiles.length)
 }
 
 async function handleSend() {
@@ -1043,6 +1554,95 @@ async function handleSend() {
 async function handleQuickAsk(question: string) {
   draft.value = question
   await submitMessage(question, true)
+}
+
+// ===== 思维链折叠 =====
+const thinkingFoldState = reactive<Record<string, boolean>>({})
+
+function toggleThinkingFold(message: AssistantMessage) {
+  const key = String(message.id)
+  thinkingFoldState[key] = !thinkingFoldState[key]
+}
+
+// ===== 深度思考折叠 =====
+const reasoningFoldState = reactive<Record<string, boolean>>({})
+
+function toggleReasoningFold(message: AssistantMessage) {
+  const key = String(message.id)
+  reasoningFoldState[key] = !reasoningFoldState[key]
+}
+
+function isReasoningOpen(message: AssistantMessage) {
+  return !!reasoningFoldState[String(message.id)]
+}
+
+/** 折叠态预览：取推理内容的前 60 字，去掉多余空白 */
+function reasoningPreview(content?: string | null) {
+  if (!content) return ''
+  const compact = String(content).replace(/\s+/g, ' ').trim()
+  if (compact.length <= 60) return compact
+  return `${compact.slice(0, 60)}…`
+}
+
+// ===== 任务日志折叠已迁移到 AssistantTaskPanel 子组件 =====
+
+// ===== 复制回答 =====
+async function handleCopyMessage(message: AssistantMessage) {
+  const text = message.content || ''
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success('回答已复制到剪贴板')
+  } catch {
+    // 剪贴板不可用时降级为 textarea 复制
+    try {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+      ElMessage.success('回答已复制到剪贴板')
+    } catch {
+      ElMessage.error('复制失败，请手动选择文本复制')
+    }
+  }
+}
+
+// ===== 重新生成 =====
+function findUserQuestionFor(assistantMessage: AssistantMessage): string {
+  const index = messages.value.findIndex(item => String(item.id) === String(assistantMessage.id))
+  for (let i = index - 1; i >= 0; i--) {
+    if (messages.value[i].role === 'user') {
+      return messages.value[i].content
+    }
+  }
+  return ''
+}
+
+async function handleRegenerate(message: AssistantMessage) {
+  if (sending.value || message.status === 'streaming') return
+  const question = findUserQuestionFor(message)
+  if (!question) {
+    ElMessage.warning('未找到对应的用户问题，无法重新生成')
+    return
+  }
+  await assistantStore.regenerateMessage(message.id, {
+    message: question,
+    pageContext: currentPageContext.value,
+    knowledgeBaseId: selectedKbScope.value,
+    llmModelId: selectedLlmModelId.value,
+    mode: selectedKbScope.value != null ? searchMode.value : undefined,
+    topK: selectedKbScope.value != null ? topK.value : undefined,
+    webSearch: selectedKbScope.value == null ? webSearchEnabled.value : undefined,
+    files: attachedFiles.length ? buildAttachmentsForRequest() : undefined,
+  })
+}
+
+function handleStop() {
+  assistantStore.stopGenerating()
 }
 
 async function handleNavigate(targetPath?: string) {
@@ -1057,6 +1657,11 @@ async function handleNavigate(targetPath?: string) {
 }
 
 async function handleSourceNavigate(source: AssistantSource) {
+  // 知识库文档来源：拉起文档预览
+  if (source.code === 'knowledge_document' && source.documentId && source.knowledgeBaseId) {
+    openSourcePreview(source)
+    return
+  }
   if (!source.path) return
   await handleNavigate(source.path)
 }
@@ -1106,7 +1711,121 @@ watch(visible, async (opened) => {
   }
 })
 
+// ===== 动态思考提示（对标 WorkBuddy 等待模型响应）=====
+const thinkingHintTicker = ref(0)
+let thinkingHintTimer: ReturnType<typeof setInterval> | null = null
+
+/** 通用助手场景下的阶段轮播（无 task 数据时使用） */
+const GENERAL_HINTS = [
+  '正在理解问题…',
+  '正在分析上下文…',
+  '正在组织回答思路…',
+  '正在精心整理回复…',
+  '内容较多，正在优化格式…',
+]
+/** 联网搜索场景下的阶段轮播 */
+const WEBSEARCH_HINTS = [
+  '正在检索本地知识库…',
+  '正在发起联网搜索…',
+  '正在综合整理回复…',
+]
+/** 知识库 RAG 场景下的阶段轮播 */
+const KNOWLEDGE_HINTS = [
+  '正在解析问题…',
+  '正在向量化查询…',
+  '正在检索相关片段…',
+  '正在重排序…',
+  '正在生成回答…',
+]
+
+/** 获取当前最后一条 assistant 消息中正在运行的任务 */
+function getRunningTask() {
+  const lastMsg = messages.value[messages.value.length - 1]
+  if (lastMsg?.role !== 'assistant' || !lastMsg.tasks?.length) return null
+  return lastMsg.tasks.find(t => t.status === 'running') || null
+}
+
+/** 当前流式场景：根据助手模式/最后一条消息状态推断 */
+function getCurrentScene(): 'general' | 'webSearch' | 'knowledge' {
+  if (selectedKbScope.value != null) return 'knowledge'
+  if (webSearchEnabled.value) return 'webSearch'
+  return 'general'
+}
+
+/** 根据场景获取对应的阶段文案数组 */
+function getHintsForScene(scene: 'general' | 'webSearch' | 'knowledge') {
+  if (scene === 'webSearch') return WEBSEARCH_HINTS
+  if (scene === 'knowledge') return KNOWLEDGE_HINTS
+  return GENERAL_HINTS
+}
+
+/** 把运行中任务标题里的「中…」后缀去掉，避免 HUD 出现"…中…中…"重复 */
+function stripRunningSuffix(title: string) {
+  return String(title || '').replace(/中…?$/, '').trim()
+}
+
+const streamingHintText = computed(() => {
+  if (!sending.value) return ''
+  const runningTask = getRunningTask()
+  if (runningTask) return `${runningTask.title}中…`
+  const hints = getHintsForScene(getCurrentScene())
+  return hints[thinkingHintTicker.value % hints.length]
+})
+
+/** 流式状态标签：消息气泡旁的 token 位置 */
+const streamingStatusLabel = computed(() => {
+  if (!sending.value) return '生成中…'
+  const runningTask = getRunningTask()
+  if (runningTask) return `${runningTask.title}中…`
+  const hints = getHintsForScene(getCurrentScene())
+  return hints[thinkingHintTicker.value % hints.length]
+})
+
+/** 流式状态条 HUD 主标签（顶部状态条显示） */
+const streamHudPhaseLabel = computed(() => {
+  if (!sending.value) return ''
+  const runningTask = getRunningTask()
+  if (runningTask) {
+    const cleanTitle = stripRunningSuffix(runningTask.title)
+    return `${cleanTitle}中…`
+  }
+  const hints = getHintsForScene(getCurrentScene())
+  return hints[thinkingHintTicker.value % hints.length]
+})
+
+/** 流式状态条 HUD 模型名 */
+const streamHudModelLabel = computed(() => {
+  if (!sending.value) return ''
+  if (selectedChatModel.value) {
+    return compactModelName(selectedChatModel.value)
+  }
+  return ''
+})
+
+/** HUD 视觉变体（按场景区分） */
+const streamHudVariantClass = computed(() => `is-${getCurrentScene()}`)
+
+// 轮播提示定时器
+watch(sending, (val) => {
+  if (val) {
+    thinkingHintTicker.value = 0
+    // 每 2.5 秒切换一个提示文案
+    thinkingHintTimer = setInterval(() => {
+      thinkingHintTicker.value++
+    }, 2500)
+  } else {
+    if (thinkingHintTimer) {
+      clearInterval(thinkingHintTimer)
+      thinkingHintTimer = null
+    }
+  }
+})
+
 onBeforeUnmount(() => {
+  if (thinkingHintTimer) {
+    clearInterval(thinkingHintTimer)
+    thinkingHintTimer = null
+  }
   window.removeEventListener('keydown', handleGlobalKeydown)
   window.removeEventListener('resize', handleFabResize)
   document.removeEventListener('mousemove', onFabDragMove)
@@ -1193,10 +1912,10 @@ onBeforeUnmount(() => {
 .assistant-panel__header {
   position: relative;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 18px 56px 16px 20px;
+  padding: 14px 52px 14px 20px;
   border-bottom: 1px solid #e8ebf0;
   background: #fff;
   cursor: move;
@@ -1204,12 +1923,12 @@ onBeforeUnmount(() => {
 
 .assistant-panel__close-btn {
   position: absolute;
-  top: 16px;
-  right: 18px;
-  width: 32px;
-  height: 32px;
+  top: 12px;
+  right: 14px;
+  width: 28px;
+  height: 28px;
   padding: 0;
-  font-size: 18px;
+  font-size: 16px;
   color: #4e5969;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -1224,33 +1943,61 @@ onBeforeUnmount(() => {
   }
 }
 
+.assistant-panel__title-block {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .assistant-panel__tools {
+  flex: 0 0 auto;
   cursor: default;
+  white-space: nowrap;
+}
+
+.assistant-meta-tag {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .assistant-tool-button {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   padding: 0;
-  font-size: 16px;
+  font-size: 15px;
   color: #4e5969;
+  border-radius: 8px;
+  transition: all 0.2s ease;
 
   &:hover {
-    color: #409eff;
-    background: #ecf5ff;
+    color: #2563eb;
+    background: #eef4ff;
+  }
+
+  &:active {
+    transform: scale(0.94);
   }
 }
 
 .assistant-panel__title {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
   color: #1f2329;
+  letter-spacing: 0.2px;
 }
 
 .assistant-panel__subtitle {
-  margin-top: 6px;
   color: #86909c;
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .assistant-panel__body {
@@ -1260,72 +2007,184 @@ onBeforeUnmount(() => {
 }
 
 .assistant-session-list {
-  width: 168px;
-  padding: 12px;
+  width: 200px;
+  display: flex;
+  flex-direction: column;
   border-right: 1px solid #e8ebf0;
-  background: #fff;
-  overflow-y: auto;
-}
-
-.assistant-session-list__header {
-  margin-bottom: 10px;
-  font-size: 13px;
-  color: #86909c;
-}
-
-.assistant-session-list__empty {
-  font-size: 12px;
-  color: #a9b1bc;
-}
-
-.assistant-session-item {
-  width: 100%;
-  margin-bottom: 10px;
-  padding: 10px;
-  border: 1px solid #e8ebf0;
-  border-radius: 12px;
-  background: #fff;
-  text-align: left;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.assistant-session-item:hover,
-.assistant-session-item.is-active {
-  border-color: #409eff;
-  background: #ecf5ff;
-}
-
-.assistant-session-item__title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #1f2329;
-  line-height: 1.4;
-}
-
-.assistant-session-item__preview {
-  margin-top: 6px;
-  font-size: 12px;
-  line-height: 1.4;
-  color: #86909c;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  background: #fafbfc;
   overflow: hidden;
 }
 
-.assistant-session-item__footer {
-  margin-top: 8px;
+.assistant-session-list__header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  font-size: 11px;
-  color: #a9b1bc;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e8ebf0;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.assistant-session-list__header-icon {
+  font-size: 14px;
+  color: #64748b;
+}
+
+.assistant-session-list__new-btn {
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.15s;
+}
+
+.assistant-session-list__new-btn:hover {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+
+.assistant-session-list__search {
+  padding: 8px 10px;
+  border-bottom: 1px solid #e8ebf0;
+  background: #fff;
+}
+
+:deep(.session-search-input .el-input__wrapper) {
+  border-radius: 6px;
+  background: #f1f5f9;
+  box-shadow: none !important;
+}
+
+:deep(.session-search-input .el-input__wrapper:hover),
+:deep(.session-search-input .el-input__wrapper.is-focus) {
+  background: #e8ecf2;
+}
+
+:deep(.session-search-input .el-input__inner) {
+  font-size: 12px;
+}
+
+.assistant-session-list__empty {
+  padding: 16px 12px;
+  font-size: 12px;
+  color: #94a3b8;
+  text-align: center;
+}
+
+.assistant-session-group {
+  padding: 4px 0;
+}
+
+.assistant-session-group__label {
+  padding: 6px 12px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.assistant-session-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  margin: 0 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.assistant-session-item:hover {
+  background: #e8ecf2;
+}
+
+.assistant-session-item.is-active {
+  background: #eff6ff;
+}
+
+.assistant-session-item.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: #2563eb;
+}
+
+.assistant-session-item__title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: #334155;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.assistant-session-item.is-active .assistant-session-item__title {
+  color: #1d4ed8;
+  font-weight: 500;
+}
+
+.assistant-session-item__time {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: #94a3b8;
+  white-space: nowrap;
 }
 
 .assistant-session-item__delete {
-  font-size: 14px;
-  color: #c45656;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #cbd5e1;
+  opacity: 0;
+  transition: all 0.12s;
+  border-radius: 4px;
+  padding: 2px;
+}
+
+.assistant-session-item:hover .assistant-session-item__delete {
+  opacity: 1;
+}
+
+.assistant-session-item__delete:hover {
+  color: #ef4444;
+  background: #fee2e2;
+}
+
+.assistant-session-list__footer {
+  margin-top: auto;
+  padding: 8px 12px;
+  border-top: 1px solid #e8ecf2;
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+/* 滚动容器 */
+.assistant-session-list {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.assistant-session-list__scrollable {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .assistant-chat {
@@ -1421,37 +2280,69 @@ onBeforeUnmount(() => {
 
 .assistant-message {
   display: flex;
-  flex-direction: column;
-  margin-bottom: 16px;
+  gap: 10px;
+  margin-bottom: 18px;
 }
 
 .assistant-message--user {
-  align-items: flex-end;
+  justify-content: flex-end;
 }
 
 .assistant-message--assistant {
+  justify-content: flex-start;
+}
+
+.assistant-message__avatar {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  margin-top: 2px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #409eff, #7c4dff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(64, 158, 255, 0.25);
+  overflow: hidden;
+}
+
+.assistant-message__avatar :deep(.assistant-fab__icon) {
+  width: 26px;
+  height: 26px;
+}
+
+.assistant-message__main {
+  max-width: calc(100% - 44px);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   align-items: flex-start;
 }
 
-.assistant-message__meta {
-  margin-bottom: 6px;
-  display: flex;
-  gap: 8px;
-  font-size: 12px;
-  color: #86909c;
+.assistant-message--user .assistant-message__main {
+  align-items: flex-end;
 }
 
 .assistant-message__bubble {
-  width: min(100%, 620px);
-  padding: 12px 14px;
+  padding: 10px 14px;
   border-radius: 14px;
-  background: #fff;
-  box-shadow: 0 4px 12px rgba(31, 35, 41, 0.06);
+  word-break: break-word;
 }
 
-.assistant-message--user .assistant-message__bubble {
-  background: #409eff;
+.assistant-message__bubble--user {
+  max-width: min(100%, 560px);
+  background: #2563eb;
   color: #fff;
+  border-bottom-right-radius: 4px;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.22);
+}
+
+.assistant-message__bubble--assistant {
+  max-width: 100%;
+  background: #fff;
+  border: 1px solid #e8ebf0;
+  border-bottom-left-radius: 4px;
+  box-shadow: 0 1px 4px rgba(31, 35, 41, 0.04);
 }
 
 .assistant-message__content {
@@ -1466,6 +2357,440 @@ onBeforeUnmount(() => {
 
 .assistant-message__content--assistant {
   margin-top: 0;
+  color: #1f2329;
+}
+
+/* ===== 动态思考提示 ===== */
+.assistant-streaming-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.assistant-streaming-hint__text {
+  font-size: 14px;
+  color: #64748b;
+  font-style: italic;
+}
+
+.assistant-streaming-hint__dots {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.assistant-streaming-hint__dots .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #94a3b8;
+  animation: streaming-dot-bounce 1.2s ease-in-out infinite;
+}
+
+.assistant-streaming-hint__dots .dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.assistant-streaming-hint__dots .dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes streaming-dot-bounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+/* 闪烁光标 */
+.assistant-streaming-cursor {
+  display: inline;
+  font-weight: 100;
+  color: #2563eb;
+  animation: streaming-cursor-blink 0.8s steps(1) infinite;
+  font-size: 14px;
+  vertical-align: baseline;
+}
+
+@keyframes streaming-cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* 消息操作栏：复制 / 重新生成 / token / 时间 */
+.assistant-message__toolbar {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+}
+
+.assistant-message__tool-btn {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #a9b1bc;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.assistant-message__tool-btn:hover:not(:disabled) {
+  color: #2563eb;
+  background: #eef4ff;
+}
+
+.assistant-message__tool-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.assistant-message__tokens {
+  margin-left: 6px;
+  font-size: 11px;
+  color: #a9b1bc;
+  white-space: nowrap;
+}
+
+.assistant-message__tokens.is-streaming {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #2563eb;
+  font-weight: 500;
+}
+
+.assistant-message__tokens-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #2563eb;
+  animation: streaming-pulse-glow 1.4s ease-in-out infinite;
+}
+
+@keyframes streaming-pulse-glow {
+  0%, 100% {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+}
+
+/* ===== 流式状态条 HUD（对标 WorkBuddy 等待模型响应）===== */
+.assistant-stream-hud {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 18px 8px;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f9fafb 0%, #f3f4f6 100%);
+  font-size: 12.5px;
+  color: #475569;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+
+  &.is-webSearch {
+    border-color: rgba(14, 165, 233, 0.35);
+    background: linear-gradient(180deg, #f0f9ff 0%, #e0f2fe 100%);
+    color: #075985;
+  }
+
+  &.is-knowledge {
+    border-color: rgba(99, 102, 241, 0.35);
+    background: linear-gradient(180deg, #eef2ff 0%, #e0e7ff 100%);
+    color: #3730a3;
+  }
+}
+
+.assistant-stream-hud__pulse {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.assistant-stream-hud__pulse-dot {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+  z-index: 1;
+}
+
+.assistant-stream-hud__pulse-ring {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid rgba(16, 185, 129, 0.5);
+  border-radius: 50%;
+  animation: hud-pulse-ring 1.4s ease-out infinite;
+}
+
+.is-webSearch .assistant-stream-hud__pulse-dot {
+  background: #0ea5e9;
+}
+.is-webSearch .assistant-stream-hud__pulse-ring {
+  border-color: rgba(14, 165, 233, 0.5);
+}
+
+.is-knowledge .assistant-stream-hud__pulse-dot {
+  background: #6366f1;
+}
+.is-knowledge .assistant-stream-hud__pulse-ring {
+  border-color: rgba(99, 102, 241, 0.5);
+}
+
+@keyframes hud-pulse-ring {
+  0% {
+    transform: scale(0.6);
+    opacity: 1;
+  }
+  80%, 100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+.assistant-stream-hud__label {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.assistant-stream-hud__model {
+  flex-shrink: 0;
+  color: #64748b;
+  font-size: 11.5px;
+  padding: 1px 8px;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 999px;
+  font-weight: 500;
+  white-space: nowrap;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.is-webSearch .assistant-stream-hud__model {
+  color: #075985;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.is-knowledge .assistant-stream-hud__model {
+  color: #3730a3;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.assistant-stream-hud__stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fff;
+  color: #475569;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+
+  &:hover {
+    border-color: #f43f5e;
+    background: #fff1f2;
+    color: #be123c;
+  }
+}
+
+/* HUD 出现/消失过渡 */
+.stream-hud-enter-active,
+.stream-hud-leave-active {
+  transition: opacity 0.18s ease, transform 0.2s ease;
+}
+
+.stream-hud-enter-from,
+.stream-hud-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+/* 消息列表底部内边距，给 HUD 留出呼吸空间 */
+.assistant-message-list {
+  padding-bottom: 8px;
+}
+
+.assistant-message__time {
+  margin-left: auto;
+  font-size: 11px;
+  color: #c0c4cc;
+  white-space: nowrap;
+}
+
+/* 深度思考折叠面板（WorkBuddy 同款） */
+.assistant-reasoning {
+  margin-top: 10px;
+  width: 100%;
+  border: 1px solid #e3e8ef;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f7f9fd, #f3f6fc);
+  overflow: hidden;
+}
+
+.assistant-reasoning__header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.18s ease;
+}
+
+.assistant-reasoning__header:hover {
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.assistant-reasoning__icon {
+  flex-shrink: 0;
+  font-size: 14px;
+  color: #2563eb;
+}
+
+.assistant-reasoning__label {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #2563eb;
+}
+
+.assistant-reasoning__preview {
+  flex: 1;
+  min-width: 0;
+  margin-left: 10px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #86909c;
+  font-weight: 400;
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* 渐变淡出，提示"还有更多" */
+  mask-image: linear-gradient(90deg, #000 0%, #000 70%, transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 70%, transparent 100%);
+}
+
+.assistant-reasoning__arrow {
+  font-size: 12px;
+  color: #86909c;
+  transition: transform 0.2s ease;
+}
+
+.assistant-reasoning__arrow.is-open {
+  transform: rotate(180deg);
+}
+
+.assistant-reasoning__body {
+  padding: 0 12px 12px;
+}
+
+.assistant-reasoning__content {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid #e8ebf0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #4e5969;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 思维链折叠面板 */
+.assistant-thinking-fold {
+  margin-top: 10px;
+  width: 100%;
+  border: 1px solid #e8ebf0;
+  border-radius: 10px;
+  background: #fafbfc;
+  overflow: hidden;
+}
+
+.assistant-thinking-fold__header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.18s ease;
+}
+
+.assistant-thinking-fold__header:hover {
+  background: #f2f4f7;
+}
+
+.assistant-thinking-fold__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #2563eb;
+  flex-shrink: 0;
+}
+
+.assistant-thinking-fold__label {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4e5969;
+}
+
+.assistant-thinking-fold__arrow {
+  font-size: 12px;
+  color: #86909c;
+  transition: transform 0.2s ease;
+}
+
+.assistant-thinking-fold__arrow.is-open {
+  transform: rotate(180deg);
+}
+
+.assistant-thinking-fold__body {
+  padding: 4px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .assistant-message__actions,
@@ -1479,6 +2804,8 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 10px;
 }
+
+/* 任务面板样式已抽离到 AssistantTaskPanel.vue 子组件 */
 
 .assistant-action-card {
   width: 100%;
@@ -1600,6 +2927,33 @@ onBeforeUnmount(() => {
   outline: none;
 }
 
+/* 知识库文档来源 → 超链接样式 */
+.assistant-source-chip.is-previewable {
+  cursor: pointer;
+  color: #2563eb;
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.assistant-source-chip.is-previewable:hover,
+.assistant-source-chip.is-previewable:focus-visible {
+  border-color: #2563eb;
+  background: #dbeafe;
+  text-decoration: underline;
+  outline: none;
+}
+
+.assistant-source-chip.is-previewable .assistant-source-chip__title {
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: text-decoration-color 0.2s ease;
+}
+
+.assistant-source-chip.is-previewable:hover .assistant-source-chip__title,
+.assistant-source-chip.is-previewable:focus-visible .assistant-source-chip__title {
+  text-decoration-color: #2563eb;
+}
+
 .assistant-source-chip.is-current-page,
 .assistant-source-chip.is-current-menu {
   border-color: #b3e19d;
@@ -1629,6 +2983,39 @@ onBeforeUnmount(() => {
   margin-bottom: 12px;
 }
 
+/* 教育性提示（对标 WorkBuddy「能力不是开越多越好…」） */
+.assistant-composer__hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 4px 10px;
+  background: #f1f5f9;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #64748b;
+  max-width: 100%;
+  animation: hint-fade-in 0.25s ease-out;
+}
+
+.assistant-composer__hint-icon {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+@keyframes hint-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .assistant-composer__footer {
   margin-top: 12px;
   display: flex;
@@ -1652,6 +3039,32 @@ onBeforeUnmount(() => {
 
 .assistant-composer__scope-icon {
   color: #409eff;
+}
+
+.assistant-composer__websearch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid #dcdfe6;
+  border-radius: 8px;
+  background: #fff;
+  flex-shrink: 0;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.assistant-composer__websearch:hover {
+  border-color: #409eff;
+}
+
+.assistant-composer__websearch-icon {
+  font-size: 14px;
+  color: #86909c;
+}
+
+:deep(.assistant-composer__websearch .el-switch) {
+  --el-switch-on-color: #409eff;
 }
 
 .assistant-composer__model-btn {
@@ -1802,6 +3215,100 @@ onBeforeUnmount(() => {
   color: #86909c;
 }
 
+/* 文件上传：卡片 + 上传按钮 */
+.assistant-composer__files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.assistant-file-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid #dcdfe6;
+  border-radius: 8px;
+  background: #fafbfc;
+  font-size: 12px;
+  max-width: 320px;
+  transition: border-color 0.2s, opacity 0.2s;
+}
+
+.assistant-file-card.is-uploading {
+  opacity: 0.6;
+  border-style: dashed;
+}
+
+.assistant-file-card__icon {
+  flex-shrink: 0;
+  font-size: 14px;
+}
+
+.assistant-file-card__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #1f2329;
+  font-weight: 500;
+}
+
+.assistant-file-card__size {
+  flex-shrink: 0;
+  color: #a9b1bc;
+}
+
+.assistant-file-card__remove {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: #e8ebf0;
+  color: #86909c;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s;
+}
+
+.assistant-file-card__remove:hover {
+  background: #f56c6c;
+  color: #fff;
+}
+
+.assistant-composer__file-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #dcdfe6;
+  border-radius: 8px;
+  background: #fff;
+  color: #86909c;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  flex-shrink: 0;
+}
+
+.assistant-composer__file-btn:hover:not(:disabled) {
+  border-color: #2563eb;
+  color: #2563eb;
+  background: #eef4ff;
+}
+
+.assistant-composer__file-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 @media (max-width: 768px) {
   :deep(.assistant-dialog) {
     width: calc(100vw - 16px) !important;
@@ -1818,6 +3325,14 @@ onBeforeUnmount(() => {
 
   .assistant-panel__header {
     flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px 44px 12px 16px;
+  }
+
+  .assistant-panel__tools {
+    flex-wrap: wrap;
+    row-gap: 6px;
   }
 
   .assistant-panel__body {
@@ -1826,35 +3341,28 @@ onBeforeUnmount(() => {
 
   .assistant-session-list {
     width: auto;
-    max-height: 128px;
+    max-height: 40px;
+    flex-direction: row;
+    align-items: center;
     border-right: none;
     border-bottom: 1px solid #e8ebf0;
   }
 
-  .assistant-message__bubble {
-    width: 100%;
+  .assistant-message__main {
+    max-width: calc(100% - 36px);
   }
-}
 
-.assistant-message__thinking {
-  margin-top: 12px;
-  padding: 12px;
-  background: #f7f9fc;
-  border-radius: 8px;
-  border: 1px solid #e8ebf0;
-}
-
-.assistant-thinking-steps {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  .assistant-message__bubble--user {
+    max-width: 100%;
+  }
 }
 
 .assistant-thinking-step {
   padding: 8px 12px;
   background: #fff;
-  border-radius: 6px;
+  border-radius: 8px;
   border-left: 3px solid #409eff;
+  box-shadow: 0 1px 3px rgba(31, 35, 41, 0.04);
 }
 
 .assistant-thinking-step--query_parse {

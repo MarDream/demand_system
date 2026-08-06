@@ -7,6 +7,7 @@ import com.demand.system.module.knowledge.dto.KnowledgeSearchRequest;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse;
 import com.demand.system.module.knowledge.entity.KnowledgeChunk;
 import com.demand.system.module.knowledge.entity.KnowledgeDocument;
+import com.demand.system.module.knowledge.llm.LlmGateway;
 import com.demand.system.module.knowledge.mapper.KnowledgeChunkMapper;
 import com.demand.system.module.knowledge.mapper.KnowledgeDocumentMapper;
 import com.demand.system.module.knowledge.service.EmbeddingService;
@@ -71,13 +72,16 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         }
 
         try {
-            String answer = ragAnswerService.generateAnswer(
+            LlmGateway.ChatResult chatResult = ragAnswerService.generateAnswerWithReasoning(
                     query,
                     response.getResults(),
                     request.getKnowledgeBaseId(),
                     request.getLlmModelId()
             );
-            response.setAnswer(answer);
+            if (chatResult != null) {
+                response.setAnswer(chatResult.getContent());
+                response.setReasoningContent(chatResult.getReasoningContent());
+            }
         } catch (Exception e) {
             log.warn("RAG答案生成失败，仅返回检索结果", e);
             response.setAnswer(null);
@@ -662,6 +666,7 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                     .fileName(first.getFileName())
                     .hitCount(items.size())
                     .maxScore(maxScore)
+                    .knowledgeBaseId(first.getKnowledgeBaseId())
                     .build());
         }
 

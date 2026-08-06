@@ -1,4 +1,5 @@
 import { ref, onUnmounted } from 'vue'
+import { getToken } from '@/utils/auth'
 
 export interface CollaborationCursor {
   userId: number
@@ -7,6 +8,17 @@ export interface CollaborationCursor {
   recordId: number
   fieldId: number
   timestamp: number
+}
+
+export interface OnlineCollaborator {
+  id: number
+  name: string
+  avatar?: string
+}
+
+export interface PresenceUpdatedEvent {
+  type: 'presence_updated'
+  users: OnlineCollaborator[]
 }
 
 export interface CellUpdateEvent {
@@ -37,21 +49,28 @@ export interface CursorMoveEvent {
   fieldId: number
 }
 
-const WS_BASE = import.meta.env.VITE_WS_URL || 'ws://localhost:8081'
+const WS_BASE = (import.meta.env.VITE_WS_URL || 'ws://localhost:8081').replace(/\/$/, '')
 
 export function useBitableWebSocket(baseId: number) {
   const ws = ref<WebSocket | null>(null)
   const connected = ref(false)
   const cursors = ref<Map<string, CollaborationCursor>>(new Map())
+  const onlineUsers = ref<OnlineCollaborator[]>([])
   const reconnectAttempts = ref(0)
 
   const onCellUpdated = ref<((event: CellUpdateEvent) => void) | null>(null)
   const onConflict = ref<((event: ConflictEvent) => void) | null>(null)
 
   function connect() {
-    if (ws.value?.readyState === WebSocket.OPEN) return
+    if (ws.value?.readyState === WebSocket.OPEN || ws.value?.readyState === WebSocket.CONNECTING) return
 
-    const url = `${WS_BASE}/ws/bitable/${baseId}`
+    const token = getToken()
+    if (!token) {
+      onlineUsers.value = []
+      return
+    }
+
+    const url = `${WS_BASE}/ws/bitable/${baseId}?accessToken=${encodeURIComponent(token)}`
     ws.value = new WebSocket(url)
 
     ws.value.onopen = () => {
@@ -65,6 +84,7 @@ export function useBitableWebSocket(baseId: number) {
           | CellUpdateEvent
           | ConflictEvent
           | CursorMoveEvent
+          | PresenceUpdatedEvent
 
         if (msg.type === 'cell_updated' && onCellUpdated.value) {
           onCellUpdated.value(msg)
@@ -73,6 +93,8 @@ export function useBitableWebSocket(baseId: number) {
         } else if (msg.type === 'cursor_moved') {
           const key = `${msg.tableId}_${msg.recordId}_${msg.fieldId}`
           cursors.value.set(key, { ...msg, timestamp: Date.now() })
+        } else if (msg.type === 'presence_updated') {
+          onlineUsers.value = Array.isArray(msg.users) ? msg.users : []
         }
       } catch {
         // ignore parse errors
@@ -81,6 +103,8 @@ export function useBitableWebSocket(baseId: number) {
 
     ws.value.onclose = () => {
       connected.value = false
+      onlineUsers.value = []
+      ws.value = null
       if (reconnectAttempts.value < 5) {
         reconnectAttempts.value++
         setTimeout(connect, 3000)
@@ -93,6 +117,7 @@ export function useBitableWebSocket(baseId: number) {
     ws.value?.close()
     ws.value = null
     connected.value = false
+    onlineUsers.value = []
   }
 
   function sendCellUpdate(
@@ -146,6 +171,7 @@ export function useBitableWebSocket(baseId: number) {
     ws,
     connected,
     cursors,
+    onlineUsers,
     reconnectAttempts,
     onCellUpdated,
     onConflict,

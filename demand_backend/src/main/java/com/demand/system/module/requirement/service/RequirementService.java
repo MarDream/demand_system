@@ -27,7 +27,7 @@ public interface RequirementService {
      * 导出用：按检索条件查询全量需求数据
      *
      * @param query 检索条件
-     * @param view  视图类型：all / drafts / pending / done / follows
+     * @param view  视图类型：all / drafts / pending / done / follows / cc
      * @return 导出数据列表（每行为 Map，key 为字段名）
      */
     List<Map<String, Object>> listForExport(RequirementQueryDTO query, String view);
@@ -51,6 +51,8 @@ public interface RequirementService {
     PageResult<RequirementVO> listMyPending(RequirementMyListQueryDTO query, Long userId);
 
     PageResult<RequirementVO> listMyFollows(RequirementMyListQueryDTO query, Long userId);
+
+    PageResult<RequirementVO> listMyCc(RequirementMyListQueryDTO query, Long userId);
 
     /**
      * 我的已办 - 查询用户参与过审批的需求

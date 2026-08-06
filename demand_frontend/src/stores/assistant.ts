@@ -6,9 +6,10 @@ import {
   deleteAssistantSession,
   getAssistantMessages,
   getAssistantSessions,
+  regenerateAssistantMessage,
   streamAssistantMessage,
 } from '@/api/modules/assistant'
-import type { AssistantChatRequest, AssistantMessage, AssistantMessageId, AssistantSession } from '@/types/assistant'
+import type { AssistantChatRequest, AssistantMessage, AssistantMessageId, AssistantSession, AssistantTask } from '@/types/assistant'
 
 const DEFAULT_SESSION_TITLE = '新会话'
 
@@ -50,6 +51,19 @@ export const useAssistantStore = defineStore('assistant', () => {
   const activeSessionId = ref<number | null>(null)
   const messages = ref<AssistantMessage[]>([])
   const sending = ref(false)
+  let abortController: AbortController | null = null
+
+  function stopGenerating() {
+    abortController?.abort()
+    abortController = null
+  }
+
+  function applyUsage(target: AssistantMessage, usage?: { inputTokens?: number | null, outputTokens?: number | null, totalTokens?: number | null }) {
+    if (!usage || !target) return
+    if (usage.inputTokens != null) target.inputTokens = usage.inputTokens
+    if (usage.outputTokens != null) target.outputTokens = usage.outputTokens
+    if (usage.totalTokens != null) target.totalTokens = usage.totalTokens
+  }
 
   async function loadSessions() {
     const data = await getAssistantSessions() as unknown as AssistantSession[]
@@ -201,6 +215,7 @@ export const useAssistantStore = defineStore('assistant', () => {
       createdAt,
     })
 
+    abortController = new AbortController()
     try {
       await streamAssistantMessage(sessionId, request, {
         onActions(payload) {
@@ -209,16 +224,45 @@ export const useAssistantStore = defineStore('assistant', () => {
           target.intent = payload.intent || null
           target.actions = payload.actions || []
           target.sources = payload.sources || []
+          target.tasks = payload.tasks || []
         },
         onThinkingSteps(steps) {
           const target = messages.value.find(item => String(item.id) === assistantTempId)
           if (!target) return
           target.thinkingSteps = steps
         },
+        onTaskUpdate(task) {
+          const target = messages.value.find(item => String(item.id) === assistantTempId)
+          if (!target) return
+          if (!target.tasks) target.tasks = []
+          const idx = target.tasks.findIndex(t => t.id === task.id)
+          if (idx >= 0) {
+            target.tasks[idx] = task
+          } else {
+            target.tasks.push(task)
+          }
+          // 触发响应式更新
+          target.tasks = [...target.tasks]
+        },
         onDelta(delta) {
           const target = messages.value.find(item => String(item.id) === assistantTempId)
           if (!target) return
           target.content += delta
+        },
+        onReasoningDelta(delta) {
+          const target = messages.value.find(item => String(item.id) === assistantTempId)
+          if (!target) return
+          target.reasoning = (target.reasoning || '') + delta
+        },
+        onReasoning(content) {
+          const target = messages.value.find(item => String(item.id) === assistantTempId)
+          if (!target) return
+          target.reasoning = content
+        },
+        onUsage(usage) {
+          const target = messages.value.find(item => String(item.id) === assistantTempId)
+          if (!target) return
+          applyUsage(target, usage)
         },
         onDone(message) {
           const index = messages.value.findIndex(item => String(item.id) === assistantTempId)
@@ -237,18 +281,127 @@ export const useAssistantStore = defineStore('assistant', () => {
           }
           sending.value = false
         },
-      })
+      }, abortController.signal)
     } catch (error) {
-      const message = error instanceof Error ? error.message : '操作助手请求失败'
+      const isAborted = error instanceof DOMException && error.name === 'AbortError'
       const target = messages.value.find(item => String(item.id) === assistantTempId)
       if (target) {
-        target.status = 'failed'
-        target.content = target.content || message
+        target.status = isAborted ? 'completed' : 'failed'
+        if (!target.content) {
+          target.content = isAborted ? '' : (error instanceof Error ? error.message : '操作助手请求失败')
+        }
       }
-      ElMessage.error(message)
+      if (!isAborted) {
+        ElMessage.error(error instanceof Error ? error.message : '操作助手请求失败')
+      }
     } finally {
+      abortController = null
       sending.value = false
       await loadSessions()
+      if (activeSessionId.value === sessionId) {
+        await loadMessages(sessionId)
+      }
+    }
+  }
+
+  async function regenerateMessage(assistantMessageId: AssistantMessageId, request: AssistantChatRequest) {
+    if (sending.value) {
+      return
+    }
+    const sessionId = activeSessionId.value
+    if (sessionId == null) {
+      return
+    }
+
+    sending.value = true
+    const index = messages.value.findIndex(item => String(item.id) === String(assistantMessageId))
+    const oldMessage = messages.value[index]
+    if (!oldMessage) {
+      sending.value = false
+      return
+    }
+    // 目标消息原地进入流式态，新内容覆盖旧内容
+    oldMessage.status = 'streaming'
+    oldMessage.content = ''
+    oldMessage.reasoning = null
+    oldMessage.thinkingSteps = []
+    oldMessage.actions = []
+    oldMessage.sources = []
+    oldMessage.inputTokens = null
+    oldMessage.outputTokens = null
+    oldMessage.totalTokens = null
+
+    abortController = new AbortController()
+    try {
+      await regenerateAssistantMessage(sessionId, {
+        message: request.message,
+        pageContext: request.pageContext,
+        knowledgeBaseId: request.knowledgeBaseId,
+        llmModelId: request.llmModelId,
+        mode: request.mode,
+        topK: request.topK,
+        webSearch: request.webSearch,
+        files: request.files,
+        assistantMessageId,
+      }, {
+        onActions(payload) {
+          oldMessage.intent = payload.intent || null
+          oldMessage.actions = payload.actions || []
+          oldMessage.sources = payload.sources || []
+          oldMessage.tasks = payload.tasks || []
+        },
+        onThinkingSteps(steps) {
+          oldMessage.thinkingSteps = steps
+        },
+        onTaskUpdate(task) {
+          if (!oldMessage.tasks) oldMessage.tasks = []
+          const idx = oldMessage.tasks.findIndex(t => t.id === task.id)
+          if (idx >= 0) {
+            oldMessage.tasks[idx] = task
+          } else {
+            oldMessage.tasks.push(task)
+          }
+          oldMessage.tasks = [...oldMessage.tasks]
+        },
+        onDelta(delta) {
+          oldMessage.content += delta
+        },
+        onReasoningDelta(delta) {
+          oldMessage.reasoning = (oldMessage.reasoning || '') + delta
+        },
+        onReasoning(content) {
+          oldMessage.reasoning = content
+        },
+        onUsage(usage) {
+          applyUsage(oldMessage, usage)
+        },
+        onDone(message) {
+          const doneIndex = messages.value.findIndex(item => String(item.id) === String(assistantMessageId))
+          if (doneIndex >= 0) {
+            messages.value.splice(doneIndex, 1, message)
+          }
+          sending.value = false
+        },
+        onError(message) {
+          oldMessage.status = 'failed'
+          if (!oldMessage.content) {
+            oldMessage.content = message
+          }
+          sending.value = false
+        },
+      }, abortController.signal)
+    } catch (error) {
+      const isAborted = error instanceof DOMException && error.name === 'AbortError'
+      oldMessage.status = isAborted ? 'completed' : 'failed'
+      if (!oldMessage.content && !isAborted) {
+        oldMessage.content = error instanceof Error ? error.message : '重新生成失败'
+      }
+      if (!isAborted) {
+        ElMessage.error(error instanceof Error ? error.message : '重新生成失败')
+      }
+    } finally {
+      abortController = null
+      sending.value = false
       if (activeSessionId.value === sessionId) {
         await loadMessages(sessionId)
       }
@@ -273,5 +426,7 @@ export const useAssistantStore = defineStore('assistant', () => {
     ensureSession,
     removeSession,
     sendMessage,
+    regenerateMessage,
+    stopGenerating,
   }
 })

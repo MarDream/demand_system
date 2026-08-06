@@ -16,14 +16,18 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 public class BitableWebSocketConfig implements WebSocketConfigurer {
 
     private final BitableWebSocketHandler bitableWebSocketHandler;
+    private final BitableWebSocketAuthInterceptor authInterceptor;
 
-    public BitableWebSocketConfig(BitableWebSocketHandler bitableWebSocketHandler) {
+    public BitableWebSocketConfig(BitableWebSocketHandler bitableWebSocketHandler,
+                                  BitableWebSocketAuthInterceptor authInterceptor) {
         this.bitableWebSocketHandler = bitableWebSocketHandler;
+        this.authInterceptor = authInterceptor;
     }
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(bitableWebSocketHandler, "/ws/bitable/{baseId}")
+                .addInterceptors(authInterceptor)
                 .setAllowedOrigins("http://localhost:5170", "http://127.0.0.1:5170");
     }
 }

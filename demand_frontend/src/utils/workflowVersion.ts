@@ -4,7 +4,8 @@ export function normalizeWorkflowVersion(version?: string | number | null) {
   if (version === null || version === undefined) {
     return ''
   }
-  return String(version).trim()
+  const normalized = String(version).trim()
+  return /^[vV]\d/.test(normalized) ? normalized.slice(1).trim() : normalized
 }
 
 export function isWorkflowVersion(version?: string | number | null) {

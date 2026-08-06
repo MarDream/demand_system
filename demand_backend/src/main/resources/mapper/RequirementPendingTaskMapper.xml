@@ -2,16 +2,18 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.demand.system.module.requirement.mapper.RequirementPendingTaskMapper">
 
-    <!-- 删除指定需求的所有待办任务 -->
+    <!-- 删除指定需求的审批待办；只读抄送待办需保留供查阅 -->
     <delete id="deleteByRequirementId">
         DELETE FROM requirement_pending_tasks
         WHERE requirement_id = #{requirementId}
+          AND task_type = 'APPROVAL'
     </delete>
 
-    <!-- 批量删除需求的待办任务 -->
+    <!-- 批量删除需求的审批待办；只读抄送待办需保留供查阅 -->
     <delete id="deleteByRequirementIds">
         DELETE FROM requirement_pending_tasks
-        WHERE requirement_id IN
+        WHERE task_type = 'APPROVAL'
+          AND requirement_id IN
         <foreach collection="requirementIds" item="id" open="(" separator="," close=")">
             #{id}
         </foreach>
@@ -20,10 +22,10 @@
     <!-- 批量插入待办任务（支持角色/角色组/组织范围） -->
     <insert id="insertBatch">
         INSERT INTO requirement_pending_tasks
-        (requirement_id, user_id, assignee_type, role_id, role_group_id, org_id, workflow_instance_id, current_node_id, current_node_name)
+        (requirement_id, task_type, user_id, assignee_type, role_id, role_group_id, org_id, workflow_instance_id, current_node_id, current_node_name)
         VALUES
         <foreach collection="tasks" item="task" separator=",">
-            (#{task.requirementId}, #{task.userId}, #{task.assigneeType},
+            (#{task.requirementId}, COALESCE(#{task.taskType}, 'APPROVAL'), #{task.userId}, #{task.assigneeType},
             #{task.roleId}, #{task.roleGroupId}, #{task.orgId},
             #{task.workflowInstanceId}, #{task.currentNodeId}, #{task.currentNodeName})
         </foreach>
@@ -56,7 +58,8 @@
                 NOT EXISTS (
                     SELECT 1
                     FROM requirement_pending_tasks direct_pt
-                    WHERE direct_pt.requirement_id = pt.requirement_id
+                    WHERE direct_pt.task_type = 'APPROVAL'
+                      AND direct_pt.requirement_id = pt.requirement_id
                       AND direct_pt.workflow_instance_id = pt.workflow_instance_id
                       AND direct_pt.current_node_id = pt.current_node_id
                       AND direct_pt.user_id IS NOT NULL
@@ -100,7 +103,8 @@
         SELECT pt.requirement_id
         FROM requirement_pending_tasks pt
         <include refid="pendingUserAccessJoins" />
-        WHERE <include refid="pendingUserAccessCondition" />
+        WHERE pt.task_type = 'APPROVAL'
+          AND <include refid="pendingUserAccessCondition" />
         <if test="projectId != null">
             AND EXISTS (
                 SELECT 1 FROM requirements r
@@ -118,7 +122,26 @@
         FROM requirement_pending_tasks pt
         <include refid="pendingUserAccessJoins" />
         JOIN requirements r ON r.id = pt.requirement_id AND r.deleted_at = 0 AND r.is_draft = 0
-        WHERE <include refid="pendingUserAccessCondition" />
+        WHERE pt.task_type = 'APPROVAL'
+          AND <include refid="pendingUserAccessCondition" />
+        <if test="isSuperAdmin != true and visibleOrgIds != null and visibleOrgIds.size() > 0">
+            AND r.org_id IN
+            <foreach collection="visibleOrgIds" item="orgId" open="(" separator="," close=")">
+                #{orgId}
+            </foreach>
+        </if>
+        <if test="isSuperAdmin != true and (visibleOrgIds == null or visibleOrgIds.size() == 0)">
+            AND 1 = 0
+        </if>
+    </select>
+
+    <!-- 统计用户的只读抄送查阅数量（不参与审批权限） -->
+    <select id="countCcReadOnlyByUserIdWithOrgFilter" resultType="java.lang.Long">
+        SELECT COUNT(DISTINCT pt.requirement_id)
+        FROM requirement_pending_tasks pt
+        JOIN requirements r ON r.id = pt.requirement_id AND r.deleted_at = 0 AND r.is_draft = 0
+        WHERE pt.task_type = 'CC_READ_ONLY'
+          AND pt.user_id = #{userId}
         <if test="isSuperAdmin != true and visibleOrgIds != null and visibleOrgIds.size() > 0">
             AND r.org_id IN
             <foreach collection="visibleOrgIds" item="orgId" open="(" separator="," close=")">
@@ -134,7 +157,8 @@
     <select id="countByCurrentWorkflowPosition" resultType="java.lang.Long">
         SELECT COUNT(1)
         FROM requirement_pending_tasks
-        WHERE requirement_id = #{requirementId}
+        WHERE task_type = 'APPROVAL'
+          AND requirement_id = #{requirementId}
           AND workflow_instance_id = #{workflowInstanceId}
           AND current_node_id = #{currentNodeId}
     </select>
@@ -144,7 +168,8 @@
         SELECT COUNT(DISTINCT pt.requirement_id)
         FROM requirement_pending_tasks pt
         <include refid="pendingUserAccessJoins" />
-        WHERE pt.requirement_id = #{requirementId}
+        WHERE pt.task_type = 'APPROVAL'
+          AND pt.requirement_id = #{requirementId}
           AND pt.workflow_instance_id = #{workflowInstanceId}
           AND pt.current_node_id = #{currentNodeId}
           AND <include refid="pendingUserAccessCondition" />
@@ -154,10 +179,31 @@
     <select id="selectPendingUserIds" resultType="java.lang.Long">
         SELECT DISTINCT user_id
         FROM requirement_pending_tasks
-        WHERE requirement_id = #{requirementId}
+        WHERE task_type = 'APPROVAL'
+          AND requirement_id = #{requirementId}
           AND workflow_instance_id = #{workflowInstanceId}
           AND current_node_id = #{currentNodeId}
           AND user_id IS NOT NULL
     </select>
+
+    <!-- 插入只读抄送待办：收件人已在服务层展开为具体用户 -->
+    <insert id="insertCcReadOnlyBatch">
+        INSERT INTO requirement_pending_tasks
+        (requirement_id, task_type, user_id, assignee_type, workflow_instance_id, current_node_id, current_node_name)
+        <foreach collection="tasks" item="task" separator=" UNION ALL ">
+            SELECT #{task.requirementId}, 'CC_READ_ONLY', #{task.userId}, #{task.assigneeType},
+                   #{task.workflowInstanceId}, #{task.currentNodeId}, #{task.currentNodeName}
+            FROM DUAL
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM requirement_pending_tasks existing
+                WHERE existing.requirement_id = #{task.requirementId}
+                  AND existing.task_type = 'CC_READ_ONLY'
+                  AND existing.user_id = #{task.userId}
+                  AND existing.workflow_instance_id = #{task.workflowInstanceId}
+                  AND existing.current_node_id = #{task.currentNodeId}
+            )
+        </foreach>
+    </insert>
 
 </mapper>

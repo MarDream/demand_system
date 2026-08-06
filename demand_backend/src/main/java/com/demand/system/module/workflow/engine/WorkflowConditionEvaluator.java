@@ -57,6 +57,32 @@ public class WorkflowConditionEvaluator {
     }
 
     /**
+     * 对同一条件节点的出边做互斥选择：若有明确条件命中，则忽略默认分支；
+     * 只有明确条件均未命中时，才放行 defaultFlow=true 的分支。
+     */
+    public List<WorkflowEdge> filterMatchingEdges(List<WorkflowEdge> edges, Requirement requirement) {
+        if (edges == null || edges.isEmpty()) {
+            return List.of();
+        }
+        List<WorkflowEdge> explicitMatches = edges.stream()
+                .filter(edge -> !isDefaultFlow(edge))
+                .filter(edge -> matches(edge, requirement))
+                .toList();
+        if (!explicitMatches.isEmpty()) {
+            return explicitMatches;
+        }
+        return edges.stream()
+                .filter(this::isDefaultFlow)
+                .filter(edge -> matches(edge, requirement))
+                .toList();
+    }
+
+    public boolean isDefaultFlow(WorkflowEdge edge) {
+        Map<String, Object> condition = resolveCondition(edge);
+        return condition != null && Boolean.TRUE.equals(condition.get("defaultFlow"));
+    }
+
+    /**
      * 结构化组合条件评估：遍历 rules，按 AND/OR 逻辑组合
      */
     public boolean evaluateRules(List<?> rules, Requirement requirement, String logic) {

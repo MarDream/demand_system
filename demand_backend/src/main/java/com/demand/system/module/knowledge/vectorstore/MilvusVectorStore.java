@@ -8,9 +8,11 @@ import io.milvus.v2.common.DataType;
 import io.milvus.v2.common.IndexParam;
 import io.milvus.v2.service.collection.request.AddFieldReq;
 import io.milvus.v2.service.collection.request.CreateCollectionReq;
+import io.milvus.v2.service.collection.request.DescribeCollectionReq;
 import io.milvus.v2.service.collection.request.DropCollectionReq;
 import io.milvus.v2.service.collection.request.GetCollectionStatsReq;
 import io.milvus.v2.service.collection.request.HasCollectionReq;
+import io.milvus.v2.service.collection.response.DescribeCollectionResp;
 import io.milvus.v2.service.collection.response.GetCollectionStatsResp;
 import io.milvus.v2.service.vector.request.DeleteReq;
 import io.milvus.v2.service.vector.request.InsertReq;
@@ -31,6 +33,7 @@ public class MilvusVectorStore {
 
     private final MilvusConfig milvusConfig;
     private MilvusClientV2 client;
+    private volatile int actualDimension = -1;
 
     public MilvusVectorStore(MilvusConfig milvusConfig) {
         this.milvusConfig = milvusConfig;
@@ -64,7 +67,13 @@ public class MilvusVectorStore {
                     .collectionName(collectionName).build();
             boolean exists = client.hasCollection(hasReq);
             if (exists) {
-                log.info("Milvus集合已存在: {}", collectionName);
+                int dimension = describeDimension(collectionName);
+                if (dimension > 0) {
+                    actualDimension = dimension;
+                    milvusConfig.setDimension(dimension);
+                }
+                log.info("Milvus集合已存在: {}, dimension={}", collectionName,
+                        dimension > 0 ? dimension : milvusConfig.getDimension());
                 return;
             }
 
@@ -108,7 +117,8 @@ public class MilvusVectorStore {
                     .indexParams(indexParams)
                     .build();
             client.createCollection(createReq);
-            log.info("Milvus集合创建成功: {}", collectionName);
+            actualDimension = milvusConfig.getDimension();
+            log.info("Milvus集合创建成功: {}, dimension={}", collectionName, actualDimension);
         } catch (Exception e) {
             log.error("Milvus集合创建失败", e);
         }
@@ -117,6 +127,8 @@ public class MilvusVectorStore {
     public void insertVectors(List<VectorDocument> documents) {
         if (documents.isEmpty()) return;
         String collectionName = milvusConfig.getCollectionName();
+        int vectorDimension = validateVectorDimensions(documents);
+        ensureDimension(vectorDimension);
 
         List<JsonObject> data = new ArrayList<>();
         for (VectorDocument doc : documents) {
@@ -161,6 +173,12 @@ public class MilvusVectorStore {
 
     public List<SearchResult> search(float[] queryVector, String knowledgeBaseId, int topK) {
         String collectionName = milvusConfig.getCollectionName();
+        int collectionDimension = getActualDimension();
+        if (queryVector == null || queryVector.length != collectionDimension) {
+            int queryDimension = queryVector == null ? 0 : queryVector.length;
+            throw new IllegalArgumentException("查询向量维度(" + queryDimension
+                    + ")与Milvus集合维度(" + collectionDimension + ")不一致");
+        }
 
         List<Float> queryList = new ArrayList<>(queryVector.length);
         for (float v : queryVector) {
@@ -238,7 +256,7 @@ public class MilvusVectorStore {
      * @param dimension 新的向量维度
      * @return true 如果重建成功
      */
-    public boolean rebuildCollection(int dimension) {
+    public synchronized boolean rebuildCollection(int dimension) {
         String collectionName = milvusConfig.getCollectionName();
         try {
             HasCollectionReq hasReq = HasCollectionReq.builder()
@@ -251,11 +269,15 @@ public class MilvusVectorStore {
                 log.warn("Milvus旧集合已删除: {}", collectionName);
             }
 
-            // 临时覆盖维度
-            int originalDimension = milvusConfig.getDimension();
             milvusConfig.setDimension(dimension);
+            actualDimension = -1;
             ensureCollection();
-            milvusConfig.setDimension(originalDimension);
+            int createdDimension = describeDimension(collectionName);
+            if (createdDimension != dimension) {
+                throw new IllegalStateException("Milvus集合创建后的维度校验失败: expected="
+                        + dimension + ", actual=" + createdDimension);
+            }
+            actualDimension = createdDimension;
 
             log.info("Milvus集合重建成功: {}, 新维度={}", collectionName, dimension);
             return true;
@@ -266,11 +288,91 @@ public class MilvusVectorStore {
     }
 
     /**
+     * 按 embedding 接口实际返回的向量维度校准 Milvus 集合。
+     * 当模型未配置 dimension 或模型切换时，以真实向量长度为准自动重建集合。
+     */
+    public synchronized DimensionSyncResult ensureDimension(int requiredDimension) {
+        if (requiredDimension <= 0) {
+            throw new IllegalArgumentException("向量维度必须大于0");
+        }
+
+        int currentDimension = getActualDimension();
+        if (currentDimension == requiredDimension) {
+            return DimensionSyncResult.unchanged(currentDimension);
+        }
+
+        long previousEntityCount = Math.max(0, getCollectionStats());
+        log.warn("检测到Embedding实际维度与Milvus集合不一致，自动重建集合: collection={}, oldDimension={}, "
+                        + "newDimension={}, previousEntityCount={}",
+                milvusConfig.getCollectionName(), currentDimension, requiredDimension, previousEntityCount);
+
+        if (!rebuildCollection(requiredDimension)) {
+            throw new IllegalStateException("Milvus集合维度自动校准失败: oldDimension="
+                    + currentDimension + ", requiredDimension=" + requiredDimension);
+        }
+        return new DimensionSyncResult(true, currentDimension, requiredDimension, previousEntityCount);
+    }
+
+    /**
      * 获取当前集合实际使用的向量维度。
      * 如果集合不存在或无法获取，返回配置中的维度。
      */
     public int getActualDimension() {
+        int cached = actualDimension;
+        if (cached > 0) {
+            return cached;
+        }
+        int described = describeDimension(milvusConfig.getCollectionName());
+        if (described > 0) {
+            actualDimension = described;
+            milvusConfig.setDimension(described);
+            return described;
+        }
         return milvusConfig.getDimension();
+    }
+
+    private int describeDimension(String collectionName) {
+        try {
+            DescribeCollectionResp response = client.describeCollection(DescribeCollectionReq.builder()
+                    .collectionName(collectionName)
+                    .build());
+            if (response == null || response.getCollectionSchema() == null) {
+                return -1;
+            }
+            CreateCollectionReq.FieldSchema field = response.getCollectionSchema().getField("dense_vector");
+            return field != null && field.getDimension() != null ? field.getDimension() : -1;
+        } catch (Exception e) {
+            log.warn("读取Milvus集合维度失败: collection={}, error={}", collectionName, e.getMessage());
+            return -1;
+        }
+    }
+
+    private int validateVectorDimensions(List<VectorDocument> documents) {
+        int dimension = -1;
+        for (VectorDocument document : documents) {
+            float[] vector = document.getVector();
+            if (vector == null || vector.length == 0) {
+                throw new IllegalArgumentException("存在空向量，无法写入Milvus");
+            }
+            if (dimension < 0) {
+                dimension = vector.length;
+            } else if (dimension != vector.length) {
+                throw new IllegalArgumentException("同一批次存在不同向量维度: expected="
+                        + dimension + ", actual=" + vector.length);
+            }
+        }
+        return dimension;
+    }
+
+    public record DimensionSyncResult(boolean rebuilt, int previousDimension,
+                                      int currentDimension, long previousEntityCount) {
+        public static DimensionSyncResult unchanged(int dimension) {
+            return new DimensionSyncResult(false, dimension, dimension, 0);
+        }
+
+        public boolean requiresFullReindex() {
+            return rebuilt && previousEntityCount > 0;
+        }
     }
 
     public static class VectorDocument {

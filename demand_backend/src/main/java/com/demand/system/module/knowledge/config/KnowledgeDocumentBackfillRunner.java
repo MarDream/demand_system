@@ -24,6 +24,11 @@ public class KnowledgeDocumentBackfillRunner {
         try {
             int updatedCount = knowledgeDocumentService.backfillDocumentMetadata();
             log.info("Knowledge document metadata backfill finished, updated {} records", updatedCount);
+
+            int retriedCount = knowledgeDocumentService.retryRecoverableFailedDocuments();
+            if (retriedCount > 0) {
+                log.warn("已自动重新提交 {} 个因向量维度不匹配或临时存储连接故障而失败的知识库文档", retriedCount);
+            }
         } catch (Exception e) {
             log.warn("Knowledge document metadata backfill failed", e);
         }

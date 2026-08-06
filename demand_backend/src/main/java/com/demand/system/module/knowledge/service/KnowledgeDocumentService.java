@@ -85,6 +85,9 @@ public interface KnowledgeDocumentService {
 
     int backfillDocumentMetadata();
 
+    /** 自动重试因向量维度不匹配或临时存储连接故障而失败的历史文档。 */
+    int retryRecoverableFailedDocuments();
+
     int retryDocuments(Long knowledgeBaseId, List<Long> documentIds);
 
     int batchDelete(Long knowledgeBaseId, List<Long> documentIds);

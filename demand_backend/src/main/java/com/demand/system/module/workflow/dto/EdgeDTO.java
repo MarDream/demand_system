@@ -1,6 +1,7 @@
 package com.demand.system.module.workflow.dto;
 
 import java.util.List;
+import java.util.Map;
 
 public class EdgeDTO {
 
@@ -17,6 +18,12 @@ public class EdgeDTO {
     private String conditions;
 
     private Boolean defaultFlow;
+
+    /** 结构化条件配置，与可视化 workflow_edges.condition 保持一致。 */
+    private Map<String, Object> condition;
+
+    /** 连线的完整扩展属性。 */
+    private Map<String, Object> properties;
 
     public String getSource() {
         return source;
@@ -72,5 +79,21 @@ public class EdgeDTO {
 
     public void setDefaultFlow(Boolean defaultFlow) {
         this.defaultFlow = defaultFlow;
+    }
+
+    public Map<String, Object> getCondition() {
+        return condition;
+    }
+
+    public void setCondition(Map<String, Object> condition) {
+        this.condition = condition;
+    }
+
+    public Map<String, Object> getProperties() {
+        return properties;
+    }
+
+    public void setProperties(Map<String, Object> properties) {
+        this.properties = properties;
     }
 }

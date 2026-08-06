@@ -22,6 +22,13 @@ public class RequirementTypeConfig {
     private Boolean isDefault;
 
     /**
+     * 是否启用：false=禁用（不可用于新建需求），true=启用。
+     * <p>工作流被禁用时由 {@code WorkflowActivationServiceImpl.deactivate} 联动置 false。
+     * <p>手动开启时需校验绑定的工作流版本仍处于活跃状态（is_active=1 AND activation_status='active'）。
+     */
+    private Boolean enabled;
+
+    /**
      * 绑定的工作流版本ID。
      * <p>取值来源：{@code workflow_versions.id}。运行时由 {@code WorkflowVersionResolver.resolveForType(code)}
      * 通过该字段解析工作流，必须指向 {@code is_active=1 AND activation_status='active'} 的版本。
@@ -81,6 +88,14 @@ public class RequirementTypeConfig {
 
     public void setIsDefault(Boolean isDefault) {
         this.isDefault = isDefault;
+    }
+
+    public Boolean getEnabled() {
+        return enabled;
+    }
+
+    public void setEnabled(Boolean enabled) {
+        this.enabled = enabled;
     }
 
     public Long getWorkflowVersionId() {

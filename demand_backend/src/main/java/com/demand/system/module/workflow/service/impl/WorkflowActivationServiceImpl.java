@@ -1,7 +1,9 @@
 package com.demand.system.module.workflow.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.demand.system.common.exception.BusinessException;
+import com.demand.system.module.requirement.entity.RequirementTypeConfig;
 import com.demand.system.module.requirement.mapper.RequirementTypeMapper;
 import com.demand.system.module.workflow.dto.WorkflowValidationIssue;
 import com.demand.system.module.workflow.dto.WorkflowVersionDTO;
@@ -90,6 +92,11 @@ public class WorkflowActivationServiceImpl implements WorkflowActivationService 
         version.setActivatedAt(LocalDateTime.now());
         workflowVersionMapper.updateById(version);
 
+        // 工作流启用成功 → 联动恢复所有绑定该版本的需求类型为启用（与 deactivate 的禁用联动对称）
+        requirementTypeMapper.update(null, new LambdaUpdateWrapper<RequirementTypeConfig>()
+                .eq(RequirementTypeConfig::getWorkflowVersionId, versionId)
+                .set(RequirementTypeConfig::getEnabled, true));
+
         return toVersionDTO(version);
     }
 
@@ -103,6 +110,12 @@ public class WorkflowActivationServiceImpl implements WorkflowActivationService 
         version.setIsActive(0);
         version.setActivationStatus("inactive");
         workflowVersionMapper.updateById(version);
+
+        // 工作流禁用 → 联动禁用所有绑定该版本的需求类型（重新启用工作流时由 activate() 自动恢复）
+        requirementTypeMapper.update(null, new LambdaUpdateWrapper<RequirementTypeConfig>()
+                .eq(RequirementTypeConfig::getWorkflowVersionId, versionId)
+                .set(RequirementTypeConfig::getEnabled, false));
+
         return toVersionDTO(version);
     }
 

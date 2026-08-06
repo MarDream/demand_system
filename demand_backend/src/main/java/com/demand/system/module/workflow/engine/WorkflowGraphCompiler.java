@@ -171,6 +171,7 @@ public class WorkflowGraphCompiler {
             config.setType(node.getNodeType());
             config.setSortOrder(order++);
             config.setIsFinal("end".equalsIgnoreCase(node.getNodeType()));
+            config.setProperties(node.getProperties());
             configs.add(config);
         }
         return configs;
@@ -189,6 +190,18 @@ public class WorkflowGraphCompiler {
             config.setSource(edge.getSourceNodeId());
             config.setTarget(edge.getTargetNodeId());
             config.setLabel(edge.getLabel());
+            config.setCondition(edge.getCondition());
+            config.setProperties(edge.getProperties());
+            if (edge.getCondition() != null) {
+                Object expr = edge.getCondition().get("expr");
+                if (expr != null) {
+                    config.setConditions(String.valueOf(expr));
+                }
+                Object defaultFlow = edge.getCondition().get("defaultFlow");
+                if (defaultFlow instanceof Boolean b) {
+                    config.setDefaultFlow(b);
+                }
+            }
             configs.add(config);
         }
         return configs;

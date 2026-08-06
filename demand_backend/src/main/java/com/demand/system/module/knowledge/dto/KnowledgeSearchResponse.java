@@ -8,6 +8,8 @@ public class KnowledgeSearchResponse {
     private List<SearchResultItem> results;
     private Integer total;
     private String answer;
+    /** 深度思考内容（LLM reasoning，可为 null） */
+    private String reasoningContent;
     private String processSummary;
     private List<ThinkingStep> thinkingSteps;
     private String questionIntent;
@@ -36,6 +38,14 @@ public class KnowledgeSearchResponse {
 
     public void setAnswer(String answer) {
         this.answer = answer;
+    }
+
+    public String getReasoningContent() {
+        return reasoningContent;
+    }
+
+    public void setReasoningContent(String reasoningContent) {
+        this.reasoningContent = reasoningContent;
     }
 
     public String getProcessSummary() {
@@ -157,6 +167,7 @@ public class KnowledgeSearchResponse {
         private Integer hitCount;
         private Double maxScore;
         private List<String> sources;
+        private String knowledgeBaseId;
 
         public Integer getIndex() { return index; }
         public void setIndex(Integer index) { this.index = index; }
@@ -170,6 +181,8 @@ public class KnowledgeSearchResponse {
         public void setMaxScore(Double maxScore) { this.maxScore = maxScore; }
         public List<String> getSources() { return sources; }
         public void setSources(List<String> sources) { this.sources = sources; }
+        public String getKnowledgeBaseId() { return knowledgeBaseId; }
+        public void setKnowledgeBaseId(String knowledgeBaseId) { this.knowledgeBaseId = knowledgeBaseId; }
 
         public static Builder builder() { return new Builder(); }
 
@@ -180,6 +193,7 @@ public class KnowledgeSearchResponse {
             private Integer hitCount;
             private Double maxScore;
             private List<String> sources;
+            private String knowledgeBaseId;
 
             public Builder index(Integer v) { this.index = v; return this; }
             public Builder documentId(Long v) { this.documentId = v; return this; }
@@ -187,6 +201,7 @@ public class KnowledgeSearchResponse {
             public Builder hitCount(Integer v) { this.hitCount = v; return this; }
             public Builder maxScore(Double v) { this.maxScore = v; return this; }
             public Builder sources(List<String> v) { this.sources = v; return this; }
+            public Builder knowledgeBaseId(String v) { this.knowledgeBaseId = v; return this; }
 
             public CitationReference build() {
                 CitationReference r = new CitationReference();
@@ -196,6 +211,7 @@ public class KnowledgeSearchResponse {
                 r.setHitCount(hitCount);
                 r.setMaxScore(maxScore);
                 r.setSources(sources);
+                r.setKnowledgeBaseId(knowledgeBaseId);
                 return r;
             }
         }
@@ -205,6 +221,7 @@ public class KnowledgeSearchResponse {
         private List<SearchResultItem> results;
         private Integer total;
         private String answer;
+        private String reasoningContent;
         private String processSummary;
         private List<ThinkingStep> thinkingSteps;
         private String questionIntent;
@@ -223,6 +240,11 @@ public class KnowledgeSearchResponse {
 
         public KnowledgeSearchResponseBuilder answer(String answer) {
             this.answer = answer;
+            return this;
+        }
+
+        public KnowledgeSearchResponseBuilder reasoningContent(String reasoningContent) {
+            this.reasoningContent = reasoningContent;
             return this;
         }
 
@@ -256,6 +278,7 @@ public class KnowledgeSearchResponse {
             response.setResults(results);
             response.setTotal(total);
             response.setAnswer(answer);
+            response.setReasoningContent(reasoningContent);
             response.setProcessSummary(processSummary);
             response.setThinkingSteps(thinkingSteps);
             response.setQuestionIntent(questionIntent);

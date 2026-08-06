@@ -46,7 +46,6 @@ function resolveEntityType(routePath: string, routeName?: string) {
   if (routePath.startsWith('/iterations')) return 'iteration'
   if (routePath.startsWith('/settings/knowledge/search')) return 'knowledge-search'
   if (routePath.startsWith('/settings/knowledge')) return 'knowledge'
-  if (routePath.startsWith('/settings/documents')) return 'documents'
   if (routePath.startsWith('/system/workflow-config')) return 'workflow'
   if (routePath.startsWith('/system/workflow-migration')) return 'workflow'
   if (routePath.startsWith('/settings/llm')) return 'llm'

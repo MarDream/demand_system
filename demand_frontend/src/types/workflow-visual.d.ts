@@ -29,7 +29,8 @@ export interface WorkflowNodeDTO {
   nodeName: string
   positionX: number
   positionY: number
-  assigneeType?: 'SPECIFIED_USER' | 'SPECIFIED_ROLE' | 'SPECIFIED_ROLE_GROUP' | 'SPECIFIED_ORG'
+  assigneeType?: 'SPECIFIED_USER' | 'SPECIFIED_ROLE' | 'SPECIFIED_ROLE_GROUP' | 'SPECIFIED_ORG' | 'CREATOR' | 'PREV_APPROVER'
+  ccMode?: 'MESSAGE' | 'READ_ONLY_TODO'
   assigneeRoleId?: number
   assigneeRoleGroupId?: number
   assigneeOrgId?: number
@@ -87,6 +88,8 @@ export interface WorkflowValidationReport {
 export interface WorkflowVersionDTO {
   id: number
   projectId: number
+  workflowDefinitionId?: number
+  workflowDefinitionName?: string
   version: string
   name: string
   isActive: number
@@ -106,6 +109,20 @@ export interface WorkflowVersionDTO {
   approvalEvaluationEnabled?: boolean
   /** 保存时后端返回的校验问题列表 */
   validationIssues?: WorkflowValidationIssue[]
+}
+
+/** 工作流定义（独立工作流实体，承载工作流名称） */
+export interface WorkflowDefinitionInfoDTO {
+  id: number
+  name: string
+  projectId: number
+  projectName?: string
+  description?: string
+  versionCount?: number
+  activeVersionCount?: number
+  creatorId?: number
+  creatorName?: string
+  createdAt?: string
 }
 
 export interface WorkflowVersionMetaUpdateDTO {

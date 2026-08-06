@@ -1,11 +1,80 @@
 <template>
   <div class="bitable-editor">
-    <!-- 顶部面包屑 -->
+    <!-- 顶部面包屑 + 协作者 -->
     <div class="editor-header">
-      <el-button link @click="router.push('/bitable')">
+      <el-button link class="editor-header__back" @click="router.push('/bitable')">
         <el-icon><ArrowLeft /></el-icon> 返回
       </el-button>
-      <span class="editor-title">{{ base?.name }}</span>
+      <div class="editor-header__divider" />
+      <div class="editor-header__breadcrumbs">
+        <span class="editor-header__crumb">多维表格</span>
+        <el-icon class="editor-header__sep"><ArrowRight /></el-icon>
+        <span class="editor-header__crumb editor-header__crumb--active">{{ base?.name || '加载中…' }}</span>
+        <el-tag v-if="activeView" size="small" round class="editor-header__view-tag">
+          <el-icon class="mr-4"><component :is="getViewIcon(activeView.viewType)" /></el-icon>
+          {{ activeView.name }}
+        </el-tag>
+      </div>
+      <div class="editor-header__spacer" />
+      <div
+        v-if="collaboratorCount > 0"
+        class="editor-header__collaborators"
+        :title="`${collaboratorCount} 位协作者在线`"
+      >
+        <el-popover
+          v-for="(c, idx) in visibleCollaborators"
+          :key="c.id"
+          trigger="click"
+          placement="bottom"
+          :width="180"
+        >
+          <template #reference>
+            <button
+              type="button"
+              class="editor-header__avatar-button"
+              :aria-label="`查看协作者：${c.name}`"
+              :style="{ marginLeft: idx === 0 ? 0 : '-8px', zIndex: visibleCollaborators.length - idx }"
+            >
+              <el-avatar
+                :size="28"
+                :src="c.avatar || undefined"
+                :style="{ background: c.color }"
+                class="editor-header__avatar"
+              >
+                {{ c.initial }}
+              </el-avatar>
+            </button>
+          </template>
+          <div class="collaborator-card">
+            <el-avatar :size="36" :src="c.avatar || undefined" :style="{ background: c.color }">
+              {{ c.initial }}
+            </el-avatar>
+            <div>
+              <strong>{{ c.name }}</strong>
+              <span>正在协作</span>
+            </div>
+          </div>
+        </el-popover>
+
+        <el-popover v-if="remainingCollaborators.length" trigger="click" placement="bottom" :width="200">
+          <template #reference>
+            <button type="button" class="editor-header__avatar-more">
+              +{{ remainingCollaborators.length }}
+            </button>
+          </template>
+          <div class="collaborator-list">
+            <div v-for="c in remainingCollaborators" :key="c.id" class="collaborator-card">
+              <el-avatar :size="30" :src="c.avatar || undefined" :style="{ background: c.color }">
+                {{ c.initial }}
+              </el-avatar>
+              <div>
+                <strong>{{ c.name }}</strong>
+                <span>正在协作</span>
+              </div>
+            </div>
+          </div>
+        </el-popover>
+      </div>
     </div>
 
     <div class="editor-body" :style="sidebar.styleVars">
@@ -580,7 +649,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { resolveErrorMessage } from '@/utils/error'
-import { ArrowLeft, Plus, Delete, Edit, CopyDocument, ArrowRight, MagicStick } from '@element-plus/icons-vue'
+import { ArrowLeft, Plus, Delete, Edit, CopyDocument, ArrowRight, MagicStick, Grid, Menu, Calendar, Picture, Tickets } from '@element-plus/icons-vue'
 import { useCollapsibleSidebar } from '@/composables/useCollapsibleSidebar'
 import { useToast } from '@/composables/useToast'
 import TableSidebar from './components/TableSidebar.vue'
@@ -835,6 +904,7 @@ function isReadonlyFieldType(type?: string) {
 // WebSocket 实时协作
 const {
   connect: wsConnect,
+  onlineUsers,
   onCellUpdated,
   onConflict,
 } = useBitableWebSocket(baseId)
@@ -1095,6 +1165,30 @@ function getViewTypeName(type: ViewType): string {
   }
   return map[type] || type
 }
+
+// 视图类型图标映射（用于顶部 view-tag）
+const viewTypeIconMap: Record<string, any> = {
+  grid: Grid,
+  kanban: Menu,
+  gantt: ArrowRight,
+  calendar: Calendar,
+  gallery: Picture,
+  form: Tickets,
+}
+function getViewIcon(type: string) {
+  return viewTypeIconMap[type] || Grid
+}
+
+// 顶部真实在线协作者，由 WebSocket presence_updated 消息维护
+const collaboratorColors = ['#6366F1', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6', '#06B6D4']
+const collaborators = computed(() => onlineUsers.value.map((user) => ({
+  ...user,
+  initial: Array.from(user.name?.trim() || '?')[0]?.toUpperCase() || '?',
+  color: collaboratorColors[Math.abs(user.id - 1) % collaboratorColors.length],
+})))
+const visibleCollaborators = computed(() => collaborators.value.slice(0, 3))
+const remainingCollaborators = computed(() => collaborators.value.slice(3))
+const collaboratorCount = computed(() => collaborators.value.length)
 
 async function handleCreateView(viewType: ViewType) {
   if (!activeTableId.value) return
@@ -1755,17 +1849,155 @@ watch(showImportExport, (val) => {
 .editor-header {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface);
+  gap: 12px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-surface, #fff);
   flex-shrink: 0;
+  min-height: 52px;
 
-  .editor-title {
-    font-size: var(--font-size-lg);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text-primary);
+  .editor-header__back {
+    color: var(--color-text-secondary, #475569);
+    font-weight: 500;
   }
+
+  .editor-header__divider {
+    width: 1px;
+    height: 18px;
+    background: var(--color-border, #e2e8f0);
+  }
+
+  .editor-header__breadcrumbs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .editor-header__crumb {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-text-secondary, #475569);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 240px;
+
+    &--active {
+      color: var(--color-text-primary, #0f172a);
+      font-weight: 700;
+    }
+  }
+
+  .editor-header__sep {
+    font-size: 12px;
+    color: var(--color-text-placeholder, #cbd5e1);
+  }
+
+  .editor-header__view-tag {
+    margin-left: 4px;
+    font-weight: 500;
+    background: var(--color-primary-subtle, #eff6ff) !important;
+    color: var(--color-primary, #2563eb) !important;
+    border: 0.5px solid var(--color-primary-light, #dbeafe) !important;
+  }
+
+  .mr-4 {
+    margin-right: 4px;
+  }
+
+  .editor-header__spacer {
+    flex: 1;
+  }
+
+  .editor-header__collaborators {
+    display: flex;
+    align-items: center;
+    padding: 4px 4px 4px 8px;
+    border-radius: 14px;
+    background: var(--color-background, #f8fafc);
+  }
+
+  .editor-header__avatar-button {
+    display: inline-flex;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .editor-header__avatar {
+    border: 2px solid var(--color-surface, #fff);
+    font-weight: 600;
+    font-size: 12px;
+    color: #fff;
+    transition: transform 200ms var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+  }
+
+  .editor-header__avatar-button:hover .editor-header__avatar,
+  .editor-header__avatar-button:focus-visible .editor-header__avatar {
+    transform: translateY(-2px) scale(1.08);
+  }
+
+  .editor-header__avatar-button:focus-visible {
+    outline: 2px solid var(--color-primary, #2563eb);
+    outline-offset: 2px;
+  }
+
+  .editor-header__avatar-more {
+    margin-left: 6px;
+    padding: 2px 5px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--color-text-secondary, #475569);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .editor-header__avatar-more:hover,
+  .editor-header__avatar-more:focus-visible {
+    background: var(--color-primary-subtle, #eff6ff);
+    color: var(--color-primary, #2563eb);
+    outline: none;
+  }
+}
+
+.collaborator-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+
+  > div {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+  }
+
+  strong {
+    overflow: hidden;
+    color: var(--color-text-primary, #0f172a);
+    font-size: 14px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  span {
+    margin-top: 2px;
+    color: var(--color-success, #10b981);
+    font-size: 12px;
+  }
+}
+
+.collaborator-list {
+  display: flex;
+  max-height: 240px;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
 }
 
 .editor-body {
@@ -1860,28 +2092,31 @@ watch(showImportExport, (val) => {
 
 .field-list {
   flex-shrink: 0;
-  max-height: 300px;
+  max-height: 320px;
   overflow-y: auto;
-  border-bottom: 1px solid var(--color-border);
-  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  padding: 8px 4px;
+  margin-bottom: 8px;
 }
 
 .field-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
-  border-radius: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md, 8px);
   cursor: pointer;
-  transition: background-color 0.15s;
+  margin-bottom: 2px;
+  transition: all 150ms var(--ease-standard, ease);
 
   &:hover {
-    background: var(--color-surface-alt);
+    background: var(--color-row-hover-bg, rgba(59, 130, 246, 0.04));
   }
 
   &--active {
-    background: var(--el-color-primary-light-9);
-    color: var(--el-color-primary);
+    background: var(--color-primary-subtle, #eff6ff) !important;
+    color: var(--color-primary, #2563eb);
+    box-shadow: inset 3px 0 0 var(--color-primary, #2563eb);
   }
 
   .field-item__info {
@@ -1892,7 +2127,7 @@ watch(showImportExport, (val) => {
   }
 
   .field-item__name {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
@@ -1914,22 +2149,23 @@ watch(showImportExport, (val) => {
 .field-editor {
   flex: 1;
   overflow-y: auto;
-  padding-top: 16px;
+  padding: 12px 4px 16px;
 
   .field-editor__title {
     font-size: 15px;
-    font-weight: 600;
+    font-weight: 700;
     margin-bottom: 16px;
-    color: var(--color-text-primary);
+    color: var(--color-text-primary, #0f172a);
+    letter-spacing: -0.01em;
   }
 
   .field-editor__actions {
     display: flex;
     justify-content: flex-end;
-    gap: 8px;
-    margin-top: 20px;
-    padding-top: 12px;
-    border-top: 1px solid var(--color-border);
+    gap: 10px;
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1px solid var(--color-border, #e2e8f0);
   }
 }
 

@@ -14,6 +14,7 @@ import com.demand.system.module.workflow.mapper.WorkflowApprovalMapper;
 import com.demand.system.module.workflow.mapper.WorkflowRequirementTypeMapper;
 import com.demand.system.module.workflow.mapper.WorkflowInstanceMapper;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
+import com.demand.system.module.workflow.support.WorkflowVersionUtils;
 import com.demand.system.module.project.entity.Project;
 import com.demand.system.module.project.mapper.ProjectMapper;
 import com.demand.system.module.user.entity.User;
@@ -315,41 +316,15 @@ public class WorkflowVersionService {
      * 生成下一个版本号
      */
     private String generateNextVersion(Long projectId, Long requirementTypeId) {
-        List<WorkflowVersion> existingVersions = workflowVersionMapper.selectList(
-                new LambdaQueryWrapper<WorkflowVersion>()
-                        .eq(WorkflowVersion::getProjectId, projectId)
-                        .orderByDesc(WorkflowVersion::getCreatedAt)
-                        .last("LIMIT 1"));
-
-        if (existingVersions.isEmpty()) {
-            return "v1.0.0";
-        }
-
-        String lastVersion = existingVersions.get(0).getVersion();
-        return incrementVersion(lastVersion);
-    }
-
-    /**
-     * 版本号自增（语义化版本）
-     */
-    private String incrementVersion(String version) {
-        // v1.0.0 -> v1.1.0
-        if (version == null || !version.startsWith("v")) {
-            return "v1.0.0";
-        }
-
-        String[] parts = version.substring(1).split("\\.");
-        if (parts.length != 3) {
-            return "v1.0.0";
-        }
-
-        try {
-            int major = Integer.parseInt(parts[0]);
-            int minor = Integer.parseInt(parts[1]) + 1;
-            return String.format("v%d.%d.0", major, minor);
-        } catch (NumberFormatException e) {
-            return "v1.0.0";
-        }
+        return workflowVersionMapper.selectList(
+                        new LambdaQueryWrapper<WorkflowVersion>()
+                                .eq(WorkflowVersion::getProjectId, projectId))
+                .stream()
+                .map(WorkflowVersion::getVersion)
+                .filter(WorkflowVersionUtils::isValid)
+                .max(WorkflowVersionUtils::compare)
+                .map(WorkflowVersionUtils::suggestNext)
+                .orElse("1.0.0");
     }
 
     /**
@@ -380,7 +355,7 @@ public class WorkflowVersionService {
         WorkflowVersionVO vo = new WorkflowVersionVO();
         vo.setId(version.getId());
         vo.setProjectId(version.getProjectId());
-        vo.setVersion(version.getVersion());
+        vo.setVersion(WorkflowVersionUtils.normalize(version.getVersion()));
         vo.setName(version.getName());
         vo.setIsActive(version.getIsActive());
         vo.setActivationStatus(version.getActivationStatus());

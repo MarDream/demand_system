@@ -16,7 +16,7 @@ public class WorkflowTemplateDTO {
     @Schema(description = "工作流名称", example = "项目审批流程")
     private String name;
 
-    @Schema(description = "版本号", example = "v1.0")
+    @Schema(description = "版本号", example = "1.0.0")
     private String version;
 
     @Schema(description = "描述信息")

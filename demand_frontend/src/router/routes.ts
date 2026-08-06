@@ -73,12 +73,6 @@ export const routes: RouteRecordRaw[] = [
         meta: { title: '多维表格编辑', hidden: true, activeMenu: '/bitable' },
       },
       {
-        path: 'settings/documents',
-        name: 'Documents',
-        component: () => import('@/views/rag/index.vue'),
-        meta: { title: '文档中心', icon: 'Files', requiredPermissions: ['menu:document'] },
-      },
-      {
         path: 'settings/knowledge',
         name: 'KnowledgeBases',
         component: () => import('@/views/knowledge/index.vue'),

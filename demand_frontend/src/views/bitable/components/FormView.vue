@@ -89,10 +89,12 @@
           />
         </el-form-item>
 
-        <el-form-item>
-          <el-button type="primary" :loading="loading" @click="submit">提交记录</el-button>
+        <div class="form-view__actions">
           <el-button @click="reset">重置</el-button>
-        </el-form-item>
+          <el-button type="primary" :loading="loading" @click="submit">
+            提交记录
+          </el-button>
+        </div>
       </el-form>
 
       <el-empty v-else description="暂无可填写字段，请先添加字段" />
@@ -200,16 +202,28 @@ defineExpose({ reset })
 </script>
 
 <style scoped lang="scss">
+// ===== 多维表格 FormView 激进风格精修（2026-08-03）=====
+// 设计目标：
+// 1. 字段按类型分组章节
+// 2. 提交按钮 sticky 底部
+// 3. 必填星号视觉强化
+// 4. 行内 hint 替代 tooltip
+// 5. label 加大 + 描述行间距加大
+
 .form-view {
   flex: 1;
   overflow: auto;
-  padding: 24px;
-  background: var(--color-background);
+  padding: 32px 20px 80px;
+  background: var(--color-background, #f8fafc);
 }
 
 .form-view__card {
   max-width: 760px;
   margin: 0 auto;
+  border-radius: var(--radius-card-xl, 18px) !important;
+  box-shadow: var(--shadow-md, 0 4px 6px -1px rgba(15, 23, 42, 0.08)) !important;
+  border: 0.5px solid var(--color-border, #e2e8f0) !important;
+  overflow: hidden;
 }
 
 .form-view__header {
@@ -217,26 +231,66 @@ defineExpose({ reset })
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+  padding-bottom: 4px;
 
   h3 {
-    margin: 0 0 4px;
+    margin: 0 0 6px;
     font-size: 18px;
+    font-weight: 700;
+    color: var(--color-text-primary, #0f172a);
+    letter-spacing: -0.01em;
   }
 
   p {
     margin: 0;
-    color: var(--color-text-secondary);
+    color: var(--color-text-secondary, #475569);
     font-size: 13px;
+    line-height: 1.6;
   }
 }
 
 .form-view__form {
-  padding-top: 8px;
+  padding-top: 12px;
+}
+
+.form-view__form :deep(.el-form-item) {
+  margin-bottom: 22px;
+}
+
+.form-view__form :deep(.el-form-item__label) {
+  font-weight: 600;
+  color: var(--color-text-primary, #0f172a);
+  font-size: 13px;
+  padding-right: 16px;
+  line-height: 1.5;
+}
+
+.form-view__form :deep(.el-form-item.is-required:not(.is-no-asterisk) .el-form-item__label-wrap > .el-form-item__label::before) {
+  content: '*';
+  color: var(--color-danger, #ef4444);
+  margin-right: 4px;
+  font-weight: 700;
 }
 
 .form-view__hint {
-  margin-left: 4px;
-  color: var(--color-text-secondary);
-  vertical-align: -2px;
+  margin-left: 6px;
+  color: var(--color-text-secondary, #475569);
+  font-size: 12px;
+  font-weight: 400;
+  margin-top: 4px;
+  display: block;
+  line-height: 1.5;
+}
+
+// 提交操作区
+.form-view__actions {
+  position: sticky;
+  bottom: 0;
+  background: linear-gradient(180deg, transparent, var(--color-surface, #fff) 30%);
+  padding: 16px 0 0;
+  margin-top: 8px;
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
 }
 </style>

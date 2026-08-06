@@ -11,6 +11,7 @@ import type {
   WorkflowMigrationReport,
   WorkflowExportData,
   WorkflowImportResponse,
+  WorkflowDefinitionInfoDTO,
 } from '@/types/workflow-visual'
 
 export const GLOBAL_WORKFLOW_PROJECT_ID = 0
@@ -48,6 +49,13 @@ export function getVersionHistory(projectId: number) {
  */
 export function listActiveWorkflowVersions() {
   return request.get<WorkflowVersionDTO[]>('/v1/workflows/versions/active') as unknown as Promise<WorkflowVersionDTO[]>
+}
+
+/**
+ * 获取全部工作流定义（需求类型绑定第一级下拉：先选工作流名称）
+ */
+export function listWorkflowDefinitions() {
+  return request.get<WorkflowDefinitionInfoDTO[]>('/v1/workflows/definitions') as unknown as Promise<WorkflowDefinitionInfoDTO[]>
 }
 
 /**

@@ -45,10 +45,7 @@ public class WorkflowGraphNavigator {
 
         List<WorkflowNode> targets = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
-        for (WorkflowEdge edge : context.outgoing(currentNodeId)) {
-            if (!conditionEvaluator.matches(edge, requirement)) {
-                continue;
-            }
+        for (WorkflowEdge edge : matchingOutgoingEdges(context, currentNodeId, requirement)) {
             WorkflowNode directTarget = context.getNode(edge.getTargetNodeId());
             if (directTarget == null) {
                 continue;
@@ -85,10 +82,7 @@ public class WorkflowGraphNavigator {
             return;
         }
 
-        for (WorkflowEdge edge : context.outgoing(nodeId)) {
-            if (!conditionEvaluator.matches(edge, requirement)) {
-                continue;
-            }
+        for (WorkflowEdge edge : matchingOutgoingEdges(context, nodeId, requirement)) {
             collectWaitNodes(context, edge.getTargetNodeId(), requirement, visited, results, seenWaitNodes);
         }
     }
@@ -114,10 +108,7 @@ public class WorkflowGraphNavigator {
             return false;
         }
 
-        for (WorkflowEdge edge : context.outgoing(currentNodeId)) {
-            if (!conditionEvaluator.matches(edge, requirement)) {
-                continue;
-            }
+        for (WorkflowEdge edge : matchingOutgoingEdges(context, currentNodeId, requirement)) {
             if (findPath(context, edge.getTargetNodeId(), targetWaitNodeId, requirement, visited, path)) {
                 return true;
             }
@@ -126,6 +117,16 @@ public class WorkflowGraphNavigator {
         path.remove(path.size() - 1);
         visited.remove(currentNodeId);
         return false;
+    }
+
+    private List<WorkflowEdge> matchingOutgoingEdges(WorkflowGraphContext context, String nodeId, Requirement requirement) {
+        WorkflowNode node = context.getNode(nodeId);
+        if (node != null && "condition".equalsIgnoreCase(node.getNodeType())) {
+            return conditionEvaluator.filterMatchingEdges(context.outgoing(nodeId), requirement);
+        }
+        return context.outgoing(nodeId).stream()
+                .filter(edge -> conditionEvaluator.matches(edge, requirement))
+                .toList();
     }
 
     /**

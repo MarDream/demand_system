@@ -250,12 +250,14 @@ public class WorkflowServiceImpl implements WorkflowService {
             if (!WorkflowVersionUtils.isValid(requestedVersion)) {
                 throw new BusinessException("版本号格式需为正整数或 1.0.0");
             }
+            String requestedName = normalizeWorkflowName(version.getName());
             boolean duplicateVersion = versionMapper.selectList(new LambdaQueryWrapper<WorkflowVersion>()
                             .eq(WorkflowVersion::getProjectId, version.getProjectId()))
                     .stream()
-                    .anyMatch(item -> WorkflowVersionUtils.sameVersion(item.getVersion(), requestedVersion));
+                    .anyMatch(item -> WorkflowVersionUtils.sameVersion(item.getVersion(), requestedVersion)
+                            && Objects.equals(normalizeWorkflowName(item.getName()), requestedName));
             if (duplicateVersion) {
-                throw new BusinessException("版本号 V" + requestedVersion + " 已存在，请重新输入");
+                throw new BusinessException("工作流“" + requestedName + "”下版本号 V" + requestedVersion + " 已存在，请重新输入");
             }
             version.setVersion(requestedVersion);
         } else {
@@ -371,6 +373,10 @@ public class WorkflowServiceImpl implements WorkflowService {
                         .min(Comparator.comparing(WorkflowState::getSortOrder, Comparator.nullsLast(Integer::compareTo))))
                 .map(WorkflowState::getName)
                 .orElse("新建");
+    }
+
+    private String normalizeWorkflowName(String name) {
+        return StringUtils.hasText(name) ? name.trim() : null;
     }
 
     private WorkflowState findStateByName(Long projectId, String status) {

@@ -131,4 +131,112 @@ $palette-gray-50: #F9FAFB;
 
   // 阴影基色
   --shadow-color: rgba(15, 23, 42, 0.06);
+
+  // ===== 多维表格（bitable）专用 Token — 2026-08-03 激进风格升级 =====
+  // 列容器背景：浅蓝灰，弱于卡片，营造"列→卡片"层级反差
+  --color-kanban-column-bg: #{$palette-slate-100};
+  --color-kanban-column-bg-hover: #{$palette-slate-200};
+  --color-kanban-column-drop-target: #{$palette-blue-50};
+  --color-kanban-card-bg: #{$palette-slate-50};
+
+  // 行/单元格交互态
+  --color-row-hover-bg: rgba(59, 130, 246, 0.04);
+  --color-row-selected-bg: rgba(37, 99, 235, 0.08);
+  --color-row-hover-bar: #{$palette-blue-500};
+  --color-row-selected-bar: linear-gradient(180deg, #{$palette-blue-500} 0%, #{$palette-indigo-500} 100%);
+
+  // 单元格 hover/active outline
+  --color-cell-hover-bg: rgba(37, 99, 235, 0.04);
+  --color-cell-active-outline: rgba(37, 99, 235, 0.35);
+
+  // 日历今日高亮
+  --color-today-bg: #{$palette-blue-50};
+  --color-today-ring: #{$palette-blue-500};
+
+  // 甘特图
+  --gradient-gantt-bar: linear-gradient(180deg, #{$palette-blue-500} 0%, #{$palette-blue-600} 100%);
+  --gradient-gantt-bar-progress: linear-gradient(180deg, #{$palette-indigo-500} 0%, #{$palette-indigo-600} 100%);
+  --color-gantt-today-line: #{$palette-red-500};
+  --color-gantt-milestone: #{$palette-amber-500};
+
+  // 进度条
+  --gradient-progress-fill: linear-gradient(90deg, #{$palette-blue-500} 0%, #{$palette-indigo-500} 100%);
+  --color-progress-low: #{$palette-amber-500};
+  --color-progress-track: rgba(99, 102, 241, 0.12);
+
+  // 评分
+  --color-rating-active: #{$palette-amber-500};
+  --color-rating-inactive: #{$palette-slate-200};
+
+  // 复选框
+  --color-checkbox-active: #{$palette-blue-600};
+  --color-checkbox-inactive: #{$palette-slate-300};
+
+  // 画廊缺图占位（首字母）
+  --color-gallery-placeholder-from: #{$palette-blue-100};
+  --color-gallery-placeholder-to: #{$palette-indigo-100};
+
+  // ===== 多维表格标签色板（10 色） — 替代 bitableCellRenderers.ts 中的硬编码 =====
+  // 单选/多选/流程选项使用，每个颜色含 bg（底）+ fg（文字）+ border（边框）三档
+  // 透明度经过飞书/Linear 视觉校准，与浅色背景和谐共存
+  --color-tag-red-bg: rgba(239, 68, 68, 0.10);
+  --color-tag-red-fg: #B91C1C;
+  --color-tag-red-border: rgba(239, 68, 68, 0.28);
+
+  --color-tag-orange-bg: rgba(249, 115, 22, 0.10);
+  --color-tag-orange-fg: #C2410C;
+  --color-tag-orange-border: rgba(249, 115, 22, 0.28);
+
+  --color-tag-yellow-bg: rgba(234, 179, 8, 0.12);
+  --color-tag-yellow-fg: #A16207;
+  --color-tag-yellow-border: rgba(234, 179, 8, 0.32);
+
+  --color-tag-green-bg: rgba(34, 197, 94, 0.10);
+  --color-tag-green-fg: #15803D;
+  --color-tag-green-border: rgba(34, 197, 94, 0.28);
+
+  --color-tag-teal-bg: rgba(20, 184, 166, 0.10);
+  --color-tag-teal-fg: #0F766E;
+  --color-tag-teal-border: rgba(20, 184, 166, 0.28);
+
+  --color-tag-blue-bg: rgba(37, 99, 235, 0.10);
+  --color-tag-blue-fg: #1D4ED8;
+  --color-tag-blue-border: rgba(37, 99, 235, 0.28);
+
+  --color-tag-purple-bg: rgba(99, 102, 241, 0.10);
+  --color-tag-purple-fg: #4338CA;
+  --color-tag-purple-border: rgba(99, 102, 241, 0.28);
+
+  --color-tag-pink-bg: rgba(236, 72, 153, 0.10);
+  --color-tag-pink-fg: #BE185D;
+  --color-tag-pink-border: rgba(236, 72, 153, 0.28);
+
+  --color-tag-gray-bg: rgba(100, 116, 139, 0.10);
+  --color-tag-gray-fg: #475569;
+  --color-tag-gray-border: rgba(100, 116, 139, 0.28);
+
+  // 默认色（颜色名未识别时回退到品牌主色）
+  --color-tag-default-bg: rgba(37, 99, 235, 0.10);
+  --color-tag-default-fg: #1D4ED8;
+  --color-tag-default-border: rgba(37, 99, 235, 0.28);
+
+  // 卡片 hover 光晕（更激进）
+  --shadow-glow-primary-strong: 0 8px 24px rgba(37, 99, 235, 0.28), 0 0 0 1px rgba(37, 99, 235, 0.08);
+  --shadow-glow-indigo: 0 8px 24px rgba(99, 102, 241, 0.25);
+  --shadow-card-lift: 0 12px 32px -4px rgba(15, 23, 42, 0.16), 0 4px 8px -2px rgba(15, 23, 42, 0.08);
+  --shadow-drag-rotate: 0 20px 40px -8px rgba(15, 23, 42, 0.25), 0 8px 16px -4px rgba(37, 99, 235, 0.15);
+
+  // 拖拽中的源卡片
+  --color-drag-source-opacity: 0.35;
+
+  // 圆角升级（激进风）
+  --radius-tag: 6px;
+  --radius-cell: 8px;
+  --radius-card-lg: 14px;
+  --radius-card-xl: 18px;
+
+  // 行高（更舒展）
+  --row-height-md: 38px;
+  --row-height-lg: 44px;
+  --row-height-xl: 56px;
 }

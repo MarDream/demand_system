@@ -245,8 +245,10 @@ public class StatisticsServiceImpl implements StatisticsService {
         // 我发起的：creator_id = userId 的非草稿需求（带数据权限过滤）
         Long initiated = noDataScope ? 0L : statisticsMapper.countInitiatedByUserIdWithOrgFilter(userId, isSuperAdmin, visibleOrgIds);
 
-        // 抄送我的：cc_user_ids 包含当前用户的需求（带数据权限过滤）
-        Long cc = noDataScope ? 0L : statisticsMapper.countCcByUserIdWithOrgFilter(userId, isSuperAdmin, visibleOrgIds);
+        // 抄送我的：兼容旧 cc_user_ids，同时统计新增只读抄送待办
+        Long legacyCc = noDataScope ? 0L : statisticsMapper.countCcByUserIdWithOrgFilter(userId, isSuperAdmin, visibleOrgIds);
+        Long ccReadOnly = noDataScope ? 0L : pendingTaskMapper.countCcReadOnlyByUserIdWithOrgFilter(userId, isSuperAdmin, visibleOrgIds);
+        Long cc = Math.max(legacyCc == null ? 0L : legacyCc, ccReadOnly == null ? 0L : ccReadOnly);
 
         return new WorkflowProcessStatsDTO(pending, processed, initiated, cc);
     }
@@ -263,6 +265,7 @@ public class StatisticsServiceImpl implements StatisticsService {
         Map<String, Long> counts = new LinkedHashMap<>();
         counts.put("pending", noDataScope ? 0L : pendingTaskMapper.countByUserIdWithOrgFilter(userId, isSuperAdmin, visibleOrgIds));
         counts.put("follows", noDataScope ? 0L : statisticsMapper.countMyFollowsByUserIdWithOrgFilter(userId, isSuperAdmin, visibleOrgIds));
+        counts.put("cc", noDataScope ? 0L : pendingTaskMapper.countCcReadOnlyByUserIdWithOrgFilter(userId, isSuperAdmin, visibleOrgIds));
         counts.put("drafts", statisticsMapper.countMyDraftsByUserId(userId));
         return counts;
     }

@@ -1,6 +1,7 @@
 package com.demand.system.module.workflow.dto;
 
 import java.util.List;
+import java.util.Map;
 
 public class NodeConfigDTO {
 
@@ -25,6 +26,9 @@ public class NodeConfigDTO {
     private List<String> requiredFields;
 
     private List<String> availableActions;
+
+    /** 可视化编辑器保存的完整节点属性，兼容运行时扩展配置（抄送、并行、通知等）。 */
+    private Map<String, Object> properties;
 
     public String getNodeId() {
         return nodeId;
@@ -112,5 +116,13 @@ public class NodeConfigDTO {
 
     public void setAvailableActions(List<String> availableActions) {
         this.availableActions = availableActions;
+    }
+
+    public Map<String, Object> getProperties() {
+        return properties;
+    }
+
+    public void setProperties(Map<String, Object> properties) {
+        this.properties = properties;
     }
 }

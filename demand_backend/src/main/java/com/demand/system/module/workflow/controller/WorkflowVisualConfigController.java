@@ -8,7 +8,9 @@ import com.demand.system.module.workflow.dto.WorkflowValidationReport;
 import com.demand.system.module.workflow.dto.WorkflowVersionActivationDTO;
 import com.demand.system.module.workflow.dto.WorkflowVersionMetaUpdateDTO;
 import com.demand.system.module.workflow.dto.WorkflowVersionDTO;
+import com.demand.system.module.workflow.dto.WorkflowDefinitionInfoDTO;
 import com.demand.system.module.workflow.service.WorkflowConfigService;
+import com.demand.system.module.workflow.service.WorkflowDefinitionService;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -20,9 +22,12 @@ import java.util.List;
 public class WorkflowVisualConfigController {
 
     private final WorkflowConfigService workflowConfigService;
+    private final WorkflowDefinitionService workflowDefinitionService;
 
-    public WorkflowVisualConfigController(WorkflowConfigService workflowConfigService) {
+    public WorkflowVisualConfigController(WorkflowConfigService workflowConfigService,
+                                         WorkflowDefinitionService workflowDefinitionService) {
         this.workflowConfigService = workflowConfigService;
+        this.workflowDefinitionService = workflowDefinitionService;
     }
 
     /**
@@ -70,6 +75,15 @@ public class WorkflowVisualConfigController {
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config', 'button:requirement-config:update')")
     public Result<List<WorkflowVersionDTO>> listActiveVersions() {
         return Result.success(workflowConfigService.listActiveVersions());
+    }
+
+    /**
+     * 获取全部工作流定义（用于需求类型绑定的第一级下拉：先选工作流名称）
+     */
+    @GetMapping("/workflows/definitions")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config', 'button:requirement-config:update')")
+    public Result<List<WorkflowDefinitionInfoDTO>> listDefinitions() {
+        return Result.success(workflowDefinitionService.listAll());
     }
 
     /**

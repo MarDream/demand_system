@@ -792,6 +792,14 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         List<MilvusVectorStore.VectorDocument> milvusDocs = new ArrayList<>();
         try {
             List<float[]> vectors = embedInBatches(chunks);
+            int vectorDimension = resolveVectorDimension(vectors);
+            if (vectorDimension > 0) {
+                MilvusVectorStore.DimensionSyncResult dimensionSync =
+                        milvusVectorStore.ensureDimension(vectorDimension);
+                if (dimensionSync.requiresFullReindex()) {
+                    requeueIndexedDocumentsAfterDimensionChange(documentId, dimensionSync);
+                }
+            }
 
             int validChunks = 0;
             for (int i = 0; i < chunks.size(); i++) {
@@ -1116,6 +1124,22 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    private int resolveVectorDimension(List<float[]> vectors) {
+        int dimension = -1;
+        for (float[] vector : vectors) {
+            if (vector == null || vector.length == 0) {
+                continue;
+            }
+            if (dimension < 0) {
+                dimension = vector.length;
+            } else if (dimension != vector.length) {
+                throw new IllegalStateException("Embedding返回了不同维度的向量: expected="
+                        + dimension + ", actual=" + vector.length);
+            }
+        }
+        return dimension;
     }
 
     private List<float[]> embedInBatches(List<String> chunks) {
@@ -1479,9 +1503,77 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
     @Override
     @Transactional
+    public int retryRecoverableFailedDocuments() {
+        List<KnowledgeDocument> failedDocuments = documentMapper.selectList(
+                new LambdaQueryWrapper<KnowledgeDocument>()
+                        .eq(KnowledgeDocument::getStatus, "failed")
+                        .and(wrapper -> wrapper
+                                .like(KnowledgeDocument::getErrorMessage, "Incorrect dimension")
+                                .or()
+                                .like(KnowledgeDocument::getErrorMessage, "Failed to connect to"))
+                        .orderByAsc(KnowledgeDocument::getId)
+        );
+
+        int retried = 0;
+        for (KnowledgeDocument doc : failedDocuments) {
+            if (!KnowledgeDocumentSupport.isVectorizable(doc.getFileType())) {
+                continue;
+            }
+            resetAndEnqueueForVectorRetry(doc);
+            retried++;
+        }
+        return retried;
+    }
+
+    private void requeueIndexedDocumentsAfterDimensionChange(
+            Long currentDocumentId,
+            MilvusVectorStore.DimensionSyncResult dimensionSync
+    ) {
+        List<KnowledgeDocument> indexedDocuments = documentMapper.selectList(
+                new LambdaQueryWrapper<KnowledgeDocument>()
+                        .eq(KnowledgeDocument::getStatus, "indexed")
+                        .ne(KnowledgeDocument::getId, currentDocumentId)
+                        .orderByAsc(KnowledgeDocument::getId)
+        );
+
+        int requeued = 0;
+        for (KnowledgeDocument indexedDocument : indexedDocuments) {
+            if (!KnowledgeDocumentSupport.isVectorizable(indexedDocument.getFileType())) {
+                continue;
+            }
+            resetAndEnqueueForVectorRetry(indexedDocument);
+            requeued++;
+        }
+        log.warn("Milvus维度已从{}自动切换为{}，旧集合包含{}条向量，已重新提交{}个历史文档",
+                dimensionSync.previousDimension(), dimensionSync.currentDimension(),
+                dimensionSync.previousEntityCount(), requeued);
+    }
+
+    private void resetAndEnqueueForVectorRetry(KnowledgeDocument doc) {
+        Long docId = doc.getId();
+        chunkMapper.delete(new LambdaQueryWrapper<KnowledgeChunk>()
+                .eq(KnowledgeChunk::getDocumentId, docId));
+        try {
+            milvusVectorStore.deleteByDocumentId(String.valueOf(docId));
+        } catch (Exception e) {
+            log.warn("Milvus向量清理失败: documentId={}", docId, e);
+        }
+
+        doc.setStatus("pending");
+        doc.setErrorMessage(null);
+        doc.setChunkCount(0);
+        doc.setUpdatedAt(LocalDateTime.now());
+        documentMapper.updateById(doc);
+        enqueueDocumentProcessing(docId);
+
+        KnowledgeBase kb = knowledgeBaseMapper.selectById(doc.getKnowledgeBaseId());
+        registerDocTimeout(docId, kb != null ? kb.getDocTimeoutMinutes() : null);
+    }
+
+    @Override
+    @Transactional
     public int retryDocuments(Long knowledgeBaseId, List<Long> documentIds) {
         assertCanModifyKnowledgeBase(knowledgeBaseId);
-        KnowledgeBase kb = knowledgeBaseMapper.selectById(knowledgeBaseId);
         int retried = 0;
         for (Long docId : documentIds) {
             KnowledgeDocument doc = documentMapper.selectById(docId);
@@ -1491,19 +1583,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             if (!"failed".equals(doc.getStatus()) || !KnowledgeDocumentSupport.isVectorizable(doc.getFileType())) {
                 continue;
             }
-            chunkMapper.delete(new LambdaQueryWrapper<KnowledgeChunk>()
-                    .eq(KnowledgeChunk::getDocumentId, docId));
-            try {
-                milvusVectorStore.deleteByDocumentId(String.valueOf(docId));
-            } catch (Exception e) {
-                log.warn("Milvus向量清理失败: documentId={}", docId, e);
-            }
-            doc.setStatus("pending");
-            doc.setErrorMessage(null);
-            doc.setChunkCount(0);
-            documentMapper.updateById(doc);
-            enqueueDocumentProcessing(docId);
-            registerDocTimeout(docId, kb != null ? kb.getDocTimeoutMinutes() : null);
+            resetAndEnqueueForVectorRetry(doc);
             retried++;
         }
         return retried;

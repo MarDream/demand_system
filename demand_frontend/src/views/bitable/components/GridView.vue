@@ -525,169 +525,249 @@ function handleHeaderDragend({ startIndex, endIndex, columns }: any) {
 </script>
 
 <style scoped lang="scss">
+// ===== 多维表格 GridView 激进风格精修（2026-08-03）=====
+// 设计目标：
+// 1. 行高 32→38、单元格 padding 8→12、圆角 4→8（更舒展的密度）
+// 2. 行 hover 左缘 3px 主色条 + 极淡蓝底（方向感反馈）
+// 3. 选中行 2px 主色 outline + 渐变左缘条（编辑态突出）
+// 4. 单元格 active outline（2px 主色 + 光晕）
+// 5. 全部颜色走 var(--color-*)，不再硬编码
+// 6. tabular-nums 应用于所有数字单元格
+
 .grid-view {
   display: flex;
   flex-direction: column;
   overflow: hidden;
 
+  // 表格基础容器
   :deep(.vxe-grid) {
     border-radius: 0;
   }
 
-  // 显示列边框（纵线条）
-  :deep(.vxe-table--render-default) {
-    &.vxe-table--border {
-      .vxe-table--body-wrapper,
-      .vxe-table--header-wrapper {
-        .vxe-cell {
-          border-right: 1px solid var(--color-border, #e0e0e0);
-        }
+  // ===== 表头区 =====
+  :deep(.vxe-table--header-wrapper) {
+    background: var(--color-background, #f8fafc);
+    // 上下双线：上分割 + 下强调
+    box-shadow: inset 0 -1px 0 var(--color-border, #e2e8f0), inset 0 -2px 0 rgba(37, 99, 235, 0.04);
+  }
+
+  :deep(.vxe-header--row) {
+    .vxe-cell {
+      height: var(--row-height-md, 38px);
+      padding: 0 12px;
+      background: transparent;
+      border-bottom: 1px solid var(--color-border, #e2e8f0);
+      font-weight: 600;
+      font-size: 12px;
+      letter-spacing: 0.02em;
+      color: var(--color-text-secondary, #475569);
+      text-transform: none;
+    }
+  }
+
+  // ===== 表体行/单元格 =====
+  :deep(.vxe-body--row) {
+    transition: background-color 150ms var(--ease-standard, ease);
+  }
+
+  :deep(.vxe-body--row .vxe-cell) {
+    height: var(--row-height-md, 38px);
+    padding: 0 12px;
+    border-bottom: 1px solid var(--color-border, #e2e8f0);
+    font-size: 13px;
+    color: var(--color-text-primary, #0f172a);
+    transition: background-color 120ms var(--ease-standard, ease), box-shadow 120ms var(--ease-standard, ease);
+  }
+
+  // 行 hover：左缘 3px 主色条 + 极淡蓝底（方向感反馈）
+  :deep(.vxe-body--row:hover .vxe-cell) {
+    background-color: var(--color-row-hover-bg, rgba(59, 130, 246, 0.04));
+  }
+  :deep(.vxe-body--row:hover) {
+    box-shadow: inset 3px 0 0 var(--color-row-hover-bar, #3b82f6);
+  }
+
+  // 选中行：2px 主色 outline + 渐变左缘条（编辑态突出）
+  :deep(.vxe-body--row.row--selected .vxe-cell),
+  :deep(.vxe-body--row.vxe-body--row-selected .vxe-cell) {
+    background-color: var(--color-row-selected-bg, rgba(37, 99, 235, 0.08));
+  }
+  :deep(.vxe-body--row.row--selected),
+  :deep(.vxe-body--row.vxe-body--row-selected) {
+    box-shadow: inset 3px 0 0 var(--color-row-selected-bar, linear-gradient(180deg, #3b82f6 0%, #6366f1 100%));
+  }
+
+  // 单元格 active（编辑态）：2px 主色 outline + 浅蓝底
+  :deep(.vxe-cell--edit),
+  :deep(.vxe-cell.is--active) {
+    background-color: var(--color-cell-hover-bg, rgba(37, 99, 235, 0.04));
+    box-shadow: inset 0 0 0 2px var(--color-cell-active-outline, rgba(37, 99, 235, 0.35));
+  }
+
+  // ===== 列分隔线（淡化）=====
+  :deep(.vxe-table--render-default.vxe-table--border) {
+    .vxe-table--body-wrapper,
+    .vxe-table--header-wrapper {
+      .vxe-cell {
+        border-right: 0.5px solid var(--color-border, #e2e8f0);
       }
     }
   }
 
-  // 确保 vxe-table 样式正确显示
+  // 表体容器
   :deep(.vxe-table--body-wrapper) {
     overflow-y: auto;
   }
 
-  // 表格行边框
-  :deep(.vxe-body--row) {
-    .vxe-cell {
-      border-bottom: 1px solid var(--color-border, #e0e0e0);
-    }
-  }
-
-  // 表头行列边框
-  :deep(.vxe-header--row) {
-    .vxe-cell {
-      border-bottom: 1px solid var(--color-border, #e0e0e0);
-    }
-  }
-
-  :deep(.vxe-table--header-wrapper) {
-    background: var(--color-surface);
-  }
-
-  // 右键菜单样式覆盖（与项目主题一致）
+  // 右键菜单（与项目主题一致 + 更大圆角）
   :deep(.vxe-context-menu) {
-    border-radius: var(--radius-md, 6px);
-    box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.12));
+    border-radius: var(--radius-md, 8px);
+    box-shadow: var(--shadow-2xl, 0 25px 50px -12px rgba(15, 23, 42, 0.18));
+    border: 0.5px solid var(--color-border, #e2e8f0);
+  }
+  :deep(.vxe-context-menu--option) {
+    border-radius: 4px;
+    margin: 2px;
   }
 
-  // ===== 自定义单元格渲染器样式（对齐飞书多维表格） =====
+  // ===== 自定义单元格渲染器（激进风格精修）=====
 
-  // 进度条单元格
+  // 进度条
   :deep(.bitable-progress-cell) {
     display: flex;
     align-items: center;
     gap: 8px;
     width: 100%;
-    height: 22px;
-    padding: 0 4px;
+    height: 100%;
+    padding: 0 2px;
   }
   :deep(.bitable-progress-cell__bar) {
     flex: 1;
-    height: 8px;
-    border-radius: 4px;
-    background: var(--color-surface-variant, rgba(0, 0, 0, 0.06));
+    height: 6px;
+    border-radius: 3px;
+    background: var(--color-progress-track, rgba(99, 102, 241, 0.12));
     overflow: hidden;
     min-width: 40px;
   }
   :deep(.bitable-progress-cell__fill) {
     height: 100%;
-    border-radius: 4px;
-    transition: width 0.25s ease;
+    border-radius: 3px;
+    transition: width 280ms var(--ease-decelerate, cubic-bezier(0, 0, 0.2, 1));
     min-width: 2px;
   }
   :deep(.bitable-progress-cell__text) {
     flex-shrink: 0;
     font-size: 12px;
-    color: var(--color-text-secondary, #64748B);
+    font-weight: 600;
+    color: var(--color-text-primary, #0f172a);
     font-variant-numeric: tabular-nums;
     min-width: 32px;
     text-align: right;
   }
 
-  // 彩色标签单元格（单选 / 多选 / 流程）
+  // 彩色标签（单选/多选/流程）
   :deep(.bitable-tag-cell) {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 4px;
     width: 100%;
-    min-height: 22px;
+    height: 100%;
     padding: 2px 0;
-  }
-  :deep(.bitable-tag-cell.is-multiple) {
-    gap: 4px;
   }
   :deep(.bitable-tag-cell__item) {
     display: inline-flex;
     align-items: center;
     max-width: 100%;
     padding: 2px 8px;
-    border-radius: 4px;
+    border-radius: var(--radius-tag, 6px);
     font-size: 12px;
-    line-height: 16px;
-    border: 1px solid transparent;
+    font-weight: 500;
+    line-height: 18px;
+    border: 0.5px solid transparent;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     cursor: default;
+    transition: transform 120ms var(--ease-standard, ease);
+  }
+  :deep(.bitable-tag-cell__item:hover) {
+    transform: translateY(-1px);
   }
 
-  // 复选框单元格
+  // 复选框
   :deep(.bitable-checkbox-cell) {
     display: flex;
     align-items: center;
     justify-content: flex-start;
     width: 100%;
-    height: 22px;
+    height: 100%;
     cursor: pointer;
   }
   :deep(.bitable-checkbox-cell i) {
-    font-size: 18px;
-    color: var(--color-text-placeholder, #94A3B8);
-    transition: color 0.15s ease;
+    font-size: 20px;
+    color: var(--color-checkbox-inactive, #cbd5e1);
+    transition: color 150ms var(--ease-standard, ease), transform 150ms var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
   }
   :deep(.bitable-checkbox-cell--checked) {
-    color: var(--color-primary, #2563EB) !important;
+    color: var(--color-checkbox-active, #2563eb) !important;
   }
   :deep(.bitable-checkbox-cell:hover i) {
-    color: var(--color-primary-hover, #3B82F6);
+    color: var(--color-primary-hover, #3b82f6);
+    transform: scale(1.1);
   }
 
-  // 评分星级单元格
+  // 评分星级
   :deep(.bitable-rate-cell) {
     display: flex;
     align-items: center;
     gap: 2px;
     width: 100%;
-    height: 22px;
+    height: 100%;
   }
   :deep(.bitable-rate-cell i) {
     font-size: 16px;
-    color: var(--color-text-placeholder, #CBD5E1);
-    transition: color 0.15s ease, transform 0.1s ease;
+    color: var(--color-rating-inactive, #e2e8f0);
+    transition: color 150ms var(--ease-standard, ease), transform 100ms var(--ease-standard, ease);
   }
   :deep(.bitable-rate-cell--active) {
-    color: var(--color-warning, #F59E0B) !important;
+    color: var(--color-rating-active, #f59e0b) !important;
   }
   :deep(.bitable-rate-cell__text) {
     margin-left: 6px;
     font-size: 12px;
-    color: var(--color-text-secondary, #64748B);
+    font-weight: 500;
+    color: var(--color-text-secondary, #475569);
     font-variant-numeric: tabular-nums;
   }
 
-  // 空值单元格占位
-  :deep(.bitable-cell-empty) {
-    color: var(--color-text-placeholder, #CBD5E1);
-    font-size: 12px;
+  // 日期单元格
+  :deep(.bitable-date-cell) {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    height: 100%;
+  }
+  :deep(.bitable-date-cell__icon) {
+    font-size: 14px;
+    color: var(--color-text-placeholder, #94a3b8);
+    flex-shrink: 0;
+  }
+  :deep(.bitable-date-cell__text) {
+    font-size: 13px;
+    color: var(--color-text-primary, #0f172a);
+    font-variant-numeric: tabular-nums;
   }
 
-  // VxeSelect / VxeDatePicker 编辑态时，撑满单元格
+  // 空值占位
+  :deep(.bitable-cell-empty) {
+    color: var(--color-text-placeholder, #cbd5e1);
+    font-size: 13px;
+    font-style: italic;
+  }
+
+  // 编辑态撑满
   :deep(.vxe-cell--edit) {
     .vxe-select,
     .vxe-input,
@@ -696,45 +776,39 @@ function handleHeaderDragend({ startIndex, endIndex, columns }: any) {
     }
   }
 
-  // 新建记录行（常驻底部入口）
+  // 新建记录行（底部常驻入口，更显眼的视觉）
   .grid-add-row {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 10px 14px;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 16px;
+    margin: 12px 0;
     cursor: pointer;
-    color: var(--color-text-secondary, #64748B);
+    color: var(--color-text-secondary, #475569);
     font-size: 13px;
-    border-top: 1px solid var(--color-border, #e0e0e0);
-    transition: background 0.15s ease, color 0.15s ease;
+    font-weight: 500;
+    background: linear-gradient(90deg, transparent, var(--color-primary-subtle, #eff6ff) 20%, var(--color-primary-subtle, #eff6ff) 80%, transparent);
+    border: 1.5px dashed var(--color-border-hover, #cbd5e1);
+    border-radius: var(--radius-md, 8px);
+    transition: all 200ms var(--ease-standard, ease);
 
     i {
-      font-size: 16px;
+      font-size: 18px;
     }
 
     &:hover {
-      background: var(--color-surface-variant, rgba(0, 0, 0, 0.04));
-      color: var(--color-primary, #2563EB);
+      background: linear-gradient(90deg, transparent, var(--color-primary-light, #dbeafe) 20%, var(--color-primary-light, #dbeafe) 80%, transparent);
+      border-color: var(--color-primary, #2563eb);
+      border-style: solid;
+      color: var(--color-primary, #2563eb);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-glow-primary, 0 4px 14px rgba(37, 99, 235, 0.25));
     }
-  }
 
-  // 日期单元格展示
-  :deep(.bitable-date-cell) {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    width: 100%;
-    min-height: 22px;
-  }
-  :deep(.bitable-date-cell__icon) {
-    font-size: 14px;
-    color: var(--color-text-placeholder, #94A3B8);
-    flex-shrink: 0;
-  }
-  :deep(.bitable-date-cell__text) {
-    font-size: 13px;
-    color: var(--color-text, #1f2937);
-    font-variant-numeric: tabular-nums;
+    &:active {
+      transform: translateY(0);
+    }
   }
 }
 </style>

@@ -10,6 +10,10 @@ public class WorkflowVersionDTO {
 
     private Long projectId;
 
+    private Long workflowDefinitionId;
+
+    private String workflowDefinitionName;
+
     private String version;
 
     private String name;
@@ -62,6 +66,22 @@ public class WorkflowVersionDTO {
 
     public void setProjectId(Long projectId) {
         this.projectId = projectId;
+    }
+
+    public Long getWorkflowDefinitionId() {
+        return workflowDefinitionId;
+    }
+
+    public void setWorkflowDefinitionId(Long workflowDefinitionId) {
+        this.workflowDefinitionId = workflowDefinitionId;
+    }
+
+    public String getWorkflowDefinitionName() {
+        return workflowDefinitionName;
+    }
+
+    public void setWorkflowDefinitionName(String workflowDefinitionName) {
+        this.workflowDefinitionName = workflowDefinitionName;
     }
 
     public String getVersion() {

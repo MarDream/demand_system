@@ -20,22 +20,63 @@ type RenderOptions = any
 type RenderParams = any
 
 // 飞书风格调色板（与 FieldConfig.options.color 字符串对应）
-const TAG_COLOR_MAP: Record<string, { bg: string; fg: string; border: string }> = {
-  red: { bg: 'rgba(245, 63, 63, 0.12)', fg: '#cb2634', border: 'rgba(245, 63, 63, 0.32)' },
-  orange: { bg: 'rgba(247, 137, 31, 0.12)', fg: '#d46b08', border: 'rgba(247, 137, 31, 0.32)' },
-  yellow: { bg: 'rgba(245, 200, 33, 0.16)', fg: '#a37a07', border: 'rgba(245, 200, 33, 0.36)' },
-  green: { bg: 'rgba(19, 194, 99, 0.12)', fg: '#138a4f', border: 'rgba(19, 194, 99, 0.32)' },
-  teal: { bg: 'rgba(13, 148, 136, 0.12)', fg: '#0c7569', border: 'rgba(13, 148, 136, 0.32)' },
-  blue: { bg: 'rgba(37, 99, 235, 0.12)', fg: '#1d4ed8', border: 'rgba(37, 99, 235, 0.32)' },
-  purple: { bg: 'rgba(99, 102, 241, 0.12)', fg: '#4f46e5', border: 'rgba(99, 102, 241, 0.32)' },
-  pink: { bg: 'rgba(236, 72, 153, 0.12)', fg: '#be185d', border: 'rgba(236, 72, 153, 0.32)' },
-  gray: { bg: 'rgba(107, 114, 128, 0.12)', fg: '#4b5563', border: 'rgba(107, 114, 128, 0.32)' },
-  default: { bg: 'rgba(37, 99, 235, 0.10)', fg: '#2563eb', border: 'rgba(37, 99, 235, 0.28)' },
+// 全部走 CSS 变量（见 styles/tokens/colors.scss），便于主题切换与品牌色联动
+const TAG_COLOR_VARS: Record<string, { bg: string; fg: string; border: string }> = {
+  red: {
+    bg: 'var(--color-tag-red-bg)',
+    fg: 'var(--color-tag-red-fg)',
+    border: 'var(--color-tag-red-border)',
+  },
+  orange: {
+    bg: 'var(--color-tag-orange-bg)',
+    fg: 'var(--color-tag-orange-fg)',
+    border: 'var(--color-tag-orange-border)',
+  },
+  yellow: {
+    bg: 'var(--color-tag-yellow-bg)',
+    fg: 'var(--color-tag-yellow-fg)',
+    border: 'var(--color-tag-yellow-border)',
+  },
+  green: {
+    bg: 'var(--color-tag-green-bg)',
+    fg: 'var(--color-tag-green-fg)',
+    border: 'var(--color-tag-green-border)',
+  },
+  teal: {
+    bg: 'var(--color-tag-teal-bg)',
+    fg: 'var(--color-tag-teal-fg)',
+    border: 'var(--color-tag-teal-border)',
+  },
+  blue: {
+    bg: 'var(--color-tag-blue-bg)',
+    fg: 'var(--color-tag-blue-fg)',
+    border: 'var(--color-tag-blue-border)',
+  },
+  purple: {
+    bg: 'var(--color-tag-purple-bg)',
+    fg: 'var(--color-tag-purple-fg)',
+    border: 'var(--color-tag-purple-border)',
+  },
+  pink: {
+    bg: 'var(--color-tag-pink-bg)',
+    fg: 'var(--color-tag-pink-fg)',
+    border: 'var(--color-tag-pink-border)',
+  },
+  gray: {
+    bg: 'var(--color-tag-gray-bg)',
+    fg: 'var(--color-tag-gray-fg)',
+    border: 'var(--color-tag-gray-border)',
+  },
+  default: {
+    bg: 'var(--color-tag-default-bg)',
+    fg: 'var(--color-tag-default-fg)',
+    border: 'var(--color-tag-default-border)',
+  },
 }
 
 function resolveTagColor(color?: string) {
-  if (!color) return TAG_COLOR_MAP.default
-  return TAG_COLOR_MAP[color] || TAG_COLOR_MAP.default
+  if (!color) return TAG_COLOR_VARS.default
+  return TAG_COLOR_VARS[color] || TAG_COLOR_VARS.default
 }
 
 /**
@@ -70,13 +111,16 @@ VxeUI.renderer.add('BitableProgress', {
     if (!Number.isFinite(num)) num = 0
     if (num < 0) num = 0
     if (num > 100) num = 100
-    // 进度条颜色：使用项目主色，低进度用 amber 提示
-    const fillColor = num < 30 ? 'var(--color-warning, #F59E0B)' : 'var(--color-primary, #2563EB)'
+    // 进度条填充：使用品牌渐变（>30% 走主色→强调渐变，更激进；<30% 走警示色提醒）
+    const fillStyle =
+      num < 30
+        ? { background: 'var(--color-progress-low, #F59E0B)' }
+        : { background: 'var(--gradient-progress-fill, linear-gradient(90deg, #3B82F6 0%, #6366F1 100%))' }
     return h('div', { class: 'bitable-progress-cell' }, [
       h('div', { class: 'bitable-progress-cell__bar' }, [
         h('div', {
           class: 'bitable-progress-cell__fill',
-          style: { width: `${num}%`, background: fillColor },
+          style: { width: `${num}%`, ...fillStyle },
         }),
       ]),
       h('span', { class: 'bitable-progress-cell__text' }, `${num}%`),

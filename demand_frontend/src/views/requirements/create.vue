@@ -428,6 +428,7 @@ addLocale('zh', {
 import { requirementApi, projectApi, relationApi, userApi, iterationApi } from '@/api'
 import { getRequirementTemplateByType, getRequirementTemplatesByType } from '@/api/modules/requirement'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
+import { getTabBadgeCounts } from '@/api/modules/statistics'
 import { downloadRequirementAttachment, uploadRequirementAttachment } from '@/api/modules/file'
 import { usePermission } from '@/composables/usePermission'
 import type { RelationItem } from '@/api/modules/relation'
@@ -1388,11 +1389,27 @@ async function handleSubmit() {
       projectId: formData.projectId,
     })
     ElMessage.success('提交审核成功')
-    router.push({ name: 'RequirementDetail', params: { id: submitted.id || draft.id } })
+    await navigateAfterSubmit()
   } catch (error) {
     ElMessage.error(resolveErrorMessage(error, isDraftMode.value ? '提交审核失败' : '更新失败'))
   } finally {
     submitting.value = false
+  }
+}
+
+// 提交审核后智能跳转：有待办跳“我的待办”，否则跳“全部需求”
+async function navigateAfterSubmit() {
+  try {
+    const res = await getTabBadgeCounts() as any
+    const counts = res?.data ?? res
+    const hasPending = (counts?.pending ?? 0) > 0
+    if (hasPending) {
+      router.push({ path: '/requirements', query: { view: 'pending', _r: '1' } })
+    } else {
+      router.push({ path: '/requirements', query: { view: 'all', _r: '1' } })
+    }
+  } catch {
+    router.push({ path: '/requirements', query: { view: 'pending', _r: '1' } })
   }
 }
 

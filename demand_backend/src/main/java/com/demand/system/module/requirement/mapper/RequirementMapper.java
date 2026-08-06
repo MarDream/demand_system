@@ -67,6 +67,22 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                        @Param("isOverdue") Boolean isOverdue);
 
     /**
+     * 我的抄送：仅返回只读查阅待办，不参与审批权限判断。
+     */
+    IPage<Requirement> selectMyCc(IPage<Requirement> page,
+                                  @Param("userId") Long userId,
+                                  @Param("projectId") Long projectId,
+                                  @Param("type") String type,
+                                  @Param("priority") String priority,
+                                  @Param("status") String status,
+                                  @Param("assigneeId") Long assigneeId,
+                                  @Param("keyword") String keyword,
+                                  @Param("nodeStatus") String nodeStatus,
+                                  @Param("isOverdue") Boolean isOverdue,
+                                  @Param("isSuperAdmin") boolean isSuperAdmin,
+                                  @Param("visibleOrgIds") List<Long> visibleOrgIds);
+
+    /**
      * 我的已办 - 查询当前用户创建的已提交需求 或 审批过的需求，排除当前待我审批的需求
      * @param userId 当前用户ID
      * @param roleCodes 当前用户角色编码列表

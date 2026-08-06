@@ -1,56 +1,17 @@
 <template>
   <PageContainer :title="pageTitle" class="workflow-config-page">
     <div class="workflow-management-page">
-      <el-card shadow="never" class="overview-card">
-        <div class="overview-header">
-          <div>
-            <h2>{{ pageTitle }}</h2>
-            <p>{{ pageDescription }}</p>
-          </div>
-          <AppButton type="primary" permission="button:workflow:create" @click="createNewWorkflow">
-            <el-icon><Plus /></el-icon>
-            新建工作流
-          </AppButton>
-        </div>
-
-        <div class="overview-metrics">
-          <div class="metric-card">
-            <div class="metric-value">{{ versions.length }}</div>
-            <div class="metric-label">工作流版本</div>
-          </div>
-          <div class="metric-card success">
-            <div class="metric-value">{{ activeVersionCount }}</div>
-            <div class="metric-label">启用中版本</div>
-          </div>
-          <div class="metric-card warning">
-            <div class="metric-value">{{ approvalSummary.pending }}</div>
-            <div class="metric-label">待审核记录</div>
-          </div>
-          <div class="metric-card danger">
-            <div class="metric-value">{{ approvalSummary.rejected }}</div>
-            <div class="metric-label">已拒绝记录</div>
-          </div>
-        </div>
-      </el-card>
-
       <el-card shadow="never" class="management-card">
-        <template #header>
-          <div class="card-header">
-            <div class="header-copy">
-              <h3>工作流版本与审核管理</h3>
-              <p>支持查看配置、编辑版本、审核处理、启停切换和安全删除。</p>
-            </div>
-            <el-button @click="reloadAllData">
-              <el-icon><Refresh /></el-icon>
-              刷新数据
-            </el-button>
-          </div>
-        </template>
-
         <el-tabs v-model="activeTab" class="management-tabs">
           <el-tab-pane label="版本管理" name="versions">
             <div class="table-toolbar">
               <div class="toolbar-left">
+                <div class="workflow-stats" aria-label="工作流统计">
+                  <span>工作流总计 <strong>{{ versions.length }}</strong></span>
+                  <span>启用 <strong>{{ activeVersionCount }}</strong></span>
+                  <span>待审核 <strong>{{ approvalSummary.pending }}</strong></span>
+                  <span>已拒绝 <strong>{{ approvalSummary.rejected }}</strong></span>
+                </div>
                 <el-select v-model="activationFilter" clearable placeholder="启停状态" class="toolbar-control toolbar-control--sm">
                   <el-option label="全部状态" value="" />
                   <el-option label="已启用" value="ACTIVE" />
@@ -578,7 +539,7 @@
       </template>
     </el-drawer>
 
-    <WorkflowCopyDialog ref="copyDialogRef" :project-id="0" @success="loadVersions" />
+    <WorkflowCopyDialog ref="copyDialogRef" :project-id="0" @success="handleCopySuccess" />
   </PageContainer>
 </template>
 
@@ -586,7 +547,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh, Setting, CircleCheck, CircleClose, Document, Delete, View, EditPen, Tools, CopyDocument, Download, Upload } from '@element-plus/icons-vue'
+import { Plus, Setting, CircleCheck, CircleClose, Document, Delete, View, EditPen, Tools, CopyDocument, Download, Upload } from '@element-plus/icons-vue'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
@@ -595,7 +556,7 @@ import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import { formatDate as formatDateTime } from '@/utils/format'
 import { resolveActiveMenuPath } from '@/utils/menuNavigation'
 import { resolveErrorMessage } from '@/utils/error'
-import { isWorkflowVersion, sameWorkflowVersion } from '@/utils/workflowVersion'
+import { isWorkflowVersion, normalizeWorkflowVersion, sameWorkflowVersion } from '@/utils/workflowVersion'
 import { usePermission } from '@/composables/usePermission'
 import {
   GLOBAL_WORKFLOW_PROJECT_ID,
@@ -755,7 +716,6 @@ const pagination = reactive({
 })
 
 const pageTitle = '工作流配置'
-const pageDescription = '维护工作流版本、流程审核和生效状态。'
 const canProcessApproval = computed(() => hasPermission('button:workflow:approve'))
 const canConfig = computed(() => hasPermission('button:workflow:config'))
 const canExport = computed(() => hasPermission('button:workflow:export'))
@@ -790,9 +750,14 @@ const processScopeOptions = computed(() => {
   ]
 })
 const duplicatedVersion = computed(() => {
-  const normalizedVersion = versionDialogForm.version.trim()
-  if (!editingVersion.value?.id || !normalizedVersion) return undefined
-  return versions.value.find((item) => sameWorkflowVersion(item.version, normalizedVersion) && item.id !== editingVersion.value?.id)
+  const normalizedVersion = normalizeWorkflowVersion(versionDialogForm.version)
+  const normalizedName = versionDialogForm.name.trim()
+  if (!editingVersion.value?.id || !normalizedVersion || !normalizedName) return undefined
+  return versions.value.find((item) =>
+    item.id !== editingVersion.value?.id
+      && item.name?.trim() === normalizedName
+      && sameWorkflowVersion(item.version, normalizedVersion),
+  )
 })
 const versionDialogHint = computed(() => {
   const trimmedName = versionDialogForm.name.trim()
@@ -804,7 +769,7 @@ const versionDialogHint = computed(() => {
     return { type: 'warning', message: '版本号格式需为正整数或 1.0.0' }
   }
   if (duplicatedVersion.value) {
-    return { type: 'error', message: `版本号 V${trimmedVersion} 已存在` }
+    return { type: 'error', message: `工作流“${trimmedName}”下版本号 V${normalizeWorkflowVersion(trimmedVersion)} 已存在` }
   }
   if (!trimmedName) {
     return { type: 'warning', message: '版本名称不能为空' }
@@ -848,7 +813,7 @@ const filteredApprovals = computed(() => {
       return true
     }
 
-    const searchText = `${item.projectName || ''} ${item.versionName || ''} V${item.version || ''}`.toLowerCase()
+    const searchText = `${item.projectName || ''} ${(item as any).workflowDefinitionName || ''} ${item.versionName || ''} V${item.version || ''}`.toLowerCase()
     return searchText.includes(keyword)
   })
 })
@@ -1035,6 +1000,20 @@ function handleCopyWorkflow(version: WorkflowVersionDTO) {
   copyDialogRef.value?.open('copy', version.id)
 }
 
+async function handleCopySuccess(versionId: number) {
+  await loadVersions()
+  // “复制并编辑”应直接进入新生成的草稿版本，确保模板内容真正关联到我的工作流。
+  router.push({
+    path: '/system/workflow-config/editor',
+    query: {
+      versionId: String(versionId),
+      projectId: String(GLOBAL_WORKFLOW_PROJECT_ID),
+      mode: 'edit',
+      sourceMenu: sourceMenuPath.value,
+    },
+  })
+}
+
 function viewWorkflow(row: WorkflowVersionDTO) {
   router.push({
     path: '/system/workflow-config/editor',
@@ -1078,7 +1057,7 @@ function focusApprovalHistory(row: WorkflowVersionDTO) {
 
 const openVersionMetaDialog = (row: WorkflowVersionDTO) => {
   editingVersion.value = row
-  versionDialogForm.version = row.version
+  versionDialogForm.version = normalizeWorkflowVersion(row.version)
   versionDialogForm.name = row.name
   versionDialogVisible.value = true
 }
@@ -1097,7 +1076,7 @@ const handleSaveVersionMeta = async () => {
     return
   }
   if (duplicatedVersion.value) {
-    ElMessage.warning(`版本号 V${trimmedVersion} 已存在，请重新输入`)
+    ElMessage.warning(`工作流“${trimmedName}”下版本号 V${normalizeWorkflowVersion(trimmedVersion)} 已存在，请重新输入`)
     return
   }
   if (!trimmedName) {
@@ -1157,7 +1136,7 @@ async function handleToggleActivation(row: WorkflowVersionDTO) {
     if (!hasBoundTypes) {
       try {
         await ElMessageBox.confirm(
-          '该工作流尚未绑定任何工单类型，启用后无法被需求使用。是否前往需求配置绑定工单类型？',
+          '该工作流尚未绑定任何工单类型，启用后需绑定具体工单类型才能正常使用。是否前往需求配置绑定工单类型？',
           '工单类型未绑定',
           {
             confirmButtonText: '前往绑定',
@@ -1444,10 +1423,6 @@ onMounted(() => {
   }
 }
 
-.overview-card {
-  flex-shrink: 0;
-}
-
 .management-card {
   flex: 1;
   min-height: 0;
@@ -1483,8 +1458,6 @@ onMounted(() => {
   }
 }
 
-.overview-header,
-.card-header,
 .table-toolbar,
 .approval-toolbar,
 .toolbar-left,
@@ -1540,31 +1513,26 @@ onMounted(() => {
   padding: 4px;
 }
 
-.overview-header {
-  align-items: flex-start;
-}
-
-.overview-header h2,
-.card-header h3 {
-  margin: 0;
-  color: var(--color-text-primary);
-}
-
-.overview-header p,
-.card-header p {
-  margin: 6px 0 0;
-  color: var(--color-muted-text);
-  font-size: 13px;
-}
-
-.overview-metrics {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+.workflow-stats {
+  display: flex;
+  align-items: center;
   gap: 12px;
-  margin-top: 18px;
+  color: var(--color-muted-text);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
-.metric-card,
+.workflow-stats span + span {
+  padding-left: 12px;
+  border-left: 1px solid var(--color-border, #e5e7eb);
+}
+
+.workflow-stats strong {
+  margin-left: 2px;
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
 .summary-card {
   padding: 16px;
   border-radius: 14px;
@@ -1572,26 +1540,12 @@ onMounted(() => {
   background: #f8fafc;
 }
 
-.metric-card.success {
-  background: #f0f9eb;
-}
-
-.metric-card.warning {
-  background: #fff7e6;
-}
-
-.metric-card.danger {
-  background: #fef0f0;
-}
-
-.metric-value,
 .summary-value {
   font-size: 26px;
   font-weight: 700;
   color: var(--color-text-primary);
 }
 
-.metric-label,
 .summary-label {
   margin-top: 6px;
   font-size: 12px;
@@ -1843,14 +1797,7 @@ onMounted(() => {
   }
 }
 
-@media (max-width: 960px) {
-  .overview-metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
 @media (max-width: 640px) {
-  .overview-metrics,
   .summary-grid {
     grid-template-columns: 1fr;
   }
@@ -1860,3 +1807,5 @@ onMounted(() => {
   }
 }
 </style>
+
+

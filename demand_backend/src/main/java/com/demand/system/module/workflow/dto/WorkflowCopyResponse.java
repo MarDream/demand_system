@@ -14,7 +14,7 @@ public class WorkflowCopyResponse {
     @Schema(description = "新工作流名称", example = "审批流程 - 副本")
     private String name;
 
-    @Schema(description = "新版本号", example = "v2.0")
+    @Schema(description = "新版本号", example = "2.0.0")
     private String version;
 
     @Schema(description = "复制模式", example = "sync", allowableValues = {"sync", "async"})

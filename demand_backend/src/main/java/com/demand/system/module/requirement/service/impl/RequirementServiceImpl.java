@@ -936,6 +936,42 @@ public class RequirementServiceImpl implements RequirementService {
     }
 
     @Override
+    public PageResult<RequirementVO> listMyCc(RequirementMyListQueryDTO query, Long userId) {
+        List<String> currentRoleCodes = SecurityUtils.getCurrentUserRoles();
+        boolean isSuperAdmin = isSuperAdmin(currentRoleCodes);
+        List<Long> visibleOrgIds = resolveVisibleOrgIds(userId, isSuperAdmin);
+        if (!isSuperAdmin && visibleOrgIds.isEmpty()) {
+            return new PageResult<>(Collections.emptyList(), 0L, query.getPageNum(), query.getPageSize());
+        }
+
+        Page<Requirement> page = new Page<>(query.getPageNum(), query.getPageSize());
+        IPage<Requirement> result = requirementMapper.selectMyCc(page, userId,
+                query.getProjectId(), query.getType(), query.getPriority(), query.getStatus(),
+                query.getAssigneeId(), query.getKeyword(), query.getNodeStatus(), query.getIsOverdue(),
+                isSuperAdmin, visibleOrgIds);
+        List<RequirementVO> list = new ArrayList<>();
+        for (Requirement r : result.getRecords()) {
+            RequirementVO vo = new RequirementVO();
+            BeanUtils.copyProperties(r, vo);
+            vo.setOperationType("view");
+            vo.setCanView(true);
+            vo.setCanApprove(false);
+            vo.setCanEdit(false);
+            list.add(vo);
+        }
+        batchFillUserNamesAndOrg(list, result.getRecords());
+        batchFillFollowed(list, userId);
+        // 抄送列表即使抄送人同时是当前审批人，也严格保持只读。
+        list.forEach(vo -> {
+            vo.setOperationType("view");
+            vo.setCanView(true);
+            vo.setCanApprove(false);
+            vo.setCanEdit(false);
+        });
+        return new PageResult<>(list, result.getTotal(), query.getPageNum(), query.getPageSize());
+    }
+
+    @Override
     public PageResult<RequirementVO> listMyDone(RequirementMyListQueryDTO query, Long userId) {
         List<String> currentRoleCodes = SecurityUtils.getCurrentUserRoles();
         boolean isSuperAdmin = isSuperAdmin(currentRoleCodes);
@@ -2481,6 +2517,15 @@ public class RequirementServiceImpl implements RequirementService {
                         myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
                         myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(),
                         isSuperAdmin, visibleOrgIds, myQuery.getNodeStatus(), myQuery.getIsOverdue());
+                records = result.getRecords();
+            }
+            case "cc" -> {
+                RequirementMyListQueryDTO myQuery = buildMyListQuery(query);
+                Page<Requirement> page = new Page<>(1, 10000);
+                var result = requirementMapper.selectMyCc(page, currentUserId,
+                        myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
+                        myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(),
+                        myQuery.getNodeStatus(), myQuery.getIsOverdue(), isSuperAdmin, visibleOrgIds);
                 records = result.getRecords();
             }
             default -> {

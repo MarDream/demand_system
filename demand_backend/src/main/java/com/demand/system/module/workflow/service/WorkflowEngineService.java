@@ -138,6 +138,7 @@ public class WorkflowEngineService {
     private final WorkflowVersionResolver workflowVersionResolver;
     private final WorkflowDefinitionEngine workflowDefinitionEngine;
     private final RequirementTypeMapper requirementTypeMapper;
+    private final WorkflowCcService ccService;
 
     public WorkflowEngineService(WorkflowInstanceMapper instanceMapper, WorkflowInstanceTransitionMapper transitionMapper,
                                WorkflowNodeMapper nodeMapper, WorkflowEdgeMapper edgeMapper,
@@ -161,7 +162,8 @@ public class WorkflowEngineService {
                                UserNameResolver userNameResolver,
                                WorkflowVersionResolver workflowVersionResolver,
                                WorkflowDefinitionEngine workflowDefinitionEngine,
-                               RequirementTypeMapper requirementTypeMapper) {
+                               RequirementTypeMapper requirementTypeMapper,
+                               WorkflowCcService ccService) {
         this.instanceMapper = instanceMapper;
         this.transitionMapper = transitionMapper;
         this.nodeMapper = nodeMapper;
@@ -192,6 +194,7 @@ public class WorkflowEngineService {
         this.workflowVersionResolver = workflowVersionResolver;
         this.workflowDefinitionEngine = workflowDefinitionEngine;
         this.requirementTypeMapper = requirementTypeMapper;
+        this.ccService = ccService;
     }
 
     /**
@@ -311,6 +314,7 @@ public class WorkflowEngineService {
 
         // ====== 待办任务同步（提交时无 selectedAssigneeId，按角色/角色组/组织分配）======
         pendingTaskSyncService.syncPendingTasks(requirementId, null);
+        ccService.process(requirement, instance, context, startNode.getNodeId(), targetNode.getNodeId(), operatorId);
         // ====== 待办任务同步 END ======
     }
 
@@ -466,6 +470,11 @@ public class WorkflowEngineService {
             .eq(Requirement::getId, request.getRequirementId())
             .set(Requirement::getAssigneeId, request.getSelectedAssigneeId()));
         pendingTaskSyncService.syncPendingTasks(request.getRequirementId(), request.getSelectedAssigneeId());
+        WorkflowInstance latestInstance = instanceMapper.selectById(instance.getId());
+        if (latestInstance != null && "running".equalsIgnoreCase(latestInstance.getStatus())) {
+            ccService.process(requirement, latestInstance, context, latestInstance.getPreviousNodeId(),
+                    latestInstance.getCurrentNodeId(), operatorId);
+        }
         // ====== 待办任务同步 END ======
     }
 
@@ -516,6 +525,9 @@ public class WorkflowEngineService {
         RequirementTypeConfig newTypeConfig = requirementTypeMapper.selectByCode(newType);
         if (newTypeConfig == null || newTypeConfig.getWorkflowVersionId() == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "目标工单类型不存在或未绑定工作流");
+        }
+        if (!Boolean.TRUE.equals(newTypeConfig.getEnabled())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "目标工单类型已禁用，无法切换");
         }
 
         WorkflowVersion newVersion = workflowVersionMapper.selectById(newTypeConfig.getWorkflowVersionId());
@@ -865,6 +877,13 @@ public class WorkflowEngineService {
         stampNodeEndTime(rollbackUpdate, currentNode);
         requirementMapper.update(null, rollbackUpdate);
         pendingTaskSyncService.syncPendingTasks(requirementId, null);
+        WorkflowGraphContext context = runtimeLoader.loadContext(instance.getWorkflowVersionId());
+        WorkflowInstance latestInstance = instanceMapper.selectById(instance.getId());
+        Requirement latestRequirement = requirementMapper.selectById(requirementId);
+        if (latestInstance != null && latestRequirement != null && "running".equalsIgnoreCase(latestInstance.getStatus())) {
+            ccService.process(latestRequirement, latestInstance, context, latestInstance.getPreviousNodeId(),
+                    latestInstance.getCurrentNodeId(), operatorId);
+        }
     }
 
     @Transactional
@@ -1052,6 +1071,10 @@ public class WorkflowEngineService {
             for (RequirementTypeConfig config : allTypes) {
                 // 跳过当前类型
                 if (Objects.equals(config.getCode(), requirement.getType())) {
+                    continue;
+                }
+                // 跳过已禁用的类型（工作流停用时联动禁用，不作为切换候选）
+                if (!Boolean.TRUE.equals(config.getEnabled())) {
                     continue;
                 }
                 // 跳过未绑定工作流版本或绑定版本未激活的

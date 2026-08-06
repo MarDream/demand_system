@@ -1921,7 +1921,6 @@ function permissionName(code: string) {
     'menu:settings:workflow': '工作流配置菜单',
     'menu:settings:role': '角色管理菜单',
     'menu:menu-management': '菜单管理菜单',
-    'menu:document': '文档中心菜单',
     'menu:settings:llm': '模型配置菜单',
     'menu:requirement:view:all': '全部需求',
     'menu:requirement:view:pending': '我的待办',

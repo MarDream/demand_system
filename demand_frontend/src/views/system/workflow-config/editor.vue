@@ -293,6 +293,16 @@
 
               <!-- 审批节点和抄送节点的配置 -->
               <template v-if="nodeForm.nodeType === 'approval' || nodeForm.nodeType === 'cc'">
+                <el-form-item v-if="nodeForm.nodeType === 'cc'" label="抄送方式">
+                  <el-radio-group v-model="nodeForm.ccMode" class="cc-mode-group">
+                    <el-radio value="MESSAGE">站内消息</el-radio>
+                    <el-radio value="READ_ONLY_TODO">只读查阅待办</el-radio>
+                  </el-radio-group>
+                  <div class="cc-mode-tip">
+                    站内消息只发送通知；只读查阅待办会出现在“抄送我的”列表中，但不可审批或流转。
+                  </div>
+                </el-form-item>
+
                 <el-form-item label="处理人类型">
                   <el-select v-model="nodeForm.assigneeType" placeholder="请选择处理人类型">
                     <el-option label="指定用户" value="SPECIFIED_USER" />
@@ -305,28 +315,7 @@
                 </el-form-item>
 
                 <el-form-item v-if="nodeForm.assigneeType === 'SPECIFIED_ROLE'" label="指定角色">
-                  <el-tree-select
-                    v-model="nodeForm.assigneeRoleId"
-                    :data="roleTreeSelectOptions"
-                    :props="{ label: 'groupName', value: 'groupId', children: 'children' }"
-                    placeholder="请选择角色"
-                    :loading="assigneeOptionsLoading"
-                    filterable
-                    clearable
-                    node-key="groupId"
-                    check-strictly
-                    @change="handleRoleTreeSelectChange"
-                  >
-                    <template #default="{ data }">
-                      <span v-if="data.groupId !== undefined">
-                        <span v-if="data.groupId === null">[默认] {{ data.groupName }}</span>
-                        <span v-else>{{ data.groupName }}</span>
-                      </span>
-                      <span v-else>
-                        {{ data.name }}
-                      </span>
-                    </template>
-                  </el-tree-select>
+                  <RoleSelect v-model="nodeForm.assigneeRoleId" placeholder="请选择角色" />
                 </el-form-item>
 
                 <el-form-item v-if="nodeForm.assigneeType === 'SPECIFIED_ROLE_GROUP'" label="指定角色组">
@@ -470,6 +459,7 @@ import { computed, ref, onMounted, onBeforeUnmount, reactive, watch } from 'vue'
 import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppButton from '@/components/common/AppButton.vue'
+import RoleSelect from '@/components/common/RoleSelect.vue'
 import CountersignConfig from './components/CountersignConfig.vue'
 import ParallelConfig from './components/ParallelConfig.vue'
 import ConditionConfig from './components/ConditionConfig.vue'
@@ -507,6 +497,7 @@ import { resolveActiveMenuPath } from '@/utils/menuNavigation'
 import {
   compareWorkflowVersion,
   isWorkflowVersion,
+  normalizeWorkflowVersion,
   sameWorkflowVersion,
   suggestNextWorkflowVersion,
 } from '@/utils/workflowVersion'
@@ -642,6 +633,7 @@ const nodeForm = reactive<Partial<WorkflowNodeDTO> & {
   parallelType?: 'AND' | 'OR'
   parallelBranches?: Array<{ branchId: string; branchName: string; condition: { field?: string; operator?: string; value?: string } }>
   conditionBranches?: ConditionBranch[]
+  ccMode?: 'MESSAGE' | 'READ_ONLY_TODO'
 }>({
   nodeId: '',
   nodeType: 'approval',
@@ -675,7 +667,8 @@ const nodeForm = reactive<Partial<WorkflowNodeDTO> & {
   countersignApprovers: [],
   parallelType: 'AND',
   parallelBranches: [],
-  conditionBranches: []
+  conditionBranches: [],
+  ccMode: 'MESSAGE'
 })
 
 // 会签配置：需求提出人占位 ID（与 CountersignConfig 中保持一致）
@@ -831,12 +824,13 @@ const userSelectOptions = computed(() => {
 })
 const trimmedVersionName = computed(() => versionForm.name.trim())
 const duplicatedVersionRecord = computed(() => {
-  const trimmedVersion = versionForm.version.trim()
-  if (!trimmedVersion) return undefined
+  const normalizedVersion = normalizeWorkflowVersion(versionForm.version)
+  const normalizedName = trimmedVersionName.value
+  if (!normalizedVersion || !normalizedName) return undefined
   return versionHistory.value.find((item) => {
-    if (!sameWorkflowVersion(item.version, trimmedVersion)) return false
     if (currentVersion.value?.id && item.id === currentVersion.value.id) return false
-    return true
+    if ((item.name || '').trim() !== normalizedName) return false
+    return sameWorkflowVersion(item.version, normalizedVersion)
   })
 })
 const versionMetaHint = computed(() => {
@@ -852,7 +846,7 @@ const versionMetaHint = computed(() => {
     return { type: 'warning', message: '版本号格式需为正整数或 1.0.0' }
   }
   if (duplicatedVersionRecord.value) {
-    return { type: 'error', message: `版本号 V${trimmedVersion} 已存在` }
+    return { type: 'error', message: `工作流“${trimmedVersionName.value}”下版本号 V${normalizeWorkflowVersion(trimmedVersion)} 已存在` }
   }
   if (!trimmedVersionName.value) {
     return { type: 'warning', message: '版本名称不能为空' }
@@ -869,7 +863,7 @@ const applyCurrentVersion = (version: WorkflowVersionDTO) => {
 }
 
 const syncVersionForm = (version?: WorkflowVersionDTO) => {
-  versionForm.version = version?.version || ''
+  versionForm.version = normalizeWorkflowVersion(version?.version)
   versionForm.name = version?.name || ''
   versionForm.knowledgeBaseId = version?.knowledgeBaseId ?? null
   versionForm.approvalEvaluationEnabled = version?.approvalEvaluationEnabled ?? false
@@ -895,7 +889,7 @@ const getDesiredVersionMeta = (): WorkflowVersionMetaUpdateDTO | null => {
   }
 
   if (duplicatedVersionRecord.value) {
-    ElMessage.warning(`版本号 V${version} 已存在，请重新输入`)
+    ElMessage.warning(`工作流“${name}”下版本号 V${normalizeWorkflowVersion(version)} 已存在，请重新输入`)
     return null
   }
 
@@ -1937,6 +1931,7 @@ const handleNodeClick = (data: any) => {
     countersignApprovers: data.properties?.countersignApprovers || [],
     parallelType: data.properties?.parallelType ?? 'AND',
     parallelBranches: data.properties?.branches || [],
+    ccMode: data.properties?.ccMode ?? data.properties?.properties?.ccMode ?? 'MESSAGE',
     properties: data.properties || {}
   })
 
@@ -2074,6 +2069,7 @@ const handleSaveNodeConfig = () => {
       countersignApprovers: nodeForm.countersignApprovers,
       parallelType: nodeForm.parallelType,
       branches: nodeForm.parallelBranches,
+      ccMode: nodeForm.nodeType === 'cc' ? (nodeForm.ccMode || 'MESSAGE') : undefined,
     }
   }
 
@@ -2305,6 +2301,9 @@ const handleSave = async () => {
       syncVersionForm(savedVersion)
     }
 
+    // 配置已成功落库，离开画板时不应再提示存在未保存修改。
+    // 提交审核会先调用本方法，清除脏状态后随后的路由跳转可直接放行。
+    configDirty.value = false
     ElMessage.success('保存成功')
     return true
   } catch (error) {
@@ -2580,6 +2579,7 @@ const loadWorkflowConfig = async () => {
                 assigneeUserIds: node.assigneeUserIds,
                 timeoutHours: node.timeoutHours,
                 timeoutAction: node.timeoutAction,
+                ccMode: node.properties?.ccMode ?? (node.properties as any)?.properties?.ccMode ?? 'MESSAGE',
                 nodeStatusCode: node.properties?.nodeStatusCode ?? (node.properties as any)?.properties?.nodeStatusCode,
                 requireAttachment: node.properties?.requireAttachment ?? (node.properties as any)?.properties?.requireAttachment ?? false
               }

@@ -11,6 +11,10 @@ export interface AssistantSource {
   title?: string
   path?: string
   reason?: string
+  /** 知识库文档 ID（知识库检索来源时有效） */
+  documentId?: number | null
+  /** 知识库 ID（知识库检索来源时有效） */
+  knowledgeBaseId?: number | null
 }
 
 export interface AssistantPageContext {
@@ -30,6 +34,23 @@ export interface ThinkingStep {
   detail: string
   score?: number
   metadata?: Record<string, any>
+}
+
+/** 任务日志行 */
+export interface TaskLog {
+  timestamp: number
+  level: string  // 'info' | 'warn' | 'error'
+  message: string
+}
+
+/** 检索任务节点（对标 WorkBuddy 任务列表） */
+export interface AssistantTask {
+  id: string
+  title: string
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  startedAt?: number | null
+  completedAt?: number | null
+  logs: TaskLog[]
 }
 
 export interface CitationReference {
@@ -52,9 +73,19 @@ export interface AssistantMessage {
   actions: AssistantAction[]
   sources: AssistantSource[]
   thinkingSteps?: ThinkingStep[]
+  /** 任务列表（检索过程） */
+  tasks?: AssistantTask[]
   processSummary?: string | null
   retrievedCount?: number | null
   citations?: CitationReference[]
+  /** 深度思考内容（LLM reasoning，可为 null） */
+  reasoning?: string | null
+  /** 输入（提示词）token 数 */
+  inputTokens?: number | null
+  /** 输出（生成）token 数 */
+  outputTokens?: number | null
+  /** 总 token 数 */
+  totalTokens?: number | null
   createdAt?: string
 }
 
@@ -91,6 +122,21 @@ export interface AssistantChatRequest {
    * 默认 10
    */
   topK?: number
+  /**
+   * 是否启用联网搜索（仅通用助手模式 knowledgeBaseId=null 下生效）。
+   * 开启后：轻量检索全部本地知识库 + LLM 联网搜索，综合给出结果。
+   */
+  webSearch?: boolean
+  /** 上传的文件附件（文件ID + 客户端提取的文本内容） */
+  files?: AssistantFileAttachment[]
+}
+
+export interface AssistantFileAttachment {
+  fileId: number
+  name: string
+  size: number
+  contentType: string
+  extractedText?: string | null
 }
 
 export interface AssistantMetaPayload {
@@ -99,8 +145,16 @@ export interface AssistantMetaPayload {
   assistantMessageId?: number
 }
 
+export interface AssistantUsage {
+  inputTokens?: number | null
+  outputTokens?: number | null
+  totalTokens?: number | null
+}
+
 export interface AssistantActionPayload {
   intent?: string | null
   actions: AssistantAction[]
   sources: AssistantSource[]
+  /** 任务列表（知识库问答时携带） */
+  tasks?: AssistantTask[]
 }

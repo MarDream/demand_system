@@ -291,6 +291,16 @@ public class RequirementController {
         return Result.success(requirementService.listMyDone(query, userId));
     }
 
+    @GetMapping("/my-cc")
+    @PreAuthorize("isAuthenticated()")
+    public Result<PageResult<RequirementVO>> listMyCc(RequirementMyListQueryDTO query) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) {
+            return Result.fail(401, "未登录或登录已过期");
+        }
+        return Result.success(requirementService.listMyCc(query, userId));
+    }
+
     @PostMapping("/{id}/follow")
     @PreAuthorize("isAuthenticated()")
     public Result<Void> follow(@PathVariable Long id) {

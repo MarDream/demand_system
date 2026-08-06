@@ -110,6 +110,7 @@ public class RequirementConfigService {
         ).stream().map(WorkflowVersion::getId).collect(Collectors.toSet());
 
         List<RequirementTypeConfig> available = allTypes.stream()
+                .filter(t -> Boolean.TRUE.equals(t.getEnabled()))
                 .filter(t -> t.getWorkflowVersionId() != null && activeVersionIds.contains(t.getWorkflowVersionId()))
                 .collect(Collectors.toList());
         return Result.success(available);
@@ -249,6 +250,9 @@ public class RequirementConfigService {
         if (type.getSortOrder() == null) {
             type.setSortOrder(nextTypeSortOrder());
         }
+        if (type.getEnabled() == null) {
+            type.setEnabled(true);
+        }
         syncTypeDefaultFlag(type.getId(), type.getIsDefault());
         typeMapper.insert(type);
         return Result.success();
@@ -271,6 +275,39 @@ public class RequirementConfigService {
         }
         syncTypeDefaultFlag(type.getId(), type.getIsDefault());
         typeMapper.updateById(type);
+        return Result.success();
+    }
+
+    /**
+     * 启用/禁用需求类型。
+     * <p>开启时需校验该类型绑定的工作流版本仍处于活跃状态（is_active=1 AND activation_status='active'），
+     * 否则拒绝以避免启用一个无可用工作流的类型。禁用无需校验。
+     *
+     * @param id      需求类型ID
+     * @param enabled true=启用，false=禁用
+     */
+    @Transactional
+    public Result<Void> updateTypeEnabled(Long id, boolean enabled) {
+        RequirementTypeConfig existing = typeMapper.selectById(id);
+        if (existing == null) {
+            return Result.fail("需求类型不存在");
+        }
+        if (enabled) {
+            Long versionId = existing.getWorkflowVersionId();
+            if (versionId == null) {
+                return Result.fail("该类型未绑定工作流，无法启用");
+            }
+            WorkflowVersion version = workflowVersionMapper.selectById(versionId);
+            if (version == null
+                    || version.getIsActive() == null
+                    || version.getIsActive() != 1
+                    || !"active".equals(version.getActivationStatus())) {
+                return Result.fail("请先启用绑定的工作流");
+            }
+        }
+        typeMapper.update(null, new LambdaUpdateWrapper<RequirementTypeConfig>()
+                .eq(RequirementTypeConfig::getId, id)
+                .set(RequirementTypeConfig::getEnabled, enabled));
         return Result.success();
     }
 

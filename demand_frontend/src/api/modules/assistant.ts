@@ -6,6 +6,8 @@ import type {
   AssistantMessage,
   AssistantMetaPayload,
   AssistantSession,
+  AssistantTask,
+  AssistantUsage,
   ThinkingStep,
 } from '@/types/assistant'
 
@@ -29,7 +31,13 @@ export interface AssistantStreamHandlers {
   onMeta?: (payload: AssistantMetaPayload) => void
   onActions?: (payload: AssistantActionPayload) => void
   onThinkingSteps?: (steps: ThinkingStep[]) => void
+  onTaskUpdate?: (task: AssistantTask) => void
   onDelta?: (delta: string) => void
+  /** 深度思考内容增量（reasoningDelta 事件，流式） */
+  onReasoningDelta?: (delta: string) => void
+  /** 深度思考完整内容（reasoning 事件，RAG 分支一次性下发） */
+  onReasoning?: (content: string) => void
+  onUsage?: (usage: AssistantUsage) => void
   onDone?: (message: AssistantMessage) => void
   onError?: (message: string) => void
 }
@@ -38,10 +46,31 @@ export async function streamAssistantMessage(
   sessionId: number,
   data: AssistantChatRequest,
   handlers: AssistantStreamHandlers,
+  signal?: AbortSignal,
+) {
+  await streamAssistantRequest(sessionId, 'stream', data, handlers, signal)
+}
+
+export async function regenerateAssistantMessage(
+  sessionId: number,
+  data: AssistantChatRequest & { assistantMessageId: number | string },
+  handlers: AssistantStreamHandlers,
+  signal?: AbortSignal,
+) {
+  await streamAssistantRequest(sessionId, 'regenerate', data, handlers, signal)
+}
+
+async function streamAssistantRequest(
+  sessionId: number,
+  action: 'stream' | 'regenerate',
+  data: AssistantChatRequest & { assistantMessageId?: number | string },
+  handlers: AssistantStreamHandlers,
+  signal?: AbortSignal,
 ) {
   const baseURL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
   const token = getToken()
-  const response = await fetch(`${baseURL}/v1/assistant/sessions/${sessionId}/messages/stream`, {
+  const suffix = action === 'regenerate' ? 'regenerate' : 'stream'
+  const response = await fetch(`${baseURL}/v1/assistant/sessions/${sessionId}/messages/${suffix}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -49,10 +78,11 @@ export async function streamAssistantMessage(
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify(data),
+    signal,
   })
 
   if (!response.ok || !response.body) {
-    throw new Error(`操作助手请求失败: HTTP ${response.status}`)
+    throw new Error(`${action === 'regenerate' ? '重新生成' : '操作助手'}请求失败: HTTP ${response.status}`)
   }
 
   const reader = response.body.getReader()
@@ -101,6 +131,25 @@ function handleStreamEvent(eventBlock: string, handlers: AssistantStreamHandlers
     return eventName
   }
 
+  if (eventName === 'reasoningDelta') {
+    handlers.onReasoningDelta?.(payload)
+    return eventName
+  }
+
+  if (eventName === 'reasoning') {
+    handlers.onReasoning?.(payload)
+    return eventName
+  }
+
+  if (eventName === 'usage') {
+    try {
+      handlers.onUsage?.(JSON.parse(payload) as AssistantUsage)
+    } catch {
+      // usage 帧解析失败时忽略
+    }
+    return eventName
+  }
+
   if (eventName === 'error') {
     handlers.onError?.(parseStreamMessage(payload))
     return eventName
@@ -113,6 +162,8 @@ function handleStreamEvent(eventBlock: string, handlers: AssistantStreamHandlers
     handlers.onActions?.(parsed as AssistantActionPayload)
   } else if (eventName === 'thinkingSteps') {
     handlers.onThinkingSteps?.(parsed as ThinkingStep[])
+  } else if (eventName === 'taskUpdate') {
+    handlers.onTaskUpdate?.(parsed as AssistantTask)
   } else if (eventName === 'done') {
     handlers.onDone?.(parsed as AssistantMessage)
   }

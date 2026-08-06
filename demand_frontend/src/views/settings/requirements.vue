@@ -39,21 +39,22 @@
               </template>
             </el-table-column>
             <el-table-column prop="sortOrder" label="排序" width="80" align="center" />
-            <el-table-column prop="isDefault" label="默认" width="80" align="center">
+            <el-table-column prop="enabled" label="状态" width="90" align="center">
               <template #default="{ row }">
-                <el-tag v-if="row.isDefault" type="success" size="small">是</el-tag>
-                <span v-else>-</span>
+                <el-switch
+                  :model-value="row.enabled !== false"
+                  :loading="row._enabledLoading"
+                  @change="(val: boolean) => toggleTypeEnabled(row, val)"
+                />
               </template>
             </el-table-column>
-            <el-table-column label="绑定工作流" min-width="160">
+            <el-table-column label="绑定工作流" min-width="180">
               <template #default="{ row }">
                 <template v-if="row.workflowVersionId">
-                  <el-tag
-                    v-for="v in activeWorkflowVersions.filter(wv => wv.id === row.workflowVersionId)"
-                    :key="v.id"
-                    size="small"
-                    type="success"
-                  >{{ v.name }}</el-tag>
+                  <span v-for="v in activeWorkflowVersions.filter(wv => wv.id === row.workflowVersionId)" :key="v.id">
+                    <el-tag size="small" type="success">{{ v.workflowDefinitionName || v.name }}</el-tag>
+                    <span v-if="v.workflowDefinitionName" style="margin-left: 4px; color: var(--el-text-color-secondary); font-size: 12px;">v{{ v.version }}</span>
+                  </span>
                 </template>
                 <span v-else style="color: var(--el-text-color-placeholder)">未绑定</span>
               </template>
@@ -105,8 +106,11 @@
             <el-table-column v-if="isPriorityColumnVisible('sortOrder')" prop="sortOrder" label="排序" width="80" align="center" />
             <el-table-column v-if="isPriorityColumnVisible('isDefault')" prop="isDefault" label="默认" width="80" align="center">
               <template #default="{ row }">
-                <el-tag v-if="row.isDefault" type="success" size="small">是</el-tag>
-                <span v-else>-</span>
+                <el-switch
+                  :model-value="row.isDefault"
+                  :loading="row._defaultLoading"
+                  @change="(val: boolean) => togglePriorityDefault(row, val)"
+                />
               </template>
             </el-table-column>
             <el-table-column v-if="isPriorityColumnVisible('operations')" label="操作" width="100" fixed="right">
@@ -227,19 +231,36 @@
           <el-switch v-model="typeForm.isDefault" />
         </el-form-item>
         <el-form-item label="绑定工作流">
-          <el-select
-            v-model="typeForm.workflowVersionId"
-            placeholder="未绑定"
-            clearable
-            style="width: 100%"
-          >
-            <el-option
-              v-for="v in activeWorkflowVersions"
-              :key="v.id"
-              :label="v.name"
-              :value="v.id"
-            />
-          </el-select>
+          <div style="display: flex; gap: 8px; width: 100%;">
+            <el-select
+              v-model="typeForm.workflowDefinitionId"
+              placeholder="请选择工作流"
+              clearable
+              style="flex: 1"
+              @change="handleDefinitionChange"
+            >
+              <el-option
+                v-for="d in workflowDefinitions"
+                :key="d.id"
+                :label="d.name"
+                :value="d.id"
+              />
+            </el-select>
+            <el-select
+              v-model="typeForm.workflowVersionId"
+              :placeholder="typeForm.workflowDefinitionId ? '请选择版本号' : '请先选择工作流'"
+              :disabled="!typeForm.workflowDefinitionId"
+              clearable
+              style="flex: 1"
+            >
+              <el-option
+                v-for="v in filteredVersionOptions"
+                :key="v.id"
+                :label="v.version"
+                :value="v.id"
+              />
+            </el-select>
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -281,10 +302,30 @@
     <el-dialog v-model="nodeStatusDialogVisible" :title="editingNodeStatus ? '编辑节点状态' : '新增节点状态'" width="500px" class="settings-form-dialog">
       <el-form ref="nodeStatusFormRef" :model="nodeStatusForm" :rules="nodeStatusRules" label-width="100px">
         <el-form-item label="名称" prop="name">
-          <el-input v-model="nodeStatusForm.name" placeholder="如: 待评审" />
+          <el-input v-model="nodeStatusForm.name" placeholder="如: 待评审" @input="handleNodeStatusNameInput" />
         </el-form-item>
         <el-form-item label="编码" prop="code">
-          <el-input v-model="nodeStatusForm.code" placeholder="如: PENDING_REVIEW" />
+          <div style="display: flex; gap: 8px; width: 100%;">
+            <el-input
+              v-model="nodeStatusForm.code"
+              placeholder="如: PENDING_REVIEW"
+              style="flex: 1"
+              @input="nodeStatusCodeManuallyEdited = true"
+            />
+            <el-tooltip
+              v-if="!editingNodeStatus"
+              :content="nodeStatusCodeAiGenerating ? 'AI 正在生成编码...' : 'AI 自动生成编码'"
+              placement="top"
+            >
+              <el-button
+                :loading="nodeStatusCodeAiGenerating"
+                :disabled="!nodeStatusForm.name.trim() || !!editingNodeStatus"
+                @click="handleNodeStatusAiGenerateCode"
+              >
+                <el-icon v-if="!nodeStatusCodeAiGenerating"><MagicStick /></el-icon>
+              </el-button>
+            </el-tooltip>
+          </div>
         </el-form-item>
         <el-form-item label="颜色">
           <el-color-picker v-model="nodeStatusForm.color" show-alpha />
@@ -309,14 +350,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { Plus, Rank, Operation, EditPen, Delete, Document, Setting, MagicStick } from '@element-plus/icons-vue'
 import { requirementConfigApi, type RequirementType, type Priority, type SortItem } from '@/api/modules/requirementConfig'
 import { nodeStatusApi, type NodeStatus, type SortItem as NodeStatusSortItem } from '@/api/modules/workflow-engine'
-import { listActiveWorkflowVersions } from '@/api/modules/workflow-visual'
-import type { WorkflowVersionDTO } from '@/types/workflow-visual'
+import { listActiveWorkflowVersions, listWorkflowDefinitions } from '@/api/modules/workflow-visual'
+import type { WorkflowVersionDTO, WorkflowDefinitionInfoDTO } from '@/types/workflow-visual'
 import { normalizeText } from '@/utils/format'
 import { resolveErrorMessage } from '@/utils/error'
 import Sortable, { type SortableEvent } from 'sortablejs'
@@ -334,11 +375,11 @@ const typeAllColumns: ColumnDef[] = [
   { key: 'code', label: '编码', group: '基础字段', minWidth: 100 },
   { key: 'color', label: '颜色', group: '基础字段', minWidth: 100 },
   { key: 'sortOrder', label: '排序', group: '基础字段', width: 80 },
-  { key: 'isDefault', label: '默认', group: '状态信息', width: 80 },
+  { key: 'enabled', label: '状态', group: '状态信息', width: 90 },
   { key: 'workflow', label: '绑定工作流', group: '状态信息', minWidth: 160 },
   { key: 'operations', label: '操作', width: 150 },
 ]
-const typeDefaultKeys = ['drag', 'name', 'code', 'color', 'sortOrder', 'isDefault', 'workflow', 'operations']
+const typeDefaultKeys = ['drag', 'name', 'code', 'color', 'sortOrder', 'enabled', 'workflow', 'operations']
 
 const {
   showColumnConfig: showTypeColumnConfig,
@@ -448,6 +489,17 @@ const priorities = ref<Priority[]>([])
 // 活跃工作流版本列表（用于类型绑定下拉）
 const activeWorkflowVersions = ref<WorkflowVersionDTO[]>([])
 
+// 工作流定义列表（绑定弹框第一级下拉：先选工作流名称）
+const workflowDefinitions = ref<WorkflowDefinitionInfoDTO[]>([])
+
+/** 当前选中工作流下的版本选项 */
+const filteredVersionOptions = computed(() => {
+  if (!typeForm.value.workflowDefinitionId) return []
+  return activeWorkflowVersions.value.filter(
+    (v) => v.workflowDefinitionId === typeForm.value.workflowDefinitionId
+  )
+})
+
 const loadActiveWorkflowVersions = async () => {
   try {
     const res = await listActiveWorkflowVersions() as any
@@ -457,6 +509,22 @@ const loadActiveWorkflowVersions = async () => {
     ElMessage.warning(resolveErrorMessage(error, '加载可绑定工作流失败，请稍后刷新重试'))
     activeWorkflowVersions.value = []
   }
+}
+
+const loadWorkflowDefinitions = async () => {
+  try {
+    const res = await listWorkflowDefinitions() as any
+    const list = Array.isArray(res) ? res : res?.data || []
+    workflowDefinitions.value = list
+  } catch (error) {
+    ElMessage.warning(resolveErrorMessage(error, '加载工作流定义失败，请稍后刷新重试'))
+    workflowDefinitions.value = []
+  }
+}
+
+/** 切换工作流时清空已选版本号 */
+const handleDefinitionChange = () => {
+  typeForm.value.workflowVersionId = null
 }
 
 // 表格ref
@@ -475,6 +543,7 @@ const typeForm = ref({
   color: 'var(--color-accent)',
   sortOrder: 0,
   isDefault: false,
+  workflowDefinitionId: null as number | null,
   workflowVersionId: null as number | null
 })
 
@@ -529,12 +598,17 @@ const openTypeDialog = (type?: RequirementType) => {
   editingType.value = type || null
   typeCodeManuallyEdited.value = !!type
   if (type) {
+    // 编辑时反查所属工作流定义，回填第一级下拉
+    const boundVersion = type.workflowVersionId
+      ? activeWorkflowVersions.value.find((v) => v.id === type.workflowVersionId)
+      : undefined
     typeForm.value = {
       name: type.name,
       code: type.code,
       color: type.color || 'var(--color-accent)',
       sortOrder: type.sortOrder || 0,
       isDefault: type.isDefault || false,
+      workflowDefinitionId: boundVersion?.workflowDefinitionId ?? null,
       workflowVersionId: type.workflowVersionId ?? null
     }
   } else {
@@ -544,6 +618,7 @@ const openTypeDialog = (type?: RequirementType) => {
       color: 'var(--color-accent)',
       sortOrder: 0,
       isDefault: false,
+      workflowDefinitionId: null,
       workflowVersionId: null
     }
   }
@@ -586,6 +661,24 @@ const deleteType = async (id: number) => {
     loadTypes()
   } catch (error) {
     ElMessage.error(resolveErrorMessage(error, '删除失败'))
+  }
+}
+
+/** 行内切换需求类型启用状态 */
+const toggleTypeEnabled = async (row: RequirementType, val: boolean) => {
+  const previous = row.enabled
+  row._enabledLoading = true
+  try {
+    await requirementConfigApi.updateTypeEnabled(row.id!, val)
+    row.enabled = val
+    ElMessage.success(val ? '已启用' : '已禁用')
+    // 禁用后刷新列表（确保 available 下拉同步）；开启成功无需重载
+    if (!val) await loadTypes()
+  } catch (error) {
+    row.enabled = previous
+    ElMessage.error(resolveErrorMessage(error, val ? '启用失败' : '禁用失败'))
+  } finally {
+    row._enabledLoading = false
   }
 }
 
@@ -642,6 +735,24 @@ const deletePriority = async (id: number) => {
     loadPriorities()
   } catch (error) {
     ElMessage.error(resolveErrorMessage(error, '删除失败'))
+  }
+}
+
+/** 行内切换优先级默认状态 */
+const togglePriorityDefault = async (row: Priority, val: boolean) => {
+  const previous = row.isDefault
+  row._defaultLoading = true
+  try {
+    await requirementConfigApi.updatePriority(row.id!, { ...row, isDefault: val })
+    // 后端会互斥同步其他优先级，重新拉取列表刷新
+    await loadPriorities()
+    ElMessage.success(val ? '已设为默认优先级' : '已取消默认优先级')
+  } catch (error) {
+    // 失败回滚UI状态
+    row.isDefault = previous
+    ElMessage.error(resolveErrorMessage(error, '切换默认失败'))
+  } finally {
+    row._defaultLoading = false
   }
 }
 
@@ -757,6 +868,8 @@ const nodeStatuses = ref<NodeStatus[]>([])
 const nodeStatusDialogVisible = ref(false)
 const nodeStatusFormRef = ref<FormInstance>()
 const editingNodeStatus = ref<NodeStatus | null>(null)
+const nodeStatusCodeManuallyEdited = ref(false)
+const nodeStatusCodeAiGenerating = ref(false)
 
 const nodeStatusForm = ref({
   name: '',
@@ -784,6 +897,7 @@ const loadNodeStatuses = async () => {
 
 const openNodeStatusDialog = (status?: NodeStatus) => {
   editingNodeStatus.value = status || null
+  nodeStatusCodeManuallyEdited.value = false
   if (status) {
     nodeStatusForm.value = {
       name: status.name,
@@ -802,6 +916,9 @@ const openNodeStatusDialog = (status?: NodeStatus) => {
 
 const saveNodeStatus = async () => {
   if (!nodeStatusFormRef.value) return
+  if (!nodeStatusForm.value.code && nodeStatusForm.value.name) {
+    nodeStatusForm.value.code = generateNodeStatusCode(nodeStatusForm.value.name)
+  }
   await nodeStatusFormRef.value.validate(async (valid) => {
     if (valid) {
       try {
@@ -928,6 +1045,107 @@ function shortHash(value: string) {
   return hash.toString(36).toUpperCase().padStart(6, '0')
 }
 
+/** 输入节点状态名称时本地映射生成编码 */
+function handleNodeStatusNameInput() {
+  if (editingNodeStatus.value || nodeStatusCodeManuallyEdited.value) return
+  nodeStatusForm.value.code = generateNodeStatusCode(nodeStatusForm.value.name)
+}
+
+/** 手动点击 AI 按钮生成节点状态编码 */
+async function handleNodeStatusAiGenerateCode() {
+  const name = nodeStatusForm.value.name.trim()
+  if (!name) return
+
+  try {
+    nodeStatusCodeAiGenerating.value = true
+    const result = await llmProviderApi.translate(name) as any
+    const translated = result?.data ?? result
+    if (translated && typeof translated === 'string' && /^[A-Z][A-Z0-9_]*$/.test(translated)) {
+      nodeStatusForm.value.code = translated.slice(0, 50)
+      nodeStatusCodeManuallyEdited.value = false
+    } else {
+      nodeStatusForm.value.code = generateNodeStatusCode(name)
+      ElMessage.info('未配置可用模型，已使用本地映射生成编码')
+    }
+  } catch {
+    nodeStatusForm.value.code = generateNodeStatusCode(name)
+    ElMessage.info('AI 服务暂不可用，已使用本地映射生成编码')
+  } finally {
+    nodeStatusCodeAiGenerating.value = false
+  }
+}
+
+/** 本地映射生成节点状态编码 */
+function generateNodeStatusCode(name: string) {
+  const normalized = name.trim()
+  if (!normalized) return ''
+  const ascii = normalized
+    .replace(/([a-z])([A-Z])/g, '$1_$2')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toUpperCase()
+  if (/^[A-Z][A-Z0-9_]*$/.test(ascii)) {
+    return ascii.slice(0, 50)
+  }
+  const translated = translateChineseNodeStatusName(normalized)
+  if (translated) {
+    return translated.slice(0, 50)
+  }
+  return `STATUS_${shortHash(normalized)}`.slice(0, 50)
+}
+
+function translateChineseNodeStatusName(name: string) {
+  const exactMap: Record<string, string> = {
+    '待评审': 'PENDING_REVIEW',
+    '评审中': 'UNDER_REVIEW',
+    '已评审': 'REVIEWED',
+    '待审批': 'PENDING_APPROVAL',
+    '审批中': 'UNDER_APPROVAL',
+    '已审批': 'APPROVED',
+    '待开发': 'PENDING_DEVELOPMENT',
+    '开发中': 'IN_PROGRESS',
+    '开发完成': 'DEVELOPMENT_DONE',
+    '待测试': 'PENDING_TEST',
+    '测试中': 'TESTING',
+    '测试通过': 'TEST_PASSED',
+    '测试失败': 'TEST_FAILED',
+    '已发布': 'RELEASED',
+    '已上线': 'DEPLOYED',
+    '已验收': 'ACCEPTED',
+    '已关闭': 'CLOSED',
+    '已取消': 'CANCELLED',
+    '已挂起': 'SUSPENDED',
+    '已拒绝': 'REJECTED',
+    '已废弃': 'DISCARDED',
+  }
+  if (exactMap[name]) return exactMap[name]
+
+  const segments: Array<[RegExp, string]> = [
+    [/评审|审查/g, 'REVIEW'],
+    [/审批|批准/g, 'APPROVAL'],
+    [/开发|研发/g, 'DEVELOPMENT'],
+    [/测试/g, 'TEST'],
+    [/发布/g, 'RELEASE'],
+    [/上线|部署/g, 'DEPLOY'],
+    [/验收/g, 'ACCEPT'],
+    [/关闭/g, 'CLOSE'],
+    [/取消/g, 'CANCEL'],
+    [/挂起|暂停/g, 'SUSPEND'],
+    [/拒绝/g, 'REJECT'],
+    [/废弃|作废/g, 'DISCARD'],
+    [/开始/g, 'START'],
+    [/结束|完成/g, 'DONE'],
+    [/待/g, 'PENDING'],
+    [/中/g, 'IN_PROGRESS'],
+    [/已/g, ''],
+  ]
+  const parts = segments
+    .filter(([pattern]) => pattern.test(name))
+    .map(([, word]) => word)
+    .filter(word => word)
+  return Array.from(new Set(parts)).join('_')
+}
+
 /** 输入名称时本地映射生成编码 */
 function handleTypeNameInput() {
   if (editingType.value || typeCodeManuallyEdited.value) return
@@ -947,6 +1165,7 @@ const initializePage = async () => {
     loadPriorities(),
     loadNodeStatuses(),
     loadActiveWorkflowVersions(),
+    loadWorkflowDefinitions(),
   ])
   initTypeSortable()
   initPrioritySortable()
@@ -1069,3 +1288,4 @@ onMounted(() => {
   }
 }
 </style>
+

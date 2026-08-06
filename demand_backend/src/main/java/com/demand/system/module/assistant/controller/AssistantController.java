@@ -3,6 +3,7 @@ package com.demand.system.module.assistant.controller;
 import com.demand.system.common.result.Result;
 import com.demand.system.module.assistant.dto.AssistantChatRequest;
 import com.demand.system.module.assistant.dto.AssistantMessageVO;
+import com.demand.system.module.assistant.dto.AssistantRegenerateRequest;
 import com.demand.system.module.assistant.dto.AssistantSessionCreateDTO;
 import com.demand.system.module.assistant.dto.AssistantSessionVO;
 import com.demand.system.module.assistant.service.AssistantService;
@@ -59,5 +60,11 @@ public class AssistantController {
     @PreAuthorize("isAuthenticated()")
     public SseEmitter streamMessage(@PathVariable Long sessionId, @Valid @RequestBody AssistantChatRequest request) {
         return assistantService.streamMessage(sessionId, request);
+    }
+
+    @PostMapping(value = "/sessions/{sessionId}/messages/regenerate", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @PreAuthorize("isAuthenticated()")
+    public SseEmitter regenerateMessage(@PathVariable Long sessionId, @Valid @RequestBody AssistantRegenerateRequest request) {
+        return assistantService.regenerateMessage(sessionId, request);
     }
 }

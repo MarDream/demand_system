@@ -172,6 +172,44 @@
         ORDER BY rf.created_at DESC, rf.id DESC
     </select>
 
+    <!-- 我的抄送：只读查阅待办，不赋予审批权限 -->
+    <select id="selectMyCc" resultType="com.demand.system.module.requirement.entity.Requirement">
+        SELECT r.*
+        FROM requirements r
+        WHERE EXISTS (
+            SELECT 1
+            FROM requirement_pending_tasks pt
+            WHERE pt.task_type = 'CC_READ_ONLY'
+              AND pt.user_id = #{userId}
+              AND pt.requirement_id = r.id
+        )
+          AND r.deleted_at = 0
+          AND r.is_draft = 0
+          <if test='isSuperAdmin != true'>
+              AND r.org_id IN
+              <foreach collection='visibleOrgIds' item='orgId' open='(' separator=',' close=')'>
+                  #{orgId}
+              </foreach>
+          </if>
+          <if test='projectId != null'> AND r.project_id = #{projectId} </if>
+          <if test='type != null and type != ""'> AND r.type = #{type} </if>
+          <if test='priority != null and priority != ""'> AND r.priority = #{priority} </if>
+          <if test='nodeStatus != null and nodeStatus != ""'> AND r.node_status = #{nodeStatus} </if>
+          <if test='isOverdue != null and isOverdue'> AND r.node_status NOT IN (SELECT code FROM node_statuses WHERE is_end = 1) AND r.due_date IS NOT NULL AND r.due_date &lt; CURDATE() </if>
+          <if test='status != null and status != ""'> AND r.status = #{status} </if>
+          <if test='assigneeId != null'> AND r.assignee_id = #{assigneeId} </if>
+          <if test='keyword != null and keyword != ""'>
+            AND (r.title LIKE CONCAT('%', #{keyword}, '%') OR r.description LIKE CONCAT('%', #{keyword}, '%'))
+          </if>
+        ORDER BY (
+            SELECT MAX(pt_sort.updated_at)
+            FROM requirement_pending_tasks pt_sort
+            WHERE pt_sort.task_type = 'CC_READ_ONLY'
+              AND pt_sort.requirement_id = r.id
+              AND pt_sort.user_id = #{userId}
+        ) DESC, r.id DESC
+    </select>
+
     <!-- 我的已办 - 查询当前用户创建的已提交需求 或 审批过的需求，排除当前待我审批的需求（带数据权限过滤）
          @param userId 当前用户ID
          @param roleCodes 当前用户角色编码列表
@@ -279,7 +317,8 @@
         SELECT DISTINCT r.*
         FROM requirements r
         JOIN requirement_pending_tasks pt ON pt.requirement_id = r.id
-        WHERE pt.user_id = #{userId}
+        WHERE pt.task_type = 'APPROVAL'
+          AND pt.user_id = #{userId}
           AND r.deleted_at = 0
           AND r.is_draft = 0
           <if test='isSuperAdmin != true'>
@@ -335,7 +374,8 @@
                 AND pt_org.deleted_at = 0
             LEFT JOIN users login_user ON login_user.id = #{userId}
             LEFT JOIN user_organizations uo ON uo.user_id = #{userId}
-            WHERE pt.requirement_id = r.id
+            WHERE pt.task_type = 'APPROVAL'
+              AND pt.requirement_id = r.id
               AND pt.workflow_instance_id = wi.id
               AND pt.current_node_id = wi.current_node_id
               AND (
@@ -344,7 +384,8 @@
                   NOT EXISTS (
                     SELECT 1
                     FROM requirement_pending_tasks direct_pt
-                    WHERE direct_pt.requirement_id = r.id
+                    WHERE direct_pt.task_type = 'APPROVAL'
+                      AND direct_pt.requirement_id = r.id
                       AND direct_pt.workflow_instance_id = wi.id
                       AND direct_pt.current_node_id = wi.current_node_id
                       AND direct_pt.user_id IS NOT NULL
@@ -395,7 +436,8 @@
         ORDER BY COALESCE((
           SELECT MAX(pt_sort.updated_at)
           FROM requirement_pending_tasks pt_sort
-          WHERE pt_sort.requirement_id = r.id
+          WHERE pt_sort.task_type = 'APPROVAL'
+            AND pt_sort.requirement_id = r.id
             AND pt_sort.workflow_instance_id = wi.id
             AND pt_sort.current_node_id = wi.current_node_id
         ), r.updated_at) DESC, r.id DESC
@@ -451,7 +493,8 @@
                     AND pt_org.deleted_at = 0
                 LEFT JOIN users login_user ON login_user.id = #{userId}
                 LEFT JOIN user_organizations uo ON uo.user_id = #{userId}
-                WHERE pt.requirement_id = r.id
+                WHERE pt.task_type = 'APPROVAL'
+                  AND pt.requirement_id = r.id
                   AND pt.workflow_instance_id = wi2.id
                   AND pt.current_node_id = wi2.current_node_id
                   AND (
@@ -460,7 +503,8 @@
                       NOT EXISTS (
                         SELECT 1
                         FROM requirement_pending_tasks direct_pt
-                        WHERE direct_pt.requirement_id = r.id
+                        WHERE direct_pt.task_type = 'APPROVAL'
+                          AND direct_pt.requirement_id = r.id
                           AND direct_pt.workflow_instance_id = wi2.id
                           AND direct_pt.current_node_id = wi2.current_node_id
                           AND direct_pt.user_id IS NOT NULL

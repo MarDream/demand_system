@@ -18,7 +18,13 @@ public final class WorkflowVersionUtils {
         if (!StringUtils.hasText(version)) {
             return null;
         }
-        return version.trim();
+        String normalized = version.trim();
+        if (normalized.length() > 1
+                && (normalized.charAt(0) == 'v' || normalized.charAt(0) == 'V')
+                && Character.isDigit(normalized.charAt(1))) {
+            normalized = normalized.substring(1).trim();
+        }
+        return normalized;
     }
 
     public static boolean isValid(String version) {

@@ -177,12 +177,19 @@ function getBarStyle(record: BitableRecord): Record<string, string> {
   return {
     left: `${leftPercent}%`,
     width: `${widthPercent}%`,
-    backgroundColor: '#409eff',
+    background: 'var(--gradient-gantt-bar, linear-gradient(180deg, #3B82F6 0%, #2563EB 100%))',
   }
 }
 </script>
 
 <style scoped lang="scss">
+// ===== 多维表格 GanttView 激进风格精修（2026-08-03）=====
+// 设计目标：
+// 1. 甘特条：品牌渐变 + 8px 圆角 + 强化阴影
+// 2. 今日竖线：danger 色 0.5px 虚线
+// 3. 任务条 hover：放大 + 加深阴影
+// 4. 整体间距加大
+
 .gantt-view {
   display: flex;
   flex-direction: column;
@@ -193,15 +200,16 @@ function getBarStyle(record: BitableRecord): Record<string, string> {
 .gantt-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface);
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-surface, #fff);
   flex-shrink: 0;
 
   .gantt-header__label {
-    font-size: var(--font-size-sm);
-    color: var(--color-text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text-secondary, #475569);
     white-space: nowrap;
   }
 
@@ -224,54 +232,69 @@ function getBarStyle(record: BitableRecord): Record<string, string> {
   overflow: hidden;
 }
 
+// 任务侧栏
 .gantt-sidebar {
-  width: 200px;
-  border-right: 1px solid var(--color-border);
+  width: 220px;
+  border-right: 1px solid var(--color-border, #e2e8f0);
   flex-shrink: 0;
   overflow-y: auto;
+  background: var(--color-surface, #fff);
 
   .gantt-sidebar-header {
-    height: 40px;
-    padding: 8px 12px;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text-primary);
-    background: var(--color-background);
-    border-bottom: 1px solid var(--color-border);
+    height: 44px;
+    padding: 12px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text-secondary, #475569);
+    background: var(--color-background, #f8fafc);
+    border-bottom: 1px solid var(--color-border, #e2e8f0);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
   }
 
   .gantt-sidebar-row {
-    height: 32px;
-    padding: 6px 12px;
-    font-size: var(--font-size-sm);
-    color: var(--color-text-primary);
-    border-bottom: 1px solid var(--color-border);
+    height: 38px;
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text-primary, #0f172a);
+    border-bottom: 0.5px solid var(--color-border, #e2e8f0);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    transition: background-color 150ms;
+  }
+
+  .gantt-sidebar-row:hover {
+    background: var(--color-row-hover-bg, rgba(59, 130, 246, 0.04));
   }
 }
 
+// 时间轴主区
 .gantt-chart {
   flex: 1;
   overflow-x: auto;
   overflow-y: hidden;
+  position: relative;
 
   .gantt-chart-header {
     display: flex;
-    height: 40px;
-    background: var(--color-background);
-    border-bottom: 1px solid var(--color-border);
+    height: 44px;
+    background: var(--color-background, #f8fafc);
+    border-bottom: 1px solid var(--color-border, #e2e8f0);
   }
 
   .gantt-day-header {
-    width: 40px;
-    height: 40px;
-    padding: 8px 4px;
-    font-size: var(--font-size-xs);
-    color: var(--color-text-secondary);
+    width: 44px;
+    height: 44px;
+    padding: 10px 4px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--color-text-secondary, #475569);
     text-align: center;
-    border-right: 1px solid var(--color-border);
+    border-right: 0.5px solid var(--color-border, #e2e8f0);
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
   }
 
   .gantt-chart-body {
@@ -279,28 +302,43 @@ function getBarStyle(record: BitableRecord): Record<string, string> {
   }
 
   .gantt-row {
-    height: 32px;
-    border-bottom: 1px solid var(--color-border);
+    height: 38px;
+    border-bottom: 0.5px solid var(--color-border, #e2e8f0);
     position: relative;
+    transition: background-color 150ms;
+
+    &:hover {
+      background: var(--color-row-hover-bg, rgba(59, 130, 246, 0.04));
+    }
   }
 
+  // 甘特条：品牌渐变 + 圆角 + 阴影
   .gantt-bar {
     position: absolute;
-    top: 4px;
-    height: 24px;
-    border-radius: 4px;
-    padding: 2px 8px;
+    top: 6px;
+    height: 26px;
+    border-radius: var(--radius-md, 8px);
+    padding: 4px 10px;
     display: flex;
     align-items: center;
     cursor: pointer;
+    box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    transition: transform 200ms var(--ease-decelerate, cubic-bezier(0, 0, 0.2, 1)), box-shadow 200ms;
+
+    &:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 14px rgba(37, 99, 235, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    }
   }
 
   .gantt-bar-text {
-    font-size: var(--font-size-xs);
+    font-size: 12px;
+    font-weight: 600;
     color: white;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    text-shadow: 0 1px 2px rgba(15, 23, 42, 0.2);
   }
 }
 </style>

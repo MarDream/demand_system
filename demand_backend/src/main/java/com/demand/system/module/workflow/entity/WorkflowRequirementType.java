@@ -26,6 +26,8 @@ public class WorkflowRequirementType {
 
     private Integer isDefault;
 
+    private Integer enabled;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
@@ -84,6 +86,14 @@ public class WorkflowRequirementType {
 
     public void setIsDefault(Integer isDefault) {
         this.isDefault = isDefault;
+    }
+
+    public Integer getEnabled() {
+        return enabled;
+    }
+
+    public void setEnabled(Integer enabled) {
+        this.enabled = enabled;
     }
 
     public LocalDateTime getCreatedAt() {

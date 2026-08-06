@@ -62,7 +62,7 @@ public class WorkflowParallelBranchService {
         if (instance == null || context == null || !StringUtils.hasText(enteredBranchNodeId)) {
             return;
         }
-        Optional<String> forkNodeId = findParallelForkForBranchEntry(context, enteredBranchNodeId);
+        Optional<String> forkNodeId = findParallelForkForBranchEntry(context, enteredBranchNodeId, requirement);
         if (forkNodeId.isEmpty()) {
             return;
         }
@@ -120,7 +120,10 @@ public class WorkflowParallelBranchService {
         parallelBranchMapper.updateById(activeBranch);
 
         WorkflowNode forkNode = context.getNode(instance.getParallelNodeId());
-        if (isMergeParallelNode(context, toNodeId) || isBranchExit(context, instance.getParallelNodeId(), activeBranch.getBranchNodeId(), toNodeId)) {
+        boolean passedMergeNode = isMergeParallelNode(context, toNodeId)
+                || graphNavigator.resolvePathToWaitNode(context, fromNodeId, toNodeId, requirement).stream()
+                .anyMatch(nodeId -> isMergeParallelNode(context, nodeId));
+        if (passedMergeNode || isBranchExit(context, instance.getParallelNodeId(), activeBranch.getBranchNodeId(), toNodeId, requirement)) {
             activeBranch.setStatus("completed");
             activeBranch.setCompletedAt(LocalDateTime.now());
             parallelBranchMapper.updateById(activeBranch);
@@ -253,13 +256,14 @@ public class WorkflowParallelBranchService {
         return parallelBranchMapper.selectById(instance.getActiveParallelBranchId());
     }
 
-    private Optional<String> findParallelForkForBranchEntry(WorkflowGraphContext context, String branchEntryNodeId) {
+    private Optional<String> findParallelForkForBranchEntry(WorkflowGraphContext context, String branchEntryNodeId,
+                                                               Requirement requirement) {
         for (WorkflowNode node : context.nodesById().values()) {
             if (!"parallel".equalsIgnoreCase(node.getNodeType())) {
                 continue;
             }
             for (WorkflowEdge edge : context.outgoing(node.getNodeId())) {
-                for (WorkflowNode waitNode : graphNavigator.resolveNextWaitNodes(context, edge.getTargetNodeId(), null)) {
+                for (WorkflowNode waitNode : graphNavigator.resolveNextWaitNodes(context, edge.getTargetNodeId(), requirement)) {
                     if (branchEntryNodeId.equals(waitNode.getNodeId())) {
                         return Optional.of(node.getNodeId());
                     }
@@ -287,10 +291,7 @@ public class WorkflowParallelBranchService {
             return new ArrayList<>(entries.values());
         }
 
-        for (WorkflowEdge edge : context.outgoing(forkNode.getNodeId())) {
-            if (!conditionEvaluator.matches(edge, requirement)) {
-                continue;
-            }
+        for (WorkflowEdge edge : conditionEvaluator.filterMatchingEdges(context.outgoing(forkNode.getNodeId()), requirement)) {
             List<WorkflowNode> waitNodes = graphNavigator.resolveNextWaitNodes(context, edge.getTargetNodeId(), requirement);
             if (waitNodes.isEmpty()) {
                 continue;
@@ -334,11 +335,12 @@ public class WorkflowParallelBranchService {
                 && context.incoming(nodeId).size() > 1;
     }
 
-    private boolean isBranchExit(WorkflowGraphContext context, String forkNodeId, String branchEntryNodeId, String toNodeId) {
+    private boolean isBranchExit(WorkflowGraphContext context, String forkNodeId, String branchEntryNodeId,
+                                 String toNodeId, Requirement requirement) {
         if (toNodeId.equals(branchEntryNodeId)) {
             return false;
         }
-        List<String> path = graphNavigator.resolvePathToWaitNode(context, branchEntryNodeId, toNodeId, null);
+        List<String> path = graphNavigator.resolvePathToWaitNode(context, branchEntryNodeId, toNodeId, requirement);
         return path.isEmpty();
     }
 

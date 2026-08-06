@@ -318,11 +318,28 @@ CREATE TABLE `workflow_transition_records` (
   INDEX `idx_operator_id` (`operator_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='工作流转换记录表';
 
--- 18. 工作流版本表 workflow_versions
+-- 18. 工作流定义表 workflow_definitions（独立工作流实体，承载工作流名称）
+DROP TABLE IF EXISTS `workflow_definitions`;
+CREATE TABLE `workflow_definitions` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name` VARCHAR(100) NOT NULL COMMENT '工作流名称',
+  `project_id` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '归属项目ID(0=全局工作流)',
+  `description` VARCHAR(255) DEFAULT NULL COMMENT '工作流描述',
+  `creator_id` INT UNSIGNED DEFAULT NULL COMMENT '创建人ID',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `is_deleted` TINYINT(1) DEFAULT 0 COMMENT '软删除 0=否 1=是',
+  PRIMARY KEY (`id`),
+  INDEX `idx_project_id` (`project_id`),
+  UNIQUE INDEX `uk_project_name` (`project_id`, `name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='工作流定义表(独立工作流实体)';
+
+-- 19. 工作流版本表 workflow_versions
 DROP TABLE IF EXISTS `workflow_versions`;
 CREATE TABLE `workflow_versions` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `project_id` INT UNSIGNED NOT NULL COMMENT '项目ID',
+  `project_id` INT UNSIGNED NOT NULL COMMENT '项目ID(运行时状态分区键,0=全局)',
+  `workflow_definition_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '所属工作流定义ID',
   `source_version_id` INT UNSIGNED DEFAULT NULL COMMENT '源版本ID',
   `version` VARCHAR(20) NOT NULL COMMENT '版本号',
   `name` VARCHAR(100) NOT NULL COMMENT '版本名称',
@@ -346,13 +363,14 @@ CREATE TABLE `workflow_versions` (
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   INDEX `idx_project_id` (`project_id`),
+  INDEX `idx_workflow_definition_id` (`workflow_definition_id`),
   INDEX `idx_source_version_id` (`source_version_id`),
   INDEX `idx_is_active` (`is_active`),
   INDEX `idx_activation_status` (`activation_status`),
   INDEX `idx_is_template` (`is_template`),
   INDEX `idx_knowledge_base_id` (`knowledge_base_id`),
   INDEX `idx_approved_by` (`approved_by`),
-  UNIQUE INDEX `uk_project_version` (`project_id`, `version`)
+  UNIQUE INDEX `uk_definition_version` (`workflow_definition_id`, `version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='工作流版本表';
 
 -- 19. 工作流节点权限表 workflow_node_permissions
@@ -424,6 +442,24 @@ CREATE TABLE `workflow_edges` (
   INDEX `idx_target_node_id` (`target_node_id`),
   UNIQUE INDEX `uk_version_edge` (`workflow_version_id`, `edge_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='工作流连线表';
+
+-- 工作流复制审计日志表 workflow_audit_logs
+DROP TABLE IF EXISTS `workflow_audit_logs`;
+CREATE TABLE `workflow_audit_logs` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `workflow_version_id` BIGINT UNSIGNED NOT NULL COMMENT '目标工作流版本ID',
+  `action` VARCHAR(50) NOT NULL COMMENT '操作类型',
+  `operator_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '操作人ID',
+  `operator_name` VARCHAR(100) DEFAULT NULL COMMENT '操作人名称',
+  `details` JSON DEFAULT NULL COMMENT '操作详情',
+  `ip_address` VARCHAR(64) DEFAULT NULL,
+  `user_agent` VARCHAR(512) DEFAULT NULL,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_workflow_audit_version` (`workflow_version_id`),
+  KEY `idx_workflow_audit_action` (`action`),
+  KEY `idx_workflow_audit_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='工作流审计日志表';
 
 -- 22. 工作流审核表 workflow_approvals
 DROP TABLE IF EXISTS `workflow_approvals`;
@@ -555,7 +591,8 @@ DROP TABLE IF EXISTS `requirement_pending_tasks`;
 CREATE TABLE `requirement_pending_tasks` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `requirement_id` INT UNSIGNED NOT NULL COMMENT '需求ID',
-  `user_id` INT UNSIGNED NOT NULL COMMENT '待办用户ID',
+  `task_type` VARCHAR(32) NOT NULL DEFAULT 'APPROVAL' COMMENT '任务类型：APPROVAL=审批待办，CC_READ_ONLY=只读抄送待办',
+  `user_id` INT UNSIGNED DEFAULT NULL COMMENT '待办用户ID(角色/角色组/组织范围待办时为NULL)',
   `assignee_type` VARCHAR(50) NOT NULL COMMENT '待办来源类型(SPECIFIED_USER/SPECIFIED_ROLE/SPECIFIED_ROLE_GROUP/SPECIFIED_ORG/PREV_APPROVER/CREATOR)',
   `role_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '待办角色ID(SPECIFIED_ROLE时有效)',
   `role_group_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '待办角色组ID(SPECIFIED_ROLE_GROUP时有效)',
@@ -566,11 +603,15 @@ CREATE TABLE `requirement_pending_tasks` (
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '待办创建时间',
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
-  UNIQUE INDEX `uk_requirement_user` (`requirement_id`, `user_id`) COMMENT '同一需求同一用户只有一条待办',
+  UNIQUE INDEX `uk_requirement_position` (`requirement_id`, `task_type`, `workflow_instance_id`, `current_node_id`, `assignee_type`, `user_id`, `role_id`, `role_group_id`, `org_id`) COMMENT '同一需求同一流程位置同一待办范围唯一',
+  INDEX `idx_task_type_user_updated` (`task_type`, `user_id`, `updated_at` DESC) COMMENT '按任务类型和用户查询待办',
   INDEX `idx_user_updated` (`user_id`, `updated_at` DESC) COMMENT '按用户查询待办列表(核心索引)',
   INDEX `idx_requirement` (`requirement_id`) COMMENT '反查需求的待办人',
   INDEX `idx_workflow_instance` (`workflow_instance_id`) COMMENT '关联工作流实例',
-  INDEX `idx_created_at` (`created_at`) COMMENT '按创建时间排序'
+  INDEX `idx_created_at` (`created_at`) COMMENT '按创建时间排序',
+  INDEX `idx_pending_role_id` (`role_id`) COMMENT '按角色查询待办',
+  INDEX `idx_pending_role_group_id` (`role_group_id`) COMMENT '按角色组查询待办',
+  INDEX `idx_pending_org_id` (`org_id`) COMMENT '按组织查询待办'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='需求待办任务表(物化视图-性能优化)';
 
 -- 29. 需求待办任务历史表(用于审计和统计)
@@ -837,12 +878,15 @@ CREATE TABLE `requirement_types` (
   `color` VARCHAR(20) DEFAULT NULL COMMENT '颜色',
   `sort_order` INT DEFAULT 0 COMMENT '排序',
   `is_default` TINYINT DEFAULT 0 COMMENT '是否默认',
+  `enabled` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否启用 0=禁用 1=启用',
   `workflow_version_id` INT UNSIGNED DEFAULT NULL COMMENT '绑定的工作流版本ID',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   INDEX `idx_workflow_version_id` (`workflow_version_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='需求类型表';
+
+-- 已部署环境升级：ALTER TABLE requirement_types ADD COLUMN enabled TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否启用 0=禁用 1=启用' AFTER is_default;
 
 -- 31. 优先级表 priorities
 DROP TABLE IF EXISTS `priorities`;
@@ -1255,6 +1299,15 @@ CREATE TABLE `assistant_messages` (
   `page_context` JSON DEFAULT NULL COMMENT '页面上下文',
   `actions` JSON DEFAULT NULL COMMENT '建议动作列表',
   `sources` JSON DEFAULT NULL COMMENT '建议来源列表',
+  `thinking_steps` JSON DEFAULT NULL COMMENT '思维链步骤（RAG 检索过程，已废弃，迁移到 tasks）',
+  `tasks` JSON DEFAULT NULL COMMENT '任务列表（检索过程）',
+  `process_summary` TEXT DEFAULT NULL COMMENT '检索过程摘要',
+  `retrieved_count` INT DEFAULT NULL COMMENT '命中的片段数量',
+  `citations` JSON DEFAULT NULL COMMENT '引用文档列表',
+  `reasoning` LONGTEXT DEFAULT NULL COMMENT '深度思考内容（LLM reasoning）',
+  `input_tokens` INT DEFAULT NULL COMMENT '输入（提示词）token 数',
+  `output_tokens` INT DEFAULT NULL COMMENT '输出（生成）token 数',
+  `total_tokens` INT DEFAULT NULL COMMENT '总 token 数',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
@@ -1264,6 +1317,9 @@ CREATE TABLE `assistant_messages` (
   INDEX `idx_role` (`role`),
   INDEX `idx_deleted_at` (`deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='AI助手消息';
+
+-- 已部署环境升级（assistant_messages 缺 tasks 列会导致 findLatestMessage 抛 Unknown column 'tasks'）：
+-- ALTER TABLE assistant_messages ADD COLUMN tasks JSON DEFAULT NULL COMMENT '任务列表（检索过程）' AFTER thinking_steps;
 
 -- 49. 用户列配置表 user_column_configs
 DROP TABLE IF EXISTS `user_column_configs`;
@@ -1474,7 +1530,6 @@ INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description
 (6,  'menu:settings:workflow',      '工作流配置菜单',     'MENU',   '系统设置-工作流配置', 1),
 (7,  'menu:settings:role',          '角色管理菜单',       'MENU',   '系统设置-角色管理', 1),
 (8,  'menu:menu-management',        '菜单管理菜单',       'MENU',   '系统设置-菜单管理', 1),
-(9,  'menu:document',                '文档中心菜单',       'MENU',   '文档中心入口', 1),
 (129,'menu:knowledge',               '知识库管理菜单',     'MENU',   '知识库管理入口', 1),
 (10, 'button:menu:create',          '新增菜单按钮',       'BUTTON', '菜单管理-新增', 1),
 (11, 'button:menu:update',          '编辑菜单按钮',       'BUTTON', '菜单管理-编辑', 1),
@@ -1564,18 +1619,18 @@ INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description
 (125, 'menu:bitable',               '多维表格菜单',       'MENU',   '多维表格一级菜单入口', 1),
 (126, 'button:bitable:create',      '新建多维表格按钮',   'BUTTON', '多维表格-新建', 1),
 (127, 'button:bitable:update',      '编辑多维表格按钮',   'BUTTON', '多维表格-编辑', 1),
-(128, 'button:bitable:delete',      '删除多维表格按钮',   'BUTTON', '多维表格-删除', 1);
+(128, 'button:bitable:delete',      '删除多维表格按钮',   'BUTTON', '多维表格-删除', 1),
+(130, 'menu:iteration',             '迭代管理菜单',       'MENU',   '迭代管理一级菜单入口', 1);
 
 -- 菜单数据（基于数据库实际数据生成）
 INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
 -- 一级菜单
 (1,  0, '仪表盘',       'MENU',      '/dashboard',              'Dashboard',          'views/home/index.vue',                         'Odometer',     1, NULL,                          1, 1, 0),
 (2,  0, '需求管理',     'MENU',      '/requirements',           'Requirements',       'views/requirements/index.vue',                'Document',     2, NULL,                          1, 1, 0),
-(3,  0, '迭代管理',     'MENU',      '/iterations',             'Iterations',         'views/iterations/index.vue',                  'Calendar',     3, NULL,                          1, 1, 0),
+(3,  0, '迭代管理',     'MENU',      '/iterations',             'Iterations',         'views/iterations/index.vue',                  'Calendar',     3, 'menu:iteration',              1, 1, 0),
 (4,  0, '多维表格',     'MENU',      '/bitable',                'BitableList',        'views/bitable/index.vue',                     'Grid',         4, 'menu:bitable',               1, 1, 0),
 (7,  0, '系统配置',     'DIRECTORY', NULL,                        NULL,                  NULL,                                            'Setting',      8, 'menu:system-config',        1, 1, 0),
 (8,  7, '知识库管理',   'MENU',      '/settings/knowledge',     'KnowledgeBases',     'views/knowledge/index.vue',                   'Collection',   4, 'menu:knowledge',            1, 1, 0),
-(6,  7, '文档中心',     'MENU',      '/settings/documents',     'Documents',          'views/rag/index.vue',                          'Files',        7, 'menu:document',             1, 1, 0),
 (10, 0, '项目管理',     'MENU',      '/settings/projects',      'SettingsProjects',   'views/settings/projects.vue',                 'Folder',       5, 'menu:settings:project',     1, 1, 0),
 (11, 7, '用户管理',     'MENU',      '/settings/users',         'SettingsUsers',      'views/settings/users.vue',                    'User',         1, 'menu:settings:user',        1, 1, 0),
 (13, 7, '需求配置',     'MENU',      '/settings/requirements',  'SettingsRequirements','views/settings/requirements.vue',             'Setting',      4, 'menu:settings:requirement', 1, 1, 0),
@@ -1655,7 +1710,41 @@ INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, 
 (95, 11, '新增组织/部门','BUTTON',    NULL, NULL, NULL, NULL, 1, 'button:org:create',  1, 1, 0),
 (96, 11, '编辑组织/部门','BUTTON',    NULL, NULL, NULL, NULL, 2, 'button:org:update',  1, 1, 0),
 (97, 11, '删除组织/部门','BUTTON',    NULL, NULL, NULL, NULL, 3, 'button:org:delete',  1, 1, 0),
-(98, 11, '批量创建部门', 'BUTTON',    NULL, NULL, NULL, NULL, 4, 'button:org:batch-create', 1, 1, 0);
+(98, 11, '批量创建部门', 'BUTTON',    NULL, NULL, NULL, NULL, 4, 'button:org:batch-create', 1, 1, 0),
+-- 补齐角色管理中的未归类权限：多维表格
+(200, 4, '新建多维表格', 'BUTTON', NULL, NULL, NULL, NULL, 1, 'button:bitable:create', 1, 1, 0),
+(201, 4, '编辑多维表格', 'BUTTON', NULL, NULL, NULL, NULL, 2, 'button:bitable:update', 1, 1, 0),
+(202, 4, '删除多维表格', 'BUTTON', NULL, NULL, NULL, NULL, 3, 'button:bitable:delete', 1, 1, 0),
+-- 迭代管理
+(203, 3, '查看迭代/燃尽图', 'BUTTON', NULL, NULL, NULL, NULL, 4, 'button:iteration:view', 1, 1, 0),
+-- 系统配置
+(204, 7, '通知管理', 'BUTTON', NULL, NULL, NULL, NULL, 9, 'button:notification:manage', 1, 1, 0),
+-- 项目管理
+(205, 10, '导入项目', 'BUTTON', NULL, NULL, NULL, NULL, 5, 'button:project:import', 1, 1, 0),
+(206, 10, '导出项目', 'BUTTON', NULL, NULL, NULL, NULL, 6, 'button:project:export', 1, 1, 0),
+-- 知识库管理（兼容历史 RAG 权限编码）
+(207, 8, 'RAG文档上传', 'BUTTON', NULL, NULL, NULL, NULL, 8, 'button:rag:upload', 1, 1, 0),
+(208, 8, 'RAG文档搜索', 'BUTTON', NULL, NULL, NULL, NULL, 9, 'button:rag:search', 1, 1, 0),
+-- 需求管理：关联、会签、草稿和评审
+(209, 2, '创建需求关联', 'BUTTON', NULL, NULL, NULL, NULL, 16, 'button:relation:create', 1, 1, 0),
+(210, 2, '删除需求关联', 'BUTTON', NULL, NULL, NULL, NULL, 17, 'button:relation:delete', 1, 1, 0),
+(211, 2, '会签通过', 'BUTTON', NULL, NULL, NULL, NULL, 18, 'button:requirement:countersign-approve', 1, 1, 0),
+(212, 2, '会签驳回', 'BUTTON', NULL, NULL, NULL, NULL, 19, 'button:requirement:countersign-reject', 1, 1, 0),
+(213, 2, '保存需求草稿', 'BUTTON', NULL, NULL, NULL, NULL, 20, 'button:requirement:draft', 1, 1, 0),
+(214, 2, '发起评审', 'BUTTON', NULL, NULL, NULL, NULL, 21, 'button:review:create', 1, 1, 0),
+(215, 2, '编辑评审', 'BUTTON', NULL, NULL, NULL, NULL, 22, 'button:review:update', 1, 1, 0),
+(216, 2, '提交评审', 'BUTTON', NULL, NULL, NULL, NULL, 23, 'button:review:submit', 1, 1, 0),
+(217, 2, '查看评审详情', 'BUTTON', NULL, NULL, NULL, NULL, 24, 'button:review:view', 1, 1, 0),
+-- 角色管理
+(218, 17, '批量导入角色', 'BUTTON', NULL, NULL, NULL, NULL, 5, 'button:role:import', 1, 1, 0),
+(219, 17, '导出角色', 'BUTTON', NULL, NULL, NULL, NULL, 6, 'button:role:export', 1, 1, 0),
+-- 用户管理
+(220, 11, '批量启停/删除用户', 'BUTTON', NULL, NULL, NULL, NULL, 8, 'button:user:batch-delete', 1, 1, 0),
+(221, 11, '邀请成员', 'BUTTON', NULL, NULL, NULL, NULL, 9, 'button:user:invite', 1, 1, 0),
+(222, 11, '导出花名册', 'BUTTON', NULL, NULL, NULL, NULL, 10, 'button:user:export', 1, 1, 0),
+(223, 11, '导入花名册', 'BUTTON', NULL, NULL, NULL, NULL, 11, 'button:user:import', 1, 1, 0),
+-- 工作流配置
+(224, 14, '工作流配置', 'BUTTON', NULL, NULL, NULL, NULL, 8, 'button:workflow:config', 1, 1, 0);
 
 -- 角色权限数据（基于数据库实际数据生成）
 -- SUPER_ADMIN(id=1) 获得全部权限
@@ -1680,7 +1769,7 @@ INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_
 (1, 121, 1), (1, 122, 1),
 (1, 123, 1), (1, 124, 1),
 (1, 125, 1), (1, 126, 1), (1, 127, 1), (1, 128, 1),
-(1, 129, 1);
+(1, 129, 1), (1, 130, 1);
 
 -- 业务角色授权需求管理视图权限
 INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_by`) VALUES
@@ -1698,5 +1787,108 @@ INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_
 (7, 125, 1),
 -- 评审人(8): 全部需求 + 我的待办 + 我的已办 + 我的关注 + 导出
 (8, 79, 1), (8, 80, 1), (8, 81, 1), (8, 93, 1), (8, 43, 1);
+
+
+-- 官方工作流模板（复制工作流 -> 模板库）
+-- 官方工作流模板种子数据。模板属于全局项目（project_id=0），复制后会以当前操作者为创建人生成草稿版本。
+-- 仅允许 approved/active 版本出现在复制工作流的模板库中。
+INSERT INTO workflow_versions (project_id, version, name, definition, is_active, is_template, copy_count, activation_status, change_log, submitted_for_approval_at, approved_at, approved_by, creator_id)
+SELECT 0, 'tpl-1.0.0', '需求审批流程', '{"id":null,"name":"需求审批流程","nodes":[{"nodeId":"tpl_tpl-1_0_0_start","type":"start","name":"开始","sortOrder":1},{"nodeId":"tpl_tpl-1_0_0_review","type":"approval","name":"产品评审","sortOrder":2},{"nodeId":"tpl_tpl-1_0_0_dev","type":"approval","name":"研发确认","sortOrder":3},{"nodeId":"tpl_tpl-1_0_0_end","type":"end","name":"结束","sortOrder":4}],"edges":[{"edgeId":"edge_1","source":"tpl_tpl-1_0_0_start","target":"tpl_tpl-1_0_0_review","label":null},{"edgeId":"edge_2","source":"tpl_tpl-1_0_0_review","target":"tpl_tpl-1_0_0_dev","label":null},{"edgeId":"edge_3","source":"tpl_tpl-1_0_0_dev","target":"tpl_tpl-1_0_0_end","label":null}]}', 0, 1, 0, 'approved', '适用于需求提交、产品评审和研发确认的标准审批流程。', NOW(), NOW(), 1, 1
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM workflow_versions WHERE project_id = 0 AND version = 'tpl-1.0.0');
+SET @workflow_template_id := (SELECT id FROM workflow_versions WHERE project_id = 0 AND version = 'tpl-1.0.0' LIMIT 1);
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y)
+SELECT @workflow_template_id, 'tpl_tpl-1_0_0_start', 'start', '开始', 180, 80 FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl-1_0_0_start');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y)
+SELECT @workflow_template_id, 'tpl_tpl-1_0_0_review', 'approval', '产品评审', 520, 80 FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl-1_0_0_review');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y)
+SELECT @workflow_template_id, 'tpl_tpl-1_0_0_dev', 'approval', '研发确认', 860, 80 FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl-1_0_0_dev');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y)
+SELECT @workflow_template_id, 'tpl_tpl-1_0_0_end', 'end', '结束', 1200, 80 FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl-1_0_0_end');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id)
+SELECT @workflow_template_id, 'edge_1', 'tpl_tpl-1_0_0_start', 'tpl_tpl-1_0_0_review' FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'edge_1');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id)
+SELECT @workflow_template_id, 'edge_2', 'tpl_tpl-1_0_0_review', 'tpl_tpl-1_0_0_dev' FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'edge_2');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id)
+SELECT @workflow_template_id, 'edge_3', 'tpl_tpl-1_0_0_dev', 'tpl_tpl-1_0_0_end' FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'edge_3');
+INSERT INTO workflow_versions (project_id, version, name, definition, is_active, is_template, copy_count, activation_status, change_log, submitted_for_approval_at, approved_at, approved_by, creator_id)
+SELECT 0, 'tpl-1.1.0', '采购申请审批', '{"id":null,"name":"采购申请审批","nodes":[{"nodeId":"tpl_tpl-1_1_0_start","type":"start","name":"开始","sortOrder":1},{"nodeId":"tpl_tpl-1_1_0_manager","type":"approval","name":"部门负责人审批","sortOrder":2},{"nodeId":"tpl_tpl-1_1_0_finance","type":"approval","name":"财务复核","sortOrder":3},{"nodeId":"tpl_tpl-1_1_0_end","type":"end","name":"结束","sortOrder":4}],"edges":[{"edgeId":"edge_1","source":"tpl_tpl-1_1_0_start","target":"tpl_tpl-1_1_0_manager","label":null},{"edgeId":"edge_2","source":"tpl_tpl-1_1_0_manager","target":"tpl_tpl-1_1_0_finance","label":null},{"edgeId":"edge_3","source":"tpl_tpl-1_1_0_finance","target":"tpl_tpl-1_1_0_end","label":null}]}', 0, 1, 0, 'approved', '适用于采购申请、部门负责人审批和财务复核。', NOW(), NOW(), 1, 1
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM workflow_versions WHERE project_id = 0 AND version = 'tpl-1.1.0');
+SET @workflow_template_id := (SELECT id FROM workflow_versions WHERE project_id = 0 AND version = 'tpl-1.1.0' LIMIT 1);
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y)
+SELECT @workflow_template_id, 'tpl_tpl-1_1_0_start', 'start', '开始', 180, 80 FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl-1_1_0_start');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y)
+SELECT @workflow_template_id, 'tpl_tpl-1_1_0_manager', 'approval', '部门负责人审批', 520, 80 FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl-1_1_0_manager');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y)
+SELECT @workflow_template_id, 'tpl_tpl-1_1_0_finance', 'approval', '财务复核', 860, 80 FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl-1_1_0_finance');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y)
+SELECT @workflow_template_id, 'tpl_tpl-1_1_0_end', 'end', '结束', 1200, 80 FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl-1_1_0_end');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id)
+SELECT @workflow_template_id, 'edge_1', 'tpl_tpl-1_1_0_start', 'tpl_tpl-1_1_0_manager' FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'edge_1');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id)
+SELECT @workflow_template_id, 'edge_2', 'tpl_tpl-1_1_0_manager', 'tpl_tpl-1_1_0_finance' FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'edge_2');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id)
+SELECT @workflow_template_id, 'edge_3', 'tpl_tpl-1_1_0_finance', 'tpl_tpl-1_1_0_end' FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'edge_3');
+INSERT INTO workflow_versions (project_id, version, name, definition, is_active, is_template, copy_count, activation_status, change_log, submitted_for_approval_at, approved_at, approved_by, creator_id)
+SELECT 0, 'tpl-1.2.0', '请假审批流程', '{"id":null,"name":"请假审批流程","nodes":[{"nodeId":"tpl_tpl-1_2_0_start","type":"start","name":"开始","sortOrder":1},{"nodeId":"tpl_tpl-1_2_0_leave","type":"approval","name":"直属负责人审批","sortOrder":2},{"nodeId":"tpl_tpl-1_2_0_end","type":"end","name":"结束","sortOrder":3}],"edges":[{"edgeId":"edge_1","source":"tpl_tpl-1_2_0_start","target":"tpl_tpl-1_2_0_leave","label":null},{"edgeId":"edge_2","source":"tpl_tpl-1_2_0_leave","target":"tpl_tpl-1_2_0_end","label":null}]}', 0, 1, 0, 'approved', '适用于员工请假申请和直属负责人审批。', NOW(), NOW(), 1, 1
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM workflow_versions WHERE project_id = 0 AND version = 'tpl-1.2.0');
+SET @workflow_template_id := (SELECT id FROM workflow_versions WHERE project_id = 0 AND version = 'tpl-1.2.0' LIMIT 1);
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y)
+SELECT @workflow_template_id, 'tpl_tpl-1_2_0_start', 'start', '开始', 180, 80 FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl-1_2_0_start');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y)
+SELECT @workflow_template_id, 'tpl_tpl-1_2_0_leave', 'approval', '直属负责人审批', 620, 80 FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl-1_2_0_leave');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y)
+SELECT @workflow_template_id, 'tpl_tpl-1_2_0_end', 'end', '结束', 1060, 80 FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl-1_2_0_end');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id)
+SELECT @workflow_template_id, 'edge_1', 'tpl_tpl-1_2_0_start', 'tpl_tpl-1_2_0_leave' FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'edge_1');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id)
+SELECT @workflow_template_id, 'edge_2', 'tpl_tpl-1_2_0_leave', 'tpl_tpl-1_2_0_end' FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'edge_2');
+INSERT INTO workflow_versions (project_id, version, name, definition, is_active, is_template, copy_count, activation_status, change_log, submitted_for_approval_at, approved_at, approved_by, creator_id)
+SELECT 0, 'tpl-1.3.0', '发布变更审批', '{"id":null,"name":"发布变更审批","nodes":[{"nodeId":"tpl_tpl-1_3_0_start","type":"start","name":"开始","sortOrder":1},{"nodeId":"tpl_tpl-1_3_0_risk","type":"approval","name":"变更风险评估","sortOrder":2},{"nodeId":"tpl_tpl-1_3_0_release","type":"approval","name":"上线确认","sortOrder":3},{"nodeId":"tpl_tpl-1_3_0_end","type":"end","name":"结束","sortOrder":4}],"edges":[{"edgeId":"edge_1","source":"tpl_tpl-1_3_0_start","target":"tpl_tpl-1_3_0_risk","label":null},{"edgeId":"edge_2","source":"tpl_tpl-1_3_0_risk","target":"tpl_tpl-1_3_0_release","label":null},{"edgeId":"edge_3","source":"tpl_tpl-1_3_0_release","target":"tpl_tpl-1_3_0_end","label":null}]}', 0, 1, 0, 'approved', '适用于生产发布、变更风险评估和上线确认。', NOW(), NOW(), 1, 1
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM workflow_versions WHERE project_id = 0 AND version = 'tpl-1.3.0');
+SET @workflow_template_id := (SELECT id FROM workflow_versions WHERE project_id = 0 AND version = 'tpl-1.3.0' LIMIT 1);
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y)
+SELECT @workflow_template_id, 'tpl_tpl-1_3_0_start', 'start', '开始', 180, 80 FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl-1_3_0_start');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y)
+SELECT @workflow_template_id, 'tpl_tpl-1_3_0_risk', 'approval', '变更风险评估', 500, 80 FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl-1_3_0_risk');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y)
+SELECT @workflow_template_id, 'tpl_tpl-1_3_0_release', 'approval', '上线确认', 860, 80 FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl-1_3_0_release');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y)
+SELECT @workflow_template_id, 'tpl_tpl-1_3_0_end', 'end', '结束', 1200, 80 FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl-1_3_0_end');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id)
+SELECT @workflow_template_id, 'edge_1', 'tpl_tpl-1_3_0_start', 'tpl_tpl-1_3_0_risk' FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'edge_1');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id)
+SELECT @workflow_template_id, 'edge_2', 'tpl_tpl-1_3_0_risk', 'tpl_tpl-1_3_0_release' FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'edge_2');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id)
+SELECT @workflow_template_id, 'edge_3', 'tpl_tpl-1_3_0_release', 'tpl_tpl-1_3_0_end' FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'edge_3');
 
 SET FOREIGN_KEY_CHECKS = 1;

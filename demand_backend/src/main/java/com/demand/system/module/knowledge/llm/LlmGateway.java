@@ -354,30 +354,80 @@ public class LlmGateway {
             }
 
             long durationMs = System.currentTimeMillis() - start;
-
-            String content;
-            JsonNode usageNode;
-            if (protocol == Protocol.ANTHROPIC) {
-                content = root.path("content").path(0).path("text").asText();
-                usageNode = root.path("usage");
-            } else {
-                content = root.path("choices").path(0).path("message").path("content").asText();
-                usageNode = root.path("usage");
-            }
-
-            String model = root.path("model").asText(null);
-
-            return ChatResult.builder()
-                    .content(content)
-                    .durationMs(durationMs)
-                    .promptTokens(usageNode.has("prompt_tokens") ? usageNode.get("prompt_tokens").asInt() : null)
-                    .completionTokens(usageNode.has("completion_tokens") ? usageNode.get("completion_tokens").asInt() : null)
-                    .totalTokens(usageNode.has("total_tokens") ? usageNode.get("total_tokens").asInt() : null)
-                    .model(model)
-                    .build();
+            return parseChatResult(root, protocol, durationMs);
         } catch (Exception e) {
             throw new RuntimeException("Chat调用失败: " + describeApiException(e), e);
         }
+    }
+
+    /**
+     * 非流式对话（带深度思考参数）。
+     * <p>extraBodyParams 合并规则与流式一致：OpenAI 协议全量合并，Anthropic 协议仅合并 thinking 键。
+     * 若目标端点不支持 thinking 参数会抛异常，由调用方决定是否降级重试。</p>
+     */
+    public ChatResult chatWithProviderWithThinking(
+            LlmGatewayConfig.Provider provider,
+            String systemPrompt,
+            String userMessage,
+            BigDecimal temperature,
+            Integer maxTokens,
+            Map<String, Object> extraBodyParams
+    ) {
+        long start = System.currentTimeMillis();
+        try {
+            Protocol protocol = config.resolveProtocol(provider);
+            Map<String, Object> body = protocol == Protocol.ANTHROPIC
+                    ? buildAnthropicChatBody(provider, systemPrompt, userMessage, temperature, maxTokens)
+                    : buildOpenAIChatBody(provider, systemPrompt, userMessage, temperature, maxTokens);
+            if (extraBodyParams != null && !extraBodyParams.isEmpty()) {
+                if (protocol == Protocol.ANTHROPIC) {
+                    extraBodyParams.forEach((key, value) -> {
+                        if (key.toLowerCase(Locale.ROOT).contains("thinking")) {
+                            body.put(key, value);
+                        }
+                    });
+                } else {
+                    body.putAll(extraBodyParams);
+                }
+            }
+            String path = protocol == Protocol.ANTHROPIC ? "/messages" : "/chat/completions";
+            JsonNode root = call(provider, path, body);
+            long durationMs = System.currentTimeMillis() - start;
+            return parseChatResult(root, protocol, durationMs);
+        } catch (Exception e) {
+            throw new RuntimeException("Chat(thinking)调用失败: " + describeApiException(e), e);
+        }
+    }
+
+    private ChatResult parseChatResult(JsonNode root, Protocol protocol, long durationMs) {
+        String content;
+        String reasoning = null;
+        JsonNode usageNode;
+        if (protocol == Protocol.ANTHROPIC) {
+            // 启用 thinking 后 content 数组首个 block 可能是 thinking，需按 type 区分
+            content = extractAnthropicText(root);
+            reasoning = extractAnthropicThinking(root);
+            usageNode = root.path("usage");
+        } else {
+            content = root.path("choices").path(0).path("message").path("content").asText();
+            JsonNode reasoningNode = root.path("choices").path(0).path("message").path("reasoning_content");
+            if (reasoningNode.isTextual()) {
+                reasoning = reasoningNode.asText();
+            }
+            usageNode = root.path("usage");
+        }
+
+        String model = root.path("model").asText(null);
+
+        return ChatResult.builder()
+                .content(content)
+                .reasoningContent(reasoning)
+                .durationMs(durationMs)
+                .promptTokens(usageNode.has("prompt_tokens") ? usageNode.get("prompt_tokens").asInt() : null)
+                .completionTokens(usageNode.has("completion_tokens") ? usageNode.get("completion_tokens").asInt() : null)
+                .totalTokens(usageNode.has("total_tokens") ? usageNode.get("total_tokens").asInt() : null)
+                .model(model)
+                .build();
     }
 
     public void streamChatWithProvider(
@@ -388,13 +438,134 @@ public class LlmGateway {
             Integer maxTokens,
             Consumer<String> tokenConsumer
     ) {
+        streamChatWithProvider(provider, systemPrompt, userMessage, temperature, maxTokens, tokenConsumer, null);
+    }
+
+    /**
+     * 流式对话（带 token 用量统计）。
+     *
+     * @param usageConsumer 流结束后收到累计的 token 用量（可能为 null，表示接口未返回 usage）
+     */
+    public void streamChatWithProvider(
+            LlmGatewayConfig.Provider provider,
+            String systemPrompt,
+            String userMessage,
+            BigDecimal temperature,
+            Integer maxTokens,
+            Consumer<String> tokenConsumer,
+            Consumer<ChatUsage> usageConsumer
+    ) {
+        streamChatWithProvider(provider, systemPrompt, userMessage, temperature, maxTokens, null, tokenConsumer, usageConsumer);
+    }
+
+    /**
+     * 流式对话（带 token 用量统计 + 额外请求体参数）。
+     * <p>额外参数仅在 OpenAI 兼容协议下合并到请求体，用于注入厂商专属的联网搜索等开关，
+     * 例如智谱的 {@code web_search:true}、通义千问的 {@code enable_search:true}。
+     * 可通过 {@link #buildWebSearchParams(LlmGatewayConfig.Provider)} 获取对应厂商的参数。
+     *
+     * @param extraBodyParams 额外请求体参数，null 或空表示不追加
+     * @param usageConsumer   流结束后收到累计的 token 用量（可能为 null，表示接口未返回 usage）
+     */
+    public void streamChatWithProvider(
+            LlmGatewayConfig.Provider provider,
+            String systemPrompt,
+            String userMessage,
+            BigDecimal temperature,
+            Integer maxTokens,
+            Map<String, Object> extraBodyParams,
+            Consumer<String> tokenConsumer,
+            Consumer<ChatUsage> usageConsumer
+    ) {
+        streamChatWithProvider(provider, systemPrompt, userMessage, temperature, maxTokens, extraBodyParams, tokenConsumer, null, usageConsumer);
+    }
+
+    /**
+     * 流式对话（带 token 用量统计 + 额外请求体参数 + 深度思考 reasoning 增量回调）。
+     * <p>extraBodyParams 合并规则：OpenAI 兼容协议全量合并；Anthropic 协议仅合并含 {@code thinking} 的条目
+     * （避免 web_search 等 OpenAI 专属键污染 anthropic 请求体）。</p>
+     *
+     * @param extraBodyParams  额外请求体参数（如联网搜索、深度思考开关），null 或空表示不追加
+     * @param reasoningConsumer 深度思考内容增量回调，可为 null（不解析 reasoning）
+     * @param usageConsumer     流结束后收到累计的 token 用量，可为 null
+     */
+    public void streamChatWithProvider(
+            LlmGatewayConfig.Provider provider,
+            String systemPrompt,
+            String userMessage,
+            BigDecimal temperature,
+            Integer maxTokens,
+            Map<String, Object> extraBodyParams,
+            Consumer<String> tokenConsumer,
+            Consumer<String> reasoningConsumer,
+            Consumer<ChatUsage> usageConsumer
+    ) {
         Protocol protocol = config.resolveProtocol(provider);
         Map<String, Object> body = protocol == Protocol.ANTHROPIC
                 ? buildAnthropicChatBody(provider, systemPrompt, userMessage, temperature, maxTokens)
                 : buildOpenAIChatBody(provider, systemPrompt, userMessage, temperature, maxTokens);
         body.put("stream", true);
+        if (protocol == Protocol.OPENAI) {
+            // OpenAI 兼容接口：开启 usage 统计，接口会在流末返回 usage 帧
+            body.put("stream_options", Map.of("include_usage", true));
+        }
+        if (extraBodyParams != null && !extraBodyParams.isEmpty()) {
+            if (protocol == Protocol.ANTHROPIC) {
+                // Anthropic 协议仅注入 thinking 相关参数，其余（如 web_search）忽略
+                extraBodyParams.forEach((key, value) -> {
+                    if (key.toLowerCase(Locale.ROOT).contains("thinking")) {
+                        body.put(key, value);
+                    }
+                });
+            } else {
+                body.putAll(extraBodyParams);
+            }
+        }
         String path = protocol == Protocol.ANTHROPIC ? "/messages" : "/chat/completions";
-        streamCall(provider, path, body, protocol, tokenConsumer);
+        streamCall(provider, path, body, protocol, tokenConsumer, reasoningConsumer, usageConsumer);
+    }
+
+    /**
+     * 根据 Provider 的 baseUrl / model 检测厂商，返回对应的联网搜索请求体参数。
+     * <ul>
+     *   <li>智谱 GLM (bigmodel/zhipu)：{@code web_search:true}</li>
+     *   <li>通义千问 (dashscope/aliyun)：{@code enable_search:true}</li>
+     *   <li>月之暗面 Kimi (moonshot)：内置 {@code $web_search} 工具</li>
+     *   <li>SiliconFlow 硅基流动：{@code enable_search:true}（部分模型支持）</li>
+     *   <li>其它 OpenAI 兼容服务：默认尝试 {@code web_search:true}（不支持时会被忽略）</li>
+     * </ul>
+     *
+     * @return 联网搜索参数 Map；若 provider 为空则返回默认 {@code web_search:true}
+     */
+    public Map<String, Object> buildWebSearchParams(LlmGatewayConfig.Provider provider) {
+        Map<String, Object> params = new HashMap<>();
+        if (provider == null) {
+            params.put("web_search", true);
+            return params;
+        }
+        String baseUrl = provider.getBaseUrl() == null ? "" : provider.getBaseUrl().toLowerCase(Locale.ROOT);
+        String model = provider.getModel() == null ? "" : provider.getModel().toLowerCase(Locale.ROOT);
+
+        if (baseUrl.contains("bigmodel") || baseUrl.contains("zhipu")) {
+            // 智谱 GLM：web_search: true（也可用 web_search: { enable: true, search_result: true }）
+            params.put("web_search", true);
+        } else if (baseUrl.contains("dashscope") || baseUrl.contains("aliyuncs") || model.contains("qwen")) {
+            // 通义千问 DashScope 兼容模式：enable_search: true
+            params.put("enable_search", true);
+        } else if (baseUrl.contains("moonshot") || model.contains("kimi")) {
+            // 月之暗面 Kimi：通过内置工具 $web_search 触发联网
+            params.put("tools", List.of(Map.of(
+                    "type", "builtin_function",
+                    "function", Map.of("name", "$web_search")
+            )));
+        } else if (baseUrl.contains("siliconflow")) {
+            // 硅基流动：部分模型（如 Qwen 系）支持 enable_search
+            params.put("enable_search", true);
+        } else {
+            // 兜底：尝试 web_search: true，多数 OpenAI 兼容服务会忽略不认识的字段
+            params.put("web_search", true);
+        }
+        return params;
     }
 
     private JsonNode callOpenAIChatRaw(
@@ -445,17 +616,87 @@ public class LlmGateway {
         ));
         body.put("temperature", normalizeTemperature(temperature));
         body.put("max_tokens", normalizeMaxTokens(maxTokens));
-        addSiliconFlowChatCompatibility(provider, body);
         return body;
     }
 
-    private void addSiliconFlowChatCompatibility(LlmGatewayConfig.Provider provider, Map<String, Object> body) {
-        if (!isSiliconFlowProvider(provider)) {
-            return;
+    /**
+     * 构造"深度思考"请求体参数。
+     * <ul>
+     *   <li>OpenAI 兼容协议：注入 {@code enable_thinking:true}（SiliconFlow/Qwen 等思考模型支持，不认识的厂商会忽略）</li>
+     *   <li>Anthropic 协议：注入 {@code thinking:{type:enabled,budget_tokens:N}}（Claude 原生思考模式，
+     *       budget 取 maxTokens 的一半且不低于 512；第三方 anthropic 兼容端点若不支持会返回 4xx，
+     *       由调用方捕获后降级为不带 thinking 重试）</li>
+     * </ul>
+     *
+     * @param maxTokens 当前请求的 max_tokens，用于计算 Anthropic 思考预算；null 时按默认 2048 计算
+     * @return 思考参数 Map（可为空 map，表示无需注入）
+     */
+    public Map<String, Object> buildThinkingParams(LlmGatewayConfig.Provider provider, Integer maxTokens) {
+        Map<String, Object> params = new HashMap<>();
+        if (provider == null) {
+            return params;
         }
-        // SiliconFlow 官方 Chat Completions 文档对 Qwen3/DeepSeek/GLM 等思考模型支持 enable_thinking。
-        // 批量连通性测试只需要快速确认可用性，关闭思考模式可避免部分模型返回空 content 或测试耗时过长。
-        body.put("enable_thinking", false);
+        Protocol protocol = config.resolveProtocol(provider);
+        if (protocol == Protocol.ANTHROPIC) {
+            int maxTokensValue = normalizeMaxTokens(maxTokens);
+            int budget = Math.max(512, Math.min(2048, maxTokensValue / 2));
+            params.put("thinking", Map.of(
+                    "type", "enabled",
+                    "budget_tokens", budget
+            ));
+        } else {
+            // OpenAI 兼容：思考模型开关（Qwen3/DeepSeek/GLM 等 SiliconFlow 系支持）
+            params.put("enable_thinking", true);
+        }
+        return params;
+    }
+
+    /**
+     * Anthropic 非流式响应中提取正文文本（跳过 thinking block）。
+     */
+    private String extractAnthropicText(JsonNode root) {
+        JsonNode content = root.path("content");
+        if (!content.isArray() || content.isEmpty()) {
+            return root.path("content").path(0).path("text").asText();
+        }
+        StringBuilder builder = new StringBuilder();
+        for (JsonNode block : content) {
+            String type = block.path("type").asText("");
+            if ("text".equals(type) || type.isBlank()) {
+                String text = block.path("text").asText("");
+                if (!text.isEmpty()) {
+                    if (builder.length() > 0) {
+                        builder.append("\n");
+                    }
+                    builder.append(text);
+                }
+            }
+        }
+        return builder.toString();
+    }
+
+    /**
+     * Anthropic 非流式响应中提取思考（thinking）内容，拼接所有 thinking block 的 thinking 字段。
+     */
+    private String extractAnthropicThinking(JsonNode root) {
+        JsonNode content = root.path("content");
+        if (!content.isArray() || content.isEmpty()) {
+            return null;
+        }
+        StringBuilder builder = new StringBuilder();
+        for (JsonNode block : content) {
+            String type = block.path("type").asText("");
+            if ("thinking".equals(type)) {
+                String thinking = block.path("thinking").asText("");
+                if (!thinking.isEmpty()) {
+                    if (builder.length() > 0) {
+                        builder.append("\n");
+                    }
+                    builder.append(thinking);
+                }
+            }
+        }
+        return builder.length() > 0 ? builder.toString() : null;
     }
 
     private void addEmbeddingDimensionsIfSupported(LlmGatewayConfig.Provider provider, Map<String, Object> body) {
@@ -501,7 +742,9 @@ public class LlmGateway {
             String path,
             Map<String, Object> body,
             Protocol protocol,
-            Consumer<String> tokenConsumer
+            Consumer<String> tokenConsumer,
+            Consumer<String> reasoningConsumer,
+            Consumer<ChatUsage> usageConsumer
     ) {
         HttpHeaders headers = buildHeaders(provider);
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -509,6 +752,8 @@ public class LlmGateway {
 
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
         String url = buildApiUrl(provider, path);
+
+        ChatUsage usage = new ChatUsage();
 
         sharedRestTemplate.execute(url, HttpMethod.POST, request -> {
             request.getHeaders().putAll(headers);
@@ -522,14 +767,18 @@ public class LlmGateway {
                     new InputStreamReader(response.getBody(), StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    handleStreamLine(line, protocol, tokenConsumer);
+                    handleStreamLine(line, protocol, tokenConsumer, reasoningConsumer, usage);
                 }
             }
             return null;
         });
+
+        if (usageConsumer != null && (usage.getPromptTokens() != null || usage.getCompletionTokens() != null)) {
+            usageConsumer.accept(usage);
+        }
     }
 
-    private void handleStreamLine(String line, Protocol protocol, Consumer<String> tokenConsumer) {
+    private void handleStreamLine(String line, Protocol protocol, Consumer<String> tokenConsumer, Consumer<String> reasoningConsumer, ChatUsage usage) {
         if (line == null || line.isBlank() || line.startsWith(":")) {
             return;
         }
@@ -548,8 +797,96 @@ public class LlmGateway {
             if (delta != null && !delta.isEmpty()) {
                 tokenConsumer.accept(delta);
             }
+            if (reasoningConsumer != null) {
+                String reasoningDelta = protocol == Protocol.ANTHROPIC
+                        ? extractAnthropicReasoningDelta(root)
+                        : extractOpenAIReasoningDelta(root);
+                if (reasoningDelta != null && !reasoningDelta.isEmpty()) {
+                    reasoningConsumer.accept(reasoningDelta);
+                }
+            }
+            accumulateUsage(root, protocol, usage);
         } catch (Exception e) {
             log.debug("忽略无法解析的LLM流式片段: {}", payload, e);
+        }
+    }
+
+    /**
+     * OpenAI 兼容协议（DeepSeek/Qwen 等思考模型）：提取 choices[0].delta.reasoning_content 增量。
+     */
+    private String extractOpenAIReasoningDelta(JsonNode root) {
+        JsonNode choice = root.path("choices").path(0);
+        JsonNode deltaNode = choice.path("delta").path("reasoning_content");
+        if (deltaNode.isTextual()) {
+            return deltaNode.asText();
+        }
+        JsonNode messageNode = choice.path("message").path("reasoning_content");
+        if (messageNode.isTextual()) {
+            return messageNode.asText();
+        }
+        return null;
+    }
+
+    /**
+     * Anthropic 协议：提取 content_block_delta 事件中 delta.thinking 增量，
+     * 以及 content_block 中 type=thinking 的文本。
+     */
+    private String extractAnthropicReasoningDelta(JsonNode root) {
+        JsonNode deltaThinking = root.path("delta").path("thinking");
+        if (deltaThinking.isTextual()) {
+            return deltaThinking.asText();
+        }
+        JsonNode contentBlock = root.path("content_block");
+        if (contentBlock.isObject() && "thinking".equals(contentBlock.path("type").asText(""))) {
+            JsonNode text = contentBlock.path("thinking");
+            if (text.isTextual()) {
+                return text.asText();
+            }
+        }
+        // 兼容部分实现直接放在 content[0].thinking
+        JsonNode content = root.path("content");
+        if (content.isArray() && content.size() > 0) {
+            JsonNode first = content.path(0);
+            if ("thinking".equals(first.path("type").asText(""))) {
+                JsonNode text = first.path("thinking");
+                if (text.isTextual()) {
+                    return text.asText();
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 从流式帧中累加 token 用量（取覆盖值，非增量）：
+     * - OpenAI：流末 usage 帧携带 prompt_tokens / completion_tokens / total_tokens
+     * - Anthropic：message_start 携带 usage.input_tokens，message_delta 携带累计的 usage.output_tokens
+     */
+    private void accumulateUsage(JsonNode root, Protocol protocol, ChatUsage usage) {
+        JsonNode usageNode = root.path("usage");
+        if (usageNode == null || !usageNode.isObject() || usageNode.isMissingNode()) {
+            return;
+        }
+        if (protocol == Protocol.ANTHROPIC) {
+            if (usageNode.has("input_tokens")) {
+                usage.setPromptTokens(usageNode.get("input_tokens").asInt());
+            }
+            if (usageNode.has("output_tokens")) {
+                usage.setCompletionTokens(usageNode.get("output_tokens").asInt());
+            }
+        } else {
+            if (usageNode.has("prompt_tokens")) {
+                usage.setPromptTokens(usageNode.get("prompt_tokens").asInt());
+            }
+            if (usageNode.has("completion_tokens")) {
+                usage.setCompletionTokens(usageNode.get("completion_tokens").asInt());
+            }
+            if (usageNode.has("total_tokens")) {
+                usage.setTotalTokens(usageNode.get("total_tokens").asInt());
+            }
+        }
+        if (usage.getTotalTokens() == null && usage.getPromptTokens() != null && usage.getCompletionTokens() != null) {
+            usage.setTotalTokens(usage.getPromptTokens() + usage.getCompletionTokens());
         }
     }
 
@@ -915,8 +1252,22 @@ public class LlmGateway {
         public void setCreated(Long created) { this.created = created; }
     }
 
+    public static class ChatUsage {
+        private Integer promptTokens;
+        private Integer completionTokens;
+        private Integer totalTokens;
+
+        public Integer getPromptTokens() { return promptTokens; }
+        public void setPromptTokens(Integer promptTokens) { this.promptTokens = promptTokens; }
+        public Integer getCompletionTokens() { return completionTokens; }
+        public void setCompletionTokens(Integer completionTokens) { this.completionTokens = completionTokens; }
+        public Integer getTotalTokens() { return totalTokens; }
+        public void setTotalTokens(Integer totalTokens) { this.totalTokens = totalTokens; }
+    }
+
     public static class ChatResult {
         private String content;
+        private String reasoningContent;
         private long durationMs;
         private Integer promptTokens;
         private Integer completionTokens;
@@ -925,6 +1276,8 @@ public class LlmGateway {
 
         public String getContent() { return content; }
         public void setContent(String content) { this.content = content; }
+        public String getReasoningContent() { return reasoningContent; }
+        public void setReasoningContent(String reasoningContent) { this.reasoningContent = reasoningContent; }
         public long getDurationMs() { return durationMs; }
         public void setDurationMs(long durationMs) { this.durationMs = durationMs; }
         public Integer getPromptTokens() { return promptTokens; }
@@ -940,6 +1293,7 @@ public class LlmGateway {
 
         public static class Builder {
             private String content;
+            private String reasoningContent;
             private long durationMs;
             private Integer promptTokens;
             private Integer completionTokens;
@@ -947,6 +1301,7 @@ public class LlmGateway {
             private String model;
 
             public Builder content(String content) { this.content = content; return this; }
+            public Builder reasoningContent(String reasoningContent) { this.reasoningContent = reasoningContent; return this; }
             public Builder durationMs(long durationMs) { this.durationMs = durationMs; return this; }
             public Builder promptTokens(Integer promptTokens) { this.promptTokens = promptTokens; return this; }
             public Builder completionTokens(Integer completionTokens) { this.completionTokens = completionTokens; return this; }
@@ -955,6 +1310,7 @@ public class LlmGateway {
             public ChatResult build() {
                 ChatResult r = new ChatResult();
                 r.content = this.content;
+                r.reasoningContent = this.reasoningContent;
                 r.durationMs = this.durationMs;
                 r.promptTokens = this.promptTokens;
                 r.completionTokens = this.completionTokens;

@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -64,18 +65,42 @@ public class RagAnswerServiceImpl implements RagAnswerService {
             Long knowledgeBaseId,
             Long llmModelId
     ) {
+        LlmGateway.ChatResult result = generateAnswerWithReasoning(query, searchResults, knowledgeBaseId, llmModelId);
+        return result != null ? result.getContent() : null;
+    }
+
+    @Override
+    public LlmGateway.ChatResult generateAnswerWithReasoning(
+            String query,
+            List<KnowledgeSearchResponse.SearchResultItem> searchResults,
+            Long knowledgeBaseId,
+            Long llmModelId
+    ) {
         String context = buildContext(searchResults);
         String userMessage = "问题：" + query + "\n\n参考资料：\n" + context;
 
-        return invokeChatWithFallback(llmModelId, (resolution) ->
-                llmGateway.chatWithProvider(
+        return invokeChatWithFallback(llmModelId, (resolution) -> {
+            Map<String, Object> thinkingParams = llmGateway.buildThinkingParams(resolution.provider(), resolution.maxTokens());
+            try {
+                return llmGateway.chatWithProviderWithThinking(
+                        resolution.provider(),
+                        SYSTEM_PROMPT,
+                        userMessage,
+                        resolution.temperature(),
+                        resolution.maxTokens(),
+                        thinkingParams
+                );
+            } catch (Exception e) {
+                log.warn("RAG 深度思考模式调用失败，降级为普通模式: {}", e.getMessage());
+                return llmGateway.chatWithProvider(
                         resolution.provider(),
                         SYSTEM_PROMPT,
                         userMessage,
                         resolution.temperature(),
                         resolution.maxTokens()
-                ).getContent()
-        );
+                );
+            }
+        });
     }
 
     @Override

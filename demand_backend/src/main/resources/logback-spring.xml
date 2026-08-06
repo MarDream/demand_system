@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-    <!-- 从 application.yml 读取日志路径，未配置时默认 ./logs -->
-    <property name="LOG_PATH" value="${LOG_PATH:-./logs}" />
+    <!--
+        启动脚本通过 DEMAND_LOG_PATH 指向仓库根目录 logs；直接从 demand_backend 启动时，
+        默认使用 ../logs，避免在 demand_backend/logs 下再生成一套日志。
+        使用不同的 Logback 变量名，避免 DEMAND_LOG_PATH 自引用导致环境变量未生效。
+    -->
+    <property name="LOG_DIR" value="${DEMAND_LOG_PATH:-../logs}" />
     <!-- 日志文件名前缀 -->
     <property name="APP_NAME" value="demand-system" />
 
@@ -15,10 +19,10 @@
 
     <!-- ==================== 文件输出（按天滚动） ==================== -->
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>${LOG_PATH}/${APP_NAME}.log</file>
+        <file>${LOG_DIR}/${APP_NAME}.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
             <!-- 每天一个日志文件 -->
-            <fileNamePattern>${LOG_PATH}/${APP_NAME}.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <fileNamePattern>${LOG_DIR}/${APP_NAME}.%d{yyyy-MM-dd}.log</fileNamePattern>
             <!-- 保留最近 30 天 -->
             <maxHistory>30</maxHistory>
             <!-- 总大小上限 -->
@@ -33,12 +37,12 @@
 
     <!-- ==================== 错误日志单独一份 ==================== -->
     <appender name="ERROR_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>${LOG_PATH}/${APP_NAME}-error.log</file>
+        <file>${LOG_DIR}/error.log</file>
         <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
             <level>ERROR</level>
         </filter>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>${LOG_PATH}/${APP_NAME}-error.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <fileNamePattern>${LOG_DIR}/error.%d{yyyy-MM-dd}.log</fileNamePattern>
             <maxHistory>30</maxHistory>
             <totalSizeCap>1GB</totalSizeCap>
             <cleanHistoryOnStart>true</cleanHistoryOnStart>

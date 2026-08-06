@@ -40,6 +40,9 @@ public interface RequirementPendingTaskMapper extends BaseMapper<RequirementPend
      */
     int insertBatch(@Param("tasks") List<RequirementPendingTask> tasks);
 
+    /** 批量插入只读抄送待办（收件人已展开为具体用户） */
+    int insertCcReadOnlyBatch(@Param("tasks") List<RequirementPendingTask> tasks);
+
     /**
      * 查询用户的待办需求ID列表
      *
@@ -70,6 +73,11 @@ public interface RequirementPendingTaskMapper extends BaseMapper<RequirementPend
     Long countByUserIdWithOrgFilter(@Param("userId") Long userId,
                                     @Param("isSuperAdmin") boolean isSuperAdmin,
                                     @Param("visibleOrgIds") List<Long> visibleOrgIds);
+
+    /** 统计用户的只读抄送查阅数量（带数据权限过滤） */
+    Long countCcReadOnlyByUserIdWithOrgFilter(@Param("userId") Long userId,
+                                              @Param("isSuperAdmin") boolean isSuperAdmin,
+                                              @Param("visibleOrgIds") List<Long> visibleOrgIds);
 
     /**
      * 统计当前流程位置是否已有运行期待办记录

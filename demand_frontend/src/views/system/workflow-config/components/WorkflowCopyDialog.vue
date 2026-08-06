@@ -27,7 +27,7 @@
           <el-input v-model="blankForm.name" placeholder="请输入工作流名称" clearable />
         </el-form-item>
         <el-form-item label="版本号" prop="version">
-          <el-input v-model="blankForm.version" placeholder="例如: v1.0" clearable />
+          <el-input v-model="blankForm.version" placeholder="例如: 1.0.0" clearable />
         </el-form-item>
         <el-form-item label="描述">
           <el-input
@@ -155,6 +155,15 @@
             </div>
           </el-form-item>
 
+          <el-form-item label="版本号" prop="newVersion">
+            <el-input
+              v-model="copyOptions.newVersion"
+              placeholder="例如: 1.0.0"
+              clearable
+              @input="handleCopyVersionInput"
+            />
+          </el-form-item>
+
           <el-collapse v-model="activeAdvanced">
             <el-collapse-item title="高级选项" name="advanced">
               <div class="advanced-options">
@@ -194,6 +203,7 @@ import {
 } from '@/api/modules/workflow'
 import { formatDate as formatDateUtil } from '@/utils/format'
 import { resolveErrorMessage } from '@/utils/error'
+import { isWorkflowVersion, normalizeWorkflowVersion } from '@/utils/workflowVersion'
 
 interface Props {
   projectId?: number
@@ -224,7 +234,7 @@ const selectedWorkflow = ref<WorkflowTemplateDTO | null>(null)
 const blankFormRef = ref<FormInstance>()
 const blankForm = reactive({
   name: '',
-  version: 'v1.0',
+  version: '1.0.0',
   description: ''
 })
 
@@ -237,6 +247,7 @@ const blankRules: FormRules = {
 const copyFormRef = ref<FormInstance>()
 const copyOptions = reactive<WorkflowCopyRequest>({
   newName: '',
+  newVersion: '1.0.0',
   includeDescription: true,
   includeNodes: true,
   includeEdges: true,
@@ -246,7 +257,17 @@ const copyOptions = reactive<WorkflowCopyRequest>({
 })
 
 const copyRules: FormRules = {
-  newName: [{ required: true, message: '请输入新工作流名称', trigger: 'blur' }]
+  newName: [{ required: true, message: '请输入新工作流名称', trigger: 'blur' }],
+  newVersion: [
+    { required: true, message: '请输入版本号', trigger: 'blur' },
+    {
+      validator: (_rule, value, callback) => {
+        if (isWorkflowVersion(value)) callback()
+        else callback(new Error('版本号格式需为正整数或 1.0.0'))
+      },
+      trigger: ['blur', 'change']
+    }
+  ]
 }
 
 const activeAdvanced = ref<string[]>([])
@@ -314,8 +335,14 @@ const handleSearch = () => {
 const handleSelectTemplate = (template: WorkflowTemplateDTO) => {
   selectedWorkflow.value = template
   copyOptions.newName = `${template.name} - 副本`
+  const sourceVersion = normalizeWorkflowVersion(template.version)
+  copyOptions.newVersion = isWorkflowVersion(sourceVersion) ? sourceVersion : '1.0.0'
   nameStatus.value = 'idle'
   suggestedName.value = ''
+}
+
+const handleCopyVersionInput = (value: string) => {
+  copyOptions.newVersion = normalizeWorkflowVersion(value)
 }
 
 // 检查名称冲突
@@ -365,6 +392,7 @@ const handleCreate = async () => {
     }
 
     await copyFormRef.value?.validate()
+    copyOptions.newVersion = normalizeWorkflowVersion(copyOptions.newVersion)
 
     creating.value = true
     try {

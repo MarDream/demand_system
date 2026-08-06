@@ -1,14 +1,13 @@
 <template>
-  <PageContainer :breadcrumb="false">
-    <div class="member-console">
-      <div class="member-topbar">
-        <div />
-        <el-radio-group v-model="managementMode" class="mode-switch">
-          <el-radio-button value="basic">基础管理模式</el-radio-button>
-          <el-radio-button value="hr">人事管理模式</el-radio-button>
-        </el-radio-group>
-      </div>
+  <PageContainer title="用户管理" subtitle="管理系统成员、组织架构与花名册">
+    <template #headerActions>
+      <el-radio-group v-model="managementMode" class="mode-switch">
+        <el-radio-button value="basic">基础管理模式</el-radio-button>
+        <el-radio-button value="hr">人事管理模式</el-radio-button>
+      </el-radio-group>
+    </template>
 
+    <div class="member-console">
       <div
         v-if="managementMode === 'basic'"
         class="member-layout"
@@ -44,12 +43,19 @@
             </el-button>
           </div>
 
+          <div v-if="isOrgSortMode" class="org-sort-tip">
+            <el-icon><InfoFilled /></el-icon>
+            <span>拖拽组织调整同级顺序，调整后自动保存</span>
+            <el-button v-if="orgSortSaving" link :loading="orgSortSaving">保存中</el-button>
+          </div>
+
           <div class="org-list">
             <div
               v-for="node in visibleOrgNodes"
               :key="node.key"
               class="org-item"
-              :class="{ 'is-active': activeOrgKey === node.key }"
+              :data-key="node.key"
+              :class="{ 'is-active': activeOrgKey === node.key, 'is-sortable': isOrgSortMode }"
               :style="{ paddingLeft: `${12 + node.level * 18}px` }"
             >
               <span
@@ -137,7 +143,9 @@
                 </template>
               </el-dropdown>
             </AppButton>
-            <AppButton permission="button:user:update" @click="showTodo('调整排序')">调整排序</AppButton>
+            <AppButton permission="button:user:update" :type="isOrgSortMode ? 'primary' : 'default'" @click="toggleOrgSortMode">
+              {{ isOrgSortMode ? '完成排序' : '调整排序' }}
+            </AppButton>
             <el-button :icon="Setting" circle aria-label="列表字段设置" title="列表字段设置" @click="openColumnConfig" />
           </div>
 
@@ -435,19 +443,31 @@
       @close="resetForm"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="110px">
-        <el-form-item label="用户名" prop="username">
-          <el-input v-model="form.username" placeholder="请输入用户名" :disabled="isEdit" />
-        </el-form-item>
-        <el-alert
-          v-if="!isEdit"
-          type="info"
-          :closable="false"
-          show-icon
-          title="初始密码默认生成为“用户名 + 手机号后3位”，创建成功后系统会通过邮箱发送给用户。"
-          style="margin-bottom: 16px"
-        />
         <el-form-item label="姓名" prop="realName">
-          <el-input v-model="form.realName" placeholder="请输入姓名" />
+          <el-input v-model="form.realName" placeholder="请输入姓名" @input="handleRealNameInput" />
+        </el-form-item>
+        <el-form-item prop="username">
+          <template #label>
+            <span class="form-label-with-tip">
+              账号名
+              <el-tooltip
+                v-if="!isEdit"
+                content="初始密码默认生成为“账号名 + 手机号后3位”，创建成功后系统会通过邮箱发送给用户。"
+                placement="top"
+                popper-class="initial-password-tooltip"
+              >
+                <el-icon class="form-label-tip-icon" tabindex="0" aria-label="查看初始密码说明">
+                  <InfoFilled />
+                </el-icon>
+              </el-tooltip>
+            </span>
+          </template>
+          <el-input
+            v-model="form.username"
+            placeholder="输入姓名后自动填入拼音，可手动修改"
+            :disabled="isEdit"
+            @input="handleUsernameInput"
+          />
         </el-form-item>
         <el-form-item label="邮箱" prop="email">
           <el-input v-model="form.email" placeholder="请输入邮箱" />
@@ -477,14 +497,7 @@
           </el-tree-select>
         </el-form-item>
         <el-form-item label="角色" prop="roleId">
-          <el-select v-model="form.roleId" placeholder="请选择角色" clearable style="width: 100%">
-            <el-option
-              v-for="role in roleList"
-              :key="role.id"
-              :label="role.name"
-              :value="role.id"
-            />
-          </el-select>
+          <RoleSelect v-model="form.roleId" placeholder="请选择角色" />
         </el-form-item>
 
         <el-form-item v-if="isEdit" label="工号">
@@ -584,7 +597,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, type Component } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, type Component } from 'vue'
 import {
   ArrowLeft,
   ArrowDown,
@@ -595,6 +608,7 @@ import {
   Edit,
   Filter,
   FolderOpened,
+  InfoFilled,
   Key,
   MapLocation,
   MoreFilled,
@@ -616,14 +630,17 @@ import type { OrgNode, User as UserInfo } from '@/types/user'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
+import RoleSelect from '@/components/common/RoleSelect.vue'
 import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import { formatDate as formatDateTime } from '@/utils/format'
 import { getRoleList } from '@/api/modules/role'
 import { resolveErrorMessage } from '@/utils/error'
 import type { RoleItem } from '@/api/modules/menu'
+import { pinyin } from 'pinyin-pro'
 import { useUserStore } from '@/stores/modules/user'
 import { useCollapsibleSidebar } from '@/composables/useCollapsibleSidebar'
 import { usePermission } from '@/composables/usePermission'
+import Sortable, { type SortableEvent } from 'sortablejs'
 
 interface FlatOrgNode {
   key: string
@@ -635,6 +652,7 @@ interface FlatOrgNode {
   hasChildren: boolean
   parentKey: string | null
   orgType?: string | null
+  sortOrder: number
 }
 
 interface DepartmentRow {
@@ -706,6 +724,10 @@ const orgKeyword = ref('')
 const activeOrgKey = ref('')
 const selectedDepartments = ref<DepartmentRow[]>([])
 const expandedKeys = ref<Set<string>>(new Set())
+/** 组织同层级排序模式：开启后左侧组织树可拖拽调整同级顺序 */
+const isOrgSortMode = ref(false)
+const orgSortSaving = ref(false)
+let orgSortableInstance: Sortable | null = null
 const memberSidebar = useCollapsibleSidebar({
   defaultWidth: 284,
   minWidth: 200,
@@ -926,6 +948,7 @@ const flatOrgNodes = computed<FlatOrgNode[]>(() => {
         hasChildren: (item.children?.length ?? 0) > 0,
         parentKey,
         orgType: item.orgType,
+        sortOrder: item.sortOrder ?? 0,
       })
       if (item.children?.length) {
         walk(item.children, level + 1, key)
@@ -954,8 +977,8 @@ const departmentRows = computed<DepartmentRow[]>(() => {
 
 const rules: FormRules = {
   username: [
-    { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 3, max: 20, message: '用户名长度为3-20个字符', trigger: 'blur' },
+    { required: true, message: '请输入账号名', trigger: 'blur' },
+    { min: 3, max: 20, message: '账号名长度为3-20个字符', trigger: 'blur' },
     { validator: validateUsername, trigger: 'blur' },
   ],
   realName: [
@@ -1162,6 +1185,7 @@ async function handleEdit(row: UserInfo) {
   isEdit.value = true
   editId.value = row.id
   editJobNumber.value = row.jobNumber || null
+  resetUsernameAutoState()
   try {
     const userDetail: any = await userApi.getUserById(row.id)
     form.username = userDetail.username
@@ -1287,7 +1311,7 @@ async function handleSubmit() {
   } catch {
     // 响应拦截器已显示错误消息，这里处理用户体验：
     // - 不关闭对话框，让用户可以修改后重新提交
-    // - 对于用户名重复（code 50001）等场景，用户可以修改用户名后再试
+    // - 对于账号名重复（code 50001）等场景，用户可以修改账号名后再试
     // 对话框保持打开状态，用户可以修改表单重新提交
   } finally {
     submitting.value = false
@@ -1315,6 +1339,7 @@ function resetForm() {
   form.roleId = null
   form.status = 'active'
   editJobNumber.value = null
+  resetUsernameAutoState()
   formRef.value?.resetFields()
 }
 
@@ -1412,6 +1437,87 @@ async function selectOrg(node: FlatOrgNode) {
   await fetchList()
 }
 
+/** 切换组织排序模式 */
+async function toggleOrgSortMode() {
+  if (isOrgSortMode.value) {
+    // 退出排序模式：卸载 Sortable
+    destroyOrgSortable()
+    isOrgSortMode.value = false
+    return
+  }
+  // 进入排序模式：展开所有节点便于调整
+  isOrgSortMode.value = true
+  expandedKeys.value = new Set(flatOrgNodes.value.filter(n => n.hasChildren).map(n => n.key))
+  await nextTick()
+  mountOrgSortable()
+}
+
+/** 挂载 Sortable 到组织列表，限制同层级拖拽 */
+function mountOrgSortable() {
+  const el = document.querySelector('.org-list') as HTMLElement | null
+  if (!el) return
+  destroyOrgSortable()
+  orgSortableInstance = Sortable.create(el, {
+    animation: 150,
+    handle: '.org-item-btn',
+    draggable: '.org-item',
+    ghostClass: 'org-sort-ghost',
+    chosenClass: 'org-sort-chosen',
+    // 只允许同层级（parentKey 相同）拖拽
+    onMove: (evt) => {
+      const dragged = evt.dragged as HTMLElement
+      const related = evt.related as HTMLElement
+      // 通过扁平节点的 parentKey 判断是否同级
+      const dragNode = flatOrgNodes.value.find(n => n.key === dragged.dataset.key)
+      const relatedNode = flatOrgNodes.value.find(n => n.key === related.dataset.key)
+      if (!dragNode || !relatedNode) return false
+      return dragNode.parentKey === relatedNode.parentKey
+    },
+    onEnd: handleOrgSortEnd,
+  })
+}
+
+/** 拖拽结束：将被移动项的新位置提交保存，后端 reindex 同级 */
+async function handleOrgSortEnd(evt: SortableEvent) {
+  const movedKey = (evt.item as HTMLElement).dataset.key
+  const movedNode = flatOrgNodes.value.find(n => n.key === movedKey)
+  if (!movedNode) return
+  const parentKey = movedNode.parentKey
+  const container = evt.to as HTMLElement
+  // 在新顺序下定位被移动项的同级索引
+  const siblingKeys = Array.from(container.querySelectorAll<HTMLElement>('.org-item'))
+    .map(el => el.dataset.key)
+    .filter((key): key is string => !!key)
+    .filter(key => {
+      const node = flatOrgNodes.value.find(n => n.key === key)
+      return node && node.parentKey === parentKey
+    })
+  const newIndex = siblingKeys.indexOf(movedKey!)
+  if (newIndex === -1 || newIndex === movedNode.sortOrder) return
+  orgSortSaving.value = true
+  try {
+    await userApi.moveOrgNode({
+      id: movedNode.id,
+      targetParentId: parentKey ? Number(parentKey.replace('org-', '')) : null,
+      targetSortOrder: newIndex,
+    })
+    await loadOrgData()
+    ElMessage.success('组织排序已更新')
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '组织排序保存失败'))
+    await loadOrgData()
+  } finally {
+    orgSortSaving.value = false
+  }
+}
+
+function destroyOrgSortable() {
+  if (orgSortableInstance) {
+    orgSortableInstance.destroy()
+    orgSortableInstance = null
+  }
+}
+
 function toggleExpand(key: string) {
   const keys = new Set(expandedKeys.value)
   if (keys.has(key)) {
@@ -1500,10 +1606,79 @@ function validatePhone(_rule: unknown, value: string, callback: (error?: Error) 
 
 function validateUsername(_rule: unknown, value: string, callback: (error?: Error) => void) {
   if (value && !/^[a-zA-Z0-9_]+$/.test(value)) {
-    callback(new Error('用户名仅支持字母、数字、下划线'))
+    callback(new Error('账号名仅支持字母、数字、下划线'))
   } else {
     callback()
   }
+}
+
+/* ── 账号名自动生成（姓名 → 拼音 + 查重加序号） ── */
+// 标记账号名是否已被用户手动修改过；改过就不再随姓名联动覆盖
+const usernameManuallyEdited = ref(false)
+
+function realNameToBaseUsername(realName: string): string {
+  if (!realName) return ''
+  const trimmed = realName.trim()
+  if (!trimmed) return ''
+  try {
+    return pinyin(trimmed, {
+      toneType: 'none',
+      type: 'string',
+      v: true,
+      nonZh: 'consecutive',
+    })
+      .replace(/\s+/g, '')
+      .replace(/[^a-zA-Z0-9_]/g, '')
+      .toLowerCase()
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * 计算当前用户名列表里已被占用的账号名集合
+ * 用于查重加序号
+ */
+function isUsernameTaken(name: string): boolean {
+  const lower = name.toLowerCase()
+  return userList.value.some(u => (u.username || '').toLowerCase() === lower)
+}
+
+/**
+ * 从 base 出发，在已占用集合中挑出第一个未占用的 zhangsan / zhangsan1 / zhangsan2...
+ * 长度上限 20
+ */
+function findFreeUsername(base: string): string {
+  if (!base) return ''
+  const maxLen = 20
+  const trimmedBase = base.slice(0, maxLen)
+  if (!isUsernameTaken(trimmedBase)) return trimmedBase
+  for (let n = 1; n < 10000; n++) {
+    const suffix = String(n)
+    const reserve = suffix.length
+    if (trimmedBase.length + reserve > maxLen) break
+    const candidate = trimmedBase + suffix
+    if (!isUsernameTaken(candidate)) return candidate
+  }
+  // 极端兜底：缩短 base 留 2 位后缀空间
+  return trimmedBase.slice(0, Math.max(1, maxLen - 2)) + '99'
+}
+
+function handleRealNameInput(value: string | number) {
+  if (isEdit.value) return
+  if (usernameManuallyEdited.value) return
+  const base = realNameToBaseUsername(String(value ?? ''))
+  form.username = findFreeUsername(base)
+}
+
+function handleUsernameInput() {
+  if (isEdit.value) return
+  // 用户改过就标记，避免后续姓名变更覆盖其输入
+  usernameManuallyEdited.value = true
+}
+
+function resetUsernameAutoState() {
+  usernameManuallyEdited.value = false
 }
 
 function validateDepartmentNameUnique(_rule: unknown, value: string, callback: (error?: Error) => void) {
@@ -1559,6 +1734,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   // Sortable 实例由 ColumnConfigDialog 自行管理，无需在此清理
+  destroyOrgSortable()
 })
 
 function resolveInitialOrgKey() {
@@ -1570,29 +1746,36 @@ function resolveInitialOrgKey() {
 </script>
 
 <style lang="scss" scoped>
+.form-label-with-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.form-label-tip-icon {
+  color: var(--color-text-secondary);
+  cursor: help;
+  font-size: 15px;
+  outline: none;
+  transition: color 0.2s;
+
+  &:hover,
+  &:focus-visible {
+    color: var(--color-accent);
+  }
+}
+
+:global(.initial-password-tooltip) {
+  max-width: 320px;
+  line-height: 1.6;
+}
+
 .member-console {
-  min-height: calc(100vh - 82px);
+  min-height: calc(100vh - 130px);
   overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   background: #fff;
-}
-
-.member-topbar {
-  height: 96px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-md);
-  padding: 0 var(--spacing-lg);
-  border-bottom: 1px solid var(--color-border);
-  background: #fff;
-
-  h2 {
-    margin: 8px 0 0;
-    color: var(--color-text-primary);
-    font-size: var(--font-size-lg);
-  }
 }
 
 .page-crumb {
@@ -1626,7 +1809,7 @@ function resolveInitialOrgKey() {
 .member-layout,
 .roster-layout {
   display: grid;
-  min-height: calc(100vh - 220px);
+  min-height: calc(100vh - 130px);
   position: relative;
 }
 
@@ -1742,6 +1925,44 @@ function resolveInitialOrgKey() {
   color: var(--color-text-primary);
   text-align: left;
   cursor: pointer;
+}
+
+.org-sort-tip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 8px 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #6b7280;
+  background: #f0f5ff;
+  border: 1px solid #d6e4ff;
+  border-radius: 6px;
+
+  .el-icon {
+    color: #409eff;
+  }
+
+  span {
+    flex: 1;
+  }
+}
+
+.org-item.is-sortable {
+  cursor: grab;
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+.org-sort-ghost {
+  opacity: 0.4;
+  background: #e6f7ff !important;
+}
+
+.org-sort-chosen {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .org-item:hover,
@@ -2130,13 +2351,6 @@ function resolveInitialOrgKey() {
 }
 
 @media (max-width: 900px) {
-  .member-topbar {
-    height: auto;
-    align-items: flex-start;
-    flex-direction: column;
-    padding: var(--spacing-md);
-  }
-
   .member-layout,
   .roster-layout {
     grid-template-columns: 1fr;

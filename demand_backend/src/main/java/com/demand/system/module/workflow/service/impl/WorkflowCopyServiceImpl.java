@@ -7,6 +7,10 @@ import com.demand.system.module.workflow.dto.*;
 import com.demand.system.module.workflow.entity.*;
 import com.demand.system.module.workflow.mapper.*;
 import com.demand.system.module.workflow.service.WorkflowCopyService;
+import com.demand.system.module.workflow.support.WorkflowVersionUtils;
+import com.demand.system.module.project.entity.Project;
+import com.demand.system.module.project.mapper.ProjectMapper;
+import com.demand.system.module.user.entity.User;
 import com.demand.system.module.user.mapper.UserMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -38,10 +42,12 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
     );
 
     private final WorkflowVersionMapper workflowVersionMapper;
+    private final WorkflowDefinitionMapper workflowDefinitionMapper;
     private final WorkflowNodeMapper workflowNodeMapper;
     private final WorkflowEdgeMapper workflowEdgeMapper;
     private final WorkflowAuditLogMapper auditLogMapper;
     private final UserMapper userMapper;
+    private final ProjectMapper projectMapper;
     private final ObjectMapper objectMapper;
 
     public WorkflowCopyServiceImpl(WorkflowVersionMapper workflowVersionMapper,
@@ -49,12 +55,16 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
                                    WorkflowEdgeMapper workflowEdgeMapper,
                                    WorkflowAuditLogMapper auditLogMapper,
                                    UserMapper userMapper,
+                                   ProjectMapper projectMapper,
+                                   WorkflowDefinitionMapper workflowDefinitionMapper,
                                    ObjectMapper objectMapper) {
         this.workflowVersionMapper = workflowVersionMapper;
         this.workflowNodeMapper = workflowNodeMapper;
         this.workflowEdgeMapper = workflowEdgeMapper;
         this.auditLogMapper = auditLogMapper;
         this.userMapper = userMapper;
+        this.projectMapper = projectMapper;
+        this.workflowDefinitionMapper = workflowDefinitionMapper;
         this.objectMapper = objectMapper;
     }
 
@@ -82,9 +92,11 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
             }
 
             // 4. 生成新版本号
-            String newVersionStr = request.getNewVersion();
+            String newVersionStr = WorkflowVersionUtils.normalize(request.getNewVersion());
             if (newVersionStr == null || newVersionStr.isEmpty()) {
                 newVersionStr = generateNextVersion(targetProjectId);
+            } else if (!WorkflowVersionUtils.isValid(newVersionStr)) {
+                throw new BusinessException("版本号格式需为正整数或 1.0.0");
             }
 
             // 5. 创建新工作流版本
@@ -153,6 +165,9 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
                                             Long targetProjectId, Long operatorId) {
         WorkflowVersion newVer = new WorkflowVersion();
         newVer.setProjectId(targetProjectId);
+        // 复制后的名称代表一个新的工作流定义；版本号只需在该定义下保持唯一，
+        // 因此不同名称的工作流可以使用相同版本号。
+        newVer.setWorkflowDefinitionId(resolveOrCreateDefinition(targetProjectId, newName, operatorId));
         newVer.setVersion(newVersion);
         newVer.setName(newName);
         newVer.setSourceVersionId(source.getId().intValue());
@@ -163,10 +178,14 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
         newVer.setCreatorId(operatorId);
         newVer.setCreatedAt(LocalDateTime.now());
         
-        // 复制描述
-        if (request.getIncludeDescription() && source.getDefinition() != null) {
-            newVer.setDefinition(source.getDefinition());
+        // definition 是工作流画布的完整定义且数据库不允许为空，复制时始终保留。
+        // “包含描述”只控制说明/变更日志，不能用来决定是否复制 definition。
+        newVer.setDefinition(source.getDefinition() != null ? source.getDefinition() : "{}");
+        if (Boolean.TRUE.equals(request.getIncludeDescription())) {
+            newVer.setChangeLog(source.getChangeLog());
         }
+        newVer.setKnowledgeBaseId(source.getKnowledgeBaseId());
+        newVer.setApprovalEvaluationEnabled(source.getApprovalEvaluationEnabled());
         
         return newVer;
     }
@@ -347,8 +366,115 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
     @Override
     public Page<WorkflowTemplateDTO> getTemplates(Page<WorkflowTemplateDTO> page, String keyword,
                                                   Boolean includeMyWorkflows, Long currentUserId) {
-        // TODO: 实现模板列表查询（需要连表查询user表）
-        return page;
+        boolean queryMyWorkflows = Boolean.TRUE.equals(includeMyWorkflows);
+        LambdaQueryWrapper<WorkflowVersion> wrapper = new LambdaQueryWrapper<WorkflowVersion>()
+            // 已审核通过和已启用的版本都可以作为复制来源。
+            .in(WorkflowVersion::getActivationStatus, "approved", "active")
+            .isNull(WorkflowVersion::getDeprecatedAt);
+
+        if (queryMyWorkflows) {
+            if (currentUserId == null) {
+                return new Page<>(page.getCurrent(), page.getSize(), 0);
+            }
+            wrapper.eq(WorkflowVersion::getCreatorId, currentUserId)
+                .eq(WorkflowVersion::getIsTemplate, 0);
+        } else {
+            wrapper.eq(WorkflowVersion::getIsTemplate, 1);
+        }
+
+        if (keyword != null && !keyword.trim().isEmpty()) {
+            String searchKeyword = keyword.trim();
+            wrapper.and(query -> query
+                .like(WorkflowVersion::getName, searchKeyword)
+                .or()
+                .like(WorkflowVersion::getVersion, searchKeyword)
+                .or()
+                .like(WorkflowVersion::getChangeLog, searchKeyword));
+        }
+
+        wrapper.orderByDesc(WorkflowVersion::getCopyCount)
+            .orderByDesc(WorkflowVersion::getCreatedAt);
+
+        Page<WorkflowVersion> versionPage = new Page<>(page.getCurrent(), page.getSize());
+        workflowVersionMapper.selectPage(versionPage, wrapper);
+
+        Page<WorkflowTemplateDTO> result = new Page<>(
+            versionPage.getCurrent(), versionPage.getSize(), versionPage.getTotal()
+        );
+        if (versionPage.getRecords().isEmpty()) {
+            return result;
+        }
+
+        List<WorkflowVersion> versions = versionPage.getRecords();
+        Set<Long> versionIds = versions.stream()
+            .map(WorkflowVersion::getId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+        Set<Long> creatorIds = versions.stream()
+            .map(WorkflowVersion::getCreatorId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+        Set<Long> projectIds = versions.stream()
+            .map(WorkflowVersion::getProjectId)
+            .filter(id -> id != null && id > 0)
+            .collect(Collectors.toSet());
+
+        Map<Long, User> usersById = creatorIds.isEmpty()
+            ? Collections.emptyMap()
+            : userMapper.selectBatchIds(creatorIds).stream()
+                .collect(Collectors.toMap(User::getId, user -> user));
+        Map<Long, Project> projectsById = projectIds.isEmpty()
+            ? Collections.emptyMap()
+            : projectMapper.selectBatchIds(projectIds).stream()
+                .collect(Collectors.toMap(Project::getId, project -> project));
+        Map<Long, Integer> nodeCounts = workflowNodeMapper.selectList(
+                new LambdaQueryWrapper<WorkflowNode>()
+                    .in(WorkflowNode::getWorkflowVersionId, versionIds)
+            ).stream()
+            .collect(Collectors.groupingBy(
+                WorkflowNode::getWorkflowVersionId,
+                Collectors.collectingAndThen(Collectors.counting(), Long::intValue)
+            ));
+
+        List<WorkflowTemplateDTO> records = versions.stream()
+            .map(version -> toTemplateDTO(version, usersById, projectsById, nodeCounts))
+            .collect(Collectors.toList());
+        result.setRecords(records);
+        return result;
+    }
+
+    private WorkflowTemplateDTO toTemplateDTO(WorkflowVersion version,
+                                               Map<Long, User> usersById,
+                                               Map<Long, Project> projectsById,
+                                               Map<Long, Integer> nodeCounts) {
+        WorkflowTemplateDTO dto = new WorkflowTemplateDTO();
+        dto.setId(version.getId());
+        dto.setName(version.getName());
+        dto.setVersion(WorkflowVersionUtils.normalize(version.getVersion()));
+        dto.setDescription(version.getChangeLog());
+        dto.setIsTemplate(Integer.valueOf(1).equals(version.getIsTemplate()));
+        dto.setCopyCount(version.getCopyCount() != null ? version.getCopyCount() : 0);
+        dto.setCreatorId(version.getCreatorId());
+        dto.setProjectId(version.getProjectId());
+        dto.setCreatedAt(version.getCreatedAt());
+        dto.setNodeCount(nodeCounts.getOrDefault(version.getId(), 0));
+        dto.setActivationStatus(version.getActivationStatus());
+
+        User creator = usersById.get(version.getCreatorId());
+        if (creator != null) {
+            String realName = creator.getRealName();
+            dto.setCreatorName(realName != null && !realName.trim().isEmpty()
+                ? realName
+                : creator.getUsername());
+        }
+
+        if (version.getProjectId() != null && version.getProjectId() == 0L) {
+            dto.setProjectName("全局工作流");
+        } else {
+            Project project = projectsById.get(version.getProjectId());
+            dto.setProjectName(project != null ? project.getName() : null);
+        }
+        return dto;
     }
 
     @Override
@@ -419,7 +545,7 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
         WorkflowLineageDTO dto = new WorkflowLineageDTO();
         dto.setId(version.getId());
         dto.setName(version.getName());
-        dto.setVersion(version.getVersion());
+        dto.setVersion(WorkflowVersionUtils.normalize(version.getVersion()));
         dto.setCreatedAt(version.getCreatedAt());
 
         // 查询创建人姓名
@@ -440,28 +566,37 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
      * 生成下一个版本号
      */
     private String generateNextVersion(Long projectId) {
-        List<WorkflowVersion> versions = workflowVersionMapper.selectList(
-            new LambdaQueryWrapper<WorkflowVersion>()
-                .eq(WorkflowVersion::getProjectId, projectId)
-                .orderByDesc(WorkflowVersion::getId)
-                .last("LIMIT 1")
-        );
+        return workflowVersionMapper.selectList(
+                    new LambdaQueryWrapper<WorkflowVersion>()
+                            .eq(WorkflowVersion::getProjectId, projectId))
+                .stream()
+                .map(WorkflowVersion::getVersion)
+                .filter(WorkflowVersionUtils::isValid)
+                .max(WorkflowVersionUtils::compare)
+                .map(WorkflowVersionUtils::suggestNext)
+                .orElse("1.0.0");
+    }
 
-        if (versions.isEmpty()) {
-            return "v1.0";
+    /**
+     * 按项目和工作流名称解析或创建定义，保证复制后的新名称拥有独立的版本命名空间。
+     */
+    private Long resolveOrCreateDefinition(Long projectId, String name, Long creatorId) {
+        String definitionName = name == null || name.trim().isEmpty() ? "未命名工作流" : name.trim();
+        WorkflowDefinition existing = workflowDefinitionMapper.selectOne(
+                new LambdaQueryWrapper<WorkflowDefinition>()
+                        .eq(WorkflowDefinition::getProjectId, projectId)
+                        .eq(WorkflowDefinition::getName, definitionName)
+                        .last("LIMIT 1"));
+        if (existing != null) {
+            return existing.getId();
         }
 
-        String lastVersion = versions.get(0).getVersion();
-        Pattern pattern = Pattern.compile("v(\\d+)\\.(\\d+)");
-        Matcher matcher = pattern.matcher(lastVersion);
-        
-        if (matcher.matches()) {
-            int major = Integer.parseInt(matcher.group(1));
-            int minor = Integer.parseInt(matcher.group(2));
-            return "v" + major + "." + (minor + 1);
-        }
-
-        return "v1.0";
+        WorkflowDefinition definition = new WorkflowDefinition();
+        definition.setProjectId(projectId);
+        definition.setName(definitionName);
+        definition.setCreatorId(creatorId);
+        workflowDefinitionMapper.insert(definition);
+        return definition.getId();
     }
 
     /**
