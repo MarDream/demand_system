@@ -50,7 +50,7 @@ export function importExcel(tableId: number, file: File) {
   return request.post<ApiResponse<number[]>>(
     `/v1/bitable/tables/${tableId}/import/excel`,
     formData,
-    { headers: { 'Content-Type': 'multipart/form-data' } }
+    { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 }
   ) as unknown as Promise<number[]>
 }
 
@@ -63,6 +63,6 @@ export function importCsv(tableId: number, file: File) {
   return request.post<ApiResponse<number[]>>(
     `/v1/bitable/tables/${tableId}/import/csv`,
     formData,
-    { headers: { 'Content-Type': 'multipart/form-data' } }
+    { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 }
   ) as unknown as Promise<number[]>
 }

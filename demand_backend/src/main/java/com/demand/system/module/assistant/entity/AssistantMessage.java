@@ -64,6 +64,10 @@ public class AssistantMessage {
     @TableField(typeHandler = JacksonTypeHandler.class)
     private List<CitationReference> citations;
 
+    /** 检索降级与能力提示（例如未配置 vision 模型） */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private List<String> warnings;
+
     /** 深度思考内容（LLM reasoning，可为 null） */
     private String reasoning;
 
@@ -203,6 +207,14 @@ public class AssistantMessage {
 
     public void setCitations(List<CitationReference> citations) {
         this.citations = citations;
+    }
+
+    public List<String> getWarnings() {
+        return warnings;
+    }
+
+    public void setWarnings(List<String> warnings) {
+        this.warnings = warnings;
     }
 
     public String getReasoning() {

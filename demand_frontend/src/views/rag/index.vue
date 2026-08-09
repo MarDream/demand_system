@@ -165,11 +165,21 @@
                       class="msg-content-card__body"
                       @citation-click="handleCitationClick(message, $event)"
                     />
+                    <div v-if="message.warnings?.length" class="retrieval-warning-list">
+                      <el-alert
+                        v-for="warning in message.warnings"
+                        :key="warning"
+                        :title="warning"
+                        type="warning"
+                        :closable="false"
+                        show-icon
+                      />
+                    </div>
                     <div v-else class="msg-content-card__body">{{ message.content }}</div>
                   </div>
                   <!-- 底部元信息 -->
                   <div class="msg-footer" v-if="message.role === 'assistant'">
-                    <span v-if="message.citations?.length">{{ message.citations.length }} 份证据文件</span>
+                    <span v-if="message.citations?.length">{{ message.citations.length }} 个引用来源</span>
                     <span v-if="message.retrievedCount">{{ message.retrievedCount }} 条命中</span>
                     <span v-if="message.llmModelLabel">模型：{{ message.llmModelLabel }}</span>
                   </div>
@@ -320,7 +330,7 @@
                 <button
                   type="button"
                   class="send-btn"
-                  :disabled="!selectedKnowledgeBase || !draftQuestion.trim()"
+                  :disabled="!selectedKnowledgeBase || !draftQuestion.trim() || selectedSearchScopes.length === 0"
                   @click="handleAsk"
                 >
                   <el-icon><Promotion /></el-icon>
@@ -332,6 +342,10 @@
           <!-- 检索配置提示 -->
           <div class="composer-hint" v-if="selectedKnowledgeBase">
             <span>{{ composerTip }}</span>
+            <el-checkbox-group v-model="selectedSearchScopes" class="search-scope-group" size="small">
+              <el-checkbox label="REQUIREMENT_BODY">工单正文</el-checkbox>
+              <el-checkbox label="KNOWLEDGE_BASE">知识库</el-checkbox>
+            </el-checkbox-group>
             <div class="composer-hint__actions">
               <el-select v-model="searchMode" size="small" style="width: 110px">
                 <el-option label="混合模式" value="hybrid" />
@@ -385,28 +399,46 @@
               </ul>
             </section>
 
-            <!-- 涉及文件 -->
+            <!-- 引用来源 -->
             <section class="insight-section" v-if="currentInsight.citations?.length">
-              <div class="insight-section__label">涉及文件</div>
+              <div class="insight-section__label">引用来源</div>
               <div class="citation-list">
                 <div
                   v-for="citation in currentInsight.citations"
-                  :key="`${citation.documentId}-${citation.fileName}`"
+                  :key="citationKey(citation)"
                   class="citation-item"
-                  :class="{ 'citation-item--expanded': expandedCitations.has(citation.documentId) }"
+                  :class="{
+                    'citation-item--expanded': expandedCitations.has(citation.documentId),
+                    'citation-item--requirement': isRequirementBodyCitation(citation),
+                    'citation-item--previewable': isCitationPreviewable(citation),
+                  }"
                 >
-                  <div class="citation-item__header" @click="toggleCitationExpand(citation)">
+                  <div class="citation-item__header" @click="handleCitationHeaderClick(citation)">
                     <div class="citation-item__name">
                       <el-icon><Document /></el-icon>
-                      <span>{{ citation.fileName }}</span>
+                      <span>{{ formatCitationTitle(citation) }}</span>
+                      <el-tag v-if="isRequirementBodyCitation(citation)" size="small" type="primary">
+                        {{ resolveCitationTypeLabel(citation) }}
+                      </el-tag>
                       <el-tag size="small" type="info">{{ citation.hitCount }} 片段</el-tag>
                     </div>
                     <div class="citation-item__meta">
                       <span>{{ Math.round(citation.score * 100) }}%</span>
-                      <el-button text type="primary" size="small" @click.stop="openPreview(citation)">预览</el-button>
+                      <el-button
+                        text
+                        type="primary"
+                        size="small"
+                        :title="resolveCitationActionTitle(citation)"
+                        @click.stop="handleCitationPrimaryAction(citation)"
+                      >
+                        {{ resolveCitationActionLabel(citation) }}
+                      </el-button>
                     </div>
                   </div>
-                  <div v-if="expandedCitations.has(citation.documentId)" class="citation-item__chunks">
+                  <div
+                    v-if="!isRequirementBodyCitation(citation) && expandedCitations.has(citation.documentId)"
+                    class="citation-item__chunks"
+                  >
                     <div v-for="(chunk, idx) in getCitationChunks(citation)" :key="idx" class="citation-chunk">
                       <HighlightText :content="chunk.content" :query="currentInsight.question || ''" />
                     </div>
@@ -415,7 +447,7 @@
               </div>
             </section>
 
-            <el-empty v-else description="当前回答无可预览文件" :image-size="60" />
+            <el-empty v-else description="当前回答暂无引用来源" :image-size="60" />
           </div>
         </aside>
       </transition>
@@ -459,6 +491,7 @@ import { useCollapsibleSidebar } from '@/composables/useCollapsibleSidebar'
 import storage from '@/utils/storage'
 import { formatDate } from '@/utils/format'
 import { streamSearchKnowledge, type KnowledgeBase, type SearchMode, type SearchResponse, type SearchResultItem, type CitationReference, getRagConfig, type RagConfig, type RagModelCandidate } from '@/api/modules/knowledge'
+import { PREVIEW_SUPPORTED_EXTENSION_SET, normalizeFileExtension } from '@/constants/knowledgeDocument'
 
 interface RagThinkingStep {
   stepType?: 'query_parse' | 'retrieve' | 'rerank' | 'synthesize'
@@ -485,6 +518,14 @@ interface RagCitation {
   hitCount: number
   pageText: string
   chunks?: CitationChunk[]
+  sourceType?: string | null
+  requirementId?: number | null
+  requirementNo?: string | null
+  requirementTitle?: string | null
+  contentType?: string | null
+  imageFileId?: number | null
+  imagePosition?: number | null
+  focus?: string | null
 }
 
 interface RagModelOption {
@@ -511,6 +552,7 @@ interface RagMessage {
   summaryPoints?: string[]
   thinkingSteps?: RagThinkingStep[]
   citations?: RagCitation[]
+  warnings?: string[]
   retrievedCount?: number
   llmModelId?: number | null
   llmModelLabel?: string | null
@@ -553,6 +595,7 @@ const selectedLlmModelId = ref<number | null>(null)
 const draftQuestion = ref('')
 const searchMode = ref<SearchMode>('hybrid')
 const topK = ref(10)
+const selectedSearchScopes = ref<Array<'REQUIREMENT_BODY' | 'KNOWLEDGE_BASE'>>(['REQUIREMENT_BODY', 'KNOWLEDGE_BASE'])
 const asking = ref(false)
 const streamingMessageId = ref<string | null>(null)
 const refreshing = ref(false)
@@ -949,6 +992,16 @@ function handleCitationClick(message: RagMessage, citationIndex: number) {
   const citation = message.citations?.[citationIndex]
   if (!citation) return
 
+  if (isRequirementBodyCitation(citation)) {
+    void navigateToRequirement(citation)
+    return
+  }
+  if (isCitationPreviewable(citation)) {
+    openPreview(citation)
+    return
+  }
+
+  // 不支持在线预览的文档仍保留展开片段能力。
   // 等待右侧面板渲染完成后展开目标引用并滚动
   nextTick(() => {
     if (citation.documentId != null) {
@@ -999,6 +1052,10 @@ async function handleAsk() {
     ElMessage.warning('请输入检索问题')
     return
   }
+  if (!selectedSearchScopes.value.length) {
+    ElMessage.warning('请至少选择一个检索范围')
+    return
+  }
 
   const requestQuery = buildRequestQuery(session, question)
   const askedAt = Date.now()
@@ -1027,7 +1084,8 @@ async function handleAsk() {
         mode: searchMode.value,
         knowledgeBaseId: knowledgeBase.id,
         topK: topK.value,
-        llmModelId: selectedModel?.id
+        llmModelId: selectedModel?.id,
+        searchScopes: selectedSearchScopes.value
       },
       {
         onResults(response) {
@@ -1042,6 +1100,7 @@ async function handleAsk() {
             citations: response.citations?.length
               ? buildCitationsFromBackend(response.citations, question)
               : buildCitations(response.results || [], question),
+            warnings: response.warnings || [],
           })
           session.messages.push(assistantMessage)
           session.updatedAt = assistantMessage.createdAt
@@ -1061,7 +1120,8 @@ async function handleAsk() {
               question,
               knowledgeBaseName: knowledgeBase.name,
               session,
-              streamAnswer: false
+              streamAnswer: false,
+              warnings: response?.warnings || []
             })
             session.messages.push(assistantMessage)
             activeInsightMessageId.value = assistantMessage.id
@@ -1079,6 +1139,7 @@ async function handleAsk() {
           assistantMessage.citations = response.citations?.length
             ? buildCitationsFromBackend(response.citations, question)
             : buildCitations(response?.results || [], question)
+          assistantMessage.warnings = response?.warnings || assistantMessage.warnings || []
           assistantMessage.retrievedCount = response?.total || response?.results?.length || 0
           // 优先使用后端返回的 thinkingSteps，前端仅作兜底
           assistantMessage.thinkingSteps = response.thinkingSteps?.length
@@ -1115,7 +1176,8 @@ async function handleAsk() {
         searchMode.value,
         knowledgeBase.id,
         topK.value,
-        selectedChatModel.value?.id
+        selectedChatModel.value?.id,
+        selectedSearchScopes.value
       ) as SearchResponse | null
       const assistantMessage = createAssistantMessage({
         response,
@@ -1128,6 +1190,7 @@ async function handleAsk() {
         citations: response?.citations?.length
           ? buildCitationsFromBackend(response.citations, question)
           : buildCitations(response?.results || [], question),
+        warnings: response?.warnings || []
       })
       session.messages.push(assistantMessage)
       session.updatedAt = assistantMessage.createdAt
@@ -1263,6 +1326,7 @@ function createAssistantMessage(options: {
   questionIntent?: string | null
   intentConfidence?: number | null
   citations?: RagCitation[]
+  warnings?: string[]
 }): RagMessage {
   const response = options.response
   const content = options.streamAnswer ? '' : buildAnswerContent(response, options.question)
@@ -1285,6 +1349,7 @@ function createAssistantMessage(options: {
       llmModelLabel: selectedChatModel.value?.label || null
     }),
     citations: options.citations ?? buildCitations(response?.results || [], options.question),
+    warnings: options.warnings ?? response?.warnings ?? [],
     retrievedCount: response?.total || response?.results?.length || 0,
     llmModelId: selectedChatModel.value?.id || null,
     llmModelLabel: selectedChatModel.value?.label || null
@@ -1292,6 +1357,10 @@ function createAssistantMessage(options: {
 }
 
 function openPreview(citation: RagCitation) {
+  if (!isCitationPreviewable(citation)) {
+    ElMessage.info('该文档暂不支持在线预览，可展开查看命中片段')
+    return
+  }
   previewState.value = {
     knowledgeBaseId: citation.knowledgeBaseId,
     documentId: citation.documentId,
@@ -1300,6 +1369,96 @@ function openPreview(citation: RagCitation) {
     downloadUrl: `/api/v1/knowledge/bases/${citation.knowledgeBaseId}/documents/${citation.documentId}/download`
   }
   previewVisible.value = true
+}
+
+function isRequirementBodyCitation(citation: RagCitation) {
+  return (citation.sourceType || '').startsWith('requirement_body')
+}
+
+function isCitationPreviewable(citation: RagCitation) {
+  if (isRequirementBodyCitation(citation) || !citation.documentId || !citation.knowledgeBaseId) {
+    return false
+  }
+  const extension = normalizeFileExtension(citation.fileType || citation.fileName)
+  return PREVIEW_SUPPORTED_EXTENSION_SET.has(extension)
+}
+
+function resolveCitationActionLabel(citation: RagCitation) {
+  if (isRequirementBodyCitation(citation)) return '查看工单'
+  return isCitationPreviewable(citation) ? '预览' : '展开片段'
+}
+
+function resolveCitationActionTitle(citation: RagCitation) {
+  if (isRequirementBodyCitation(citation)) return '打开工单详情'
+  return isCitationPreviewable(citation) ? '预览引用文档' : '该文档暂不支持在线预览，可展开查看命中片段'
+}
+
+function citationKey(citation: RagCitation) {
+  return [
+    citation.documentId ?? 'requirement',
+    citation.requirementId ?? '',
+    citation.requirementNo ?? '',
+    citation.fileName ?? '',
+  ].join('-')
+}
+
+function formatCitationTitle(citation: RagCitation) {
+  if (!isRequirementBodyCitation(citation)) {
+    return citation.fileName
+  }
+  const requirementNo = citation.requirementNo?.trim() || ''
+  const requirementTitle = citation.requirementTitle?.trim() || citation.fileName || '未命名工单'
+  return requirementNo ? `${requirementNo} ${requirementTitle}` : requirementTitle
+}
+
+function resolveCitationTypeLabel(citation: RagCitation) {
+  if (citation.contentType === 'image_ocr') return '图片 OCR'
+  if (citation.contentType === 'image_caption') return '图片理解'
+  if (citation.contentType === 'body_image') return '正文 + 图片'
+  return '工单正文'
+}
+
+async function navigateToRequirement(citation: RagCitation) {
+  if (!citation.requirementId) {
+    ElMessage.warning('该引用缺少工单标识，暂时无法跳转')
+    return
+  }
+  previewVisible.value = false
+  try {
+    await router.push({
+      name: 'RequirementDetail',
+      params: { id: citation.requirementId },
+      query: citation.imageFileId
+        ? {
+            focus: citation.focus || 'image',
+            fileId: String(citation.imageFileId),
+            ...(citation.imagePosition ? { position: String(citation.imagePosition) } : {})
+          }
+        : undefined,
+    })
+  } catch (error: any) {
+    ElMessage.error(error?.message || '工单详情打开失败，请确认你有权限查看该工单')
+  }
+}
+
+function handleCitationPrimaryAction(citation: RagCitation) {
+  if (isRequirementBodyCitation(citation)) {
+    void navigateToRequirement(citation)
+  } else if (isCitationPreviewable(citation)) {
+    openPreview(citation)
+  } else {
+    toggleCitationExpand(citation)
+  }
+}
+
+function handleCitationHeaderClick(citation: RagCitation) {
+  if (isRequirementBodyCitation(citation)) {
+    void navigateToRequirement(citation)
+  } else if (isCitationPreviewable(citation)) {
+    openPreview(citation)
+  } else {
+    toggleCitationExpand(citation)
+  }
 }
 
 function toggleCitationExpand(citation: RagCitation) {
@@ -1473,12 +1632,29 @@ function buildCitations(results: SearchResultItem[], question: string): RagCitat
         pageText: pageNum > 0 ? `第 ${pageNum} 页` : '页码未标注',
         pageSet: pageNum > 0 ? new Set([pageNum]) : new Set<number>(),
         textPool: [item.content],
-        sectionPool: item.sectionTitle ? [item.sectionTitle] : []
+        sectionPool: item.sectionTitle ? [item.sectionTitle] : [],
+        sourceType: item.requirement ? 'requirement_body' : null,
+        requirementId: item.requirement?.id ?? null,
+        requirementNo: item.requirement?.requirementNo ?? null,
+        requirementTitle: item.requirement?.title ?? null,
+        contentType: item.sectionTitle?.includes('OCR')
+          ? 'image_ocr'
+          : item.sectionTitle?.includes('图片理解') ? 'image_caption' : 'body',
+        imageFileId: item.imageFileId ?? null,
+        imagePosition: item.imagePosition ?? null,
+        focus: item.focus ?? null
       })
       return
     }
 
     existing.hitCount += 1
+    if (item.score >= existing.score) {
+      existing.imageFileId = item.imageFileId ?? existing.imageFileId
+      existing.imagePosition = item.imagePosition ?? existing.imagePosition
+      existing.focus = item.focus ?? existing.focus
+      if (item.sectionTitle?.includes('OCR')) existing.contentType = 'image_ocr'
+      else if (item.sectionTitle?.includes('图片理解')) existing.contentType = 'image_caption'
+    }
     existing.score = Math.max(existing.score, item.score)
     existing.textPool.push(item.content)
     if (item.sectionTitle) {
@@ -1524,7 +1700,7 @@ function buildCitations(results: SearchResultItem[], question: string): RagCitat
  */
 function buildCitationsFromBackend(citations: CitationReference[], question: string): RagCitation[] {
   return citations.map((c) => ({
-    knowledgeBaseId: selectedKbId.value ?? 0,
+    knowledgeBaseId: Number(c.knowledgeBaseId || selectedKbId.value || 0),
     documentId: c.documentId,
     fileName: c.fileName,
     fileType: detectFileType(c.fileName),
@@ -1534,6 +1710,14 @@ function buildCitationsFromBackend(citations: CitationReference[], question: str
     hitCount: c.hitCount,
     pageText: `${c.hitCount} 个片段`,
     chunks: undefined,
+    sourceType: c.sourceType,
+    requirementId: c.requirementId,
+    requirementNo: c.requirementNo,
+    requirementTitle: c.requirementTitle,
+    contentType: c.contentType,
+    imageFileId: c.imageFileId ?? null,
+    imagePosition: c.imagePosition ?? null,
+    focus: c.focus ?? null,
   }))
 }
 
@@ -2617,11 +2801,26 @@ function scrollToBottom() {
   &--expanded {
     border-color: rgba(37, 99, 235, 0.25);
   }
+
+  &--requirement {
+    border-color: rgba(37, 99, 235, 0.22);
+    background: rgba(239, 246, 255, 0.72);
+  }
 }
 
 .citation-item__header {
   padding: 10px 12px;
   cursor: pointer;
+}
+
+.citation-item--previewable .citation-item__header,
+.citation-item--requirement .citation-item__header {
+  cursor: pointer;
+}
+
+.citation-item--previewable .citation-item__header:hover,
+.citation-item--requirement .citation-item__header:hover {
+  background: rgba(239, 246, 255, 0.72);
 }
 
 .citation-item__name {

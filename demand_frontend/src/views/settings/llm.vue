@@ -396,8 +396,9 @@
         </div>
         <el-form-item label="模型类型" prop="modelType">
           <el-select v-model="modelForm.modelType" allow-create filterable default-first-option style="width: 100%">
-            <el-option v-for="r in presetTypes" :key="r" :label="r" :value="r" />
+            <el-option v-for="r in presetTypes" :key="r" :label="modelTypeOptionLabel(r)" :value="r" />
           </el-select>
+          <div v-if="modelForm.modelType === 'vision'" class="form-hint">用于图片 OCR、截图、图表和页面内容理解，并在“模型应用”中按功能点绑定</div>
         </el-form-item>
         <el-form-item v-if="modelForm.modelType === 'embedding'" label="向量维度" class="form-row-item">
           <el-input-number v-model="modelForm.dimension" :min="1" :max="8192" :step="256" placeholder="如 1024、2048" style="width: 100%" />
@@ -610,7 +611,7 @@
           <div class="application-intro">
             <div>
               <h3>功能点模型应用</h3>
-              <p>为不同业务功能单独指定默认模型；未指定时会自动回退到对应类型的全局默认模型。</p>
+              <p>为不同业务功能单独指定默认模型；未指定时普通功能会自动回退，图片理解功能未配置时会跳过图片处理。</p>
             </div>
             <el-tag type="info">共 {{ applications.length }} 个功能点</el-tag>
           </div>
@@ -627,7 +628,10 @@
             <div v-for="application in applications" :key="application.code" class="application-card">
               <div class="application-card-header">
                 <div>
-                  <div class="application-name">{{ application.name }}</div>
+                  <div class="application-name">
+                    <span>{{ application.name }}</span>
+                    <el-tag v-if="application.modelType === 'vision'" type="warning" size="small">多模态</el-tag>
+                  </div>
                   <div class="application-code">{{ application.code }}</div>
                 </div>
                 <el-switch
@@ -638,7 +642,7 @@
               </div>
               <p class="application-description">{{ application.description }}</p>
               <el-form label-position="top" size="default">
-                <el-form-item label="默认模型">
+                <el-form-item :label="applicationModelLabel(application)">
                   <el-select
                     v-model="application.modelId"
                     clearable
@@ -655,6 +659,12 @@
                       :value="option.id"
                     />
                   </el-select>
+                  <div
+                    v-if="application.modelType === 'vision' && applicationModelOptions(application).length === 0"
+                    class="form-hint"
+                  >
+                    请先在“接入组与模型”中新增并启用 vision 类型模型；未配置时将自动跳过图片理解
+                  </div>
                 </el-form-item>
               </el-form>
               <div class="application-current">
@@ -669,6 +679,10 @@
                 <template v-else-if="application.modelId">
                   <el-tag type="danger" size="small">不可用</el-tag>
                   <span>模型不存在、未启用或接入组未启用</span>
+                </template>
+                <template v-else-if="isImageUnderstandingApplication(application)">
+                  <el-tag type="warning" size="small">未配置</el-tag>
+                  <span>未选择 vision 模型，向量化时将跳过正文图片 OCR/理解</span>
                 </template>
                 <template v-else>
                   <el-tag type="info" size="small">自动回退</el-tag>
@@ -785,13 +799,14 @@ const modelTypeFilters = computed(() => {
   const countByType = (type: string) => type === 'all'
     ? all.length
     : type === 'chat'
-      ? all.filter(m => m.modelType !== 'embedding' && m.modelType !== 'rerank').length
+      ? all.filter(m => m.modelType !== 'embedding' && m.modelType !== 'rerank' && m.modelType !== 'vision').length
       : all.filter(m => m.modelType === type).length
   return [
     { value: 'all', label: '全部', count: countByType('all') },
     { value: 'chat', label: '对话', count: countByType('chat') },
     { value: 'embedding', label: 'Embedding', count: countByType('embedding') },
     { value: 'rerank', label: 'Reranker', count: countByType('rerank') },
+    { value: 'vision', label: '多模态', count: countByType('vision') },
   ]
 })
 
@@ -804,8 +819,10 @@ const pagedModels = computed(() => {
     all = all.filter(m => m.modelType === 'embedding')
   } else if (modelTypeFilter.value === 'rerank') {
     all = all.filter(m => m.modelType === 'rerank')
+  } else if (modelTypeFilter.value === 'vision') {
+    all = all.filter(m => m.modelType === 'vision')
   } else if (modelTypeFilter.value === 'chat') {
-    all = all.filter(m => m.modelType !== 'embedding' && m.modelType !== 'rerank')
+    all = all.filter(m => m.modelType !== 'embedding' && m.modelType !== 'rerank' && m.modelType !== 'vision')
   }
   if (all.length <= modelPageSize) return all
   const start = (modelCurrentPage.value - 1) * modelPageSize
@@ -862,7 +879,7 @@ const modelDialogVisible = ref(false)
 const editingModelId = ref<number | null>(null)
 const currentProviderId = ref<number | null>(null)
 const modelFormRef = ref<FormInstance>()
-const presetTypes = ref<string[]>(['primary', 'haiku', 'sonnet', 'opus', 'embedding', 'rerank', 'general'])
+const presetTypes = ref<string[]>(['primary', 'haiku', 'sonnet', 'opus', 'embedding', 'rerank', 'vision', 'general'])
 const modelForm = reactive<LlmModelForm>({
   name: '',
   modelId: '',
@@ -984,6 +1001,18 @@ async function loadApplications() {
   } finally {
     applicationsLoading.value = false
   }
+}
+
+function isImageUnderstandingApplication(application: LlmApplication) {
+  return application.code === 'knowledge.image-understanding'
+}
+
+function applicationModelLabel(application: LlmApplication) {
+  return application.modelType === 'vision' ? '多模态模型' : '默认模型'
+}
+
+function modelTypeOptionLabel(modelType: string) {
+  return modelType === 'vision' ? '多模态（vision）' : modelType
 }
 
 function applicationModelOptions(application: LlmApplication) {
@@ -1452,6 +1481,7 @@ function typeTagType(modelType: string): string {
     opus: 'warning',
     embedding: 'info',
     rerank: 'danger',
+    vision: 'warning',
     general: 'info',
   }
   return map[modelType] ?? 'info'
@@ -2320,6 +2350,9 @@ async function handleSniffImport() {
 }
 
 .application-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   color: var(--el-text-color-primary);
   font-weight: 600;
 }

@@ -178,3 +178,81 @@ function parseStreamMessage(payload: string) {
     return payload
   }
 }
+
+// ==================== 快捷提问 API ====================
+
+export interface QuickQuestion {
+  id: number
+  category: 'manual_curated' | 'auto_extracted' | 'ai_suggested'
+  questionText: string
+  pageRoute: string | null
+  weight: number
+  sortOrder: number
+  hitCount: number
+  status: 'enabled' | 'disabled'
+}
+
+export interface ExtractedQuestion {
+  questionText: string
+  questionHash: string
+  pageRoute: string
+  frequency: number
+  avgRating: number
+  aiConfidence: number
+  lastAskedAt: string
+  infoLevel: '丰富' | '中等' | '基础'
+}
+
+export function getQuickQuestions(pageRoute?: string) {
+  return request.get<QuickQuestion[]>('/v1/assistant/quick-questions', {
+    params: { pageRoute: pageRoute || '' },
+  })
+}
+
+export function recordQuickQuestionClick(id: number) {
+  return request.post<void>(`/v1/assistant/quick-questions/${id}/click`)
+}
+
+export function listAllQuickQuestions(params?: { pageRoute?: string; status?: string; category?: string }) {
+  return request.get<QuickQuestion[]>('/v1/assistant/admin/quick-questions', { params })
+}
+
+export function getExtractedQuestions(windowDays?: number, minFrequency?: number) {
+  return request.get<ExtractedQuestion[]>('/v1/assistant/admin/quick-questions/extracted', {
+    params: { windowDays: windowDays ?? 30, minFrequency: minFrequency ?? 5 },
+  })
+}
+
+export function createQuickQuestion(data: {
+  questionText: string
+  category?: string
+  pageRoute?: string | null
+  weight?: number
+  sortOrder?: number
+  status?: string
+}) {
+  return request.post<QuickQuestion>('/v1/assistant/admin/quick-questions', data)
+}
+
+export function updateQuickQuestion(id: number, data: {
+  questionText: string
+  category?: string
+  pageRoute?: string | null
+  weight?: number
+  sortOrder?: number
+  status?: string
+}) {
+  return request.put<QuickQuestion>(`/v1/assistant/admin/quick-questions/${id}`, data)
+}
+
+export function deleteQuickQuestion(id: number) {
+  return request.delete<void>(`/v1/assistant/admin/quick-questions/${id}`)
+}
+
+export function toggleQuickQuestionStatus(id: number, status: string) {
+  return request.put<void>(`/v1/assistant/admin/quick-questions/${id}/status`, null, { params: { status } })
+}
+
+export function adoptAiSuggestion(data: { questionText: string; pageRoute?: string | null; questionHash?: string }) {
+  return request.post<QuickQuestion>('/v1/assistant/admin/quick-questions/adopt', data)
+}

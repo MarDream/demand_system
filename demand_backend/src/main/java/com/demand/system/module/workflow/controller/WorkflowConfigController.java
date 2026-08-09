@@ -1,15 +1,18 @@
 package com.demand.system.module.workflow.controller;
 
 import com.demand.system.common.result.Result;
+import com.demand.system.module.workflow.dto.WorkflowHistoryVO;
 import com.demand.system.module.workflow.entity.WorkflowState;
 import com.demand.system.module.workflow.entity.WorkflowTransition;
 import com.demand.system.module.workflow.entity.WorkflowVersion;
+import com.demand.system.module.workflow.mapper.WorkflowHistoryMapper;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.demand.system.module.workflow.service.WorkflowService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/v1")
@@ -18,10 +21,13 @@ public class WorkflowConfigController {
 
     private final WorkflowService workflowService;
     private final WorkflowVersionMapper workflowVersionMapper;
+    private final WorkflowHistoryMapper workflowHistoryMapper;
 
-    public WorkflowConfigController(WorkflowService workflowService, WorkflowVersionMapper workflowVersionMapper) {
+    public WorkflowConfigController(WorkflowService workflowService, WorkflowVersionMapper workflowVersionMapper,
+                                     WorkflowHistoryMapper workflowHistoryMapper) {
         this.workflowService = workflowService;
         this.workflowVersionMapper = workflowVersionMapper;
+        this.workflowHistoryMapper = workflowHistoryMapper;
     }
 
     @GetMapping("/projects/{id}/workflow/states")
@@ -74,7 +80,23 @@ public class WorkflowConfigController {
 
     @GetMapping("/projects/{id}/workflow/versions")
     public Result<List<WorkflowVersion>> getVersions(@PathVariable("id") Long projectId) {
-        return Result.success(workflowService.getVersions(projectId));
+        List<WorkflowVersion> versions = workflowService.getVersions(projectId);
+        // 附带每个版本的最近发布时间（放在 changeLog 字段里透传给前端）
+        versions.forEach(v -> {
+            WorkflowHistoryVO latest = workflowHistoryMapper.selectLatestPublishByVersionId(v.getId());
+            if (latest != null) {
+                v.setChangeLog(latest.getCreatedAt() != null ? latest.getCreatedAt().toString() : null);
+            }
+        });
+        return Result.success(versions);
+    }
+
+    /**
+     * 查询指定版本的修改历史时间线
+     */
+    @GetMapping("/workflow/versions/{versionId}/history")
+    public Result<List<WorkflowHistoryVO>> getHistory(@PathVariable("versionId") Long versionId) {
+        return Result.success(workflowHistoryMapper.selectHistoryByVersionId(versionId));
     }
 
     @PostMapping("/projects/{id}/workflow/versions")

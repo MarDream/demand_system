@@ -24,7 +24,7 @@ public interface WorkflowConfigService {
     /**
      * 提交审核
      */
-    void submitForApproval(Long projectId);
+    void submitForApproval(Long projectId, Long versionId);
 
     /**
      * 获取历史版本列表
@@ -86,7 +86,7 @@ public interface WorkflowConfigService {
      */
     void clearAllApprovals();
 
-    WorkflowValidationReport validateLatestDraft(Long projectId);
+    WorkflowValidationReport validateLatestDraft(Long projectId, Long versionId);
 
     WorkflowValidationReport validateVersionReport(Long versionId);
 

@@ -99,10 +99,14 @@ export interface WorkflowVersionDTO {
   creatorId: number
   creatorName: string
   createdAt: string
+  /** 编辑时间（最近一次保存/启停/复制等变更时间；存量数据回退为创建时间） */
+  updatedAt?: string
   latestApprovalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED'
   latestApprovalComment?: string
   latestSubmittedAt?: string
   latestApprovedAt?: string
+  /** 最近一次发布时间（从workflow_history回填） */
+  changeLog?: string
   config?: WorkflowConfigDTO
   knowledgeBaseId?: number
   knowledgeBaseName?: string

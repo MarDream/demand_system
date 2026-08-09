@@ -157,6 +157,12 @@ export const routes: RouteRecordRaw[] = [
         meta: { title: '模型配置', requiredPermissions: ['menu:settings:llm'] },
       },
       {
+        path: 'settings/assistant',
+        name: 'AssistantSettings',
+        component: () => import('@/views/settings/assistant.vue'),
+        meta: { title: 'AI 助手设置', hidden: true, requiredPermissions: ['menu:system-config'] },
+      },
+      {
         path: 'notifications',
         name: 'Notifications',
         component: () => import('@/views/notifications/index.vue'),

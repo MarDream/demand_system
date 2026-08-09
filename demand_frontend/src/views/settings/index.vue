@@ -42,6 +42,7 @@ const cardMeta: Record<string, { description: string; color: string; buttonType:
   '/settings/menus': { description: '维护菜单、按钮以及角色授权能力', color: 'var(--color-danger)', buttonType: 'danger' },
   '/settings/knowledge': { description: '创建和管理知识库，配置文档索引', color: '#2C3E50', buttonType: '' },
   '/settings/llm': { description: '配置文档知识库可用的大模型参数和密钥', color: '#9B59B6', buttonType: 'primary' },
+  '/settings/assistant': { description: '维护AI助手快捷提问，管理人工配置与AI自动提炼', color: '#E67E22', buttonType: 'primary' },
 }
 
 // 权限校验映射：path -> 权限判断函数
@@ -54,6 +55,7 @@ const pathPermissions: Record<string, () => boolean> = {
   '/settings/menus': () => hasPermission('menu:menu-management') || hasAnyPermission(['button:menu:create', 'button:menu:update', 'button:menu:delete']),
   '/settings/knowledge': () => hasPermission('menu:knowledge'),
   '/settings/llm': () => hasPermission('menu:settings:llm') || hasPermission('menu:system-config'),
+  '/settings/assistant': () => hasPermission('menu:system-config') || hasAnyRole(['admin', 'SUPER_ADMIN']),
 }
 
 const iconMap: Record<string, Component> = {}
@@ -62,7 +64,7 @@ for (const [name, comp] of Object.entries(ElementPlusIcons)) {
 }
 
 const menuItems = ref<MenuItem[]>([])
-const fallbackPaths = ['/settings/llm']
+const fallbackPaths = ['/settings/llm', '/settings/assistant']
 
 onMounted(async () => {
   try {
@@ -120,12 +122,16 @@ const visibleCards = computed<CardItem[]>(() => {
       path,
       title: path === '/settings/llm'
         ? '模型配置'
+        : path === '/settings/assistant'
+        ? 'AI 助手设置'
         : path,
       description: meta.description,
       icon: path === '/settings/llm'
         ? 'ri-robot-2-line'
+        : path === '/settings/assistant'
+        ? 'ri-robot-2-line'
         : 'Setting',
-      isRemix: path === '/settings/llm',
+      isRemix: path === '/settings/llm' || path === '/settings/assistant',
       color: meta.color,
       buttonType: meta.buttonType,
       visible: () => true,

@@ -218,6 +218,7 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
                 existingVersion.setKnowledgeBaseId(null);
             }
 
+            existingVersion.setUpdatedAt(LocalDateTime.now());
             workflowVersionMapper.updateById(existingVersion);
 
             log.info("更新工作流版本成功，projectId={}, versionId={}, status={}", normalizedProjectId, existingVersion.getId(), existingVersion.getActivationStatus());
@@ -264,6 +265,7 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         draftVersion.setDefinition(compiled.definitionJson());
         draftVersion.setRuntimeHash(compiled.runtimeHash());
         draftVersion.setConfigHash(compiled.configHash());
+        draftVersion.setUpdatedAt(LocalDateTime.now());
         workflowVersionMapper.updateById(draftVersion);
 
         log.info("新建工作流草稿成功，projectId={}, versionId={}, version={}", normalizedProjectId, draftVersion.getId(), draftVersion.getVersion());
@@ -411,14 +413,14 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void submitForApproval(Long projectId) {
+    public void submitForApproval(Long projectId, Long versionId) {
         Long currentUserId = SecurityUtils.getCurrentUserId();
         if (currentUserId == null) {
             throw new BusinessException("用户未登录");
         }
 
         Long normalizedProjectId = normalizeProjectId(projectId);
-        WorkflowVersion draftVersion = findLatestInactiveVersion(normalizedProjectId);
+        WorkflowVersion draftVersion = resolveSubmissionVersion(normalizedProjectId, versionId, "没有可提交的版本");
 
         if (draftVersion == null) {
             throw new BusinessException("没有可提交的版本");
@@ -442,12 +444,13 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         List<WorkflowEdge> edges = workflowEdgeMapper.selectList(new LambdaQueryWrapper<WorkflowEdge>()
                 .eq(WorkflowEdge::getWorkflowVersionId, draftVersion.getId()));
         WorkflowValidationReport validationReport = buildValidationReport(draftVersion, nodes, edges, false);
-        // 任何校验问题（error/warning/info）都拦截提交审核
-        if (validationReport.getErrorCount() > 0 || validationReport.getWarningCount() > 0 || validationReport.getInfoCount() > 0) {
+        // 仅错误阻断提交；warning/info 已由前端展示并允许用户确认后继续。
+        if (validationReport.getErrorCount() > 0) {
             throw new BusinessException(400, "工作流配置存在异常，请修复后再提交审核", validationReport);
         }
 
         draftVersion.setActivationStatus("pending");
+        draftVersion.setUpdatedAt(LocalDateTime.now());
         workflowVersionMapper.updateById(draftVersion);
 
         // 创建审核记录
@@ -563,12 +566,9 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
     }
 
     @Override
-    public WorkflowValidationReport validateLatestDraft(Long projectId) {
+    public WorkflowValidationReport validateLatestDraft(Long projectId, Long versionId) {
         Long normalizedProjectId = normalizeProjectId(projectId);
-        WorkflowVersion draftVersion = findLatestInactiveVersion(normalizedProjectId);
-        if (draftVersion == null) {
-            throw new BusinessException("没有可校验的版本");
-        }
+        WorkflowVersion draftVersion = resolveSubmissionVersion(normalizedProjectId, versionId, "没有可校验的版本");
         List<WorkflowNode> nodes = workflowNodeMapper.selectList(new LambdaQueryWrapper<WorkflowNode>()
                 .eq(WorkflowNode::getWorkflowVersionId, draftVersion.getId()));
         List<WorkflowEdge> edges = workflowEdgeMapper.selectList(new LambdaQueryWrapper<WorkflowEdge>()
@@ -730,6 +730,7 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         WorkflowVersion version = workflowVersionMapper.selectById(approval.getWorkflowVersionId());
         if (version != null) {
             version.setActivationStatus("approved");
+            version.setUpdatedAt(LocalDateTime.now());
             workflowVersionMapper.updateById(version);
             log.info("审核通过工作流版本，versionId={}, projectId={}，请手动启用后生效", version.getId(), version.getProjectId());
         }
@@ -767,6 +768,7 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         WorkflowVersion version = workflowVersionMapper.selectById(approval.getWorkflowVersionId());
         if (version != null) {
             version.setActivationStatus("draft");
+            version.setUpdatedAt(LocalDateTime.now());
             workflowVersionMapper.updateById(version);
         }
 
@@ -998,6 +1000,31 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
                 .orElse(null);
     }
 
+    /**
+     * 解析本次校验/提交所针对的工作流版本。
+     * <p>
+     * 同一 projectId 下可能存在多个工作流。编辑器传入 versionId 时必须精确使用该版本，
+     * 不能按 projectId 选择“最新草稿”，否则会把其他工作流的节点错误地作为当前工作流校验结果。
+     */
+    private WorkflowVersion resolveSubmissionVersion(Long projectId, Long versionId, String missingMessage) {
+        if (versionId == null) {
+            WorkflowVersion latestVersion = findLatestInactiveVersion(projectId);
+            if (latestVersion == null) {
+                throw new BusinessException(missingMessage);
+            }
+            return latestVersion;
+        }
+
+        WorkflowVersion version = workflowVersionMapper.selectById(versionId);
+        if (version == null) {
+            throw new BusinessException("指定的工作流版本不存在");
+        }
+        if (!Objects.equals(normalizeProjectId(version.getProjectId()), projectId)) {
+            throw new BusinessException("指定的工作流版本不属于当前工作流范围");
+        }
+        return version;
+    }
+
     private boolean hasPendingApproval(Long versionId) {
         LambdaQueryWrapper<WorkflowApproval> approvalQuery = new LambdaQueryWrapper<>();
         approvalQuery.eq(WorkflowApproval::getWorkflowVersionId, versionId)
@@ -1033,6 +1060,7 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         newVersion.setActivationStatus("draft");
         newVersion.setCreatorId(currentUserId);
         newVersion.setCreatedAt(LocalDateTime.now());
+        newVersion.setUpdatedAt(LocalDateTime.now());
         workflowVersionMapper.insert(newVersion);
         return newVersion;
     }

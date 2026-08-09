@@ -15,6 +15,7 @@ public class KnowledgeSearchResponse {
     private String questionIntent;
     private Double intentConfidence;
     private List<CitationReference> citations;
+    private List<String> warnings;
 
     public List<SearchResultItem> getResults() {
         return results;
@@ -87,6 +88,9 @@ public class KnowledgeSearchResponse {
     public void setCitations(List<CitationReference> citations) {
         this.citations = citations;
     }
+
+    public List<String> getWarnings() { return warnings; }
+    public void setWarnings(List<String> warnings) { this.warnings = warnings; }
 
     public static KnowledgeSearchResponseBuilder builder() {
         return new KnowledgeSearchResponseBuilder();
@@ -168,6 +172,15 @@ public class KnowledgeSearchResponse {
         private Double maxScore;
         private List<String> sources;
         private String knowledgeBaseId;
+        private String sourceType;
+        private Long requirementId;
+        private String requirementNo;
+        private String requirementTitle;
+        /** 命中内容类型：body、image_ocr、image_caption 或 body_image。 */
+        private String contentType;
+        private Long imageFileId;
+        private Integer imagePosition;
+        private String focus;
 
         public Integer getIndex() { return index; }
         public void setIndex(Integer index) { this.index = index; }
@@ -183,6 +196,22 @@ public class KnowledgeSearchResponse {
         public void setSources(List<String> sources) { this.sources = sources; }
         public String getKnowledgeBaseId() { return knowledgeBaseId; }
         public void setKnowledgeBaseId(String knowledgeBaseId) { this.knowledgeBaseId = knowledgeBaseId; }
+        public String getSourceType() { return sourceType; }
+        public void setSourceType(String sourceType) { this.sourceType = sourceType; }
+        public Long getRequirementId() { return requirementId; }
+        public void setRequirementId(Long requirementId) { this.requirementId = requirementId; }
+        public String getRequirementNo() { return requirementNo; }
+        public void setRequirementNo(String requirementNo) { this.requirementNo = requirementNo; }
+        public String getRequirementTitle() { return requirementTitle; }
+        public void setRequirementTitle(String requirementTitle) { this.requirementTitle = requirementTitle; }
+        public String getContentType() { return contentType; }
+        public void setContentType(String contentType) { this.contentType = contentType; }
+        public Long getImageFileId() { return imageFileId; }
+        public void setImageFileId(Long imageFileId) { this.imageFileId = imageFileId; }
+        public Integer getImagePosition() { return imagePosition; }
+        public void setImagePosition(Integer imagePosition) { this.imagePosition = imagePosition; }
+        public String getFocus() { return focus; }
+        public void setFocus(String focus) { this.focus = focus; }
 
         public static Builder builder() { return new Builder(); }
 
@@ -194,6 +223,14 @@ public class KnowledgeSearchResponse {
             private Double maxScore;
             private List<String> sources;
             private String knowledgeBaseId;
+            private String sourceType;
+            private Long requirementId;
+            private String requirementNo;
+            private String requirementTitle;
+            private String contentType;
+            private Long imageFileId;
+            private Integer imagePosition;
+            private String focus;
 
             public Builder index(Integer v) { this.index = v; return this; }
             public Builder documentId(Long v) { this.documentId = v; return this; }
@@ -202,6 +239,14 @@ public class KnowledgeSearchResponse {
             public Builder maxScore(Double v) { this.maxScore = v; return this; }
             public Builder sources(List<String> v) { this.sources = v; return this; }
             public Builder knowledgeBaseId(String v) { this.knowledgeBaseId = v; return this; }
+            public Builder sourceType(String v) { this.sourceType = v; return this; }
+            public Builder requirementId(Long v) { this.requirementId = v; return this; }
+            public Builder requirementNo(String v) { this.requirementNo = v; return this; }
+            public Builder requirementTitle(String v) { this.requirementTitle = v; return this; }
+            public Builder contentType(String v) { this.contentType = v; return this; }
+            public Builder imageFileId(Long v) { this.imageFileId = v; return this; }
+            public Builder imagePosition(Integer v) { this.imagePosition = v; return this; }
+            public Builder focus(String v) { this.focus = v; return this; }
 
             public CitationReference build() {
                 CitationReference r = new CitationReference();
@@ -212,6 +257,14 @@ public class KnowledgeSearchResponse {
                 r.setMaxScore(maxScore);
                 r.setSources(sources);
                 r.setKnowledgeBaseId(knowledgeBaseId);
+                r.setSourceType(sourceType);
+                r.setRequirementId(requirementId);
+                r.setRequirementNo(requirementNo);
+                r.setRequirementTitle(requirementTitle);
+                r.setContentType(contentType);
+                r.setImageFileId(imageFileId);
+                r.setImagePosition(imagePosition);
+                r.setFocus(focus);
                 return r;
             }
         }
@@ -227,6 +280,7 @@ public class KnowledgeSearchResponse {
         private String questionIntent;
         private Double intentConfidence;
         private List<CitationReference> citations;
+        private List<String> warnings;
 
         public KnowledgeSearchResponseBuilder results(List<SearchResultItem> results) {
             this.results = results;
@@ -273,6 +327,11 @@ public class KnowledgeSearchResponse {
             return this;
         }
 
+        public KnowledgeSearchResponseBuilder warnings(List<String> warnings) {
+            this.warnings = warnings;
+            return this;
+        }
+
         public KnowledgeSearchResponse build() {
             KnowledgeSearchResponse response = new KnowledgeSearchResponse();
             response.setResults(results);
@@ -284,6 +343,7 @@ public class KnowledgeSearchResponse {
             response.setQuestionIntent(questionIntent);
             response.setIntentConfidence(intentConfidence);
             response.setCitations(citations);
+            response.setWarnings(warnings);
             return response;
         }
     }
@@ -298,6 +358,9 @@ public class KnowledgeSearchResponse {
         private Double score;
         private String knowledgeBaseId;
         private RequirementReference requirement;
+        private Long imageFileId;
+        private Integer imagePosition;
+        private String focus;
 
         public Long getChunkId() {
             return chunkId;
@@ -370,6 +433,12 @@ public class KnowledgeSearchResponse {
         public void setRequirement(RequirementReference requirement) {
             this.requirement = requirement;
         }
+        public Long getImageFileId() { return imageFileId; }
+        public void setImageFileId(Long imageFileId) { this.imageFileId = imageFileId; }
+        public Integer getImagePosition() { return imagePosition; }
+        public void setImagePosition(Integer imagePosition) { this.imagePosition = imagePosition; }
+        public String getFocus() { return focus; }
+        public void setFocus(String focus) { this.focus = focus; }
 
         public static Builder builder() {
             return new Builder();
@@ -385,6 +454,9 @@ public class KnowledgeSearchResponse {
             private Double score;
             private String knowledgeBaseId;
             private RequirementReference requirement;
+            private Long imageFileId;
+            private Integer imagePosition;
+            private String focus;
 
             public Builder chunkId(Long chunkId) {
                 this.chunkId = chunkId;
@@ -431,6 +503,10 @@ public class KnowledgeSearchResponse {
                 return this;
             }
 
+            public Builder imageFileId(Long v) { this.imageFileId = v; return this; }
+            public Builder imagePosition(Integer v) { this.imagePosition = v; return this; }
+            public Builder focus(String v) { this.focus = v; return this; }
+
             public SearchResultItem build() {
                 SearchResultItem item = new SearchResultItem();
                 item.setChunkId(chunkId);
@@ -442,6 +518,9 @@ public class KnowledgeSearchResponse {
                 item.setScore(score);
                 item.setKnowledgeBaseId(knowledgeBaseId);
                 item.setRequirement(requirement);
+                item.setImageFileId(imageFileId);
+                item.setImagePosition(imagePosition);
+                item.setFocus(focus);
                 return item;
             }
         }
@@ -453,6 +532,7 @@ public class KnowledgeSearchResponse {
         private String status;
         private String type;
         private String summary;
+        private String requirementNo;
 
         public Long getId() {
             return id;
@@ -494,6 +574,14 @@ public class KnowledgeSearchResponse {
             this.summary = summary;
         }
 
+        public String getRequirementNo() {
+            return requirementNo;
+        }
+
+        public void setRequirementNo(String requirementNo) {
+            this.requirementNo = requirementNo;
+        }
+
         public static Builder builder() {
             return new Builder();
         }
@@ -504,6 +592,7 @@ public class KnowledgeSearchResponse {
             private String status;
             private String type;
             private String summary;
+            private String requirementNo;
 
             public Builder id(Long id) {
                 this.id = id;
@@ -530,6 +619,11 @@ public class KnowledgeSearchResponse {
                 return this;
             }
 
+            public Builder requirementNo(String requirementNo) {
+                this.requirementNo = requirementNo;
+                return this;
+            }
+
             public RequirementReference build() {
                 RequirementReference ref = new RequirementReference();
                 ref.setId(id);
@@ -537,6 +631,7 @@ public class KnowledgeSearchResponse {
                 ref.setStatus(status);
                 ref.setType(type);
                 ref.setSummary(summary);
+                ref.setRequirementNo(requirementNo);
                 return ref;
             }
         }

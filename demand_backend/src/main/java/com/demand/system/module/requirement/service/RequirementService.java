@@ -34,6 +34,9 @@ public interface RequirementService {
 
     RequirementVO getDetail(Long id);
 
+    /** 检索阶段使用的工单可见性校验，避免越权正文进入 LLM 上下文。 */
+    boolean canViewForSearch(com.demand.system.module.requirement.entity.Requirement requirement, Long userId);
+
     void create(RequirementCreateDTO dto, Long creatorId);
 
     void update(RequirementUpdateDTO dto, Long userId);

@@ -104,6 +104,7 @@
           @add-field="handleAddField"
           @view-switch="handleViewSwitch"
           @create-view="handleCreateView"
+          @rename-table="handleRenameTable"
           @rename-view="handleRenameView"
           @duplicate-view="handleDuplicateView"
           @set-default-view="handleSetDefaultView"
@@ -649,6 +650,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { resolveErrorMessage } from '@/utils/error'
+import { updateTable } from '@/api/modules/bitable'
 import { ArrowLeft, Plus, Delete, Edit, CopyDocument, ArrowRight, MagicStick, Grid, Menu, Calendar, Picture, Tickets } from '@element-plus/icons-vue'
 import { useCollapsibleSidebar } from '@/composables/useCollapsibleSidebar'
 import { useToast } from '@/composables/useToast'
@@ -1214,6 +1216,19 @@ async function handleRenameView(viewId: number, name: string) {
     await loadViews(activeTableId.value!)
   } catch (e: any) {
     toast.error(resolveErrorMessage(e, '重命名失败'))
+  }
+}
+
+async function handleRenameTable(tableId: number, name: string) {
+  try {
+    await updateTable(tableId, { name } as any)
+    toast.success('表名已保存')
+    const idx = tables.value.findIndex(t => t.id === tableId)
+    if (idx !== -1) {
+      tables.value[idx] = { ...tables.value[idx], name }
+    }
+  } catch (e: any) {
+    toast.error(resolveErrorMessage(e, '表名保存失败'))
   }
 }
 

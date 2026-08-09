@@ -103,11 +103,12 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     mode: SearchMode = 'hybrid',
     knowledgeBaseId?: number,
     topK?: number,
-    llmModelId?: number
+    llmModelId?: number,
+    searchScopes?: Array<'REQUIREMENT_BODY' | 'KNOWLEDGE_BASE' | 'WEB'>
   ) {
     loading.value = true
     try {
-      const res = await searchKnowledge({ query, mode, knowledgeBaseId, topK, llmModelId })
+      const res = await searchKnowledge({ query, mode, knowledgeBaseId, topK, llmModelId, searchScopes })
       searchResults.value = (res as any)?.data || res
       return searchResults.value
     } finally {

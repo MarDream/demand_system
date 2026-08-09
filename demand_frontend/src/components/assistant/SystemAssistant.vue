@@ -30,63 +30,68 @@
             <div class="assistant-panel__title">AI 操作助手</div>
             <div class="assistant-panel__subtitle" :title="assistantSubtitle">结合当前页面、系统菜单和模型能力，为你提供入口导航与操作建议</div>
           </div>
-          <el-space class="assistant-panel__tools" alignment="center" :size="6">
-            <el-tag v-if="currentPageContext.pageTitle" type="info" effect="plain" size="small" class="assistant-meta-tag">当前页面：{{ currentPageContext.pageTitle }}</el-tag>
-            <el-tag type="success" effect="plain" size="small" class="assistant-meta-tag">Ctrl/⌘ + K</el-tag>
-            <el-dropdown trigger="click" @command="handleAvatarCommand">
-              <el-tag class="assistant-avatar-tag" type="warning" effect="plain" size="small">
-                头像：{{ avatarVariantLabel }}
-                <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-              </el-tag>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="girl" :disabled="avatarVariant === 'girl'">圆脸少女 · 双马尾</el-dropdown-item>
-                  <el-dropdown-item command="fox" :disabled="avatarVariant === 'fox'">小狐狸 · 戴眼镜</el-dropdown-item>
-                  <el-dropdown-item command="cat" :disabled="avatarVariant === 'cat'">小猫咪 · 竖瞳</el-dropdown-item>
-                  <el-dropdown-item command="elf" :disabled="avatarVariant === 'elf'">魔法少女 · 尖耳</el-dropdown-item>
-                  <el-dropdown-item command="default" :disabled="avatarVariant === 'default'">经典数字人</el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-            <el-tooltip content="新会话" placement="bottom">
-              <el-button
-                class="assistant-tool-button"
-                text
-                circle
-                aria-label="新会话"
-                @click="handleCreateSession"
-              >
-                <el-icon><Plus /></el-icon>
-              </el-button>
-            </el-tooltip>
-            <el-tooltip :content="assistantFullscreen ? '退出全屏' : '全屏'" placement="bottom">
-              <el-button
-                class="assistant-tool-button"
-                text
-                circle
-                :aria-label="assistantFullscreen ? '退出全屏' : '全屏'"
-                @click="toggleAssistantFullscreen"
-              >
-                <el-icon>
-                  <ScaleToOriginal v-if="assistantFullscreen" />
-                  <FullScreen v-else />
-                </el-icon>
-              </el-button>
-            </el-tooltip>
-          </el-space>
 
-          <el-tooltip content="关闭" placement="bottom">
-            <el-button
-              class="assistant-panel__close-btn"
-              text
-              circle
-              aria-label="关闭"
-              @mousedown.stop
-              @click="assistantStore.close()"
-            >
-              <el-icon><Close /></el-icon>
-            </el-button>
-          </el-tooltip>
+          <div class="assistant-panel__header-right">
+            <!-- 信息标签组：纯文本状态展示，无操作语义 -->
+            <div class="assistant-panel__info-group">
+              <el-tag v-if="currentPageContext.pageTitle" type="info" effect="plain" size="small" class="assistant-meta-tag">当前页面：{{ currentPageContext.pageTitle }}</el-tag>
+              <el-tag type="success" effect="plain" size="small" class="assistant-meta-tag">Ctrl/⌘ + K</el-tag>
+              <el-dropdown trigger="click" @command="handleAvatarCommand">
+                <el-tag class="assistant-avatar-tag" type="warning" effect="plain" size="small">
+                  头像：{{ avatarVariantLabel }}
+                  <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                </el-tag>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="girl" :disabled="avatarVariant === 'girl'">圆脸少女 · 双马尾</el-dropdown-item>
+                    <el-dropdown-item command="fox" :disabled="avatarVariant === 'fox'">小狐狸 · 戴眼镜</el-dropdown-item>
+                    <el-dropdown-item command="cat" :disabled="avatarVariant === 'cat'">小猫咪 · 竖瞳</el-dropdown-item>
+                    <el-dropdown-item command="elf" :disabled="avatarVariant === 'elf'">魔法少女 · 尖耳</el-dropdown-item>
+                    <el-dropdown-item command="default" :disabled="avatarVariant === 'default'">经典数字人</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </div>
+
+            <!-- 操作按钮组：统一 32x32 圆角按钮，关闭按钮位于组的最右端 -->
+            <div class="assistant-panel__action-group" role="toolbar" aria-label="弹窗操作">
+              <el-tooltip content="新会话" placement="bottom">
+                <el-button
+                  class="assistant-tool-button"
+                  text
+                  aria-label="新会话"
+                  @click="handleCreateSession"
+                >
+                  <el-icon><Plus /></el-icon>
+                </el-button>
+              </el-tooltip>
+              <el-tooltip :content="assistantFullscreen ? '退出全屏' : '全屏'" placement="bottom">
+                <el-button
+                  class="assistant-tool-button"
+                  text
+                  :aria-label="assistantFullscreen ? '退出全屏' : '全屏'"
+                  @click="toggleAssistantFullscreen"
+                >
+                  <el-icon>
+                    <ScaleToOriginal v-if="assistantFullscreen" />
+                    <FullScreen v-else />
+                  </el-icon>
+                </el-button>
+              </el-tooltip>
+              <span class="assistant-panel__action-divider" aria-hidden="true" />
+              <el-tooltip content="关闭（Esc）" placement="bottom">
+                <el-button
+                  class="assistant-tool-button assistant-tool-button--close"
+                  text
+                  aria-label="关闭"
+                  @mousedown.stop
+                  @click="assistantStore.close()"
+                >
+                  <el-icon><Close /></el-icon>
+                </el-button>
+              </el-tooltip>
+            </div>
+          </div>
         </div>
       </template>
 
@@ -296,6 +301,17 @@
                     </div>
                   </div>
 
+                  <div v-if="message.role === 'assistant' && message.warnings?.length" class="assistant-message__warnings">
+                    <el-alert
+                      v-for="warning in message.warnings"
+                      :key="warning"
+                      :title="warning"
+                      type="warning"
+                      :closable="false"
+                      show-icon
+                    />
+                  </div>
+
                   <div
                     v-if="message.role === 'assistant' && message.sources?.length"
                     class="assistant-message__sources assistant-message__sources--compact"
@@ -314,7 +330,7 @@
                         @keydown.enter.prevent="handleSourceNavigate(source)"
                         @keydown.space.prevent="handleSourceNavigate(source)"
                       >
-                        <span class="assistant-source-chip__title">{{ source.title || source.path || source.code || '系统匹配结果' }}</span>
+                        <span class="assistant-source-chip__title">{{ formatSourceTitle(source) }}</span>
                         <span class="assistant-source-chip__badge">{{ resolveSourceMatchLabel(source) }}</span>
                       </div>
                     </div>
@@ -475,6 +491,25 @@
                     </el-select>
                   </el-tooltip>
 
+                  <el-popover
+                    v-if="selectedKbScope != null || webSearchEnabled"
+                    placement="top"
+                    :width="230"
+                    trigger="click"
+                  >
+                    <div class="assistant-search-scope-popover">
+                      <strong>本地检索范围</strong>
+                      <el-checkbox-group v-model="selectedAssistantSearchScopes">
+                        <el-checkbox label="REQUIREMENT_BODY">工单正文</el-checkbox>
+                        <el-checkbox label="KNOWLEDGE_BASE">知识库附件</el-checkbox>
+                      </el-checkbox-group>
+                      <span v-if="webSearchEnabled">联网内容由“联网”开关控制。</span>
+                    </div>
+                    <template #reference>
+                      <el-button size="small" :disabled="sending">检索范围</el-button>
+                    </template>
+                  </el-popover>
+
                   <el-tooltip
                     v-if="selectedKbScope == null"
                     content="开启后：轻量检索全部本地知识库 + 大模型联网搜索，综合给出结果"
@@ -615,9 +650,10 @@ import AssistantTaskPanel from '@/components/assistant/AssistantTaskPanel.vue'
 import { getToken } from '@/utils/auth'
 import { useAssistantStore } from '@/stores/assistant'
 import { useAssistantContext } from '@/composables/useAssistantContext'
+import { useQuickQuestions } from '@/composables/useQuickQuestions'
 import { getAllKnowledgeBases, type KnowledgeBase } from '@/api/modules/knowledge'
 import { llmProviderApi, type ChatModelOption } from '@/api/modules/llmProvider'
-import type { AssistantFileAttachment, AssistantMessage, AssistantPageContext, AssistantSource } from '@/types/assistant'
+import type { AssistantFileAttachment, AssistantMessage, AssistantPageContext, AssistantSearchScope, AssistantSource } from '@/types/assistant'
 import FilePreviewDialog from '@/components/document/FilePreviewDialog.vue'
 
 type PathMatchType = 'current-page' | 'current-menu' | 'related' | 'none'
@@ -631,6 +667,13 @@ const draft = ref('')
 const messageListRef = ref<HTMLDivElement | null>(null)
 const assistantFullscreen = ref(false)
 const assistantSubtitle = '结合当前页面、系统菜单和模型能力，为你提供入口导航与操作建议'
+
+// ===== 快捷提问（动态轮询） =====
+const quickQuestions = useQuickQuestions({
+  pageRoute: () => currentPageContext.value?.routeName ?? '',
+  dialogVisible: () => visible.value,
+  hasActiveConversation: () => (activeSessionId.value !== null && messages.value.length > 0),
+})
 
 // ===== 会话搜索与分组 =====
 const sessionSearchKeyword = ref('')
@@ -724,6 +767,17 @@ watch(selectedKbScope, (val) => {
 // ===== RAG 检索参数 =====
 const searchMode = ref<'hybrid' | 'semantic' | 'keyword'>('hybrid')
 const topK = ref<number>(10)
+const selectedAssistantSearchScopes = ref<Array<Exclude<AssistantSearchScope, 'WEB'>>>([
+  'REQUIREMENT_BODY',
+  'KNOWLEDGE_BASE'
+])
+
+function buildAssistantSearchScopes(): AssistantSearchScope[] | undefined {
+  if (selectedKbScope.value == null && !webSearchEnabled.value) return undefined
+  const scopes: AssistantSearchScope[] = [...selectedAssistantSearchScopes.value]
+  if (selectedKbScope.value == null && webSearchEnabled.value) scopes.push('WEB')
+  return scopes
+}
 
 // ===== 联网搜索（仅通用助手模式生效）=====
 const webSearchEnabled = ref<boolean>(false)
@@ -1189,7 +1243,15 @@ const currentModeHint = computed(() => {
   return ''
 })
 
-const recommendedQuestions = computed(() => buildRecommendedQuestions(currentPageContext.value))
+const recommendedQuestions = computed(() => {
+  // 优先从后端获取动态问题（人工 + AI 提炼）
+  const backend = quickQuestions.questions.value
+  if (backend.length > 0) {
+    return backend.map(q => q.questionText)
+  }
+  // 冷启动兜底：后端无数据时回退到硬编码默认问题
+  return buildRecommendedQuestions(currentPageContext.value)
+})
 const composerQuestions = computed(() => recommendedQuestions.value.slice(0, 3))
 
 function buildRecommendedQuestions(pageContext: AssistantPageContext) {
@@ -1446,6 +1508,10 @@ function resolvePathMatchLabel(targetPath?: string) {
 
 function resolveSourceMatchLabel(source: AssistantSource) {
   if (source.code === 'web_search') return '联网来源'
+  if (source.contentType === 'image_ocr') return '图片 OCR'
+  if (source.contentType === 'image_caption') return '图片理解'
+  if (source.contentType === 'body_image') return '正文 + 图片'
+  if (isRequirementSource(source)) return '工单正文'
   if (source.code === 'knowledge_document') return '知识库依据'
   const match = resolveSourceMatch(source)
   if (match === 'current-page') return '当前页依据'
@@ -1454,16 +1520,30 @@ function resolveSourceMatchLabel(source: AssistantSource) {
   return '系统依据'
 }
 
+function isRequirementSource(source: AssistantSource) {
+  return (source.sourceType || source.code || '').startsWith('requirement_body')
+}
+
+function formatSourceTitle(source: AssistantSource) {
+  if (isRequirementSource(source)) {
+    const no = source.requirementNo || ''
+    const title = source.requirementTitle || source.title || '未命名工单'
+    return no ? `${no} ${title}` : title
+  }
+  return source.title || source.path || source.code || '系统匹配结果'
+}
+
 function buildSourceTooltip(source: AssistantSource) {
   const segments = [
-    source.title || source.path || source.code || '系统匹配结果',
+    formatSourceTitle(source),
     source.path,
-    source.reason || '系统根据页面上下文与功能目录生成了这条建议。',
+    source.contentType === 'image_ocr' ? '命中工单正文图片 OCR 内容' : source.contentType === 'image_caption' ? '命中工单正文图片理解内容' : source.reason || '系统根据页面上下文与功能目录生成了这条建议。',
   ].filter(Boolean)
   return segments.join('\n')
 }
 
 function isSourceClickable(source: AssistantSource) {
+  if (isRequirementSource(source) && source.requirementId) return true
   if (source.code === 'knowledge_document' && source.documentId && source.knowledgeBaseId) return true
   return !!source.path
 }
@@ -1524,6 +1604,10 @@ async function submitMessage(message: string, clearDraft = false) {
   if (sending.value) {
     return
   }
+  if (selectedKbScope.value != null && selectedAssistantSearchScopes.value.length === 0) {
+    ElMessage.warning('请至少选择一个本地检索范围')
+    return
+  }
 
   if (clearDraft) {
     draft.value = ''
@@ -1540,6 +1624,7 @@ async function submitMessage(message: string, clearDraft = false) {
     mode: selectedKbScope.value != null ? searchMode.value : undefined,
     topK: selectedKbScope.value != null ? topK.value : undefined,
     webSearch: selectedKbScope.value == null ? webSearchEnabled.value : undefined,
+    searchScopes: buildAssistantSearchScopes(),
     files,
   })
 
@@ -1552,6 +1637,11 @@ async function handleSend() {
 }
 
 async function handleQuickAsk(question: string) {
+  // 记录点击到后端（用于统计热度和提炼）
+  const matched = quickQuestions.questions.value.find(q => q.questionText === question)
+  if (matched) {
+    quickQuestions.handleQuickClick(matched).catch(() => {})
+  }
   draft.value = question
   await submitMessage(question, true)
 }
@@ -1624,6 +1714,10 @@ function findUserQuestionFor(assistantMessage: AssistantMessage): string {
 
 async function handleRegenerate(message: AssistantMessage) {
   if (sending.value || message.status === 'streaming') return
+  if (selectedKbScope.value != null && selectedAssistantSearchScopes.value.length === 0) {
+    ElMessage.warning('请至少选择一个本地检索范围')
+    return
+  }
   const question = findUserQuestionFor(message)
   if (!question) {
     ElMessage.warning('未找到对应的用户问题，无法重新生成')
@@ -1637,6 +1731,7 @@ async function handleRegenerate(message: AssistantMessage) {
     mode: selectedKbScope.value != null ? searchMode.value : undefined,
     topK: selectedKbScope.value != null ? topK.value : undefined,
     webSearch: selectedKbScope.value == null ? webSearchEnabled.value : undefined,
+    searchScopes: buildAssistantSearchScopes(),
     files: attachedFiles.length ? buildAttachmentsForRequest() : undefined,
   })
 }
@@ -1657,7 +1752,22 @@ async function handleNavigate(targetPath?: string) {
 }
 
 async function handleSourceNavigate(source: AssistantSource) {
-  // 知识库文档来源：拉起文档预览
+  if (isRequirementSource(source) && source.requirementId) {
+    await router.push({
+      name: 'RequirementDetail',
+      params: { id: source.requirementId },
+      query: source.imageFileId
+        ? {
+            focus: source.focus || 'image',
+            fileId: String(source.imageFileId),
+            ...(source.imagePosition ? { position: String(source.imagePosition) } : {})
+          }
+        : undefined,
+    })
+    assistantStore.close()
+    return
+  }
+  // 知识库附件来源：拉起文档预览
   if (source.code === 'knowledge_document' && source.documentId && source.knowledgeBaseId) {
     openSourcePreview(source)
     return
@@ -1915,32 +2025,49 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 52px 14px 20px;
+  padding: 12px 18px;
   border-bottom: 1px solid #e8ebf0;
   background: #fff;
   cursor: move;
+  min-height: 56px;
 }
 
-.assistant-panel__close-btn {
-  position: absolute;
-  top: 12px;
-  right: 14px;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  font-size: 16px;
-  color: #4e5969;
-  cursor: pointer;
-  transition: all 0.2s ease;
+.assistant-panel__header-right {
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
 
-  &:hover {
-    color: #f56c6c;
-    background: #fef0f0;
-  }
+/* 信息标签组：纯展示，灰色基调 */
+.assistant-panel__info-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
 
-  &:active {
-    transform: scale(0.95);
-  }
+/* 操作按钮组：统一规格，关闭按钮在组的最右端 */
+.assistant-panel__action-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: #f5f7fa;
+  border-radius: 10px;
+  border: 1px solid #e8ebf0;
+  flex-shrink: 0;
+}
+
+/* 操作组内的分割线：在普通操作按钮和关闭按钮之间建立视觉分组 */
+.assistant-panel__action-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: #dcdfe6;
+  flex-shrink: 0;
 }
 
 .assistant-panel__title-block {
@@ -1952,7 +2079,6 @@ onBeforeUnmount(() => {
 }
 
 .assistant-panel__tools {
-  flex: 0 0 auto;
   cursor: default;
   white-space: nowrap;
 }
@@ -1962,24 +2088,55 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 11px;
+  padding: 0 8px;
+  height: 22px;
+  line-height: 20px;
 }
 
+.assistant-avatar-tag {
+  cursor: pointer;
+  user-select: none;
+  font-size: 11px;
+  padding: 0 8px;
+  height: 22px;
+  line-height: 20px;
+}
+
+/* 操作按钮统一规格：32x32 方形圆角 */
 .assistant-tool-button {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   font-size: 15px;
   color: #4e5969;
   border-radius: 8px;
   transition: all 0.2s ease;
+  background: transparent;
 
   &:hover {
     color: #2563eb;
-    background: #eef4ff;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
   }
 
   &:active {
     transform: scale(0.94);
+  }
+}
+
+/* 关闭按钮作为操作组最后一位：稍重的默认态 + hover 强调红色 */
+.assistant-tool-button--close {
+  color: #64748b;
+
+  &:hover {
+    color: #f56c6c;
+    background: #fef0f0;
+    box-shadow: 0 1px 3px rgba(245, 108, 108, 0.18);
+  }
+
+  &:active {
+    transform: scale(0.92);
   }
 }
 
@@ -2877,6 +3034,13 @@ onBeforeUnmount(() => {
   word-break: break-all;
 }
 
+.assistant-message__warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
 .assistant-message__sources--compact {
   display: flex;
   align-items: center;
@@ -3039,6 +3203,32 @@ onBeforeUnmount(() => {
 
 .assistant-composer__scope-icon {
   color: #409eff;
+}
+
+.assistant-search-scope-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.assistant-search-scope-popover strong {
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+}
+
+.assistant-search-scope-popover :deep(.el-checkbox-group) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.assistant-search-scope-popover :deep(.el-checkbox) {
+  margin-right: 0;
+}
+
+.assistant-search-scope-popover span {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 
 .assistant-composer__websearch {

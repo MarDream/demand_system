@@ -225,6 +225,7 @@ export const useAssistantStore = defineStore('assistant', () => {
           target.actions = payload.actions || []
           target.sources = payload.sources || []
           target.tasks = payload.tasks || []
+          target.warnings = payload.warnings || []
         },
         onThinkingSteps(steps) {
           const target = messages.value.find(item => String(item.id) === assistantTempId)
@@ -327,6 +328,7 @@ export const useAssistantStore = defineStore('assistant', () => {
     oldMessage.thinkingSteps = []
     oldMessage.actions = []
     oldMessage.sources = []
+    oldMessage.warnings = []
     oldMessage.inputTokens = null
     oldMessage.outputTokens = null
     oldMessage.totalTokens = null
@@ -341,6 +343,7 @@ export const useAssistantStore = defineStore('assistant', () => {
         mode: request.mode,
         topK: request.topK,
         webSearch: request.webSearch,
+        searchScopes: request.searchScopes,
         files: request.files,
         assistantMessageId,
       }, {
@@ -349,6 +352,7 @@ export const useAssistantStore = defineStore('assistant', () => {
           oldMessage.actions = payload.actions || []
           oldMessage.sources = payload.sources || []
           oldMessage.tasks = payload.tasks || []
+          oldMessage.warnings = payload.warnings || []
         },
         onThinkingSteps(steps) {
           oldMessage.thinkingSteps = steps

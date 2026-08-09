@@ -27,6 +27,19 @@ export interface WorkflowVersion {
   isActive: boolean
   creatorId: number
   createdAt: string
+  /** 最近一次发布时间(从workflow_history回填) */
+  changeLog?: string
+}
+
+export interface WorkflowHistory {
+  id: number
+  workflowVersionId: number
+  operatorName: string
+  action: string
+  changeSummary: string
+  changeLog: string
+  versionSnapshot: string
+  createdAt: string
 }
 
 export interface WorkflowNodePermission {

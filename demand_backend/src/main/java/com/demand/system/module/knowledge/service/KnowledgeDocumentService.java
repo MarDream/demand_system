@@ -47,6 +47,18 @@ public interface KnowledgeDocumentService {
      */
     void syncRequirementAttachmentsWithContext(Long projectId, Long requirementId, String requirementCode,
                                                String requirementTitle, List<RequirementAttachmentDTO> attachments, Long uploaderId);
+    /**
+     * 将工单标题与富文本正文同步为可检索的虚拟知识文档。
+     * 虚拟文档不关联附件存储，也不能走知识库附件预览。
+     */
+    void syncRequirementBody(Long projectId, Long requirementId, String requirementCode,
+                             String requirementTitle, String description, Long uploaderId);
+
+    /** 删除工单正文虚拟文档、文本分块和向量。 */
+    void deleteRequirementBodyIndex(Long requirementId);
+
+    /** 为历史工单补建或刷新正文索引，返回提交索引的工单数量。 */
+    int backfillRequirementBodies();
 
     /**
      * 同步需求附件到指定知识库（包含需求上下文信息）

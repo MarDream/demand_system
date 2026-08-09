@@ -227,6 +227,9 @@
                   <el-checkbox v-model="nodeForm.requireAttachment">
                     必须上传附件
                   </el-checkbox>
+                  <el-checkbox v-if="nodeForm.nodeType === 'approval'" v-model="nodeForm.allowModifyType">
+                    允许变更工单类型
+                  </el-checkbox>
                 </div>
               </el-form-item>
 
@@ -615,6 +618,8 @@ const nodeForm = reactive<Partial<WorkflowNodeDTO> & {
   allowCancel?: boolean
   projectRequired?: boolean
   requireAttachment?: boolean
+  /** 审核节点是否允许在流转时切换需求类型 */
+  allowModifyType?: boolean
   notifyOnEnter?: boolean
   notifyScope?: 'PATH_APPROVERS' | 'ACTUAL_HANDLERS'
   ratingConfig: {
@@ -652,6 +657,7 @@ const nodeForm = reactive<Partial<WorkflowNodeDTO> & {
   allowCancel: true,
   projectRequired: false,
   requireAttachment: false,
+  allowModifyType: false,
   notifyOnEnter: false,
   notifyScope: 'PATH_APPROVERS',
   ratingConfig: {
@@ -1913,6 +1919,7 @@ const handleNodeClick = (data: any) => {
     allowCancel: data.properties?.allowCancel ?? data.properties?.properties?.allowCancel ?? true,
     projectRequired: data.properties?.projectRequired ?? data.properties?.properties?.projectRequired ?? false,
     requireAttachment: data.properties?.requireAttachment ?? data.properties?.properties?.requireAttachment ?? false,
+    allowModifyType: data.properties?.allowModifyType ?? data.properties?.properties?.allowModifyType ?? false,
     notifyOnEnter: data.properties?.notifyOnEnter ?? data.properties?.properties?.notifyOnEnter ?? false,
     notifyScope: (() => {
       const scope = data.properties?.notifyScope ?? data.properties?.properties?.notifyScope
@@ -2058,6 +2065,7 @@ const handleSaveNodeConfig = () => {
       allowCancel: nodeForm.allowCancel,
       projectRequired: showProjectRequiredCheckbox.value ? nodeForm.projectRequired : false,
       requireAttachment: nodeForm.requireAttachment,
+      allowModifyType: nodeForm.nodeType === 'approval' ? nodeForm.allowModifyType : false,
       notifyOnEnter: nodeForm.notifyOnEnter ?? false,
       notifyScope: nodeForm.notifyOnEnter ? (nodeForm.notifyScope || 'PATH_APPROVERS') : undefined,
       ratingConfig: nodeForm.nodeType === 'approval' ? nodeForm.ratingConfig : undefined,
@@ -2345,7 +2353,12 @@ const buildValidationHtml = (issues: Array<{ message: string; severity: string; 
 }
 
 const validateBeforeSubmitAndConfirm = async (): Promise<boolean> => {
-  const report = await validateBeforeSubmit(currentProjectId.value)
+  const versionId = currentVersion.value?.id
+  if (!versionId) {
+    ElMessage.warning('当前工作流版本尚未保存，请先保存后再提交审核')
+    return false
+  }
+  const report = await validateBeforeSubmit(currentProjectId.value, versionId)
   const issues = report?.issues || []
   if (!issues.length) return true
 
@@ -2394,7 +2407,12 @@ const handleSubmit = async () => {
     const canSubmit = await validateBeforeSubmitAndConfirm()
     if (!canSubmit) return
 
-    await submitForApproval(currentProjectId.value)
+    const versionId = currentVersion.value?.id
+    if (!versionId) {
+      ElMessage.warning('当前工作流版本尚未保存，请先保存后再提交审核')
+      return
+    }
+    await submitForApproval(currentProjectId.value, versionId)
 
     ElMessage.success('提交审核成功')
     router.push(returnMenuPath.value)

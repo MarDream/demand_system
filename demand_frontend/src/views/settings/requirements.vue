@@ -51,10 +51,21 @@
             <el-table-column label="绑定工作流" min-width="180">
               <template #default="{ row }">
                 <template v-if="row.workflowVersionId">
-                  <span v-for="v in activeWorkflowVersions.filter(wv => wv.id === row.workflowVersionId)" :key="v.id">
-                    <el-tag size="small" type="success">{{ v.workflowDefinitionName || v.name }}</el-tag>
-                    <span v-if="v.workflowDefinitionName" style="margin-left: 4px; color: var(--el-text-color-secondary); font-size: 12px;">v{{ v.version }}</span>
-                  </span>
+                  <template v-if="getBoundWorkflowVersion(row.workflowVersionId)">
+                    <el-tag
+                      size="small"
+                      :type="isWorkflowVersionActive(getBoundWorkflowVersion(row.workflowVersionId)) ? 'success' : 'warning'"
+                    >
+                      {{ getBoundWorkflowVersion(row.workflowVersionId)?.workflowDefinitionName || getBoundWorkflowVersion(row.workflowVersionId)?.name }}
+                    </el-tag>
+                    <span style="margin-left: 4px; color: var(--el-text-color-secondary); font-size: 12px;">
+                      v{{ getBoundWorkflowVersion(row.workflowVersionId)?.version }}
+                    </span>
+                    <el-tag v-if="!isWorkflowVersionActive(getBoundWorkflowVersion(row.workflowVersionId))" size="small" type="warning" effect="plain" style="margin-left: 4px;">
+                      已停用
+                    </el-tag>
+                  </template>
+                  <el-tag v-else size="small" type="danger" effect="plain">工作流已不存在</el-tag>
                 </template>
                 <span v-else style="color: var(--el-text-color-placeholder)">未绑定</span>
               </template>
@@ -173,6 +184,100 @@
         </div>
       </el-tab-pane>
 
+      <el-tab-pane label="工单正文索引" name="bodyIndex">
+        <div class="tab-content requirement-body-index-panel">
+          <div class="index-overview-grid" v-loading="bodyIndexOverviewLoading">
+            <el-card shadow="never"><span>工单总数</span><strong>{{ bodyIndexOverview?.totalRequirements ?? '—' }}</strong></el-card>
+            <el-card shadow="never"><span>已建立索引</span><strong>{{ bodyIndexOverview?.indexedRequirements ?? '—' }}</strong></el-card>
+            <el-card shadow="never"><span>未建立索引</span><strong>{{ bodyIndexOverview?.notIndexedRequirements ?? '—' }}</strong></el-card>
+            <el-card shadow="never"><span>失败任务</span><strong>{{ bodyIndexOverview?.statusCounts?.failed ?? 0 }}</strong></el-card>
+            <el-card shadow="never"><span>图片检索片段</span><strong>{{ bodyIndexOverview?.imageChunkCount ?? '—' }}</strong></el-card>
+          </div>
+
+          <el-alert
+            v-if="bodyIndexOverview && !bodyIndexOverview.imageUnderstandingEnabled"
+            :title="bodyIndexOverview.imageUnderstandingReason || '图片理解模型未配置，图片处理已自动跳过。'"
+            type="warning"
+            :closable="false"
+            show-icon
+          />
+
+          <el-alert
+            title="工单正文索引包含标题、富文本、表格、代码块以及正文图片的 OCR/语义结果。图片理解模型只从“模型配置-模型应用”读取；未配置时会自动跳过图片处理，不影响正文文本检索。"
+            type="info"
+            :closable="false"
+            show-icon
+          />
+
+          <div class="index-operation-grid">
+            <el-card shadow="never">
+              <template #header><span>历史数据维护</span></template>
+              <p class="index-operation-desc">首次启用或批量补齐历史工单正文时使用。任务提交后可在后台异步完成索引。</p>
+              <div class="index-operation-actions">
+                <el-button type="primary" :loading="bodyIndexLoading === 'backfill'" @click="handleBodyIndexBackfill">历史正文回填</el-button>
+                <el-button :loading="bodyIndexLoading === 'rebuildAll'" @click="handleBodyIndexRebuildAll">重建全部工单</el-button>
+                <el-button type="warning" plain :loading="bodyIndexLoading === 'retry'" @click="handleBodyIndexRetry">重试失败任务</el-button>
+              </div>
+            </el-card>
+
+            <el-card shadow="never">
+              <template #header><span>单工单索引</span></template>
+              <p class="index-operation-desc">输入工单 ID 查看索引状态，或提交单条正文重建。</p>
+              <div class="index-requirement-form">
+                <el-input-number v-model="bodyIndexRequirementId" :min="1" :step="1" controls-position="right" placeholder="工单 ID" />
+                <el-button :disabled="!bodyIndexRequirementId" :loading="bodyIndexLoading === 'status'" @click="handleBodyIndexStatus">查询状态</el-button>
+                <el-button type="primary" :disabled="!bodyIndexRequirementId" :loading="bodyIndexLoading === 'rebuild'" @click="handleBodyIndexRebuild">重建正文</el-button>
+              </div>
+            </el-card>
+          </div>
+
+          <el-card v-if="bodyIndexStatus" shadow="never" class="index-status-card">
+            <template #header>
+              <div class="index-status-header">
+                <span>工单 {{ bodyIndexStatus.requirementId }} 索引状态</span>
+                <el-tag :type="resolveBodyIndexStatusType(bodyIndexStatus.status)">{{ resolveBodyIndexStatusLabel(bodyIndexStatus.status) }}</el-tag>
+              </div>
+            </template>
+            <div class="index-status-grid">
+              <div><span class="index-status-label">索引文档</span><span>{{ bodyIndexStatus.documentId || '—' }}</span></div>
+              <div><span class="index-status-label">片段数量</span><span>{{ bodyIndexStatus.chunkCount }}</span></div>
+              <div><span class="index-status-label">最近更新时间</span><span>{{ formatBodyIndexDate(bodyIndexStatus.updatedAt) }}</span></div>
+              <div>
+                <span class="index-status-label">图片理解</span>
+                <el-tag :type="bodyIndexStatus.imageUnderstandingEnabled ? 'success' : 'warning'" size="small">
+                  {{ bodyIndexStatus.imageUnderstandingEnabled ? '已配置' : '未配置，已跳过' }}
+                </el-tag>
+              </div>
+            </div>
+            <el-alert
+              v-if="bodyIndexStatus.imageUnderstandingReason"
+              class="index-status-warning"
+              :title="bodyIndexStatus.imageUnderstandingReason"
+              type="warning"
+              :closable="false"
+              show-icon
+            />
+            <el-alert
+              v-if="bodyIndexStatus.errorMessage"
+              class="index-status-warning"
+              :title="bodyIndexStatus.errorMessage"
+              type="error"
+              :closable="false"
+              show-icon
+            />
+          </el-card>
+
+          <el-alert
+            v-if="bodyIndexOperationMessage"
+            class="index-operation-result"
+            :title="bodyIndexOperationMessage"
+            type="success"
+            :closable="false"
+            show-icon
+          />
+        </div>
+      </el-tab-pane>
+
       <el-tab-pane label="需求模板" name="templates">
         <div class="tab-content">
           <Toolbar class="tab-header">
@@ -260,6 +365,9 @@
                 :value="v.id"
               />
             </el-select>
+          </div>
+          <div v-if="selectedDefinitionInactive" class="workflow-inactive-tip">
+            选中的工作流暂未启用，请检查工作流状态
           </div>
         </el-form-item>
       </el-form>
@@ -350,13 +458,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { Plus, Rank, Operation, EditPen, Delete, Document, Setting, MagicStick } from '@element-plus/icons-vue'
 import { requirementConfigApi, type RequirementType, type Priority, type SortItem } from '@/api/modules/requirementConfig'
+import {
+  backfillRequirementBodies,
+  rebuildRequirementBody,
+  getRequirementBodyIndexOverview,
+  getRequirementBodyIndexStatus,
+  retryFailedRequirementBodies,
+  rebuildRequirementBodies,
+  type RequirementBodyIndexOverview,
+  type RequirementBodyIndexStatus
+} from '@/api/modules/knowledge'
 import { nodeStatusApi, type NodeStatus, type SortItem as NodeStatusSortItem } from '@/api/modules/workflow-engine'
-import { listActiveWorkflowVersions, listWorkflowDefinitions } from '@/api/modules/workflow-visual'
+import { getVersionHistory, listWorkflowDefinitions } from '@/api/modules/workflow-visual'
 import type { WorkflowVersionDTO, WorkflowDefinitionInfoDTO } from '@/types/workflow-visual'
 import { normalizeText } from '@/utils/format'
 import { resolveErrorMessage } from '@/utils/error'
@@ -478,6 +596,107 @@ function openTemplateCreate() {
 const selectedTypeCodeForTemplate = ref('')
 
 const activeTab = ref('types')
+type BodyIndexLoadingKind = 'backfill' | 'rebuildAll' | 'retry' | 'status' | 'rebuild'
+const bodyIndexRequirementId = ref<number | undefined>()
+const bodyIndexOverview = ref<RequirementBodyIndexOverview | null>(null)
+const bodyIndexOverviewLoading = ref(false)
+const bodyIndexStatus = ref<RequirementBodyIndexStatus | null>(null)
+const bodyIndexLoading = ref<BodyIndexLoadingKind | null>(null)
+const bodyIndexOperationMessage = ref('')
+
+function unwrapBodyIndexResult<T>(response: any): T {
+  return (response?.data ?? response) as T
+}
+
+async function loadBodyIndexOverview() {
+  if (bodyIndexOverviewLoading.value) return
+  bodyIndexOverviewLoading.value = true
+  try {
+    bodyIndexOverview.value = unwrapBodyIndexResult<RequirementBodyIndexOverview>(await getRequirementBodyIndexOverview())
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '加载工单正文索引概览失败'))
+  } finally {
+    bodyIndexOverviewLoading.value = false
+  }
+}
+
+watch(activeTab, (tab) => {
+  if (tab === 'bodyIndex') void loadBodyIndexOverview()
+})
+
+function resolveBodyIndexStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    indexed: '已完成',
+    completed: '已完成',
+    processing: '索引中',
+    indexing: '索引中',
+    pending: '等待中',
+    failed: '失败',
+    stored: '仅存储',
+    not_indexed: '未索引'
+  }
+  return labels[status] || status || '未知'
+}
+
+function resolveBodyIndexStatusType(status: string): 'success' | 'warning' | 'danger' | 'info' {
+  if (['indexed', 'completed'].includes(status)) return 'success'
+  if (['processing', 'indexing', 'pending'].includes(status)) return 'warning'
+  if (status === 'failed') return 'danger'
+  return 'info'
+}
+
+function formatBodyIndexDate(value?: string | null) {
+  if (!value) return '—'
+  return value.replace('T', ' ').slice(0, 19)
+}
+
+async function handleBodyIndexAction(kind: BodyIndexLoadingKind, action: () => Promise<any>, success: (result: any) => string) {
+  if (bodyIndexLoading.value) return
+  bodyIndexLoading.value = kind
+  bodyIndexOperationMessage.value = ''
+  try {
+    const result = unwrapBodyIndexResult<any>(await action())
+    bodyIndexOperationMessage.value = success(result)
+    await loadBodyIndexOverview()
+    if (bodyIndexRequirementId.value) await handleBodyIndexStatus()
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '工单正文索引操作失败'))
+  } finally {
+    bodyIndexLoading.value = null
+  }
+}
+
+async function handleBodyIndexBackfill() {
+  await handleBodyIndexAction('backfill', backfillRequirementBodies, result => `已提交 ${result?.submitted ?? 0} 条历史正文回填任务。`)
+}
+
+async function handleBodyIndexRebuildAll() {
+  await ElMessageBox.confirm('将提交全部工单正文重建任务，已存在的索引会重新生成，是否继续？', '确认重建', { type: 'warning' })
+    .then(() => handleBodyIndexAction('rebuildAll', () => rebuildRequirementBodies(), result => `已提交 ${result?.submitted ?? 0} 条重建任务，跳过 ${result?.skipped ?? 0} 条。`))
+    .catch(() => undefined)
+}
+
+async function handleBodyIndexRetry() {
+  await handleBodyIndexAction('retry', retryFailedRequirementBodies, result => `已提交 ${result?.submitted ?? 0} 条失败任务重试，跳过 ${result?.skipped ?? 0} 条。`)
+}
+
+async function handleBodyIndexStatus() {
+  if (!bodyIndexRequirementId.value || bodyIndexLoading.value === 'status') return
+  bodyIndexLoading.value = 'status'
+  try {
+    bodyIndexStatus.value = unwrapBodyIndexResult<RequirementBodyIndexStatus>(await getRequirementBodyIndexStatus(bodyIndexRequirementId.value))
+  } catch (error) {
+    bodyIndexStatus.value = null
+    ElMessage.error(resolveErrorMessage(error, '工单正文索引操作失败'))
+  } finally {
+    bodyIndexLoading.value = null
+  }
+}
+
+async function handleBodyIndexRebuild() {
+  if (!bodyIndexRequirementId.value) return
+  await handleBodyIndexAction('rebuild', () => rebuildRequirementBody(bodyIndexRequirementId.value!), result => result?.submitted === false ? (result?.message || '工单不存在或已删除。') : `已提交工单 ${bodyIndexRequirementId.value} 的正文重建任务。`)
+}
 
 function goToTemplateDesign(row: RequirementType) {
   selectedTypeCodeForTemplate.value = row.code
@@ -486,8 +705,9 @@ function goToTemplateDesign(row: RequirementType) {
 const types = ref<RequirementType[]>([])
 const priorities = ref<Priority[]>([])
 
-// 活跃工作流版本列表（用于类型绑定下拉）
-const activeWorkflowVersions = ref<WorkflowVersionDTO[]>([])
+// 工作流版本列表：下拉仅展示启用版本，但需保留已停用绑定以便显示和编辑时维持关系
+const workflowVersions = ref<WorkflowVersionDTO[]>([])
+const activeWorkflowVersions = computed(() => workflowVersions.value.filter(isWorkflowVersionActive))
 
 // 工作流定义列表（绑定弹框第一级下拉：先选工作流名称）
 const workflowDefinitions = ref<WorkflowDefinitionInfoDTO[]>([])
@@ -495,19 +715,46 @@ const workflowDefinitions = ref<WorkflowDefinitionInfoDTO[]>([])
 /** 当前选中工作流下的版本选项 */
 const filteredVersionOptions = computed(() => {
   if (!typeForm.value.workflowDefinitionId) return []
-  return activeWorkflowVersions.value.filter(
-    (v) => v.workflowDefinitionId === typeForm.value.workflowDefinitionId
+
+  const options = activeWorkflowVersions.value.filter(
+    (v) => v.workflowDefinitionId === typeForm.value.workflowDefinitionId,
   )
+  const currentVersion = editingType.value?.workflowVersionId
+    ? getBoundWorkflowVersion(editingType.value.workflowVersionId)
+    : undefined
+  if (currentVersion
+      && currentVersion.workflowDefinitionId === typeForm.value.workflowDefinitionId
+      && !options.some((v) => v.id === currentVersion.id)) {
+    options.push(currentVersion)
+  }
+  return options
 })
+
+/**
+ * 选中的工作流是否暂未启用（无任何启用版本，且当前编辑绑定的旧版本不属于该工作流）。
+ * 此时版本号下拉无可用选项，需提示用户检查工作流状态。
+ */
+const selectedDefinitionInactive = computed(() => {
+  if (!typeForm.value.workflowDefinitionId) return false
+  return filteredVersionOptions.value.length === 0
+})
+
+function isWorkflowVersionActive(version?: WorkflowVersionDTO) {
+  return version?.isActive === 1 && version.activationStatus === 'active'
+}
+
+function getBoundWorkflowVersion(versionId?: number | null) {
+  return versionId == null ? undefined : workflowVersions.value.find((v) => v.id === versionId)
+}
 
 const loadActiveWorkflowVersions = async () => {
   try {
-    const res = await listActiveWorkflowVersions() as any
+    const res = await getVersionHistory(0) as any
     const list = Array.isArray(res) ? res : res?.data || []
-    activeWorkflowVersions.value = list.filter((v: WorkflowVersionDTO) => v.activationStatus === 'active' && v.isActive === 1)
+    workflowVersions.value = list
   } catch (error) {
-    ElMessage.warning(resolveErrorMessage(error, '加载可绑定工作流失败，请稍后刷新重试'))
-    activeWorkflowVersions.value = []
+    ElMessage.warning(resolveErrorMessage(error, '加载工作流版本失败，请稍后刷新重试'))
+    workflowVersions.value = []
   }
 }
 
@@ -600,7 +847,7 @@ const openTypeDialog = (type?: RequirementType) => {
   if (type) {
     // 编辑时反查所属工作流定义，回填第一级下拉
     const boundVersion = type.workflowVersionId
-      ? activeWorkflowVersions.value.find((v) => v.id === type.workflowVersionId)
+      ? getBoundWorkflowVersion(type.workflowVersionId)
       : undefined
     typeForm.value = {
       name: type.name,
@@ -1233,6 +1480,13 @@ onMounted(() => {
   font-size: 12px;
 }
 
+.workflow-inactive-tip {
+  margin-top: 6px;
+  color: var(--el-color-warning);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .node-status-flags {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 140px));
@@ -1285,6 +1539,101 @@ onMounted(() => {
 :deep(.el-table__body-wrapper tbody) {
   tr {
     transition: transform 0.3s;
+  }
+}
+
+.requirement-body-index-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.index-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.index-overview-grid :deep(.el-card__body) {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.index-overview-grid span {
+  color: var(--color-muted-text);
+  font-size: 12px;
+}
+
+.index-overview-grid strong {
+  color: var(--el-text-color-primary);
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.index-operation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.index-operation-desc {
+  margin: 0 0 16px;
+  color: var(--color-muted-text);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.index-operation-actions,
+.index-requirement-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.index-status-card {
+  margin-top: 2px;
+}
+
+.index-status-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.index-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.index-status-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.index-status-label {
+  color: var(--color-muted-text);
+  font-size: 12px;
+}
+
+.index-status-warning {
+  margin-top: 12px;
+}
+
+.index-operation-result {
+  margin-top: 0;
+}
+
+@media (max-width: 900px) {
+  .index-overview-grid,
+  .index-operation-grid,
+  .index-status-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

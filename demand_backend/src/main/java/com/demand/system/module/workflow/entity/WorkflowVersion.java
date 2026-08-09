@@ -43,6 +43,9 @@ public class WorkflowVersion {
 
     private LocalDateTime createdAt;
 
+    /** 编辑时间（最近一次保存/启停/复制等变更时间） */
+    private LocalDateTime updatedAt;
+
     private LocalDateTime deprecatedAt;
 
     private String changeLog;
@@ -185,6 +188,14 @@ public class WorkflowVersion {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
     }
 
     public LocalDateTime getDeprecatedAt() {

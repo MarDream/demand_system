@@ -3,6 +3,7 @@ package com.demand.system.module.knowledge.controller;
 import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.ErrorCode;
 import com.demand.system.common.result.Result;
+import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.knowledge.config.KnowledgeConfig;
 import com.demand.system.module.knowledge.config.MilvusConfig;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchRequest;
@@ -56,6 +57,7 @@ public class KnowledgeSearchController {
     @PostMapping("/search")
     @PreAuthorize("isAuthenticated()")
     public Result<KnowledgeSearchResponse> search(@Valid @RequestBody KnowledgeSearchRequest request) {
+        request.setRequesterId(SecurityUtils.getCurrentUserId());
         try {
             KnowledgeSearchResponse response = searchService.search(request);
             return Result.success(response);
@@ -69,6 +71,7 @@ public class KnowledgeSearchController {
     @PostMapping(value = "/search/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @PreAuthorize("isAuthenticated()")
     public SseEmitter streamSearch(@Valid @RequestBody KnowledgeSearchRequest request) {
+        request.setRequesterId(SecurityUtils.getCurrentUserId());
         return searchService.streamSearch(request);
     }
 

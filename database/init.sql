@@ -1245,12 +1245,16 @@ CREATE TABLE `knowledge_chunks` (
   `section_title` VARCHAR(256) DEFAULT NULL COMMENT '章节标题',
   `page_num` INT UNSIGNED DEFAULT NULL COMMENT '页码',
   `char_count` INT UNSIGNED DEFAULT 0 COMMENT '字符数',
+  `source_content_type` VARCHAR(32) DEFAULT NULL COMMENT '来源内容类型(body/image_ocr/image_caption)',
+  `source_ref_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '来源引用ID，例如正文图片文件ID',
+  `source_position` INT UNSIGNED DEFAULT NULL COMMENT '来源位置，例如正文图片序号',
   `vector_id` VARCHAR(128) DEFAULT NULL COMMENT 'Milvus中的向量ID',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   INDEX `idx_document_id` (`document_id`),
   INDEX `idx_knowledge_base_id` (`knowledge_base_id`),
   INDEX `idx_vector_id` (`vector_id`),
+  INDEX `idx_chunk_source_ref` (`source_content_type`, `source_ref_id`, `source_position`),
   INDEX `idx_document_deleted` (`document_id`, `deleted_at`) COMMENT '性能优化:按文档ID查询已存在分块'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='知识库文档分块表';
 
@@ -1304,6 +1308,7 @@ CREATE TABLE `assistant_messages` (
   `process_summary` TEXT DEFAULT NULL COMMENT '检索过程摘要',
   `retrieved_count` INT DEFAULT NULL COMMENT '命中的片段数量',
   `citations` JSON DEFAULT NULL COMMENT '引用文档列表',
+  `warnings` JSON DEFAULT NULL COMMENT '检索降级与能力提示',
   `reasoning` LONGTEXT DEFAULT NULL COMMENT '深度思考内容（LLM reasoning）',
   `input_tokens` INT DEFAULT NULL COMMENT '输入（提示词）token 数',
   `output_tokens` INT DEFAULT NULL COMMENT '输出（生成）token 数',
@@ -1514,6 +1519,7 @@ VALUES
   ('knowledge.embedding', '知识库向量化', '文档切片及查询向量生成', 'embedding', NULL, 1, 40),
   ('knowledge.rerank', '知识库重排', '知识库检索结果的模型重排', 'rerank', NULL, 1, 50),
   ('knowledge.event-rerank', '知识事件 LLM 精排', '知识事件检索结果的 LLM 相关性精排', 'chat', NULL, 1, 60),
+  ('knowledge.image-understanding', '工单正文图片理解', '识别工单正文图片中的文字、页面、图表、错误信息和关键数值', 'vision', NULL, 0, 65),
   ('bitable.ai', '多维表格 AI', '多维表格字段、记录及模板的 AI 能力', 'chat', NULL, 1, 70),
   ('llm.translation', '文本翻译', '角色编码及其他系统文本的英文转换', 'chat', NULL, 1, 80);
 

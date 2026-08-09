@@ -346,24 +346,16 @@ public class WorkflowEngineService {
             throw conflictException(instance.getId());
         }
 
-        // 处理需求类型变更（当 newType 非空且与当前类型不同时）
-        boolean typeChanged = StringUtils.hasText(request.getNewType())
-                && !request.getNewType().equals(requirement.getType());
-        if (typeChanged) {
-            handleTypeChange(request, instance, requirement, operatorId);
-            // 类型变更后重新加载需求和实例
-            requirement = requirementMapper.selectById(request.getRequirementId());
-            instance = instanceMapper.selectOne(
-                    new LambdaQueryWrapper<WorkflowInstance>()
-                            .eq(WorkflowInstance::getRequirementId, request.getRequirementId())
-            );
-        }
-
         WorkflowGraphContext context = runtimeLoader.loadContext(instance.getWorkflowVersionId());
         WorkflowNode currentNode = context.getNode(instance.getCurrentNodeId());
         WorkflowNode targetNode = context.getNode(request.getToNodeId());
         bindProjectIfNecessary(requirement, request.getProjectId(), operatorId);
         requirement = requirementMapper.selectById(request.getRequirementId());
+
+        // 类型变更必须先完成旧工作流节点的权限、流转目标和审核信息校验。
+        // 变更成功后工作流实例会切换到新类型绑定工作流的初始节点，不再继续执行旧工作流目标节点。
+        boolean typeChanged = StringUtils.hasText(request.getNewType())
+                && !request.getNewType().equals(requirement.getType());
 
         validateTransition(context, instance, currentNode, targetNode, request.getAction(), operatorId);
         if (isCountersignEnabled(currentNode)
@@ -389,6 +381,11 @@ public class WorkflowEngineService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "当前节点要求必须上传附件");
         }
         validateSelectedAssignee(targetNode, requirement, operatorId, request.getSelectedAssigneeId());
+
+        if (typeChanged) {
+            handleTypeChange(request, instance, requirement, currentNode, operatorId, evalConfig);
+            return;
+        }
 
         closeCurrentTransition(instance.getId());
 
@@ -506,9 +503,8 @@ public class WorkflowEngineService {
      */
     @Transactional
     protected void handleTypeChange(FlowTransitionRequest request, WorkflowInstance instance,
-                                     Requirement requirement, Long operatorId) {
-        WorkflowGraphContext oldContext = runtimeLoader.loadContext(instance.getWorkflowVersionId());
-        WorkflowNode currentNode = oldContext.getNode(instance.getCurrentNodeId());
+                                     Requirement requirement, WorkflowNode currentNode,
+                                     Long operatorId, EvaluationConfig evalConfig) {
         if (currentNode == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "当前流程节点不存在");
         }
@@ -536,11 +532,18 @@ public class WorkflowEngineService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "目标工单类型绑定的工作流未启用");
         }
 
-        // 解析新工作流的初始 wait 节点（startEvent 之后的第一个 userTask）
-        String initialNodeId = resolveInitialWaitNodeId(newVersion.getId());
+        // 使用变更后的需求类型参与新工作流起始条件计算，避免条件分支仍按旧类型路由。
+        requirement.setType(newType);
+        String initialNodeId = resolveInitialWaitNodeId(newVersion.getId(), requirement);
         if (initialNodeId == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "目标工单类型的工作流配置异常，缺少初始节点");
         }
+        WorkflowGraphContext newContext = runtimeLoader.loadContext(newVersion.getId());
+        WorkflowNode initialNode = newContext.getNode(initialNodeId);
+        if (initialNode == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "目标工单类型的工作流初始节点不存在");
+        }
+        String newInstanceStatus = "end".equalsIgnoreCase(initialNode.getNodeType()) ? "completed" : "running";
 
         // 3. 关闭当前流转记录
         closeCurrentTransition(instance.getId());
@@ -569,7 +572,7 @@ public class WorkflowEngineService {
                 .set(WorkflowInstance::getWorkflowVersionId, newVersion.getId())
                 .set(WorkflowInstance::getCurrentNodeId, initialNodeId)
                 .set(WorkflowInstance::getPreviousNodeId, findStartNodeId(newVersion.getId()))
-                .set(WorkflowInstance::getStatus, "running")
+                .set(WorkflowInstance::getStatus, newInstanceStatus)
                 .set(WorkflowInstance::getLockVersion, currentLockVersion + 1)
         );
         if (updated <= 0) {
@@ -582,8 +585,14 @@ public class WorkflowEngineService {
                 .eq(Requirement::getId, request.getRequirementId())
                 .set(Requirement::getType, newType)
                 .set(Requirement::getStatus, resolveNodeStatusName(nodeStatusCode))
-                .set(Requirement::getNodeStatus, nodeStatusCode);
+                .set(Requirement::getNodeStatus, nodeStatusCode)
+                .set(Requirement::getAssigneeId, (Long) null);
         requirementMapper.update(null, reqUpdate);
+
+        Requirement updatedRequirement = requirementMapper.selectById(request.getRequirementId());
+        notificationService.notifyNodeEntered(updatedRequirement, initialNode, operatorId);
+        notificationService.notifyApproversOnTransition(updatedRequirement, initialNode, operatorId, instance.getId());
+        initCountersignIfNeeded(instance.getId(), initialNode, updatedRequirement);
 
         // 记录需求历史变更
         RequirementHistory history = new RequirementHistory();
@@ -595,17 +604,28 @@ public class WorkflowEngineService {
         history.setCreatedAt(LocalDateTime.now());
         requirementHistoryMapper.insert(history);
 
-        // 同步待办
+        if (evalConfig != null && evalConfig.enabled()) {
+            approvalEvaluationService.saveOnApprovalTransition(
+                    instance, currentNode, typeChangeTransition.getId(), operatorId,
+                    request.getRating(), request.getRatingDimensions(),
+                    request.getComment(), request.getAttachments());
+        } else {
+            approvalEvaluationService.saveOnTransition(
+                    instance, currentNode, typeChangeTransition.getId(), operatorId,
+                    request.getComment(), request.getAttachments());
+        }
+
+        // 新类型的初始节点重新生成待办，后续流转完全按照新工作流执行。
         pendingTaskSyncService.syncPendingTasks(request.getRequirementId(), null);
 
-        log.info("需求类型变更: requirementId={}, oldType={}, newType={}, newVersionId={}, initialNodeId={}",
-                request.getRequirementId(), oldType, newType, newVersion.getId(), initialNodeId);
+        log.info("需求类型变更: requirementId={}, oldType={}, newType={}, newVersionId={}, initialNodeId={}, transitionId={}",
+                request.getRequirementId(), oldType, newType, newVersion.getId(), initialNodeId, typeChangeTransition.getId());
     }
 
     /**
      * 解析工作流版本中 startEvent 之后的第一个 wait 节点 ID
      */
-    private String resolveInitialWaitNodeId(Long workflowVersionId) {
+    private String resolveInitialWaitNodeId(Long workflowVersionId, Requirement requirement) {
         WorkflowGraphContext context = runtimeLoader.loadContext(workflowVersionId);
         WorkflowNode startNode = context.nodesById().values().stream()
                 .filter(node -> "start".equalsIgnoreCase(node.getNodeType()))
@@ -614,7 +634,7 @@ public class WorkflowEngineService {
         if (startNode == null) {
             return null;
         }
-        List<WorkflowNode> targets = graphNavigator.resolveAvailableTargets(context, startNode.getNodeId(), null);
+        List<WorkflowNode> targets = graphNavigator.resolveAvailableTargets(context, startNode.getNodeId(), requirement);
         return targets.isEmpty() ? null : targets.get(0).getNodeId();
     }
 

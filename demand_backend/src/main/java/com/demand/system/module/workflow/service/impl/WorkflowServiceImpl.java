@@ -23,6 +23,8 @@ import com.demand.system.module.workflow.entity.WorkflowState;
 import com.demand.system.module.workflow.entity.WorkflowTransition;
 import com.demand.system.module.workflow.entity.WorkflowVersion;
 import com.demand.system.module.workflow.entity.WorkflowNode;
+import com.demand.system.module.workflow.entity.WorkflowHistory;
+import com.demand.system.module.workflow.mapper.WorkflowHistoryMapper;
 import com.demand.system.module.workflow.mapper.WorkflowNodeMapper;
 import com.demand.system.module.workflow.mapper.WorkflowNodePermissionMapper;
 import com.demand.system.module.workflow.mapper.WorkflowStateMapper;
@@ -81,6 +83,7 @@ public class WorkflowServiceImpl implements WorkflowService {
     private final NotificationService notificationService;
     private final ObjectMapper objectMapper;
     private final WorkflowPermissionValidator permissionValidator;
+    private final WorkflowHistoryMapper workflowHistoryMapper;
 
     public WorkflowServiceImpl(WorkflowStateMapper stateMapper, WorkflowTransitionMapper transitionMapper,
                             WorkflowVersionMapper versionMapper, WorkflowNodeMapper workflowNodeMapper,
@@ -90,7 +93,8 @@ public class WorkflowServiceImpl implements WorkflowService {
                             WorkflowVersionResolver workflowVersionResolver, WorkflowDefinitionEngine workflowDefinitionEngine,
                             RequirementMapper requirementMapper, RequirementHistoryMapper requirementHistoryMapper,
                             NotificationService notificationService, ObjectMapper objectMapper,
-                            WorkflowPermissionValidator permissionValidator) {
+                            WorkflowPermissionValidator permissionValidator,
+                            WorkflowHistoryMapper workflowHistoryMapper) {
         this.stateMapper = stateMapper;
         this.transitionMapper = transitionMapper;
         this.versionMapper = versionMapper;
@@ -106,6 +110,50 @@ public class WorkflowServiceImpl implements WorkflowService {
         this.requirementHistoryMapper = requirementHistoryMapper;
         this.notificationService = notificationService;
         this.objectMapper = objectMapper;
+        this.workflowHistoryMapper = workflowHistoryMapper;
+    }
+
+    // ==== 修改历史记录辅助方法 ====
+
+    private void recordHistory(Long versionId, Long projectId, String action, String summary, String changeLogJson, String snapshotJson) {
+        WorkflowHistory history = new WorkflowHistory();
+        history.setWorkflowVersionId(versionId);
+        history.setProjectId(projectId);
+        history.setOperatorId(resolveCurrentUserId());
+        history.setAction(action);
+        history.setChangeSummary(summary);
+        history.setChangeLog(changeLogJson);
+        history.setVersionSnapshot(snapshotJson);
+        workflowHistoryMapper.insert(history);
+    }
+
+    private String buildVersionSnapshot(WorkflowVersion version) {
+        try {
+            Map<String, Object> snapshot = new LinkedHashMap<>();
+            snapshot.put("nodes", countNodes(version.getId()));
+            snapshot.put("edges", countEdges(version.getId()));
+            snapshot.put("states", countStates(version.getProjectId()));
+            return objectMapper.writeValueAsString(snapshot);
+        } catch (Exception e) {
+            return "{}";
+        }
+    }
+
+    private int countNodes(Long versionId) {
+        return workflowNodeMapper.selectCount(
+            new LambdaQueryWrapper<WorkflowNode>().eq(WorkflowNode::getWorkflowVersionId, versionId)
+        ).intValue();
+    }
+
+    private int countEdges(Long versionId) {
+        // 当前运行时引擎没有提供按版本统计边的接口，历史快照保留可用的保守值。
+        return 0;
+    }
+
+    private int countStates(Long projectId) {
+        return stateMapper.selectCount(
+            new LambdaQueryWrapper<WorkflowState>().eq(WorkflowState::getProjectId, projectId)
+        ).intValue();
     }
 
     @Override
@@ -270,6 +318,9 @@ public class WorkflowServiceImpl implements WorkflowService {
         }
         versionMapper.insert(version);
         syncNodePermissionsFromDefinition(version.getId(), version.getDefinition());
+        recordHistory(version.getId(), version.getProjectId(), "create",
+                "创建工作流版本 V" + version.getVersion() + "「" + (version.getName() != null ? version.getName() : "") + "」",
+                null, buildVersionSnapshot(version));
     }
 
     @Override
@@ -292,6 +343,9 @@ public class WorkflowServiceImpl implements WorkflowService {
         if (version.getDefinition() != null) {
             syncNodePermissionsFromDefinition(existing.getId(), existing.getDefinition());
         }
+        recordHistory(existing.getId(), existing.getProjectId(), "update",
+                "编辑工作流 V" + existing.getVersion() + "「" + (existing.getName() != null ? existing.getName() : "") + "」",
+                version.getChangeLog(), buildVersionSnapshot(existing));
     }
 
     @Override
@@ -319,6 +373,9 @@ public class WorkflowServiceImpl implements WorkflowService {
             permissionValidator.validateNodesPermissions(nodeDTOs);
 
             workflowActivationService.activate(id);
+            recordHistory(version.getId(), projectId, "publish",
+                    "可视化发布启用 V" + version.getVersion() + "「" + (version.getName() != null ? version.getName() : "") + "」",
+                    null, buildVersionSnapshot(version));
             return;
         }
 
@@ -335,6 +392,9 @@ public class WorkflowServiceImpl implements WorkflowService {
                 .set("is_active", 1)
                 .set("activation_status", "active")
                 .set("activated_at", LocalDateTime.now()));
+        recordHistory(version.getId(), projectId, "publish",
+                "发布启用 V" + version.getVersion() + "「" + (version.getName() != null ? version.getName() : "") + "」",
+                null, buildVersionSnapshot(version));
     }
 
     @Override

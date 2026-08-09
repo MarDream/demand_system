@@ -91,7 +91,8 @@ public class WorkflowVersionService {
                     .eq(WorkflowVersion::getId, currentActive.getId())
                     .set(WorkflowVersion::getName, name)
                     .set(WorkflowVersion::getDefinition, definition)
-                    .set(WorkflowVersion::getRuntimeHash, newRuntimeHash));
+                    .set(WorkflowVersion::getRuntimeHash, newRuntimeHash)
+                    .set(WorkflowVersion::getUpdatedAt, LocalDateTime.now()));
             return currentActive.getId();
         }
 
@@ -111,6 +112,7 @@ public class WorkflowVersionService {
         newWorkflowVersion.setSubmittedForApprovalAt(LocalDateTime.now());
         newWorkflowVersion.setChangeLog(changeLog);
         newWorkflowVersion.setCreatorId(SecurityUtils.getCurrentUserId());
+        newWorkflowVersion.setUpdatedAt(LocalDateTime.now());
         workflowVersionMapper.insert(newWorkflowVersion);
 
         return newWorkflowVersion.getId();
@@ -186,14 +188,14 @@ public class WorkflowVersionService {
     }
 
     /**
-     * 查询工作流版本列表（系统维度，按时间倒序）
+     * 查询工作流版本列表（系统维度，按编辑时间倒序，编辑时间缺失时回退创建时间）
      *
      * @param projectId 项目ID（可选）
      * @return 版本列表
      */
     public List<WorkflowVersionVO> listVersions(Long projectId) {
         LambdaQueryWrapper<WorkflowVersion> queryWrapper = new LambdaQueryWrapper<WorkflowVersion>()
-                .orderByDesc(WorkflowVersion::getCreatedAt);
+                .last("ORDER BY COALESCE(updated_at, created_at) DESC, id DESC");
 
         if (projectId != null) {
             queryWrapper.eq(WorkflowVersion::getProjectId, projectId);
@@ -369,6 +371,7 @@ public class WorkflowVersionService {
         vo.setApprovalComment(version.getApprovalComment());
         vo.setCreatorId(version.getCreatorId());
         vo.setCreatedAt(version.getCreatedAt());
+        vo.setUpdatedAt(version.getUpdatedAt() != null ? version.getUpdatedAt() : version.getCreatedAt());
         vo.setRunningInstanceCount(instanceCountMap.getOrDefault(version.getId(), 0L));
 
         if (version.getProjectId() != null) {

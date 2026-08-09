@@ -773,7 +773,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, watch, type Ref } from 'vue'
+import { computed, ref, onMounted, watch, nextTick, type Ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { ArrowLeftBold, ArrowRightBold, Document, Picture, List, ChatLineRound, ChatDotRound, View, Download, Edit, Delete, ZoomIn, ZoomOut, RefreshLeft, CircleCheck } from '@element-plus/icons-vue'
@@ -1983,6 +1983,34 @@ function hasMeaningfulCommentContent(html: string) {
   return text.length > 0
 }
 
+async function focusRequirementImageFromQuery() {
+  if (route.query.focus !== 'image' || !route.query.fileId) return
+  const fileId = String(route.query.fileId)
+  const position = Number(route.query.position || 0)
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    await nextTick()
+    if (attempt > 0) {
+      await new Promise(resolve => window.setTimeout(resolve, attempt >= 4 ? 320 : 120 * attempt))
+    }
+    const images = Array.from(document.querySelectorAll<HTMLImageElement>('.description-content-section__body img'))
+    const matchingImages = images.filter((image) => {
+      const src = image.currentSrc || image.src || image.getAttribute('src') || ''
+      return src.includes(`/files/${fileId}/preview`) || src.includes(`fileId=${fileId}`)
+    })
+    const target = matchingImages[position > 0 ? position - 1 : 0] || matchingImages[0]
+    if (!target) continue
+
+    document.querySelectorAll('.requirement-image-citation-focus').forEach((element) => {
+      element.classList.remove('requirement-image-citation-focus')
+    })
+    target.classList.add('requirement-image-citation-focus')
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    return
+  }
+}
+
+
 async function initializePage() {
   // Load config and project options in parallel with batch detail fetch
   // 注：getRequirementDetailBatch 在用户无权查看时会返回 code=403，
@@ -2008,6 +2036,7 @@ async function initializePage() {
   // Populate data from batch response
   if (batchData) {
     detail.value = batchData.requirement
+    void focusRequirementImageFromQuery()
     children.value = (batchData.children || []) as any
     relatedRequirements.value = (batchData.relations || []) as any
     comments.value = (batchData.comments || []) as any
@@ -2528,6 +2557,13 @@ onMounted(() => {
     margin: 8px 0;
     color: var(--el-text-color-secondary);
     background: var(--el-fill-color-light);
+  }
+
+  :deep(img.requirement-image-citation-focus) {
+    outline: 4px solid var(--el-color-primary);
+    outline-offset: 6px;
+    border-radius: 6px;
+    box-shadow: 0 0 0 8px rgba(64, 158, 255, 0.16);
   }
 
   :deep(img) {

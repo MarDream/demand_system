@@ -187,6 +187,7 @@ const settingsMenuOrder: Record<string, number> = {
   '/settings/requirements': 4,
   '/system/workflow-config': 5,
   '/settings/menus': 7,
+  '/settings/assistant': 8,
   '/settings/llm': 10,
 }
 

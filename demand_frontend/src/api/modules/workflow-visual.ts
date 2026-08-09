@@ -33,8 +33,10 @@ export function saveWorkflowConfig(projectId: number, config: WorkflowConfigDTO)
 /**
  * 提交审核
  */
-export function submitForApproval(projectId: number) {
-  return request.post<void>(`/v1/workflows/${projectId}/publish`) as unknown as Promise<void>
+export function submitForApproval(projectId: number, versionId?: number) {
+  return request.post<void>(`/v1/workflows/${projectId}/publish`, undefined, {
+    params: versionId ? { versionId } : undefined,
+  }) as unknown as Promise<void>
 }
 
 /**
@@ -128,8 +130,10 @@ export function clearAllWorkflowApprovals() {
   return request.delete<void>('/v1/workflow-approvals') as unknown as Promise<void>
 }
 
-export function validateBeforeSubmit(projectId: number) {
-  return request.post<WorkflowValidationReport>(`/v1/workflows/${projectId}/validate-before-submit`) as unknown as Promise<WorkflowValidationReport>
+export function validateBeforeSubmit(projectId: number, versionId?: number) {
+  return request.post<WorkflowValidationReport>(`/v1/workflows/${projectId}/validate-before-submit`, undefined, {
+    params: versionId ? { versionId } : undefined,
+  }) as unknown as Promise<WorkflowValidationReport>
 }
 
 export function validateWorkflowVersionReport(versionId: number) {

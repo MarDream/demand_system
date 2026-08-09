@@ -15,13 +15,16 @@ import com.demand.system.module.assistant.dto.AssistantSessionVO;
 import com.demand.system.module.assistant.dto.AssistantTask;
 import com.demand.system.module.assistant.entity.AssistantMessage;
 import com.demand.system.module.assistant.entity.AssistantSession;
+import com.demand.system.module.assistant.entity.QuestionLog;
 import com.demand.system.module.assistant.mapper.AssistantMessageMapper;
 import com.demand.system.module.assistant.mapper.AssistantSessionMapper;
+import com.demand.system.module.assistant.mapper.QuestionLogMapper;
 import com.demand.system.module.assistant.service.AssistantOperationCatalogService;
 import com.demand.system.module.assistant.service.AssistantService;
 import com.demand.system.module.assistant.validator.AssistantActionValidator;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchRequest;
+import com.demand.system.module.knowledge.constant.KnowledgeSearchScope;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse.ThinkingStep;
 import com.demand.system.module.knowledge.service.KnowledgeSearchService;
@@ -35,6 +38,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.LocalDateTime;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -50,6 +55,7 @@ public class AssistantServiceImpl implements AssistantService {
 
     private final AssistantSessionMapper sessionMapper;
     private final AssistantMessageMapper messageMapper;
+    private final QuestionLogMapper questionLogMapper;
     private final AssistantOperationCatalogService catalogService;
     private final AssistantActionValidator actionValidator;
     private final LlmGateway llmGateway;
@@ -58,6 +64,7 @@ public class AssistantServiceImpl implements AssistantService {
 
     public AssistantServiceImpl(AssistantSessionMapper sessionMapper,
                                 AssistantMessageMapper messageMapper,
+                                QuestionLogMapper questionLogMapper,
                                 AssistantOperationCatalogService catalogService,
                                 AssistantActionValidator actionValidator,
                                 LlmGateway llmGateway,
@@ -65,6 +72,7 @@ public class AssistantServiceImpl implements AssistantService {
                                 KnowledgeSearchService knowledgeSearchService) {
         this.sessionMapper = sessionMapper;
         this.messageMapper = messageMapper;
+        this.questionLogMapper = questionLogMapper;
         this.catalogService = catalogService;
         this.actionValidator = actionValidator;
         this.llmGateway = llmGateway;
@@ -138,6 +146,9 @@ public class AssistantServiceImpl implements AssistantService {
         userMessage.setPageContext(request.getPageContext());
         messageMapper.insert(userMessage);
 
+        // 埋点：记录用户提问到 question_logs，供 AI 自动提炼高频问题
+        recordQuestionLog(userId, request, userContent, sessionId);
+
         AssistantMessage assistantMessage = new AssistantMessage();
         assistantMessage.setSessionId(sessionId);
         assistantMessage.setUserId(userId);
@@ -149,13 +160,15 @@ public class AssistantServiceImpl implements AssistantService {
 
         SseEmitter emitter = new SseEmitter(STREAM_TIMEOUT_MS);
         boolean webSearchEnabled = Boolean.TRUE.equals(request.getWebSearch());
-        if (request.getKnowledgeBaseId() != null) {
+        if (request.getKnowledgeBaseId() != null
+                || hasExplicitSearchScopeValue(request, KnowledgeSearchScope.REQUIREMENT_BODY)
+                || hasExplicitSearchScopeValue(request, KnowledgeSearchScope.KNOWLEDGE_BASE)) {
             // 知识库检索问答分支：跨全部或指定知识库做 RAG 问答
             assistantMessage.setIntent("knowledge_qa");
             messageMapper.updateById(assistantMessage);
             updateSessionAfterInteraction(session, buildPreview(userContent));
             CompletableFuture.runAsync(() -> doStreamKnowledgeReply(emitter, request, userContent, userMessage.getId(), assistantMessage));
-        } else if (webSearchEnabled) {
+        } else if (webSearchEnabled || hasExplicitSearchScopeValue(request, KnowledgeSearchScope.WEB)) {
             // 联网搜索分支：通用助手模式下启用联网，轻量检索本地知识库 + LLM 联网搜索综合回答
             assistantMessage.setIntent("web_search");
             messageMapper.updateById(assistantMessage);
@@ -218,11 +231,13 @@ public class AssistantServiceImpl implements AssistantService {
 
         SseEmitter emitter = new SseEmitter(STREAM_TIMEOUT_MS);
         boolean webSearchEnabled = Boolean.TRUE.equals(request.getWebSearch());
-        if (request.getKnowledgeBaseId() != null) {
+        if (request.getKnowledgeBaseId() != null
+                || hasExplicitSearchScopeValue(request, KnowledgeSearchScope.REQUIREMENT_BODY)
+                || hasExplicitSearchScopeValue(request, KnowledgeSearchScope.KNOWLEDGE_BASE)) {
             newAssistant.setIntent("knowledge_qa");
             messageMapper.updateById(newAssistant);
             CompletableFuture.runAsync(() -> doStreamKnowledgeReply(emitter, request, userMessage.getContent(), userMessage.getId(), newAssistant));
-        } else if (webSearchEnabled) {
+        } else if (webSearchEnabled || hasExplicitSearchScopeValue(request, KnowledgeSearchScope.WEB)) {
             newAssistant.setIntent("web_search");
             messageMapper.updateById(newAssistant);
             CompletableFuture.runAsync(() -> doStreamWebSearchReply(emitter, request, userMessage.getContent(), userMessage.getId(), newAssistant));
@@ -432,6 +447,8 @@ public class AssistantServiceImpl implements AssistantService {
             searchRequest.setMode(mode);
             searchRequest.setTopK(topK);
             searchRequest.setLlmModelId(request.getLlmModelId());
+            searchRequest.setRequesterId(assistantMessage.getUserId());
+            searchRequest.setSearchScopes(resolveAssistantSearchScopes(request, false));
 
             // ===== Task 1: 问题解析 =====
             AssistantTask parseTask = new AssistantTask("query_parse", "问题解析");
@@ -503,6 +520,7 @@ public class AssistantServiceImpl implements AssistantService {
 
             List<AssistantSource> sources = mapCitationsToSources(searchResponse.getCitations(), rawKbId);
             assistantMessage.setSources(sources);
+            assistantMessage.setWarnings(searchResponse.getWarnings());
             assistantMessage.setIntent("knowledge_qa");
             assistantMessage.setTasks(tasks);
 
@@ -520,7 +538,8 @@ public class AssistantServiceImpl implements AssistantService {
                     "intent", "knowledge_qa",
                     "actions", List.of(),
                     "sources", sources,
-                    "tasks", tasks
+                    "tasks", tasks,
+                    "warnings", searchResponse.getWarnings() == null ? List.of() : searchResponse.getWarnings()
             )));
 
             // 下发深度思考内容（RAG 生成答案时模型的 reasoning）
@@ -621,6 +640,7 @@ public class AssistantServiceImpl implements AssistantService {
             List<AssistantSource> kbSources = new ArrayList<>();
             List<ThinkingStep> thinkingSteps = new ArrayList<>();
             int retrievedCount = 0;
+            List<String> retrievalWarnings = new ArrayList<>();
             kbTask.start("轻量检索全部本地知识库（topK=5）…");
             try {
                 KnowledgeSearchRequest searchRequest = new KnowledgeSearchRequest();
@@ -629,6 +649,8 @@ public class AssistantServiceImpl implements AssistantService {
                 searchRequest.setMode("hybrid");
                 searchRequest.setTopK(5); // 轻量检索，避免拖慢响应
                 searchRequest.setLlmModelId(request.getLlmModelId());
+                searchRequest.setRequesterId(assistantMessage.getUserId());
+                searchRequest.setSearchScopes(resolveAssistantSearchScopes(request, true));
 
                 KnowledgeSearchResponse searchResponse = knowledgeSearchService.search(searchRequest);
 
@@ -645,6 +667,9 @@ public class AssistantServiceImpl implements AssistantService {
                     kbContext = ctx.toString();
                     retrievedCount = searchResponse.getResults().size();
                     kbSources = mapCitationsToSources(searchResponse.getCitations(), null);
+                    if (searchResponse.getWarnings() != null) {
+                        retrievalWarnings.addAll(searchResponse.getWarnings());
+                    }
                     kbTask.log("info", "命中 " + retrievedCount + " 条片段");
                 } else {
                     kbTask.log("info", "本地知识库未命中相关片段");
@@ -680,12 +705,14 @@ public class AssistantServiceImpl implements AssistantService {
             assistantMessage.setThinkingSteps(thinkingSteps);
             assistantMessage.setTasks(tasks);
             assistantMessage.setRetrievedCount(retrievedCount);
+            assistantMessage.setWarnings(retrievalWarnings);
 
             emitter.send(SseEmitter.event().name("actions").data(Map.of(
                     "intent", "web_search",
                     "actions", List.of(),
                     "sources", allSources,
-                    "tasks", tasks
+                    "tasks", tasks,
+                    "warnings", retrievalWarnings
             )));
 
             // ===== 调用 LLM 联网搜索流式回答 =====
@@ -871,6 +898,26 @@ public class AssistantServiceImpl implements AssistantService {
         return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
     }
 
+    private boolean hasExplicitSearchScopeValue(AssistantChatRequest request, String scope) {
+        return hasExplicitSearchScope(request) && request.getSearchScopes().stream()
+                .filter(Objects::nonNull)
+                .anyMatch(value -> scope.equalsIgnoreCase(value.trim()));
+    }
+
+    private boolean hasExplicitSearchScope(AssistantChatRequest request) {
+        return request != null && request.getSearchScopes() != null && !request.getSearchScopes().isEmpty();
+    }
+
+    private List<String> resolveAssistantSearchScopes(AssistantChatRequest request, boolean webMode) {
+        if (hasExplicitSearchScope(request)) {
+            return request.getSearchScopes();
+        }
+        if (webMode) {
+            return List.of(KnowledgeSearchScope.REQUIREMENT_BODY,
+                    KnowledgeSearchScope.KNOWLEDGE_BASE, KnowledgeSearchScope.WEB);
+        }
+        return List.of(KnowledgeSearchScope.REQUIREMENT_BODY, KnowledgeSearchScope.KNOWLEDGE_BASE);
+    }
     private List<AssistantSource> mapCitationsToSources(List<KnowledgeSearchResponse.CitationReference> citations, Long rawKbId) {
         if (citations == null || citations.isEmpty()) {
             return List.of();
@@ -878,22 +925,47 @@ public class AssistantServiceImpl implements AssistantService {
         List<AssistantSource> sources = new ArrayList<>();
         for (KnowledgeSearchResponse.CitationReference citation : citations) {
             AssistantSource source = new AssistantSource();
-            source.setCode("knowledge_document");
-            source.setTitle(citation.getFileName());
-            source.setDocumentId(citation.getDocumentId());
-            // 优先用 citation 自带的 knowledgeBaseId（跨库检索场景），否则用 rawKbId
-            Long kbId = citation.getKnowledgeBaseId() != null
-                    ? Long.valueOf(citation.getKnowledgeBaseId())
-                    : (rawKbId != null && rawKbId != -1L ? rawKbId : null);
-            source.setKnowledgeBaseId(kbId);
-            if (rawKbId != null && rawKbId != -1L) {
-                source.setPath("/settings/knowledge/" + rawKbId);
+            boolean requirementBody = citation.getSourceType() != null
+                    && citation.getSourceType().startsWith("requirement_body");
+            source.setCode(requirementBody ? "requirement_body" : "knowledge_document");
+            source.setSourceType(citation.getSourceType());
+            source.setDocumentId(requirementBody ? null : citation.getDocumentId());
+            source.setRequirementId(citation.getRequirementId());
+            source.setRequirementNo(citation.getRequirementNo());
+            source.setRequirementTitle(citation.getRequirementTitle());
+            source.setContentType(citation.getContentType());
+            source.setImageFileId(citation.getImageFileId());
+            source.setImagePosition(citation.getImagePosition());
+            source.setFocus(citation.getFocus());
+            source.setTitle(requirementBody
+                    ? ((citation.getRequirementNo() != null ? citation.getRequirementNo() + " " : "")
+                    + (citation.getRequirementTitle() != null ? citation.getRequirementTitle() : "工单正文"))
+                    : citation.getFileName());
+            // 正文来源不进入附件预览链路；知识库附件仍携带知识库和文档标识。
+            if (requirementBody) {
+                source.setKnowledgeBaseId(null);
+                source.setPath(citation.getRequirementId() == null ? null : "/requirements/" + citation.getRequirementId());
             } else {
-                source.setPath("/settings/knowledge");
+                // 优先用 citation 自带的 knowledgeBaseId（跨库检索场景），否则用 rawKbId
+                Long kbId = citation.getKnowledgeBaseId() != null
+                        ? Long.valueOf(citation.getKnowledgeBaseId())
+                        : (rawKbId != null && rawKbId != -1L ? rawKbId : null);
+                source.setKnowledgeBaseId(kbId);
+                source.setPath(rawKbId != null && rawKbId != -1L
+                        ? "/settings/knowledge/" + rawKbId
+                        : "/settings/knowledge");
             }
             int hitCount = citation.getHitCount() != null ? citation.getHitCount() : 0;
             double maxScore = citation.getMaxScore() != null ? citation.getMaxScore() : 0d;
-            source.setReason("命中 " + hitCount + " 个片段，相关度 " + Math.round(maxScore * 100) + "%");
+            source.setHitCount(hitCount);
+            source.setMaxScore(maxScore);
+            String evidenceType = switch (citation.getContentType() == null ? "" : citation.getContentType()) {
+                case "image_ocr" -> "，包含图片 OCR";
+                case "image_caption" -> "，包含图片理解";
+                case "body_image" -> "，包含正文图片 OCR/理解";
+                default -> "";
+            };
+            source.setReason("命中 " + hitCount + " 个片段，相关度 " + Math.round(maxScore * 100) + "%" + evidenceType);
             sources.add(source);
         }
         return sources;
@@ -1111,6 +1183,7 @@ public class AssistantServiceImpl implements AssistantService {
         vo.setProcessSummary(message.getProcessSummary());
         vo.setRetrievedCount(message.getRetrievedCount());
         vo.setCitations(message.getCitations());
+        vo.setWarnings(message.getWarnings());
         vo.setReasoning(message.getReasoning());
         vo.setInputTokens(message.getInputTokens());
         vo.setOutputTokens(message.getOutputTokens());
@@ -1153,6 +1226,35 @@ public class AssistantServiceImpl implements AssistantService {
             this.provider = provider;
             this.temperature = temperature;
             this.maxTokens = maxTokens;
+        }
+    }
+
+    private void recordQuestionLog(Long userId, AssistantChatRequest request, String questionText, Long sessionId) {
+        try {
+            QuestionLog log = new QuestionLog();
+            log.setUserId(userId);
+            log.setSessionId(sessionId);
+            log.setPageRoute(request.getPageContext() != null ? request.getPageContext().getRouteName() : null);
+            log.setQuestionText(questionText);
+            log.setQuestionHash(md5(questionText));
+            log.setAnswered(1);
+            questionLogMapper.insert(log);
+        } catch (Exception e) {
+            // 埋点失败不影响主流程
+        }
+    }
+
+    private static String md5(String input) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            byte[] digest = md.digest(input.getBytes());
+            StringBuilder sb = new StringBuilder();
+            for (byte b : digest) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            return Integer.toHexString(input.hashCode());
         }
     }
 }

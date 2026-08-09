@@ -1,3 +1,5 @@
+export type AssistantSearchScope = 'REQUIREMENT_BODY' | 'KNOWLEDGE_BASE' | 'WEB'
+
 export interface AssistantAction {
   type: string
   label: string
@@ -15,6 +17,20 @@ export interface AssistantSource {
   documentId?: number | null
   /** 知识库 ID（知识库检索来源时有效） */
   knowledgeBaseId?: number | null
+  /** 来源类型，例如 requirement_body */
+  sourceType?: string | null
+  /** 工单正文来源的工单 ID */
+  requirementId?: number | null
+  /** 工单编号 */
+  requirementNo?: string | null
+  /** 工单名称 */
+  requirementTitle?: string | null
+  contentType?: string | null
+  hitCount?: number | null
+  maxScore?: number | null
+  imageFileId?: number | null
+  imagePosition?: number | null
+  focus?: string | null
 }
 
 export interface AssistantPageContext {
@@ -60,6 +76,15 @@ export interface CitationReference {
   hitCount?: number
   maxScore?: number
   sources?: string[]
+  sourceType?: string | null
+  requirementId?: number | null
+  requirementNo?: string | null
+  requirementTitle?: string | null
+  contentType?: string | null
+  knowledgeBaseId?: string | null
+  imageFileId?: number | null
+  imagePosition?: number | null
+  focus?: string | null
 }
 
 export interface AssistantMessage {
@@ -78,6 +103,8 @@ export interface AssistantMessage {
   processSummary?: string | null
   retrievedCount?: number | null
   citations?: CitationReference[]
+  /** 检索降级与能力提示 */
+  warnings?: string[]
   /** 深度思考内容（LLM reasoning，可为 null） */
   reasoning?: string | null
   /** 输入（提示词）token 数 */
@@ -127,6 +154,8 @@ export interface AssistantChatRequest {
    * 开启后：轻量检索全部本地知识库 + LLM 联网搜索，综合给出结果。
    */
   webSearch?: boolean
+  /** 显式检索范围；未传时由后端按场景使用默认范围。 */
+  searchScopes?: AssistantSearchScope[]
   /** 上传的文件附件（文件ID + 客户端提取的文本内容） */
   files?: AssistantFileAttachment[]
 }
@@ -157,4 +186,6 @@ export interface AssistantActionPayload {
   sources: AssistantSource[]
   /** 任务列表（知识库问答时携带） */
   tasks?: AssistantTask[]
+  /** 检索降级与能力提示 */
+  warnings?: string[]
 }

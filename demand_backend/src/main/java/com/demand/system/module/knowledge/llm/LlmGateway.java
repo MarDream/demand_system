@@ -335,6 +335,61 @@ public class LlmGateway {
         return chatWithProvider(provider, systemPrompt, userMessage, null, null);
     }
 
+    /**
+     * 调用兼容 OpenAI/Anthropic 协议的多模态对话接口。
+     * 图片只在调用已配置的视觉 provider 时上传；调用方负责限制图片大小和类型。
+     */
+    public ChatResult chatWithImageWithProvider(
+            LlmGatewayConfig.Provider provider,
+            String systemPrompt,
+            String userMessage,
+            String contentType,
+            byte[] imageBytes
+    ) {
+        if (provider == null || imageBytes == null || imageBytes.length == 0) {
+            throw new IllegalArgumentException("图片理解 provider 或图片内容为空");
+        }
+        long start = System.currentTimeMillis();
+        try {
+            Protocol protocol = config.resolveProtocol(provider);
+            String mime = contentType == null || contentType.isBlank()
+                    ? "application/octet-stream" : contentType.toLowerCase(Locale.ROOT);
+            String encoded = Base64.getEncoder().encodeToString(imageBytes);
+            Map<String, Object> body = new HashMap<>();
+            body.put("model", provider.getModel());
+            if (protocol == Protocol.ANTHROPIC) {
+                body.put("max_tokens", 2048);
+                body.put("messages", List.of(Map.of(
+                        "role", "user",
+                        "content", List.of(
+                                Map.of("type", "image", "source", Map.of(
+                                        "type", "base64", "media_type", mime, "data", encoded
+                                )),
+                                Map.of("type", "text", "text", userMessage)
+                        )
+                )));
+                body.put("system", systemPrompt == null ? "" : systemPrompt);
+                JsonNode root = call(provider, "/messages", body);
+                return parseChatResult(root, protocol, System.currentTimeMillis() - start);
+            }
+            body.put("messages", List.of(
+                    Map.of("role", "system", "content", systemPrompt == null ? "" : systemPrompt),
+                    Map.of("role", "user", "content", List.of(
+                            Map.of("type", "text", "text", userMessage),
+                            Map.of("type", "image_url", "image_url", Map.of(
+                                    "url", "data:" + mime + ";base64," + encoded
+                            ))
+                    ))
+            ));
+            body.put("temperature", 0.0);
+            body.put("max_tokens", 2048);
+            JsonNode root = call(provider, "/chat/completions", body);
+            return parseChatResult(root, protocol, System.currentTimeMillis() - start);
+        } catch (Exception e) {
+            throw new RuntimeException("图片理解调用失败: " + describeApiException(e), e);
+        }
+    }
+
     public ChatResult chatWithProvider(
             LlmGatewayConfig.Provider provider,
             String systemPrompt,

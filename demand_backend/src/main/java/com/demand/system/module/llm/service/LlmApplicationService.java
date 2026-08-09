@@ -1,6 +1,7 @@
 package com.demand.system.module.llm.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.ErrorCode;
 import com.demand.system.module.knowledge.llm.LlmGatewayConfig;
@@ -59,13 +60,15 @@ public class LlmApplicationService {
             }
         }
 
-        LlmApplication update = new LlmApplication();
-        update.setId(application.getId());
-        update.setModelId(dto.getModelId());
+        // 显式使用 UpdateWrapper 写入 model_id，确保清空模型绑定时能真正落库 NULL。
+        // 不能依赖 updateById 的默认非空更新策略，否则前端 clearable 选择清空后仍会保留旧模型。
+        UpdateWrapper<LlmApplication> updateWrapper = new UpdateWrapper<LlmApplication>()
+                .eq("id", application.getId())
+                .set("model_id", dto.getModelId());
         if (dto.getEnabled() != null) {
-            update.setEnabled(dto.getEnabled());
+            updateWrapper.set("enabled", dto.getEnabled());
         }
-        applicationMapper.updateById(update);
+        applicationMapper.update(null, updateWrapper);
         return toVO(applicationMapper.selectById(application.getId()));
     }
 

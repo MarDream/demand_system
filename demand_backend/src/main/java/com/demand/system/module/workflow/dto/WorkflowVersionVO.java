@@ -73,6 +73,9 @@ public class WorkflowVersionVO {
     @Schema(description = "创建时间")
     private LocalDateTime createdAt;
 
+    @Schema(description = "编辑时间（最近一次保存/启停/复制等变更时间）")
+    private LocalDateTime updatedAt;
+
     @Schema(description = "关联的运行中工单数")
     private Long runningInstanceCount;
 
@@ -249,6 +252,14 @@ public class WorkflowVersionVO {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
     }
 
     public Long getRunningInstanceCount() {

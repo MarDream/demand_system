@@ -60,8 +60,12 @@ export interface SearchResultItem {
   pageNum: number | null
   score: number
   knowledgeBaseId: string
+  imageFileId?: number | null
+  imagePosition?: number | null
+  focus?: string | null
   requirement?: {
     id: number
+    requirementNo?: string | null
     title: string
     status: string
     type: string
@@ -86,6 +90,7 @@ export interface SearchResponse {
   questionIntent?: string | null
   intentConfidence?: number | null
   citations?: CitationReference[]
+  warnings?: string[]
 }
 
 export interface CitationReference {
@@ -94,6 +99,16 @@ export interface CitationReference {
   fileName: string
   hitCount: number
   maxScore: number
+  sources?: string[]
+  knowledgeBaseId?: string | null
+  sourceType?: string | null
+  requirementId?: number | null
+  requirementNo?: string | null
+  requirementTitle?: string | null
+  contentType?: 'body' | 'image_ocr' | 'image_caption' | 'body_image' | string | null
+  imageFileId?: number | null
+  imagePosition?: number | null
+  focus?: string | null
 }
 
 export type SearchMode = 'hybrid' | 'semantic' | 'keyword'
@@ -231,6 +246,66 @@ export function getDocumentRequirementRefs(knowledgeBaseId: number, documentId: 
   return request.get<DocumentRequirementRef[]>(`/v1/knowledge/bases/${knowledgeBaseId}/documents/${documentId}/requirement-refs`)
 }
 
+export interface RequirementBodyIndexOperationResult {
+  submitted?: number
+  skipped?: number
+  requested?: number
+  total?: number
+  requirementId?: number
+  documentId?: number | null
+  message?: string | null
+}
+
+export interface RequirementBodyIndexOverview {
+  totalRequirements: number
+  indexedRequirements: number
+  notIndexedRequirements: number
+  statusCounts: Record<string, number>
+  imageChunkCount: number
+  imageUnderstandingEnabled: boolean
+  imageUnderstandingReason?: string | null
+}
+
+export interface RequirementBodyIndexStatus {
+  requirementId: number
+  documentId: number | null
+  status: string
+  chunkCount: number
+  errorMessage?: string | null
+  updatedAt?: string | null
+  imageUnderstandingEnabled: boolean
+  imageUnderstandingReason?: string | null
+}
+
+export function getRequirementBodyIndexOverview() {
+  return request.get<RequirementBodyIndexOverview>('/v1/knowledge/requirement-bodies/overview')
+}
+
+/** 提交历史工单正文索引回填任务。仅管理员可调用。 */
+export function backfillRequirementBodies() {
+  return request.post<RequirementBodyIndexOperationResult>('/v1/knowledge/requirement-bodies/backfill')
+}
+
+/** 重建指定工单正文索引。正文文本和图片理解按模型应用配置自动降级。 */
+export function rebuildRequirementBody(requirementId: number) {
+  return request.post<RequirementBodyIndexOperationResult>(`/v1/knowledge/requirement-bodies/${requirementId}/rebuild`)
+}
+
+export function getRequirementBodyIndexStatus(requirementId: number) {
+  return request.get<RequirementBodyIndexStatus>(`/v1/knowledge/requirement-bodies/${requirementId}/status`)
+}
+
+/** 重试所有失败的工单正文索引任务。 */
+export function retryFailedRequirementBodies() {
+  return request.post<RequirementBodyIndexOperationResult>('/v1/knowledge/requirement-bodies/retry-failed')
+}
+
+/** 批量重建工单正文；不传 requirementIds 时重建全部工单。 */
+export function rebuildRequirementBodies(requirementIds?: number[]) {
+  return request.post<RequirementBodyIndexOperationResult>('/v1/knowledge/requirement-bodies/rebuild-batch',
+    requirementIds?.length ? { requirementIds } : {})
+}
+
 // 语义检索
 export function searchKnowledge(data: {
   query: string
@@ -238,6 +313,7 @@ export function searchKnowledge(data: {
   mode?: SearchMode
   topK?: number
   llmModelId?: number
+  searchScopes?: Array<'REQUIREMENT_BODY' | 'KNOWLEDGE_BASE' | 'WEB'>
 }) {
   return request.post<SearchResponse>('/v1/knowledge/search', data)
 }
@@ -256,6 +332,7 @@ export async function streamSearchKnowledge(
     mode?: SearchMode | 'rag'
     topK?: number
     llmModelId?: number
+    searchScopes?: Array<'REQUIREMENT_BODY' | 'KNOWLEDGE_BASE' | 'WEB'>
   },
   handlers: StreamSearchHandlers
 ) {

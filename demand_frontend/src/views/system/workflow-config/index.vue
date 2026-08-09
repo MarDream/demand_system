@@ -135,9 +135,22 @@
                   {{ formatDateTime(row.createdAt) }}
                 </template>
               </el-table-column>
+              <el-table-column v-if="isVersionColumnVisible('updatedAt')" label="编辑时间" min-width="160">
+                <template #default="{ row }">
+                  {{ row.updatedAt ? formatDateTime(row.updatedAt) : formatDateTime(row.createdAt) }}
+                </template>
+              </el-table-column>
               <el-table-column v-if="isVersionColumnVisible('latestSubmittedAt')" label="最近提交" min-width="160">
                 <template #default="{ row }">
                   {{ row.latestSubmittedAt ? formatDateTime(row.latestSubmittedAt) : '-' }}
+                </template>
+              </el-table-column>
+              <el-table-column v-if="isVersionColumnVisible('latestPublishedAt')" label="最近发布" min-width="160">
+                <template #default="{ row }">
+                  <template v-if="row.changeLog">
+                    {{ formatDateTime(row.changeLog) }}
+                  </template>
+                  <span v-else class="text-secondary">-</span>
                 </template>
               </el-table-column>
               <el-table-column v-if="isVersionColumnVisible('activatedAt')" label="启用时间" min-width="160">
@@ -150,6 +163,9 @@
                   <div class="operation-cell">
                     <el-tooltip content="查看" placement="top">
                       <el-button link type="primary" :icon="View" @click="viewWorkflow(row)" />
+                    </el-tooltip>
+                    <el-tooltip content="修改历史" placement="top">
+                      <el-button link type="primary" :icon="Clock" @click="openHistory(row)" />
                     </el-tooltip>
                     <el-tooltip :content="getEditButtonTooltip(row)" placement="top">
                       <span>
@@ -540,6 +556,49 @@
     </el-drawer>
 
     <WorkflowCopyDialog ref="copyDialogRef" :project-id="0" @success="handleCopySuccess" />
+
+    <!-- 修改历史时间线抽屉 -->
+    <el-drawer
+      v-model="historyDrawerVisible"
+      :title="historyTitle"
+      direction="rtl"
+      size="480px"
+      :before-close="closeHistory"
+    >
+      <template #default>
+        <div v-if="historyLoading" class="history-loading">加载中...</div>
+        <div v-else-if="historyItems.length === 0" class="history-empty">暂无修改记录</div>
+        <div v-else class="history-timeline">
+          <div
+            v-for="item in historyItems"
+            :key="item.id"
+            class="history-timeline__item"
+          >
+            <div class="history-timeline__dot" :class="'dot--' + item.action" />
+            <div class="history-timeline__line" v-if="item !== historyItems[historyItems.length - 1]" />
+            <div class="history-timeline__card">
+              <div class="history-timeline__header">
+                <el-tag :type="actionTagType(item.action)" size="small" effect="light">
+                  {{ actionLabel(item.action) }}
+                </el-tag>
+                <span class="history-timeline__time">{{ formatDateTime(item.createdAt) }}</span>
+              </div>
+              <div class="history-timeline__summary">{{ item.changeSummary }}</div>
+              <div class="history-timeline__operator">操作人：{{ item.operatorName }}</div>
+              <div v-if="item.versionSnapshot" class="history-timeline__snapshot">
+                <template v-if="hasSnapshotData(item.versionSnapshot)">
+                  <span class="snapshot-label">快照：</span>
+                  <span v-for="(v, k) in parseSnapshot(item.versionSnapshot)" :key="k" class="snapshot-chip">
+                    {{ k }}: {{ v }}
+                  </span>
+                  <span v-if="!hasSnapshotData(item.versionSnapshot)" class="muted-cell">-</span>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </el-drawer>
   </PageContainer>
 </template>
 
@@ -547,7 +606,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Setting, CircleCheck, CircleClose, Document, Delete, View, EditPen, Tools, CopyDocument, Download, Upload } from '@element-plus/icons-vue'
+import { Plus, Setting, CircleCheck, CircleClose, Document, Delete, View, EditPen, Tools, CopyDocument, Download, Upload, Clock } from '@element-plus/icons-vue'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
@@ -585,6 +644,8 @@ import type {
 } from '@/types/workflow-visual'
 
 import { requirementConfigApi, type RequirementType } from '@/api/modules/requirementConfig'
+import { getWorkflowVersionHistory } from '@/api/modules/workflow'
+import type { WorkflowHistory } from '@/types/workflow'
 
 // ── 列表字段设置：版本管理表 ──
 const versionAllColumns: ColumnDef[] = [
@@ -597,11 +658,13 @@ const versionAllColumns: ColumnDef[] = [
   { key: 'approvalStatus', label: '审核状态', group: '状态信息', width: 140 },
   { key: 'creatorName', label: '创建人', group: '人员与时间', width: 140 },
   { key: 'createdAt', label: '创建时间', group: '人员与时间', width: 180 },
+  { key: 'updatedAt', label: '编辑时间', group: '人员与时间', width: 180 },
   { key: 'latestSubmittedAt', label: '最近提交', group: '人员与时间', width: 180 },
+  { key: 'latestPublishedAt', label: '最近发布', group: '人员与时间', width: 180 },
   { key: 'activatedAt', label: '启用时间', group: '人员与时间', width: 180 },
   { key: 'operations', label: '操作', width: 120 },
 ]
-const versionDefaultKeys = ['version', 'boundTypes', 'projectId', 'knowledgeBaseName', 'isActive', 'approvalEvaluation', 'approvalStatus', 'creatorName', 'createdAt', 'operations']
+const versionDefaultKeys = ['version', 'boundTypes', 'projectId', 'knowledgeBaseName', 'isActive', 'approvalEvaluation', 'approvalStatus', 'creatorName', 'createdAt', 'updatedAt', 'operations']
 
 const {
   showColumnConfig: showVersionColumnConfig,
@@ -779,7 +842,7 @@ const versionDialogHint = computed(() => {
 
 const filteredVersions = computed(() => {
   const keyword = versionKeyword.value.trim().toLowerCase()
-  return versions.value.filter((item) => {
+  const list = versions.value.filter((item) => {
     const approvalStatus = versionApprovalStatus(item)
     const matchesActivation = !activationFilter.value
       || (activationFilter.value === 'ACTIVE' && item.isActive === 1)
@@ -792,6 +855,15 @@ const filteredVersions = computed(() => {
       return true
     }
     return `${item.name} V${item.version}`.toLowerCase().includes(keyword)
+  })
+  // 排序：启用状态置顶（启用在前）→ 编辑时间倒序（缺失时回退创建时间）→ id 倒序兜底
+  return [...list].sort((a, b) => {
+    const activeDiff = (b.isActive === 1 ? 1 : 0) - (a.isActive === 1 ? 1 : 0)
+    if (activeDiff !== 0) return activeDiff
+    const timeA = Date.parse(a.updatedAt || a.createdAt || '')
+    const timeB = Date.parse(b.updatedAt || b.createdAt || '')
+    if (timeB !== timeA) return timeB - timeA
+    return b.id - a.id
   })
 })
 
@@ -1397,6 +1469,44 @@ function handleImportWorkflow() {
   input.click()
 }
 
+// ===== 修改历史时间线 =====
+const historyDrawerVisible = ref(false)
+const historyTitle = ref('修改历史')
+const historyLoading = ref(false)
+const historyItems = ref<WorkflowHistory[]>([])
+
+function actionTagType(action: string): string {
+  const map: Record<string, string> = { create: 'success', update: 'primary', publish: 'warning', activate: 'warning', deactivate: 'info', delete: 'danger' }
+  return map[action] || 'info'
+}
+function actionLabel(action: string): string {
+  const map: Record<string, string> = { create: '创建', update: '编辑', publish: '发布', activate: '启用', deactivate: '停用', delete: '删除', copy: '复制', export: '导出', import: '导入' }
+  return map[action] || action
+}
+function hasSnapshotData(snapshot: string): boolean {
+  try { const o = JSON.parse(snapshot); return o && Object.keys(o).length > 0 } catch { return false }
+}
+function parseSnapshot(snapshot: string): Record<string, number> {
+  try { return JSON.parse(snapshot) } catch { return {} }
+}
+async function openHistory(row: WorkflowVersionDTO) {
+  historyDrawerVisible.value = true
+  historyTitle.value = `修改历史 — ${row.name || 'V' + row.version}`
+  historyLoading.value = true
+  historyItems.value = []
+  try {
+    const res = await getWorkflowVersionHistory(row.id)
+    historyItems.value = (res as any)?.data ?? []
+  } catch {
+    historyItems.value = []
+  } finally {
+    historyLoading.value = false
+  }
+}
+function closeHistory() {
+  historyDrawerVisible.value = false
+}
+
 onMounted(() => {
   reloadAllData()
   loadVersionColumnConfig()
@@ -1805,6 +1915,95 @@ onMounted(() => {
   .pagination-container {
     justify-content: flex-start;
   }
+}
+
+// ===== 修改历史时间线样式 =====
+.history-timeline {
+  position: relative;
+  padding: 8px 0;
+}
+.history-timeline__item {
+  position: relative;
+  display: flex;
+  padding-left: 32px;
+  padding-bottom: 24px;
+}
+.history-timeline__dot {
+  position: absolute;
+  left: 0;
+  top: 6px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #c0c4cc;
+  background: #fff;
+  z-index: 3;
+}
+.history-timeline__dot.dot--create { border-color: #67c23a; background: #f0f9eb; }
+.history-timeline__dot.dot--update { border-color: #409eff; background: #ecf5ff; }
+.history-timeline__dot.dot--publish, .dot--activate { border-color: #e6a23c; background: #fdf6ec; }
+.history-timeline__dot.dot--delete { border-color: #f56c6c; background: #fef0f0; }
+.history-timeline__line {
+  position: absolute;
+  left: 5px;
+  top: 18px;
+  bottom: -14px;
+  width: 2px;
+  background: #e4e7ed;
+  z-index: 2;
+}
+.history-timeline__card {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #fafbfc;
+  border: 1px solid #ebeef5;
+}
+.history-timeline__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.history-timeline__time {
+  font-size: 12px;
+  color: #909399;
+}
+.history-timeline__summary {
+  font-size: 13px;
+  font-weight: 500;
+  color: #303133;
+  margin-bottom: 4px;
+}
+.history-timeline__operator {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 4px;
+}
+.history-timeline__snapshot {
+  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.snapshot-label {
+  font-size: 11px;
+  color: #c0c4cc;
+}
+.snapshot-chip {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #f0f2f5;
+  color: #606266;
+}
+.history-loading, .history-empty {
+  text-align: center;
+  padding: 40px 0;
+  font-size: 14px;
+  color: #c0c4cc;
 }
 </style>
 

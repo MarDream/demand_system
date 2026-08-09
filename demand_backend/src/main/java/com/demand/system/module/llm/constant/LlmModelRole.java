@@ -13,7 +13,10 @@ public final class LlmModelRole {
     public static final String OPUS = "opus";
     public static final String EMBEDDING = "embedding";
     public static final String RERANK = "rerank";
+    public static final String VISION = "vision";
     public static final String GENERAL = "general";
 
-    public static final List<String> PRESET_ROLES = List.of(PRIMARY, HAIKU, SONNET, OPUS, EMBEDDING, RERANK, GENERAL);
+    public static final List<String> PRESET_ROLES = List.of(
+            PRIMARY, HAIKU, SONNET, OPUS, EMBEDDING, RERANK, VISION, GENERAL
+    );
 }

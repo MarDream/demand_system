@@ -54,8 +54,9 @@ public class WorkflowVisualConfigController {
      */
     @PostMapping("/workflows/{projectId}/publish")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
-    public Result<Void> submitForApproval(@PathVariable Long projectId) {
-        workflowConfigService.submitForApproval(projectId);
+    public Result<Void> submitForApproval(@PathVariable Long projectId,
+                                          @RequestParam(required = false) Long versionId) {
+        workflowConfigService.submitForApproval(projectId, versionId);
         return Result.success();
     }
 
@@ -63,7 +64,7 @@ public class WorkflowVisualConfigController {
      * 获取历史版本列表
      */
     @GetMapping("/workflows/{projectId}/versions")
-    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config', 'button:requirement-config:update')")
     public Result<List<WorkflowVersionDTO>> getVersionHistory(@PathVariable Long projectId) {
         return Result.success(workflowConfigService.getVersionHistory(projectId));
     }
@@ -190,8 +191,9 @@ public class WorkflowVisualConfigController {
      */
     @PostMapping("/workflows/{projectId}/validate-before-submit")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
-    public Result<WorkflowValidationReport> validateBeforeSubmit(@PathVariable Long projectId) {
-        return Result.success(workflowConfigService.validateLatestDraft(projectId));
+    public Result<WorkflowValidationReport> validateBeforeSubmit(@PathVariable Long projectId,
+                                                                  @RequestParam(required = false) Long versionId) {
+        return Result.success(workflowConfigService.validateLatestDraft(projectId, versionId));
     }
 
     @PostMapping("/workflows/versions/{versionId}/validate/report")

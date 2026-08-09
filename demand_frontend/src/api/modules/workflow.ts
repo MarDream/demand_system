@@ -1,6 +1,6 @@
 import request from '@/api/request'
 import type { ApiResponse } from '@/types/api'
-import type { WorkflowState, WorkflowTransition, WorkflowVersion, TransitionRequest, TransitionResponse } from '@/types/workflow'
+import type { WorkflowState, WorkflowTransition, WorkflowVersion, WorkflowHistory, TransitionRequest, TransitionResponse } from '@/types/workflow'
 
 export function getWorkflowStates(projectId: number) {
   return request.get<ApiResponse<WorkflowState[]>>(`/v1/projects/${projectId}/workflow/states`)
@@ -36,6 +36,10 @@ export function deleteWorkflowTransition(id: number) {
 
 export function getWorkflowVersions(projectId: number) {
   return request.get<ApiResponse<WorkflowVersion[]>>(`/v1/projects/${projectId}/workflow/versions`)
+}
+
+export function getWorkflowVersionHistory(versionId: number) {
+  return request.get<ApiResponse<WorkflowHistory[]>>(`/v1/workflow/versions/${versionId}/history`)
 }
 
 export function createWorkflowVersion(projectId: number, data: any) {

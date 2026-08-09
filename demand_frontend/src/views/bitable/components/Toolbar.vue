@@ -212,6 +212,7 @@ const emit = defineEmits<{
   addField: []
   viewSwitch: [viewId: number]
   createView: [viewType: ViewType]
+  renameTable: [tableId: number, name: string]
   renameView: [viewId: number, name: string]
   duplicateView: [viewId: number]
   setDefaultView: [tableId: number, viewId: number]
@@ -278,9 +279,11 @@ function handleNameBlur() {
   const newName = tempName.value.trim()
   if (!newName || newName === props.table.name) {
     editingName.value = false
+    tempName.value = props.table.name
     return
   }
   editingName.value = false
+  emit('renameTable', props.table.id, newName)
 }
 
 function cancelEdit() {

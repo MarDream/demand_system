@@ -100,6 +100,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -363,6 +364,34 @@ public class RequirementServiceImpl implements RequirementService {
     }
 
     @Override
+    public boolean canViewForSearch(Requirement requirement, Long userId) {
+        if (requirement == null || userId == null) {
+            return false;
+        }
+        // 草稿仅允许创建人参与检索，即使管理员也不能把未提交正文带入普通问答。
+        if (Boolean.TRUE.equals(requirement.getIsDraft())) {
+            return Objects.equals(requirement.getCreatorId(), userId);
+        }
+
+        List<Long> roleIds = getUserRoleIds(userId);
+        List<String> roleCodes = roleIds.isEmpty()
+                ? List.of()
+                : roleMapper.selectBatchIds(roleIds).stream()
+                .map(Role::getCode)
+                .filter(StringUtils::hasText)
+                .toList();
+        if (isSuperAdmin(roleCodes)) {
+            return true;
+        }
+        if (Objects.equals(requirement.getCreatorId(), userId) || isParticipant(requirement.getId(), userId)) {
+            return true;
+        }
+        if (isAssignedAsCurrentNodeApprover(requirement, userId, new HashSet<>(roleIds))) {
+            return true;
+        }
+        List<Long> visibleOrgIds = resolveVisibleOrgIds(userId, false);
+        return requirement.getOrgId() != null && visibleOrgIds.contains(requirement.getOrgId());
+    }
     public RequirementVO getDetail(Long id) {
         Requirement r = requirementMapper.selectById(id);
         if (r == null) {
@@ -430,6 +459,10 @@ public class RequirementServiceImpl implements RequirementService {
                 dto.getAttachments(),
                 creatorId
         );
+        knowledgeDocumentService.syncRequirementBody(
+                requirement.getProjectId(), requirement.getId(), requirement.getRequirementNo(),
+                requirement.getTitle(), requirement.getDescription(), creatorId
+        );
     }
 
     @Override
@@ -443,14 +476,17 @@ public class RequirementServiceImpl implements RequirementService {
         Long operatorId = userId;
         UpdateWrapper<Requirement> updateWrapper = new UpdateWrapper<>();
         updateWrapper.eq("id", dto.getId());
+        boolean bodyChanged = false;
 
         if (dto.getTitle() != null && !Objects.equals(existing.getTitle(), dto.getTitle())) {
             recordHistory(dto.getId(), operatorId, "title", existing.getTitle(), dto.getTitle());
             updateWrapper.set("title", dto.getTitle());
+            bodyChanged = true;
         }
         if (dto.getDescription() != null && !Objects.equals(existing.getDescription(), dto.getDescription())) {
             recordHistory(dto.getId(), operatorId, "description", existing.getDescription(), dto.getDescription());
             updateWrapper.set("description", dto.getDescription());
+            bodyChanged = true;
         }
         if (dto.getType() != null && !Objects.equals(existing.getType(), dto.getType())) {
             recordHistory(dto.getId(), operatorId, "type", existing.getType(), dto.getType());
@@ -515,14 +551,23 @@ public class RequirementServiceImpl implements RequirementService {
         if (updateWrapper.getSqlSet() != null && !updateWrapper.getSqlSet().isEmpty()) {
             requirementMapper.update(null, updateWrapper);
         }
-        if (dto.getAttachments() != null) {
+        Requirement latest = (bodyChanged || dto.getAttachments() != null)
+                ? requirementMapper.selectById(dto.getId())
+                : existing;
+        if (dto.getAttachments() != null && latest != null) {
             knowledgeDocumentService.syncRequirementAttachmentsWithContext(
-                    existing.getProjectId(),
-                    existing.getId(),
-                    existing.getRequirementNo(),
-                    existing.getTitle(),
+                    latest.getProjectId(),
+                    latest.getId(),
+                    latest.getRequirementNo(),
+                    latest.getTitle(),
                     dto.getAttachments(),
                     userId
+            );
+        }
+        if (bodyChanged && latest != null) {
+            knowledgeDocumentService.syncRequirementBody(
+                    latest.getProjectId(), latest.getId(), latest.getRequirementNo(),
+                    latest.getTitle(), latest.getDescription(), userId
             );
         }
     }
@@ -584,6 +629,10 @@ public class RequirementServiceImpl implements RequirementService {
                 requirement.getTitle(),
                 dto.getAttachments(),
                 creatorId
+        );
+        knowledgeDocumentService.syncRequirementBody(
+                requirement.getProjectId(), requirement.getId(), requirement.getRequirementNo(),
+                requirement.getTitle(), requirement.getDescription(), creatorId
         );
         return requirement.getId();
     }
@@ -703,14 +752,21 @@ public class RequirementServiceImpl implements RequirementService {
         }
 
         recordHistory(dto.getId(), userId, "update", null, "更新草稿");
-        if (dto.getAttachments() != null) {
+        Requirement latest = requirementMapper.selectById(dto.getId());
+        if (dto.getAttachments() != null && latest != null) {
             knowledgeDocumentService.syncRequirementAttachmentsWithContext(
-                    attachmentProjectId,
-                    existing.getId(),
-                    existing.getRequirementNo(),
-                    existing.getTitle(),
+                    latest.getProjectId(),
+                    latest.getId(),
+                    latest.getRequirementNo(),
+                    latest.getTitle(),
                     dto.getAttachments(),
                     userId
+            );
+        }
+        if (latest != null && (dto.getTitle() != null || dto.getDescription() != null || dto.getProjectId() != null)) {
+            knowledgeDocumentService.syncRequirementBody(
+                    latest.getProjectId(), latest.getId(), latest.getRequirementNo(),
+                    latest.getTitle(), latest.getDescription(), userId
             );
         }
     }
@@ -829,6 +885,10 @@ public class RequirementServiceImpl implements RequirementService {
         Requirement latest = requirementMapper.selectById(requirementId);
         RequirementVO vo = new RequirementVO();
         if (latest != null) {
+            knowledgeDocumentService.syncRequirementBody(
+                    latest.getProjectId(), latest.getId(), latest.getRequirementNo(),
+                    latest.getTitle(), latest.getDescription(), userId
+            );
             vo = toRequirementVO(latest, userId, true);
         }
         return vo;
@@ -1066,6 +1126,7 @@ public class RequirementServiceImpl implements RequirementService {
                 throw new BusinessException("只有创建者可以删除草稿");
             }
             // 草稿可以直接删除，无需检查流转记录
+            knowledgeDocumentService.deleteRequirementBodyIndex(id);
             requirementMapper.deleteById(id);
             return;
         }
@@ -1101,6 +1162,7 @@ public class RequirementServiceImpl implements RequirementService {
             throw new BusinessException("已流转的需求不能删除");
         }
 
+        knowledgeDocumentService.deleteRequirementBodyIndex(id);
         requirementMapper.deleteById(id);
     }
 
@@ -1129,6 +1191,10 @@ public class RequirementServiceImpl implements RequirementService {
 
         // 修复 P0：使用自定义 SQL 绕过 @TableLogic 拦截
         requirementMapper.restoreById(id);
+        knowledgeDocumentService.syncRequirementBody(
+                existing.getProjectId(), existing.getId(), existing.getRequirementNo(),
+                existing.getTitle(), existing.getDescription(), userId
+        );
     }
 
     @Override
@@ -2245,6 +2311,10 @@ public class RequirementServiceImpl implements RequirementService {
      * 6 种 assignee_type 分支完全对齐，保证"我的待办"列表可见的每一条都至少能查看。
      */
     private boolean isAssignedAsCurrentNodeApprover(Requirement requirement, Long userId) {
+        return isAssignedAsCurrentNodeApprover(requirement, userId, null);
+    }
+
+    private boolean isAssignedAsCurrentNodeApprover(Requirement requirement, Long userId, Set<Long> userRoleIds) {
         if (requirement == null || userId == null || requirement.getWorkflowInstanceId() == null) {
             return false;
         }
@@ -2272,7 +2342,9 @@ public class RequirementServiceImpl implements RequirementService {
                     return false;
                 }
                 Role role = roleMapper.selectById(node.getAssigneeRoleId().longValue());
-                return role != null && currentUserMatchesRole(role);
+                return role != null && (userRoleIds != null
+                        ? userRoleIds.contains(role.getId())
+                        : currentUserMatchesRole(role));
             case "SPECIFIED_ROLE_GROUP":
                 if (node.getAssigneeRoleGroupId() == null) {
                     return false;
@@ -2282,7 +2354,9 @@ public class RequirementServiceImpl implements RequirementService {
                         .eq(Role::getRoleGroupId, node.getAssigneeRoleGroupId())
                         .eq(Role::getDeletedAt, 0)
                 );
-                return groupRoles.stream().anyMatch(this::currentUserMatchesRole);
+                return userRoleIds != null
+                        ? groupRoles.stream().map(Role::getId).anyMatch(userRoleIds::contains)
+                        : groupRoles.stream().anyMatch(this::currentUserMatchesRole);
             case "SPECIFIED_ORG": {
                 Long orgId = node.getAssigneeOrgId();
                 if (orgId == null) {

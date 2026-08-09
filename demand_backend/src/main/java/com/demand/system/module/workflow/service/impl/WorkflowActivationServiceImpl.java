@@ -90,12 +90,9 @@ public class WorkflowActivationServiceImpl implements WorkflowActivationService 
         version.setIsActive(1);
         version.setActivationStatus("active");
         version.setActivatedAt(LocalDateTime.now());
+        version.setUpdatedAt(LocalDateTime.now());
         workflowVersionMapper.updateById(version);
 
-        // 工作流启用成功 → 联动恢复所有绑定该版本的需求类型为启用（与 deactivate 的禁用联动对称）
-        requirementTypeMapper.update(null, new LambdaUpdateWrapper<RequirementTypeConfig>()
-                .eq(RequirementTypeConfig::getWorkflowVersionId, versionId)
-                .set(RequirementTypeConfig::getEnabled, true));
 
         return toVersionDTO(version);
     }
@@ -109,9 +106,10 @@ public class WorkflowActivationServiceImpl implements WorkflowActivationService 
         }
         version.setIsActive(0);
         version.setActivationStatus("inactive");
+        version.setUpdatedAt(LocalDateTime.now());
         workflowVersionMapper.updateById(version);
 
-        // 工作流禁用 → 联动禁用所有绑定该版本的需求类型（重新启用工作流时由 activate() 自动恢复）
+        // 工作流禁用 → 联动禁用所有绑定该版本的需求类型；绑定关系保持不变，恢复由需求类型自行启用
         requirementTypeMapper.update(null, new LambdaUpdateWrapper<RequirementTypeConfig>()
                 .eq(RequirementTypeConfig::getWorkflowVersionId, versionId)
                 .set(RequirementTypeConfig::getEnabled, false));

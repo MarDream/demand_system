@@ -263,12 +263,23 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
                     continue;
                 }
                 String headerName = getCellAsString(headerCell);
-                if (headerName != null) {
-                    BitableField field = fieldNameMap.get(headerName.trim());
-                    if (field != null) {
-                        colToField.put(col, field);
-                    }
+                if (headerName == null || headerName.trim().isEmpty()) {
+                    continue;
                 }
+                String trimmedName = headerName.trim();
+                // 优先查找已有字段，不匹配则自动创建 text 类型字段
+                BitableField field = fieldNameMap.get(trimmedName);
+                if (field == null) {
+                    field = new BitableField();
+                    field.setTableId(tableId);
+                    field.setName(trimmedName);
+                    field.setFieldType(FieldType.TEXT.getCode());
+                    field.setSortOrder(fields.size() + col);
+                    fieldMapper.insert(field);
+                    fieldNameMap.put(trimmedName, field);
+                    fields.add(field);
+                }
+                colToField.put(col, field);
             }
 
             // 遍历数据行（从第二行开始）
@@ -510,12 +521,23 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
         Map<Integer, BitableField> colToField = new LinkedHashMap<>();
         for (int col = 0; col < header.size(); col++) {
             String headerName = header.get(col);
-            if (headerName != null) {
-                BitableField field = fieldNameMap.get(headerName.trim());
-                if (field != null) {
-                    colToField.put(col, field);
-                }
+            if (headerName == null || headerName.trim().isEmpty()) {
+                continue;
             }
+            String trimmedName = headerName.trim();
+            // 优先查找已有字段，不匹配则自动创建 text 类型字段
+            BitableField field = fieldNameMap.get(trimmedName);
+            if (field == null) {
+                field = new BitableField();
+                field.setTableId(tableId);
+                field.setName(trimmedName);
+                field.setFieldType(FieldType.TEXT.getCode());
+                field.setSortOrder(fields.size() + col);
+                fieldMapper.insert(field);
+                fieldNameMap.put(trimmedName, field);
+                fields.add(field);
+            }
+            colToField.put(col, field);
         }
 
         // 遍历数据行

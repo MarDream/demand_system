@@ -25,9 +25,14 @@ import com.demand.system.module.knowledge.mapper.KnowledgeDocumentShareMapper;
 import com.demand.system.module.knowledge.service.EmbeddingService;
 import com.demand.system.module.knowledge.service.KnowledgeDocumentService;
 import com.demand.system.module.knowledge.support.KnowledgeDocumentSupport;
+import com.demand.system.module.knowledge.support.RequirementContentParser;
 import com.demand.system.module.knowledge.vectorstore.MilvusVectorStore;
 import com.demand.system.module.preview.PreviewWarmupService;
 import com.demand.system.module.file.storage.MinioStorageService;
+import com.demand.system.module.file.entity.FileRecord;
+import com.demand.system.module.file.service.FileService;
+import com.demand.system.module.knowledge.service.ImageUnderstandingResult;
+import com.demand.system.module.knowledge.service.ImageUnderstandingService;
 import com.demand.system.module.requirement.dto.RequirementAttachmentDTO;
 import com.demand.system.module.requirement.entity.Requirement;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
@@ -92,6 +97,9 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
      */
     private static final int EXCEL_MAX_CHUNKS = 5_000;
 
+    /** 单张正文图片允许送入 OCR/视觉服务的最大大小。 */
+    private static final long REQUIREMENT_IMAGE_MAX_SIZE = 10L * 1024 * 1024;
+
     /**
      * POI zip entry 字节上限（兜底，防止 200MB+ zip entry 触发 OOM）。
      *
@@ -110,12 +118,14 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
     /** Redis 文档超时 key 前缀 */
     private static final String DOC_TIMEOUT_KEY_PREFIX = "demand:doc:timeout:";
+    private static final String REQUIREMENT_BODY_SOURCE_TYPE = "requirement_body";
 
     private final KnowledgeDocumentMapper documentMapper;
     private final KnowledgeChunkMapper chunkMapper;
     private final KnowledgeBaseMapper knowledgeBaseMapper;
     private final SysUserMapper sysUserMapper;
     private final RequirementMapper requirementMapper;
+    private final RequirementContentParser requirementContentParser;
     private final MinioStorageService minioStorageService;
     private final EmbeddingService embeddingService;
     private final KnowledgeConfig knowledgeConfig;
@@ -128,6 +138,8 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     private final com.demand.system.module.knowledge.mapper.KnowledgeDocumentRequirementRefMapper refMapper;
     private final com.demand.system.module.knowledge.service.KnowledgeBaseService knowledgeBaseService;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final FileService fileService;
+    private final ImageUnderstandingService imageUnderstandingService;
 
     @Value("${jwt.secret}")
     private String jwtSecret;
@@ -137,6 +149,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                                         KnowledgeBaseMapper knowledgeBaseMapper,
                                         SysUserMapper sysUserMapper,
                                         RequirementMapper requirementMapper,
+                                        RequirementContentParser requirementContentParser,
                                         MinioStorageService minioStorageService,
                                         EmbeddingService embeddingService,
                                         KnowledgeConfig knowledgeConfig,
@@ -148,12 +161,15 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                                         PreviewWarmupService previewWarmupService,
                                         com.demand.system.module.knowledge.mapper.KnowledgeDocumentRequirementRefMapper refMapper,
                                         com.demand.system.module.knowledge.service.KnowledgeBaseService knowledgeBaseService,
-                                        RedisTemplate<String, Object> redisTemplate) {
+                                        RedisTemplate<String, Object> redisTemplate,
+                                        FileService fileService,
+                                        ImageUnderstandingService imageUnderstandingService) {
         this.documentMapper = documentMapper;
         this.chunkMapper = chunkMapper;
         this.knowledgeBaseMapper = knowledgeBaseMapper;
         this.sysUserMapper = sysUserMapper;
         this.requirementMapper = requirementMapper;
+        this.requirementContentParser = requirementContentParser;
         this.minioStorageService = minioStorageService;
         this.embeddingService = embeddingService;
         this.knowledgeConfig = knowledgeConfig;
@@ -166,6 +182,8 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         this.refMapper = refMapper;
         this.knowledgeBaseService = knowledgeBaseService;
         this.redisTemplate = redisTemplate;
+        this.fileService = fileService;
+        this.imageUnderstandingService = imageUnderstandingService;
     }
 
     @Override
@@ -353,6 +371,97 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     }
 
     @Override
+    @Transactional
+    public void syncRequirementBody(Long projectId, Long requirementId, String requirementCode,
+                                    String requirementTitle, String description, Long uploaderId) {
+        if (requirementId == null) {
+            return;
+        }
+        Long knowledgeBaseId = getTargetKnowledgeBaseForRequirements(projectId, uploaderId);
+        KnowledgeDocument doc = documentMapper.selectOne(new LambdaQueryWrapper<KnowledgeDocument>()
+                .eq(KnowledgeDocument::getSourceType, REQUIREMENT_BODY_SOURCE_TYPE)
+                .eq(KnowledgeDocument::getSourceId, requirementId)
+                .orderByDesc(KnowledgeDocument::getId)
+                .last("LIMIT 1"));
+
+        if (doc == null) {
+            doc = new KnowledgeDocument();
+            doc.setKnowledgeBaseId(knowledgeBaseId);
+            doc.setProjectId(projectId);
+            doc.setRequirementId(requirementId);
+            doc.setSourceType(REQUIREMENT_BODY_SOURCE_TYPE);
+            doc.setSourceId(requirementId);
+            doc.setUploaderId(uploaderOrZero(uploaderId));
+            doc.setDownloadCount(0);
+            doc.setChunkCount(0);
+            doc.setMinioKey(null);
+            documentMapper.insert(doc);
+        }
+
+        String displayName = buildRequirementBodyFileName(requirementCode, requirementTitle);
+        long contentSize = description == null ? 0L : description.getBytes(StandardCharsets.UTF_8).length;
+        doc.setKnowledgeBaseId(knowledgeBaseId);
+        doc.setProjectId(projectId);
+        doc.setRequirementId(requirementId);
+        doc.setFileName(displayName);
+        doc.setFileType("html");
+        doc.setFileSize(contentSize);
+        doc.setSourceType(REQUIREMENT_BODY_SOURCE_TYPE);
+        doc.setSourceId(requirementId);
+        doc.setUploaderId(uploaderOrZero(uploaderId));
+        doc.setStatus("pending");
+        doc.setErrorMessage(null);
+        doc.setUpdatedAt(LocalDateTime.now());
+        documentMapper.updateById(doc);
+
+        // 更新正文时先清理旧分块和向量，避免空正文或异步处理期间继续命中旧内容。
+        clearDocumentIndex(doc.getId());
+        enqueueDocumentProcessing(doc.getId());
+        updateKnowledgeBaseCount(knowledgeBaseId);
+    }
+
+    @Override
+    @Transactional
+    public void deleteRequirementBodyIndex(Long requirementId) {
+        if (requirementId == null) {
+            return;
+        }
+        List<KnowledgeDocument> documents = documentMapper.selectList(new LambdaQueryWrapper<KnowledgeDocument>()
+                .eq(KnowledgeDocument::getSourceType, REQUIREMENT_BODY_SOURCE_TYPE)
+                .eq(KnowledgeDocument::getSourceId, requirementId));
+        for (KnowledgeDocument document : documents) {
+            clearDocumentIndex(document.getId());
+            documentMapper.deleteById(document.getId());
+            updateKnowledgeBaseCount(document.getKnowledgeBaseId());
+        }
+    }
+
+    @Override
+    public int backfillRequirementBodies() {
+        List<Requirement> requirements = requirementMapper.selectList(new LambdaQueryWrapper<Requirement>()
+                .orderByAsc(Requirement::getId));
+        int submitted = 0;
+        for (Requirement requirement : requirements) {
+            try {
+                syncRequirementBody(
+                        requirement.getProjectId(), requirement.getId(), requirement.getRequirementNo(),
+                        requirement.getTitle(), requirement.getDescription(), requirement.getCreatorId());
+                submitted++;
+            } catch (Exception e) {
+                log.warn("工单正文索引补建失败: requirementId={}", requirement.getId(), e);
+            }
+        }
+        return submitted;
+    }
+
+    private String buildRequirementBodyFileName(String requirementCode, String requirementTitle) {
+        String code = requirementCode == null ? "" : requirementCode.trim();
+        String title = requirementTitle == null ? "" : requirementTitle.trim();
+        String name = (code + " " + title).trim();
+        return name.isBlank() ? "工单正文" : name;
+    }
+
+    @Override
     public List<com.demand.system.module.knowledge.entity.KnowledgeDocumentRequirementRef> getDocumentRequirementRefs(Long documentId) {
         return refMapper.selectList(new LambdaQueryWrapper<com.demand.system.module.knowledge.entity.KnowledgeDocumentRequirementRef>()
                 .eq(com.demand.system.module.knowledge.entity.KnowledgeDocumentRequirementRef::getDocumentId, documentId)
@@ -416,7 +525,8 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                                                 String projectName,
                                                 Long requirementId) {
         LambdaQueryWrapper<KnowledgeDocument> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(KnowledgeDocument::getKnowledgeBaseId, knowledgeBaseId);
+        wrapper.eq(KnowledgeDocument::getKnowledgeBaseId, knowledgeBaseId)
+                .ne(KnowledgeDocument::getSourceType, REQUIREMENT_BODY_SOURCE_TYPE);
         if (fileName != null && !fileName.isBlank()) {
             wrapper.like(KnowledgeDocument::getFileName, fileName.trim());
         }
@@ -715,7 +825,8 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
 
         String fileType = doc.getFileType() != null ? doc.getFileType().toLowerCase() : "";
-        if (!KnowledgeDocumentSupport.isSupported(fileType)) {
+        boolean requirementBody = REQUIREMENT_BODY_SOURCE_TYPE.equals(doc.getSourceType());
+        if (!requirementBody && !KnowledgeDocumentSupport.isSupported(fileType)) {
             doc.setChunkCount(0);
             doc.setStatus("failed");
             doc.setErrorMessage("该文件格式暂不支持在线预览");
@@ -725,7 +836,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             return;
         }
 
-        if (!KnowledgeDocumentSupport.isVectorizable(fileType)) {
+        if (!requirementBody && !KnowledgeDocumentSupport.isVectorizable(fileType)) {
             doc.setChunkCount(0);
             doc.setStatus("stored");
             doc.setErrorMessage(null);
@@ -739,9 +850,18 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         doc.setUpdatedAt(LocalDateTime.now());
         documentMapper.updateById(doc);
 
-        List<String> chunks;
+        List<IndexedContentChunk> indexedChunks;
         try {
-            chunks = readDocumentContent(doc);
+            if (requirementBody) {
+                Requirement requirement = doc.getRequirementId() == null ? null : requirementMapper.selectById(doc.getRequirementId());
+                indexedChunks = requirement == null
+                        ? List.of()
+                        : buildRequirementBodyChunks(requirement);
+            } else {
+                indexedChunks = readDocumentContent(doc).stream()
+                        .map(text -> new IndexedContentChunk(text, null, null, null, null))
+                        .toList();
+            }
         } catch (Exception e) {
             doc.setStatus("failed");
             doc.setErrorMessage("文件读取失败: " + e.getMessage());
@@ -751,7 +871,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
 
         // 检查是否是密码保护提示
-        if (chunks.size() == 1 && "[此文档受密码保护，无法建立索引]".equals(chunks.get(0))) {
+        if (indexedChunks.size() == 1 && "[此文档受密码保护，无法建立索引]".equals(indexedChunks.get(0).content())) {
             doc.setChunkCount(0);
             doc.setStatus("failed");
             doc.setErrorMessage("此文档受密码保护，无法建立索引。请移除密码后重新上传。");
@@ -761,7 +881,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             return;
         }
 
-        if (chunks == null || chunks.isEmpty()) {
+        if (indexedChunks == null || indexedChunks.isEmpty()) {
             doc.setChunkCount(0);
             doc.setStatus("stored");
             doc.setErrorMessage(null);
@@ -771,11 +891,12 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             return;
         }
 
-        chunks = chunks.stream()
-                .map(KnowledgeDocumentServiceImpl::sanitizeText)
-                .filter(c -> !c.isBlank())
+        indexedChunks = indexedChunks.stream()
+                .map(chunk -> new IndexedContentChunk(sanitizeText(chunk.content()), chunk.sectionTitle(),
+                        chunk.sourceContentType(), chunk.sourceRefId(), chunk.sourcePosition()))
+                .filter(chunk -> !chunk.content().isBlank())
                 .toList();
-        if (chunks.isEmpty()) {
+        if (indexedChunks.isEmpty()) {
             doc.setChunkCount(0);
             doc.setStatus("stored");
             doc.setErrorMessage(null);
@@ -789,9 +910,12 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         doc.setUpdatedAt(LocalDateTime.now());
         documentMapper.updateById(doc);
 
+        // 正文更新/文档重试前清理旧分块和旧向量，避免重复命中。
+        clearDocumentIndex(documentId);
         List<MilvusVectorStore.VectorDocument> milvusDocs = new ArrayList<>();
         try {
-            List<float[]> vectors = embedInBatches(chunks);
+            List<String> chunkTexts = indexedChunks.stream().map(IndexedContentChunk::content).toList();
+            List<float[]> vectors = embedInBatches(chunkTexts);
             int vectorDimension = resolveVectorDimension(vectors);
             if (vectorDimension > 0) {
                 MilvusVectorStore.DimensionSyncResult dimensionSync =
@@ -802,7 +926,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             }
 
             int validChunks = 0;
-            for (int i = 0; i < chunks.size(); i++) {
+            for (int i = 0; i < indexedChunks.size(); i++) {
                 float[] vector = vectors.get(i);
                 if (vector == null || vector.length == 0) {
                     continue;
@@ -815,15 +939,20 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 chunk.setDocumentId(doc.getId());
                 chunk.setKnowledgeBaseId(doc.getKnowledgeBaseId());
                 chunk.setChunkIndex(validChunks - 1);
-                chunk.setContent(chunks.get(i));
-                chunk.setCharCount(chunks.get(i).length());
+                IndexedContentChunk indexedChunk = indexedChunks.get(i);
+                chunk.setContent(indexedChunk.content());
+                chunk.setSectionTitle(indexedChunk.sectionTitle());
+                chunk.setCharCount(indexedChunk.content().length());
+                chunk.setSourceContentType(indexedChunk.sourceContentType());
+                chunk.setSourceRefId(indexedChunk.sourceRefId());
+                chunk.setSourcePosition(indexedChunk.sourcePosition());
                 chunk.setVectorId(vectorId);
                 chunkMapper.insert(chunk);
 
                 milvusDocs.add(new MilvusVectorStore.VectorDocument(
                         vectorId, vector,
                         doc.getKnowledgeBaseId(), doc.getId(),
-                        validChunks - 1, chunks.get(i), null, null,
+                        validChunks - 1, indexedChunk.content(), indexedChunk.sectionTitle(), null,
                         doc.getFileName(), doc.getFileType()
                 ));
             }
@@ -847,6 +976,94 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         documentMapper.updateById(doc);
 
         updateKnowledgeBaseCount(doc.getKnowledgeBaseId());
+    }
+
+    /** 构建工单正文分块，并将可访问的内部图片 OCR/视觉描述作为独立分块加入索引。 */
+    private List<IndexedContentChunk> buildRequirementBodyChunks(Requirement requirement) {
+        List<IndexedContentChunk> chunks = new ArrayList<>();
+        List<String> bodyChunks = requirementContentParser.parse(
+                requirement.getRequirementNo(), requirement.getTitle(), requirement.getDescription());
+        bodyChunks.forEach(text -> chunks.add(new IndexedContentChunk(text, "工单正文", "body", null, null)));
+
+        List<RequirementContentParser.RequirementImageReference> images =
+                requirementContentParser.extractImageReferences(requirement.getDescription());
+        if (images.isEmpty()) {
+            return chunks;
+        }
+        if (!imageUnderstandingService.enabled()) {
+            log.warn("跳过工单正文图片 OCR/视觉理解：requirementId={}, reason={}",
+                    requirement.getId(), imageUnderstandingService.unavailableReason());
+            return chunks;
+        }
+        for (RequirementContentParser.RequirementImageReference image : images) {
+            if (image.fileId() == null) {
+                continue;
+            }
+            try {
+                FileRecord record = fileService.findRecord(image.fileId());
+                if (!isAnalyzableImage(record)) {
+                    continue;
+                }
+                Map<String, Object> downloaded = fileService.download(image.fileId());
+                Object input = downloaded.get("inputStream");
+                if (!(input instanceof InputStream stream)) {
+                    continue;
+                }
+                try (stream) {
+                    byte[] bytes = stream.readNBytes((int) Math.min(record.getFileSize(), REQUIREMENT_IMAGE_MAX_SIZE + 1));
+                    if (record.getFileSize() != null && record.getFileSize() > REQUIREMENT_IMAGE_MAX_SIZE
+                            || bytes.length > REQUIREMENT_IMAGE_MAX_SIZE) {
+                        log.info("跳过超大工单正文图片理解: requirementId={}, fileId={}", requirement.getId(), image.fileId());
+                        continue;
+                    }
+                    ImageUnderstandingResult result = imageUnderstandingService.analyze(
+                            bytes, record.getContentType(), image.alt());
+                    appendImageUnderstandingChunks(chunks, requirement, image, result);
+                }
+            } catch (Exception e) {
+                log.warn("工单正文图片下载或理解失败，跳过该图片: requirementId={}, fileId={}",
+                        requirement.getId(), image.fileId(), e);
+            }
+        }
+        return chunks;
+    }
+
+    private boolean isAnalyzableImage(FileRecord record) {
+        if (record == null || record.getFileSize() == null || record.getFileSize() <= 0
+                || record.getFileSize() > REQUIREMENT_IMAGE_MAX_SIZE) {
+            return false;
+        }
+        String type = record.getContentType() == null ? "" : record.getContentType().toLowerCase(Locale.ROOT);
+        return type.startsWith("image/");
+    }
+
+    private void appendImageUnderstandingChunks(
+            List<IndexedContentChunk> chunks,
+            Requirement requirement,
+            RequirementContentParser.RequirementImageReference image,
+            ImageUnderstandingResult result) {
+        if (result == null || !result.hasContent()) {
+            return;
+        }
+        String prefix = "工单编号：" + safe(requirement.getRequirementNo()) + "\n"
+                + "工单名称：" + safe(requirement.getTitle()) + "\n"
+                + "正文图片序号：" + image.position() + "\n"
+                + (image.alt() == null || image.alt().isBlank() ? "" : "图片替代文本：" + image.alt().trim() + "\n");
+        if (result.ocrText() != null && !result.ocrText().isBlank()) {
+            chunks.add(new IndexedContentChunk(prefix + "图片 OCR：\n" + result.ocrText().trim(),
+                    "正文图片 " + image.position() + " OCR", "image_ocr", image.fileId(), image.position()));
+        }
+        if (result.caption() != null && !result.caption().isBlank()) {
+            chunks.add(new IndexedContentChunk(prefix + "图片理解：\n" + result.caption().trim(),
+                    "正文图片 " + image.position() + " 图片理解", "image_caption", image.fileId(), image.position()));
+        }
+    }
+
+    private String safe(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private record IndexedContentChunk(String content, String sectionTitle, String sourceContentType, Long sourceRefId, Integer sourcePosition) {
     }
 
     private void enqueueDocumentProcessing(Long docId) {
@@ -1480,6 +1697,18 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 com.demand.system.module.auth.security.SecurityUtils.isSuperAdmin());
     }
 
+    private void clearDocumentIndex(Long documentId) {
+        if (documentId == null) {
+            return;
+        }
+        try {
+            milvusVectorStore.deleteByDocumentId(String.valueOf(documentId));
+        } catch (Exception e) {
+            log.warn("Milvus旧向量清理失败: documentId={}", documentId, e);
+        }
+        chunkMapper.delete(new LambdaQueryWrapper<KnowledgeChunk>()
+                .eq(KnowledgeChunk::getDocumentId, documentId));
+    }
     private void updateKnowledgeBaseCount(Long knowledgeBaseId) {
         Long docCount = documentMapper.selectCount(new LambdaQueryWrapper<KnowledgeDocument>()
                 .eq(KnowledgeDocument::getKnowledgeBaseId, knowledgeBaseId));

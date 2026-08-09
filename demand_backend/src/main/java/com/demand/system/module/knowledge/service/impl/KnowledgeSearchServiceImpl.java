@@ -3,6 +3,7 @@ package com.demand.system.module.knowledge.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.demand.system.common.exception.BusinessException;
 import com.demand.system.module.knowledge.config.KnowledgeConfig;
+import com.demand.system.module.knowledge.constant.KnowledgeSearchScope;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchRequest;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse;
 import com.demand.system.module.knowledge.entity.KnowledgeChunk;
@@ -11,11 +12,14 @@ import com.demand.system.module.knowledge.llm.LlmGateway;
 import com.demand.system.module.knowledge.mapper.KnowledgeChunkMapper;
 import com.demand.system.module.knowledge.mapper.KnowledgeDocumentMapper;
 import com.demand.system.module.knowledge.service.EmbeddingService;
+import com.demand.system.module.knowledge.service.ImageUnderstandingService;
 import com.demand.system.module.knowledge.service.IntentRecognizer;
 import com.demand.system.module.knowledge.service.KnowledgeSearchService;
 import com.demand.system.module.knowledge.service.RagAnswerService;
 import com.demand.system.module.knowledge.vectorstore.MilvusVectorStore;
 import com.demand.system.module.requirement.entity.Requirement;
+import com.demand.system.module.requirement.service.RequirementService;
+import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,6 +30,7 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 @Service
 public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
@@ -39,6 +44,8 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
     private final RequirementMapper requirementMapper;
     private final KnowledgeDocumentMapper knowledgeDocumentMapper;
     private final KnowledgeChunkMapper knowledgeChunkMapper;
+    private final RequirementService requirementService;
+    private final ImageUnderstandingService imageUnderstandingService;
 
     public KnowledgeSearchServiceImpl(EmbeddingService embeddingService,
                                      MilvusVectorStore milvusVectorStore,
@@ -47,7 +54,8 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                                      IntentRecognizer intentRecognizer,
                                      RequirementMapper requirementMapper,
                                      KnowledgeDocumentMapper knowledgeDocumentMapper,
-                                     KnowledgeChunkMapper knowledgeChunkMapper) {
+                                     KnowledgeChunkMapper knowledgeChunkMapper, RequirementService requirementService,
+                                     ImageUnderstandingService imageUnderstandingService) {
         this.embeddingService = embeddingService;
         this.milvusVectorStore = milvusVectorStore;
         this.knowledgeConfig = knowledgeConfig;
@@ -56,6 +64,8 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         this.requirementMapper = requirementMapper;
         this.knowledgeDocumentMapper = knowledgeDocumentMapper;
         this.knowledgeChunkMapper = knowledgeChunkMapper;
+        this.requirementService = requirementService;
+        this.imageUnderstandingService = imageUnderstandingService;
     }
 
     @Override
@@ -275,24 +285,96 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         // 优先级：请求参数 > 模型配置 > 全局配置
         int topK = request.getTopK() != null ? request.getTopK() : resolveTopK();
         String kbId = request.getKnowledgeBaseId() != null ? String.valueOf(request.getKnowledgeBaseId()) : null;
+        SearchScopeDecision scopes = resolveSearchScopes(request);
 
         List<KnowledgeSearchResponse.SearchResultItem> results;
-
-        if ("semantic".equals(mode)) {
+        if (!scopes.includeKnowledgeBase() && !scopes.includeRequirementBody()) {
+            results = Collections.emptyList();
+        } else if ("semantic".equals(mode)) {
             float[] queryVector = embeddingService.embed(request.getQuery());
-            results = semanticSearch(queryVector, kbId, topK);
+            results = semanticSearch(queryVector, kbId, topK,
+                    scopes.includeKnowledgeBase(), scopes.includeRequirementBody());
         } else if ("keyword".equals(mode)) {
-            results = keywordSearch(request.getQuery(), request.getKnowledgeBaseId(), topK);
+            results = keywordSearch(request.getQuery(), request.getKnowledgeBaseId(), topK,
+                    scopes.includeKnowledgeBase(), scopes.includeRequirementBody());
         } else {
             float[] queryVector = embeddingService.embed(request.getQuery());
-            results = hybridSearch(request.getQuery(), queryVector, kbId, topK);
+            results = hybridSearch(request.getQuery(), queryVector, kbId, topK,
+                    scopes.includeKnowledgeBase(), scopes.includeRequirementBody());
         }
 
-        return KnowledgeSearchResponse.builder()
-                .results(results)
+        // 在生成回答前做后端权限过滤，禁止无权工单正文进入检索结果或 LLM 上下文。
+        results = filterVisibleRequirementResults(results, request.getRequesterId());
+
+        KnowledgeSearchResponse response = KnowledgeSearchResponse.builder().results(results)
                 .total(results.size())
                 .processSummary(buildProcessSummary(request, results.size(), results))
+                .citations(buildCitationReferences(results))
+                .warnings(buildRetrievalWarnings(results))
                 .build();
+        return response;
+    }
+
+    private List<String> buildRetrievalWarnings(List<KnowledgeSearchResponse.SearchResultItem> results) {
+        if (results == null || results.isEmpty() || imageUnderstandingService.enabled()) {
+            return List.of();
+        }
+        Set<Long> documentIds = results.stream()
+                .map(KnowledgeSearchResponse.SearchResultItem::getDocumentId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (documentIds.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, KnowledgeDocument> bodyDocuments = knowledgeDocumentMapper.selectBatchIds(documentIds).stream()
+                .filter(document -> "requirement_body".equals(document.getSourceType()))
+                .collect(Collectors.toMap(KnowledgeDocument::getId, document -> document, (left, right) -> left));
+        if (bodyDocuments.isEmpty()) {
+            return List.of();
+        }
+        Set<Long> requirementIds = bodyDocuments.values().stream()
+                .map(KnowledgeDocument::getRequirementId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (requirementIds.isEmpty()) {
+            return List.of();
+        }
+        boolean hasBodyImage = requirementMapper.selectBatchIds(requirementIds).stream()
+                .map(Requirement::getDescription)
+                .filter(Objects::nonNull)
+                .anyMatch(description -> description.toLowerCase(Locale.ROOT).contains("<img"));
+        boolean hasImageEvidence = results.stream()
+                .filter(item -> bodyDocuments.containsKey(item.getDocumentId()))
+                .anyMatch(item -> item.getImageFileId() != null);
+        if (hasBodyImage && !hasImageEvidence) {
+            return List.of("已找到相关工单正文，但当前未配置图片理解模型，图片中的文字和语义暂未完成处理。请在“模型配置-模型应用”中配置 vision 模型后重建索引。");
+        }
+        return List.of();
+    }
+
+    private SearchScopeDecision resolveSearchScopes(KnowledgeSearchRequest request) {
+        Collection<String> requestedScopes = request.getSearchScopes();
+        Set<String> explicit = KnowledgeSearchScope.normalize(requestedScopes);
+        if (requestedScopes == null || requestedScopes.isEmpty()) {
+            // 旧接口行为：知识库检索自动包含工单正文。
+            return new SearchScopeDecision(true, true);
+        }
+        // 非空但全部非法时，不扩大检索范围，避免误把请求当成兼容旧接口。
+        return new SearchScopeDecision(explicit.contains(KnowledgeSearchScope.KNOWLEDGE_BASE),
+                explicit.contains(KnowledgeSearchScope.REQUIREMENT_BODY));
+    }
+
+    private boolean isAllowedMilvusSource(MilvusVectorStore.SearchResult result,
+                                           Map<Long, KnowledgeDocument> documents,
+                                           boolean includeKnowledgeBase,
+                                           boolean includeRequirementBody) {
+        Long documentId = parseLong(result.getEntity().get("document_id"));
+        KnowledgeDocument document = documents.get(documentId);
+        if (document == null || !"indexed".equalsIgnoreCase(document.getStatus())) {
+            return false;
+        }
+        boolean body = "requirement_body".equals(document.getSourceType());
+        return body ? includeRequirementBody : includeKnowledgeBase;
     }
 
     /**
@@ -306,21 +388,59 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         return knowledgeConfig.getSearchTopK();
     }
 
+    /** 指定知识库检索时，额外召回全局工单正文；null 表示全部知识库。 */
+    private List<MilvusVectorStore.SearchResult> searchMilvusIncludingRequirementBodies(
+            float[] queryVector, String knowledgeBaseId, int topK,
+            boolean includeKnowledgeBase, boolean includeRequirementBody) {
+        List<MilvusVectorStore.SearchResult> selected = includeKnowledgeBase
+                ? milvusVectorStore.search(queryVector, knowledgeBaseId, Math.min(Math.max(topK * 5, 50), 300))
+                : List.of();
+        List<MilvusVectorStore.SearchResult> globalCandidates = includeRequirementBody
+                ? milvusVectorStore.search(queryVector, null, Math.min(Math.max(topK * 10, 100), 500))
+                : List.of();
+        Set<Long> documentIds = Stream.concat(selected.stream(), globalCandidates.stream())
+                .map(result -> parseLong(result.getEntity().get("document_id")))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, KnowledgeDocument> documents = knowledgeDocumentMapper.selectBatchIds(documentIds).stream()
+                .collect(Collectors.toMap(KnowledgeDocument::getId, document -> document, (left, right) -> left));
+        Map<String, MilvusVectorStore.SearchResult> merged = new LinkedHashMap<>();
+        for (MilvusVectorStore.SearchResult result : selected) {
+            merged.putIfAbsent(String.valueOf(result.getEntity().get("id")), result);
+        }
+        for (MilvusVectorStore.SearchResult result : globalCandidates) {
+            Long documentId = parseLong(result.getEntity().get("document_id"));
+            KnowledgeDocument document = documents.get(documentId);
+            if (document != null && includeRequirementBody && "requirement_body".equals(document.getSourceType())) {
+                merged.putIfAbsent(String.valueOf(result.getEntity().get("id")), result);
+            }
+        }
+        return merged.values().stream()
+                .filter(result -> isAllowedMilvusSource(result, documents, includeKnowledgeBase, includeRequirementBody))
+                .sorted(Comparator.comparingDouble(MilvusVectorStore.SearchResult::getScore).reversed())
+                .limit(topK)
+                .toList();
+    }
     private List<KnowledgeSearchResponse.SearchResultItem> semanticSearch(
-            float[] queryVector, String knowledgeBaseId, int topK) {
+            float[] queryVector, String knowledgeBaseId, int topK,
+            boolean includeKnowledgeBase, boolean includeRequirementBody) {
         List<MilvusVectorStore.SearchResult> milvusResults =
-                milvusVectorStore.search(queryVector, knowledgeBaseId, topK);
+                searchMilvusIncludingRequirementBodies(queryVector, knowledgeBaseId, topK,
+                        includeKnowledgeBase, includeRequirementBody);
         Map<Long, KnowledgeSearchResponse.RequirementReference> reqMap = buildDocumentRequirementMap(milvusResults);
+        Map<String, KnowledgeChunk> chunkMap = buildChunkMetadataMap(milvusResults);
         return milvusResults.stream()
-                .map(sr -> toResultItem(sr, reqMap))
+                .map(sr -> toResultItem(sr, reqMap, chunkMap))
                 .collect(Collectors.toList());
     }
 
     private List<KnowledgeSearchResponse.SearchResultItem> hybridSearch(
-            String query, float[] queryVector, String knowledgeBaseId, int topK) {
+            String query, float[] queryVector, String knowledgeBaseId, int topK,
+            boolean includeKnowledgeBase, boolean includeRequirementBody) {
         int candidateSize = Math.min(topK * 5, 100);
         List<MilvusVectorStore.SearchResult> candidates =
-                milvusVectorStore.search(queryVector, knowledgeBaseId, candidateSize);
+                searchMilvusIncludingRequirementBodies(queryVector, knowledgeBaseId, candidateSize,
+                        includeKnowledgeBase, includeRequirementBody);
 
         if (candidates.isEmpty()) {
             return Collections.emptyList();
@@ -341,11 +461,13 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
 
             scored.sort(Comparator.comparingDouble(s -> -s.score));
 
-            Map<Long, KnowledgeSearchResponse.RequirementReference> reqMap = buildDocumentRequirementMap(scored.stream().map(s -> s.result).collect(Collectors.toList()));
+            List<MilvusVectorStore.SearchResult> scoredResults = scored.stream().map(ScoredCandidate::result).toList();
+            Map<Long, KnowledgeSearchResponse.RequirementReference> reqMap = buildDocumentRequirementMap(scoredResults);
+            Map<String, KnowledgeChunk> chunkMap = buildChunkMetadataMap(scoredResults);
             return scored.stream()
                     .limit(topK)
                     .map(s -> {
-                        KnowledgeSearchResponse.SearchResultItem item = toResultItem(s.result, reqMap);
+                        KnowledgeSearchResponse.SearchResultItem item = toResultItem(s.result, reqMap, chunkMap);
                         item.setScore(s.score);
                         return item;
                     })
@@ -357,13 +479,15 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
             log.warn("Reranker调用失败，降级使用向量检索结果", e);
             return candidates.stream()
                     .limit(topK)
-                    .map(sr -> toResultItem(sr, buildDocumentRequirementMap(candidates.stream().limit(topK).collect(Collectors.toList()))))
+                    .map(sr -> toResultItem(sr, buildDocumentRequirementMap(candidates.stream().limit(topK).collect(Collectors.toList())),
+                            buildChunkMetadataMap(candidates.stream().limit(topK).collect(Collectors.toList()))))
                     .collect(Collectors.toList());
         }
     }
 
     private List<KnowledgeSearchResponse.SearchResultItem> keywordSearch(
-            String query, Long knowledgeBaseId, int topK) {
+            String query, Long knowledgeBaseId, int topK,
+            boolean includeKnowledgeBase, boolean includeRequirementBody) {
         String normalizedQuery = normalizeKeyword(query);
         if (normalizedQuery.isBlank()) {
             return Collections.emptyList();
@@ -374,7 +498,9 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         Map<Long, KeywordCandidate> candidates = new LinkedHashMap<>();
 
         LambdaQueryWrapper<KnowledgeChunk> chunkWrapper = new LambdaQueryWrapper<>();
-        if (knowledgeBaseId != null) {
+        if (!includeKnowledgeBase) {
+            chunkWrapper.eq(KnowledgeChunk::getId, -1L);
+        } else if (knowledgeBaseId != null) {
             chunkWrapper.eq(KnowledgeChunk::getKnowledgeBaseId, knowledgeBaseId);
         }
         chunkWrapper.and(wrapper -> {
@@ -392,9 +518,16 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         for (KnowledgeChunk chunk : knowledgeChunkMapper.selectList(chunkWrapper)) {
             candidates.putIfAbsent(chunk.getId(), new KeywordCandidate(chunk, false));
         }
-
+        // 工单正文是独立来源，可跨知识库检索；正文引用后续按权限过滤。
+        if (includeRequirementBody) {
+            for (KnowledgeChunk chunk : knowledgeChunkMapper.searchRequirementBodyChunks(normalizedQuery, terms, candidateLimit)) {
+                candidates.putIfAbsent(chunk.getId(), new KeywordCandidate(chunk, false));
+            }
+        }
         LambdaQueryWrapper<KnowledgeDocument> documentWrapper = new LambdaQueryWrapper<>();
-        if (knowledgeBaseId != null) {
+        if (!includeKnowledgeBase) {
+            documentWrapper.eq(KnowledgeDocument::getId, -1L);
+        } else if (knowledgeBaseId != null) {
             documentWrapper.eq(KnowledgeDocument::getKnowledgeBaseId, knowledgeBaseId);
         }
         documentWrapper.and(wrapper -> {
@@ -409,12 +542,23 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                 .map(KnowledgeDocument::getId)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
+        List<Long> bodyFileMatchedDocIds = includeRequirementBody ? knowledgeDocumentMapper.selectList(new LambdaQueryWrapper<KnowledgeDocument>()
+                .eq(KnowledgeDocument::getSourceType, "requirement_body")
+                .and(wrapper -> {
+                    wrapper.like(KnowledgeDocument::getFileName, normalizedQuery);
+                    for (String term : terms) {
+                        wrapper.or().like(KnowledgeDocument::getFileName, term);
+                    }
+                })
+                .last("LIMIT 50")).stream()
+                .map(KnowledgeDocument::getId)
+                .filter(Objects::nonNull)
+                .toList() : List.of();
+        fileMatchedDocIds = new ArrayList<>(fileMatchedDocIds);
+        fileMatchedDocIds.addAll(bodyFileMatchedDocIds);
         if (!fileMatchedDocIds.isEmpty()) {
             LambdaQueryWrapper<KnowledgeChunk> byDocumentWrapper = new LambdaQueryWrapper<>();
             byDocumentWrapper.in(KnowledgeChunk::getDocumentId, fileMatchedDocIds);
-            if (knowledgeBaseId != null) {
-                byDocumentWrapper.eq(KnowledgeChunk::getKnowledgeBaseId, knowledgeBaseId);
-            }
             byDocumentWrapper.last("LIMIT " + candidateLimit);
             for (KnowledgeChunk chunk : knowledgeChunkMapper.selectList(byDocumentWrapper)) {
                 candidates.putIfAbsent(chunk.getId(), new KeywordCandidate(chunk, true));
@@ -431,7 +575,19 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                 .collect(Collectors.toSet());
         Map<Long, KnowledgeDocument> documentMap = knowledgeDocumentMapper.selectBatchIds(docIds).stream()
                 .collect(Collectors.toMap(KnowledgeDocument::getId, d -> d, (a, b) -> a));
-        Map<Long, KnowledgeSearchResponse.RequirementReference> requirementMap = buildDocumentRequirementMap(docIds);
+        candidates.entrySet().removeIf(entry -> {
+            KnowledgeDocument document = documentMap.get(entry.getValue().chunk.getDocumentId());
+            if (document == null || !"indexed".equalsIgnoreCase(document.getStatus())) {
+                return true;
+            }
+            boolean body = "requirement_body".equals(document.getSourceType());
+            return body ? !includeRequirementBody : !includeKnowledgeBase;
+        });
+        if (candidates.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Map<Long, KnowledgeSearchResponse.RequirementReference> requirementMap = buildDocumentRequirementMap(
+                candidates.values().stream().map(candidate -> candidate.chunk.getDocumentId()).filter(Objects::nonNull).collect(Collectors.toSet()));
 
         return candidates.values().stream()
                 .map(candidate -> toResultItem(candidate, documentMap, requirementMap, normalizedQuery, terms))
@@ -441,11 +597,15 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
     }
 
     private KnowledgeSearchResponse.SearchResultItem toResultItem(
-            MilvusVectorStore.SearchResult sr, Map<Long, KnowledgeSearchResponse.RequirementReference> requirementMap) {
+            MilvusVectorStore.SearchResult sr,
+            Map<Long, KnowledgeSearchResponse.RequirementReference> requirementMap,
+            Map<String, KnowledgeChunk> chunkMetadataMap) {
         Map<String, Object> entity = sr.getEntity();
         Long docId = parseLong(entity.get("document_id"));
+        String vectorId = getString(entity.get("id"));
+        KnowledgeChunk metadata = chunkMetadataMap.get(vectorId);
         return KnowledgeSearchResponse.SearchResultItem.builder()
-                .chunkId(parseLong(entity.get("id")))
+                .chunkId(metadata != null ? metadata.getId() : parseLong(entity.get("id")))
                 .documentId(docId)
                 .fileName(getString(entity.get("file_name")))
                 .sectionTitle(getString(entity.get("section_title")))
@@ -454,6 +614,9 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                 .score((double) sr.getScore())
                 .knowledgeBaseId(getString(entity.get("knowledge_base_id")))
                 .requirement(requirementMap.get(docId))
+                .imageFileId(metadata != null ? metadata.getSourceRefId() : null)
+                .imagePosition(metadata != null ? metadata.getSourcePosition() : null)
+                .focus(metadata != null && metadata.getSourceRefId() != null ? "image" : null)
                 .build();
     }
 
@@ -476,7 +639,27 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                 .score(scoreKeywordCandidate(candidate, document, query, terms))
                 .knowledgeBaseId(chunk.getKnowledgeBaseId() != null ? String.valueOf(chunk.getKnowledgeBaseId()) : null)
                 .requirement(requirementMap.get(docId))
+                .imageFileId(chunk.getSourceRefId())
+                .imagePosition(chunk.getSourcePosition())
+                .focus(chunk.getSourceRefId() != null ? "image" : null)
                 .build();
+    }
+
+    private Map<String, KnowledgeChunk> buildChunkMetadataMap(List<MilvusVectorStore.SearchResult> results) {
+        if (results == null || results.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<String> vectorIds = results.stream()
+                .map(result -> getString(result.getEntity().get("id")))
+                .filter(value -> value != null && !value.isBlank())
+                .distinct()
+                .toList();
+        if (vectorIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return knowledgeChunkMapper.selectByVectorIds(vectorIds).stream()
+                .filter(chunk -> chunk.getVectorId() != null)
+                .collect(Collectors.toMap(KnowledgeChunk::getVectorId, chunk -> chunk, (left, right) -> left));
     }
 
     private Map<Long, KnowledgeSearchResponse.RequirementReference> buildDocumentRequirementMap(
@@ -538,6 +721,42 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         return resultMap;
     }
 
+    private List<KnowledgeSearchResponse.SearchResultItem> filterVisibleRequirementResults(
+            List<KnowledgeSearchResponse.SearchResultItem> results, Long requesterId) {
+        if (results == null || results.isEmpty()) {
+            return List.of();
+        }
+        Set<Long> documentIds = results.stream()
+                .map(KnowledgeSearchResponse.SearchResultItem::getDocumentId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (documentIds.isEmpty()) {
+            return results;
+        }
+        Map<Long, KnowledgeDocument> documentMap = knowledgeDocumentMapper.selectBatchIds(documentIds).stream()
+                .collect(Collectors.toMap(KnowledgeDocument::getId, document -> document, (left, right) -> left));
+        Map<Long, Requirement> requirementMap = documentMap.values().stream()
+                .map(KnowledgeDocument::getRequirementId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .map(requirementMapper::selectById)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toMap(Requirement::getId, requirement -> requirement, (left, right) -> left));
+        Long userId = requesterId != null ? requesterId : SecurityUtils.getCurrentUserId();
+        return results.stream()
+                .filter(result -> {
+                    KnowledgeDocument document = documentMap.get(result.getDocumentId());
+                    if (document == null || !"indexed".equalsIgnoreCase(document.getStatus())) {
+                        // Milvus 中可能短暂残留已删除、失败或重建中的旧向量；这些文档不能进入最终上下文。
+                        return false;
+                    }
+                    if (document.getRequirementId() == null) {
+                        return true;
+                    }
+                    return requirementService.canViewForSearch(requirementMap.get(document.getRequirementId()), userId);
+                })
+                .toList();
+    }
     private String buildProcessSummary(KnowledgeSearchRequest request, int candidateCount, List<KnowledgeSearchResponse.SearchResultItem> results) {
         String mode = request.getMode() == null ? "hybrid" : request.getMode();
         if (results.isEmpty()) {
@@ -545,7 +764,7 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         }
         long relatedRequirementCount = results.stream().filter(item -> item.getRequirement() != null).count();
         return String.format(
-                "系统按%s模式解析问题\"%s\"，在%s个候选片段中返回前%d条结果，其中%d条结果可追溯到需求流程附件。",
+                "系统按%s模式解析问题\"%s\"，在%s个候选片段中返回前%d条结果，其中%d条结果可追溯到工单正文或附件。",
                 mode,
                 request.getQuery(),
                 candidateCount,
@@ -557,6 +776,7 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
     private KnowledgeSearchResponse.RequirementReference toRequirementReference(Requirement requirement) {
         return KnowledgeSearchResponse.RequirementReference.builder()
                 .id(requirement.getId())
+                .requirementNo(requirement.getRequirementNo())
                 .title(requirement.getTitle())
                 .status(requirement.getStatus())
                 .type(requirement.getType())
@@ -657,17 +877,33 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
 
             KnowledgeSearchResponse.SearchResultItem first = items.get(0);
             double maxScore = items.stream()
-                    .mapToDouble(KnowledgeSearchResponse.SearchResultItem::getScore)
+                    .mapToDouble(item -> item.getScore() == null ? 0.0 : item.getScore())
                     .max()
                     .orElse(0.0);
+            KnowledgeDocument document = knowledgeDocumentMapper.selectById(docId);
+            KnowledgeSearchResponse.RequirementReference requirement = first.getRequirement();
 
-            refs.add(KnowledgeSearchResponse.CitationReference.builder()
+            KnowledgeSearchResponse.CitationReference.Builder builder = KnowledgeSearchResponse.CitationReference.builder()
                     .documentId(docId)
                     .fileName(first.getFileName())
                     .hitCount(items.size())
                     .maxScore(maxScore)
                     .knowledgeBaseId(first.getKnowledgeBaseId())
-                    .build());
+                    .sources(items.stream().map(KnowledgeSearchResponse.SearchResultItem::getSectionTitle)
+                            .filter(Objects::nonNull).filter(value -> !value.isBlank()).distinct().limit(8).toList())
+                    .contentType(resolveCitationContentType(items))
+                    .imageFileId(bestImageItem(items) != null ? bestImageItem(items).getImageFileId() : null)
+                    .imagePosition(bestImageItem(items) != null ? bestImageItem(items).getImagePosition() : null)
+                    .focus(bestImageItem(items) != null && bestImageItem(items).getImageFileId() != null ? "image" : null);
+            if (document != null) {
+                builder.sourceType(document.getSourceType())
+                        .requirementId(document.getRequirementId());
+            }
+            if (requirement != null) {
+                builder.requirementNo(requirement.getRequirementNo())
+                        .requirementTitle(requirement.getTitle());
+            }
+            refs.add(builder.build());
         }
 
         // 按 maxScore 降序
@@ -681,9 +917,32 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         return refs;
     }
 
+    private KnowledgeSearchResponse.SearchResultItem bestImageItem(List<KnowledgeSearchResponse.SearchResultItem> items) {
+        return items.stream()
+                .filter(item -> item.getImageFileId() != null)
+                .max(Comparator.comparingDouble(item -> item.getScore() == null ? 0d : item.getScore()))
+                .orElse(null);
+    }
+
+    private String resolveCitationContentType(List<KnowledgeSearchResponse.SearchResultItem> items) {
+        boolean ocr = items.stream().map(KnowledgeSearchResponse.SearchResultItem::getSectionTitle)
+                .filter(Objects::nonNull).anyMatch(title -> title.contains("OCR"));
+        boolean caption = items.stream().map(KnowledgeSearchResponse.SearchResultItem::getSectionTitle)
+                .filter(Objects::nonNull).anyMatch(title -> title.contains("图片理解"));
+        boolean body = items.stream().map(KnowledgeSearchResponse.SearchResultItem::getSectionTitle)
+                .filter(Objects::nonNull).anyMatch(title -> title.equals("工单正文"));
+        if (ocr && (caption || body)) return "body_image";
+        if (caption && body) return "body_image";
+        if (ocr) return "image_ocr";
+        if (caption) return "image_caption";
+        return "body";
+    }
+
     private String lower(String value) {
         return value == null ? "" : value.toLowerCase(Locale.ROOT);
     }
+
+    private record SearchScopeDecision(boolean includeKnowledgeBase, boolean includeRequirementBody) {}
 
     private record ScoredCandidate(MilvusVectorStore.SearchResult result, double score) {}
 

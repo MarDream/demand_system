@@ -23,6 +23,7 @@ public class AssistantMessageVO {
     private String processSummary;
     private Integer retrievedCount;
     private List<CitationReference> citations;
+    private List<String> warnings;
     private String reasoning;
     private Integer inputTokens;
     private Integer outputTokens;
@@ -147,6 +148,14 @@ public class AssistantMessageVO {
 
     public void setCitations(List<CitationReference> citations) {
         this.citations = citations;
+    }
+
+    public List<String> getWarnings() {
+        return warnings;
+    }
+
+    public void setWarnings(List<String> warnings) {
+        this.warnings = warnings;
     }
 
     public String getReasoning() {

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demand.system.module.assistant.mapper.QuickQuestionMapper">
+
+    <!-- ===== 前台查询：人工优先 + AI 补齐 ===== -->
+    <select id="selectForFrontend" resultType="com.demand.system.module.assistant.dto.QuickQuestionVO">
+        SELECT id, category, question_text AS questionText, page_route AS pageRoute,
+               weight, sort_order AS sortOrder, hit_count AS hitCount
+        FROM quick_questions
+        WHERE status = 'enabled'
+          AND (page_route = #{pageRoute} OR page_route IS NULL)
+        ORDER BY
+            FIELD(category, 'manual_curated', 'auto_extracted', 'ai_suggested'),
+            weight DESC,
+            sort_order ASC
+        LIMIT #{limit}
+    </select>
+
+    <!-- ===== AI 提炼：从 question_logs 聚合高频问题 ===== -->
+    <select id="selectExtractedFromLogs" resultType="com.demand.system.module.assistant.dto.ExtractedQuestionVO">
+        SELECT
+            ql.question_text AS questionText,
+            ql.question_hash AS questionHash,
+            ql.page_route AS pageRoute,
+            COUNT(*) AS frequency,
+            ROUND(AVG(COALESCE(ql.response_rating, 1)), 2) AS avgRating,
+            LEAST(ROUND((COUNT(*) / GREATEST((SELECT MAX(cnt) FROM (
+                SELECT COUNT(*) AS cnt FROM question_logs
+                WHERE created_at >= DATE_SUB(NOW(), INTERVAL #{windowDays} DAY)
+                GROUP BY question_hash
+            ) AS sub)), 1) * 0.7 + COALESCE(AVG(ql.response_rating), 1) * 0.3, 2), 1.00) AS aiConfidence,
+            MAX(ql.created_at) AS lastAskedAt,
+            CASE
+                WHEN COUNT(*) >= 20 THEN '丰富'
+                WHEN COUNT(*) >= 10 THEN '中等'
+                ELSE '基础'
+            END AS infoLevel
+        FROM question_logs ql
+        WHERE ql.created_at >= DATE_SUB(NOW(), INTERVAL #{windowDays} DAY)
+          AND ql.answered = 1
+          AND LENGTH(ql.question_text) >= 5
+        GROUP BY ql.question_hash, ql.question_text, ql.page_route
+        HAVING frequency >= #{minFrequency}
+        ORDER BY frequency DESC, avgRating DESC
+    </select>
+
+    <update id="incrementHitCount">
+        UPDATE quick_questions SET hit_count = hit_count + 1 WHERE id = #{id}
+    </update>
+
+</mapper>

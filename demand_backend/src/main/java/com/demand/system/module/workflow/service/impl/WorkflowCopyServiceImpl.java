@@ -122,6 +122,7 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
             updateVersion.setId(sourceVersionId);
             Integer currentCopyCount = sourceVersion.getCopyCount() != null ? sourceVersion.getCopyCount() : 0;
             updateVersion.setCopyCount(currentCopyCount + 1);
+            updateVersion.setUpdatedAt(LocalDateTime.now());
             workflowVersionMapper.updateById(updateVersion);
 
             // 9. 记录审计日志
@@ -516,6 +517,7 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
         WorkflowVersion version = new WorkflowVersion();
         version.setId(versionId);
         version.setIsTemplate(isTemplate ? 1 : 0);
+        version.setUpdatedAt(LocalDateTime.now());
         workflowVersionMapper.updateById(version);
     }
 

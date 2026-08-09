@@ -60,6 +60,11 @@ public class AssistantChatRequest {
      */
     private Boolean webSearch;
 
+    /**
+     * 显式检索范围：REQUIREMENT_BODY、KNOWLEDGE_BASE、WEB。为空时保持历史兼容规则。
+     */
+    private List<String> searchScopes;
+
     public String getMessage() {
         return message;
     }
@@ -114,6 +119,14 @@ public class AssistantChatRequest {
 
     public void setWebSearch(Boolean webSearch) {
         this.webSearch = webSearch;
+    }
+
+    public List<String> getSearchScopes() {
+        return searchScopes;
+    }
+
+    public void setSearchScopes(List<String> searchScopes) {
+        this.searchScopes = searchScopes;
     }
 
     public List<AssistantFileAttachment> getFiles() {

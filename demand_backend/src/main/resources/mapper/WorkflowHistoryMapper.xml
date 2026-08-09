@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demand.system.module.workflow.mapper.WorkflowHistoryMapper">
+
+    <select id="selectHistoryByVersionId" resultType="com.demand.system.module.workflow.dto.WorkflowHistoryVO">
+        SELECT wh.id, wh.workflow_version_id AS workflowVersionId,
+               u.real_name AS operatorName,
+               wh.action, wh.change_summary AS changeSummary,
+               wh.change_log AS changeLog, wh.version_snapshot AS versionSnapshot,
+               wh.created_at AS createdAt
+        FROM workflow_history wh
+        LEFT JOIN users u ON wh.operator_id = u.id
+        WHERE wh.workflow_version_id = #{workflowVersionId}
+        ORDER BY wh.created_at DESC
+    </select>
+
+    <select id="selectLatestPublishByVersionId" resultType="com.demand.system.module.workflow.dto.WorkflowHistoryVO">
+        SELECT wh.id, wh.workflow_version_id AS workflowVersionId,
+               u.real_name AS operatorName,
+               wh.action, wh.change_summary AS changeSummary,
+               wh.created_at AS createdAt
+        FROM workflow_history wh
+        LEFT JOIN users u ON wh.operator_id = u.id
+        WHERE wh.workflow_version_id = #{workflowVersionId}
+          AND wh.action IN ('publish', 'activate')
+        ORDER BY wh.created_at DESC
+        LIMIT 1
+    </select>
+
+</mapper>

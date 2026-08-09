@@ -253,6 +253,12 @@ public class RequirementConfigService {
         if (type.getEnabled() == null) {
             type.setEnabled(true);
         }
+        if (type.getWorkflowVersionId() != null) {
+            WorkflowVersion version = workflowVersionMapper.selectById(type.getWorkflowVersionId());
+            if (!isActiveWorkflow(version)) {
+                return Result.fail("只能绑定启用中的工作流版本");
+            }
+        }
         syncTypeDefaultFlag(type.getId(), type.getIsDefault());
         typeMapper.insert(type);
         return Result.success();
@@ -267,6 +273,11 @@ public class RequirementConfigService {
         if (existsTypeCode(type.getCode(), type.getId())) {
             return Result.fail("需求类型编码已存在");
         }
+        // 工作流绑定由 bindWorkflow 独立维护，避免更新基本信息时意外解除绑定，
+        // 也避免把已停用但仍保留关系的工作流版本写回需求类型。
+        type.setWorkflowVersionId(existing.getWorkflowVersionId());
+        type.setEnabled(existing.getEnabled());
+
         // code 变更时同步更新已引用的需求工单
         if (type.getCode() != null && !type.getCode().equals(existing.getCode())) {
             requirementMapper.update(null, new LambdaUpdateWrapper<Requirement>()
@@ -295,20 +306,23 @@ public class RequirementConfigService {
         if (enabled) {
             Long versionId = existing.getWorkflowVersionId();
             if (versionId == null) {
-                return Result.fail("该类型未绑定工作流，无法启用");
+                return Result.fail("请先启用对应工作流或者绑定新的工作流");
             }
             WorkflowVersion version = workflowVersionMapper.selectById(versionId);
-            if (version == null
-                    || version.getIsActive() == null
-                    || version.getIsActive() != 1
-                    || !"active".equals(version.getActivationStatus())) {
-                return Result.fail("请先启用绑定的工作流");
+            if (!isActiveWorkflow(version)) {
+                return Result.fail("请先启用对应工作流或者绑定新的工作流");
             }
         }
         typeMapper.update(null, new LambdaUpdateWrapper<RequirementTypeConfig>()
                 .eq(RequirementTypeConfig::getId, id)
                 .set(RequirementTypeConfig::getEnabled, enabled));
         return Result.success();
+    }
+
+    private boolean isActiveWorkflow(WorkflowVersion version) {
+        return version != null
+                && Integer.valueOf(1).equals(version.getIsActive())
+                && "active".equals(version.getActivationStatus());
     }
 
     @Transactional

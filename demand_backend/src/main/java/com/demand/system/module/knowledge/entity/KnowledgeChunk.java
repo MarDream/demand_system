@@ -25,6 +25,15 @@ public class KnowledgeChunk {
 
     private Integer charCount;
 
+    /** 来源内容类型：body、image_ocr、image_caption。 */
+    private String sourceContentType;
+
+    /** 来源引用ID，例如正文图片文件ID。 */
+    private Long sourceRefId;
+
+    /** 来源位置，例如正文图片序号。 */
+    private Integer sourcePosition;
+
     private String vectorId;
 
     private LocalDateTime createdAt;
@@ -91,6 +100,30 @@ public class KnowledgeChunk {
 
     public void setCharCount(Integer charCount) {
         this.charCount = charCount;
+    }
+
+    public String getSourceContentType() {
+        return sourceContentType;
+    }
+
+    public void setSourceContentType(String sourceContentType) {
+        this.sourceContentType = sourceContentType;
+    }
+
+    public Long getSourceRefId() {
+        return sourceRefId;
+    }
+
+    public void setSourceRefId(Long sourceRefId) {
+        this.sourceRefId = sourceRefId;
+    }
+
+    public Integer getSourcePosition() {
+        return sourcePosition;
+    }
+
+    public void setSourcePosition(Integer sourcePosition) {
+        this.sourcePosition = sourcePosition;
     }
 
     public String getVectorId() {
