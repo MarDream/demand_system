@@ -10,7 +10,7 @@ CREATE TABLE `workflow_history` (
   `workflow_version_id` BIGINT UNSIGNED NOT NULL COMMENT '工作流版本ID(workflow_versions.id)',
   `project_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '所属项目ID(冗余，方便按项目查询)',
   `operator_id` INT UNSIGNED NOT NULL COMMENT '操作人ID(users.id)',
-  `action` ENUM('create','update','activate','deactivate','delete','copy','export','import','publish') NOT NULL DEFAULT 'update' COMMENT '操作类型',
+  `action` ENUM('create','update','activate','deactivate','delete','copy','export','import','publish','submit','approve','reject') NOT NULL DEFAULT 'update' COMMENT '操作类型',
   `change_summary` VARCHAR(500) DEFAULT NULL COMMENT '修改摘要(人类可读的描述，如"新增节点:审批→完成")',
   `change_log` TEXT DEFAULT NULL COMMENT '详细变更内容(JSON格式，记录field/oldValue/newValue列表)',
   `version_snapshot` TEXT DEFAULT NULL COMMENT '操作后的状态快照(JSON，含节点数/连线数/状态数)',

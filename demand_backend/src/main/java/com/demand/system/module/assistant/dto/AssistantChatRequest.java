@@ -1,5 +1,6 @@
 package com.demand.system.module.assistant.dto;
 
+import com.demand.system.module.knowledge.dto.ConversationTurn;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
@@ -65,6 +66,12 @@ public class AssistantChatRequest {
      */
     private List<String> searchScopes;
 
+    /**
+     * 多轮对话历史（旧→新），用于查询改写（消解指代）与回答上下文；
+     * 建议由前端截取最近 3~6 条，后端会再做长度限制。
+     */
+    private List<ConversationTurn> history;
+
     public String getMessage() {
         return message;
     }
@@ -127,6 +134,14 @@ public class AssistantChatRequest {
 
     public void setSearchScopes(List<String> searchScopes) {
         this.searchScopes = searchScopes;
+    }
+
+    public List<ConversationTurn> getHistory() {
+        return history;
+    }
+
+    public void setHistory(List<ConversationTurn> history) {
+        this.history = history;
     }
 
     public List<AssistantFileAttachment> getFiles() {

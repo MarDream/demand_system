@@ -294,7 +294,186 @@
           <RequirementTemplateManager ref="templateManagerRef" :preselected-type-code="selectedTypeCodeForTemplate" />
         </div>
       </el-tab-pane>
+
+      <!-- 动态字段 -->
+      <el-tab-pane label="动态字段" name="customFields">
+        <div class="tab-content">
+          <div class="field-scope-bar">
+            <el-select
+              v-model="fieldScopeProjectId"
+              placeholder="选择项目"
+              filterable
+              clearable
+              style="width: 220px"
+              @change="loadCustomFields"
+            >
+              <el-option v-for="p in projectOptions" :key="p.id" :label="p.name" :value="p.id" />
+            </el-select>
+            <el-select
+              v-model="fieldScopeTypeCode"
+              placeholder="选择需求类型"
+              clearable
+              style="width: 200px"
+              @change="loadCustomFields"
+            >
+              <el-option v-for="t in types" :key="t.code" :label="t.name" :value="t.code" />
+            </el-select>
+            <el-button type="primary" :disabled="!fieldScopeProjectId" @click="openFieldDialog()">
+              <el-icon><Plus /></el-icon>新增字段
+            </el-button>
+            <span class="field-scope-hint">
+              字段按「项目 + 需求类型」隔离；未选类型时维护项目级通用字段。字段在各环节的可见/可编辑/必填请在「系统设置 → 流程配置」的节点中配置。
+            </span>
+          </div>
+
+          <el-table
+            v-loading="fieldsLoading"
+            :data="customFields"
+            border
+            stripe
+            size="small"
+            class="full-table"
+          >
+            <el-table-column prop="name" label="字段名称" min-width="130" />
+            <el-table-column prop="fieldCode" label="字段编码" min-width="130" />
+            <el-table-column label="类型" width="120">
+              <template #default="{ row }">
+                <el-tag size="small" effect="plain">{{ fieldTypeLabel(row.fieldType) }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="选项" min-width="160">
+              <template #default="{ row }">
+                <span v-if="fieldOptionsText(row)">{{ fieldOptionsText(row) }}</span>
+                <span v-else class="text-muted">—</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="默认值" min-width="110">
+              <template #default="{ row }">
+                <span>{{ row.defaultValue || '—' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="必填" width="70" align="center">
+              <template #default="{ row }">
+                <el-tag :type="row.required ? 'danger' : 'info'" size="small" effect="plain">
+                  {{ row.required ? '是' : '否' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="sortOrder" label="排序" width="80" align="center" />
+            <el-table-column label="状态" width="80" align="center">
+              <template #default="{ row }">
+                <el-switch
+                  v-model="row.enabled"
+                  size="small"
+                  :loading="row._enabledLoading"
+                  @change="(v: boolean) => toggleFieldEnabled(row, v)"
+                />
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="150" fixed="right">
+              <template #default="{ row, $index }">
+                <div class="table-actions">
+                  <el-button link type="primary" size="small" :disabled="$index === 0" @click="moveField(row, -1)">
+                    上移
+                  </el-button>
+                  <el-button
+                    link
+                    type="primary"
+                    size="small"
+                    :disabled="$index === customFields.length - 1"
+                    @click="moveField(row, 1)"
+                  >
+                    下移
+                  </el-button>
+                  <el-button link type="primary" size="small" @click="openFieldDialog(row)">编辑</el-button>
+                  <el-button link type="danger" size="small" @click="deleteField(row)">删除</el-button>
+                </div>
+              </template>
+            </el-table-column>
+            <template #empty>
+              <el-empty description="该项目/类型下暂无动态字段" :image-size="60" />
+            </template>
+          </el-table>
+        </div>
+      </el-tab-pane>
     </el-tabs>
+
+    <!-- 动态字段对话框 -->
+    <el-dialog
+      v-model="fieldDialogVisible"
+      :title="editingField ? '编辑动态字段' : '新增动态字段'"
+      width="560px"
+      class="settings-form-dialog"
+      @close="resetFieldForm"
+    >
+      <el-form ref="fieldFormRef" :model="fieldForm" :rules="fieldRules" label-width="100px">
+        <el-form-item label="字段名称" prop="name">
+          <el-input v-model="fieldForm.name" placeholder="如：验收标准" />
+        </el-form-item>
+        <el-form-item label="字段编码" prop="fieldCode">
+          <el-input
+            v-model="fieldForm.fieldCode"
+            placeholder="如：acceptance_criteria"
+            :disabled="!!editingField"
+          />
+          <div v-if="!editingField" class="form-tip">字母开头，仅含字母/数字/下划线，创建后不可修改</div>
+        </el-form-item>
+        <el-form-item label="字段类型" prop="fieldType">
+          <el-select v-model="fieldForm.fieldType" style="width: 100%">
+            <el-option v-for="opt in FIELD_TYPE_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="needsOptions" label="选项" prop="options">
+          <div class="options-editor">
+            <div v-for="(opt, idx) in fieldForm.options" :key="opt.key" class="option-row">
+              <el-input v-model="opt.label" placeholder="选项名称" maxlength="100" />
+              <el-button link type="danger" :icon="Delete" @click="removeOption(idx)" />
+            </div>
+            <el-button link type="primary" :icon="Plus" @click="addOption">添加选项</el-button>
+            <div class="form-tip">选项名称可随时修改，已填写的数据不受影响；被数据引用的选项无法删除</div>
+          </div>
+        </el-form-item>
+        <el-form-item label="默认值">
+          <el-input
+            v-if="!needsOptions && fieldForm.fieldType !== 'BOOLEAN' && fieldForm.fieldType !== 'DATE'"
+            v-model="fieldForm.defaultValue"
+            :placeholder="defaultValuePlaceholder"
+          />
+          <el-date-picker
+            v-else-if="fieldForm.fieldType === 'DATE'"
+            v-model="fieldForm.defaultValue"
+            type="date"
+            value-format="YYYY-MM-DD"
+            style="width: 100%"
+          />
+          <el-switch
+            v-else-if="fieldForm.fieldType === 'BOOLEAN'"
+            v-model="fieldForm.defaultValueBoolean"
+            active-text="是"
+            inactive-text="否"
+          />
+          <el-select v-else v-model="fieldForm.defaultValue" clearable style="width: 100%">
+            <el-option
+              v-for="opt in fieldForm.options.filter((o) => o.label.trim())"
+              :key="opt.key"
+              :label="opt.label"
+              :value="opt.key"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="必填">
+          <el-switch v-model="fieldForm.required" />
+          <span class="form-tip-inline">开启后所有环节均要求填写，也可在流程节点单独追加必填</span>
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="fieldForm.enabled" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="fieldDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="fieldSubmitting" @click="submitField">确定</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 类型对话框 -->
     <el-dialog v-model="typeDialogVisible" :title="editingType ? '编辑需求类型' : '新增需求类型'" width="500px" class="settings-form-dialog" @close="resetTypeForm">
@@ -458,11 +637,21 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { Plus, Rank, Operation, EditPen, Delete, Document, Setting, MagicStick } from '@element-plus/icons-vue'
-import { requirementConfigApi, type RequirementType, type Priority, type SortItem } from '@/api/modules/requirementConfig'
+import {
+  requirementConfigApi,
+  parseFieldOptions,
+  type CustomFieldDef,
+  type CustomFieldOption,
+  type CustomFieldType,
+  type Priority,
+  type RequirementType,
+  type SortItem,
+} from '@/api/modules/requirementConfig'
+import { getProjectList } from '@/api/modules/project'
 import {
   backfillRequirementBodies,
   rebuildRequirementBody,
@@ -828,6 +1017,258 @@ const loadTypes = async () => {
     types.value = list.map((t: RequirementType) => ({ ...t, name: normalizeText(t.name) }))
   } catch (error) {
     console.error(error)
+  }
+}
+
+// ------------------------------------------------------------------
+// 动态字段
+// ------------------------------------------------------------------
+
+const FIELD_TYPE_OPTIONS = [
+  { value: 'TEXT', label: '文本' },
+  { value: 'SELECT', label: '单选' },
+  { value: 'MULTI_SELECT', label: '多选' },
+  { value: 'NUMBER', label: '数值' },
+  { value: 'DATE', label: '日期' },
+  { value: 'BOOLEAN', label: '是/否' },
+  { value: 'USER', label: '人员' },
+  { value: 'MULTI_USER', label: '多人员' },
+  { value: 'URL', label: '链接' },
+  { value: 'FILE', label: '附件' },
+] as const
+
+type CustomFieldRow = CustomFieldDef & { _enabledLoading?: boolean }
+
+const projectOptions = ref<Array<{ id: number; name: string }>>([])
+const customFields = ref<CustomFieldRow[]>([])
+const fieldsLoading = ref(false)
+const fieldScopeProjectId = ref<number | undefined>(undefined)
+const fieldScopeTypeCode = ref<string | undefined>(undefined)
+
+const fieldDialogVisible = ref(false)
+const fieldFormRef = ref<FormInstance>()
+const editingField = ref<CustomFieldRow | null>(null)
+const fieldSubmitting = ref(false)
+
+const createFieldForm = () => ({
+  name: '',
+  fieldCode: '',
+  fieldType: 'TEXT' as CustomFieldType,
+  options: [] as CustomFieldOption[],
+  defaultValue: '' as string,
+  defaultValueBoolean: false,
+  required: false,
+  enabled: true,
+})
+
+const fieldForm = reactive(createFieldForm())
+
+const needsOptions = computed(() => fieldForm.fieldType === 'SELECT' || fieldForm.fieldType === 'MULTI_SELECT')
+
+const defaultValuePlaceholder = computed(() => {
+  switch (fieldForm.fieldType) {
+    case 'NUMBER': return '请输入数值'
+    case 'URL': return 'https://'
+    case 'USER': return '请输入用户ID'
+    default: return '请输入默认值'
+  }
+})
+
+const fieldRules: FormRules = {
+  name: [{ required: true, message: '请输入字段名称', trigger: 'blur' }],
+  fieldCode: [
+    { required: true, message: '请输入字段编码', trigger: 'blur' },
+    {
+      pattern: /^[a-zA-Z][a-zA-Z0-9_]*$/,
+      message: '字母开头，仅含字母、数字、下划线',
+      trigger: 'blur',
+    },
+  ],
+  fieldType: [{ required: true, message: '请选择字段类型', trigger: 'change' }],
+}
+
+function fieldTypeLabel(type?: string) {
+  return FIELD_TYPE_OPTIONS.find((o) => o.value === type)?.label || type || '-'
+}
+
+/** 生成稳定选项 key：一旦创建不再变化，改名只改 label */
+function generateOptionKey() {
+  return `opt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
+}
+
+function fieldOptionsText(row: CustomFieldRow) {
+  const opts = parseFieldOptions(row.options)
+  return opts.length ? opts.map((o) => o.label).join('、') : ''
+}
+
+async function loadProjectOptions() {
+  try {
+    const res = await getProjectList({ pageNum: 1, pageSize: 200 }) as any
+    projectOptions.value = res?.list || []
+  } catch {
+    projectOptions.value = []
+  }
+}
+
+async function loadCustomFields() {
+  if (!fieldScopeProjectId.value) {
+    customFields.value = []
+    return
+  }
+  fieldsLoading.value = true
+  try {
+    const res = await requirementConfigApi.listCustomFields(
+      fieldScopeProjectId.value,
+      fieldScopeTypeCode.value || null,
+    ) as any
+    const list = Array.isArray(res) ? res : res?.data || []
+    customFields.value = (list as CustomFieldDef[]).map((f) => ({
+      ...f,
+      required: !!f.required,
+      enabled: f.enabled !== false,
+    }))
+  } catch (error) {
+    console.error(error)
+    customFields.value = []
+  } finally {
+    fieldsLoading.value = false
+  }
+}
+
+function addOption() {
+  fieldForm.options.push({ key: generateOptionKey(), label: '' })
+}
+
+function removeOption(idx: number) {
+  fieldForm.options.splice(idx, 1)
+}
+
+function openFieldDialog(row?: CustomFieldRow) {
+  editingField.value = row || null
+  if (row) {
+    const isBool = row.fieldType === 'BOOLEAN'
+    fieldForm.name = row.name || ''
+    fieldForm.fieldCode = row.fieldCode || ''
+    fieldForm.fieldType = row.fieldType
+    fieldForm.options = parseFieldOptions(row.options)
+    fieldForm.defaultValue = isBool ? '' : (row.defaultValue || '')
+    fieldForm.defaultValueBoolean = isBool ? row.defaultValue === 'true' : false
+    fieldForm.required = !!row.required
+    fieldForm.enabled = row.enabled !== false
+  } else {
+    Object.assign(fieldForm, createFieldForm())
+  }
+  fieldDialogVisible.value = true
+  nextTick(() => fieldFormRef.value?.clearValidate())
+}
+
+function resetFieldForm() {
+  editingField.value = null
+  Object.assign(fieldForm, createFieldForm())
+}
+
+async function submitField() {
+  if (!fieldFormRef.value || !fieldScopeProjectId.value) return
+  const valid = await fieldFormRef.value.validate().catch(() => false)
+  if (!valid) return
+
+  const options = needsOptions.value
+    ? fieldForm.options
+        .map((o) => ({ key: o.key.trim(), label: o.label.trim() }))
+        .filter((o) => o.label)
+    : []
+  if (needsOptions.value && options.length === 0) {
+    ElMessage.warning('请至少配置一个选项')
+    return
+  }
+  // 默认值保存选项 key（历史字段 key=label，行为不变）
+  const defaultValue = fieldForm.fieldType === 'BOOLEAN'
+    ? String(fieldForm.defaultValueBoolean)
+    : (fieldForm.defaultValue || null)
+
+  fieldSubmitting.value = true
+  try {
+    const payload: CustomFieldDef = {
+      projectId: fieldScopeProjectId.value,
+      requirementTypeCode: fieldScopeTypeCode.value || null,
+      fieldCode: editingField.value?.fieldCode || fieldForm.fieldCode.trim(),
+      name: fieldForm.name.trim(),
+      fieldType: fieldForm.fieldType,
+      options: options.length ? JSON.stringify(options) : null,
+      required: fieldForm.required,
+      defaultValue,
+      enabled: fieldForm.enabled,
+    }
+    if (editingField.value?.id) {
+      payload.id = editingField.value.id
+      await requirementConfigApi.updateCustomField(payload)
+      ElMessage.success('字段已更新')
+    } else {
+      await requirementConfigApi.createCustomField(payload)
+      ElMessage.success('字段已创建')
+    }
+    fieldDialogVisible.value = false
+    await loadCustomFields()
+  } catch (error: any) {
+    ElMessage.error(error?.message || '保存失败')
+  } finally {
+    fieldSubmitting.value = false
+  }
+}
+
+async function toggleFieldEnabled(row: CustomFieldRow, value: boolean) {
+  row._enabledLoading = true
+  try {
+    await requirementConfigApi.updateCustomField({
+      id: row.id,
+      projectId: row.projectId,
+      fieldCode: row.fieldCode,
+      name: row.name,
+      fieldType: row.fieldType,
+      enabled: value,
+    })
+    row.enabled = value
+  } catch (error: any) {
+    row.enabled = !value
+    ElMessage.error(error?.message || '状态更新失败')
+  } finally {
+    row._enabledLoading = false
+  }
+}
+
+async function moveField(row: CustomFieldRow, delta: number) {
+  const idx = customFields.value.findIndex((f) => f.id === row.id)
+  const target = idx + delta
+  if (idx < 0 || target < 0 || target >= customFields.value.length) return
+  const reordered = [...customFields.value]
+  reordered.splice(idx, 1)
+  reordered.splice(target, 0, row)
+  try {
+    await requirementConfigApi.sortCustomFields(
+      reordered.map((f, i) => ({ id: f.id as number, sortOrder: i })),
+    )
+    customFields.value = reordered.map((f, i) => ({ ...f, sortOrder: i }))
+  } catch (error: any) {
+    ElMessage.error(error?.message || '排序失败')
+  }
+}
+
+async function deleteField(row: CustomFieldRow) {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除字段「${row.name}」吗？已填写的历史值会保留但不展示。`,
+      '删除确认',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await requirementConfigApi.deleteCustomField(row.id as number)
+    ElMessage.success('字段已删除')
+    await loadCustomFields()
+  } catch (error: any) {
+    ElMessage.error(error?.message || '删除失败')
   }
 }
 
@@ -1424,6 +1865,14 @@ onMounted(() => {
   loadTypeColumnConfig()
   loadPriorityColumnConfig()
   loadNodeStatusColumnConfig()
+  void loadProjectOptions()
+})
+
+// 切到动态字段页签且已选项目时自动加载
+watch(activeTab, (tab) => {
+  if (tab === 'customFields' && fieldScopeProjectId.value && customFields.value.length === 0) {
+    void loadCustomFields()
+  }
 })
 </script>
 
@@ -1478,6 +1927,43 @@ onMounted(() => {
   margin-left: 8px;
   color: var(--color-muted-text);
   font-size: 12px;
+}
+
+.form-tip-inline {
+  margin-left: 10px;
+  color: var(--color-muted-text);
+  font-size: 12px;
+}
+
+.field-scope-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.field-scope-hint {
+  flex: 1 1 320px;
+  min-width: 240px;
+  color: var(--color-muted-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.text-muted {
+  color: var(--color-muted-text);
+}
+
+.options-editor {
+  width: 100%;
+
+  .option-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
 }
 
 .workflow-inactive-tip {

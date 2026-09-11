@@ -42,6 +42,9 @@ public class RequirementUpdateDTO {
 
     private List<RequirementAttachmentDTO> attachments;
 
+    /** 动态字段值（fieldCode + typed value）。 */
+    private List<CustomFieldValueDTO> customFields;
+
     private String status;
 
     private Integer orderNum;
@@ -156,6 +159,14 @@ public class RequirementUpdateDTO {
 
     public void setAttachments(List<RequirementAttachmentDTO> attachments) {
         this.attachments = attachments;
+    }
+
+    public List<CustomFieldValueDTO> getCustomFields() {
+        return customFields;
+    }
+
+    public void setCustomFields(List<CustomFieldValueDTO> customFields) {
+        this.customFields = customFields;
     }
 
     public String getStatus() {

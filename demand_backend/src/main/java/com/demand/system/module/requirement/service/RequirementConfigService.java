@@ -6,6 +6,7 @@ import com.demand.system.common.result.Result;
 import com.demand.system.module.requirement.dto.RequirementFieldAlias;
 import com.demand.system.module.requirement.dto.SortRequest;
 import com.demand.system.module.requirement.dto.RequirementFormConfigDTO;
+import com.demand.system.module.requirement.entity.CustomField;
 import com.demand.system.module.requirement.entity.PriorityConfig;
 import com.demand.system.module.requirement.entity.Requirement;
 import com.demand.system.module.requirement.entity.RequirementTypeConfig;
@@ -56,8 +57,9 @@ public class RequirementConfigService {
     private final WorkflowNodeMapper workflowNodeMapper;
     private final WorkflowEdgeMapper workflowEdgeMapper;
     private final ObjectMapper objectMapper;
+    private final RequirementFieldService requirementFieldService;
 
-    public RequirementConfigService(RequirementTypeMapper typeMapper, PriorityMapper priorityMapper, RequirementMapper requirementMapper, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowNodePermissionMapper workflowNodePermissionMapper, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, ObjectMapper objectMapper) {
+    public RequirementConfigService(RequirementTypeMapper typeMapper, PriorityMapper priorityMapper, RequirementMapper requirementMapper, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowNodePermissionMapper workflowNodePermissionMapper, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, ObjectMapper objectMapper, RequirementFieldService requirementFieldService) {
         this.typeMapper = typeMapper;
         this.priorityMapper = priorityMapper;
         this.requirementMapper = requirementMapper;
@@ -67,6 +69,7 @@ public class RequirementConfigService {
         this.workflowNodeMapper = workflowNodeMapper;
         this.workflowEdgeMapper = workflowEdgeMapper;
         this.objectMapper = objectMapper;
+        this.requirementFieldService = requirementFieldService;
     }
 
     public Result<List<RequirementTypeConfig>> listTypes() {
@@ -201,6 +204,7 @@ public class RequirementConfigService {
         if (activeVersion == null) {
             config.setVisibleFields(Collections.emptyList());
             config.setRequiredFields(Collections.emptyList());
+            config.setDynamicFields(Collections.emptyList());
             return Result.success(config);
         }
 
@@ -208,6 +212,7 @@ public class RequirementConfigService {
         if (initialNode == null || !StringUtils.hasText(initialNode.getNodeId())) {
             config.setVisibleFields(Collections.emptyList());
             config.setRequiredFields(Collections.emptyList());
+            config.setDynamicFields(Collections.emptyList());
             return Result.success(config);
         }
 
@@ -221,6 +226,7 @@ public class RequirementConfigService {
         if (permission == null) {
             config.setVisibleFields(Collections.emptyList());
             config.setRequiredFields(Collections.emptyList());
+            config.setDynamicFields(Collections.emptyList());
             return Result.success(config);
         }
 
@@ -230,6 +236,10 @@ public class RequirementConfigService {
         }
         config.setVisibleFields(appendCcFieldIfNeeded(normalizeFields(visibleFields), activeVersion.getId()));
         config.setRequiredFields(normalizeFields(parseStringList(permission.getRequiredFields())));
+
+        // 动态字段 schema：按需求类型 + 初始节点权限计算可见/可编辑集合（创建场景无当前值）
+        List<CustomField> typeFields = requirementFieldService.listEnabledFields(projectId, defaultType.getCode());
+        config.setDynamicFields(requirementFieldService.buildSchema(typeFields, permission, Collections.emptyMap()));
         return Result.success(config);
     }
 

@@ -28,6 +28,10 @@ import com.demand.system.module.requirement.dto.RequirementQueryDTO;
 import com.demand.system.module.requirement.dto.RequirementUpdateDTO;
 import com.demand.system.module.requirement.dto.RequirementListVO;
 import com.demand.system.module.requirement.dto.RequirementVO;
+import com.demand.system.module.requirement.dto.CustomFieldConfigDTO;
+import com.demand.system.module.requirement.dto.CustomFieldValueDTO;
+import com.demand.system.module.requirement.dto.FieldOption;
+import com.demand.system.module.requirement.entity.CustomField;
 import com.demand.system.module.requirement.entity.Requirement;
 import com.demand.system.module.requirement.entity.RequirementComment;
 import com.demand.system.module.requirement.entity.RequirementFollow;
@@ -44,6 +48,7 @@ import com.demand.system.module.file.entity.FileRecord;
 import com.demand.system.module.file.mapper.FileRecordMapper;
 import com.demand.system.module.requirement.service.RequirementApprovalEvaluationService;
 import com.demand.system.module.requirement.service.RequirementConfigService;
+import com.demand.system.module.requirement.service.RequirementFieldService;
 import com.demand.system.module.requirement.service.RequirementService;
 import com.demand.system.module.user.entity.User;
 import com.demand.system.module.user.entity.UserOrganization;
@@ -66,6 +71,7 @@ import com.demand.system.module.rbac.support.RbacConstants;
 import com.demand.system.module.workflow.entity.WorkflowEdge;
 import com.demand.system.module.workflow.entity.WorkflowInstance;
 import com.demand.system.module.workflow.entity.WorkflowNode;
+import com.demand.system.module.workflow.entity.WorkflowNodePermission;
 import com.demand.system.module.workflow.entity.WorkflowVersion;
 import com.demand.system.module.workflow.engine.WorkflowDefinitionEngine;
 import com.demand.system.module.workflow.engine.WorkflowGraphContext;
@@ -100,6 +106,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -160,6 +167,7 @@ public class RequirementServiceImpl implements RequirementService {
     private final WorkflowDefinitionEngine workflowDefinitionEngine;
     private final RequirementApprovalEvaluationService approvalEvaluationService;
     private final RequirementConfigService requirementConfigService;
+    private final RequirementFieldService requirementFieldService;
     private final KnowledgeDocumentService knowledgeDocumentService;
     private final NodeStatusMapper nodeStatusMapper;
     private final ProjectMapper projectMapper;
@@ -174,7 +182,7 @@ public class RequirementServiceImpl implements RequirementService {
     private final VisibleOrgCache visibleOrgCache;
     private final RoleDataScopeOrgMapper roleDataScopeOrgMapper;
 
-    public RequirementServiceImpl(RequirementMapper requirementMapper, RequirementPendingTaskMapper pendingTaskMapper, RequirementFollowMapper requirementFollowMapper, RequirementHistoryMapper historyMapper, RequirementCommentMapper requirementCommentMapper, CustomFieldValueMapper customFieldValueMapper, UserMapper userMapper, UserOrganizationMapper userOrganizationMapper, SysOrgService sysOrgService, NotificationService notificationService, RelationService relationService, WorkflowService workflowService, WorkflowEngineService workflowEngineService, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowGraphNavigator workflowGraphNavigator, WorkflowRuntimeLoader workflowRuntimeLoader, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, WorkflowInstanceMapper workflowInstanceMapper, WorkflowInstanceTransitionMapper workflowInstanceTransitionMapper, WorkflowTransitionRecordMapper workflowTransitionRecordMapper, WorkflowDefinitionEngine workflowDefinitionEngine, RequirementApprovalEvaluationService approvalEvaluationService, RequirementConfigService requirementConfigService, KnowledgeDocumentService knowledgeDocumentService, NodeStatusMapper nodeStatusMapper, ProjectMapper projectMapper, RoleMapper roleMapper, RoleGroupMapper roleGroupMapper, FileRecordMapper fileRecordMapper, ObjectMapper objectMapper, DistributedIdGenerator distributedIdGenerator, com.demand.system.module.organization.service.OrgHierarchyCache orgHierarchyCache, UserLocalCache userLocalCache, OrgLocalCache orgLocalCache, VisibleOrgCache visibleOrgCache, RoleDataScopeOrgMapper roleDataScopeOrgMapper) {
+    public RequirementServiceImpl(RequirementMapper requirementMapper, RequirementPendingTaskMapper pendingTaskMapper, RequirementFollowMapper requirementFollowMapper, RequirementHistoryMapper historyMapper, RequirementCommentMapper requirementCommentMapper, CustomFieldValueMapper customFieldValueMapper, UserMapper userMapper, UserOrganizationMapper userOrganizationMapper, SysOrgService sysOrgService, NotificationService notificationService, RelationService relationService, WorkflowService workflowService, WorkflowEngineService workflowEngineService, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowGraphNavigator workflowGraphNavigator, WorkflowRuntimeLoader workflowRuntimeLoader, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, WorkflowInstanceMapper workflowInstanceMapper, WorkflowInstanceTransitionMapper workflowInstanceTransitionMapper, WorkflowTransitionRecordMapper workflowTransitionRecordMapper, WorkflowDefinitionEngine workflowDefinitionEngine, RequirementApprovalEvaluationService approvalEvaluationService, RequirementConfigService requirementConfigService, RequirementFieldService requirementFieldService, KnowledgeDocumentService knowledgeDocumentService, NodeStatusMapper nodeStatusMapper, ProjectMapper projectMapper, RoleMapper roleMapper, RoleGroupMapper roleGroupMapper, FileRecordMapper fileRecordMapper, ObjectMapper objectMapper, DistributedIdGenerator distributedIdGenerator, com.demand.system.module.organization.service.OrgHierarchyCache orgHierarchyCache, UserLocalCache userLocalCache, OrgLocalCache orgLocalCache, VisibleOrgCache visibleOrgCache, RoleDataScopeOrgMapper roleDataScopeOrgMapper) {
         this.requirementMapper = requirementMapper;
         this.pendingTaskMapper = pendingTaskMapper;
         this.requirementFollowMapper = requirementFollowMapper;
@@ -200,6 +208,7 @@ public class RequirementServiceImpl implements RequirementService {
         this.workflowDefinitionEngine = workflowDefinitionEngine;
         this.approvalEvaluationService = approvalEvaluationService;
         this.requirementConfigService = requirementConfigService;
+        this.requirementFieldService = requirementFieldService;
         this.knowledgeDocumentService = knowledgeDocumentService;
         this.nodeStatusMapper = nodeStatusMapper;
         this.projectMapper = projectMapper;
@@ -409,6 +418,7 @@ public class RequirementServiceImpl implements RequirementService {
             fillPermissionFields(vo, r, userId);
             fillFollowed(vo, r.getId(), userId);
         }
+        fillDynamicFields(vo, r);
         return vo;
     }
 
@@ -439,6 +449,12 @@ public class RequirementServiceImpl implements RequirementService {
         requirement.setVersion(0);
 
         insertRequirementWithGeneratedNo(requirement);
+
+        if (dto.getCustomFields() != null) {
+            requirementFieldService.validateAndPersist(requirement,
+                    requirementFieldService.resolveCreatePermission(projectId, requirement.getType()),
+                    dto.getCustomFields());
+        }
 
         if (dto.getParentId() != null) {
             Requirement parent = requirementMapper.selectById(dto.getParentId());
@@ -471,6 +487,14 @@ public class RequirementServiceImpl implements RequirementService {
         Requirement existing = requirementMapper.selectById(dto.getId());
         if (existing == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "需求不存在");
+        }
+
+        if (dto.getCustomFields() != null) {
+            requirementFieldService.validateAndPersist(existing,
+                    existing.getWorkflowInstanceId() != null
+                            ? requirementFieldService.resolveRequirementPermission(existing)
+                            : requirementFieldService.resolveCreatePermission(existing.getProjectId(), existing.getType()),
+                    dto.getCustomFields());
         }
 
         Long operatorId = userId;
@@ -621,6 +645,11 @@ public class RequirementServiceImpl implements RequirementService {
         requirement.setVersion(0);
 
         insertRequirementWithGeneratedNo(requirement);
+        if (dto.getCustomFields() != null) {
+            requirementFieldService.validateAndPersist(requirement,
+                    requirementFieldService.resolveCreatePermission(requirement.getProjectId(), requirement.getType()),
+                    dto.getCustomFields());
+        }
         recordHistory(requirement.getId(), creatorId, "create", null, "保存草稿");
         knowledgeDocumentService.syncRequirementAttachmentsWithContext(
                 requirement.getProjectId(),
@@ -751,6 +780,12 @@ public class RequirementServiceImpl implements RequirementService {
             throw new BusinessException(ErrorCode.CONFLICT, "草稿已被他人更新，请刷新后重试");
         }
 
+        if (dto.getCustomFields() != null) {
+            requirementFieldService.validateAndPersist(existing,
+                    requirementFieldService.resolveCreatePermission(existing.getProjectId(), existing.getType()),
+                    dto.getCustomFields());
+        }
+
         recordHistory(dto.getId(), userId, "update", null, "更新草稿");
         Requirement latest = requirementMapper.selectById(dto.getId());
         if (dto.getAttachments() != null && latest != null) {
@@ -874,6 +909,12 @@ public class RequirementServiceImpl implements RequirementService {
                 .eq("version", effectiveDto.getVersion())
                 .set("is_draft", 0)
                 .set("version", effectiveDto.getVersion() + 1);
+
+        // 动态字段：以目标节点权限严格校验并持久化（按字段 upsert：未提交字段沿用原值，越权字段静默忽略）
+        requirementFieldService.validateAndPersist(requirement,
+                requirementFieldService.resolvePermission(active.getId(), targetNodeId),
+                effectiveDto.getCustomFields());
+
         int updated = requirementMapper.update(null, submitWrapper);
         if (updated <= 0) {
             throw new BusinessException(ErrorCode.CONFLICT, "需求已被他人处理，请刷新后重试");
@@ -1814,6 +1855,16 @@ public class RequirementServiceImpl implements RequirementService {
         return user.getUsername();
     }
 
+    private void fillDynamicFields(RequirementVO vo, Requirement requirement) {
+        List<CustomField> fields = requirementFieldService.listEnabledFields(
+                requirement.getProjectId(), requirement.getType());
+        WorkflowNodePermission permission = requirement.getWorkflowInstanceId() != null
+                ? requirementFieldService.resolveRequirementPermission(requirement)
+                : requirementFieldService.resolveCreatePermission(requirement.getProjectId(), requirement.getType());
+        vo.setDynamicFields(requirementFieldService.buildSchema(
+                fields, permission, requirementFieldService.loadValues(requirement.getId())));
+    }
+
     private RequirementVO toRequirementVO(Requirement requirement, Long userId, boolean fillPermission) {
         return toRequirementVO(requirement, userId, fillPermission, false);
     }
@@ -2714,6 +2765,96 @@ public class RequirementServiceImpl implements RequirementService {
     /**
      * 将 Requirement 列表转换为导出用的 Map 列表
      */
+    /** 将可见动态字段值追加到导出行 Map，字段 key = fieldCode。 */
+    private void appendDynamicFieldsToExportRow(Map<String, Object> row, Requirement r, DynamicExportContext ctx) {
+        String typeKey = r.getProjectId() + ":" + r.getType();
+        List<CustomField> fields = ctx.fieldsByTypeKey.computeIfAbsent(typeKey,
+                k -> requirementFieldService.listEnabledFields(r.getProjectId(), r.getType()));
+        WorkflowNodePermission permission = r.getWorkflowInstanceId() != null
+                ? ctx.permissionByRequirement.get(r.getId())
+                : ctx.createPermissionByTypeKey.computeIfAbsent(typeKey,
+                        k -> requirementFieldService.resolveCreatePermission(r.getProjectId(), r.getType()));
+        List<CustomFieldConfigDTO> schema = requirementFieldService.buildSchema(
+                fields, permission, ctx.valuesByRequirement.getOrDefault(r.getId(), Collections.emptyMap()));
+        if (schema == null || schema.isEmpty()) {
+            return;
+        }
+        for (CustomFieldConfigDTO field : schema) {
+            // 用 fieldCode 作为导出列 key
+            String key = field.getFieldCode();
+            Object val = resolveDynamicFieldExportValue(field);
+            row.put(key, val);
+        }
+    }
+
+    /** 导出动态字段批量上下文：字段定义、节点权限、字段值均一次预载复用。 */
+    private static final class DynamicExportContext {
+        /** key = projectId:typeCode → 该类型启用的字段定义。 */
+        final Map<String, List<CustomField>> fieldsByTypeKey = new HashMap<>();
+        /** key = projectId:typeCode → 创建态（草稿）首节点权限。 */
+        final Map<String, WorkflowNodePermission> createPermissionByTypeKey = new HashMap<>();
+        /** key = requirementId → 当前节点权限（批量解析）。 */
+        final Map<Long, WorkflowNodePermission> permissionByRequirement;
+        /** key = requirementId → 动态字段当前值。 */
+        final Map<Long, Map<String, CustomFieldValueDTO>> valuesByRequirement;
+
+        DynamicExportContext(Map<Long, WorkflowNodePermission> permissionByRequirement,
+                             Map<Long, Map<String, CustomFieldValueDTO>> valuesByRequirement) {
+            this.permissionByRequirement = permissionByRequirement;
+            this.valuesByRequirement = valuesByRequirement;
+        }
+    }
+
+    private DynamicExportContext buildDynamicExportContext(List<Requirement> records) {
+        Map<Long, Map<String, CustomFieldValueDTO>> values =
+                requirementFieldService.loadValuesByRequirementIds(
+                        records.stream().map(Requirement::getId).toList());
+        return new DynamicExportContext(requirementFieldService.resolvePermissions(records), values);
+    }
+
+    /** 解析单个动态字段的导出文本值（选项类型把 key 解析为展示名）。 */
+    private String resolveDynamicFieldExportValue(CustomFieldConfigDTO field) {
+        String type = field.getFieldType();
+        if (type == null) {
+            return field.getValue() != null ? field.getValue() : "";
+        }
+        String t = type.toUpperCase();
+        return switch (t) {
+            case "NUMBER" -> field.getValueNumber() != null ? field.getValueNumber().toPlainString() : "";
+            case "DATE" -> field.getValueDate() != null ? field.getValueDate().toString() : "";
+            case "BOOLEAN" -> Boolean.TRUE.equals(field.getValueBoolean()) ? "是" : (Boolean.FALSE.equals(field.getValueBoolean()) ? "否" : "");
+            case "USER" -> field.getValueUserId() != null ? field.getValueUserId().toString() : "";
+            case "SELECT" -> optionLabel(field.getOptionList(), field.getValue());
+            case "MULTI_SELECT", "MULTI_USER", "FILE" -> {
+                List<Object> vals = field.getValues();
+                if (vals == null || vals.isEmpty()) {
+                    yield "";
+                }
+                if ("MULTI_SELECT".equals(t)) {
+                    yield vals.stream().map(v -> optionLabel(field.getOptionList(), String.valueOf(v)))
+                            .collect(Collectors.joining(","));
+                }
+                yield String.join(",", vals.stream().map(String::valueOf).toList());
+            }
+            default -> field.getValue() != null ? field.getValue() : "";
+        };
+    }
+
+    /** 选项 key → 展示名；无匹配（历史数据/选项已移除）时回退显示原值。 */
+    private String optionLabel(List<FieldOption> options, String key) {
+        if (key == null || key.isBlank()) {
+            return "";
+        }
+        if (options != null) {
+            for (FieldOption option : options) {
+                if (key.equals(option.getKey())) {
+                    return option.getLabel();
+                }
+            }
+        }
+        return key;
+    }
+
     private List<Map<String, Object>> convertToExportMaps(List<Requirement> records,
                                                           Map<String, String> typeMap,
                                                           Map<String, String> priorityMap) {
@@ -2750,6 +2891,9 @@ public class RequirementServiceImpl implements RequirementService {
 
         DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
         DateTimeFormatter df = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+
+        // 动态字段上下文：字段定义/权限/值一次预载，避免逐行 N+1
+        DynamicExportContext dynamicCtx = buildDynamicExportContext(records);
 
         for (Requirement r : records) {
             Map<String, Object> row = new java.util.LinkedHashMap<>();
@@ -2793,6 +2937,9 @@ public class RequirementServiceImpl implements RequirementService {
             row.put("confirmAt", r.getConfirmAt() != null ? r.getConfirmAt().format(dtf) : "");
             row.put("developmentCompletedAt", r.getDevelopmentCompletedAt() != null ? r.getDevelopmentCompletedAt().format(dtf) : "");
             row.put("description", r.getDescription() != null ? r.getDescription() : "");
+
+            // 动态字段值：按需求类型/工作流节点权限过滤后追加到行 Map
+            appendDynamicFieldsToExportRow(row, r, dynamicCtx);
 
             result.add(row);
         }

@@ -163,6 +163,30 @@ export const routes: RouteRecordRaw[] = [
         meta: { title: 'AI 助手设置', hidden: true, requiredPermissions: ['menu:system-config'] },
       },
       {
+        path: 'settings/git/platforms',
+        name: 'GitPlatforms',
+        component: () => import('@/views/settings/git/platforms.vue'),
+        meta: { title: 'Git 平台配置', hidden: true, requiredPermissions: ['menu:system-config'] },
+      },
+      {
+        path: 'settings/git/repositories',
+        name: 'GitRepositories',
+        component: () => import('@/views/settings/git/repositories.vue'),
+        meta: { title: '代码仓库管理', hidden: true, requiredPermissions: ['menu:system-config'] },
+      },
+      {
+        path: 'settings/git/repositories/:id',
+        name: 'GitRepositoryDetail',
+        component: () => import('@/views/settings/git/repository-detail.vue'),
+        meta: { title: '仓库详情', hidden: true, activeMenu: '/settings/git/repositories' },
+      },
+      {
+        path: 'settings/git/rule-sets',
+        name: 'GitRuleSets',
+        component: () => import('@/views/settings/git/rule-sets.vue'),
+        meta: { title: '保护规则集', hidden: true, requiredPermissions: ['menu:system-config'] },
+      },
+      {
         path: 'notifications',
         name: 'Notifications',
         component: () => import('@/views/notifications/index.vue'),

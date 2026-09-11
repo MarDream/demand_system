@@ -1476,11 +1476,11 @@ const historyLoading = ref(false)
 const historyItems = ref<WorkflowHistory[]>([])
 
 function actionTagType(action: string): string {
-  const map: Record<string, string> = { create: 'success', update: 'primary', publish: 'warning', activate: 'warning', deactivate: 'info', delete: 'danger' }
+  const map: Record<string, string> = { create: 'success', update: 'primary', submit: 'warning', publish: 'warning', approve: 'success', reject: 'danger', activate: 'warning', deactivate: 'info', delete: 'danger' }
   return map[action] || 'info'
 }
 function actionLabel(action: string): string {
-  const map: Record<string, string> = { create: '创建', update: '编辑', publish: '发布', activate: '启用', deactivate: '停用', delete: '删除', copy: '复制', export: '导出', import: '导入' }
+  const map: Record<string, string> = { create: '创建', update: '编辑', submit: '提交审核', publish: '发布', approve: '审核通过', reject: '审核拒绝', activate: '启用', deactivate: '停用', delete: '删除', copy: '复制', export: '导出', import: '导入' }
   return map[action] || action
 }
 function hasSnapshotData(snapshot: string): boolean {
@@ -1496,7 +1496,9 @@ async function openHistory(row: WorkflowVersionDTO) {
   historyItems.value = []
   try {
     const res = await getWorkflowVersionHistory(row.id)
-    historyItems.value = (res as any)?.data ?? []
+    // 响应拦截器在 code===200 时已解包返回 data 字段（即历史数组本身），
+    // 兼容两种形态：直接是数组 / 仍是 { data: [...] } 信封
+    historyItems.value = Array.isArray(res) ? res : ((res as any)?.data ?? [])
   } catch {
     historyItems.value = []
   } finally {
@@ -1939,10 +1941,11 @@ onMounted(() => {
   background: #fff;
   z-index: 3;
 }
-.history-timeline__dot.dot--create { border-color: #67c23a; background: #f0f9eb; }
+.history-timeline__dot.dot--create, .dot--approve { border-color: #67c23a; background: #f0f9eb; }
 .history-timeline__dot.dot--update { border-color: #409eff; background: #ecf5ff; }
-.history-timeline__dot.dot--publish, .dot--activate { border-color: #e6a23c; background: #fdf6ec; }
-.history-timeline__dot.dot--delete { border-color: #f56c6c; background: #fef0f0; }
+.history-timeline__dot.dot--publish, .dot--activate, .dot--submit { border-color: #e6a23c; background: #fdf6ec; }
+.history-timeline__dot.dot--reject, .dot--delete { border-color: #f56c6c; background: #fef0f0; }
+.history-timeline__dot.dot--deactivate { border-color: #909399; background: #f4f4f5; }
 .history-timeline__line {
   position: absolute;
   left: 5px;

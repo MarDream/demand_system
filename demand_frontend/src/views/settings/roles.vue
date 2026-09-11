@@ -1450,13 +1450,25 @@ const dataScopeOrgIndeterminate = computed(() => {
 })
 
 function handleAllDataScopeOrgCheck(checked: boolean) {
+  // el-tree 通过 v-if="dataScopeExpanded" 条件渲染，未展开时 orgTreeRef.value 可能为 null
+  // 或残留非 tree 实例对象，此时不应调用 tree 实例方法，直接基于数据源计算
+  const treeRef = orgTreeRef.value
+  const hasTreeMethods = treeRef && typeof treeRef.setCheckedKeys === 'function' && typeof treeRef.getCheckedKeys === 'function'
+
   if (checked) {
-    // 全选：设置el-tree全选，然后取checkedKeys
-    orgTreeRef.value?.setCheckedKeys(getAllOrgIds(orgTree.value))
-    const checkedKeys = orgTreeRef.value?.getCheckedKeys() || []
-    selectedDataScopeOrgIds.value = [...checkedKeys]
+    if (hasTreeMethods) {
+      // 全选：设置el-tree全选，然后取checkedKeys
+      treeRef.setCheckedKeys(getAllOrgIds(orgTree.value))
+      const checkedKeys = treeRef.getCheckedKeys() || []
+      selectedDataScopeOrgIds.value = [...checkedKeys]
+    } else {
+      // 树未渲染时直接全选所有组织节点
+      selectedDataScopeOrgIds.value = getAllOrgIds(orgTree.value)
+    }
   } else {
-    orgTreeRef.value?.setCheckedKeys([])
+    if (hasTreeMethods) {
+      treeRef.setCheckedKeys([])
+    }
     selectedDataScopeOrgIds.value = []
   }
 }

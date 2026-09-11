@@ -1,3 +1,5 @@
+import type { DynamicFieldSchema } from '@/api/modules/requirementConfig'
+
 export interface Requirement {
   id: number
   projectId: number
@@ -49,6 +51,8 @@ export interface Requirement {
   isParticipant?: boolean  // 是否参与人
   operationType?: 'edit' | 'approve' | 'view'  // 操作类型
   followed?: boolean       // 当前登录用户是否已关注
+  /** 动态字段 schema（含当前流程节点权限与已存值） */
+  dynamicFields?: DynamicFieldSchema[]
 }
 
 export interface RequirementAttachment {
@@ -237,7 +241,6 @@ export interface CustomField {
   fieldType: string
   options?: string[]
   required: boolean
-  visibleStatuses?: string[]
   defaultValue?: string
   sortOrder: number
 }

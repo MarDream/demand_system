@@ -9,7 +9,7 @@ import {
   regenerateAssistantMessage,
   streamAssistantMessage,
 } from '@/api/modules/assistant'
-import type { AssistantChatRequest, AssistantMessage, AssistantMessageId, AssistantSession, AssistantTask } from '@/types/assistant'
+import type { AssistantChatRequest, AssistantMessage, AssistantMessageId, AssistantSession, AssistantTask, ConversationTurn } from '@/types/assistant'
 
 const DEFAULT_SESSION_TITLE = '新会话'
 
@@ -42,6 +42,33 @@ function isEmptyDefaultSession(session: AssistantSession) {
   return isDefaultSessionTitle(session.title)
     && !normalizeText(session.lastMessagePreview)
     && !session.lastMessageAt
+}
+
+/** 单条历史注入上限（字符），与后端截断口径一致即可 */
+const HISTORY_MAX_TURN_CHARS = 500
+/** 随请求携带的最大历史条数（约 3 轮） */
+const HISTORY_MAX_TURNS = 6
+
+/**
+ * 从会话消息中组装多轮对话历史（旧→新），供后端做查询改写与回答上下文。
+ * 仅保留成功完成的发言，过滤空内容与流式中的临时消息。
+ */
+function buildHistory(messages: AssistantMessage[], beforeId?: AssistantMessageId): ConversationTurn[] {
+  const usable = messages.filter((item) => {
+    if (item.role !== 'user' && item.role !== 'assistant') return false
+    if (beforeId != null && String(item.id) === String(beforeId)) return false
+    if (item.status === 'streaming' || item.status === 'failed') return false
+    return !!item.content?.trim()
+  })
+  const scoped = beforeId != null
+    ? usable.slice(0, Math.max(0, usable.findIndex((item) => String(item.id) === String(beforeId))))
+    : usable
+  return scoped
+    .slice(-HISTORY_MAX_TURNS)
+    .map((item) => ({
+      role: item.role as 'user' | 'assistant',
+      content: item.content.trim().slice(0, HISTORY_MAX_TURN_CHARS),
+    }))
 }
 
 export const useAssistantStore = defineStore('assistant', () => {
@@ -190,6 +217,7 @@ export const useAssistantStore = defineStore('assistant', () => {
     const userTempId = buildTempId('user')
     const assistantTempId = buildTempId('assistant')
     const createdAt = new Date().toISOString()
+    const history = buildHistory(messages.value)
 
     updateSessionOptimistically(sessionId, content)
 
@@ -217,7 +245,7 @@ export const useAssistantStore = defineStore('assistant', () => {
 
     abortController = new AbortController()
     try {
-      await streamAssistantMessage(sessionId, request, {
+      await streamAssistantMessage(sessionId, { ...request, history }, {
         onActions(payload) {
           const target = messages.value.find(item => String(item.id) === assistantTempId)
           if (!target) return
@@ -345,6 +373,7 @@ export const useAssistantStore = defineStore('assistant', () => {
         webSearch: request.webSearch,
         searchScopes: request.searchScopes,
         files: request.files,
+        history: buildHistory(messages.value, assistantMessageId),
         assistantMessageId,
       }, {
         onActions(payload) {

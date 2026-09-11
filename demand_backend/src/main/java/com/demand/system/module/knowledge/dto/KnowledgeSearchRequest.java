@@ -21,6 +21,9 @@ public class KnowledgeSearchRequest {
     /** 显式检索范围：REQUIREMENT_BODY、KNOWLEDGE_BASE、WEB。 */
     private List<String> searchScopes;
 
+    /** 多轮对话历史（旧→新），用于查询改写与回答上下文；检索页单轮场景可不传。 */
+    private List<ConversationTurn> history;
+
     /** 后端内部传递的检索用户，禁止客户端注入。 */
     @JsonIgnore
     private Long requesterId;
@@ -79,5 +82,13 @@ public class KnowledgeSearchRequest {
 
     public void setRequesterId(Long requesterId) {
         this.requesterId = requesterId;
+    }
+
+    public List<ConversationTurn> getHistory() {
+        return history;
+    }
+
+    public void setHistory(List<ConversationTurn> history) {
+        this.history = history;
     }
 }

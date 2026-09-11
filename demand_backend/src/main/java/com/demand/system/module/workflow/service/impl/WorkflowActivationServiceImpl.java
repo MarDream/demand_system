@@ -3,6 +3,7 @@ package com.demand.system.module.workflow.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.demand.system.common.exception.BusinessException;
+import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.requirement.entity.RequirementTypeConfig;
 import com.demand.system.module.requirement.mapper.RequirementTypeMapper;
 import com.demand.system.module.workflow.dto.WorkflowValidationIssue;
@@ -12,24 +13,31 @@ import com.demand.system.module.workflow.engine.WorkflowGraphValidator;
 import com.demand.system.module.workflow.engine.WorkflowStateProjector;
 import com.demand.system.module.workflow.entity.WorkflowApproval;
 import com.demand.system.module.workflow.entity.WorkflowEdge;
+import com.demand.system.module.workflow.entity.WorkflowHistory;
 import com.demand.system.module.workflow.entity.WorkflowNode;
 import com.demand.system.module.workflow.entity.WorkflowNodePermission;
 import com.demand.system.module.workflow.entity.WorkflowVersion;
 import com.demand.system.module.workflow.mapper.WorkflowApprovalMapper;
 import com.demand.system.module.workflow.mapper.WorkflowEdgeMapper;
+import com.demand.system.module.workflow.mapper.WorkflowHistoryMapper;
 import com.demand.system.module.workflow.mapper.WorkflowNodeMapper;
 import com.demand.system.module.workflow.mapper.WorkflowNodePermissionMapper;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.demand.system.module.workflow.service.WorkflowActivationService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class WorkflowActivationServiceImpl implements WorkflowActivationService {
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(WorkflowActivationServiceImpl.class);
 
     private final WorkflowVersionMapper workflowVersionMapper;
     private final WorkflowNodeMapper workflowNodeMapper;
@@ -40,6 +48,8 @@ public class WorkflowActivationServiceImpl implements WorkflowActivationService 
     private final WorkflowGraphValidator workflowGraphValidator;
     private final WorkflowGraphCompiler workflowGraphCompiler;
     private final WorkflowStateProjector workflowStateProjector;
+    private final WorkflowHistoryMapper workflowHistoryMapper;
+    private final ObjectMapper objectMapper;
 
     public WorkflowActivationServiceImpl(WorkflowVersionMapper workflowVersionMapper,
                                          WorkflowNodeMapper workflowNodeMapper,
@@ -49,7 +59,9 @@ public class WorkflowActivationServiceImpl implements WorkflowActivationService 
                                          RequirementTypeMapper requirementTypeMapper,
                                          WorkflowGraphValidator workflowGraphValidator,
                                          WorkflowGraphCompiler workflowGraphCompiler,
-                                         WorkflowStateProjector workflowStateProjector) {
+                                         WorkflowStateProjector workflowStateProjector,
+                                         WorkflowHistoryMapper workflowHistoryMapper,
+                                         ObjectMapper objectMapper) {
         this.workflowVersionMapper = workflowVersionMapper;
         this.workflowNodeMapper = workflowNodeMapper;
         this.workflowEdgeMapper = workflowEdgeMapper;
@@ -59,6 +71,8 @@ public class WorkflowActivationServiceImpl implements WorkflowActivationService 
         this.workflowGraphValidator = workflowGraphValidator;
         this.workflowGraphCompiler = workflowGraphCompiler;
         this.workflowStateProjector = workflowStateProjector;
+        this.workflowHistoryMapper = workflowHistoryMapper;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -92,7 +106,8 @@ public class WorkflowActivationServiceImpl implements WorkflowActivationService 
         version.setActivatedAt(LocalDateTime.now());
         version.setUpdatedAt(LocalDateTime.now());
         workflowVersionMapper.updateById(version);
-
+        recordHistory(version, "activate",
+                "启用 V" + (version.getVersion() != null ? version.getVersion() : "") + "（" + version.getName() + "）");
 
         return toVersionDTO(version);
     }
@@ -108,6 +123,8 @@ public class WorkflowActivationServiceImpl implements WorkflowActivationService 
         version.setActivationStatus("inactive");
         version.setUpdatedAt(LocalDateTime.now());
         workflowVersionMapper.updateById(version);
+        recordHistory(version, "deactivate",
+                "停用 V" + (version.getVersion() != null ? version.getVersion() : "") + "（" + version.getName() + "）");
 
         // 工作流禁用 → 联动禁用所有绑定该版本的需求类型；绑定关系保持不变，恢复由需求类型自行启用
         requirementTypeMapper.update(null, new LambdaUpdateWrapper<RequirementTypeConfig>()
@@ -152,5 +169,40 @@ public class WorkflowActivationServiceImpl implements WorkflowActivationService 
         WorkflowVersionDTO dto = new WorkflowVersionDTO();
         BeanUtils.copyProperties(version, dto);
         return dto;
+    }
+
+    // ==== 修改历史记录辅助方法 ====
+
+    private void recordHistory(WorkflowVersion version, String action, String summary) {
+        if (version == null || version.getId() == null) {
+            return;
+        }
+        try {
+            WorkflowHistory history = new WorkflowHistory();
+            history.setWorkflowVersionId(version.getId());
+            history.setProjectId(version.getProjectId());
+            history.setOperatorId(SecurityUtils.getCurrentUserId());
+            history.setAction(action);
+            history.setChangeSummary(summary);
+            history.setVersionSnapshot(buildVersionSnapshot(version));
+            workflowHistoryMapper.insert(history);
+        } catch (Exception e) {
+            log.warn("记录工作流启用历史失败，versionId={}, action={}", version.getId(), action, e);
+        }
+    }
+
+    private String buildVersionSnapshot(WorkflowVersion version) {
+        try {
+            Long nodeCount = workflowNodeMapper.selectCount(new LambdaQueryWrapper<WorkflowNode>()
+                    .eq(WorkflowNode::getWorkflowVersionId, version.getId()));
+            Long edgeCount = workflowEdgeMapper.selectCount(new LambdaQueryWrapper<WorkflowEdge>()
+                    .eq(WorkflowEdge::getWorkflowVersionId, version.getId()));
+            Map<String, Object> snapshot = new LinkedHashMap<>();
+            snapshot.put("nodes", nodeCount == null ? 0 : nodeCount);
+            snapshot.put("edges", edgeCount == null ? 0 : edgeCount);
+            return objectMapper.writeValueAsString(snapshot);
+        } catch (Exception e) {
+            return "{}";
+        }
     }
 }

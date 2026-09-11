@@ -34,6 +34,8 @@ public class MilvusVectorStore {
     private final MilvusConfig milvusConfig;
     private MilvusClientV2 client;
     private volatile int actualDimension = -1;
+    /** 缓存集合是否具备 source_type 标量字段；null 表示尚未探测。旧集合无此字段，需回退双路检索 */
+    private volatile Boolean sourceTypeFieldSupported;
 
     public MilvusVectorStore(MilvusConfig milvusConfig) {
         this.milvusConfig = milvusConfig;
@@ -99,6 +101,10 @@ public class MilvusVectorStore {
                     .fieldName("file_name").dataType(DataType.VarChar).maxLength(256).build());
             schema.addField(AddFieldReq.builder()
                     .fieldName("file_type").dataType(DataType.VarChar).maxLength(32).build());
+            // 标量字段：区分知识库附件(requirement_body 之外的默认值)与工单正文(requirement_body)，
+            // 使"指定知识库 + 全局工单正文"能用一次组合过滤搜索完成，旧集合无此字段时自动回退双路搜索。
+            schema.addField(AddFieldReq.builder()
+                    .fieldName("source_type").dataType(DataType.VarChar).maxLength(32).build());
 
             List<IndexParam> indexParams = new ArrayList<>();
             Map<String, Object> extraParams = new HashMap<>();
@@ -118,6 +124,7 @@ public class MilvusVectorStore {
                     .build();
             client.createCollection(createReq);
             actualDimension = milvusConfig.getDimension();
+            sourceTypeFieldSupported = true; // 新建集合必含 source_type 字段
             log.info("Milvus集合创建成功: {}, dimension={}", collectionName, actualDimension);
         } catch (Exception e) {
             log.error("Milvus集合创建失败", e);
@@ -129,6 +136,7 @@ public class MilvusVectorStore {
         String collectionName = milvusConfig.getCollectionName();
         int vectorDimension = validateVectorDimensions(documents);
         ensureDimension(vectorDimension);
+        boolean supportsSourceType = supportsSourceTypeFilter();
 
         List<JsonObject> data = new ArrayList<>();
         for (VectorDocument doc : documents) {
@@ -147,6 +155,9 @@ public class MilvusVectorStore {
             row.addProperty("page_num", doc.getPageNum() != null ? doc.getPageNum() : 0);
             row.addProperty("file_name", doc.getFileName() != null ? doc.getFileName() : "");
             row.addProperty("file_type", doc.getFileType() != null ? doc.getFileType() : "");
+            if (supportsSourceType) {
+                row.addProperty("source_type", doc.getSourceType() != null ? doc.getSourceType() : "knowledge_base");
+            }
             data.add(row);
         }
 
@@ -171,7 +182,19 @@ public class MilvusVectorStore {
         }
     }
 
+    /**
+     * 按知识库检索（等价于 filter = knowledge_base_id == {knowledgeBaseId}，null 表示全库）。
+     */
     public List<SearchResult> search(float[] queryVector, String knowledgeBaseId, int topK) {
+        String filter = knowledgeBaseId == null ? null : "knowledge_base_id == \"" + knowledgeBaseId + "\"";
+        return searchByFilter(queryVector, filter, topK);
+    }
+
+    /**
+     * 按任意标量过滤表达式检索；filter 为 null 或空表示不过滤。
+     * 支持组合表达式，如 {@code (knowledge_base_id == "1") or (source_type == "requirement_body")}。
+     */
+    public List<SearchResult> searchByFilter(float[] queryVector, String filter, int topK) {
         String collectionName = milvusConfig.getCollectionName();
         int collectionDimension = getActualDimension();
         if (queryVector == null || queryVector.length != collectionDimension) {
@@ -185,23 +208,20 @@ public class MilvusVectorStore {
             queryList.add(v);
         }
 
-        String filter = "";
-        if (knowledgeBaseId != null) {
-            filter = "knowledge_base_id == \"" + knowledgeBaseId + "\"";
-        }
-
         Map<String, Object> searchParams = new HashMap<>();
         searchParams.put("ef", String.valueOf(milvusConfig.getHnswEfSearchDefault()));
 
-        SearchReq searchReq = SearchReq.builder()
+        SearchReq.SearchReqBuilder builder = SearchReq.builder()
                 .collectionName(collectionName)
                 .data(Collections.singletonList(new FloatVec(queryList)))
                 .limit(topK)
-                .filter(filter)
                 .outputFields(List.of("id", "knowledge_base_id", "document_id", "chunk_index",
                         "text", "section_title", "page_num", "file_name", "file_type"))
-                .searchParams(searchParams)
-                .build();
+                .searchParams(searchParams);
+        if (filter != null && !filter.isBlank()) {
+            builder.filter(filter);
+        }
+        SearchReq searchReq = builder.build();
 
         SearchResp searchResp = client.search(searchReq);
         List<SearchResult> results = new ArrayList<>();
@@ -215,6 +235,41 @@ public class MilvusVectorStore {
             }
         }
         return results;
+    }
+
+    /**
+     * 集合是否具备 source_type 标量字段（结果按集合探测并缓存）。
+     * 具备时"指定知识库 + 工单正文"可走单次组合过滤搜索；旧集合返回 false，由调用方回退双路检索。
+     */
+    public boolean supportsSourceTypeFilter() {
+        Boolean cached = sourceTypeFieldSupported;
+        if (cached != null) {
+            return cached;
+        }
+        synchronized (this) {
+            if (sourceTypeFieldSupported == null) {
+                sourceTypeFieldSupported = detectSourceTypeField();
+            }
+            return sourceTypeFieldSupported;
+        }
+    }
+
+    private boolean detectSourceTypeField() {
+        try {
+            DescribeCollectionResp response = client.describeCollection(DescribeCollectionReq.builder()
+                    .collectionName(milvusConfig.getCollectionName())
+                    .build());
+            boolean supported = response != null && response.getCollectionSchema() != null
+                    && response.getCollectionSchema().getField("source_type") != null;
+            if (!supported) {
+                log.info("Milvus集合不含 source_type 字段(旧集合)，跨范围检索将回退双路搜索；"
+                        + "重建集合后可启用单次组合过滤检索");
+            }
+            return supported;
+        } catch (Exception e) {
+            log.warn("探测Milvus集合 source_type 字段失败，按旧集合处理: {}", e.getMessage());
+            return false;
+        }
     }
 
     public void deleteByDocumentId(String documentId) {
@@ -271,6 +326,7 @@ public class MilvusVectorStore {
 
             milvusConfig.setDimension(dimension);
             actualDimension = -1;
+            sourceTypeFieldSupported = null; // 重建后重新探测 schema
             ensureCollection();
             int createdDimension = describeDimension(collectionName);
             if (createdDimension != dimension) {
@@ -386,10 +442,11 @@ public class MilvusVectorStore {
         private final Integer pageNum;
         private final String fileName;
         private final String fileType;
+        private final String sourceType;
 
         public VectorDocument(String id, float[] vector, Long knowledgeBaseId, Long documentId,
                               Integer chunkIndex, String text, String sectionTitle, Integer pageNum,
-                              String fileName, String fileType) {
+                              String fileName, String fileType, String sourceType) {
             this.id = id;
             this.vector = vector;
             this.knowledgeBaseId = knowledgeBaseId;
@@ -400,6 +457,7 @@ public class MilvusVectorStore {
             this.pageNum = pageNum;
             this.fileName = fileName;
             this.fileType = fileType;
+            this.sourceType = sourceType;
         }
 
         public String getId() { return id; }
@@ -412,6 +470,7 @@ public class MilvusVectorStore {
         public Integer getPageNum() { return pageNum; }
         public String getFileName() { return fileName; }
         public String getFileType() { return fileType; }
+        public String getSourceType() { return sourceType; }
     }
 
     public static class SearchResult {

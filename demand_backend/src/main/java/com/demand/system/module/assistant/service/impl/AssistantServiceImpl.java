@@ -1,6 +1,7 @@
 package com.demand.system.module.assistant.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.demand.system.common.config.SseExecutorConfig;
 import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.ErrorCode;
 import com.demand.system.module.assistant.dto.AssistantAction;
@@ -23,17 +24,20 @@ import com.demand.system.module.assistant.service.AssistantOperationCatalogServi
 import com.demand.system.module.assistant.service.AssistantService;
 import com.demand.system.module.assistant.validator.AssistantActionValidator;
 import com.demand.system.module.auth.security.SecurityUtils;
-import com.demand.system.module.knowledge.dto.KnowledgeSearchRequest;
 import com.demand.system.module.knowledge.constant.KnowledgeSearchScope;
+import com.demand.system.module.knowledge.dto.KnowledgeSearchRequest;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse;
-import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse.ThinkingStep;
+import com.demand.system.module.knowledge.dto.QueryRewriteResult;
 import com.demand.system.module.knowledge.service.KnowledgeSearchService;
+import com.demand.system.module.knowledge.service.QueryRewriteService;
+import com.demand.system.module.knowledge.service.RagAnswerService;
 import com.demand.system.module.knowledge.llm.LlmGateway;
 import com.demand.system.module.knowledge.llm.LlmGatewayConfig;
 import com.demand.system.module.llm.constant.LlmApplicationCode;
 import com.demand.system.module.llm.service.LlmModelResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -41,17 +45,18 @@ import java.time.LocalDateTime;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 @Service
 public class AssistantServiceImpl implements AssistantService {
     private static final Logger log = LoggerFactory.getLogger(AssistantServiceImpl.class);
     private static final long STREAM_TIMEOUT_MS = 120_000L;
     private static final String DEFAULT_SESSION_TITLE = "新会话";
+    private static final String NO_RESULT_HINT = "未在所选知识库中找到相关内容，建议换个问法，或切换到其它知识库范围后再试。";
 
     private final AssistantSessionMapper sessionMapper;
     private final AssistantMessageMapper messageMapper;
@@ -61,6 +66,9 @@ public class AssistantServiceImpl implements AssistantService {
     private final LlmGateway llmGateway;
     private final LlmModelResolver llmModelResolver;
     private final KnowledgeSearchService knowledgeSearchService;
+    private final QueryRewriteService queryRewriteService;
+    private final RagAnswerService ragAnswerService;
+    private final Executor sseExecutor;
 
     public AssistantServiceImpl(AssistantSessionMapper sessionMapper,
                                 AssistantMessageMapper messageMapper,
@@ -69,7 +77,10 @@ public class AssistantServiceImpl implements AssistantService {
                                 AssistantActionValidator actionValidator,
                                 LlmGateway llmGateway,
                                 LlmModelResolver llmModelResolver,
-                                KnowledgeSearchService knowledgeSearchService) {
+                                KnowledgeSearchService knowledgeSearchService,
+                                QueryRewriteService queryRewriteService,
+                                RagAnswerService ragAnswerService,
+                                @Qualifier(SseExecutorConfig.SSE_TASK_EXECUTOR) Executor sseExecutor) {
         this.sessionMapper = sessionMapper;
         this.messageMapper = messageMapper;
         this.questionLogMapper = questionLogMapper;
@@ -78,6 +89,9 @@ public class AssistantServiceImpl implements AssistantService {
         this.llmGateway = llmGateway;
         this.llmModelResolver = llmModelResolver;
         this.knowledgeSearchService = knowledgeSearchService;
+        this.queryRewriteService = queryRewriteService;
+        this.ragAnswerService = ragAnswerService;
+        this.sseExecutor = sseExecutor;
     }
 
     @Override
@@ -88,10 +102,18 @@ public class AssistantServiceImpl implements AssistantService {
                         .eq(AssistantSession::getUserId, userId)
                         .orderByDesc(AssistantSession::getUpdatedAt)
         );
+        if (sessions.isEmpty()) {
+            return List.of();
+        }
+        // 一次批量取每个会话的最新消息，避免逐会话查询
+        List<Long> sessionIds = sessions.stream().map(AssistantSession::getId).toList();
+        Map<Long, AssistantMessage> latestBySession = messageMapper.selectLatestBySessionIds(sessionIds).stream()
+                .collect(java.util.stream.Collectors.toMap(AssistantMessage::getSessionId, m -> m, (a, b) -> a));
+
         List<AssistantSessionVO> result = new ArrayList<>();
         for (AssistantSession session : sessions) {
             AssistantSessionVO vo = toSessionVO(session);
-            AssistantMessage latestMessage = findLatestMessage(session.getId());
+            AssistantMessage latestMessage = latestBySession.get(session.getId());
             if (latestMessage != null) {
                 vo.setLastMessageAt(latestMessage.getCreatedAt());
                 vo.setLastMessagePreview(buildPreview(latestMessage.getContent()));
@@ -146,8 +168,8 @@ public class AssistantServiceImpl implements AssistantService {
         userMessage.setPageContext(request.getPageContext());
         messageMapper.insert(userMessage);
 
-        // 埋点：记录用户提问到 question_logs，供 AI 自动提炼高频问题
-        recordQuestionLog(userId, request, userContent, sessionId);
+        // 埋点：记录用户提问到 question_logs，回答成功/失败后回写 answered，供 AI 提炼高频问题
+        Long questionLogId = recordQuestionLog(userId, request, userContent, sessionId);
 
         AssistantMessage assistantMessage = new AssistantMessage();
         assistantMessage.setSessionId(sessionId);
@@ -159,33 +181,8 @@ public class AssistantServiceImpl implements AssistantService {
         messageMapper.insert(assistantMessage);
 
         SseEmitter emitter = new SseEmitter(STREAM_TIMEOUT_MS);
-        boolean webSearchEnabled = Boolean.TRUE.equals(request.getWebSearch());
-        if (request.getKnowledgeBaseId() != null
-                || hasExplicitSearchScopeValue(request, KnowledgeSearchScope.REQUIREMENT_BODY)
-                || hasExplicitSearchScopeValue(request, KnowledgeSearchScope.KNOWLEDGE_BASE)) {
-            // 知识库检索问答分支：跨全部或指定知识库做 RAG 问答
-            assistantMessage.setIntent("knowledge_qa");
-            messageMapper.updateById(assistantMessage);
-            updateSessionAfterInteraction(session, buildPreview(userContent));
-            CompletableFuture.runAsync(() -> doStreamKnowledgeReply(emitter, request, userContent, userMessage.getId(), assistantMessage));
-        } else if (webSearchEnabled || hasExplicitSearchScopeValue(request, KnowledgeSearchScope.WEB)) {
-            // 联网搜索分支：通用助手模式下启用联网，轻量检索本地知识库 + LLM 联网搜索综合回答
-            assistantMessage.setIntent("web_search");
-            messageMapper.updateById(assistantMessage);
-            updateSessionAfterInteraction(session, buildPreview(userContent));
-            CompletableFuture.runAsync(() -> doStreamWebSearchReply(emitter, request, userContent, userMessage.getId(), assistantMessage));
-        } else {
-            // 通用操作导航分支（原有逻辑）
-            AssistantOperationAdvice advice = catalogService.advise(userContent, request.getPageContext(), permissions, superAdmin);
-            List<AssistantAction> validatedActions = actionValidator.sanitize(advice.getActions(), permissions, superAdmin);
-            advice.setActions(validatedActions);
-            assistantMessage.setIntent(advice.getIntent());
-            assistantMessage.setActions(validatedActions);
-            assistantMessage.setSources(advice.getSources());
-            messageMapper.updateById(assistantMessage);
-            updateSessionAfterInteraction(session, advice.getSessionTitle());
-            CompletableFuture.runAsync(() -> doStreamReply(emitter, advice, userContent, request.getPageContext(), userMessage.getId(), assistantMessage, request.getLlmModelId(), request.getFiles()));
-        }
+        dispatchByIntent(emitter, request, userContent, userMessage.getId(), assistantMessage, session,
+                questionLogId, superAdmin, permissions, false);
         return emitter;
     }
 
@@ -230,29 +227,76 @@ public class AssistantServiceImpl implements AssistantService {
         messageMapper.insert(newAssistant);
 
         SseEmitter emitter = new SseEmitter(STREAM_TIMEOUT_MS);
-        boolean webSearchEnabled = Boolean.TRUE.equals(request.getWebSearch());
+        AssistantChatRequest unifiedRequest = toChatRequest(request);
+        dispatchByIntent(emitter, unifiedRequest, userMessage.getContent(), userMessage.getId(), newAssistant, session,
+                null, superAdmin, permissions, true);
+        return emitter;
+    }
+
+    /** 按请求意图分发到知识库问答 / 联网搜索 / 通用操作导航三条流式链路 */
+    private void dispatchByIntent(SseEmitter emitter,
+                                  AssistantChatRequest request,
+                                  String userContent,
+                                  Long userMessageId,
+                                  AssistantMessage assistantMessage,
+                                  AssistantSession session,
+                                  Long questionLogId,
+                                  boolean superAdmin,
+                                  List<String> permissions,
+                                  boolean regenerate) {
         if (request.getKnowledgeBaseId() != null
                 || hasExplicitSearchScopeValue(request, KnowledgeSearchScope.REQUIREMENT_BODY)
                 || hasExplicitSearchScopeValue(request, KnowledgeSearchScope.KNOWLEDGE_BASE)) {
-            newAssistant.setIntent("knowledge_qa");
-            messageMapper.updateById(newAssistant);
-            CompletableFuture.runAsync(() -> doStreamKnowledgeReply(emitter, request, userMessage.getContent(), userMessage.getId(), newAssistant));
-        } else if (webSearchEnabled || hasExplicitSearchScopeValue(request, KnowledgeSearchScope.WEB)) {
-            newAssistant.setIntent("web_search");
-            messageMapper.updateById(newAssistant);
-            CompletableFuture.runAsync(() -> doStreamWebSearchReply(emitter, request, userMessage.getContent(), userMessage.getId(), newAssistant));
+            // 知识库检索问答分支：跨全部或指定知识库做 RAG 问答
+            assistantMessage.setIntent("knowledge_qa");
+            messageMapper.updateById(assistantMessage);
+            if (!regenerate) {
+                updateSessionAfterInteraction(session, buildPreview(userContent));
+            }
+            CompletableFuture.runAsync(() -> doStreamKnowledgeReply(
+                    emitter, request, userContent, userMessageId, assistantMessage, questionLogId), sseExecutor);
+        } else if (Boolean.TRUE.equals(request.getWebSearch())
+                || hasExplicitSearchScopeValue(request, KnowledgeSearchScope.WEB)) {
+            // 联网搜索分支：轻量检索本地知识库 + LLM 联网搜索综合回答
+            assistantMessage.setIntent("web_search");
+            messageMapper.updateById(assistantMessage);
+            if (!regenerate) {
+                updateSessionAfterInteraction(session, buildPreview(userContent));
+            }
+            CompletableFuture.runAsync(() -> doStreamWebSearchReply(
+                    emitter, request, userContent, userMessageId, assistantMessage, questionLogId), sseExecutor);
         } else {
-            AssistantOperationAdvice advice = catalogService.advise(userMessage.getContent(), request.getPageContext(), permissions, superAdmin);
+            // 通用操作导航分支
+            AssistantOperationAdvice advice = catalogService.advise(userContent, request.getPageContext(), permissions, superAdmin);
             List<AssistantAction> validatedActions = actionValidator.sanitize(advice.getActions(), permissions, superAdmin);
             advice.setActions(validatedActions);
-            newAssistant.setIntent(advice.getIntent());
-            newAssistant.setActions(validatedActions);
-            newAssistant.setSources(advice.getSources());
-            messageMapper.updateById(newAssistant);
-            updateSessionAfterInteraction(session, advice.getSessionTitle());
-            CompletableFuture.runAsync(() -> doStreamReply(emitter, advice, userMessage.getContent(), request.getPageContext(), userMessage.getId(), newAssistant, request.getLlmModelId(), request.getFiles()));
+            assistantMessage.setIntent(advice.getIntent());
+            assistantMessage.setActions(validatedActions);
+            assistantMessage.setSources(advice.getSources());
+            messageMapper.updateById(assistantMessage);
+            if (!regenerate) {
+                updateSessionAfterInteraction(session, advice.getSessionTitle());
+            }
+            CompletableFuture.runAsync(() -> doStreamReply(
+                    emitter, advice, userContent, request.getPageContext(), userMessageId, assistantMessage,
+                    request.getLlmModelId(), request.getFiles(), questionLogId), sseExecutor);
         }
-        return emitter;
+    }
+
+    /** 重新生成请求复用统一的聊天请求结构 */
+    private AssistantChatRequest toChatRequest(AssistantRegenerateRequest request) {
+        AssistantChatRequest chatRequest = new AssistantChatRequest();
+        chatRequest.setMessage(request.getMessage());
+        chatRequest.setPageContext(request.getPageContext());
+        chatRequest.setKnowledgeBaseId(request.getKnowledgeBaseId());
+        chatRequest.setLlmModelId(request.getLlmModelId());
+        chatRequest.setMode(request.getMode());
+        chatRequest.setTopK(request.getTopK());
+        chatRequest.setWebSearch(request.getWebSearch());
+        chatRequest.setSearchScopes(request.getSearchScopes());
+        chatRequest.setFiles(request.getFiles());
+        chatRequest.setHistory(request.getHistory());
+        return chatRequest;
     }
 
     private void doStreamReply(SseEmitter emitter,
@@ -262,7 +306,8 @@ public class AssistantServiceImpl implements AssistantService {
                                Long userMessageId,
                                AssistantMessage assistantMessage,
                                Long llmModelId,
-                               List<AssistantFileAttachment> files) {
+                               List<AssistantFileAttachment> files,
+                               Long questionLogId) {
         StringBuilder answer = new StringBuilder();
         StringBuilder reasoning = new StringBuilder();
 
@@ -270,7 +315,7 @@ public class AssistantServiceImpl implements AssistantService {
         String fileContext = buildFileContext(files);
         String enhancedMessage = fileContext.isEmpty() ? userMessage : fileContext + "\n\n用户问题：" + userMessage;
 
-        // ===== 任务节点（对标 WorkBuddy 任务列表）=====
+        // ===== 任务节点 =====
         List<AssistantTask> tasks = new ArrayList<>();
         AssistantTask contextTask = new AssistantTask("general_context", "理解上下文");
         AssistantTask llmTask = new AssistantTask("general_llm", "调用模型");
@@ -377,6 +422,7 @@ public class AssistantServiceImpl implements AssistantService {
             assistantMessage.setSources(advice.getSources());
             assistantMessage.setIntent(advice.getIntent());
             messageMapper.updateById(assistantMessage);
+            markQuestionAnswered(questionLogId, true);
 
             try {
                 emitter.send(SseEmitter.event().name("done").data(toMessageVO(assistantMessage)));
@@ -386,7 +432,6 @@ public class AssistantServiceImpl implements AssistantService {
             emitter.complete();
         } catch (Exception e) {
             log.warn("assistant stream failed, sessionId={}", assistantMessage.getSessionId(), e);
-            // 标记未完成的任务为失败
             if ("running".equals(contextTask.getStatus())) {
                 contextTask.fail("上下文处理异常");
                 pushTaskUpdate(emitter, contextTask);
@@ -405,26 +450,26 @@ public class AssistantServiceImpl implements AssistantService {
             assistantMessage.setSources(advice.getSources());
             assistantMessage.setIntent(advice.getIntent());
             messageMapper.updateById(assistantMessage);
-            try {
-                emitter.send(SseEmitter.event().name("error").data(Map.of(
-                        "message", e.getMessage() != null ? e.getMessage() : "操作助手响应失败"
-                )));
-            } catch (Exception ex) {
-                log.debug("SSE 发送 error 事件失败(客户端可能已断开)", ex);
-            }
-            emitter.completeWithError(e);
+            markQuestionAnswered(questionLogId, false);
+            sendErrorAndComplete(emitter, e, "操作助手响应失败");
         }
     }
 
     /**
-     * 知识库检索问答流式回复：逐步骤执行检索流程，每个步骤通过 taskUpdate SSE 事件实时推送。
-     * 命中的文档以 sources 形式返回给前端用于展示"依据"。
+     * 知识库检索问答流式回复（真流式）：
+     * <ol>
+     *   <li>问题解析：结合多轮历史做查询改写，产出独立检索问题、关键词与追问推荐</li>
+     *   <li>文档检索：改写后的问题做向量+关键词混合检索（仅检索，不生成）</li>
+     *   <li>生成回答：基于命中的片段流式生成（深度思考与真实 token 用量同步推送）</li>
+     * </ol>
+     * 命中片段但生成失败/无模型时，如实展示检索摘要与来源，不再误报"未找到"。
      */
     private void doStreamKnowledgeReply(SseEmitter emitter,
-                                         AssistantChatRequest request,
-                                         String userMessage,
-                                         Long userMessageId,
-                                         AssistantMessage assistantMessage) {
+                                        AssistantChatRequest request,
+                                        String userMessage,
+                                        Long userMessageId,
+                                        AssistantMessage assistantMessage,
+                                        Long questionLogId) {
         StringBuilder answer = new StringBuilder();
         List<AssistantTask> tasks = new ArrayList<>();
         try {
@@ -439,101 +484,82 @@ public class AssistantServiceImpl implements AssistantService {
             String mode = request.getMode() != null ? request.getMode() : "hybrid";
             int topK = request.getTopK() != null ? request.getTopK() : 10;
 
-            KnowledgeSearchRequest searchRequest = new KnowledgeSearchRequest();
-            String fileContext = buildFileContext(request.getFiles());
-            String enhancedQuery = fileContext.isEmpty() ? userMessage : fileContext + "\n用户问题：" + userMessage;
-            searchRequest.setQuery(enhancedQuery);
-            searchRequest.setKnowledgeBaseId(searchKbId);
-            searchRequest.setMode(mode);
-            searchRequest.setTopK(topK);
-            searchRequest.setLlmModelId(request.getLlmModelId());
-            searchRequest.setRequesterId(assistantMessage.getUserId());
-            searchRequest.setSearchScopes(resolveAssistantSearchScopes(request, false));
-
-            // ===== Task 1: 问题解析 =====
+            // ===== Task 1: 问题解析（LLM 查询改写，失败自动降级）=====
             AssistantTask parseTask = new AssistantTask("query_parse", "问题解析");
             tasks.add(parseTask);
-            parseTask.start("解析用户问题：「" + userMessage + "」");
+            parseTask.start("解析用户问题：「" + shorten(userMessage, 30) + "」");
+            QueryRewriteResult rewrite;
             try {
-                String keywordsHint = buildKeywordHint(userMessage);
-                parseTask.log("info", keywordsHint);
+                rewrite = queryRewriteService.rewrite(userMessage, request.getHistory());
+                parseTask.log("info", rewrite.rewritten()
+                        ? "改写为独立检索问题：" + shorten(rewrite.safeStandaloneQuery(), 40)
+                        : "未启用改写，按原始问题检索");
+                if (!rewrite.keywords().isEmpty()) {
+                    parseTask.log("info", "检索关键词：" + String.join("、", rewrite.keywords()));
+                }
                 parseTask.complete("问题解析完成");
-                pushTaskUpdate(emitter, parseTask);
             } catch (Exception e) {
+                rewrite = QueryRewriteResult.fallback(userMessage);
                 parseTask.fail("问题解析异常：" + e.getMessage());
-                pushTaskUpdate(emitter, parseTask);
             }
+            pushTaskUpdate(emitter, parseTask);
 
-            // ===== Task 2: 向量嵌入 & 文档检索 =====
+            // ===== Task 2: 文档检索 =====
             AssistantTask searchTask = new AssistantTask("retrieve", "文档检索");
             tasks.add(searchTask);
             searchTask.start("向量嵌入 + 知识库检索…");
             KnowledgeSearchResponse searchResponse;
             try {
+                KnowledgeSearchRequest searchRequest = new KnowledgeSearchRequest();
+                // 检索用改写后的独立问题；附件内容只注入生成阶段，避免长文本污染查询向量
+                searchRequest.setQuery(rewrite.safeStandaloneQuery());
+                searchRequest.setHistory(request.getHistory());
+                searchRequest.setKnowledgeBaseId(searchKbId);
+                searchRequest.setMode(mode);
+                searchRequest.setTopK(topK);
+                searchRequest.setLlmModelId(request.getLlmModelId());
+                searchRequest.setRequesterId(assistantMessage.getUserId());
+                searchRequest.setSearchScopes(resolveAssistantSearchScopes(request, false));
+
                 String kbDesc = searchKbId != null ? "指定知识库 ID=" + searchKbId : "全部知识库";
                 searchTask.log("info", "检索范围：" + kbDesc + "，模式：" + mode + "，TopK：" + topK);
 
-                if ("hybrid".equals(mode)) {
-                    searchTask.log("info", "调用 Embedding 模型，将问题文本转为向量…");
-                    searchTask.log("info", "调用向量库 Milvus 进行语义检索…");
-                }
-
-                if ("keyword".equals(mode)) {
-                    searchTask.log("info", "执行关键词检索（MySQL LIKE）…");
-                } else if ("hybrid".equals(mode)) {
-                    searchTask.log("info", "执行混合检索：语义 + 关键词 + Reranker 重排序…");
-                }
-
-                searchResponse = knowledgeSearchService.search(searchRequest);
+                searchResponse = knowledgeSearchService.retrieve(searchRequest);
 
                 int resultCount = searchResponse.getResults().size();
                 int uniqueDocs = (int) searchResponse.getResults().stream()
                         .map(KnowledgeSearchResponse.SearchResultItem::getDocumentId)
-                        .filter(java.util.Objects::nonNull)
+                        .filter(Objects::nonNull)
                         .distinct()
                         .count();
-
                 searchTask.log("info", "检索完成：找到 " + resultCount + " 条相关片段，来自 " + uniqueDocs + " 份文档");
-
                 if ("hybrid".equals(mode)) {
-                    searchTask.log("info", "Reranker 已对结果进行重排序");
+                    boolean degraded = searchResponse.getWarnings() != null && searchResponse.getWarnings().stream()
+                            .anyMatch(w -> w.contains("重排序模型暂不可用"));
+                    searchTask.log("info", degraded
+                            ? "重排序模型暂不可用，已按基础相关性排序"
+                            : "Reranker 已对结果进行重排序");
                 }
-
                 searchTask.complete("检索到 " + resultCount + " 条片段（" + uniqueDocs + " 份文档）");
-                pushTaskUpdate(emitter, searchTask);
             } catch (Exception e) {
                 searchTask.fail("文档检索失败：" + e.getMessage());
                 pushTaskUpdate(emitter, searchTask);
                 throw e;
             }
+            pushTaskUpdate(emitter, searchTask);
 
-            // ===== Task 4: LLM 生成回答 =====
-            AssistantTask generateTask = new AssistantTask("synthesize", "生成回答");
-            tasks.add(generateTask);
-            boolean shouldGenerateAnswer = !searchResponse.getResults().isEmpty()
-                && (("rag".equals(mode) && searchResponse.getAnswer() != null) || request.getLlmModelId() != null);
-
-            // 发送思维链步骤（兼容旧的 thinkingSteps 事件）
-            if (searchResponse.getThinkingSteps() != null && !searchResponse.getThinkingSteps().isEmpty()) {
-                emitter.send(SseEmitter.event().name("thinkingSteps").data(searchResponse.getThinkingSteps()));
-            }
-
+            // ===== 组装来源与检索元信息 =====
             List<AssistantSource> sources = mapCitationsToSources(searchResponse.getCitations(), rawKbId);
             assistantMessage.setSources(sources);
             assistantMessage.setWarnings(searchResponse.getWarnings());
             assistantMessage.setIntent("knowledge_qa");
             assistantMessage.setTasks(tasks);
-
-            // 保存 RAG 检索结果到消息实体
             assistantMessage.setThinkingSteps(searchResponse.getThinkingSteps());
             assistantMessage.setProcessSummary(searchResponse.getProcessSummary());
-            Integer retrievedCount = (searchResponse.getResults() != null)
-                ? searchResponse.getResults().size()
-                : (searchResponse.getCitations() != null ? searchResponse.getCitations().size() : 0);
-            assistantMessage.setRetrievedCount(retrievedCount);
+            assistantMessage.setRetrievedCount(searchResponse.getResults().size());
             assistantMessage.setCitations(searchResponse.getCitations());
+            assistantMessage.setSuggestedFollowUps(rewrite.followUps());
 
-            // 先下发 actions（携带命中文档 sources + tasks），让前端展示"依据"和任务列表
             emitter.send(SseEmitter.event().name("actions").data(Map.of(
                     "intent", "knowledge_qa",
                     "actions", List.of(),
@@ -542,41 +568,57 @@ public class AssistantServiceImpl implements AssistantService {
                     "warnings", searchResponse.getWarnings() == null ? List.of() : searchResponse.getWarnings()
             )));
 
-            // 下发深度思考内容（RAG 生成答案时模型的 reasoning）
-            if (searchResponse.getReasoningContent() != null && !searchResponse.getReasoningContent().isBlank()) {
-                emitter.send(SseEmitter.event().name("reasoning").data(searchResponse.getReasoningContent()));
-            }
-
-            if (shouldGenerateAnswer) {
-                String modelHint = request.getLlmModelId() != null ? "（指定模型）" : "（默认模型）";
-                generateTask.start("调用 LLM 生成回答" + modelHint + "…");
-                try {
-                    String answerText = (searchResponse.getAnswer() != null && !searchResponse.getAnswer().isBlank())
-                            ? searchResponse.getAnswer()
-                            : "未在所选知识库中找到相关内容，建议换个问法，或切换到其它知识库范围后再试。";
-                    streamFallbackText(emitter, answer, answerText);
-                    generateTask.log("info", "回答长度：" + answer.length() + " 字");
-                    generateTask.complete("回答生成完成");
-                    pushTaskUpdate(emitter, generateTask);
-                } catch (Exception e) {
-                    generateTask.fail("LLM 生成失败：" + e.getMessage());
-                    pushTaskUpdate(emitter, generateTask);
-                }
-            } else {
-                String answerText = "未在所选知识库中找到相关内容，建议换个问法，或切换到其它知识库范围后再试。";
-                streamFallbackText(emitter, answer, answerText);
-                generateTask.start("无相关文档，返回兜底回答");
+            // ===== Task 3: 生成回答（真流式；命中即有产出，不再误报“未找到”）=====
+            AssistantTask generateTask = new AssistantTask("synthesize", "生成回答");
+            tasks.add(generateTask);
+            StringBuilder reasoning = new StringBuilder();
+            boolean hasResults = !searchResponse.getResults().isEmpty();
+            if (!hasResults) {
+                generateTask.start("未命中相关文档，返回引导提示");
+                streamFallbackText(emitter, answer, NO_RESULT_HINT);
                 generateTask.complete("已返回提示信息");
                 pushTaskUpdate(emitter, generateTask);
+            } else {
+                // 检索用改写后的独立问题；回答用用户原始问题 + 附件上下文，紧扣用户原意
+                String fileContext = buildFileContext(request.getFiles());
+                String answerQuery = fileContext.isEmpty()
+                        ? userMessage
+                        : userMessage + "\n\n" + fileContext;
+                generateTask.start("调用 LLM 基于命中片段流式生成回答…");
+                pushTaskUpdate(emitter, generateTask);
+                try {
+                    ragAnswerService.streamAnswerWithReasoning(
+                            answerQuery,
+                            searchResponse.getResults(),
+                            searchKbId,
+                            request.getLlmModelId(),
+                            request.getHistory(),
+                            token -> pushDelta(emitter, answer, token),
+                            token -> pushReasoningDelta(emitter, reasoning, token),
+                            usage -> applyTokenUsage(assistantMessage, usage)
+                    );
+                    generateTask.log("info", "回答长度：" + answer.length() + " 字");
+                    generateTask.complete("回答生成完成");
+                } catch (Exception generateError) {
+                    // 生成失败但检索有果：如实展示检索摘要，不谎报“未找到”
+                    log.warn("assistant knowledge qa generation failed, fallback to retrieval summary, sessionId={}",
+                            assistantMessage.getSessionId(), generateError);
+                    generateTask.log("warn", "LLM 生成失败：" + generateError.getMessage() + "，已展示检索摘要");
+                    if (answer.length() == 0) {
+                        streamFallbackText(emitter, answer, buildRetrievalSummary(searchResponse));
+                    }
+                    generateTask.complete("已返回检索摘要（生成失败降级）");
+                }
+                pushTaskUpdate(emitter, generateTask);
+            }
+            if (reasoning.length() > 0) {
+                assistantMessage.setReasoning(reasoning.toString());
             }
 
-            // RAG 分支不经过 LlmGateway 流式链路，token 按字符数估算
-            applyEstimatedTokens(assistantMessage, userMessage.length() + systemPromptEstimate(searchRequest, searchResponse), answer.length());
-
             assistantMessage.setContent(answer.toString());
-            assistantMessage.setReasoning(searchResponse.getReasoningContent());
             assistantMessage.setStatus("completed");
             messageMapper.updateById(assistantMessage);
+            markQuestionAnswered(questionLogId, true);
 
             emitter.send(SseEmitter.event().name("done").data(toMessageVO(assistantMessage)));
             emitter.complete();
@@ -591,30 +633,51 @@ public class AssistantServiceImpl implements AssistantService {
             assistantMessage.setIntent("knowledge_qa");
             assistantMessage.setTasks(tasks);
             messageMapper.updateById(assistantMessage);
-            try {
-                emitter.send(SseEmitter.event().name("error").data(Map.of("message", fallback)));
-            } catch (Exception ex) {
-                log.debug("SSE 发送 error 事件失败(客户端可能已断开)", ex);
-            }
-            emitter.completeWithError(e);
+            markQuestionAnswered(questionLogId, false);
+            sendErrorAndComplete(emitter, e, fallback);
         }
     }
 
-    /**
-     * 联网搜索 + 本地知识库整合的流式回复。
-     * <p>流程：
-     * <ol>
-     *   <li>轻量检索全部本地知识库（topK=5），命中内容作为上下文注入提示词</li>
-     *   <li>调用 LLM 时注入厂商对应的联网搜索参数，让模型实时联网获取信息</li>
-     *   <li>综合联网信息与本地知识库内容生成回答，sources 同时展示本地命中文档与联网来源</li>
-     * </ol>
-     * 若联网搜索调用失败，自动降级为不带联网参数的普通对话重试。
-     */
+    /** 生成失败但检索命中时的兜底摘要：如实列出已命中的片段与来源 */
+    private String buildRetrievalSummary(KnowledgeSearchResponse searchResponse) {
+        List<KnowledgeSearchResponse.SearchResultItem> results = searchResponse.getResults();
+        int uniqueDocs = (int) results.stream()
+                .map(KnowledgeSearchResponse.SearchResultItem::getDocumentId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .count();
+        StringBuilder sb = new StringBuilder();
+        sb.append("已在知识库中找到 ").append(results.size()).append(" 条相关片段（来自 ")
+          .append(uniqueDocs).append(" 份文档），但回答生成暂时失败，可参考下方来源，或稍后重试。\n");
+        int limit = Math.min(results.size(), 5);
+        for (int i = 0; i < limit; i++) {
+            KnowledgeSearchResponse.SearchResultItem item = results.get(i);
+            sb.append(i + 1).append(". ")
+              .append(item.getFileName() != null ? item.getFileName() : "未知文档");
+            if (item.getSectionTitle() != null && !item.getSectionTitle().isBlank()) {
+                sb.append(" · ").append(item.getSectionTitle());
+            }
+            sb.append('\n');
+        }
+        return sb.toString();
+    }
+
+    private void sendErrorAndComplete(SseEmitter emitter, Exception e, String fallback) {
+        try {
+            emitter.send(SseEmitter.event().name("error").data(Map.of("message", fallback)));
+        } catch (Exception ex) {
+            log.debug("SSE 发送 error 事件失败(客户端可能已断开)", ex);
+        }
+        emitter.completeWithError(e);
+    }
+
+    /** 联网搜索 + 本地知识库整合的流式回复 */
     private void doStreamWebSearchReply(SseEmitter emitter,
-                                         AssistantChatRequest request,
-                                         String userMessage,
-                                         Long userMessageId,
-                                         AssistantMessage assistantMessage) {
+                                        AssistantChatRequest request,
+                                        String userMessage,
+                                        Long userMessageId,
+                                        AssistantMessage assistantMessage,
+                                        Long questionLogId) {
         StringBuilder answer = new StringBuilder();
         StringBuilder reasoning = new StringBuilder();
         List<AssistantTask> tasks = new ArrayList<>();
@@ -625,12 +688,21 @@ public class AssistantServiceImpl implements AssistantService {
                     "assistantMessageId", assistantMessage.getId()
             )));
 
-            // ===== Task 1: 问题解析 =====
+            // ===== Task 1: 问题解析（含查询改写）=====
             AssistantTask parseTask = new AssistantTask("query_parse", "问题解析");
             tasks.add(parseTask);
-            parseTask.start("解析用户问题：「" + userMessage + "」");
-            parseTask.log("info", buildKeywordHint(userMessage));
-            parseTask.complete("问题解析完成");
+            parseTask.start("解析用户问题：「" + shorten(userMessage, 30) + "」");
+            QueryRewriteResult rewrite;
+            try {
+                rewrite = queryRewriteService.rewrite(userMessage, request.getHistory());
+                if (!rewrite.keywords().isEmpty()) {
+                    parseTask.log("info", "检索关键词：" + String.join("、", rewrite.keywords()));
+                }
+                parseTask.complete("问题解析完成");
+            } catch (Exception e) {
+                rewrite = QueryRewriteResult.fallback(userMessage);
+                parseTask.complete("问题解析完成（未启用改写）");
+            }
             pushTaskUpdate(emitter, parseTask);
 
             // ===== Task 2: 轻量检索全部本地知识库 =====
@@ -638,13 +710,13 @@ public class AssistantServiceImpl implements AssistantService {
             tasks.add(kbTask);
             String kbContext = "";
             List<AssistantSource> kbSources = new ArrayList<>();
-            List<ThinkingStep> thinkingSteps = new ArrayList<>();
+            List<KnowledgeSearchResponse.ThinkingStep> thinkingSteps = new ArrayList<>();
             int retrievedCount = 0;
             List<String> retrievalWarnings = new ArrayList<>();
             kbTask.start("轻量检索全部本地知识库（topK=5）…");
             try {
                 KnowledgeSearchRequest searchRequest = new KnowledgeSearchRequest();
-                searchRequest.setQuery(userMessage);
+                searchRequest.setQuery(rewrite.safeStandaloneQuery());
                 searchRequest.setKnowledgeBaseId(null); // null = 全部知识库
                 searchRequest.setMode("hybrid");
                 searchRequest.setTopK(5); // 轻量检索，避免拖慢响应
@@ -652,7 +724,7 @@ public class AssistantServiceImpl implements AssistantService {
                 searchRequest.setRequesterId(assistantMessage.getUserId());
                 searchRequest.setSearchScopes(resolveAssistantSearchScopes(request, true));
 
-                KnowledgeSearchResponse searchResponse = knowledgeSearchService.search(searchRequest);
+                KnowledgeSearchResponse searchResponse = knowledgeSearchService.retrieve(searchRequest);
 
                 if (searchResponse.getResults() != null && !searchResponse.getResults().isEmpty()) {
                     StringBuilder ctx = new StringBuilder();
@@ -692,7 +764,6 @@ public class AssistantServiceImpl implements AssistantService {
             webTask.start("调用 LLM 联网搜索…");
             webTask.log("info", "已启用大模型联网搜索，将实时获取互联网信息" + (retrievedCount > 0 ? "，并结合本地知识库 " + retrievedCount + " 个片段" : ""));
 
-            // 构建 sources（本地 KB + 联网标记）
             List<AssistantSource> allSources = new ArrayList<>(kbSources);
             AssistantSource webSource = new AssistantSource();
             webSource.setCode("web_search");
@@ -706,6 +777,7 @@ public class AssistantServiceImpl implements AssistantService {
             assistantMessage.setTasks(tasks);
             assistantMessage.setRetrievedCount(retrievedCount);
             assistantMessage.setWarnings(retrievalWarnings);
+            assistantMessage.setSuggestedFollowUps(rewrite.followUps());
 
             emitter.send(SseEmitter.event().name("actions").data(Map.of(
                     "intent", "web_search",
@@ -744,7 +816,6 @@ public class AssistantServiceImpl implements AssistantService {
                 } catch (Exception llmError) {
                     log.warn("web search llm stream failed, retry without web search params, sessionId={}", assistantMessage.getSessionId(), llmError);
                     webTask.log("warn", "联网搜索失败，降级为普通对话重试…");
-                    // 降级：去掉联网参数重试一次
                     if (answer.length() == 0 && reasoning.length() == 0) {
                         try {
                             llmGateway.streamChatWithProvider(
@@ -760,12 +831,11 @@ public class AssistantServiceImpl implements AssistantService {
                             );
                             webTask.log("info", "降级重试成功，回答长度：" + answer.length() + " 字");
                             webTask.complete("降级重试完成");
-                            pushTaskUpdate(emitter, webTask);
                         } catch (Exception retryError) {
                             log.warn("web search retry without params also failed, sessionId={}", assistantMessage.getSessionId(), retryError);
                             webTask.fail("联网搜索与降级重试均失败");
-                            pushTaskUpdate(emitter, webTask);
                         }
+                        pushTaskUpdate(emitter, webTask);
                     } else {
                         webTask.complete("联网搜索部分完成（已降级）");
                         pushTaskUpdate(emitter, webTask);
@@ -785,6 +855,7 @@ public class AssistantServiceImpl implements AssistantService {
             assistantMessage.setStatus("completed");
             assistantMessage.setProcessSummary("联网搜索" + (retrievedCount > 0 ? " + 本地知识库(" + retrievedCount + "片段)" : ""));
             messageMapper.updateById(assistantMessage);
+            markQuestionAnswered(questionLogId, true);
 
             emitter.send(SseEmitter.event().name("done").data(toMessageVO(assistantMessage)));
             emitter.complete();
@@ -799,12 +870,8 @@ public class AssistantServiceImpl implements AssistantService {
             assistantMessage.setStatus("failed");
             assistantMessage.setIntent("web_search");
             messageMapper.updateById(assistantMessage);
-            try {
-                emitter.send(SseEmitter.event().name("error").data(Map.of("message", fallback)));
-            } catch (Exception ex) {
-                log.debug("SSE 发送 error 事件失败(客户端可能已断开)", ex);
-            }
-            emitter.completeWithError(e);
+            markQuestionAnswered(questionLogId, false);
+            sendErrorAndComplete(emitter, e, fallback);
         }
     }
 
@@ -841,7 +908,7 @@ public class AssistantServiceImpl implements AssistantService {
 
     /** 联网搜索模式的用户提示词 */
     private String buildWebSearchUserPrompt(String userMessage) {
-        return "用户问题：" + userMessage + "\n请结合联网搜索结果" 
+        return "用户问题：" + userMessage + "\n请结合联网搜索结果"
                 + "（以及上方提供的本地知识库内容，如有）综合给出回答。";
     }
 
@@ -874,23 +941,6 @@ public class AssistantServiceImpl implements AssistantService {
         return sb.toString();
     }
 
-    /**
-     * 提取用户问题关键词用于日志展示。
-     */
-    private String buildKeywordHint(String query) {
-        if (query == null || query.isBlank()) return "问题为空";
-        String[] terms = query.split("[\\s,，。；;:：/\\\\|]+");
-        java.util.List<String> keywords = java.util.Arrays.stream(terms)
-                .map(String::trim)
-                .filter(t -> t.length() >= 2)
-                .limit(5)
-                .collect(java.util.stream.Collectors.toList());
-        if (keywords.isEmpty()) {
-            return "已解析问题（" + Math.min(query.length(), 30) + " 字符）";
-        }
-        return "关键词：" + String.join("、", keywords);
-    }
-
     private String formatFileSize(Long bytes) {
         if (bytes == null) return "未知大小";
         if (bytes < 1024) return bytes + " B";
@@ -918,6 +968,7 @@ public class AssistantServiceImpl implements AssistantService {
         }
         return List.of(KnowledgeSearchScope.REQUIREMENT_BODY, KnowledgeSearchScope.KNOWLEDGE_BASE);
     }
+
     private List<AssistantSource> mapCitationsToSources(List<KnowledgeSearchResponse.CitationReference> citations, Long rawKbId) {
         if (citations == null || citations.isEmpty()) {
             return List.of();
@@ -1013,31 +1064,6 @@ public class AssistantServiceImpl implements AssistantService {
         assistantMessage.setInputTokens(usage.getPromptTokens());
         assistantMessage.setOutputTokens(usage.getCompletionTokens());
         assistantMessage.setTotalTokens(usage.getTotalTokens());
-    }
-
-    /** RAG 等不走 LlmGateway 流式链路的场景，按字符数估算 token 用量 */
-    private void applyEstimatedTokens(AssistantMessage assistantMessage, int inputChars, int outputChars) {
-        // 中文约 1 token/1.5 字符，英文约 1 token/4 字符，取保守估算 1 token ≈ 2 字符
-        int inputTokens = Math.max(1, Math.round(inputChars / 2f));
-        int outputTokens = Math.max(1, Math.round(outputChars / 2f));
-        assistantMessage.setInputTokens(inputTokens);
-        assistantMessage.setOutputTokens(outputTokens);
-        assistantMessage.setTotalTokens(inputTokens + outputTokens);
-    }
-
-    /** 估算 RAG 检索问答时注入提示词的字符量（与前端展示口径一致即可） */
-    private int systemPromptEstimate(KnowledgeSearchRequest searchRequest, KnowledgeSearchResponse searchResponse) {
-        int estimate = 0;
-        if (searchRequest != null && searchRequest.getQuery() != null) {
-            estimate += searchRequest.getQuery().length();
-        }
-        if (searchResponse != null && searchResponse.getProcessSummary() != null) {
-            estimate += searchResponse.getProcessSummary().length();
-        }
-        if (searchResponse != null && searchResponse.getResults() != null) {
-            estimate += searchResponse.getResults().size() * 180;
-        }
-        return estimate;
     }
 
     private void streamFallbackText(SseEmitter emitter, StringBuilder answer, String text) {
@@ -1184,21 +1210,13 @@ public class AssistantServiceImpl implements AssistantService {
         vo.setRetrievedCount(message.getRetrievedCount());
         vo.setCitations(message.getCitations());
         vo.setWarnings(message.getWarnings());
+        vo.setSuggestedFollowUps(message.getSuggestedFollowUps());
         vo.setReasoning(message.getReasoning());
         vo.setInputTokens(message.getInputTokens());
         vo.setOutputTokens(message.getOutputTokens());
         vo.setTotalTokens(message.getTotalTokens());
         vo.setCreatedAt(message.getCreatedAt());
         return vo;
-    }
-
-    private AssistantMessage findLatestMessage(Long sessionId) {
-        return messageMapper.selectOne(
-                new LambdaQueryWrapper<AssistantMessage>()
-                        .eq(AssistantMessage::getSessionId, sessionId)
-                        .orderByDesc(AssistantMessage::getId)
-                        .last("LIMIT 1")
-        );
     }
 
     private String buildPreview(String content) {
@@ -1217,6 +1235,11 @@ public class AssistantServiceImpl implements AssistantService {
         return compact.length() > 120 ? compact.substring(0, 120) : compact;
     }
 
+    private String shorten(String text, int maxLen) {
+        if (text == null) return "";
+        return text.length() <= maxLen ? text : text.substring(0, maxLen) + "…";
+    }
+
     private static class ResolvedChatModel {
         private final LlmGatewayConfig.Provider provider;
         private final java.math.BigDecimal temperature;
@@ -1229,18 +1252,37 @@ public class AssistantServiceImpl implements AssistantService {
         }
     }
 
-    private void recordQuestionLog(Long userId, AssistantChatRequest request, String questionText, Long sessionId) {
+    // ==================== 提问埋点 ====================
+
+    /** 记录用户提问；插入时 answered=0，回答成功后由 markQuestionAnswered 置 1 */
+    private Long recordQuestionLog(Long userId, AssistantChatRequest request, String questionText, Long sessionId) {
         try {
-            QuestionLog log = new QuestionLog();
-            log.setUserId(userId);
-            log.setSessionId(sessionId);
-            log.setPageRoute(request.getPageContext() != null ? request.getPageContext().getRouteName() : null);
-            log.setQuestionText(questionText);
-            log.setQuestionHash(md5(questionText));
-            log.setAnswered(1);
-            questionLogMapper.insert(log);
+            QuestionLog questionLog = new QuestionLog();
+            questionLog.setUserId(userId);
+            questionLog.setSessionId(sessionId);
+            questionLog.setPageRoute(request.getPageContext() != null ? request.getPageContext().getRouteName() : null);
+            questionLog.setQuestionText(questionText);
+            questionLog.setQuestionHash(md5(questionText));
+            questionLog.setAnswered(0);
+            questionLogMapper.insert(questionLog);
+            return questionLog.getId();
         } catch (Exception e) {
             // 埋点失败不影响主流程
+            return null;
+        }
+    }
+
+    private void markQuestionAnswered(Long questionLogId, boolean answered) {
+        if (questionLogId == null) {
+            return;
+        }
+        try {
+            QuestionLog update = new QuestionLog();
+            update.setId(questionLogId);
+            update.setAnswered(answered ? 1 : 0);
+            questionLogMapper.updateById(update);
+        } catch (Exception e) {
+            log.debug("回写提问回答状态失败: questionLogId={}", questionLogId, e);
         }
     }
 

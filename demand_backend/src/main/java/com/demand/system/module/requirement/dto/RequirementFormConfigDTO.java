@@ -14,6 +14,9 @@ public class RequirementFormConfigDTO {
 
     private List<String> requiredFields;
 
+    /** 动态字段 schema（含每个字段的可见/可编辑权限）。 */
+    private List<CustomFieldConfigDTO> dynamicFields;
+
     public String getDefaultTypeCode() {
         return defaultTypeCode;
     }
@@ -52,5 +55,13 @@ public class RequirementFormConfigDTO {
 
     public void setRequiredFields(List<String> requiredFields) {
         this.requiredFields = requiredFields;
+    }
+
+    public List<CustomFieldConfigDTO> getDynamicFields() {
+        return dynamicFields;
+    }
+
+    public void setDynamicFields(List<CustomFieldConfigDTO> dynamicFields) {
+        this.dynamicFields = dynamicFields;
     }
 }

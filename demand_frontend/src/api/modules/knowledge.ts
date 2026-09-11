@@ -85,12 +85,15 @@ export interface SearchResponse {
   results: SearchResultItem[]
   total: number
   answer?: string | null
+  reasoningContent?: string | null
   processSummary?: string | null
   thinkingSteps?: ThinkingStep[]
   questionIntent?: string | null
   intentConfidence?: number | null
   citations?: CitationReference[]
   warnings?: string[]
+  /** 推荐追问问题（查询改写阶段产出） */
+  suggestedFollowUps?: string[]
 }
 
 export interface CitationReference {
@@ -321,6 +324,10 @@ export function searchKnowledge(data: {
 export interface StreamSearchHandlers {
   onResults?: (response: SearchResponse) => void
   onDelta?: (delta: string) => void
+  /** 深度思考内容增量（reasoningDelta 事件，流式） */
+  onReasoningDelta?: (delta: string) => void
+  /** 流结束后的真实 token 用量 */
+  onUsage?: (usage: { inputTokens?: number | null, outputTokens?: number | null, totalTokens?: number | null }) => void
   onDone?: (response: SearchResponse) => void
   onError?: (message: string) => void
 }
@@ -389,6 +396,20 @@ function handleStreamEvent(eventBlock: string, handlers: StreamSearchHandlers) {
 
   if (eventName === 'delta') {
     handlers.onDelta?.(payload)
+    return
+  }
+
+  if (eventName === 'reasoningDelta') {
+    handlers.onReasoningDelta?.(payload)
+    return
+  }
+
+  if (eventName === 'usage') {
+    try {
+      handlers.onUsage?.(JSON.parse(payload))
+    } catch {
+      // usage 帧解析失败时忽略
+    }
     return
   }
 

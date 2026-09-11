@@ -24,6 +24,7 @@ public class AssistantMessageVO {
     private Integer retrievedCount;
     private List<CitationReference> citations;
     private List<String> warnings;
+    private List<String> suggestedFollowUps;
     private String reasoning;
     private Integer inputTokens;
     private Integer outputTokens;
@@ -156,6 +157,14 @@ public class AssistantMessageVO {
 
     public void setWarnings(List<String> warnings) {
         this.warnings = warnings;
+    }
+
+    public List<String> getSuggestedFollowUps() {
+        return suggestedFollowUps;
+    }
+
+    public void setSuggestedFollowUps(List<String> suggestedFollowUps) {
+        this.suggestedFollowUps = suggestedFollowUps;
     }
 
     public String getReasoning() {

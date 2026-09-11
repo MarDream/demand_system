@@ -953,7 +953,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                         vectorId, vector,
                         doc.getKnowledgeBaseId(), doc.getId(),
                         validChunks - 1, indexedChunk.content(), indexedChunk.sectionTitle(), null,
-                        doc.getFileName(), doc.getFileType()
+                        doc.getFileName(), doc.getFileType(), doc.getSourceType()
                 ));
             }
 

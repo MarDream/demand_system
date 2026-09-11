@@ -2,8 +2,10 @@ package com.demand.system.module.knowledge.service.impl;
 
 import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.ErrorCode;
+import com.demand.system.module.knowledge.dto.ConversationTurn;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse;
 import com.demand.system.module.knowledge.llm.LlmGateway;
+import com.demand.system.module.knowledge.llm.LlmGateway.ChatUsage;
 import com.demand.system.module.knowledge.llm.LlmGatewayConfig;
 import com.demand.system.module.knowledge.service.RagAnswerService;
 import com.demand.system.module.llm.constant.LlmApplicationCode;
@@ -15,6 +17,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -49,6 +52,10 @@ public class RagAnswerServiceImpl implements RagAnswerService {
             [2] 项目审批流程指南
             """;
 
+    /** 多轮场景注入提示词的最大历史轮数（单轮按 user+assistant 各一条计） */
+    private static final int MAX_HISTORY_MESSAGES = 6;
+    private static final int MAX_HISTORY_TURN_CHARS = 500;
+
     private final LlmGateway llmGateway;
     private final LlmModelResolver llmModelResolver;
 
@@ -59,25 +66,14 @@ public class RagAnswerServiceImpl implements RagAnswerService {
     }
 
     @Override
-    public String generateAnswer(
-            String query,
-            List<KnowledgeSearchResponse.SearchResultItem> searchResults,
-            Long knowledgeBaseId,
-            Long llmModelId
-    ) {
-        LlmGateway.ChatResult result = generateAnswerWithReasoning(query, searchResults, knowledgeBaseId, llmModelId);
-        return result != null ? result.getContent() : null;
-    }
-
-    @Override
     public LlmGateway.ChatResult generateAnswerWithReasoning(
             String query,
             List<KnowledgeSearchResponse.SearchResultItem> searchResults,
             Long knowledgeBaseId,
-            Long llmModelId
+            Long llmModelId,
+            List<ConversationTurn> history
     ) {
-        String context = buildContext(searchResults);
-        String userMessage = "问题：" + query + "\n\n参考资料：\n" + context;
+        String userMessage = buildUserMessage(query, searchResults, history);
 
         return invokeChatWithFallback(llmModelId, (resolution) -> {
             Map<String, Object> thinkingParams = llmGateway.buildThinkingParams(resolution.provider(), resolution.maxTokens());
@@ -104,25 +100,54 @@ public class RagAnswerServiceImpl implements RagAnswerService {
     }
 
     @Override
-    public void streamAnswer(
+    public void streamAnswerWithReasoning(
             String query,
             List<KnowledgeSearchResponse.SearchResultItem> searchResults,
             Long knowledgeBaseId,
             Long llmModelId,
-            Consumer<String> tokenConsumer
+            List<ConversationTurn> history,
+            Consumer<String> tokenConsumer,
+            Consumer<String> reasoningConsumer,
+            Consumer<ChatUsage> usageConsumer
     ) {
-        String context = buildContext(searchResults);
-        String userMessage = "问题：" + query + "\n\n参考资料：\n" + context;
+        String userMessage = buildUserMessage(query, searchResults, history);
 
         invokeChatWithFallback(llmModelId, (resolution) -> {
-            llmGateway.streamChatWithProvider(
-                    resolution.provider(),
-                    SYSTEM_PROMPT,
-                    userMessage,
-                    resolution.temperature(),
-                    resolution.maxTokens(),
-                    tokenConsumer
-            );
+            AtomicBoolean anyOutput = new AtomicBoolean(false);
+            Consumer<String> guardedToken = countOutput(anyOutput, tokenConsumer);
+            Consumer<String> guardedReasoning = countOutput(anyOutput, reasoningConsumer);
+
+            Map<String, Object> thinkingParams = llmGateway.buildThinkingParams(resolution.provider(), resolution.maxTokens());
+            try {
+                llmGateway.streamChatWithProvider(
+                        resolution.provider(),
+                        SYSTEM_PROMPT,
+                        userMessage,
+                        resolution.temperature(),
+                        resolution.maxTokens(),
+                        thinkingParams,
+                        guardedToken,
+                        guardedReasoning,
+                        usageConsumer
+                );
+            } catch (Exception e) {
+                // 仅当深度思考参数导致一开始就失败时才降级重试；已有输出则保留部分结果，避免重复推送
+                if (anyOutput.get()) {
+                    throw e;
+                }
+                log.warn("RAG 流式深度思考模式调用失败，降级为普通模式重试: {}", e.getMessage());
+                llmGateway.streamChatWithProvider(
+                        resolution.provider(),
+                        SYSTEM_PROMPT,
+                        userMessage,
+                        resolution.temperature(),
+                        resolution.maxTokens(),
+                        null,
+                        guardedToken,
+                        guardedReasoning,
+                        usageConsumer
+                );
+            }
             return null;
         });
     }
@@ -137,16 +162,12 @@ public class RagAnswerServiceImpl implements RagAnswerService {
      */
     private <T> T invokeChatWithFallback(Long llmModelId, java.util.function.Function<ChatProviderResolution, T> caller) {
         try {
-            // 用户显式选择了模型 → 只用该模型，不兜底
             if (llmModelId != null) {
                 ChatProviderResolution resolution = buildProviderFromModel(llmModelId);
                 return caller.apply(resolution);
             }
 
-            // 未指定模型 → 解析默认+兜底列表
             List<ChatProviderResolution> resolutions = resolveChatProviders();
-
-            // 逐一尝试，第一个成功即返回
             for (ChatProviderResolution resolution : resolutions) {
                 try {
                     T result = caller.apply(resolution);
@@ -154,7 +175,6 @@ public class RagAnswerServiceImpl implements RagAnswerService {
                     return result;
                 } catch (Exception e) {
                     log.warn("Chat 调用失败: model={}, error={}", resolution.provider().getModel(), e.getMessage());
-                    // 继续尝试下一个兜底模型
                 }
             }
 
@@ -187,9 +207,6 @@ public class RagAnswerServiceImpl implements RagAnswerService {
                     resolved.model().getMaxTokens()
             ));
         }
-        log.info("Chat: 应用[{}]可用模型列表(应用指定优先): {}",
-                LlmApplicationCode.KNOWLEDGE_ANSWER,
-                resolutions.stream().map(r -> r.provider().getModel()).toList());
         return resolutions;
     }
 
@@ -215,6 +232,40 @@ public class RagAnswerServiceImpl implements RagAnswerService {
             java.math.BigDecimal temperature,
             Integer maxTokens
     ) {}
+
+    private Consumer<String> countOutput(AtomicBoolean anyOutput, Consumer<String> delegate) {
+        if (delegate == null) {
+            return null;
+        }
+        return token -> {
+            if (token != null && !token.isEmpty()) {
+                anyOutput.set(true);
+                delegate.accept(token);
+            }
+        };
+    }
+
+    private String buildUserMessage(String query,
+                                    List<KnowledgeSearchResponse.SearchResultItem> results,
+                                    List<ConversationTurn> history) {
+        StringBuilder sb = new StringBuilder();
+        if (history != null && !history.isEmpty()) {
+            sb.append("【对话背景（旧→新），回答当前问题时请保持连贯】\n");
+            history.stream()
+                    .limit(MAX_HISTORY_MESSAGES)
+                    .forEach(turn -> sb.append("user".equals(turn.role()) ? "用户：" : "助手：")
+                            .append(abbreviate(turn.safeContent()))
+                            .append('\n'));
+            sb.append('\n');
+        }
+        sb.append("问题：").append(query).append("\n\n参考资料：\n").append(buildContext(results));
+        return sb.toString();
+    }
+
+    private String abbreviate(String text) {
+        String compact = text.replaceAll("\\s+", " ").trim();
+        return compact.length() <= MAX_HISTORY_TURN_CHARS ? compact : compact.substring(0, MAX_HISTORY_TURN_CHARS) + "…";
+    }
 
     private String buildContext(List<KnowledgeSearchResponse.SearchResultItem> results) {
         return results.stream()

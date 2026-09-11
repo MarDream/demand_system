@@ -68,6 +68,10 @@ public class AssistantMessage {
     @TableField(typeHandler = JacksonTypeHandler.class)
     private List<String> warnings;
 
+    /** 推荐追问问题（知识库问答查询改写阶段产出） */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private List<String> suggestedFollowUps;
+
     /** 深度思考内容（LLM reasoning，可为 null） */
     private String reasoning;
 
@@ -215,6 +219,14 @@ public class AssistantMessage {
 
     public void setWarnings(List<String> warnings) {
         this.warnings = warnings;
+    }
+
+    public List<String> getSuggestedFollowUps() {
+        return suggestedFollowUps;
+    }
+
+    public void setSuggestedFollowUps(List<String> suggestedFollowUps) {
+        this.suggestedFollowUps = suggestedFollowUps;
     }
 
     public String getReasoning() {

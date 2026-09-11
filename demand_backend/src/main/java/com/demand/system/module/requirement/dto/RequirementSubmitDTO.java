@@ -1,5 +1,7 @@
 package com.demand.system.module.requirement.dto;
 
+import java.util.List;
+
 public class RequirementSubmitDTO {
 
     private Integer version;
@@ -9,6 +11,8 @@ public class RequirementSubmitDTO {
     private Long projectId;
 
     private String comment;
+
+    private List<CustomFieldValueDTO> customFields;
 
     public Integer getVersion() {
         return version;
@@ -40,5 +44,13 @@ public class RequirementSubmitDTO {
 
     public void setComment(String comment) {
         this.comment = comment;
+    }
+
+    public List<CustomFieldValueDTO> getCustomFields() {
+        return customFields;
+    }
+
+    public void setCustomFields(List<CustomFieldValueDTO> customFields) {
+        this.customFields = customFields;
     }
 }

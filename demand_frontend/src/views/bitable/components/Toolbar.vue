@@ -67,6 +67,14 @@
       <el-button size="small" type="primary" @click="emit('addField')">
         <el-icon><Plus /></el-icon> 添加字段
       </el-button>
+      <el-button size="small" @click="emit('openFilter')">
+        <el-icon><Filter /></el-icon> 筛选
+        <el-badge v-if="(filterCount ?? 0) > 0" :value="filterCount ?? 0" :max="99" class="filter-badge" />
+      </el-button>
+      <el-button size="small" @click="emit('openGroup')">
+        <el-icon><Grid /></el-icon> 分组
+        <el-badge v-if="groupFieldId" :value="1" :max="1" class="filter-badge" />
+      </el-button>
     </div>
 
     <!-- 右侧：中低频操作 -->
@@ -199,6 +207,7 @@ import {
   DataAnalysis,
   Reading,
   MoreFilled,
+  Filter,
 } from '@element-plus/icons-vue'
 import type { BitableTable, BitableView, ViewType } from '@/types/bitable'
 
@@ -206,10 +215,14 @@ const props = defineProps<{
   table: BitableTable | null
   views: BitableView[]
   activeViewId: number | null
+  filterCount?: number
+  groupFieldId?: number | null
 }>()
 
 const emit = defineEmits<{
   addField: []
+  openFilter: []
+  openGroup: []
   viewSwitch: [viewId: number]
   createView: [viewType: ViewType]
   renameTable: [tableId: number, name: string]

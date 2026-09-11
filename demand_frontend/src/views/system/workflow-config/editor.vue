@@ -415,6 +415,64 @@
                   @update:branches="nodeForm.conditionBranches = $event"
                 />
               </template>
+
+              <!-- 需求动态字段权限 -->
+              <template v-if="showFieldPermissions">
+                <el-divider content-position="left">动态字段权限</el-divider>
+                <div class="field-perm-tip">
+                  控制该环节下需求扩展字段的可见 / 可编辑 / 必填范围。全部留空表示不限制（字段默认全部可见可编辑）。
+                </div>
+                <el-table :data="customFieldOptions" size="small" border max-height="320">
+                  <el-table-column prop="name" label="字段" min-width="120">
+                    <template #default="{ row }">
+                      <div class="field-perm-name">
+                        <span>{{ row.name }}</span>
+                        <el-tag size="small" effect="plain" round>{{ row.fieldType }}</el-tag>
+                      </div>
+                      <div class="field-perm-code">{{ row.fieldCode }}</div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="可见" width="62" align="center">
+                    <template #default="{ row }">
+                      <el-checkbox
+                        :model-value="nodeForm.fieldPermissions?.visible.includes(row.fieldCode)"
+                        :disabled="isViewMode"
+                        @change="(v: boolean) => toggleFieldPermission('visible', row.fieldCode, v)"
+                      />
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="可编辑" width="72" align="center">
+                    <template #default="{ row }">
+                      <el-checkbox
+                        :model-value="nodeForm.fieldPermissions?.editable.includes(row.fieldCode)"
+                        :disabled="isViewMode"
+                        @change="(v: boolean) => toggleFieldPermission('editable', row.fieldCode, v)"
+                      />
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="必填" width="62" align="center">
+                    <template #default="{ row }">
+                      <el-checkbox
+                        :model-value="nodeForm.fieldPermissions?.required.includes(row.fieldCode)"
+                        :disabled="isViewMode"
+                        @change="(v: boolean) => toggleFieldPermission('required', row.fieldCode, v)"
+                      />
+                    </template>
+                  </el-table-column>
+                </el-table>
+                <div v-if="!isViewMode" class="field-perm-actions">
+                  <el-button link type="primary" size="small" @click="selectAllFieldPermissions('visible')">
+                    可见全选
+                  </el-button>
+                  <el-button link type="primary" size="small" @click="selectAllFieldPermissions('editable')">
+                    可编辑全选
+                  </el-button>
+                  <el-button link type="primary" size="small" @click="selectAllFieldPermissions('required')">
+                    必填全选
+                  </el-button>
+                  <el-button link type="info" size="small" @click="clearFieldPermissions">清空</el-button>
+                </div>
+              </template>
             </el-form>
 
             <div v-if="!isViewMode" class="node-config-footer">
@@ -493,6 +551,8 @@ import {
   getVersionHistory,
 } from '@/api/modules/workflow-visual'
 import { nodeStatusApi, type NodeStatus } from '@/api/modules/workflow-engine'
+import { requirementConfigApi } from '@/api/modules/requirementConfig'
+import type { CustomFieldDef } from '@/api/modules/requirementConfig'
 import * as roleApi from '@/api/modules/role'
 import * as userApi from '@/api/modules/user'
 import { getAllKnowledgeBases, type KnowledgeBase } from '@/api/modules/knowledge'
@@ -639,6 +699,12 @@ const nodeForm = reactive<Partial<WorkflowNodeDTO> & {
   parallelBranches?: Array<{ branchId: string; branchName: string; condition: { field?: string; operator?: string; value?: string } }>
   conditionBranches?: ConditionBranch[]
   ccMode?: 'MESSAGE' | 'READ_ONLY_TODO'
+  /** 需求动态字段在该节点上的可见 / 可编辑 / 必填范围（存 fieldCode） */
+  fieldPermissions?: {
+    visible: string[]
+    editable: string[]
+    required: string[]
+  }
 }>({
   nodeId: '',
   nodeType: 'approval',
@@ -674,8 +740,111 @@ const nodeForm = reactive<Partial<WorkflowNodeDTO> & {
   parallelType: 'AND',
   parallelBranches: [],
   conditionBranches: [],
-  ccMode: 'MESSAGE'
+  ccMode: 'MESSAGE',
+  fieldPermissions: { visible: [], editable: [], required: [] }
 })
+
+// ------------------------------------------------------------------
+// 需求动态字段权限
+// ------------------------------------------------------------------
+
+/** 当前流程版本所绑定需求类型下可用的动态字段 */
+const customFieldOptions = ref<CustomFieldDef[]>([])
+const customFieldsLoading = ref(false)
+
+/** 拉取流程绑定需求类型的动态字段（含项目级全局字段） */
+async function loadCustomFieldOptions() {
+  const versionId = currentVersion.value?.id
+  if (!versionId) {
+    customFieldOptions.value = []
+    return
+  }
+  customFieldsLoading.value = true
+  try {
+    const types = await requirementConfigApi.listTypes() as unknown as any[]
+    const bound = (Array.isArray(types) ? types : []).filter(
+      (t: any) => t?.workflowVersionId === versionId,
+    )
+    if (bound.length === 0) {
+      customFieldOptions.value = []
+      return
+    }
+    const projectId = resolveWorkflowProjectId(route.query.projectId || route.params.projectId)
+    const chunks = await Promise.all(
+      bound.map((t: any) =>
+        requirementConfigApi.listCustomFields(projectId, t.code).catch(() => []),
+      ),
+    )
+    const merged = new Map<string, CustomFieldDef>()
+    for (const list of chunks) {
+      for (const field of (Array.isArray(list) ? list : []) as CustomFieldDef[]) {
+        if (field?.fieldCode && !merged.has(field.fieldCode)) {
+          merged.set(field.fieldCode, field)
+        }
+      }
+    }
+    customFieldOptions.value = [...merged.values()].sort(
+      (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0),
+    )
+  } catch {
+    customFieldOptions.value = []
+  } finally {
+    customFieldsLoading.value = false
+  }
+}
+
+/** 字段权限面板是否可用：仅审批/处理类节点有意义且需绑定了动态字段 */
+const showFieldPermissions = computed(
+  () => ['approval', 'cc', 'parallel', 'condition'].includes(nodeForm.nodeType || '')
+    && customFieldOptions.value.length > 0,
+)
+
+function toggleFieldPermission(kind: 'visible' | 'editable' | 'required', fieldCode: string, on: boolean) {
+  const fp = nodeForm.fieldPermissions
+  if (!fp) return
+  const list = fp[kind]
+  const idx = list.indexOf(fieldCode)
+  if (on && idx === -1) list.push(fieldCode)
+  if (!on && idx > -1) list.splice(idx, 1)
+  // 可编辑与必填隐式要求可见
+  if ((kind === 'editable' || kind === 'required') && on && !fp.visible.includes(fieldCode)) {
+    fp.visible.push(fieldCode)
+  }
+}
+
+/** 全部可见（用于快速初始化） */
+function selectAllFieldPermissions(kind: 'visible' | 'editable' | 'required') {
+  const fp = nodeForm.fieldPermissions
+  if (!fp) return
+  fp[kind] = customFieldOptions.value.map((f) => f.fieldCode)
+  if (kind !== 'visible') {
+    fp.visible = customFieldOptions.value.map((f) => f.fieldCode)
+  }
+}
+
+function clearFieldPermissions() {
+  if (nodeForm.fieldPermissions) {
+    nodeForm.fieldPermissions = { visible: [], editable: [], required: [] }
+  }
+}
+
+function normalizeFieldPermissions(raw: any): { visible: string[]; editable: string[]; required: string[] } {
+  const pick = (v: any) => (Array.isArray(v) ? v.map(String).filter(Boolean) : [])
+  return {
+    visible: pick(raw?.visible),
+    editable: pick(raw?.editable),
+    required: pick(raw?.required),
+  }
+}
+
+// 流程版本切换后重新拉取该版本绑定需求类型下的动态字段
+watch(
+  () => currentVersion.value?.id,
+  () => {
+    void loadCustomFieldOptions()
+  },
+  { immediate: true },
+)
 
 // 会签配置：需求提出人占位 ID（与 CountersignConfig 中保持一致）
 const COUNTERSIGN_CREATOR_PLACEHOLDER_ID = -1
@@ -1939,6 +2108,9 @@ const handleNodeClick = (data: any) => {
     parallelType: data.properties?.parallelType ?? 'AND',
     parallelBranches: data.properties?.branches || [],
     ccMode: data.properties?.ccMode ?? data.properties?.properties?.ccMode ?? 'MESSAGE',
+    fieldPermissions: normalizeFieldPermissions(
+      data.properties?.fieldPermissions ?? data.properties?.properties?.fieldPermissions,
+    ),
     properties: data.properties || {}
   })
 
@@ -2078,6 +2250,8 @@ const handleSaveNodeConfig = () => {
       parallelType: nodeForm.parallelType,
       branches: nodeForm.parallelBranches,
       ccMode: nodeForm.nodeType === 'cc' ? (nodeForm.ccMode || 'MESSAGE') : undefined,
+      // 始终回写：面板未展示时保持原值，避免 undefined 覆盖已保存的字段权限
+      fieldPermissions: nodeForm.fieldPermissions ?? (nodeForm.properties as any)?.fieldPermissions,
     }
   }
 
@@ -3081,6 +3255,31 @@ onBeforeUnmount(() => {
       line-height: 1.5;
       padding-left: 6px;
     }
+  }
+
+  .field-perm-tip {
+    margin-bottom: 8px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--el-text-color-secondary);
+  }
+
+  .field-perm-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .field-perm-code {
+    font-size: 12px;
+    color: var(--el-text-color-placeholder);
+  }
+
+  .field-perm-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
   }
 
   .node-config-footer {

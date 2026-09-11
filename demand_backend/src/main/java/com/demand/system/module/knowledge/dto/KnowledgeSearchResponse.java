@@ -16,6 +16,8 @@ public class KnowledgeSearchResponse {
     private Double intentConfidence;
     private List<CitationReference> citations;
     private List<String> warnings;
+    /** 推荐追问问题（查询改写阶段产出） */
+    private List<String> suggestedFollowUps;
 
     public List<SearchResultItem> getResults() {
         return results;
@@ -91,6 +93,9 @@ public class KnowledgeSearchResponse {
 
     public List<String> getWarnings() { return warnings; }
     public void setWarnings(List<String> warnings) { this.warnings = warnings; }
+
+    public List<String> getSuggestedFollowUps() { return suggestedFollowUps; }
+    public void setSuggestedFollowUps(List<String> suggestedFollowUps) { this.suggestedFollowUps = suggestedFollowUps; }
 
     public static KnowledgeSearchResponseBuilder builder() {
         return new KnowledgeSearchResponseBuilder();
@@ -281,6 +286,7 @@ public class KnowledgeSearchResponse {
         private Double intentConfidence;
         private List<CitationReference> citations;
         private List<String> warnings;
+        private List<String> suggestedFollowUps;
 
         public KnowledgeSearchResponseBuilder results(List<SearchResultItem> results) {
             this.results = results;
@@ -332,6 +338,11 @@ public class KnowledgeSearchResponse {
             return this;
         }
 
+        public KnowledgeSearchResponseBuilder suggestedFollowUps(List<String> suggestedFollowUps) {
+            this.suggestedFollowUps = suggestedFollowUps;
+            return this;
+        }
+
         public KnowledgeSearchResponse build() {
             KnowledgeSearchResponse response = new KnowledgeSearchResponse();
             response.setResults(results);
@@ -344,6 +355,7 @@ public class KnowledgeSearchResponse {
             response.setIntentConfidence(intentConfidence);
             response.setCitations(citations);
             response.setWarnings(warnings);
+            response.setSuggestedFollowUps(suggestedFollowUps);
             return response;
         }
     }

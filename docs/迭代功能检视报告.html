@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>迭代管理功能检视报告</title>
+<style>
+  :root{
+    --bg:#0f1419; --panel:#171e26; --panel2:#1c252f; --border:#26313d;
+    --text:#e6edf3; --muted:#8b98a5; --accent:#4da3ff; --accent2:#7c5cff;
+    --ok:#3fb950; --warn:#d29922; --bad:#f85149; --info:#58a6ff;
+    --chip-bg:rgba(77,163,255,.12);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,"Segoe UI","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif;line-height:1.65;font-size:14px}
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 24px 80px}
+  /* Hero */
+  .hero{background:linear-gradient(135deg,#12233a 0%,#171e26 55%,#1d1830 100%);border:1px solid var(--border);border-radius:16px;padding:36px 40px;margin-bottom:28px;position:relative;overflow:hidden}
+  .hero::after{content:"";position:absolute;right:-80px;top:-80px;width:280px;height:280px;background:radial-gradient(circle,rgba(124,92,255,.18),transparent 70%)}
+  .hero .tag{display:inline-block;font-size:12px;color:var(--accent);background:var(--chip-bg);border:1px solid rgba(77,163,255,.3);padding:3px 12px;border-radius:20px;margin-bottom:14px;letter-spacing:1px}
+  .hero h1{font-size:30px;font-weight:700;margin-bottom:10px;letter-spacing:.5px}
+  .hero .sub{color:var(--muted);font-size:14px;margin-bottom:22px}
+  .hero .meta{display:flex;gap:28px;flex-wrap:wrap;color:var(--muted);font-size:13px}
+  .hero .meta b{color:var(--text);font-weight:600}
+  .verdict{display:flex;gap:14px;flex-wrap:wrap;margin-top:22px}
+  .verdict .v{background:rgba(63,185,80,.12);border:1px solid rgba(63,185,80,.35);color:var(--ok);padding:8px 16px;border-radius:10px;font-size:13px;font-weight:600}
+  .verdict .w{background:rgba(210,153,34,.12);border:1px solid rgba(210,153,34,.35);color:var(--warn);padding:8px 16px;border-radius:10px;font-size:13px;font-weight:600}
+  .verdict .r{background:rgba(248,81,73,.12);border:1px solid rgba(248,81,73,.35);color:var(--bad);padding:8px 16px;border-radius:10px;font-size:13px;font-weight:600}
+  /* Section */
+  h2{font-size:20px;margin:40px 0 16px;padding-left:12px;border-left:4px solid var(--accent);font-weight:700}
+  h3{font-size:16px;margin:24px 0 10px;color:var(--accent)}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:22px 24px;margin-bottom:18px}
+  .muted{color:var(--muted)}
+  /* Score cards */
+  .scores{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-bottom:8px}
+  .score{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px 22px}
+  .score .num{font-size:40px;font-weight:800;line-height:1.1}
+  .score .num small{font-size:15px;color:var(--muted);font-weight:600}
+  .score .lbl{color:var(--muted);font-size:13px;margin-bottom:12px}
+  .bar{height:8px;background:#26313d;border-radius:6px;overflow:hidden;margin-top:10px}
+  .bar>i{display:block;height:100%;border-radius:6px}
+  .dims{margin-top:14px;display:grid;gap:9px}
+  .dim{display:grid;grid-template-columns:130px 1fr 44px;align-items:center;gap:12px;font-size:12.5px}
+  .dim .name{color:var(--muted)}
+  .dim .track{height:6px;background:#26313d;border-radius:4px;overflow:hidden}
+  .dim .track>i{display:block;height:100%;border-radius:4px}
+  .dim .val{text-align:right;font-weight:600;color:var(--text)}
+  /* Matrix table */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:9px 12px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
+  th{background:var(--panel2);color:var(--muted);font-weight:600;font-size:12px;white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  td .mod{color:var(--muted);font-size:12px;display:block;margin-top:1px}
+  .st{display:inline-block;padding:2px 10px;border-radius:20px;font-size:12px;font-weight:600;white-space:nowrap}
+  .st.ok{background:rgba(63,185,80,.13);color:var(--ok)}
+  .st.part{background:rgba(210,153,34,.13);color:var(--warn)}
+  .st.no{background:rgba(248,81,73,.13);color:var(--bad)}
+  .ref{color:var(--muted);font-size:11.5px;font-family:Consolas,Menlo,monospace}
+  /* Issue cards */
+  .issue{background:var(--panel);border:1px solid var(--border);border-left:4px solid var(--bad);border-radius:10px;padding:16px 20px;margin-bottom:14px}
+  .issue.p1{border-left-color:var(--warn)}
+  .issue.p2{border-left-color:var(--accent)}
+  .issue .hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+  .issue .hd .t{font-weight:700;font-size:15px}
+  .pill{font-size:11px;padding:2px 8px;border-radius:4px;font-weight:700}
+  .pill.p0{background:rgba(248,81,73,.15);color:var(--bad)}
+  .pill.p1{background:rgba(210,153,34,.15);color:var(--warn)}
+  .pill.p2{background:rgba(88,166,255,.15);color:var(--info)}
+  .issue .desc{color:var(--text);font-size:13.5px}
+  .issue .where{margin-top:8px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--muted);font-family:Consolas,Menlo,monospace;overflow-x:auto;white-space:nowrap}
+  /* Roadmap */
+  .road{display:grid;gap:14px}
+  .step{display:grid;grid-template-columns:64px 1fr;gap:16px;align-items:start}
+  .step .ph{font-weight:800;font-size:13px;text-align:center;padding:8px 4px;border-radius:8px}
+  .ph.p0{background:rgba(248,81,73,.15);color:var(--bad)}
+  .ph.p1{background:rgba(210,153,34,.15);color:var(--warn)}
+  .ph.p2{background:rgba(88,166,255,.15);color:var(--info)}
+  .step .box{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 18px}
+  .step .box b{display:block;margin-bottom:4px}
+  .step .box ul{margin:6px 0 0 18px;color:var(--muted);font-size:13px}
+  /* legend */
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin:10px 0 6px;font-size:12.5px;color:var(--muted)}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .dot{width:10px;height:10px;border-radius:3px;display:inline-block}
+  .foot{margin-top:44px;padding-top:16px;border-top:1px solid var(--border);color:var(--muted);font-size:12px;text-align:center}
+  a{color:var(--accent);text-decoration:none}
+  @media(max-width:720px){ .hero{padding:26px 20px} .hero h1{font-size:23px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ============ HERO ============ -->
+  <div class="hero">
+    <span class="tag">迭代管理 · 功能检视</span>
+    <h1>迭代管理功能完整性与易用性检视报告</h1>
+    <p class="sub">对标 Jira / 禅道 / TAPD / ONES / Azure DevOps 等行业主流工具的迭代（Sprint）管理能力，对需求管理系统当前迭代功能进行差距检视</p>
+    <div class="meta">
+      <span>检视对象：<b>迭代管理模块</b>（前端 <span class="ref">views/iterations</span> · 后端 <span class="ref">module/iteration</span>）</span>
+      <span>检视日期：<b>2026-08-09</b></span>
+      <span>方式：<b>源码走查 + 行业基准对比</b></span>
+    </div>
+    <div class="verdict">
+      <div class="r">3 个 P0 级功能缺陷（筛选失效 / 状态值混乱 / 删除悬空引用）</div>
+      <div class="w">5 项核心能力缺失（看板 / 详情页 / 容量规划 / 冲突检测 / 甘特图）</div>
+      <div class="v">CRUD 闭环完整、权限与乐观锁规范，具备可扩展的基础</div>
+    </div>
+  </div>
+
+  <!-- ============ 总览评分 ============ -->
+  <h2>一、总体评分</h2>
+  <div class="scores">
+    <div class="score">
+      <div class="lbl">功能完整性 · 距行业基准</div>
+      <div class="num" style="color:var(--warn)">38<small>/100</small></div>
+      <div class="bar"><i style="width:38%;background:linear-gradient(90deg,var(--warn),#e3a341)"></i></div>
+      <div class="dims">
+        <div class="dim"><span class="name">迭代规划</span><div class="track"><i style="width:40%;background:var(--warn)"></i></div><span class="val">40</span></div>
+        <div class="dim"><span class="name">需求组织</span><div class="track"><i style="width:35%;background:var(--warn)"></i></div><span class="val">35</span></div>
+        <div class="dim"><span class="name">执行跟踪</span><div class="track"><i style="width:25%;background:var(--bad)"></i></div><span class="val">25</span></div>
+        <div class="dim"><span class="name">可视化</span><div class="track"><i style="width:35%;background:var(--warn)"></i></div><span class="val">35</span></div>
+        <div class="dim"><span class="name">数据洞察</span><div class="track"><i style="width:15%;background:var(--bad)"></i></div><span class="val">15</span></div>
+        <div class="dim"><span class="name">生命周期</span><div class="track"><i style="width:30%;background:var(--bad)"></i></div><span class="val">30</span></div>
+      </div>
+    </div>
+    <div class="score">
+      <div class="lbl">易用性 · 用户操作体验</div>
+      <div class="num" style="color:var(--warn)">48<small>/100</small></div>
+      <div class="bar"><i style="width:48%;background:linear-gradient(90deg,var(--warn),#e3a341)"></i></div>
+      <div class="dims">
+        <div class="dim"><span class="name">检索筛选</span><div class="track"><i style="width:20%;background:var(--bad)"></i></div><span class="val">20</span></div>
+        <div class="dim"><span class="name">列表操作</span><div class="track"><i style="width:70%;background:var(--ok)"></i></div><span class="val">70</span></div>
+        <div class="dim"><span class="name">交互方式</span><div class="track"><i style="width:40%;background:var(--warn)"></i></div><span class="val">40</span></div>
+        <div class="dim"><span class="name">信息呈现</span><div class="track"><i style="width:50%;background:var(--warn)"></i></div><span class="val">50</span></div>
+        <div class="dim"><span class="name">数据可信度</span><div class="track"><i style="width:40%;background:var(--warn)"></i></div><span class="val">40</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 行业基准 ============ -->
+  <h2>二、行业对标基准（主流工具迭代管理能力地图）</h2>
+  <div class="card">
+    <p class="muted" style="margin-bottom:14px">基于 Jira（Scrum）、禅道、TAPD、ONES、Azure DevOps、ClickUp 的能力归纳，成熟的迭代管理应覆盖以下 <b>6 大模块 / 24 项能力</b>：</p>
+    <table>
+      <thead><tr><th style="width:110px">模块</th><th>行业标准能力</th><th>代表工具</th></tr></thead>
+      <tbody>
+        <tr><td><b>迭代规划</b><span class="mod">Sprint Planning</span></td>
+            <td>迭代目标（Goal）、迭代周期设定、团队容量计算（Capacity = 可用工时 − 事务性工作）、故事点/工时估算、从 Backlog 拖拽排期、排期冲突提示</td><td>Jira · 禅道 · ONES</td></tr>
+        <tr><td><b>需求组织</b><span class="mod">Backlog</span></td>
+            <td>产品待办列表统一管理、优先级排序（拖拽）、未排期需求池、需求拆分（子任务）、史诗（Epic）分组</td><td>Jira · TAPD</td></tr>
+        <tr><td><b>执行跟踪</b><span class="mod">Execution</span></td>
+            <td>敏捷看板（状态列 + 泳道 + 卡片拖拽流转）、WIP 限制、阻塞标记、状态工作流自动化、每日站会集成</td><td>Jira · Azure DevOps</td></tr>
+        <tr><td><b>可视化</b><span class="mod">Visualization</span></td>
+            <td>燃尽图（基于真实剩余工作量）、速度图（Velocity）、甘特图/时间轴、路线图（Roadmap）</td><td>Jira · ONES · TAPD</td></tr>
+        <tr><td><b>数据洞察</b><span class="mod">Reports</span></td>
+            <td>迭代报告（完成/未完成/滚动到下轮）、速度趋势、交付质量、缺陷率、迭代对比统计</td><td>Jira · 禅道</td></tr>
+        <tr><td><b>生命周期</b><span class="mod">Lifecycle</span></td>
+            <td>迭代事件（计划会/评审会/回顾会模板）、迭代目标与回顾沉淀、发布管理（版本关联）、未完成项自动滚动至下轮</td><td>禅道 · Jira</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ============ 差距矩阵 ============ -->
+  <h2>三、差距矩阵：当前功能 vs 行业标准</h2>
+  <div class="legend">
+    <span><i class="dot" style="background:var(--ok)"></i>已支持</span>
+    <span><i class="dot" style="background:var(--warn)"></i>部分支持 / 有缺陷</span>
+    <span><i class="dot" style="background:var(--bad)"></i>缺失</span>
+  </div>
+  <div class="card" style="padding:6px 12px">
+  <table>
+    <thead><tr><th style="width:150px">能力项</th><th>行业标准</th><th style="width:110px">当前状态</th><th>说明 / 证据</th></tr></thead>
+    <tbody>
+      <tr><td>迭代 CRUD</td><td>创建/编辑/删除/查看</td><td><span class="st ok">已支持</span></td><td>含乐观锁防并发、逻辑删除；<span class="ref">IterationServiceImpl</span></td></tr>
+      <tr><td>迭代状态</td><td>未开始/进行中/已完成/已关闭</td><td><span class="st part">有缺陷</span></td><td>状态值三处不一致（见 P0-2），无日期驱动的自动流转</td></tr>
+      <tr><td>列表与分页</td><td>分页 + 排序 + 列自定义</td><td><span class="st ok">已支持</span></td><td>分页、列自定义、进度条齐全</td></tr>
+      <tr><td>搜索 / 筛选</td><td>按名称/状态/时间过滤</td><td><span class="st no">假功能</span></td><td>前端有搜索框，后端不接收参数、不生效（见 P0-1）</td></tr>
+      <tr><td>迭代目标 / 描述</td><td>Goal 字段 + 富文本描述</td><td><span class="st part">部分</span></td><td>仅有纯文本描述，无目标字段</td></tr>
+      <tr><td>容量规划</td><td>容量自动汇总、负载计算、超载预警</td><td><span class="st no">缺失</span></td><td>capacity 仅一个静态数字，无工作量汇总/预警</td></tr>
+      <tr><td>需求排期</td><td>从 Backlog 排期、冲突检测</td><td><span class="st part">部分</span></td><td>弹窗多选关联，但无冲突检测、直接覆盖 iteration_id（见 P1-4）</td></tr>
+      <tr><td>Backlog / 需求池</td><td>未排期需求统一视图</td><td><span class="st no">缺失</span></td><td>需求列表页无迭代列/未排期筛选入口</td></tr>
+      <tr><td>迭代详情页</td><td>需求清单、状态分布、成员负载</td><td><span class="st no">缺失</span></td><td>仅列表行，无详情视图</td></tr>
+      <tr><td>敏捷看板</td><td>状态列 + 泳道 + 拖拽流转</td><td><span class="st no">缺失</span></td><td>迭代域内无看板；bitable 的看板组件与迭代无关</td></tr>
+      <tr><td>状态流转操作</td><td>一键流转按钮 / 拖拽</td><td><span class="st part">弱</span></td><td>需进入编辑弹窗手动改状态，无流转按钮</td></tr>
+      <tr><td>燃尽图</td><td>基于真实剩余工作量</td><td><span class="st part">有缺陷</span></td><td>用 createdAt/updatedAt 近似，无剩余工作量维度（见 P1-5）</td></tr>
+      <tr><td>速度图 / 迭代报表</td><td>Velocity、完成率、趋势</td><td><span class="st no">缺失</span></td><td>无任何统计报表（后端有 stats/burndown 但前端未接）</td></tr>
+      <tr><td>甘特图 / 时间轴</td><td>迭代排期可视化</td><td><span class="st no">缺失</span></td><td>迭代域内无甘特/时间轴</td></tr>
+      <tr><td>迭代回顾</td><td>回顾模板、行动项沉淀</td><td><span class="st no">缺失</span></td><td>无回顾字段/流程</td></tr>
+      <tr><td>发布 / 版本关联</td><td>迭代与版本/发布关联</td><td><span class="st no">缺失</span></td><td>无发布管理模块衔接</td></tr>
+      <tr><td>批量操作</td><td>批量排期/删除/流转</td><td><span class="st no">缺失</span></td><td>仅单条操作</td></tr>
+      <tr><td>权限控制</td><td>RBAC 菜单 + 按钮级</td><td><span class="st ok">已支持</span></td><td>menu/button 两级权限 + v-permission 指令</td></tr>
+      <tr><td>数据一致性</td><td>删除/排期后引用正确</td><td><span class="st no">悬空</span></td><td>删除迭代不清空需求 iteration_id（见 P0-3）</td></tr>
+      <tr><td>需求侧联动</td><td>需求列表/详情展示迭代</td><td><span class="st part">弱</span></td><td>需求详情页只显示 iterationId 数字而非名称</td></tr>
+      <tr><td>通知 / 提醒</td><td>迭代开始/逾期提醒</td><td><span class="st no">缺失</span></td><td>无</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- ============ P0 缺陷 ============ -->
+  <h2>四、P0 级缺陷（功能可用性受阻，建议优先修复）</h2>
+  <div class="issue">
+    <div class="hd"><span class="t">P0-1 · 列表搜索/筛选为「假功能」</span><span class="pill p0">P0</span></div>
+    <div class="desc">迭代列表页提供名称、状态筛选框并发送参数，但后端接口 <b>未声明接收这两个参数</b>，服务层仅按 projectId 过滤 —— 用户搜索任何条件，返回结果都一样，误导性极强。</div>
+    <div class="where">IterationController.java:29-35（listByProject 仅 pageNum/pageSize）· IterationServiceImpl.java:37-50（wrapper 仅 eq projectId）· index.vue:319-337（前端照常传参）</div>
+  </div>
+  <div class="issue">
+    <div class="hd"><span class="t">P0-2 · 迭代状态值三处不一致</span><span class="pill p0">P0</span></div>
+    <div class="desc">新建迭代时后端写死中文 <code>status = "未开始"</code>（存的是枚举 label），而前端筛选下拉提交的是英文 key <code>not_started</code>，枚举类又是 <code>NOT_STARTED</code>。三套值互不匹配：<b>即便补上后端筛选逻辑也必然查不到数据</b>；且前端 getStatusType/getStatusLabel 各用一套映射（中文 key / 英文 key），隐患极大。</div>
+    <div class="where">IterationServiceImpl.java:100（setStatus("未开始")）· IterationStatus.java:5（NOT_STARTED("未开始")）· index.vue:13-16（value="not_started"）· index.vue:290-308（两套映射）</div>
+  </div>
+  <div class="issue">
+    <div class="hd"><span class="t">P0-3 · 删除迭代后需求引用悬空</span><span class="pill p0">P0</span></div>
+    <div class="desc"><code>delete</code> 只做迭代的逻辑删除，<b>不清理该迭代下所有需求的 iteration_id</b>。删除后需求仍指向一个不存在的迭代，导致需求详情、筛选、统计出现脏数据。</div>
+    <div class="where">IterationServiceImpl.java:146-154（delete 仅 deleteById，无需求清理）</div>
+  </div>
+
+  <!-- ============ P1 缺失 ============ -->
+  <h2>五、P1 级能力缺失（对标行业基准的核心差距）</h2>
+  <div class="issue p1">
+    <div class="hd"><span class="t">P1-1 · 无迭代详情页</span><span class="pill p1">P1</span></div>
+    <div class="desc">行业标配的「迭代详情」可一屏查看需求清单、状态分布、进度与成员负载。当前点击迭代无详情入口，只能靠列表行 + 弹窗。</div>
+  </div>
+  <div class="issue p1">
+    <div class="hd"><span class="t">P1-2 · 无敏捷看板</span><span class="pill p1">P1</span></div>
+    <div class="desc">看板（状态列 + 泳道 + 拖拽流转）是迭代执行的灵魂。当前需求状态流转靠需求模块自身，迭代域内无任何可视化执行视图。</div>
+  </div>
+  <div class="issue p1">
+    <div class="hd"><span class="t">P1-3 · 容量规划名存实亡</span><span class="pill p1">P1</span></div>
+    <div class="desc">capacity 只有一个数字字段，无需求工作量（人天/故事点）汇总、无「已排工作量 vs 容量」对比、无超载预警，排期全凭人工感觉。</div>
+  </div>
+  <div class="issue p1">
+    <div class="hd"><span class="t">P1-4 · 无排期冲突检测</span><span class="pill p1">P1</span></div>
+    <div class="desc"><code>syncIterationRequirements</code> 直接把需求从原迭代改排到新迭代，静默覆盖，无「该需求已在 XX 迭代，确认移入？」的提示。</div>
+    <div class="where">IterationServiceImpl.java:251-279（先清空再覆盖，无冲突判断）</div>
+  </div>
+  <div class="issue p1">
+    <div class="hd"><span class="t">P1-5 · 燃尽图数据源失真</span><span class="pill p1">P1</span></div>
+    <div class="desc">完成时间用 <code>updated_at</code> 近似（无状态流转日志表），且按「需求个数」而非「剩余工作量」计算；理想线为前端等差近似。当批量导入/批量更新需求时图表严重失真。</div>
+    <div class="where">IterationServiceImpl.java:180-199（createdAt/updatedAt 近似）· index.vue:474-476（理想线等差计算）</div>
+  </div>
+
+  <!-- ============ P2 增强 ============ -->
+  <h2>六、P2 级增强建议（对标进阶能力）</h2>
+  <div class="issue p2">
+    <div class="hd"><span class="t">P2-1 · 迭代目标与回顾沉淀</span><span class="pill p2">P2</span></div>
+    <div class="desc">增加「迭代目标」字段 + 结束后的回顾（做得好/待改进/行动项模板），支持 PDCA 循环。</div>
+  </div>
+  <div class="issue p2">
+    <div class="hd"><span class="t">P2-2 · 速度图与迭代报表</span><span class="pill p2">P2</span></div>
+    <div class="desc">多迭代速度对比、完成率趋势、延期迭代标识，为排期提供数据支撑。后端已有 stats/burndown（带组织过滤）未被前端使用，可复用。</div>
+  </div>
+  <div class="issue p2">
+    <div class="hd"><span class="t">P2-3 · 状态自动流转</span><span class="pill p2">P2</span></div>
+    <div class="desc">开始日期到达自动置「进行中」、结束日期逾期自动置「已关闭/需评审」，减少手工维护。</div>
+  </div>
+  <div class="issue p2">
+    <div class="hd"><span class="t">P2-4 · 需求侧迭代联动补全</span><span class="pill p2">P2</span></div>
+    <div class="desc">需求列表页增加迭代列与筛选（含「未排期」视图）；需求详情页将 iterationId 数字改为可跳转的迭代名称。</div>
+    <div class="where">requirements/detail.vue:49（仅显示数字 ID）</div>
+  </div>
+  <div class="issue p2">
+    <div class="hd"><span class="t">P2-5 · 批量操作与提醒</span><span class="pill p2">P2</span></div>
+    <div class="desc">批量排期/删除；迭代开始、逾期、容量超载的站内/消息提醒。</div>
+  </div>
+
+  <!-- ============ 易用性 ============ -->
+  <h2>七、易用性体检</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th style="width:190px">体检项</th><th style="width:110px">评价</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>搜索框可见但无效</td><td><span class="st no">差</span></td><td>最伤信任感的问题 —— 交互存在却无结果，用户会以为是自己的问题</td></tr>
+        <tr><td>列表基础操作</td><td><span class="st ok">好</span></td><td>分页、列自定义、进度条、空态处理规范，符合项目既有组件体系</td></tr>
+        <tr><td>创建/编辑弹窗</td><td><span class="st ok">好</span></td><td>表单校验、关联需求多选带状态标注，体验合格</td></tr>
+        <tr><td>无拖拽 / 无批量</td><td><span class="st no">差</span></td><td>排期、流转、删除均逐条操作，与行业工具的拖拽体验差距明显</td></tr>
+        <tr><td>无状态快捷流转</td><td><span class="st part">一般</span></td><td>改状态要进编辑弹窗，无「开始迭代/完成迭代」一键操作</td></tr>
+        <tr><td>无详情视图</td><td><span class="st part">一般</span></td><td>迭代内容（需求清单）无法集中查看，需去需求列表逐个找</td></tr>
+        <tr><td>数据可信度</td><td><span class="st part">一般</span></td><td>燃尽图近似计算 + 删除悬空引用，图表数字可能误导决策</td></tr>
+        <tr><td>信息呈现一致性</td><td><span class="st part">一般</span></td><td>需求详情页显示数字 ID 而非迭代名称，跨模块割裂</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ============ 路线图 ============ -->
+  <h2>八、改进路线图（按投入产出排序）</h2>
+  <div class="road">
+    <div class="step">
+      <div class="ph p0">阶段一<br>修 Bug</div>
+      <div class="box"><b>修复 3 个 P0 缺陷（约 1~2 天）</b>
+        <ul>
+          <li>后端补齐 name/status 模糊查询 + 状态枚举归一（统一为英文 key 入库，前端映射展示）</li>
+          <li>删除迭代时事务内清空需求 iteration_id</li>
+        </ul>
+      </div>
+    </div>
+    <div class="step">
+      <div class="ph p1">阶段二<br>补核心</div>
+      <div class="box"><b>补齐迭代执行闭环（约 1 周）</b>
+        <ul>
+          <li>迭代详情页：需求清单 + 状态分布 + 一键状态流转（开始/完成/关闭）</li>
+          <li>需求排期冲突提示 + 容量对比（需求工作量汇总 vs capacity）</li>
+          <li>燃尽图改真实数据：新增需求状态流转日志表，按剩余工作量绘制</li>
+        </ul>
+      </div>
+    </div>
+    <div class="step">
+      <div class="ph p2">阶段三<br>体验进阶</div>
+      <div class="box"><b>对标行业体验（约 2~3 周）</b>
+        <ul>
+          <li>迭代看板（拖拽流转，可复用 bitable 的 KanbanView 组件改造）</li>
+          <li>速度图 / 迭代对比报表 / 未排期 Backlog 视图</li>
+          <li>迭代目标 + 回顾模板；日期驱动的状态自动流转；批量操作与提醒</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    检视依据：源码走查（demand_frontend / demand_backend / database）· 行业基准（Atlassian Jira Agile 文档、禅道 Scrum 模型、ONES 敏捷研发实践、TAPD/Azure DevOps 能力调研）<br>
+    本报告由 AI 检视生成，建议开发评审后纳入迭代排期。
+  </div>
+</div>
+</body>
+</html>

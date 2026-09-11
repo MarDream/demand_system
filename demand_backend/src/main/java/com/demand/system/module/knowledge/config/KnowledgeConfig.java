@@ -19,6 +19,10 @@ public class KnowledgeConfig {
 
     // ==== Search ====
     private int searchTopK = 20;
+    /** 进入 LLM 上下文的片段最低分数（rerank/语义相关性量纲），低分尾部不参与回答生成 */
+    private double contextMinScore = 0.15;
+    /** 注入 LLM 的参考资料字符预算，超出时丢弃低分尾部片段 */
+    private int contextMaxChars = 24000;
 
     // ==== Multi-hop event expansion ====
     /** max multi-hop expansion depth */
@@ -91,6 +95,22 @@ public class KnowledgeConfig {
 
     public void setSearchTopK(int searchTopK) {
         this.searchTopK = searchTopK;
+    }
+
+    public double getContextMinScore() {
+        return contextMinScore;
+    }
+
+    public void setContextMinScore(double contextMinScore) {
+        this.contextMinScore = contextMinScore;
+    }
+
+    public int getContextMaxChars() {
+        return contextMaxChars;
+    }
+
+    public void setContextMaxChars(int contextMaxChars) {
+        this.contextMaxChars = contextMaxChars;
     }
 
     public int getMaxHops() {

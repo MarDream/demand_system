@@ -126,6 +126,21 @@
                 @preview="handleAttachmentPreview"
               />
             </div>
+
+            <!-- 动态字段（按需求类型 + 流程节点权限渲染） -->
+            <div v-if="dynamicFields.length" class="dynamic-section">
+              <el-divider content-position="left">
+                <span class="dynamic-section__title">
+                  {{ selectedTypeLabel || '当前类型' }} · 扩展信息
+                </span>
+              </el-divider>
+              <DynamicFieldsForm
+                ref="dynamicFieldsRef"
+                v-model="dynamicValues"
+                :fields="dynamicFields"
+                :users="users"
+              />
+            </div>
           </el-form>
         </el-card>
       </el-col>
@@ -438,9 +453,11 @@ import { resolveErrorMessage } from '@/utils/error'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import FilePreviewDialog from '@/components/document/FilePreviewDialog.vue'
+import DynamicFieldsForm from './components/DynamicFieldsForm.vue'
 import { useUserStore } from '@/stores'
 import type { NextNodeOption, Requirement, RequirementAttachment, RequirementTemplate, TemplateSection } from '@/types/requirement'
 import type { OrgNode, User } from '@/types/user'
+import type { CustomFieldValuePayload, DynamicFieldSchema } from '@/api/modules/requirementConfig'
 
 const route = useRoute()
 const router = useRouter()
@@ -456,6 +473,11 @@ const selectedRelations = ref<any[]>([])
 const createFormVisibleFields = ref<string[]>([])
 const createFormRequiredFields = ref<string[]>([])
 const currentRequirement = ref<Requirement | null>(null)
+
+// 需求动态字段（按需求类型 + 流程节点权限渲染）
+const dynamicFields = ref<DynamicFieldSchema[]>([])
+const dynamicValues = reactive<Record<string, CustomFieldValuePayload>>({})
+const dynamicFieldsRef = ref<InstanceType<typeof DynamicFieldsForm> | null>(null)
 
 // Data
 const projects = ref<any[]>([])
@@ -1032,6 +1054,10 @@ function applyRequirementToForm(data: Requirement) {
   formData.estimatedHours = data.estimatedHours || undefined
   formData.ccUserIds = Array.isArray(data.ccUserIds) ? data.ccUserIds : []
   formData.attachments = Array.isArray(data.attachments) ? data.attachments : []
+  // 编辑态：需求详情已返回带当前流程节点权限的动态字段 schema，直接复用
+  if (Array.isArray(data.dynamicFields)) {
+    applyDynamicSchema(data.dynamicFields)
+  }
 }
 
 async function loadEditData(targetId = editId.value) {
@@ -1167,9 +1193,71 @@ function ensureDefaultAssignee() {
 
 async function validateForms() {
   ensureDefaultAssignee()
-  const basicValid = await formRef.value?.validate().catch(() => false)
-  const infoValid = await infoFormRef.value?.validate().catch(() => false)
-  return !!basicValid && !!infoValid
+  const [basicValid, infoValid, dynamicValid] = await Promise.all([
+    formRef.value?.validate().catch(() => false),
+    infoFormRef.value?.validate().catch(() => false),
+    dynamicFieldsRef.value?.validate() ?? Promise.resolve(true),
+  ])
+  return !!basicValid && !!infoValid && !!dynamicValid
+}
+
+// ------------------------------------------------------------------
+// 需求动态字段
+// ------------------------------------------------------------------
+
+/** 将后端返回的 schema 当前值回填到本地值表 */
+function applyDynamicSchema(schema: DynamicFieldSchema[]) {
+  dynamicFields.value = Array.isArray(schema) ? schema : []
+  for (const code of Object.keys(dynamicValues)) {
+    delete dynamicValues[code]
+  }
+  for (const field of dynamicFields.value) {
+    dynamicValues[field.fieldCode] = {
+      fieldCode: field.fieldCode,
+      value: field.value ?? null,
+      valueNumber: field.valueNumber ?? null,
+      valueDate: field.valueDate ?? null,
+      valueBoolean: field.valueBoolean ?? null,
+      valueUserId: field.valueUserId ?? null,
+      values: field.values ? [...field.values] : null,
+    }
+  }
+}
+
+async function loadDynamicFieldSchema() {
+  if (!formData.projectId || !formData.type) {
+    dynamicFields.value = []
+    for (const code of Object.keys(dynamicValues)) delete dynamicValues[code]
+    return
+  }
+  // 详情接口已给出当前节点的字段权限与已存值，优先使用它
+  if (hasDetailSchemaForCurrentType() && dynamicFields.value.length > 0) {
+    return
+  }
+  try {
+    const schema = await requirementConfigApi.getCustomFieldSchema(
+      formData.projectId,
+      formData.type,
+    ) as unknown as DynamicFieldSchema[]
+    applyDynamicSchema(schema)
+  } catch {
+    dynamicFields.value = []
+  }
+}
+
+/** 编辑已提交需求时，schema 由详情接口提供，避免覆盖已存值 */
+function hasDetailSchemaForCurrentType() {
+  const detail = currentRequirement.value
+  return !!detail && detail.type === formData.type
+    && Array.isArray(detail.dynamicFields) && detail.dynamicFields.length > 0
+}
+
+/** 仅提交当前节点允许编辑的字段，后端会拒绝越权字段 */
+function buildCustomFieldsPayload(): CustomFieldValuePayload[] {
+  const allowed = new Set(
+    dynamicFields.value.filter((f) => f.editable).map((f) => f.fieldCode),
+  )
+  return Object.values(dynamicValues).filter((item) => allowed.has(item.fieldCode))
 }
 
 function syncDescriptionFromEditor() {
@@ -1198,6 +1286,7 @@ function buildRequirementPayload() {
     ccUserIds,
     attachments: formData.attachments,
     parentId: parentId.value,
+    customFields: buildCustomFieldsPayload(),
   }
 
   if (isEditMode.value) {
@@ -1230,6 +1319,7 @@ function buildDraftPayload() {
     ccUserIds,
     attachments: formData.attachments,
     parentId: parentId.value ?? currentRequirement.value?.parentId,
+    customFields: buildCustomFieldsPayload(),
   }
 
   if (shouldShowField('startDate') || isEditMode.value) payload.startDate = normalizeDateValue(formData.startDate)
@@ -1501,6 +1591,12 @@ onMounted(async () => {
 
 watch(() => formData.type, (typeCode) => {
   void applyRequirementTemplate(typeCode, true)
+  void loadDynamicFieldSchema()
+})
+
+// 项目或需求类型变化会改变字段集合与流程节点权限，需重新拉取 schema
+watch([() => formData.projectId, () => formData.type], () => {
+  void loadDynamicFieldSchema()
 })
 </script>
 
@@ -1512,6 +1608,19 @@ watch(() => formData.type, (typeCode) => {
   flex-direction: column;
   max-width: 1280px;
   margin: 0 auto;
+}
+
+.dynamic-section {
+  margin-top: 4px;
+
+  :deep(.el-divider__text) {
+    font-size: 13px;
+    color: var(--el-text-color-primary);
+  }
+}
+
+.dynamic-section__title {
+  font-weight: 600;
 }
 
 .card-titlebar {

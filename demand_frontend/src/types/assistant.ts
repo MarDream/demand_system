@@ -105,6 +105,8 @@ export interface AssistantMessage {
   citations?: CitationReference[]
   /** 检索降级与能力提示 */
   warnings?: string[]
+  /** 推荐追问问题（知识库问答时由后端产出） */
+  suggestedFollowUps?: string[]
   /** 深度思考内容（LLM reasoning，可为 null） */
   reasoning?: string | null
   /** 输入（提示词）token 数 */
@@ -158,6 +160,14 @@ export interface AssistantChatRequest {
   searchScopes?: AssistantSearchScope[]
   /** 上传的文件附件（文件ID + 客户端提取的文本内容） */
   files?: AssistantFileAttachment[]
+  /** 多轮对话历史（旧→新），用于查询改写与回答上下文；建议传最近 3~6 条 */
+  history?: ConversationTurn[]
+}
+
+/** 对话历史中的一轮发言 */
+export interface ConversationTurn {
+  role: 'user' | 'assistant'
+  content: string
 }
 
 export interface AssistantFileAttachment {

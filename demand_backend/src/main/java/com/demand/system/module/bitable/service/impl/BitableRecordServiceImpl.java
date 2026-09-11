@@ -24,6 +24,10 @@ import com.demand.system.module.bitable.mapper.BitableCommentMapper;
 import com.demand.system.module.bitable.mapper.BitableFieldMapper;
 import com.demand.system.module.bitable.mapper.BitableRecordMapper;
 import com.demand.system.module.bitable.mapper.BitableTableMapper;
+import com.demand.system.module.bitable.query.FilterGroupNode;
+import com.demand.system.module.bitable.query.FilterNode;
+import com.demand.system.module.bitable.query.FilterPredicateNode;
+import com.demand.system.module.bitable.query.FilterTreeParser;
 import com.demand.system.module.bitable.service.BitableAutomationService;
 import com.demand.system.module.bitable.service.BitableCollaborationService;
 import com.demand.system.module.bitable.service.BitableFormulaService;
@@ -886,156 +890,91 @@ public class BitableRecordServiceImpl implements BitableRecordService {
     // ==================== 私有辅助方法：筛选 ====================
 
     /**
-     * 应用层筛选。
-     * filterConfig 支持两种格式：
-     * 1. 简单数组：[{fieldId, operator, value, conjunction}, ...]（默认 AND 逻辑）
-     * 2. 嵌套逻辑：{logic: "and"/"or", rules: [...]}
+     * 应用层筛选。筛选配置先解析为统一递归规则树，再执行短路匹配。
      */
     private List<BitableRecordVO> applyFilter(List<BitableRecordVO> records, Object filterConfig,
                                                Map<Long, BitableField> fieldMap) {
-        if (filterConfig == null) {
+        FilterNode filterTree = FilterTreeParser.parse(filterConfig);
+        if (filterTree == null) {
             return records;
         }
-
-        // 解析为规则列表和逻辑关系
-        List<FilterRule> rules = new ArrayList<>();
-        String effectiveLogic = "and";
-
-        if (filterConfig instanceof List<?> list) {
-            // 简单数组格式
-            for (Object item : list) {
-                FilterRule rule = parseFilterRule(item);
-                if (rule != null) {
-                    rules.add(rule);
-                }
-            }
-        } else if (filterConfig instanceof Map<?, ?> map) {
-            // 嵌套逻辑格式
-            Object logicObj = map.get("logic");
-            if (logicObj instanceof String ls) {
-                effectiveLogic = ls.toLowerCase();
-            }
-            Object rulesObj = map.get("rules");
-            if (rulesObj instanceof List<?> list) {
-                for (Object item : list) {
-                    FilterRule rule = parseFilterRule(item);
-                    if (rule != null) {
-                        rules.add(rule);
-                    }
-                }
-            }
-        }
-
-        if (rules.isEmpty()) {
-            return records;
-        }
-
-        final String finalLogic = effectiveLogic;
-        final List<FilterRule> finalRules = new ArrayList<>(rules);
 
         return records.stream()
-                .filter(record -> matchesRecord(record, finalRules, finalLogic, fieldMap))
+                .filter(record -> matchesNode(record, filterTree, fieldMap))
                 .collect(Collectors.toList());
     }
 
-    private boolean matchesRecord(BitableRecordVO record, List<FilterRule> rules, String logic,
-                                   Map<Long, BitableField> fieldMap) {
-        if ("or".equals(logic)) {
-            for (FilterRule rule : rules) {
-                if (matchesRule(record, rule, fieldMap)) return true;
-            }
-            return false;
-        } else {
-            for (FilterRule rule : rules) {
-                if (!matchesRule(record, rule, fieldMap)) return false;
-            }
-            return true;
+    /** 递归执行逻辑组或字段谓词。 */
+    private boolean matchesNode(BitableRecordVO record, FilterNode node,
+                                Map<Long, BitableField> fieldMap) {
+        if (node instanceof FilterPredicateNode predicate) {
+            return matchesPredicate(record, predicate, fieldMap);
         }
-    }
 
-    /**
-     * 解析单个筛选规则
-     */
-    @SuppressWarnings("unchecked")
-    private FilterRule parseFilterRule(Object item) {
-        if (!(item instanceof Map<?, ?> map)) {
-            return null;
-        }
-        Long fieldId = asLong(map.get("fieldId"));
-        String operator = asString(map.get("operator"));
-        if (fieldId == null || operator == null) {
-            return null;
-        }
-        Object value = map.get("value");
-        String conjunction = asString(map.get("conjunction"));
-        if (conjunction == null) {
-            conjunction = "and";
-        }
-        return new FilterRule(fieldId, operator, value, conjunction);
-    }
-
-    /**
-     * 判断单条记录是否满足筛选条件
-     */
-    private boolean applyFilterVO(BitableRecordVO record, List<FilterRule> rules, String logic,
-                                   Map<Long, BitableField> fieldMap) {
-        if ("or".equals(logic)) {
-            // OR 逻辑：任一条件满足即通过
-            for (FilterRule rule : rules) {
-                if (matchesRule(record, rule, fieldMap)) {
+        FilterGroupNode group = (FilterGroupNode) node;
+        if (group.isOr()) {
+            for (FilterNode child : group.children()) {
+                if (matchesNode(record, child, fieldMap)) {
                     return true;
                 }
             }
             return false;
-        } else {
-            // AND 逻辑（默认）：所有条件都满足才通过
-            for (FilterRule rule : rules) {
-                if (!matchesRule(record, rule, fieldMap)) {
-                    return false;
-                }
-            }
-            return true;
         }
+
+        for (FilterNode child : group.children()) {
+            if (!matchesNode(record, child, fieldMap)) {
+                return false;
+            }
+        }
+        return true;
     }
 
-    /**
-     * 判断单条记录是否满足单个筛选规则
-     */
-    private boolean matchesRule(BitableRecordVO record, FilterRule rule,
-                                Map<Long, BitableField> fieldMap) {
+    /** 判断单条字段谓词。 */
+    private boolean matchesPredicate(BitableRecordVO record, FilterPredicateNode predicate,
+                                     Map<Long, BitableField> fieldMap) {
         BitableCellValueVO cell = record.getCells() != null
-                ? record.getCells().get(rule.fieldId) : null;
+                ? record.getCells().get(predicate.fieldId()) : null;
+        Object filterValue = predicate.value();
+        BitableField field = fieldMap.get(predicate.fieldId());
 
-        String operator = rule.operator.toLowerCase();
-        Object filterValue = rule.value;
+        return switch (predicate.operator()) {
+            case "is_empty" -> isCellEmpty(cell);
+            case "is_not_empty" -> !isCellEmpty(cell);
+            case "eq", "equals" -> compareCell(cell, filterValue, field) == 0;
+            case "ne", "not_equals" -> compareCell(cell, filterValue, field) != 0;
+            case "contains" -> containsValue(cell, filterValue);
+            case "not_contains" -> !containsValue(cell, filterValue);
+            case "gt" -> compareCell(cell, filterValue, field) > 0;
+            case "lt" -> compareCell(cell, filterValue, field) < 0;
+            case "gte" -> compareCell(cell, filterValue, field) >= 0;
+            case "lte" -> compareCell(cell, filterValue, field) <= 0;
+            case "between" -> matchesBetween(cell, filterValue, field);
+            default -> false;
+        };
+    }
 
-        switch (operator) {
-            case "is_empty":
-                return isCellEmpty(cell);
-            case "is_not_empty":
-                return !isCellEmpty(cell);
-            case "eq":
-            case "equals":
-                return compareCell(cell, filterValue, fieldMap.get(rule.fieldId)) == 0;
-            case "ne":
-            case "not_equals":
-                return compareCell(cell, filterValue, fieldMap.get(rule.fieldId)) != 0;
-            case "contains":
-                return containsValue(cell, filterValue);
-            case "not_contains":
-                return !containsValue(cell, filterValue);
-            case "gt":
-                return compareCell(cell, filterValue, fieldMap.get(rule.fieldId)) > 0;
-            case "lt":
-                return compareCell(cell, filterValue, fieldMap.get(rule.fieldId)) < 0;
-            case "gte":
-                return compareCell(cell, filterValue, fieldMap.get(rule.fieldId)) >= 0;
-            case "lte":
-                return compareCell(cell, filterValue, fieldMap.get(rule.fieldId)) <= 0;
-            default:
-                // 未知操作符，不筛选（放行）
-                return true;
+    /** between 使用闭区间 [min, max]，支持数组和对象两种配置。 */
+    private boolean matchesBetween(BitableCellValueVO cell, Object value, BitableField field) {
+        if (cell == null || value == null) {
+            return false;
         }
+
+        Object min = null;
+        Object max = null;
+        if (value instanceof List<?> list && list.size() == 2) {
+            min = list.get(0);
+            max = list.get(1);
+        } else if (value instanceof Map<?, ?> map
+                && map.containsKey("min") && map.containsKey("max")) {
+            min = map.get("min");
+            max = map.get("max");
+        }
+        if (min == null || max == null) {
+            return false;
+        }
+
+        return compareCell(cell, min, field) >= 0
+                && compareCell(cell, max, field) <= 0;
     }
 
     /**
@@ -1249,21 +1188,6 @@ public class BitableRecordServiceImpl implements BitableRecordService {
     }
 
     // ==================== 内部数据类 ====================
-
-    /** 筛选规则 */
-    private static class FilterRule {
-        final Long fieldId;
-        final String operator;
-        final Object value;
-        final String conjunction;
-
-        FilterRule(Long fieldId, String operator, Object value, String conjunction) {
-            this.fieldId = fieldId;
-            this.operator = operator;
-            this.value = value;
-            this.conjunction = conjunction;
-        }
-    }
 
     /** 排序规则 */
     private static class SortRule {

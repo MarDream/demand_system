@@ -32,6 +32,9 @@ public class RequirementDraftCreateDTO {
 
     private List<RequirementAttachmentDTO> attachments;
 
+    /** 动态字段值（fieldCode + typed value）。 */
+    private List<CustomFieldValueDTO> customFields;
+
     public Long getProjectId() {
         return projectId;
     }
@@ -134,5 +137,13 @@ public class RequirementDraftCreateDTO {
 
     public void setAttachments(List<RequirementAttachmentDTO> attachments) {
         this.attachments = attachments;
+    }
+
+    public List<CustomFieldValueDTO> getCustomFields() {
+        return customFields;
+    }
+
+    public void setCustomFields(List<CustomFieldValueDTO> customFields) {
+        this.customFields = customFields;
     }
 }

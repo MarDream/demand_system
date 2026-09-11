@@ -1081,7 +1081,7 @@ public class WorkflowEngineService {
         boolean canModifyType = canOperate && WorkflowNodeUtils.readBooleanProperty(currentNode, "allowModifyType", false);
         actions.setCanModifyType(canModifyType);
 
-        // 筛选有活跃工作流版本且与当前类型不同的类型列表
+        // 返回所有可用类型（包含当前类型），便于前端默认回显当前工单类型
         if (canModifyType) {
             List<RequirementTypeConfig> allTypes = requirementTypeMapper.selectList(
                     new LambdaQueryWrapper<RequirementTypeConfig>()
@@ -1089,10 +1089,6 @@ public class WorkflowEngineService {
             );
             List<WorkflowAvailableActionsDTO.RequirementTypeOption> typeOptions = new ArrayList<>();
             for (RequirementTypeConfig config : allTypes) {
-                // 跳过当前类型
-                if (Objects.equals(config.getCode(), requirement.getType())) {
-                    continue;
-                }
                 // 跳过已禁用的类型（工作流停用时联动禁用，不作为切换候选）
                 if (!Boolean.TRUE.equals(config.getEnabled())) {
                     continue;

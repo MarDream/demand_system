@@ -114,6 +114,9 @@ public class RequirementVO {
 
     private Boolean followed;
 
+    /** 动态字段 schema（含权限与当前值），仅返回当前用户可见字段。 */
+    private List<CustomFieldConfigDTO> dynamicFields;
+
     public Long getId() {
         return id;
     }
@@ -512,5 +515,13 @@ public class RequirementVO {
 
     public void setFollowed(Boolean followed) {
         this.followed = followed;
+    }
+
+    public List<CustomFieldConfigDTO> getDynamicFields() {
+        return dynamicFields;
+    }
+
+    public void setDynamicFields(List<CustomFieldConfigDTO> dynamicFields) {
+        this.dynamicFields = dynamicFields;
     }
 }

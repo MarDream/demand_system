@@ -31,6 +31,8 @@ import com.demand.system.module.workflow.dto.WorkflowValidationIssue;
 import com.demand.system.module.workflow.dto.WorkflowValidationReport;
 import com.demand.system.module.workflow.engine.WorkflowGraphCompiler;
 import com.demand.system.module.workflow.engine.WorkflowGraphValidator;
+import com.demand.system.module.workflow.entity.WorkflowHistory;
+import com.demand.system.module.workflow.mapper.WorkflowHistoryMapper;
 import com.demand.system.module.workflow.service.WorkflowActivationService;
 import com.demand.system.module.workflow.support.WorkflowVersionUtils;
 import com.demand.system.module.knowledge.entity.KnowledgeBase;
@@ -39,6 +41,7 @@ import com.demand.system.module.project.mapper.ProjectMapper;
 import com.demand.system.module.project.entity.Project;
 import com.demand.system.module.auth.mapper.SysUserMapper;
 import com.demand.system.module.auth.entity.SysUser;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.BeanUtils;
 import org.springframework.util.StringUtils;
 import org.springframework.stereotype.Service;
@@ -47,6 +50,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -72,6 +76,8 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
     private final WorkflowGraphCompiler workflowGraphCompiler;
     private final WorkflowActivationService workflowActivationService;
     private final KnowledgeBaseMapper knowledgeBaseMapper;
+    private final WorkflowHistoryMapper workflowHistoryMapper;
+    private final ObjectMapper objectMapper;
 
     public WorkflowConfigServiceImpl(WorkflowVersionMapper workflowVersionMapper, WorkflowDefinitionMapper workflowDefinitionMapper,
                                    WorkflowNodeMapper workflowNodeMapper,
@@ -80,7 +86,9 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
                                    ProjectMapper projectMapper, SysUserMapper sysUserMapper,
                                    WorkflowGraphValidator workflowGraphValidator, WorkflowGraphCompiler workflowGraphCompiler,
                                    WorkflowActivationService workflowActivationService,
-                                   KnowledgeBaseMapper knowledgeBaseMapper) {
+                                   KnowledgeBaseMapper knowledgeBaseMapper,
+                                   WorkflowHistoryMapper workflowHistoryMapper,
+                                   ObjectMapper objectMapper) {
         this.workflowVersionMapper = workflowVersionMapper;
         this.workflowDefinitionMapper = workflowDefinitionMapper;
         this.workflowNodeMapper = workflowNodeMapper;
@@ -94,6 +102,8 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         this.workflowGraphCompiler = workflowGraphCompiler;
         this.workflowActivationService = workflowActivationService;
         this.knowledgeBaseMapper = knowledgeBaseMapper;
+        this.workflowHistoryMapper = workflowHistoryMapper;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -222,6 +232,8 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             workflowVersionMapper.updateById(existingVersion);
 
             log.info("更新工作流版本成功，projectId={}, versionId={}, status={}", normalizedProjectId, existingVersion.getId(), existingVersion.getActivationStatus());
+            recordHistory(existingVersion, "update",
+                    "编辑保存 V" + existingVersion.getVersion() + "「" + (existingVersion.getName() != null ? existingVersion.getName() : "") + "」");
             WorkflowVersionDTO dto = toVersionDTO(existingVersion);
             dto.setValidationIssues(issuesA);
             return dto;
@@ -269,6 +281,8 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         workflowVersionMapper.updateById(draftVersion);
 
         log.info("新建工作流草稿成功，projectId={}, versionId={}, version={}", normalizedProjectId, draftVersion.getId(), draftVersion.getVersion());
+        recordHistory(draftVersion, "create",
+                "新建草稿 V" + draftVersion.getVersion() + "「" + (draftVersion.getName() != null ? draftVersion.getName() : "") + "」");
         WorkflowVersionDTO dto = toVersionDTO(draftVersion);
         dto.setValidationIssues(issuesB);
         return dto;
@@ -462,6 +476,8 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         workflowApprovalMapper.insert(approval);
 
         log.info("提交工作流审核成功，projectId={}, versionId={}, 原状态={}", normalizedProjectId, draftVersion.getId(), status);
+        recordHistory(draftVersion, "submit",
+                "提交审核 V" + draftVersion.getVersion() + "「" + (draftVersion.getName() != null ? draftVersion.getName() : "") + "」");
     }
 
     @Override
@@ -673,6 +689,10 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             throw new BusinessException("该工作流已被历史流程实例引用，暂不支持删除");
         }
 
+        // 删除前记录历史，确保快照仍可读取（删除后节点/连线将被清除）
+        recordHistory(version, "delete",
+                "删除 V" + (version.getVersion() != null ? version.getVersion() : "") + "（" + version.getName() + "）");
+
         workflowApprovalMapper.delete(new LambdaQueryWrapper<WorkflowApproval>()
                 .eq(WorkflowApproval::getWorkflowVersionId, versionId));
         workflowNodePermissionMapper.delete(new LambdaQueryWrapper<WorkflowNodePermission>()
@@ -732,6 +752,8 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             version.setActivationStatus("approved");
             version.setUpdatedAt(LocalDateTime.now());
             workflowVersionMapper.updateById(version);
+            recordHistory(version, "approve",
+                    "审核通过 V" + (version.getVersion() != null ? version.getVersion() : "") + "（" + version.getName() + "）");
             log.info("审核通过工作流版本，versionId={}, projectId={}，请手动启用后生效", version.getId(), version.getProjectId());
         }
     }
@@ -770,6 +792,8 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             version.setActivationStatus("draft");
             version.setUpdatedAt(LocalDateTime.now());
             workflowVersionMapper.updateById(version);
+            recordHistory(version, "reject",
+                    "审核拒绝 V" + (version.getVersion() != null ? version.getVersion() : "") + "（" + version.getName() + "）");
         }
 
         log.info("审核拒绝工作流版本，approvalId={}, versionId={}", approvalId, approval.getWorkflowVersionId());
@@ -874,6 +898,49 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         LambdaQueryWrapper<WorkflowEdge> edgeQuery = new LambdaQueryWrapper<>();
         edgeQuery.eq(WorkflowEdge::getWorkflowVersionId, versionId);
         workflowEdgeMapper.delete(edgeQuery);
+    }
+
+    // ==== 修改历史记录辅助方法 ====
+
+    /**
+     * 记录工作流版本修改历史。所有写操作均通过此方法落库，
+     * 保证「修改历史」时间线与版本列表的「最近发布时间」可正确展示。
+     */
+    private void recordHistory(WorkflowVersion version, String action, String summary) {
+        if (version == null || version.getId() == null) {
+            return;
+        }
+        try {
+            WorkflowHistory history = new WorkflowHistory();
+            history.setWorkflowVersionId(version.getId());
+            history.setProjectId(version.getProjectId());
+            history.setOperatorId(SecurityUtils.getCurrentUserId());
+            history.setAction(action);
+            history.setChangeSummary(summary);
+            history.setVersionSnapshot(buildVersionSnapshot(version));
+            workflowHistoryMapper.insert(history);
+        } catch (Exception e) {
+            // 历史记录失败不应阻断主流程
+            log.warn("记录工作流修改历史失败，versionId={}, action={}", version.getId(), action, e);
+        }
+    }
+
+    /**
+     * 构建版本快照（节点数、连线数），用于历史记录展示。
+     */
+    private String buildVersionSnapshot(WorkflowVersion version) {
+        try {
+            Long nodeCount = workflowNodeMapper.selectCount(new LambdaQueryWrapper<WorkflowNode>()
+                    .eq(WorkflowNode::getWorkflowVersionId, version.getId()));
+            Long edgeCount = workflowEdgeMapper.selectCount(new LambdaQueryWrapper<WorkflowEdge>()
+                    .eq(WorkflowEdge::getWorkflowVersionId, version.getId()));
+            Map<String, Object> snapshot = new LinkedHashMap<>();
+            snapshot.put("nodes", nodeCount == null ? 0 : nodeCount);
+            snapshot.put("edges", edgeCount == null ? 0 : edgeCount);
+            return objectMapper.writeValueAsString(snapshot);
+        } catch (Exception e) {
+            return "{}";
+        }
     }
 
     /**

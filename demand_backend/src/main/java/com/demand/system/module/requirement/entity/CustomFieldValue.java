@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Objects;
 
 @TableName("requirement_custom_field_values")
@@ -24,6 +25,14 @@ public class CustomFieldValue {
     private LocalDate valueDate;
 
     private String valueUserIds;
+
+    private Integer valueBoolean;
+
+    private Long valueUserId;
+
+    private String fieldCodeSnapshot;
+
+    private LocalDateTime updatedAt;
 
     public Long getId() {
         return id;
@@ -79,6 +88,38 @@ public class CustomFieldValue {
 
     public void setValueUserIds(String valueUserIds) {
         this.valueUserIds = valueUserIds;
+    }
+
+    public Integer getValueBoolean() {
+        return valueBoolean;
+    }
+
+    public void setValueBoolean(Integer valueBoolean) {
+        this.valueBoolean = valueBoolean;
+    }
+
+    public Long getValueUserId() {
+        return valueUserId;
+    }
+
+    public void setValueUserId(Long valueUserId) {
+        this.valueUserId = valueUserId;
+    }
+
+    public String getFieldCodeSnapshot() {
+        return fieldCodeSnapshot;
+    }
+
+    public void setFieldCodeSnapshot(String fieldCodeSnapshot) {
+        this.fieldCodeSnapshot = fieldCodeSnapshot;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
     }
 
     @Override

@@ -101,7 +101,11 @@
           :table="activeTable"
           :views="views"
           :activeViewId="activeViewId"
+          :filterCount="filterCount"
+          :groupFieldId="groupFieldId"
           @add-field="handleAddField"
+          @open-filter="showFilterPanel = true"
+          @open-group="showGroupPanel = true"
           @view-switch="handleViewSwitch"
           @create-view="handleCreateView"
           @rename-table="handleRenameTable"
@@ -131,6 +135,7 @@
           @row-delete="handleRowDelete"
           @rename-field="(fieldId: number) => handleRenameField(fieldId)"
           @clone-field="handleCloneField"
+          @hide-field="handleHideField"
           @header-dragend="handleHeaderDragend"
           @ai-fill-column="handleAiFillColumn"
           @ai-classify-column="handleAiClassifyColumn"
@@ -193,7 +198,7 @@
             v-for="field in fields"
             :key="field.id"
             class="field-item"
-            :class="{ 'field-item--active': editingFieldId === field.id }"
+            :class="{ 'field-item--active': editingFieldId === field.id, 'field-item--hidden': isFieldHiddenInView(field.id) }"
             @click="selectFieldForEdit(field)"
           >
             <div class="field-item__info">
@@ -201,6 +206,15 @@
               <el-tag size="small" type="info" class="field-item__type-tag">{{ fieldTypeLabel(field.fieldType) }}</el-tag>
             </div>
             <div class="field-item__actions">
+              <el-button
+                link
+                size="small"
+                :type="isFieldHiddenInView(field.id) ? 'warning' : 'info'"
+                :title="isFieldHiddenInView(field.id) ? '当前视图中隐藏，点击恢复显示' : '在当前视图中隐藏此字段'"
+                @click.stop="handleHideField(field.id)"
+              >
+                <el-icon><View /></el-icon>
+              </el-button>
               <el-button link size="small" @click.stop="selectFieldForEdit(field)">
                 <el-icon><Edit /></el-icon>
               </el-button>
@@ -620,6 +634,24 @@
       @close="showExport = false"
     />
 
+    <!-- 筛选面板 -->
+    <FilterPanel
+      v-if="activeTableId != null"
+      v-model="showFilterPanel"
+      :fields="fields"
+      :filter-config="filterConfig"
+      @apply="handleFilterApply"
+    />
+
+    <!-- 分组面板 -->
+    <GroupPanel
+      v-if="activeTableId != null"
+      v-model="showGroupPanel"
+      :fields="fields"
+      :groupFieldId="groupFieldId"
+      @apply="handleGroupApply"
+    />
+
     <!-- 冲突提示弹窗 -->
     <ConflictDialog
       :visible="conflictVisible"
@@ -651,7 +683,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { resolveErrorMessage } from '@/utils/error'
 import { updateTable } from '@/api/modules/bitable'
-import { ArrowLeft, Plus, Delete, Edit, CopyDocument, ArrowRight, MagicStick, Grid, Menu, Calendar, Picture, Tickets } from '@element-plus/icons-vue'
+import { ArrowLeft, Plus, Delete, Edit, CopyDocument, ArrowRight, MagicStick, Grid, Menu, Calendar, Picture, Tickets, View } from '@element-plus/icons-vue'
 import { useCollapsibleSidebar } from '@/composables/useCollapsibleSidebar'
 import { useToast } from '@/composables/useToast'
 import TableSidebar from './components/TableSidebar.vue'
@@ -664,6 +696,8 @@ import GalleryView from './components/GalleryView.vue'
 import FormView from './components/FormView.vue'
 import CommentPanel from './components/CommentPanel.vue'
 import MemberManager from './components/MemberManager.vue'
+import FilterPanel from './components/FilterPanel.vue'
+import GroupPanel from './components/GroupPanel.vue'
 import ConflictDialog from './components/ConflictDialog.vue'
 import AiChatPanel from './components/AiChatPanel.vue'
 import AiFillDialog from './components/AiFillDialog.vue'
@@ -687,6 +721,7 @@ import {
   sortFields,
   listRecords,
   queryRecords,
+  queryGroupedRecords,
   createRecord,
   deleteRecord,
   updateCell,
@@ -710,6 +745,9 @@ import type {
   CellUpdateDTO,
   ViewType,
   ViewConfig,
+  FilterGroup,
+  FilterItem,
+  RecordGroupVO,
 } from '@/types/bitable'
 
 const route = useRoute()
@@ -731,6 +769,20 @@ const activeView = computed<BitableView | null>(() => {
   return views.value.find(v => v.id === activeViewId.value) ?? null
 })
 const currentViewType = computed<ViewType>(() => activeView.value?.viewType ?? 'grid')
+
+// 筛选状态（阶段一：字段筛选）
+const showFilterPanel = ref(false)
+const filterConfig = ref<FilterGroup | FilterItem[] | null>(null)
+const filterCount = computed(() => filterRuleCount(filterConfig.value))
+
+// 分组状态
+const showGroupPanel = ref(false)
+const groupFieldId = computed<number | null>(() => {
+  const config = activeView.value?.groupConfig
+  if (!config || !Array.isArray(config)) return null
+  const first = config[0] as { fieldId?: number }
+  return first?.fieldId ?? null
+})
 const renameInputRef = ref<any>(null)
 const showCommentPanel = ref(false)
 const showMemberManager = ref(false)
@@ -993,8 +1045,8 @@ async function handleSelectTable(tableId: number) {
   activeTableId.value = tableId
   await loadViews(tableId)
   await loadFields(tableId)
-  await loadRecords(tableId)
   setActiveView()
+  await loadRecords(tableId)
 }
 
 async function loadViews(tableId: number) {
@@ -1035,14 +1087,58 @@ async function loadFields(tableId: number) {
   }
 }
 
+function filterRuleCount(config: FilterGroup | FilterItem[] | null): number {
+  if (!config) return 0
+  const rules = Array.isArray(config) ? config : config.rules
+  return rules.reduce((count, rule) => {
+    if ('rules' in rule) return count + filterRuleCount(rule)
+    return count + 1
+  }, 0)
+}
+
+async function handleFilterApply(config: FilterGroup | null) {
+  filterConfig.value = config
+  const view = activeView.value
+  if (!view || !activeTableId.value) return
+
+  try {
+    await updateView(view.id, {
+      filterConfig: config ? (config as FilterGroup) : [],
+      version: view.version,
+    })
+    toast.success(config ? `筛选已应用（${filterRuleCount(config)} 条条件）` : '筛选已清空')
+    await loadViews(activeTableId.value)
+    await loadRecords(activeTableId.value)
+  } catch (e: unknown) {
+    toast.error(resolveErrorMessage(e, '保存筛选配置失败'))
+  }
+}
+
+async function handleGroupApply(fieldId: number | null) {
+  const view = activeView.value
+  if (!view || !activeTableId.value) return
+  const groupConfig = fieldId != null ? [{ fieldId }] : []
+  try {
+    await updateView(view.id, { groupConfig, version: view.version })
+    toast.success(fieldId ? '分组已设置' : '分组已清除')
+    await loadViews(activeTableId.value)
+    await loadRecords(activeTableId.value)
+  } catch (e: unknown) {
+    toast.error(resolveErrorMessage(e, '保存分组配置失败'))
+  }
+}
+
 async function loadRecords(tableId: number) {
   loadingRecords.value = true
   try {
     const view = activeView.value
-    if (view && (view.filterConfig?.length || view.sortConfig?.length)) {
+    const currentFilter = view?.filterConfig ?? null
+    filterConfig.value = currentFilter
+    const hasFilter = currentFilter && filterRuleCount(currentFilter) > 0
+    if (view && (hasFilter || (view.sortConfig?.length ?? 0) > 0)) {
       // 视图有筛选/排序配置时，走高级查询接口
       const res = await queryRecords(tableId, {
-        filterConfig: view.filterConfig,
+        filterConfig: currentFilter ?? undefined,
         sortConfig: view.sortConfig,
         viewId: view.id,
         pageNum: 1,
@@ -1154,6 +1250,9 @@ async function submitAddField() {
 function handleViewSwitch(viewId: number) {
   activeViewId.value = viewId
   router.replace({ query: { ...route.query, viewId: String(viewId) } })
+  if (activeTableId.value) {
+    loadRecords(activeTableId.value)
+  }
 }
 
 function getViewTypeName(type: ViewType): string {
@@ -1622,6 +1721,49 @@ function cancelFieldEdit() {
 
 function handleFieldConfigClose() {
   editingFieldId.value = null
+}
+
+// ===== 字段隐藏 / 恢复（当前视图）=====
+// 隐藏状态持久化到当前视图的 config.hiddenFieldIds（各视图记录独立，按视图生效）。
+// visibleFields 已按它过滤，当前视图的所有展示形态（网格/看板/日历等）一致遵循。
+function isFieldHiddenInView(fieldId: number) {
+  const config = activeView.value?.config as ViewConfig | undefined
+  return (config?.hiddenFieldIds ?? []).includes(fieldId)
+}
+
+async function handleHideField(fieldId: number) {
+  const view = activeView.value
+  if (!view || !activeTableId.value) return
+  const currentHidden = new Set((view.config as ViewConfig | undefined)?.hiddenFieldIds ?? [])
+  const willHide = !currentHidden.has(fieldId)
+
+  if (willHide) {
+    // 至少保留一列可见，避免用户隐藏全部列后无网格入口可恢复
+    const visibleCount = fields.value.filter(f => !currentHidden.has(f.id)).length
+    if (visibleCount <= 1) {
+      toast.warning('至少保留一列可见')
+      return
+    }
+  }
+
+  const nextHidden = new Set(currentHidden)
+  if (willHide) {
+    nextHidden.add(fieldId)
+  } else {
+    nextHidden.delete(fieldId)
+  }
+
+  const config: ViewConfig = view.config
+    ? { ...view.config, hiddenFieldIds: Array.from(nextHidden) }
+    : { schemaVersion: 1, hiddenFieldIds: Array.from(nextHidden) }
+
+  try {
+    await updateView(view.id, { config, version: view.version })
+    toast.success(willHide ? '列已隐藏，可在字段配置中恢复' : '列已恢复显示')
+    await loadViews(activeTableId.value!)
+  } catch (e: any) {
+    toast.error(resolveErrorMessage(e, '更新视图配置失败'))
+  }
 }
 
 async function handleCopyField(field: BitableField) {
@@ -2132,6 +2274,13 @@ watch(showImportExport, (val) => {
     background: var(--color-primary-subtle, #eff6ff) !important;
     color: var(--color-primary, #2563eb);
     box-shadow: inset 3px 0 0 var(--color-primary, #2563eb);
+  }
+
+  &--hidden {
+    .field-item__name {
+      color: var(--color-text-placeholder, #94a3b8);
+      text-decoration: line-through;
+    }
   }
 
   .field-item__info {

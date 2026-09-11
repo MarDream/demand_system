@@ -151,7 +151,8 @@ export interface BitableView {
   name: string
   viewType: ViewType
   sortConfig?: SortItem[]
-  filterConfig?: FilterItem[]
+  /** 筛选配置，兼容历史数组格式与嵌套逻辑格式 */
+  filterConfig?: FilterItem[] | FilterGroup
   groupConfig?: GroupItem[]
   columnConfig?: ColumnItem[]
   colorConfig?: unknown
@@ -169,11 +170,25 @@ export interface SortItem {
   direction: 'asc' | 'desc'
 }
 
+/** 筛选操作符 */
+export type FilterOperator =
+  | 'eq' | 'ne' | 'contains' | 'not_contains'
+  | 'gt' | 'gte' | 'lt' | 'lte'
+  | 'between' | 'is_empty' | 'is_not_empty'
+
+/** 叶子筛选条件 */
 export interface FilterItem {
   fieldId: number
-  operator: string  // eq/ne/contains/gt/lt/between/is_empty/is_not_empty
+  operator: FilterOperator
   value?: unknown
-  conjunction?: 'and' | 'or'  // 与上一条件的关系
+  /** 数组格式中与上一条规则的关系（and/or） */
+  conjunction?: 'and' | 'or'
+}
+
+/** 嵌套筛选组（递归） */
+export interface FilterGroup {
+  logic: 'and' | 'or'
+  rules: Array<FilterItem | FilterGroup>
 }
 
 export interface GroupItem {
@@ -289,18 +304,32 @@ export interface BitableAutomation {
   updatedAt: string
 }
 
-/** 记录查询参数DTO（支持筛选、排序、分组） */
+/** 记录查询参数DTO（支持筛选、排序、分组、游标分页） */
 export interface RecordQueryDTO {
   pageNum?: number
   pageSize?: number
   /** 筛选配置，支持简单数组或嵌套逻辑格式 */
-  filterConfig?: FilterItem[] | { logic: 'and' | 'or'; rules: FilterItem[] }
+  filterConfig?: FilterItem[] | FilterGroup
   /** 排序配置，格式：[{fieldId, direction}] */
   sortConfig?: SortItem[]
   /** 分组字段ID */
   groupByFieldId?: number
   /** 视图ID（如果传入，自动从视图配置加载筛选/排序） */
   viewId?: number
+  /** 是否启用游标分页 */
+  useCursor?: boolean
+  /** 上一页返回的游标 */
+  cursor?: string
+}
+
+/** 记录查询响应（分页 + 可选游标） */
+export interface RecordQueryResult<T> {
+  list: T[]
+  total: number
+  pageNum: number
+  pageSize: number
+  nextCursor?: string | null
+  hasMore?: boolean
 }
 
 /** 分组查询结果 */

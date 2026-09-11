@@ -184,6 +184,7 @@
                 :key="String(message.id)"
                 class="assistant-message"
                 :class="[`assistant-message--${message.role}`, { 'is-streaming': message.status === 'streaming' }]"
+                :data-message-id="String(message.id)"
               >
                 <div v-if="message.role === 'assistant'" class="assistant-message__avatar">
                   <AssistantAvatar :variant="avatarVariant" />
@@ -206,6 +207,8 @@
                       v-else
                       class="assistant-message__content assistant-message__content--assistant"
                       :content="message.content || ''"
+                      :citations="message.citations"
+                      @citation-click="(index: number) => handleCitationClick(message, index)"
                     />
                     <!-- 流式输出中，内容末尾闪烁光标 -->
                     <span v-if="message.status === 'streaming' && message.content" class="assistant-streaming-cursor">|</span>
@@ -335,6 +338,13 @@
                       </div>
                     </div>
                   </div>
+
+                  <FollowUpChips
+                    v-if="message.role === 'assistant' && message.status !== 'streaming'"
+                    :questions="message.suggestedFollowUps || []"
+                    :disabled="sending"
+                    @select="handleFollowUpAsk"
+                  />
 
                   <div v-if="message.role === 'assistant'" class="assistant-message__toolbar">
                     <el-tooltip content="复制回答" placement="top">
@@ -645,6 +655,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ChatDotRound, CopyDocument, Cpu, Delete, Document, FolderAdd, InfoFilled, MagicStick, Promotion, ArrowDown, FullScreen, RefreshRight, ScaleToOriginal, Plus, Close, VideoPause, Link, Search, Folder } from '@element-plus/icons-vue'
 import MarkdownContent from '@/components/common/MarkdownContent.vue'
+import FollowUpChips from '@/components/assistant/FollowUpChips.vue'
 import AssistantAvatar from '@/components/assistant/avatars/AssistantAvatar.vue'
 import AssistantTaskPanel from '@/components/assistant/AssistantTaskPanel.vue'
 import { getToken } from '@/utils/auth'
@@ -1644,6 +1655,27 @@ async function handleQuickAsk(question: string) {
   }
   draft.value = question
   await submitMessage(question, true)
+}
+
+// ===== 追问推荐 =====
+async function handleFollowUpAsk(question: string) {
+  if (!question.trim()) return
+  await submitMessage(question.trim(), true)
+}
+
+// ===== 回答角标 [N] 点击：滚动并高亮对应来源 =====
+function handleCitationClick(message: AssistantMessage, citationIndex: number) {
+  if (!citationIndex || citationIndex < 1) return
+  const container = messageListRef.value?.querySelector(
+    `.assistant-message[data-message-id="${String(message.id)}"]`,
+  )
+  const chips = container?.querySelectorAll('.assistant-source-chip')
+  if (!chips || chips.length === 0) return
+  const target = chips[Math.min(citationIndex - 1, chips.length - 1)]
+  if (!target) return
+  target.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  target.classList.add('is-citation-flash')
+  window.setTimeout(() => target.classList.remove('is-citation-flash'), 1600)
 }
 
 // ===== 思维链折叠 =====
@@ -3081,6 +3113,19 @@ onBeforeUnmount(() => {
 
 .assistant-source-chip.is-clickable {
   cursor: pointer;
+}
+
+/* 点击回答中的 [N] 角标后，对应来源 chip 的闪动高亮 */
+.assistant-source-chip.is-citation-flash {
+  animation: assistant-citation-flash 0.8s ease-in-out 2;
+  border-color: #409eff;
+  background: #ecf5ff;
+  color: #409eff;
+}
+
+@keyframes assistant-citation-flash {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(64, 158, 255, 0); }
+  50% { box-shadow: 0 0 0 4px rgba(64, 158, 255, 0.25); }
 }
 
 .assistant-source-chip.is-clickable:hover,

@@ -55,6 +55,30 @@
             <el-descriptions-item label="实际工时">{{ detail.actualHours ? detail.actualHours + ' 小时' : '-' }}</el-descriptions-item>
           </el-descriptions>
 
+          <!-- 动态扩展字段（按当前流程节点权限下发） -->
+          <div v-if="dynamicFieldRows.length" class="dynamic-fields-section">
+            <div class="dynamic-fields-section__header">
+              <span class="dynamic-fields-section__label">扩展信息</span>
+              <span class="dynamic-fields-section__hint">{{ typeLabel(detail.type) }} 专有字段</span>
+            </div>
+            <el-descriptions :column="2" border>
+              <el-descriptions-item v-for="row in dynamicFieldRows" :key="row.code" :label="row.label">
+                <template v-if="dynamicFileUrls(row.code).length">
+                  <el-link
+                    v-for="url in dynamicFileUrls(row.code)"
+                    :key="url"
+                    type="primary"
+                    class="dynamic-file-link"
+                    @click="openDynamicFile(dynamicFieldOf(row.code)!, url)"
+                  >
+                    {{ decodeFileName(url) }}
+                  </el-link>
+                </template>
+                <span v-else>{{ row.value || '-' }}</span>
+              </el-descriptions-item>
+            </el-descriptions>
+          </div>
+
           <!-- 工单内容单独展示 -->
           <div class="description-content-section">
             <div class="description-content-section__header">
@@ -614,7 +638,7 @@
             />
           </el-form-item>
           <el-form-item
-            v-if="workflowRuntime.canModifyType && workflowRuntime.availableTypes && workflowRuntime.availableTypes.length > 0"
+            v-if="workflowRuntime.canModifyType && approvalTypeOptions.length > 0"
             label="工单类型"
           >
             <el-select
@@ -624,7 +648,7 @@
               clearable
             >
               <el-option
-                v-for="opt in workflowRuntime.availableTypes"
+                v-for="opt in approvalTypeOptions"
                 :key="opt.code"
                 :label="opt.name"
                 :value="opt.code"
@@ -780,8 +804,10 @@ import { ArrowLeftBold, ArrowRightBold, Document, Picture, List, ChatLineRound, 
 import { requirementApi, projectApi, relationApi } from '@/api'
 import { downloadRequirementAttachment, uploadRequirementAttachment } from '@/api/modules/file'
 import type { RelationItem } from '@/api/modules/relation'
-import { requirementConfigApi } from '@/api/modules/requirementConfig'
-import { workflowEngineApi, type AvailableTransition, type TransitionAssigneeCandidate, type WorkflowAvailableActions } from '@/api/modules/workflow-engine'
+import { requirementConfigApi, fieldOptionLabel, parseFieldOptions } from '@/api/modules/requirementConfig'
+import { getFilterUsers } from '@/api/modules/user'
+import type { DynamicFieldSchema } from '@/api/modules/requirementConfig'
+import { workflowEngineApi, type AvailableTransition, type RequirementTypeOption, type TransitionAssigneeCandidate, type WorkflowAvailableActions } from '@/api/modules/workflow-engine'
 import { getTabBadgeCounts } from '@/api/modules/statistics'
 import { getCountersignRecords, canCurrentUserCountersign, submitCountersignApproval, switchParallelBranch, type CountersignRecord, type ParallelBranch } from '@/api/modules/workflow'
 import type {
@@ -914,6 +940,89 @@ const currentUserId = computed(() => {
 const id = Number(route.params.id)
 const loading = ref(false)
 const detail = ref<Requirement | null>(null)
+
+// ------------------------------------------------------------------
+// 需求动态字段（只读展示，字段集合与权限由后端按当前流程节点下发）
+// ------------------------------------------------------------------
+const activeUsers = ref<Array<{ id: number; username: string; realName: string }>>([])
+
+const dynamicFields = computed<DynamicFieldSchema[]>(() =>
+  Array.isArray(detail.value?.dynamicFields) ? detail.value!.dynamicFields! : [],
+)
+
+const dynamicFieldRows = computed(() => dynamicFields.value.map((field) => ({
+  code: field.fieldCode,
+  label: field.name,
+  value: formatDynamicFieldValue(field),
+})))
+
+function userLabel(id: number | string): string {
+  const u = activeUsers.value.find((x) => String(x.id) === String(id))
+  return u ? u.realName || u.username : String(id)
+}
+
+function formatDynamicFieldValue(field: DynamicFieldSchema): string {
+  switch (field.fieldType) {
+    case 'NUMBER':
+      return field.valueNumber == null ? '' : String(field.valueNumber)
+    case 'DATE':
+      return field.valueDate || ''
+    case 'BOOLEAN':
+      return field.valueBoolean == null ? '' : field.valueBoolean ? '是' : '否'
+    case 'USER':
+      return field.valueUserId == null ? '' : userLabel(field.valueUserId)
+    case 'MULTI_USER':
+      return (field.values || []).map((v) => userLabel(v)).join('、')
+    case 'SELECT':
+      return fieldOptionLabel(field.optionList ?? parseFieldOptions(field.options), field.value)
+    case 'MULTI_SELECT': {
+      const opts = field.optionList ?? parseFieldOptions(field.options)
+      return (field.values || []).map((v) => fieldOptionLabel(opts, String(v))).join('、')
+    }
+    case 'FILE':
+      return (field.values || []).map((v) => decodeFileName(String(v))).join('、')
+    default:
+      return field.value || ''
+  }
+}
+
+function decodeFileName(url: string): string {
+  try {
+    return decodeURIComponent(url.split('?')[0].split('/').pop() || url)
+  } catch {
+    return url
+  }
+}
+
+function dynamicFieldOf(code: string): DynamicFieldSchema | undefined {
+  return dynamicFields.value.find((f) => f.fieldCode === code)
+}
+
+function dynamicFileUrls(code: string): string[] {
+  const field = dynamicFieldOf(code)
+  if (!field || field.fieldType !== 'FILE') return []
+  return (field.values || []).map(String)
+}
+
+function openDynamicFile(field: DynamicFieldSchema, url: string) {
+  if (field.fieldType === 'FILE' && /^https?:\/\//i.test(url)) {
+    window.open(url, '_blank')
+  }
+}
+
+async function loadActiveUsers() {
+  // 仅在存在人员类动态字段时才拉取用户，避免无谓请求
+  if (!dynamicFields.value.some((f) => f.fieldType === 'USER' || f.fieldType === 'MULTI_USER')) return
+  if (activeUsers.value.length) return
+  try {
+    const list = await getFilterUsers() as unknown as Array<{ id: number; username: string; realName: string }>
+    activeUsers.value = Array.isArray(list) ? list : []
+  } catch {
+    activeUsers.value = []
+  }
+}
+
+watch(dynamicFields, () => { void loadActiveUsers() }, { immediate: true })
 const relatedRequirements = ref<any[]>([])
 const comments = ref<RequirementComment[]>([])
 const approvalEvaluations = ref<RequirementApprovalEvaluation[]>([])
@@ -944,6 +1053,22 @@ const usingUnifiedEngine = ref(false)
 const selectedTransitionTargetId = ref<string | number | null>(null)
 const selectedTransitionAssigneeId = ref<number | null>(null)
 const selectedNewType = ref<string | null>(null)
+const approvalTypeOptions = computed<RequirementTypeOption[]>(() => {
+  const availableTypes = workflowRuntime.value.availableTypes || []
+  const currentType = detail.value?.type
+  if (!currentType || availableTypes.some((option) => option.code === currentType)) {
+    return availableTypes
+  }
+
+  return [
+    {
+      code: currentType,
+      name: typeMap.value[currentType] || currentType,
+      color: null,
+    },
+    ...availableTypes,
+  ]
+})
 const bindingProjectId = ref<number | null>(null)
 const transitionLoading = ref(false)
 const workflowPanelCollapsed = ref(false)
@@ -1290,6 +1415,13 @@ function resetApprovalDialog() {
   approvalComment.value = ''
   approvalAttachments.value = []
   selectedNewType.value = null
+}
+
+function initializeApprovalDialog() {
+  resetApprovalDialog()
+  if (workflowRuntime.value.canModifyType) {
+    selectedNewType.value = detail.value?.type || null
+  }
 }
 
 function resetSupplementDialog() {
@@ -1760,7 +1892,7 @@ async function handleStatusTransition() {
     return
   }
 
-  resetApprovalDialog()
+  initializeApprovalDialog()
   approvalDialogVisible.value = true
 }
 
@@ -1848,8 +1980,12 @@ async function confirmApprovalTransition() {
     toast.warning('当前节点要求必须上传附件')
     return
   }
-  // 校验类型变更是否选择
-  if (workflowRuntime.value.canModifyType && selectedNewType.value && selectedNewType.value !== detail.value?.type) {
+  const changedType = workflowRuntime.value.canModifyType
+    && selectedNewType.value
+    && selectedNewType.value !== detail.value?.type
+      ? selectedNewType.value
+      : undefined
+  if (changedType) {
     // 类型变更属于不可逆操作，弹窗确认
     const confirmed = await ElMessageBox.confirm(
       '变更工单类型后将按照新类型的工作流从初始节点开始流转，当前流转记录将保留。确定要变更吗？',
@@ -1862,7 +1998,7 @@ async function confirmApprovalTransition() {
     rating: workflowRuntime.value.evaluationRequired ? approvalRating.value : undefined,
     comment: approvalComment.value.trim() || undefined,
     attachments: approvalAttachments.value.length > 0 ? approvalAttachments.value : undefined,
-    newType: selectedNewType.value || undefined,
+    newType: changedType,
   })
 }
 
@@ -2119,6 +2255,43 @@ onMounted(() => {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   overflow: hidden;
+}
+
+.dynamic-fields-section {
+  margin-top: 20px;
+
+  :deep(.el-descriptions) {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+}
+
+.dynamic-fields-section__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-bottom: none;
+  border-top-left-radius: var(--radius-lg);
+  border-top-right-radius: var(--radius-lg);
+}
+
+.dynamic-fields-section__label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.dynamic-fields-section__hint {
+  font-size: 12px;
+  color: var(--color-muted-text);
+}
+
+.dynamic-file-link {
+  margin-right: 8px;
+  word-break: break-all;
 }
 
 .description-content-section__header {

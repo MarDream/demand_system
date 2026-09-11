@@ -43,6 +43,7 @@ const cardMeta: Record<string, { description: string; color: string; buttonType:
   '/settings/knowledge': { description: '创建和管理知识库，配置文档索引', color: '#2C3E50', buttonType: '' },
   '/settings/llm': { description: '配置文档知识库可用的大模型参数和密钥', color: '#9B59B6', buttonType: 'primary' },
   '/settings/assistant': { description: '维护AI助手快捷提问，管理人工配置与AI自动提炼', color: '#E67E22', buttonType: 'primary' },
+  '/settings/git/repositories': { description: '管理代码仓库、分支保护规则与合并请求', color: '#10B981', buttonType: 'primary' },
 }
 
 // 权限校验映射：path -> 权限判断函数
@@ -56,6 +57,7 @@ const pathPermissions: Record<string, () => boolean> = {
   '/settings/knowledge': () => hasPermission('menu:knowledge'),
   '/settings/llm': () => hasPermission('menu:settings:llm') || hasPermission('menu:system-config'),
   '/settings/assistant': () => hasPermission('menu:system-config') || hasAnyRole(['admin', 'SUPER_ADMIN']),
+  '/settings/git/repositories': () => hasPermission('menu:system-config') || hasAnyRole(['admin', 'SUPER_ADMIN']),
 }
 
 const iconMap: Record<string, Component> = {}
@@ -64,7 +66,14 @@ for (const [name, comp] of Object.entries(ElementPlusIcons)) {
 }
 
 const menuItems = ref<MenuItem[]>([])
-const fallbackPaths = ['/settings/llm', '/settings/assistant']
+const fallbackPaths = ['/settings/llm', '/settings/assistant', '/settings/git/repositories']
+
+// 兜底卡片（未在菜单树中注册时仍展示）的展示配置
+const fallbackCardConfig: Record<string, { title: string; icon: string; isRemix: boolean }> = {
+  '/settings/llm': { title: '模型配置', icon: 'ri-robot-2-line', isRemix: true },
+  '/settings/assistant': { title: 'AI 助手设置', icon: 'ri-robot-2-line', isRemix: true },
+  '/settings/git/repositories': { title: '代码仓库管理', icon: 'ri-git-branch-line', isRemix: true },
+}
 
 onMounted(async () => {
   try {
@@ -120,18 +129,10 @@ const visibleCards = computed<CardItem[]>(() => {
     if (!meta) continue
     cards.push({
       path,
-      title: path === '/settings/llm'
-        ? '模型配置'
-        : path === '/settings/assistant'
-        ? 'AI 助手设置'
-        : path,
+      title: fallbackCardConfig[path]?.title ?? path,
       description: meta.description,
-      icon: path === '/settings/llm'
-        ? 'ri-robot-2-line'
-        : path === '/settings/assistant'
-        ? 'ri-robot-2-line'
-        : 'Setting',
-      isRemix: path === '/settings/llm' || path === '/settings/assistant',
+      icon: fallbackCardConfig[path]?.icon ?? 'Setting',
+      isRemix: fallbackCardConfig[path]?.isRemix ?? false,
       color: meta.color,
       buttonType: meta.buttonType,
       visible: () => true,

@@ -15,10 +15,14 @@ import org.springframework.util.StringUtils;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Component
 public class WorkflowGraphCompiler {
@@ -110,7 +114,12 @@ public class WorkflowGraphCompiler {
                         permission.setAllowedUsers(writeJson(node.getAssigneeUserIds()));
                     }
                     break;
+                default:
+                    // 处理人由运行时解析（CREATOR / PREV_APPROVER 等），无需落库
+                    break;
             }
+            // 字段权限：需求动态字段在该节点上的可见 / 可编辑 / 必填范围
+            applyFieldPermissions(permission, node.getProperties());
             permissions.add(permission);
         }
 
@@ -212,6 +221,79 @@ public class WorkflowGraphCompiler {
             return objectMapper.writeValueAsString(value);
         } catch (JsonProcessingException e) {
             return "[]";
+        }
+    }
+
+    /**
+     * 将节点上配置的动态字段权限写入节点权限记录。
+     * <p>数据来自可视化编辑器的节点属性：
+     * <pre>properties.fieldPermissions = { "visible": [...], "editable": [...], "required": [...] }</pre>
+     * 兼容旧数据顶层的 visibleFields / editableFields / requiredFields。
+     * <p>三类均为空表示「未配置」，落库为 null，运行时按宽松策略回退为全部可见可编辑。
+     */
+    @SuppressWarnings("unchecked")
+    private void applyFieldPermissions(WorkflowNodePermission permission, Map<String, Object> properties) {
+        if (properties == null || properties.isEmpty()) {
+            return;
+        }
+        List<String> visible = Collections.emptyList();
+        List<String> editable = Collections.emptyList();
+        List<String> required = Collections.emptyList();
+
+        Object fp = properties.get("fieldPermissions");
+        if (fp instanceof Map<?, ?> fpMap) {
+            visible = toStringList(fpMap.get("visible"));
+            editable = toStringList(fpMap.get("editable"));
+            required = toStringList(fpMap.get("required"));
+        }
+        if (visible.isEmpty() && editable.isEmpty() && required.isEmpty()) {
+            visible = toStringList(properties.get("visibleFields"));
+            editable = toStringList(properties.get("editableFields"));
+            required = toStringList(properties.get("requiredFields"));
+        }
+        if (visible.isEmpty() && editable.isEmpty() && required.isEmpty()) {
+            return;
+        }
+        // 可编辑/必填隐式可见，避免仅配 editable 却因 visible 缺失被隐藏
+        List<String> mergedVisible = new ArrayList<>(new LinkedHashSet<>(visible));
+        mergedVisible.addAll(editable);
+        mergedVisible.addAll(required);
+        permission.setVisibleFields(writeJson(dedup(mergedVisible)));
+        permission.setEditableFields(editable.isEmpty() ? null : writeJson(dedup(editable)));
+        permission.setRequiredFields(required.isEmpty() ? null : writeJson(dedup(required)));
+    }
+
+    private List<String> dedup(List<String> raw) {
+        if (raw == null || raw.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return raw.stream().filter(Objects::nonNull).collect(Collectors.toCollection(LinkedHashSet::new)).stream().toList();
+    }
+
+    private List<String> toStringList(Object raw) {
+        if (raw == null) {
+            return Collections.emptyList();
+        }
+        if (raw instanceof List<?> list) {
+            return list.stream()
+                    .filter(Objects::nonNull)
+                    .map(String::valueOf)
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .toList();
+        }
+        String text = String.valueOf(raw).trim();
+        if (text.isEmpty() || "[]".equals(text)) {
+            return Collections.emptyList();
+        }
+        try {
+            List<?> parsed = objectMapper.readValue(text, List.class);
+            return parsed == null ? Collections.emptyList() : toStringList(parsed);
+        } catch (Exception ignore) {
+            return java.util.Arrays.stream(text.replace("[", "").replace("]", "").replace("\"", "").split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .toList();
         }
     }
 
