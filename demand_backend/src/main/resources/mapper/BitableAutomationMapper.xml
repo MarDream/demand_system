@@ -23,4 +23,13 @@
         ORDER BY created_at DESC
     </select>
 
+    <!-- 停用指定 Base 下所有启用的自动化规则（删除 Base 时级联停用） -->
+    <update id="disableByBaseId">
+        UPDATE `bitable_automations`
+        SET status = 'disabled', updated_at = NOW()
+        WHERE base_id = #{baseId}
+          AND deleted_at = 0
+          AND status = 'enabled'
+    </update>
+
 </mapper>

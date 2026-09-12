@@ -140,6 +140,7 @@ import HighlightText from '@/components/common/HighlightText.vue'
 import { useKnowledgeStore } from '@/stores/knowledge'
 import type { SearchMode } from '@/api/modules/knowledge'
 import { downloadDocumentBlob, batchDownloadDocumentsZip } from '@/api/modules/knowledge'
+import { saveBlob } from '@/utils/download'
 
 const store = useKnowledgeStore()
 const query = ref('')
@@ -208,29 +209,21 @@ async function handleBatchDownload() {
 
   try {
     let blob: Blob
+    let fileName: string
     if (docIds.length === 1) {
       const docId = docIds[0]
       const kbId = store.searchResults?.results.find((r) => r.documentId === docId)?.knowledgeBaseId
       if (!kbId) throw new Error('未找到文档所属知识库')
       blob = await downloadDocumentBlob(Number(kbId), docId)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
       const item = store.searchResults?.results.find((r) => r.documentId === docId)
-      a.download = item?.fileName || 'document'
-      a.click()
-      URL.revokeObjectURL(url)
+      fileName = item?.fileName || 'document'
     } else {
       const kbId = store.searchResults?.results[0]?.knowledgeBaseId
       if (!kbId) throw new Error('未找到文档所属知识库')
       blob = await batchDownloadDocumentsZip(Number(kbId), docIds)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'download.zip'
-      a.click()
-      URL.revokeObjectURL(url)
+      fileName = 'download.zip'
     }
+    await saveBlob(blob, fileName)
     ElMessage.success('下载成功')
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : '下载失败'

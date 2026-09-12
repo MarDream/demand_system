@@ -12,22 +12,16 @@
         <component :is="Component" />
       </transition>
     </router-view>
-    <AppToast ref="toastRef" />
   </template>
 </template>
 
 <script setup lang="ts">
-import { ref, onErrorCaptured, provide } from 'vue'
+import { ref, onErrorCaptured } from 'vue'
 import { ElButton, ElResult } from 'element-plus'
-import AppToast from '@/components/common/AppToast.vue'
 
 // C3: 全局错误边界 - 捕获子树渲染期未捕获异常，展示兜底 UI 而非整页白屏
 const hasError = ref(false)
 const errorMessage = ref('')
-const toastRef = ref<InstanceType<typeof AppToast>>()
-
-// 提供全局 toast 引用
-provide('toast', toastRef)
 
 onErrorCaptured((err: unknown, _instance, info: string) => {
   // 生产构建已剥离 console，此 console.error 仅 dev 可见

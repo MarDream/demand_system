@@ -20,4 +20,16 @@ public interface BitableCollaborationService {
      * @param userId      操作人ID
      */
     void handleCellUpdate(Long baseId, Long tableId, Long recordId, Long fieldId, Object value, Integer newVersion, Long userId);
+
+    /**
+     * 广播记录创建/删除事件给协作端（仅广播，不写审计日志）。
+     * 让其他在线客户端实时感知行的增删，而不必手动刷新。
+     *
+     * @param baseId     多维表格容器ID
+     * @param tableId    数据表ID
+     * @param recordId   记录ID
+     * @param changeType record_created / record_deleted
+     * @param userId     操作人ID
+     */
+    void broadcastRecordChanged(Long baseId, Long tableId, Long recordId, String changeType, Long userId);
 }

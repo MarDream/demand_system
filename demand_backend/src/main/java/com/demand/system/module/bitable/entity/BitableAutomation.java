@@ -30,6 +30,9 @@ public class BitableAutomation {
 
     private String actionConfig;
 
+    /** 定时触发器上次触发时间 */
+    private LocalDateTime lastFiredAt;
+
     private Long createdBy;
 
     @TableField(fill = FieldFill.INSERT)
@@ -111,6 +114,14 @@ public class BitableAutomation {
 
     public void setActionConfig(String actionConfig) {
         this.actionConfig = actionConfig;
+    }
+
+    public LocalDateTime getLastFiredAt() {
+        return lastFiredAt;
+    }
+
+    public void setLastFiredAt(LocalDateTime lastFiredAt) {
+        this.lastFiredAt = lastFiredAt;
     }
 
     public Long getCreatedBy() {

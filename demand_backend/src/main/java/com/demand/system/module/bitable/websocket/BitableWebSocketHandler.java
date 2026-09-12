@@ -1,6 +1,6 @@
 package com.demand.system.module.bitable.websocket;
 
-import com.demand.system.module.bitable.service.BitableCollaborationService;
+import com.demand.system.module.bitable.service.BitableAuthorizationService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -22,20 +22,22 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 多维表格 WebSocket Handler。
- * 管理在线协作者，并处理 cell_update / cursor_move 消息。
+ * 管理在线协作者，并处理 cursor_move 消息。
+ * 单元格数据写入一律走 REST（BitableRecordService.updateCell），
+ * WS 不提供数据写入上行，避免绕过权限与伪造审计日志。
  */
 @Component
 public class BitableWebSocketHandler implements WebSocketHandler {
 
     private static final Logger log = LoggerFactory.getLogger(BitableWebSocketHandler.class);
 
-    private final BitableCollaborationService collaborationService;
+    private final BitableAuthorizationService authorizationService;
     private final ObjectMapper objectMapper;
     private final Map<Long, Set<WebSocketSession>> sessionsByBaseId = new ConcurrentHashMap<>();
 
-    public BitableWebSocketHandler(BitableCollaborationService collaborationService,
+    public BitableWebSocketHandler(BitableAuthorizationService authorizationService,
                                    ObjectMapper objectMapper) {
-        this.collaborationService = collaborationService;
+        this.authorizationService = authorizationService;
         this.objectMapper = objectMapper;
     }
 
@@ -52,6 +54,14 @@ public class BitableWebSocketHandler implements WebSocketHandler {
         Long userId = sessionAttribute(session, "userId", Long.class);
         if (baseId == null || userId == null) {
             log.warn("WebSocket 连接缺少 baseId 或认证用户，关闭 session: {}", session.getId());
+            closeQuietly(session, CloseStatus.POLICY_VIOLATION);
+            return;
+        }
+
+        // 校验用户是该 Base 的成员，非成员拒绝建立协作连接
+        if (authorizationService.getMemberRole(baseId, userId) == null) {
+            log.warn("非 Base 成员尝试建立 WebSocket 连接: baseId={}, userId={}, sessionId={}",
+                    baseId, userId, session.getId());
             closeQuietly(session, CloseStatus.POLICY_VIOLATION);
             return;
         }
@@ -85,7 +95,8 @@ public class BitableWebSocketHandler implements WebSocketHandler {
 
         String type = node.has("type") ? node.get("type").asText() : "";
         switch (type) {
-            case "cell_update" -> handleCellUpdate(session, baseId, node);
+            case "cell_update" -> // 单元格写入已统一由 REST 路径处理，WS 上行不再受理，防止绕过权限和伪造操作日志
+                    sendError(session, "单元格更新请通过 REST 接口提交，WebSocket 不接受 cell_update");
             case "cursor_move" -> handleCursorMove(session, baseId, node);
             default -> {
                 log.warn("未知 WebSocket 消息类型: type={}, sessionId={}", type, session.getId());
@@ -124,28 +135,6 @@ public class BitableWebSocketHandler implements WebSocketHandler {
     @Override
     public boolean supportsPartialMessages() {
         return false;
-    }
-
-    private void handleCellUpdate(WebSocketSession session, Long baseId, JsonNode node) {
-        Long tableId = node.has("tableId") ? node.get("tableId").asLong() : null;
-        Long recordId = node.has("recordId") ? node.get("recordId").asLong() : null;
-        Long fieldId = node.has("fieldId") ? node.get("fieldId").asLong() : null;
-        Object value = node.has("value") ? objectMapper.convertValue(node.get("value"), Object.class) : null;
-        Integer version = node.has("version") ? node.get("version").asInt() : null;
-        Long userId = sessionAttribute(session, "userId", Long.class);
-
-        if (tableId == null || recordId == null || fieldId == null || userId == null) {
-            sendError(session, "cell_update 缺少必填字段或用户身份");
-            return;
-        }
-
-        try {
-            collaborationService.handleCellUpdate(baseId, tableId, recordId, fieldId, value, version, userId);
-        } catch (Exception e) {
-            log.error("处理 cell_update 失败: baseId={}, tableId={}, recordId={}, fieldId={}",
-                    baseId, tableId, recordId, fieldId, e);
-            sendError(session, "更新失败: " + e.getMessage());
-        }
     }
 
     private void handleCursorMove(WebSocketSession session, Long baseId, JsonNode node) {
@@ -209,15 +198,22 @@ public class BitableWebSocketHandler implements WebSocketHandler {
         if (sessions == null) {
             return;
         }
+        String payload;
         try {
-            String payload = objectMapper.writeValueAsString(message);
-            for (WebSocketSession session : sessions) {
-                if (session.isOpen() && !session.getId().equals(excludedSessionId)) {
+            payload = objectMapper.writeValueAsString(message);
+        } catch (Exception e) {
+            log.error("序列化 WebSocket 消息失败: baseId={}", baseId, e);
+            return;
+        }
+        // 逐个 session 独立捕获异常，避免单个客户端发送失败中断整体广播
+        for (WebSocketSession session : sessions) {
+            if (session.isOpen() && !session.getId().equals(excludedSessionId)) {
+                try {
                     sendText(session, payload);
+                } catch (Exception e) {
+                    log.warn("发送 WebSocket 消息失败: sessionId={}", session.getId(), e);
                 }
             }
-        } catch (Exception e) {
-            log.error("广播 WebSocket 消息失败: baseId={}", baseId, e);
         }
     }
 

@@ -5,16 +5,20 @@ import com.demand.system.common.result.ErrorCode;
 import com.demand.system.module.bitable.constant.MemberRole;
 import com.demand.system.module.bitable.entity.BitableBaseMember;
 import com.demand.system.module.bitable.entity.BitableComment;
+import com.demand.system.module.bitable.entity.BitableDashboard;
 import com.demand.system.module.bitable.entity.BitableField;
 import com.demand.system.module.bitable.entity.BitableRecord;
 import com.demand.system.module.bitable.entity.BitableTable;
 import com.demand.system.module.bitable.entity.BitableView;
+import com.demand.system.module.bitable.entity.BitableWebhookSubscription;
 import com.demand.system.module.bitable.mapper.BitableBaseMemberMapper;
 import com.demand.system.module.bitable.mapper.BitableCommentMapper;
+import com.demand.system.module.bitable.mapper.BitableDashboardMapper;
 import com.demand.system.module.bitable.mapper.BitableFieldMapper;
 import com.demand.system.module.bitable.mapper.BitableRecordMapper;
 import com.demand.system.module.bitable.mapper.BitableTableMapper;
 import com.demand.system.module.bitable.mapper.BitableViewMapper;
+import com.demand.system.module.bitable.mapper.BitableWebhookSubscriptionMapper;
 import com.demand.system.module.bitable.service.BitableAuthorizationService;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
@@ -42,6 +46,8 @@ public class BitableAuthorizationServiceImpl implements BitableAuthorizationServ
     private final BitableRecordMapper recordMapper;
     private final BitableViewMapper viewMapper;
     private final BitableCommentMapper commentMapper;
+    private final BitableDashboardMapper dashboardMapper;
+    private final BitableWebhookSubscriptionMapper webhookMapper;
     private final RedisTemplate<String, Object> redisTemplate;
 
     public BitableAuthorizationServiceImpl(BitableBaseMemberMapper memberMapper,
@@ -50,6 +56,8 @@ public class BitableAuthorizationServiceImpl implements BitableAuthorizationServ
                                            BitableRecordMapper recordMapper,
                                            BitableViewMapper viewMapper,
                                            BitableCommentMapper commentMapper,
+                                           BitableDashboardMapper dashboardMapper,
+                                           BitableWebhookSubscriptionMapper webhookMapper,
                                            RedisTemplate<String, Object> redisTemplate) {
         this.memberMapper = memberMapper;
         this.tableMapper = tableMapper;
@@ -57,6 +65,8 @@ public class BitableAuthorizationServiceImpl implements BitableAuthorizationServ
         this.recordMapper = recordMapper;
         this.viewMapper = viewMapper;
         this.commentMapper = commentMapper;
+        this.dashboardMapper = dashboardMapper;
+        this.webhookMapper = webhookMapper;
         this.redisTemplate = redisTemplate;
     }
 
@@ -188,10 +198,41 @@ public class BitableAuthorizationServiceImpl implements BitableAuthorizationServ
     }
 
     @Override
+    public Long getBaseIdByDashboardId(Long dashboardId) {
+        if (dashboardId == null) {
+            return null;
+        }
+        BitableDashboard dashboard = dashboardMapper.selectById(dashboardId);
+        return dashboard != null ? dashboard.getBaseId() : null;
+    }
+
+    @Override
+    public Long getBaseIdByWebhookId(Long webhookId) {
+        if (webhookId == null) {
+            return null;
+        }
+        BitableWebhookSubscription webhook = webhookMapper.selectById(webhookId);
+        return webhook != null ? webhook.getBaseId() : null;
+    }
+
+    @Override
     public void clearRoleCache(Long baseId) {
-        // 清除该 Base 下所有用户的角色缓存
-        var keys = redisTemplate.keys(ROLE_CACHE_PREFIX + baseId + ":*");
-        if (keys != null && !keys.isEmpty()) {
+        // SCAN 增量遍历替代 KEYS（KEYS 会阻塞 Redis，Base 成员多/键多时影响线上）
+        var pattern = ROLE_CACHE_PREFIX + baseId + ":*";
+        java.util.Set<String> keys = new java.util.HashSet<>();
+        try (var cursor = redisTemplate.scan(
+                org.springframework.data.redis.core.ScanOptions.scanOptions().match(pattern).count(500).build())) {
+            while (cursor.hasNext()) {
+                keys.add(String.valueOf(cursor.next()));
+            }
+        } catch (Exception e) {
+            // SCAN 不可用时退化为精确清库：删除成员列表中每个用户的缓存键
+            var members = memberMapper.selectByBaseId(baseId);
+            for (var member : members) {
+                keys.add(ROLE_CACHE_PREFIX + baseId + ":" + member.getUserId());
+            }
+        }
+        if (!keys.isEmpty()) {
             redisTemplate.delete(keys);
         }
     }

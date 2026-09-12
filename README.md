@@ -26,6 +26,7 @@
 ```
 demand_system/
 ├── demand_frontend/          # Vue3 Web端（Vite + Element Plus）
+├── demand_h5/                # 手机 H5 端（Vite + Vant 4，复用后端 /api/v1 接口，端口 5175）
 ├── demand_backend/           # Spring Boot 3.2 后端（MyBatis-Plus）
 ├── database/                 # MySQL 初始化脚本
 ├── scripts/                  # 基础设施与一键脚本

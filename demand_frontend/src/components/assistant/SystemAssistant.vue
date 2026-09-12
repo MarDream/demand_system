@@ -129,22 +129,33 @@
                 :key="group.key"
                 class="assistant-session-group"
               >
-                <div class="assistant-session-group__label">{{ group.label }}</div>
-                <div
-                  v-for="session in group.items"
-                  :key="session.id"
-                  class="assistant-session-item"
-                  :class="{ 'is-active': session.id === activeSessionId }"
-                  @click="handleSelectSession(session.id)"
+                <button
+                  type="button"
+                  class="assistant-session-group__label"
+                  :title="isGroupFolded(group.key) ? `展开${group.label}（${group.items.length} 个会话）` : `折叠${group.label}`"
+                  @click="toggleGroupFold(group.key)"
                 >
-                  <span class="assistant-session-item__title">{{ session.title || '新会话' }}</span>
-                  <span class="assistant-session-item__time">{{ formatSessionTime(session.lastMessageAt || session.updatedAt) }}</span>
-                  <el-icon
-                    class="assistant-session-item__delete"
-                    @click.stop="handleDeleteSession(session.id)"
+                  <el-icon class="assistant-session-group__chevron" :class="{ 'is-folded': isGroupFolded(group.key) }"><CaretRight /></el-icon>
+                  <span>{{ group.label }}</span>
+                  <span v-if="isGroupFolded(group.key)" class="assistant-session-group__count">{{ group.items.length }}</span>
+                </button>
+                <div v-show="!isGroupFolded(group.key)" class="assistant-session-group__items">
+                  <div
+                    v-for="session in group.items"
+                    :key="session.id"
+                    class="assistant-session-item"
+                    :class="{ 'is-active': session.id === activeSessionId }"
+                    @click="handleSelectSession(session.id)"
                   >
-                    <Delete />
-                  </el-icon>
+                    <span class="assistant-session-item__title">{{ session.title || '新会话' }}</span>
+                    <span class="assistant-session-item__time">{{ formatSessionTime(session.lastMessageAt || session.updatedAt) }}</span>
+                    <el-icon
+                      class="assistant-session-item__delete"
+                      @click.stop="handleDeleteSession(session.id)"
+                    >
+                      <Delete />
+                    </el-icon>
+                  </div>
                 </div>
               </div>
             </div>
@@ -425,7 +436,7 @@
                 >
                   <span class="assistant-file-card__icon">{{ getFileIconName(attached.contentType) }}</span>
                   <span class="assistant-file-card__name">{{ attached.name }}</span>
-                  <span class="assistant-file-card__size">{{ formatBytes(attached.size) }}</span>
+                  <span class="assistant-file-card__size">{{ formatFileSize(attached.size) }}</span>
                   <button type="button" class="assistant-file-card__remove" @click="removeAttachedFile(attached.uid)">&times;</button>
                 </div>
               </div>
@@ -653,15 +664,17 @@ import type { CSSProperties } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ChatDotRound, CopyDocument, Cpu, Delete, Document, FolderAdd, InfoFilled, MagicStick, Promotion, ArrowDown, FullScreen, RefreshRight, ScaleToOriginal, Plus, Close, VideoPause, Link, Search, Folder } from '@element-plus/icons-vue'
+import { ChatDotRound, CopyDocument, Cpu, Delete, Document, FolderAdd, InfoFilled, MagicStick, Promotion, ArrowDown, FullScreen, RefreshRight, ScaleToOriginal, Plus, Close, VideoPause, Link, Search, Folder, CaretRight } from '@element-plus/icons-vue'
 import MarkdownContent from '@/components/common/MarkdownContent.vue'
 import FollowUpChips from '@/components/assistant/FollowUpChips.vue'
 import AssistantAvatar from '@/components/assistant/avatars/AssistantAvatar.vue'
 import AssistantTaskPanel from '@/components/assistant/AssistantTaskPanel.vue'
 import { getToken } from '@/utils/auth'
+import { formatFileSize } from '@/utils/format'
 import { useAssistantStore } from '@/stores/assistant'
 import { useAssistantContext } from '@/composables/useAssistantContext'
 import { useQuickQuestions } from '@/composables/useQuickQuestions'
+import { useFoldState } from '@/composables/useFoldState'
 import { getAllKnowledgeBases, type KnowledgeBase } from '@/api/modules/knowledge'
 import { llmProviderApi, type ChatModelOption } from '@/api/modules/llmProvider'
 import type { AssistantFileAttachment, AssistantMessage, AssistantPageContext, AssistantSearchScope, AssistantSource } from '@/types/assistant'
@@ -688,6 +701,8 @@ const quickQuestions = useQuickQuestions({
 
 // ===== 会话搜索与分组 =====
 const sessionSearchKeyword = ref('')
+// 历史会话按时间分组，各组可独立折叠；折叠偏好持久化到 localStorage
+const { toggle: toggleGroupFold, isFolded: isGroupFolded } = useFoldState('assistant.session-groups-folded')
 
 interface SessionGroup {
   key: string
@@ -935,12 +950,6 @@ function readFileAsText(file: File): Promise<string> {
 function removeAttachedFile(uid: string) {
   const idx = attachedFiles.findIndex(f => f.uid === uid)
   if (idx >= 0) attachedFiles.splice(idx, 1)
-}
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / 1024 / 1024).toFixed(1) + ' MB'
 }
 
 function getFileIconName(ct: string) {
@@ -1564,12 +1573,8 @@ function toggleAssistantFullscreen() {
 }
 
 async function ensureReady() {
-  if (!initialized.value) {
-    await assistantStore.loadSessions()
-  }
-  if (activeSessionId.value) {
-    await assistantStore.loadMessages(activeSessionId.value)
-  }
+  // 打开即新会话（store.open 内已重置上下文），这里只刷新侧边栏会话列表
+  await assistantStore.loadSessions()
 }
 
 async function handleOpen() {
@@ -2010,7 +2015,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   color: #fff;
-  background: linear-gradient(135deg, #409eff, #7c4dff);
+  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
   box-shadow: 0 6px 16px rgba(64, 158, 255, 0.3);
   cursor: grab;
   user-select: none;
@@ -2044,7 +2049,7 @@ onBeforeUnmount(() => {
   height: min(76vh, 720px);
   display: flex;
   flex-direction: column;
-  background: #f7f8fa;
+  background: var(--color-background);
 }
 
 .assistant-panel--fullscreen {
@@ -2058,7 +2063,7 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 16px;
   padding: 12px 18px;
-  border-bottom: 1px solid #e8ebf0;
+  border-bottom: 1px solid var(--color-border);
   background: #fff;
   cursor: move;
   min-height: 56px;
@@ -2089,7 +2094,7 @@ onBeforeUnmount(() => {
   padding: 4px;
   background: #f5f7fa;
   border-radius: 10px;
-  border: 1px solid #e8ebf0;
+  border: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
@@ -2098,7 +2103,7 @@ onBeforeUnmount(() => {
   width: 1px;
   height: 16px;
   margin: 0 4px;
-  background: #dcdfe6;
+  background: var(--color-border);
   flex-shrink: 0;
 }
 
@@ -2141,13 +2146,13 @@ onBeforeUnmount(() => {
   height: 32px;
   padding: 0;
   font-size: 15px;
-  color: #4e5969;
+  color: var(--color-text-secondary);
   border-radius: 8px;
   transition: all 0.2s ease;
   background: transparent;
 
   &:hover {
-    color: #2563eb;
+    color: var(--color-primary);
     background: #ffffff;
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
   }
@@ -2159,10 +2164,10 @@ onBeforeUnmount(() => {
 
 /* 关闭按钮作为操作组最后一位：稍重的默认态 + hover 强调红色 */
 .assistant-tool-button--close {
-  color: #64748b;
+  color: var(--color-text-secondary);
 
   &:hover {
-    color: #f56c6c;
+    color: var(--color-danger);
     background: #fef0f0;
     box-shadow: 0 1px 3px rgba(245, 108, 108, 0.18);
   }
@@ -2175,12 +2180,12 @@ onBeforeUnmount(() => {
 .assistant-panel__title {
   font-size: 16px;
   font-weight: 600;
-  color: #1f2329;
+  color: var(--color-text-primary);
   letter-spacing: 0.2px;
 }
 
 .assistant-panel__subtitle {
-  color: #86909c;
+  color: var(--color-muted-text);
   font-size: 12px;
   line-height: 1.5;
   white-space: nowrap;
@@ -2199,8 +2204,8 @@ onBeforeUnmount(() => {
   width: 200px;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid #e8ebf0;
-  background: #fafbfc;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-background);
   overflow: hidden;
 }
 
@@ -2209,16 +2214,16 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   padding: 10px 12px;
-  border-bottom: 1px solid #e8ebf0;
+  border-bottom: 1px solid var(--color-border);
   background: #fff;
   font-size: 12px;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--color-text-primary);
 }
 
 .assistant-session-list__header-icon {
   font-size: 14px;
-  color: #64748b;
+  color: var(--color-text-secondary);
 }
 
 .assistant-session-list__new-btn {
@@ -2230,8 +2235,8 @@ onBeforeUnmount(() => {
   justify-content: center;
   border: none;
   border-radius: 6px;
-  background: #f1f5f9;
-  color: #64748b;
+  background: var(--color-surface-alt);
+  color: var(--color-text-secondary);
   cursor: pointer;
   font-size: 14px;
   transition: all 0.15s;
@@ -2239,24 +2244,24 @@ onBeforeUnmount(() => {
 
 .assistant-session-list__new-btn:hover {
   background: #e2e8f0;
-  color: #1e293b;
+  color: var(--color-text-primary);
 }
 
 .assistant-session-list__search {
   padding: 8px 10px;
-  border-bottom: 1px solid #e8ebf0;
+  border-bottom: 1px solid var(--color-border);
   background: #fff;
 }
 
 :deep(.session-search-input .el-input__wrapper) {
   border-radius: 6px;
-  background: #f1f5f9;
+  background: var(--color-surface-alt);
   box-shadow: none !important;
 }
 
 :deep(.session-search-input .el-input__wrapper:hover),
 :deep(.session-search-input .el-input__wrapper.is-focus) {
-  background: #e8ecf2;
+  background: var(--color-border);
 }
 
 :deep(.session-search-input .el-input__inner) {
@@ -2266,7 +2271,7 @@ onBeforeUnmount(() => {
 .assistant-session-list__empty {
   padding: 16px 12px;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--color-muted-text);
   text-align: center;
 }
 
@@ -2275,12 +2280,51 @@ onBeforeUnmount(() => {
 }
 
 .assistant-session-group__label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
   padding: 6px 12px 2px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
   font-size: 10px;
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--color-muted-text);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  transition: color 0.15s ease;
+}
+
+.assistant-session-group__label:hover {
+  color: var(--color-text-secondary);
+}
+
+.assistant-session-group__chevron {
+  font-size: 10px;
+  transform: rotate(90deg);
+  transition: transform 0.15s ease;
+}
+
+.assistant-session-group__chevron.is-folded {
+  transform: rotate(0deg);
+}
+
+.assistant-session-group__count {
+  margin-left: auto;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--color-muted-text);
+  background: var(--color-surface-alt);
+  border-radius: 8px;
 }
 
 .assistant-session-item {
@@ -2296,11 +2340,11 @@ onBeforeUnmount(() => {
 }
 
 .assistant-session-item:hover {
-  background: #e8ecf2;
+  background: var(--color-border);
 }
 
 .assistant-session-item.is-active {
-  background: #eff6ff;
+  background: var(--color-primary-subtle);
 }
 
 .assistant-session-item.is-active::before {
@@ -2311,7 +2355,7 @@ onBeforeUnmount(() => {
   bottom: 6px;
   width: 3px;
   border-radius: 0 3px 3px 0;
-  background: #2563eb;
+  background: var(--color-primary);
 }
 
 .assistant-session-item__title {
@@ -2333,7 +2377,7 @@ onBeforeUnmount(() => {
 .assistant-session-item__time {
   flex-shrink: 0;
   font-size: 10px;
-  color: #94a3b8;
+  color: var(--color-muted-text);
   white-space: nowrap;
 }
 
@@ -2359,9 +2403,9 @@ onBeforeUnmount(() => {
 .assistant-session-list__footer {
   margin-top: auto;
   padding: 8px 12px;
-  border-top: 1px solid #e8ecf2;
+  border-top: 1px solid var(--color-border);
   font-size: 10px;
-  color: #94a3b8;
+  color: var(--color-muted-text);
 }
 
 /* 滚动容器 */
@@ -2396,19 +2440,19 @@ onBeforeUnmount(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #86909c;
+  color: var(--color-muted-text);
   text-align: center;
 }
 
 .assistant-empty__icon {
   font-size: 28px;
   margin-bottom: 12px;
-  color: #409eff;
+  color: var(--color-primary);
 }
 
 .assistant-empty__title {
   font-size: 16px;
-  color: #1f2329;
+  color: var(--color-text-primary);
   font-weight: 600;
 }
 
@@ -2428,7 +2472,7 @@ onBeforeUnmount(() => {
   margin-bottom: 8px;
   font-size: 12px;
   font-weight: 600;
-  color: #86909c;
+  color: var(--color-muted-text);
 }
 
 .assistant-chip-list {
@@ -2447,14 +2491,14 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   padding: 8px 12px;
   background: #f5f9ff;
-  color: #409eff;
+  color: var(--color-primary);
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .assistant-chip:hover:not(:disabled) {
-  border-color: #409eff;
-  background: #ecf5ff;
+  border-color: var(--color-primary);
+  background: var(--color-primary-subtle);
 }
 
 .assistant-chip:disabled {
@@ -2487,7 +2531,7 @@ onBeforeUnmount(() => {
   height: 30px;
   margin-top: 2px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #409eff, #7c4dff);
+  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2520,7 +2564,7 @@ onBeforeUnmount(() => {
 
 .assistant-message__bubble--user {
   max-width: min(100%, 560px);
-  background: #2563eb;
+  background: var(--color-primary);
   color: #fff;
   border-bottom-right-radius: 4px;
   box-shadow: 0 2px 8px rgba(37, 99, 235, 0.22);
@@ -2529,7 +2573,7 @@ onBeforeUnmount(() => {
 .assistant-message__bubble--assistant {
   max-width: 100%;
   background: #fff;
-  border: 1px solid #e8ebf0;
+  border: 1px solid var(--color-border);
   border-bottom-left-radius: 4px;
   box-shadow: 0 1px 4px rgba(31, 35, 41, 0.04);
 }
@@ -2546,7 +2590,7 @@ onBeforeUnmount(() => {
 
 .assistant-message__content--assistant {
   margin-top: 0;
-  color: #1f2329;
+  color: var(--color-text-primary);
 }
 
 /* ===== 动态思考提示 ===== */
@@ -2559,7 +2603,7 @@ onBeforeUnmount(() => {
 
 .assistant-streaming-hint__text {
   font-size: 14px;
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-style: italic;
 }
 
@@ -2573,7 +2617,7 @@ onBeforeUnmount(() => {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: #94a3b8;
+  background: var(--color-muted-text);
   animation: streaming-dot-bounce 1.2s ease-in-out infinite;
 }
 
@@ -2600,7 +2644,7 @@ onBeforeUnmount(() => {
 .assistant-streaming-cursor {
   display: inline;
   font-weight: 100;
-  color: #2563eb;
+  color: var(--color-primary);
   animation: streaming-cursor-blink 0.8s steps(1) infinite;
   font-size: 14px;
   vertical-align: baseline;
@@ -2629,15 +2673,15 @@ onBeforeUnmount(() => {
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: #a9b1bc;
+  color: var(--color-muted-text);
   font-size: 14px;
   cursor: pointer;
   transition: all 0.18s ease;
 }
 
 .assistant-message__tool-btn:hover:not(:disabled) {
-  color: #2563eb;
-  background: #eef4ff;
+  color: var(--color-primary);
+  background: var(--color-primary-subtle);
 }
 
 .assistant-message__tool-btn:disabled {
@@ -2648,7 +2692,7 @@ onBeforeUnmount(() => {
 .assistant-message__tokens {
   margin-left: 6px;
   font-size: 11px;
-  color: #a9b1bc;
+  color: var(--color-muted-text);
   white-space: nowrap;
 }
 
@@ -2656,7 +2700,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  color: #2563eb;
+  color: var(--color-primary);
   font-weight: 500;
 }
 
@@ -2664,7 +2708,7 @@ onBeforeUnmount(() => {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #2563eb;
+  background: var(--color-primary);
   animation: streaming-pulse-glow 1.4s ease-in-out infinite;
 }
 
@@ -2690,7 +2734,7 @@ onBeforeUnmount(() => {
   border-radius: 10px;
   background: linear-gradient(180deg, #f9fafb 0%, #f3f4f6 100%);
   font-size: 12.5px;
-  color: #475569;
+  color: var(--color-text-secondary);
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 
   &.is-webSearch {
@@ -2770,7 +2814,7 @@ onBeforeUnmount(() => {
 
 .assistant-stream-hud__model {
   flex-shrink: 0;
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 11.5px;
   padding: 1px 8px;
   background: rgba(255, 255, 255, 0.6);
@@ -2800,7 +2844,7 @@ onBeforeUnmount(() => {
   border: 1px solid #e5e7eb;
   border-radius: 6px;
   background: #fff;
-  color: #475569;
+  color: var(--color-text-secondary);
   font-size: 11.5px;
   font-weight: 500;
   cursor: pointer;
@@ -2868,14 +2912,14 @@ onBeforeUnmount(() => {
 .assistant-reasoning__icon {
   flex-shrink: 0;
   font-size: 14px;
-  color: #2563eb;
+  color: var(--color-primary);
 }
 
 .assistant-reasoning__label {
   flex-shrink: 0;
   font-size: 12px;
   font-weight: 600;
-  color: #2563eb;
+  color: var(--color-primary);
 }
 
 .assistant-reasoning__preview {
@@ -2884,7 +2928,7 @@ onBeforeUnmount(() => {
   margin-left: 10px;
   font-size: 11.5px;
   line-height: 1.5;
-  color: #86909c;
+  color: var(--color-muted-text);
   font-weight: 400;
   font-style: italic;
   overflow: hidden;
@@ -2897,7 +2941,7 @@ onBeforeUnmount(() => {
 
 .assistant-reasoning__arrow {
   font-size: 12px;
-  color: #86909c;
+  color: var(--color-muted-text);
   transition: transform 0.2s ease;
 }
 
@@ -2915,10 +2959,10 @@ onBeforeUnmount(() => {
   padding: 10px 12px;
   border-radius: 8px;
   background: #fff;
-  border: 1px solid #e8ebf0;
+  border: 1px solid var(--color-border);
   font-size: 12px;
   line-height: 1.7;
-  color: #4e5969;
+  color: var(--color-text-secondary);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -2927,9 +2971,9 @@ onBeforeUnmount(() => {
 .assistant-thinking-fold {
   margin-top: 10px;
   width: 100%;
-  border: 1px solid #e8ebf0;
+  border: 1px solid var(--color-border);
   border-radius: 10px;
-  background: #fafbfc;
+  background: var(--color-background);
   overflow: hidden;
 }
 
@@ -2954,7 +2998,7 @@ onBeforeUnmount(() => {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #2563eb;
+  background: var(--color-primary);
   flex-shrink: 0;
 }
 
@@ -2962,12 +3006,12 @@ onBeforeUnmount(() => {
   flex: 1;
   font-size: 12px;
   font-weight: 600;
-  color: #4e5969;
+  color: var(--color-text-secondary);
 }
 
 .assistant-thinking-fold__arrow {
   font-size: 12px;
-  color: #86909c;
+  color: var(--color-muted-text);
   transition: transform 0.2s ease;
 }
 
@@ -3001,21 +3045,21 @@ onBeforeUnmount(() => {
   border: 1px solid #dfe5ef;
   border-radius: 12px;
   padding: 10px 12px;
-  background: #f8fbff;
+  background: var(--color-background);
   text-align: left;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .assistant-action-card:hover:not(:disabled) {
-  border-color: #409eff;
+  border-color: var(--color-primary);
   transform: translateY(-1px);
 }
 
 .assistant-action-card.is-current-page,
 .assistant-action-card.is-current-menu {
-  border-color: #67c23a;
-  background: #f0f9eb;
+  border-color: var(--color-success);
+  background: var(--color-success-light);
 }
 
 .assistant-action-card.is-disabled {
@@ -3033,7 +3077,7 @@ onBeforeUnmount(() => {
 .assistant-action-card__label {
   font-size: 14px;
   font-weight: 600;
-  color: #1f2329;
+  color: var(--color-text-primary);
 }
 
 .assistant-action-card__badge {
@@ -3042,13 +3086,13 @@ onBeforeUnmount(() => {
   padding: 2px 8px;
   font-size: 11px;
   line-height: 18px;
-  color: #409eff;
-  background: #ecf5ff;
+  color: var(--color-primary);
+  background: var(--color-primary-subtle);
 }
 
 .assistant-action-card.is-current-page .assistant-action-card__badge,
 .assistant-action-card.is-current-menu .assistant-action-card__badge {
-  color: #67c23a;
+  color: var(--color-success);
   background: #e8f5e9;
 }
 
@@ -3056,13 +3100,13 @@ onBeforeUnmount(() => {
   margin-top: 6px;
   font-size: 12px;
   line-height: 1.6;
-  color: #5f6b7a;
+  color: var(--color-text-secondary);
 }
 
 .assistant-action-card__path {
   margin-top: 6px;
   font-size: 12px;
-  color: #909399;
+  color: var(--color-muted-text);
   word-break: break-all;
 }
 
@@ -3084,7 +3128,7 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   font-size: 12px;
   font-weight: 600;
-  color: #86909c;
+  color: var(--color-muted-text);
 }
 
 .assistant-source-list--compact {
@@ -3104,8 +3148,8 @@ onBeforeUnmount(() => {
   border: 1px solid #e7ebf3;
   border-radius: 999px;
   padding: 4px 8px;
-  background: #fafbfc;
-  color: #5f6b7a;
+  background: var(--color-background);
+  color: var(--color-text-secondary);
   font-size: 12px;
   line-height: 18px;
   transition: all 0.2s ease;
@@ -3118,9 +3162,9 @@ onBeforeUnmount(() => {
 /* 点击回答中的 [N] 角标后，对应来源 chip 的闪动高亮 */
 .assistant-source-chip.is-citation-flash {
   animation: assistant-citation-flash 0.8s ease-in-out 2;
-  border-color: #409eff;
-  background: #ecf5ff;
-  color: #409eff;
+  border-color: var(--color-primary);
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
 }
 
 @keyframes assistant-citation-flash {
@@ -3130,23 +3174,23 @@ onBeforeUnmount(() => {
 
 .assistant-source-chip.is-clickable:hover,
 .assistant-source-chip.is-clickable:focus-visible {
-  border-color: #409eff;
-  background: #f8fbff;
-  color: #409eff;
+  border-color: var(--color-primary);
+  background: var(--color-background);
+  color: var(--color-primary);
   outline: none;
 }
 
 /* 知识库文档来源 → 超链接样式 */
 .assistant-source-chip.is-previewable {
   cursor: pointer;
-  color: #2563eb;
+  color: var(--color-primary);
   border-color: #bfdbfe;
-  background: #eff6ff;
+  background: var(--color-primary-subtle);
 }
 
 .assistant-source-chip.is-previewable:hover,
 .assistant-source-chip.is-previewable:focus-visible {
-  border-color: #2563eb;
+  border-color: var(--color-primary);
   background: #dbeafe;
   text-decoration: underline;
   outline: none;
@@ -3160,14 +3204,14 @@ onBeforeUnmount(() => {
 
 .assistant-source-chip.is-previewable:hover .assistant-source-chip__title,
 .assistant-source-chip.is-previewable:focus-visible .assistant-source-chip__title {
-  text-decoration-color: #2563eb;
+  text-decoration-color: var(--color-primary);
 }
 
 .assistant-source-chip.is-current-page,
 .assistant-source-chip.is-current-menu {
   border-color: #b3e19d;
-  background: #f0f9eb;
-  color: #67c23a;
+  background: var(--color-success-light);
+  color: var(--color-success);
 }
 
 .assistant-source-chip__title {
@@ -3179,12 +3223,12 @@ onBeforeUnmount(() => {
 
 .assistant-source-chip__badge {
   flex-shrink: 0;
-  color: #909399;
+  color: var(--color-muted-text);
 }
 
 .assistant-composer {
   padding: 16px 18px 18px;
-  border-top: 1px solid #e8ebf0;
+  border-top: 1px solid var(--color-border);
   background: #fff;
 }
 
@@ -3199,11 +3243,11 @@ onBeforeUnmount(() => {
   gap: 4px;
   margin: 8px 0 0;
   padding: 4px 10px;
-  background: #f1f5f9;
+  background: var(--color-surface-alt);
   border-radius: 6px;
   font-size: 11px;
   line-height: 1.6;
-  color: #64748b;
+  color: var(--color-text-secondary);
   max-width: 100%;
   animation: hint-fade-in 0.25s ease-out;
 }
@@ -3211,7 +3255,7 @@ onBeforeUnmount(() => {
 .assistant-composer__hint-icon {
   flex-shrink: 0;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--color-muted-text);
 }
 
 @keyframes hint-fade-in {
@@ -3247,7 +3291,7 @@ onBeforeUnmount(() => {
 }
 
 .assistant-composer__scope-icon {
-  color: #409eff;
+  color: var(--color-primary);
 }
 
 .assistant-search-scope-popover {
@@ -3282,7 +3326,7 @@ onBeforeUnmount(() => {
   gap: 4px;
   height: 28px;
   padding: 0 8px;
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   background: #fff;
   flex-shrink: 0;
@@ -3290,16 +3334,16 @@ onBeforeUnmount(() => {
 }
 
 .assistant-composer__websearch:hover {
-  border-color: #409eff;
+  border-color: var(--color-primary);
 }
 
 .assistant-composer__websearch-icon {
   font-size: 14px;
-  color: #86909c;
+  color: var(--color-muted-text);
 }
 
 :deep(.assistant-composer__websearch .el-switch) {
-  --el-switch-on-color: #409eff;
+  --el-switch-on-color: var(--color-primary);
 }
 
 .assistant-composer__model-btn {
@@ -3308,10 +3352,10 @@ onBeforeUnmount(() => {
   gap: 6px;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   background: #fff;
-  color: #1f2329;
+  color: var(--color-text-primary);
   font-size: 12px;
   line-height: 1;
   cursor: pointer;
@@ -3320,8 +3364,8 @@ onBeforeUnmount(() => {
 }
 
 .assistant-composer__model-btn:hover:not(:disabled) {
-  border-color: #409eff;
-  color: #409eff;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .assistant-composer__model-btn:disabled {
@@ -3331,7 +3375,7 @@ onBeforeUnmount(() => {
 
 .assistant-composer__model-arrow {
   font-size: 10px;
-  color: #86909c;
+  color: var(--color-muted-text);
 }
 
 /* 模型选择两级菜单 */
@@ -3344,7 +3388,7 @@ onBeforeUnmount(() => {
 .assistant-model-menu__title {
   font-size: 12px;
   font-weight: 600;
-  color: #86909c;
+  color: var(--color-muted-text);
 }
 
 .assistant-model-menu__panels {
@@ -3365,7 +3409,7 @@ onBeforeUnmount(() => {
 .assistant-model-menu__label {
   font-size: 11px;
   font-weight: 600;
-  color: #86909c;
+  color: var(--color-muted-text);
   padding: 0 2px;
   margin-bottom: 2px;
 }
@@ -3376,8 +3420,8 @@ onBeforeUnmount(() => {
   border: 1px solid transparent;
   border-radius: 8px;
   padding: 8px 10px;
-  background: #f7f8fa;
-  color: #1f2329;
+  background: var(--color-background);
+  color: var(--color-text-primary);
   cursor: pointer;
   text-align: left;
   display: flex;
@@ -3389,17 +3433,17 @@ onBeforeUnmount(() => {
 
 .assistant-model-menu__provider:hover,
 .assistant-model-menu__model:hover {
-  background: #ecf5ff;
+  background: var(--color-primary-subtle);
 }
 
 .assistant-model-menu__provider.is-active {
-  background: #ecf5ff;
-  border-color: #409eff;
+  background: var(--color-primary-subtle);
+  border-color: var(--color-primary);
 }
 
 .assistant-model-menu__model.is-active {
-  background: #ecf5ff;
-  border-color: #409eff;
+  background: var(--color-primary-subtle);
+  border-color: var(--color-primary);
 }
 
 .assistant-model-menu__provider-name {
@@ -3412,7 +3456,7 @@ onBeforeUnmount(() => {
 
 .assistant-model-menu__provider-count {
   font-size: 11px;
-  color: #86909c;
+  color: var(--color-muted-text);
   flex-shrink: 0;
 }
 
@@ -3428,7 +3472,7 @@ onBeforeUnmount(() => {
 .assistant-model-menu__model-id {
   margin-top: 2px;
   font-size: 11px;
-  color: #86909c;
+  color: var(--color-muted-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3436,18 +3480,18 @@ onBeforeUnmount(() => {
 
 .assistant-model-menu__check {
   flex-shrink: 0;
-  color: #409eff;
+  color: var(--color-primary);
   font-weight: 700;
 }
 
 .assistant-model-menu__models {
-  border-left: 1px solid #e8ebf0;
+  border-left: 1px solid var(--color-border);
   padding-left: 12px;
 }
 
 .assistant-composer__tip {
   font-size: 12px;
-  color: #86909c;
+  color: var(--color-muted-text);
 }
 
 /* 文件上传：卡片 + 上传按钮 */
@@ -3463,9 +3507,9 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: #fafbfc;
+  background: var(--color-background);
   font-size: 12px;
   max-width: 320px;
   transition: border-color 0.2s, opacity 0.2s;
@@ -3486,13 +3530,13 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #1f2329;
+  color: var(--color-text-primary);
   font-weight: 500;
 }
 
 .assistant-file-card__size {
   flex-shrink: 0;
-  color: #a9b1bc;
+  color: var(--color-muted-text);
 }
 
 .assistant-file-card__remove {
@@ -3504,8 +3548,8 @@ onBeforeUnmount(() => {
   justify-content: center;
   border: none;
   border-radius: 50%;
-  background: #e8ebf0;
-  color: #86909c;
+  background: var(--color-border);
+  color: var(--color-muted-text);
   font-size: 12px;
   line-height: 1;
   cursor: pointer;
@@ -3513,7 +3557,7 @@ onBeforeUnmount(() => {
 }
 
 .assistant-file-card__remove:hover {
-  background: #f56c6c;
+  background: var(--color-danger);
   color: #fff;
 }
 
@@ -3523,10 +3567,10 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   background: #fff;
-  color: #86909c;
+  color: var(--color-muted-text);
   font-size: 14px;
   cursor: pointer;
   transition: all 0.18s ease;
@@ -3534,9 +3578,9 @@ onBeforeUnmount(() => {
 }
 
 .assistant-composer__file-btn:hover:not(:disabled) {
-  border-color: #2563eb;
-  color: #2563eb;
-  background: #eef4ff;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-primary-subtle);
 }
 
 .assistant-composer__file-btn:disabled {
@@ -3580,7 +3624,7 @@ onBeforeUnmount(() => {
     flex-direction: row;
     align-items: center;
     border-right: none;
-    border-bottom: 1px solid #e8ebf0;
+    border-bottom: 1px solid var(--color-border);
   }
 
   .assistant-message__main {
@@ -3596,16 +3640,16 @@ onBeforeUnmount(() => {
   padding: 8px 12px;
   background: #fff;
   border-radius: 8px;
-  border-left: 3px solid #409eff;
+  border-left: 3px solid var(--color-primary);
   box-shadow: 0 1px 3px rgba(31, 35, 41, 0.04);
 }
 
 .assistant-thinking-step--query_parse {
-  border-left-color: #67c23a;
+  border-left-color: var(--color-success);
 }
 
 .assistant-thinking-step--retrieve {
-  border-left-color: #409eff;
+  border-left-color: var(--color-primary);
 }
 
 .assistant-thinking-step--rerank {
@@ -3613,7 +3657,7 @@ onBeforeUnmount(() => {
 }
 
 .assistant-thinking-step--synthesize {
-  border-left-color: #f56c6c;
+  border-left-color: var(--color-danger);
 }
 
 .assistant-thinking-step__header {
@@ -3632,13 +3676,13 @@ onBeforeUnmount(() => {
 
 .assistant-thinking-step__score {
   font-size: 12px;
-  color: #86909c;
+  color: var(--color-muted-text);
   font-weight: 500;
 }
 
 .assistant-thinking-step__detail {
   font-size: 12px;
-  color: #4e5969;
+  color: var(--color-text-secondary);
   line-height: 1.6;
 }
 </style>

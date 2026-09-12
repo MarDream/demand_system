@@ -113,12 +113,11 @@
           </el-table>
 
           <div class="pagination-row">
-            <el-pagination
-              v-model:current-page="pagination.page"
+            <AppPagination
+              v-model:page-num="pagination.page"
               v-model:page-size="pagination.size"
               :total="filteredQuestions.length"
               :page-sizes="[10, 20, 50]"
-              layout="total, sizes, prev, pager, next"
             />
           </div>
         </el-tab-pane>

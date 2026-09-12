@@ -51,6 +51,16 @@ public interface BitableAiService {
     void fillBatchAsync(Long tableId, Long fieldId, Long userId);
 
     /**
+     * 处理 AI 批量填充任务（由 MQ 消费者调用）
+     * 逐条填充指定字段的记录，单条失败仅记录并跳过
+     *
+     * @param tableId 数据表ID
+     * @param fieldId 字段ID
+     * @param userId  操作人ID
+     */
+    void processFillBatch(Long tableId, Long fieldId, Long userId);
+
+    /**
      * AI 对话式查询
      * 根据问题调用 LLM 生成条件，在内存过滤记录（Phase 3 简化实现）
      *

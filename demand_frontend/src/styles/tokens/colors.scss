@@ -84,10 +84,15 @@ $palette-gray-50: #F9FAFB;
   // 状态色
   --color-success: #{$palette-emerald-500};
   --color-success-light: rgba(16, 185, 129, 0.1);
+  --color-success-bg: rgba(16, 185, 129, 0.12);
   --color-warning: #{$palette-amber-500};
   --color-warning-light: rgba(245, 158, 11, 0.1);
+  --color-warning-bg: rgba(245, 158, 11, 0.14);
   --color-danger: #{$palette-red-500};
   --color-danger-light: rgba(239, 68, 68, 0.08);
+  --color-danger-bg: rgba(239, 68, 68, 0.12);
+  --color-primary-bg: rgba(37, 99, 235, 0.1);
+  --color-fill-secondary: #{$palette-slate-100};
   --color-info: #{$palette-blue-500};
   --color-info-light: rgba(59, 130, 246, 0.04);
 

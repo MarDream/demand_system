@@ -118,6 +118,11 @@
             <el-dropdown-item command="comments"><el-icon><ChatDotRound /></el-icon> 评论</el-dropdown-item>
             <el-dropdown-item command="members"><el-icon><User /></el-icon> 成员管理</el-dropdown-item>
             <el-dropdown-item command="fieldConfig"><el-icon><Setting /></el-icon> 字段配置</el-dropdown-item>
+            <el-dropdown-item command="shareView"><el-icon><Share /></el-icon> 分享视图</el-dropdown-item>
+            <el-dropdown-item v-if="activeView?.viewType === 'form'" command="publishForm">
+              <el-icon><Position /></el-icon> 发布表单
+            </el-dropdown-item>
+            <el-dropdown-item command="integration"><el-icon><Connection /></el-icon> API 与 Webhook</el-dropdown-item>
           </el-dropdown-menu>
         </template>
       </el-dropdown>
@@ -208,6 +213,9 @@ import {
   Reading,
   MoreFilled,
   Filter,
+  Share,
+  Position,
+  Connection,
 } from '@element-plus/icons-vue'
 import type { BitableTable, BitableView, ViewType } from '@/types/bitable'
 
@@ -234,7 +242,11 @@ const emit = defineEmits<{
   openMembers: []
   openAiPanel: []
   openImportExport: []
+  openExport: []
   openFieldConfig: []
+  openShareView: []
+  openFormPublish: []
+  openIntegration: []
   openAiFill: []
   openAiClassify: []
   openAiSummarize: []
@@ -319,8 +331,10 @@ function handleViewSelectorCommand(cmd: { type: string; viewId?: number }) {
 
 // 导入/导出命令处理
 function handleImportExportCommand(command: string) {
-  if (command === 'import' || command === 'export') {
+  if (command === 'import') {
     emit('openImportExport')
+  } else if (command === 'export') {
+    emit('openExport')
   }
 }
 
@@ -356,6 +370,15 @@ function handleMoreCommand(command: string) {
       break
     case 'fieldConfig':
       emit('openFieldConfig')
+      break
+    case 'shareView':
+      emit('openShareView')
+      break
+    case 'publishForm':
+      emit('openFormPublish')
+      break
+    case 'integration':
+      emit('openIntegration')
       break
   }
 }

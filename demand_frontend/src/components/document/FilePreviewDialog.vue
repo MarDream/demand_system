@@ -98,6 +98,7 @@ import request from '@/api/request'
 import { downloadDocumentBlob, getDocumentPreviewUrl } from '@/api/modules/knowledge'
 import { getOfficePreviewUrl } from '@/api/modules/preview'
 import { downloadFile } from '@/api/modules/file'
+import { saveBlob } from '@/utils/download'
 import { PREVIEW_IMAGE_SET, PREVIEW_SUPPORTED_EXTENSION_SET, PREVIEW_TEXT_SET, normalizeFileExtension } from '@/constants/knowledgeDocument'
 import { useUserStore } from '@/stores/modules/user'
 import { clampProgress, computeOfficePreviewProgress, fetchBlobWithProgress, fetchTextWithProgress } from '@/utils/previewLoading'
@@ -439,14 +440,7 @@ async function handleDownload() {
     const blob = isFileIdMode.value
       ? await downloadFile(props.fileId!) as unknown as Blob
       : await downloadDocumentBlob(props.knowledgeBaseId!, props.documentId!)
-    const url = window.URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = props.fileName || 'document'
-    document.body.appendChild(anchor)
-    anchor.click()
-    anchor.remove()
-    window.URL.revokeObjectURL(url)
+    await saveBlob(blob, props.fileName || 'document')
     emit('downloaded')
   } catch {
     ElMessage.error('下载文件失败')

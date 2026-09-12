@@ -10,10 +10,13 @@ import com.demand.system.module.bitable.dto.BitableRecordCreateDTO;
 import com.demand.system.module.bitable.dto.CellValueDTO;
 import com.demand.system.module.bitable.entity.BitableAutomation;
 import com.demand.system.module.bitable.entity.BitableAutomationRun;
+import com.demand.system.module.bitable.entity.BitableTable;
 import com.demand.system.module.bitable.mapper.BitableAutomationMapper;
 import com.demand.system.module.bitable.mapper.BitableAutomationRunMapper;
+import com.demand.system.module.bitable.mapper.BitableTableMapper;
 import com.demand.system.module.bitable.service.BitableAutomationService;
 import com.demand.system.module.bitable.service.BitableRecordService;
+import com.demand.system.module.bitable.service.BitableWebhookService;
 import com.demand.system.module.bitable.util.BitableJsonUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,6 +24,8 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.net.InetAddress;
+import java.net.URI;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -39,15 +44,21 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
     private final BitableAutomationMapper automationMapper;
     private final BitableAutomationRunMapper runMapper;
     private final BitableRecordService recordService;
+    private final BitableTableMapper tableMapper;
+    private final BitableWebhookService webhookService;
     private final RabbitTemplate rabbitTemplate;
 
     public BitableAutomationServiceImpl(BitableAutomationMapper automationMapper,
                                         BitableAutomationRunMapper runMapper,
                                         BitableRecordService recordService,
+                                        BitableTableMapper tableMapper,
+                                        BitableWebhookService webhookService,
                                         RabbitTemplate rabbitTemplate) {
         this.automationMapper = automationMapper;
         this.runMapper = runMapper;
         this.recordService = recordService;
+        this.tableMapper = tableMapper;
+        this.webhookService = webhookService;
         this.rabbitTemplate = rabbitTemplate;
     }
 
@@ -77,6 +88,12 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
     public Long createAutomation(Long baseId, BitableAutomationCreateDTO dto, Long userId) {
         validateTriggerType(dto.getTriggerType());
         validateActionType(dto.getActionType());
+
+        // 校验 tableId 确实属于当前 Base，防止跨 Base 挂载自动化
+        BitableTable table = dto.getTableId() != null ? tableMapper.selectById(dto.getTableId()) : null;
+        if (table == null || !baseId.equals(table.getBaseId())) {
+            throw new BusinessException("数据表不属于当前多维表格");
+        }
 
         BitableAutomation automation = new BitableAutomation();
         automation.setBaseId(baseId);
@@ -149,6 +166,19 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
 
     @Override
     public void onRecordChanged(Long tableId, Long recordId, String changeType, Map<String, Object> changedFields) {
+        // 出站 Webhook 分发（独立于自动化规则，任何异常不影响主流程）
+        try {
+            BitableTable eventTable = tableId != null ? tableMapper.selectById(tableId) : null;
+            if (eventTable != null) {
+                Map<String, Object> webhookPayload = new HashMap<>();
+                webhookPayload.put("recordId", recordId);
+                webhookPayload.put("changedFields", changedFields != null ? changedFields : Collections.emptyMap());
+                webhookService.dispatch(eventTable.getBaseId(), tableId, changeType, webhookPayload);
+            }
+        } catch (Exception e) {
+            log.warn("Webhook 分发失败: tableId={}, changeType={}", tableId, changeType, e);
+        }
+
         // 查询该表所有 enabled 状态的自动化规则
         List<BitableAutomation> automations = automationMapper.selectByTableIdAndStatus(tableId, "enabled");
         if (automations.isEmpty()) {
@@ -218,6 +248,54 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
     // ==================== 动作执行（MQ消费者调用） ====================
 
     @Override
+    public boolean fireScheduledAutomation(Long automationId) {
+        BitableAutomation automation = automationMapper.selectById(automationId);
+        if (automation == null || !"enabled".equals(automation.getStatus())) {
+            return false;
+        }
+
+        // 创建执行记录
+        BitableAutomationRun run = new BitableAutomationRun();
+        run.setAutomationId(automation.getId());
+        run.setEventId(buildEventId(automation.getId(), automation.getTableId(), 0L, "scheduled"));
+        run.setStatus("pending");
+        run.setTriggerDetail(BitableJsonUtils.toJsonString(Map.of(
+                "changeType", "scheduled",
+                "triggeredAt", LocalDateTime.now().toString()
+        )));
+        run.setAttempt(0);
+        runMapper.insert(run);
+
+        Map<String, Object> context = new HashMap<>();
+        if (automation.getTableId() != null) {
+            context.put("tableId", automation.getTableId());
+        }
+        context.put("changeType", "scheduled");
+        context.put("originAutomationId", automation.getId());
+        context.put("traceId", UUID.randomUUID().toString());
+        context.put("triggerDepth", 1);
+
+        Map<String, Object> message = new HashMap<>();
+        message.put("automationId", automation.getId());
+        message.put("runId", run.getId());
+        message.put("context", context);
+
+        try {
+            rabbitTemplate.convertAndSend(
+                    BitableAutomationMQConfig.AUTOMATION_EXCHANGE,
+                    BitableAutomationMQConfig.AUTOMATION_ROUTING_KEY,
+                    message
+            );
+            log.info("定时自动化已发送到MQ: automationId={}, runId={}", automation.getId(), run.getId());
+            return true;
+        } catch (Exception e) {
+            log.error("发送定时自动化MQ消息失败: automationId={}, runId={}", automation.getId(), run.getId(), e);
+            markRunFailed(run.getId(), "MQ_SEND_FAILED", "消息发送失败: " + e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public void executeAutomation(Long automationId, Long runId, Map<String, Object> context) {
         BitableAutomation automation = automationMapper.selectById(automationId);
@@ -226,9 +304,10 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
             return;
         }
 
-        // 防递归检查
-        Integer triggerDepth = (Integer) context.getOrDefault("triggerDepth", 1);
-        if (triggerDepth != null && triggerDepth > MAX_TRIGGER_DEPTH) {
+        // 防递归检查（triggerDepth 经 JSON 反序列化后可能是任意 Number 类型，避免强转异常）
+        int triggerDepth = asLong(context.getOrDefault("triggerDepth", 1)) != null
+                ? asLong(context.getOrDefault("triggerDepth", 1)).intValue() : 1;
+        if (triggerDepth > MAX_TRIGGER_DEPTH) {
             markRunFailed(runId, "MAX_DEPTH_EXCEEDED", "触发链路过深，已超过最大深度" + MAX_TRIGGER_DEPTH);
             return;
         }
@@ -236,19 +315,26 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
         // 防递归：检查同一次链路内同一自动化是否已触发
         Long originAutomationId = asLong(context.get("originAutomationId"));
         if (originAutomationId != null && originAutomationId.equals(automationId)
-                && triggerDepth != null && triggerDepth > 1) {
+                && triggerDepth > 1) {
             log.info("自动化规则在同一链路内重复触发，跳过: automationId={}", automationId);
             markRunFailed(runId, "RECURSION_BLOCKED", "同一自动化在链路内重复触发，已阻止递归");
             return;
         }
 
-        // 更新执行记录为 running
+        // CAS 抢占执行权：仅 pending 状态可转为 running。
+        // MQ 重复投递/并发消费时，重复消息因状态不匹配被跳过，保证一次 run 只产生一次业务效果。
         UpdateWrapper<BitableAutomationRun> wrapper = new UpdateWrapper<>();
         wrapper.eq("id", runId)
+                .eq("status", "pending")
                 .set("status", "running")
                 .set("started_at", LocalDateTime.now())
-                .set("attempt", ((Number) context.getOrDefault("attempt", 0)).intValue() + 1);
-        runMapper.update(null, wrapper);
+                .set("attempt", asLong(context.getOrDefault("attempt", 0)) != null
+                        ? asLong(context.getOrDefault("attempt", 0)).intValue() + 1 : 1);
+        int claimed = runMapper.update(null, wrapper);
+        if (claimed <= 0) {
+            log.info("自动化执行记录已被处理或正在处理，跳过重复消息: automationId={}, runId={}", automationId, runId);
+            return;
+        }
 
         try {
             Object actionResult = executeAction(automation, context);
@@ -276,8 +362,8 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
         Map<String, Object> actionConfig = parseConfig(automation.getActionConfig());
 
         return switch (actionType) {
-            case "update_record" -> executeUpdateRecord(actionConfig, context);
-            case "create_record" -> executeCreateRecord(actionConfig, context);
+            case "update_record" -> executeUpdateRecord(actionConfig, context, automation);
+            case "create_record" -> executeCreateRecord(actionConfig, context, automation);
             case "send_message" -> executeSendMessage(actionConfig, context);
             case "http_request" -> executeHttpRequest(actionConfig, context);
             default -> throw new BusinessException("不支持的动作类型: " + actionType);
@@ -287,7 +373,8 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
     /**
      * 动作: 更新记录字段
      */
-    private Object executeUpdateRecord(Map<String, Object> config, Map<String, Object> context) {
+    private Object executeUpdateRecord(Map<String, Object> config, Map<String, Object> context,
+                                       BitableAutomation automation) {
         Long recordId = asLong(config.get("recordId"));
         Long fieldId = asLong(config.get("fieldId"));
 
@@ -300,6 +387,12 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
         }
         if (fieldId == null) {
             throw new BusinessException("update_record 动作缺少 fieldId");
+        }
+
+        // 记录必须属于自动化所在 Base 的表，防止跨 Base 写入
+        var targetRecord = recordService.getRecordById(recordId);
+        if (targetRecord == null || !automation.getTableId().equals(targetRecord.getTableId())) {
+            throw new BusinessException("目标记录不属于自动化所在的数据表");
         }
 
         String valueText = (String) config.get("valueText");
@@ -315,8 +408,7 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
         }
 
         // 获取当前记录版本号（乐观锁）
-        var record = recordService.getRecordById(recordId);
-        Integer version = record.getVersion();
+        Integer version = targetRecord.getVersion();
 
         recordService.updateCell(recordId, fieldId, valueMap, version, 0L);
         return Map.of("recordId", recordId, "fieldId", fieldId, "updated", true);
@@ -325,7 +417,8 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
     /**
      * 动作: 创建记录
      */
-    private Object executeCreateRecord(Map<String, Object> config, Map<String, Object> context) {
+    private Object executeCreateRecord(Map<String, Object> config, Map<String, Object> context,
+                                       BitableAutomation automation) {
         Long targetTableId = asLong(config.get("targetTableId"));
         if (targetTableId == null) {
             // 默认使用触发记录所在表
@@ -333,6 +426,12 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
         }
         if (targetTableId == null) {
             throw new BusinessException("create_record 动作缺少 targetTableId");
+        }
+
+        // 目标表必须与自动化同属一个 Base，防止跨 Base 写数据
+        BitableTable targetTable = tableMapper.selectById(targetTableId);
+        if (targetTable == null || !automation.getBaseId().equals(targetTable.getBaseId())) {
+            throw new BusinessException("目标表不属于自动化所在的多维表格");
         }
 
         @SuppressWarnings("unchecked")
@@ -384,6 +483,7 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
 
     /**
      * 动作: HTTP 请求
+     * 安全约束：仅允许 http/https；拒绝回环/私网/链路本地地址（SSRF 防护）；限制超时与响应大小
      */
     private Object executeHttpRequest(Map<String, Object> config, Map<String, Object> context) {
         String url = (String) config.get("url");
@@ -402,6 +502,8 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
         }
         String processedUrl = replaceContextVariables(url, context);
 
+        assertUrlNotInternal(processedUrl);
+
         try {
             org.springframework.http.HttpHeaders httpHeaders = new org.springframework.http.HttpHeaders();
             headers.forEach((k, v) -> httpHeaders.add(k, String.valueOf(v)));
@@ -411,12 +513,11 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
 
             org.springframework.http.HttpEntity<Object> entity = new org.springframework.http.HttpEntity<>(body, httpHeaders);
 
-            org.springframework.web.client.RestTemplate restTemplate = new org.springframework.web.client.RestTemplate();
-            // 设置超时 10s
+            // 共享 RestTemplate 配置（连接/读取超时 10s）
             var requestFactory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
             requestFactory.setConnectTimeout(10_000);
             requestFactory.setReadTimeout(10_000);
-            restTemplate.setRequestFactory(requestFactory);
+            org.springframework.web.client.RestTemplate restTemplate = new org.springframework.web.client.RestTemplate(requestFactory);
 
             org.springframework.http.ResponseEntity<String> response;
             if ("GET".equalsIgnoreCase(method)) {
@@ -432,9 +533,60 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
             }
 
             return Map.of("statusCode", response.getStatusCode().value(), "response", responseBody);
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             throw new BusinessException("HTTP请求执行失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * SSRF 防护：仅允许 http/https 协议，且目标主机的所有解析 IP 都不得指向内网/回环/链路本地地址
+     */
+    private void assertUrlNotInternal(String url) {
+        URI uri;
+        try {
+            uri = URI.create(url);
+        } catch (Exception e) {
+            throw new BusinessException("URL 格式无效");
+        }
+
+        String scheme = uri.getScheme() != null ? uri.getScheme().toLowerCase() : "";
+        if (!"http".equals(scheme) && !"https".equals(scheme)) {
+            throw new BusinessException("http_request 仅支持 http/https 协议");
+        }
+
+        String host = uri.getHost();
+        if (host == null || host.isBlank()) {
+            throw new BusinessException("URL 缺少主机地址");
+        }
+
+        InetAddress[] addresses;
+        try {
+            addresses = InetAddress.getAllByName(host);
+        } catch (Exception e) {
+            throw new BusinessException("无法解析目标主机: " + host);
+        }
+
+        for (InetAddress address : addresses) {
+            if (address.isLoopbackAddress()
+                    || address.isSiteLocalAddress()
+                    || address.isLinkLocalAddress()
+                    || address.isAnyLocalAddress()
+                    || address.isMulticastAddress()
+                    || isUniqueLocalIpv6(address)) {
+                log.warn("自动化 http_request 被拒绝（内网地址）: url={}, ip={}", url, address.getHostAddress());
+                throw new BusinessException("不允许请求内网或保留地址");
+            }
+        }
+    }
+
+    /**
+     * IPv6 唯一本地地址（fc00::/7）检测，InetAddress 未直接提供该判断
+     */
+    private boolean isUniqueLocalIpv6(InetAddress address) {
+        byte[] bytes = address.getAddress();
+        return bytes.length == 16 && (bytes[0] & 0xfe) == 0xfc;
     }
 
     // ==================== 辅助方法 ====================

@@ -40,4 +40,12 @@
         WHERE record_id = #{recordId}
     </delete>
 
+    <!-- 物理删除指定数据表下所有记录的单元格值（含已软删记录的残留数据） -->
+    <delete id="deleteByTableId">
+        DELETE FROM `bitable_cell_values`
+        WHERE record_id IN (
+            SELECT id FROM `bitable_records` WHERE table_id = #{tableId}
+        )
+    </delete>
+
 </mapper>

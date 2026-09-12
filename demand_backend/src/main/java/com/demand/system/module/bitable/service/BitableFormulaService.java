@@ -46,4 +46,13 @@ public interface BitableFormulaService {
      * @return 校验结果，包含 valid、errorType、referencedFieldIds、resultType 等
      */
     Map<String, Object> validateFormula(String formula, Long tableId);
+
+    /**
+     * 对一组原始值执行 rollup 聚合（批量计算路径复用）
+     *
+     * @param values      目标字段原始值列表
+     * @param aggregation 聚合方式: sum/average/count/min/max
+     * @return 聚合结果；空列表时返回 count=0 或 null
+     */
+    Object aggregateValues(List<Object> values, String aggregation);
 }

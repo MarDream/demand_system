@@ -80,7 +80,7 @@ export default defineConfig({
           if (id.includes('node_modules/element-plus') || id.includes('node_modules/@element-plus')) {
             return 'vendor-element'
           }
-          if (id.includes('node_modules/@isle-editor') || id.includes('node_modules/@tiptap') || id.includes('node_modules/wangeditor')) {
+          if (id.includes('node_modules/@isle-editor') || id.includes('node_modules/@tiptap')) {
             return 'vendor-editor'
           }
           if (id.includes('node_modules/@logicflow')) {

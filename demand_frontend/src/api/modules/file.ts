@@ -1,6 +1,7 @@
 import request from '@/api/request'
 import type { ApiResponse } from '@/types/api'
 import type { RequirementAttachment } from '@/types/requirement'
+import { saveBlob } from '@/utils/download'
 
 export interface FileUploadResult extends RequirementAttachment {}
 
@@ -39,14 +40,7 @@ export function deleteFile(id: number) {
 export async function downloadRequirementAttachment(attachment: RequirementAttachment) {
   if (attachment.fileId) {
     const blob = await downloadFile(attachment.fileId) as unknown as Blob
-    const objectUrl = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = objectUrl
-    link.download = attachment.name || 'attachment'
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    window.URL.revokeObjectURL(objectUrl)
+    await saveBlob(blob, attachment.name || 'attachment')
     return
   }
 

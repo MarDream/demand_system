@@ -29,4 +29,12 @@ public interface BitableAutomationMapper extends BaseMapper<BitableAutomation> {
      * @return 自动化规则列表
      */
     List<BitableAutomation> selectByTableIdAndStatus(@Param("tableId") Long tableId, @Param("status") String status);
+
+    /**
+     * 停用指定 Base 下所有启用的自动化规则（删除 Base 时级联停用）
+     *
+     * @param baseId 多维表格ID
+     * @return 影响行数
+     */
+    int disableByBaseId(@Param("baseId") Long baseId);
 }

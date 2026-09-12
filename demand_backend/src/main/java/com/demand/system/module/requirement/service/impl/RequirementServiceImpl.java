@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.support.SFunction;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.demand.system.common.util.UserNameResolver;
 import com.demand.system.common.cache.UserLocalCache;
 import com.demand.system.common.cache.OrgLocalCache;
 import com.demand.system.common.cache.VisibleOrgCache;
@@ -181,8 +182,9 @@ public class RequirementServiceImpl implements RequirementService {
     private final OrgLocalCache orgLocalCache;
     private final VisibleOrgCache visibleOrgCache;
     private final RoleDataScopeOrgMapper roleDataScopeOrgMapper;
+    private final UserNameResolver userNameResolver;
 
-    public RequirementServiceImpl(RequirementMapper requirementMapper, RequirementPendingTaskMapper pendingTaskMapper, RequirementFollowMapper requirementFollowMapper, RequirementHistoryMapper historyMapper, RequirementCommentMapper requirementCommentMapper, CustomFieldValueMapper customFieldValueMapper, UserMapper userMapper, UserOrganizationMapper userOrganizationMapper, SysOrgService sysOrgService, NotificationService notificationService, RelationService relationService, WorkflowService workflowService, WorkflowEngineService workflowEngineService, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowGraphNavigator workflowGraphNavigator, WorkflowRuntimeLoader workflowRuntimeLoader, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, WorkflowInstanceMapper workflowInstanceMapper, WorkflowInstanceTransitionMapper workflowInstanceTransitionMapper, WorkflowTransitionRecordMapper workflowTransitionRecordMapper, WorkflowDefinitionEngine workflowDefinitionEngine, RequirementApprovalEvaluationService approvalEvaluationService, RequirementConfigService requirementConfigService, RequirementFieldService requirementFieldService, KnowledgeDocumentService knowledgeDocumentService, NodeStatusMapper nodeStatusMapper, ProjectMapper projectMapper, RoleMapper roleMapper, RoleGroupMapper roleGroupMapper, FileRecordMapper fileRecordMapper, ObjectMapper objectMapper, DistributedIdGenerator distributedIdGenerator, com.demand.system.module.organization.service.OrgHierarchyCache orgHierarchyCache, UserLocalCache userLocalCache, OrgLocalCache orgLocalCache, VisibleOrgCache visibleOrgCache, RoleDataScopeOrgMapper roleDataScopeOrgMapper) {
+    public RequirementServiceImpl(RequirementMapper requirementMapper, RequirementPendingTaskMapper pendingTaskMapper, RequirementFollowMapper requirementFollowMapper, RequirementHistoryMapper historyMapper, RequirementCommentMapper requirementCommentMapper, CustomFieldValueMapper customFieldValueMapper, UserMapper userMapper, UserOrganizationMapper userOrganizationMapper, SysOrgService sysOrgService, NotificationService notificationService, RelationService relationService, WorkflowService workflowService, WorkflowEngineService workflowEngineService, WorkflowVersionMapper workflowVersionMapper, WorkflowVersionResolver workflowVersionResolver, WorkflowGraphNavigator workflowGraphNavigator, WorkflowRuntimeLoader workflowRuntimeLoader, WorkflowNodeMapper workflowNodeMapper, WorkflowEdgeMapper workflowEdgeMapper, WorkflowInstanceMapper workflowInstanceMapper, WorkflowInstanceTransitionMapper workflowInstanceTransitionMapper, WorkflowTransitionRecordMapper workflowTransitionRecordMapper, WorkflowDefinitionEngine workflowDefinitionEngine, RequirementApprovalEvaluationService approvalEvaluationService, RequirementConfigService requirementConfigService, RequirementFieldService requirementFieldService, KnowledgeDocumentService knowledgeDocumentService, NodeStatusMapper nodeStatusMapper, ProjectMapper projectMapper, RoleMapper roleMapper, RoleGroupMapper roleGroupMapper, FileRecordMapper fileRecordMapper, ObjectMapper objectMapper, DistributedIdGenerator distributedIdGenerator, com.demand.system.module.organization.service.OrgHierarchyCache orgHierarchyCache, UserLocalCache userLocalCache, OrgLocalCache orgLocalCache, VisibleOrgCache visibleOrgCache, RoleDataScopeOrgMapper roleDataScopeOrgMapper, UserNameResolver userNameResolver) {
         this.requirementMapper = requirementMapper;
         this.pendingTaskMapper = pendingTaskMapper;
         this.requirementFollowMapper = requirementFollowMapper;
@@ -222,6 +224,7 @@ public class RequirementServiceImpl implements RequirementService {
         this.orgLocalCache = orgLocalCache;
         this.visibleOrgCache = visibleOrgCache;
         this.roleDataScopeOrgMapper = roleDataScopeOrgMapper;
+        this.userNameResolver = userNameResolver;
     }
 
     @Override
@@ -1920,14 +1923,7 @@ public class RequirementServiceImpl implements RequirementService {
             }
         }
 
-        java.util.Map<Long, String> uploaderNameMap = new java.util.HashMap<>();
-        if (!uploaderIds.isEmpty()) {
-            for (User u : userMapper.selectBatchIds(uploaderIds)) {
-                if (u == null) continue;
-                uploaderNameMap.put(u.getId(),
-                        StringUtils.hasText(u.getRealName()) ? u.getRealName() : u.getUsername());
-            }
-        }
+        java.util.Map<Long, String> uploaderNameMap = userNameResolver.resolveUserNames(uploaderIds);
 
         for (Requirement r : requirements) {
             if (r == null || r.getAttachments() == null) continue;
@@ -2219,17 +2215,11 @@ public class RequirementServiceImpl implements RequirementService {
             }
         }
 
-        // 4) 单次批量查 sys_user（覆盖上传人 + 操作人）
-        java.util.Map<Long, String> userNameMap = new java.util.HashMap<>();
+        // 4) 批量解析用户名称（上传人 + 操作人，走二级缓存）
         java.util.Set<Long> allUserIds = new java.util.HashSet<>();
         allUserIds.addAll(uploaderIds);
         allUserIds.addAll(operatorIds);
-        if (!allUserIds.isEmpty()) {
-            for (User u : userMapper.selectBatchIds(allUserIds)) {
-                if (u == null) continue;
-                userNameMap.put(u.getId(), StringUtils.hasText(u.getRealName()) ? u.getRealName() : u.getUsername());
-            }
-        }
+        java.util.Map<Long, String> userNameMap = userNameResolver.resolveUserNames(allUserIds);
 
         // 5) 回填主附件
         if (mainAttachments != null) {

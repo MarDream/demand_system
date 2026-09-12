@@ -46,9 +46,7 @@
         </el-table-column>
         <el-table-column v-if="isColumnVisible('status')" label="状态" width="100">
           <template #default="{ row }">
-            <el-tag :type="getStatusType(row.status)">
-              {{ getStatusLabel(row.status) }}
-            </el-tag>
+            <StatusTag :value="getStatusLabel(row.status)" />
           </template>
         </el-table-column>
         <el-table-column v-if="isColumnVisible('capacity')" prop="capacity" label="容量(人天)" width="110" />
@@ -80,14 +78,12 @@
       </template>
 
       <template #pagination>
-        <el-pagination
-          v-model:current-page="pageNum"
+        <AppPagination
+          v-model:page-num="pageNum"
           v-model:page-size="pageSize"
           :total="total"
           :page-sizes="[10, 20, 50]"
-          layout="total, sizes, prev, pager, next"
-          @size-change="loadIterations"
-          @current-change="loadIterations"
+          @change="loadIterations"
         />
       </template>
     </TableCard>
@@ -198,7 +194,9 @@ import TableCard from '@/components/common/TableCard.vue'
 import Toolbar from '@/components/common/Toolbar.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
+import AppPagination from '@/components/common/AppPagination.vue'
 import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
+import { usePagedList } from '@/composables/usePagedList'
 import { resolveErrorMessage } from '@/utils/error'
 
 // ── 列表字段设置 ──
@@ -239,20 +237,39 @@ const projectId = computed(() => {
   const id = Number(route.query.projectId)
   return Number.isFinite(id) && id > 0 ? id : 1
 })
-const iterations = ref<Iteration[]>([])
 const requirementOptions = ref<IterationRequirementOption[]>([])
-const loading = ref(false)
-
-// 分页
-const pageNum = ref(1)
-const pageSize = ref(10)
-const total = ref(0)
 
 // 筛选
 const queryParams = reactive({
   name: '',
   status: '',
 })
+
+// 分页列表状态（列表/分页/loading 统一由 usePagedList 管理）
+const {
+  list: iterations,
+  pageNum,
+  pageSize,
+  total,
+  loading,
+  fetchPage: loadIterations,
+  reset: resetToFirstPage,
+} = usePagedList<Iteration>(
+  async (pageNum, pageSize) => {
+    const res: any = await getIterationList(projectId.value, {
+      name: queryParams.name || undefined,
+      status: queryParams.status || undefined,
+      pageNum,
+      pageSize,
+    })
+    return res
+  },
+  {
+    onError: (error) => {
+      ElMessage.error(resolveErrorMessage(error, '迭代数据加载失败'))
+    },
+  },
+)
 
 // 对话框
 const dialogVisible = ref(false)
@@ -287,16 +304,6 @@ const formatDate = (date: string | undefined) => {
   return date.split('T')[0]
 }
 
-const getStatusType = (status: string) => {
-  const map: Record<string, string> = {
-    '未开始': 'info',
-    '进行中': 'primary',
-    '已完成': 'success',
-    '已关闭': 'warning',
-  }
-  return map[status] || 'info'
-}
-
 const getStatusLabel = (status: string) => {
   const map: Record<string, string> = {
     not_started: '未开始',
@@ -315,30 +322,8 @@ const getProgressColor = (progress: number | undefined) => {
   return 'var(--color-danger)'
 }
 
-// 加载数据
-const loadIterations = async () => {
-  loading.value = true
-  try {
-    const res: any = await getIterationList(projectId.value, {
-      name: queryParams.name || undefined,
-      status: queryParams.status || undefined,
-      pageNum: pageNum.value,
-      pageSize: pageSize.value,
-    })
-    iterations.value = res?.list ?? []
-    total.value = res?.total ?? 0
-  } catch (error) {
-    iterations.value = []
-    total.value = 0
-    ElMessage.error(resolveErrorMessage(error, '迭代数据加载失败'))
-  } finally {
-    loading.value = false
-  }
-}
-
 function handleSearch() {
-  pageNum.value = 1
-  loadIterations()
+  resetToFirstPage()
 }
 
 function handleReset() {

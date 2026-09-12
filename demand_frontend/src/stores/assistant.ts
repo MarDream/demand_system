@@ -98,13 +98,9 @@ export const useAssistantStore = defineStore('assistant', () => {
     sessions.value = allSessions.filter(item => !isEmptyDefaultSession(item))
     initialized.value = true
 
-    if (activeSessionId.value && sessions.value.some(item => item.id === activeSessionId.value)) {
-      return sessions.value
-    }
-
-    if (sessions.value.length > 0) {
-      activeSessionId.value = sessions.value[0].id
-    } else {
+    // 仅刷新会话列表，不自动选中会话：
+    // 「打开助手 = 新会话」由 open() 的 startNewSession 保证，选中历史会话只能由用户显式触发。
+    if (activeSessionId.value && !sessions.value.some(item => item.id === activeSessionId.value)) {
       activeSessionId.value = null
       messages.value = []
     }
@@ -123,15 +119,8 @@ export const useAssistantStore = defineStore('assistant', () => {
     if (activeSessionId.value) {
       return activeSessionId.value
     }
-
-    if (!initialized.value) {
-      await loadSessions()
-    }
-
-    if (activeSessionId.value) {
-      return activeSessionId.value
-    }
-
+    // 打开即新会话：无选中会话时直接创建，绝不回落到历史会话，
+    // 避免新提问混入旧对话的上下文。
     const created = await createSession()
     return created.id
   }
@@ -165,6 +154,9 @@ export const useAssistantStore = defineStore('assistant', () => {
   }
 
   function open() {
+    // 每次打开都进入全新会话，不停留在关闭前的对话中；
+    // 会话记录发送首条消息时才真正创建（见 ensureSession）。
+    startNewSession()
     visible.value = true
   }
 
@@ -173,7 +165,11 @@ export const useAssistantStore = defineStore('assistant', () => {
   }
 
   function toggle() {
-    visible.value = !visible.value
+    if (visible.value) {
+      close()
+      return
+    }
+    open()
   }
 
   function startNewSession() {

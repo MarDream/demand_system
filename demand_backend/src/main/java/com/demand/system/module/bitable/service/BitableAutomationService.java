@@ -64,6 +64,15 @@ public interface BitableAutomationService {
     void onRecordChanged(Long tableId, Long recordId, String changeType, Map<String, Object> changedFields);
 
     /**
+     * 触发定时自动化（由调度器调用）
+     * 创建执行记录并发送 MQ 消息，动作上下文不携带具体记录
+     *
+     * @param automationId 自动化规则ID
+     * @return 本次是否成功入队
+     */
+    boolean fireScheduledAutomation(Long automationId);
+
+    /**
      * 执行自动化动作（由MQ消费者调用）
      *
      * @param automationId 自动化规则ID

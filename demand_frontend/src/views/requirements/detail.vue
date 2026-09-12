@@ -1539,14 +1539,9 @@ function formatDateTime(value?: string | null) {
 
 function formatAttachmentMeta(attachment: RequirementAttachment) {
   const parts: string[] = []
-  if (attachment.size) {
-    if (attachment.size < 1024) {
-      parts.push(`${attachment.size} B`)
-    } else if (attachment.size < 1024 * 1024) {
-      parts.push(`${(attachment.size / 1024).toFixed(1)} KB`)
-    } else {
-      parts.push(`${(attachment.size / 1024 / 1024).toFixed(1)} MB`)
-    }
+  const sizeText = formatFileSize(attachment.size)
+  if (sizeText) {
+    parts.push(sizeText)
   }
   if (attachment.uploadedAt) {
     parts.push(formatDateTime(attachment.uploadedAt))

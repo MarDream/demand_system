@@ -47,13 +47,13 @@
       </template>
 
       <template #pagination>
-        <el-pagination
+        <AppPagination
           v-if="total > pageSize"
-          v-model:current-page="pageNum"
-          :page-size="pageSize"
+          v-model:page-num="pageNum"
+          v-model:page-size="pageSize"
           :total="total"
           layout="prev, pager, next"
-          @current-change="fetchData"
+          @change="fetchPage"
         />
       </template>
     </TableCard>
@@ -61,34 +61,25 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getNotificationList, markAsRead, markAllAsRead } from '@/api/modules/notification'
 import PageContainer from '@/components/common/PageContainer.vue'
 import TableCard from '@/components/common/TableCard.vue'
 import AppButton from '@/components/common/AppButton.vue'
+import AppPagination from '@/components/common/AppPagination.vue'
+import { usePagedList } from '@/composables/usePagedList'
 import { formatDate } from '@/utils/format'
 
 const router = useRouter()
-const loading = ref(false)
-const list = ref<any[]>([])
-const pageNum = ref(1)
-const pageSize = ref(20)
-const total = ref(0)
-
-async function fetchData() {
-  loading.value = true
-  try {
-    const res = await getNotificationList({ pageNum: pageNum.value, pageSize: pageSize.value }) as any
-    list.value = res.list || res.data?.list || []
-    total.value = res.total || res.data?.total || 0
-  } catch {
-    ElMessage.error('获取通知列表失败')
-  } finally {
-    loading.value = false
-  }
-}
+const { list, pageNum, pageSize, total, loading, fetchPage } = usePagedList<any>(
+  (pageNum, pageSize) => getNotificationList({ pageNum, pageSize }),
+  {
+    pageSize: 20,
+    onError: () => ElMessage.error('获取通知列表失败'),
+  },
+)
 
 async function handleClick(item: any) {
   if (item.isRead === 0) {
@@ -113,7 +104,7 @@ async function handleMarkAllRead() {
 }
 
 onMounted(() => {
-  fetchData()
+  fetchPage()
 })
 </script>
 

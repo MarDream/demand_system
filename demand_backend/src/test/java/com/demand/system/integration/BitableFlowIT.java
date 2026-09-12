@@ -52,12 +52,8 @@ public class BitableFlowIT extends BaseIntegrationTest {
 
     @BeforeAll
     void setup() throws Exception {
-        Path migrationPath = Paths.get("..", "database", "migrations",
-                "20260709_01__add_bitable_tables.sql").toAbsolutePath().normalize();
-        String sql = Files.readString(migrationPath);
-        // 使用 Spring ScriptUtils 执行 SQL 脚本
-        ScriptUtils.executeSqlScript(jdbcTemplate.getDataSource().getConnection(),
-                new org.springframework.core.io.ByteArrayResource(sql.getBytes()));
+        // bitable 相关表已并入 database/init.sql，由 Testcontainers 初始化时建表，
+        // 无需再执行 20260709_01__add_bitable_tables.sql（该迁移文件已不存在）
 
         this.mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext)
                 .apply(springSecurity())
@@ -288,7 +284,7 @@ public class BitableFlowIT extends BaseIntegrationTest {
                         .header("Authorization", "Bearer " + accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
-                .andExpect(status().isOk())
+                .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value(409));
     }
 

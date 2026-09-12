@@ -117,6 +117,7 @@ CREATE TABLE `role_groups` (
   `name` VARCHAR(100) NOT NULL COMMENT '角色组名称',
   `description` TEXT COMMENT '角色组描述',
   `sort_order` INT DEFAULT 0 COMMENT '排序',
+  `is_default` TINYINT DEFAULT 0 COMMENT '是否默认组',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
@@ -136,6 +137,7 @@ CREATE TABLE `roles` (
   `sort_order` INT DEFAULT 0 COMMENT '排序',
   `is_system` TINYINT DEFAULT 0 COMMENT '是否系统角色 0=否 1=是',
   `is_admin` TINYINT DEFAULT 0 COMMENT '是否管理员角色 0=否 1=是',
+  `is_default` TINYINT DEFAULT 0 COMMENT '是否默认角色 0=否 1=是',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
@@ -263,13 +265,19 @@ DROP TABLE IF EXISTS `custom_fields`;
 CREATE TABLE `custom_fields` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `project_id` INT UNSIGNED NOT NULL COMMENT '项目ID',
+  `field_code` VARCHAR(64) NOT NULL COMMENT '稳定字段编码',
+  `requirement_type_code` VARCHAR(50) DEFAULT NULL COMMENT '需求类型编码(空=全类型)',
   `name` VARCHAR(100) NOT NULL COMMENT '字段名称',
   `field_type` VARCHAR(50) NOT NULL COMMENT '字段类型(text/number/date/select/multi_select/user)',
   `options` JSON DEFAULT NULL COMMENT '选项( select/multi_select 类型使用，[{key,label}] 或历史字符串数组)',
   `required` TINYINT DEFAULT 0 COMMENT '是否必填 0=否 1=是',
   `default_value` VARCHAR(500) DEFAULT NULL COMMENT '默认值',
   `sort_order` INT DEFAULT 0 COMMENT '排序',
+  `enabled` TINYINT NOT NULL DEFAULT 1 COMMENT '是否启用 0=禁用 1=启用',
+  `deleted_at` DATETIME DEFAULT NULL COMMENT '软删除时间',
   PRIMARY KEY (`id`),
+  UNIQUE INDEX `uk_type_field_code` (`project_id`, `requirement_type_code`, `field_code`),
+  INDEX `idx_type_enabled` (`project_id`, `requirement_type_code`, `enabled`, `deleted_at`),
   INDEX `idx_project_id` (`project_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='自定义字段表';
 
@@ -360,6 +368,7 @@ CREATE TABLE `workflow_versions` (
   `approval_comment` TEXT DEFAULT NULL COMMENT '审批意见',
   `creator_id` INT UNSIGNED NOT NULL COMMENT '创建人ID',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT NULL COMMENT '编辑时间(最近一次保存/启停/复制等变更时间)',
   PRIMARY KEY (`id`),
   INDEX `idx_project_id` (`project_id`),
   INDEX `idx_workflow_definition_id` (`workflow_definition_id`),
@@ -1006,10 +1015,14 @@ CREATE TABLE `requirement_custom_field_values` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `requirement_id` INT UNSIGNED NOT NULL COMMENT '需求ID',
   `field_id` INT UNSIGNED NOT NULL COMMENT '自定义字段ID',
+  `field_code_snapshot` VARCHAR(64) DEFAULT NULL COMMENT '字段编码快照',
   `value_text` TEXT COMMENT '文本值',
   `value_number` DECIMAL(10, 2) DEFAULT NULL COMMENT '数值',
   `value_date` DATE DEFAULT NULL COMMENT '日期值',
+  `value_boolean` TINYINT DEFAULT NULL COMMENT '布尔值',
+  `value_user_id` BIGINT DEFAULT NULL COMMENT '单用户值',
   `value_user_ids` JSON DEFAULT NULL COMMENT '用户ID列表',
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   INDEX `idx_requirement_id` (`requirement_id`),
   INDEX `idx_field_id` (`field_id`),
@@ -1253,8 +1266,7 @@ CREATE TABLE `knowledge_chunks` (
   INDEX `idx_document_id` (`document_id`),
   INDEX `idx_knowledge_base_id` (`knowledge_base_id`),
   INDEX `idx_vector_id` (`vector_id`),
-  INDEX `idx_chunk_source_ref` (`source_content_type`, `source_ref_id`, `source_position`),
-  INDEX `idx_document_deleted` (`document_id`, `deleted_at`) COMMENT '性能优化:按文档ID查询已存在分块'
+  INDEX `idx_chunk_source_ref` (`source_content_type`, `source_ref_id`, `source_position`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='知识库文档分块表';
 
 -- 48. 节点状态全局字典表 node_statuses
@@ -1898,3 +1910,570 @@ SELECT @workflow_template_id, 'edge_3', 'tpl_tpl-1_3_0_release', 'tpl_tpl-1_3_0_
 WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'edge_3');
 
 SET FOREIGN_KEY_CHECKS = 1;
+-- =============================================================
+-- 56. 迁移补齐区：将以下迁移脚本中的表结构同步进初始化脚本
+--     V20260716_04 / V20260716_05 / V20260716_06 / V20260907_01 /
+--     V20260912_01 / V20260912_02 / V20260912_03
+-- =============================================================
+
+-- 多维表格-高级权限规则表（预留，P1 再实现行级/列级权限）
+CREATE TABLE IF NOT EXISTS `bitable_permission_rules` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `base_id` BIGINT UNSIGNED NOT NULL COMMENT '多维表格ID',
+  `table_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '数据表ID(空=Base级)',
+  `subject_type` VARCHAR(20) NOT NULL COMMENT '主体类型: role/user/department',
+  `subject_id` VARCHAR(50) NOT NULL COMMENT '主体ID',
+  `resource_type` VARCHAR(20) NOT NULL COMMENT '资源类型: base/table/record/field',
+  `action` VARCHAR(30) NOT NULL COMMENT '操作: read/create/update/delete/manage',
+  `effect` VARCHAR(10) NOT NULL DEFAULT 'allow' COMMENT '效果: allow/deny',
+  `condition_config` JSON DEFAULT NULL COMMENT '条件配置(行级/列级)',
+  `priority` INT DEFAULT 0 COMMENT '优先级',
+  `enabled` TINYINT DEFAULT 1 COMMENT '是否启用',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `idx_base_id` (`base_id`),
+  INDEX `idx_table_id` (`table_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='多维表格-高级权限规则';
+
+-- 为 bitable_base_members 添加联合索引（加速权限查询）
+CREATE INDEX `idx_base_user` ON `bitable_base_members` (`base_id`, `user_id`);
+
+-- 公式依赖图
+CREATE TABLE IF NOT EXISTS `bitable_formula_dependencies` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `formula_field_id` BIGINT UNSIGNED NOT NULL COMMENT '公式字段ID',
+  `dependency_field_id` BIGINT UNSIGNED NOT NULL COMMENT '依赖的字段ID',
+  `dependency_kind` VARCHAR(20) NOT NULL DEFAULT 'direct' COMMENT '依赖类型: direct/lookup/rollup',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `uk_formula_dep` (`formula_field_id`, `dependency_field_id`),
+  INDEX `idx_dependency_field_id` (`dependency_field_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='多维表格-公式依赖关系';
+
+-- 多维表格-自动化规则定义
+CREATE TABLE IF NOT EXISTS `bitable_automations` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `base_id` BIGINT UNSIGNED NOT NULL COMMENT '多维表格ID',
+  `table_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '数据表ID',
+  `name` VARCHAR(200) NOT NULL COMMENT '自动化名称',
+  `status` VARCHAR(20) NOT NULL DEFAULT 'enabled' COMMENT '状态: enabled/disabled',
+  `trigger_type` VARCHAR(50) NOT NULL COMMENT '触发器类型: record_created/record_updated/record_deleted/form_submitted/scheduled',
+  `trigger_config` JSON DEFAULT NULL COMMENT '触发器配置(字段变更条件/定时cron等)',
+  `action_type` VARCHAR(50) NOT NULL COMMENT '动作类型: update_record/create_record/send_message/http_request',
+  `action_config` JSON DEFAULT NULL COMMENT '动作配置(目标字段/消息模板/URL等)',
+  `created_by` BIGINT UNSIGNED NOT NULL COMMENT '创建人ID',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
+  PRIMARY KEY (`id`),
+  INDEX `idx_base_id` (`base_id`),
+  INDEX `idx_table_id` (`table_id`),
+  INDEX `idx_status` (`status`),
+  INDEX `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='多维表格-自动化规则';
+
+-- 多维表格-自动化执行记录
+CREATE TABLE IF NOT EXISTS `bitable_automation_runs` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `automation_id` BIGINT UNSIGNED NOT NULL COMMENT '自动化规则ID',
+  `event_id` VARCHAR(100) DEFAULT NULL COMMENT '触发事件ID(幂等键)',
+  `status` VARCHAR(20) NOT NULL DEFAULT 'pending' COMMENT '执行状态: pending/running/succeeded/failed',
+  `trigger_detail` JSON DEFAULT NULL COMMENT '触发详情(变更字段/值等)',
+  `action_result` JSON DEFAULT NULL COMMENT '动作执行结果',
+  `error_code` VARCHAR(50) DEFAULT NULL COMMENT '错误码',
+  `error_message` TEXT DEFAULT NULL COMMENT '错误信息',
+  `attempt` INT DEFAULT 0 COMMENT '重试次数',
+  `started_at` DATETIME DEFAULT NULL COMMENT '开始时间',
+  `finished_at` DATETIME DEFAULT NULL COMMENT '完成时间',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `idx_automation_id` (`automation_id`),
+  INDEX `idx_event_id` (`event_id`),
+  INDEX `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='多维表格-自动化执行记录';
+
+-- 自动化：增加 last_fired_at（定时触发器记录上次触发时间）
+SET @col_exists = (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'bitable_automations' AND COLUMN_NAME = 'last_fired_at'
+);
+SET @sql = IF(@col_exists = 0,
+  "ALTER TABLE bitable_automations ADD COLUMN last_fired_at DATETIME DEFAULT NULL COMMENT '定时触发器上次触发时间' AFTER action_config",
+  "SELECT 'last_fired_at already exists' AS note"
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+CREATE TABLE IF NOT EXISTS `bitable_form_publishes` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `view_id` BIGINT UNSIGNED NOT NULL COMMENT '表单视图ID',
+  `table_id` BIGINT UNSIGNED NOT NULL COMMENT '数据表ID',
+  `token` VARCHAR(64) NOT NULL COMMENT '公开访问令牌',
+  `status` VARCHAR(20) NOT NULL DEFAULT 'enabled' COMMENT '状态: enabled/disabled',
+  `password_hash` VARCHAR(128) DEFAULT NULL COMMENT '访问密码哈希（可空=无密码）',
+  `expire_at` DATETIME DEFAULT NULL COMMENT '过期时间（可空=永不过期）',
+  `submit_count` INT NOT NULL DEFAULT 0 COMMENT '已提交次数',
+  `submit_limit` INT DEFAULT NULL COMMENT '提交总数上限（可空=不限制）',
+  `success_message` VARCHAR(500) DEFAULT NULL COMMENT '提交成功提示语',
+  `redirect_url` VARCHAR(500) DEFAULT NULL COMMENT '提交后跳转URL',
+  `created_by` BIGINT UNSIGNED NOT NULL COMMENT '发布人ID',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_token` (`token`),
+  UNIQUE KEY `uk_view_id` (`view_id`),
+  INDEX `idx_table_id` (`table_id`),
+  INDEX `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='多维表格-公开表单发布';
+
+-- 3. 视图分享（只读链接）
+CREATE TABLE IF NOT EXISTS `bitable_view_shares` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `view_id` BIGINT UNSIGNED NOT NULL COMMENT '视图ID',
+  `table_id` BIGINT UNSIGNED NOT NULL COMMENT '数据表ID',
+  `token` VARCHAR(64) NOT NULL COMMENT '分享令牌',
+  `status` VARCHAR(20) NOT NULL DEFAULT 'enabled' COMMENT '状态: enabled/disabled',
+  `expire_at` DATETIME DEFAULT NULL COMMENT '过期时间（可空=永不过期）',
+  `allow_download` TINYINT NOT NULL DEFAULT 0 COMMENT '是否允许下载',
+  `created_by` BIGINT UNSIGNED NOT NULL COMMENT '创建人ID',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_token` (`token`),
+  UNIQUE KEY `uk_view_id` (`view_id`),
+  INDEX `idx_table_id` (`table_id`),
+  INDEX `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='多维表格-视图分享';
+
+-- 4. 仪表盘
+CREATE TABLE IF NOT EXISTS `bitable_dashboards` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `base_id` BIGINT UNSIGNED NOT NULL COMMENT '多维表格ID',
+  `name` VARCHAR(200) NOT NULL COMMENT '仪表盘名称',
+  `layout_config` JSON DEFAULT NULL COMMENT '布局配置（预留）',
+  `status` VARCHAR(20) NOT NULL DEFAULT 'enabled' COMMENT '状态: enabled/disabled',
+  `created_by` BIGINT UNSIGNED NOT NULL COMMENT '创建人ID',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
+  PRIMARY KEY (`id`),
+  INDEX `idx_base_id` (`base_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='多维表格-仪表盘';
+
+-- 5. 仪表盘组件
+CREATE TABLE IF NOT EXISTS `bitable_dashboard_widgets` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `dashboard_id` BIGINT UNSIGNED NOT NULL COMMENT '仪表盘ID',
+  `type` VARCHAR(20) NOT NULL COMMENT '组件类型: kpi/bar/line/pie',
+  `title` VARCHAR(200) NOT NULL DEFAULT '' COMMENT '组件标题',
+  `data_source_config` JSON NOT NULL COMMENT '数据源配置: {tableId, fieldId, aggregation, groupByFieldId, filterConfig}',
+  `display_config` JSON DEFAULT NULL COMMENT '展示配置（颜色等，预留）',
+  `sort_no` INT NOT NULL DEFAULT 0 COMMENT '排序号',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `idx_dashboard_id` (`dashboard_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='多维表格-仪表盘组件';
+
+-- 6. 开放 API 凭证
+CREATE TABLE IF NOT EXISTS `bitable_api_credentials` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `base_id` BIGINT UNSIGNED NOT NULL COMMENT '绑定的多维表格ID',
+  `name` VARCHAR(200) NOT NULL COMMENT '凭证名称',
+  `key_id` VARCHAR(64) NOT NULL COMMENT '公开的 Key ID（bk_ 前缀）',
+  `key_hash` VARCHAR(128) NOT NULL COMMENT 'Secret 的 SHA-256 哈希（明文不落库）',
+  `scopes` VARCHAR(500) NOT NULL DEFAULT 'records:read' COMMENT '授权范围，逗号分隔: records:read,fields:read',
+  `status` VARCHAR(20) NOT NULL DEFAULT 'enabled' COMMENT '状态: enabled/disabled',
+  `expire_at` DATETIME DEFAULT NULL COMMENT '过期时间（可空=不过期）',
+  `last_used_at` DATETIME DEFAULT NULL COMMENT '最后使用时间',
+  `created_by` BIGINT UNSIGNED NOT NULL COMMENT '创建人ID',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_key_id` (`key_id`),
+  INDEX `idx_base_id` (`base_id`),
+  INDEX `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='多维表格-开放API凭证';
+
+-- =====================================================
+-- 多维表格新功能建设：Webhook 订阅（出站推送）
+-- 日期: 2026-09-12
+-- 幂等：CREATE TABLE IF NOT EXISTS，可重复执行。
+-- =====================================================
+
+-- Webhook 订阅：记录事件后异步 HMAC-SHA256 签名推送到目标 URL
+CREATE TABLE IF NOT EXISTS `bitable_webhook_subscriptions` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `base_id` BIGINT UNSIGNED NOT NULL COMMENT '多维表格ID',
+  `table_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '限定数据表ID（可空=整表容器全部表）',
+  `name` VARCHAR(200) NOT NULL DEFAULT '' COMMENT '订阅名称',
+  `event_types` VARCHAR(300) NOT NULL DEFAULT 'record_created,record_updated,record_deleted,form_submitted' COMMENT '订阅事件类型，逗号分隔',
+  `url` VARCHAR(500) NOT NULL COMMENT '目标 URL（仅 http/https）',
+  `secret` VARCHAR(128) NOT NULL COMMENT '签名密钥（服务端持有，用于 HMAC-SHA256）',
+  `status` VARCHAR(20) NOT NULL DEFAULT 'enabled' COMMENT '状态: enabled/disabled',
+  `last_status` VARCHAR(20) DEFAULT NULL COMMENT '最近一次投递结果: succeeded/failed',
+  `last_delivered_at` DATETIME DEFAULT NULL COMMENT '最近一次投递时间',
+  `created_by` BIGINT UNSIGNED NOT NULL COMMENT '创建人ID',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
+  PRIMARY KEY (`id`),
+  INDEX `idx_base_id` (`base_id`),
+  INDEX `idx_table_id` (`table_id`),
+  INDEX `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='多维表格-Webhook订阅';
+
+-- =====================================================
+-- 修复：verification_codes 表缺失导致注册/找回密码流程不可用
+-- 日期: 2026-09-12
+-- 背景: VerificationCodeServiceImpl 依赖该表存储邮箱验证码，
+--       但历史迁移中从未建表，验证码发送/校验必然报错。
+-- 幂等：CREATE TABLE IF NOT EXISTS。
+-- =====================================================
+
+CREATE TABLE IF NOT EXISTS `verification_codes` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `email` VARCHAR(200) NOT NULL COMMENT '接收验证码的邮箱',
+  `code` VARCHAR(10) NOT NULL COMMENT '6位数字验证码',
+  `type` VARCHAR(30) NOT NULL COMMENT '用途: register/password_reset',
+  `used` TINYINT NOT NULL DEFAULT 0 COMMENT '0=未使用, 1=已使用',
+  `expires_at` DATETIME NOT NULL COMMENT '过期时间',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `idx_email_type_used` (`email`, `type`, `used`),
+  INDEX `idx_expires_at` (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='邮箱验证码';
+
+CREATE TABLE IF NOT EXISTS `requirement_custom_field_multi_values` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `requirement_id` BIGINT UNSIGNED NOT NULL,
+    `field_id` BIGINT UNSIGNED NOT NULL,
+    `value_type` VARCHAR(20) NOT NULL COMMENT 'OPTION/USER/FILE',
+    `value_text` VARCHAR(255) NOT NULL,
+    `sort_order` INT NOT NULL DEFAULT 0,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_requirement_field_multi` (`requirement_id`, `field_id`, `value_type`, `value_text`),
+    KEY `idx_field_multi_value` (`field_id`, `value_type`, `value_text`),
+    KEY `idx_requirement_field_multi` (`requirement_id`, `field_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='需求动态字段多值明细';
+
+-- =============================================================
+-- 57. 独立脚本合并：workflow_history / question_logs / quick_questions
+-- =============================================================
+
+-- =====================================================
+-- 工作流配置 - 修改历史记录表
+-- 说明: 记录工作流版本每次修改的内容，用于时间线展示
+-- 参考: requirement_history 的 fieldName/oldValue/newValue 模式
+-- =====================================================
+
+DROP TABLE IF EXISTS `workflow_history`;
+CREATE TABLE `workflow_history` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `workflow_version_id` BIGINT UNSIGNED NOT NULL COMMENT '工作流版本ID(workflow_versions.id)',
+  `project_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '所属项目ID(冗余，方便按项目查询)',
+  `operator_id` INT UNSIGNED NOT NULL COMMENT '操作人ID(users.id)',
+  `action` ENUM('create','update','activate','deactivate','delete','copy','export','import','publish','submit','approve','reject') NOT NULL DEFAULT 'update' COMMENT '操作类型',
+  `change_summary` VARCHAR(500) DEFAULT NULL COMMENT '修改摘要(人类可读的描述，如"新增节点:审批→完成")',
+  `change_log` TEXT DEFAULT NULL COMMENT '详细变更内容(JSON格式，记录field/oldValue/newValue列表)',
+  `version_snapshot` TEXT DEFAULT NULL COMMENT '操作后的状态快照(JSON，含节点数/连线数/状态数)',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '操作时间',
+  PRIMARY KEY (`id`),
+  INDEX `idx_version_id` (`workflow_version_id`),
+  INDEX `idx_project_id` (`project_id`),
+  INDEX `idx_operator_id` (`operator_id`),
+  INDEX `idx_action` (`action`),
+  INDEX `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='工作流修改历史记录表';
+
+-- =====================================================
+-- AI 助手 - 用户问答埋点表
+-- 说明: 记录每次用户向 AI 助手的提问，用于冷启动期提炼高频问题
+-- =====================================================
+
+DROP TABLE IF EXISTS `question_logs`;
+CREATE TABLE `question_logs` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `user_id` INT UNSIGNED NOT NULL COMMENT '提问用户ID',
+  `org_id` INT UNSIGNED DEFAULT NULL COMMENT '所属组织ID',
+  `session_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '所属会话ID(assistant_sessions.id)',
+  `page_route` VARCHAR(100) DEFAULT NULL COMMENT '提问所在页面路由名(route.name)',
+  `question_text` VARCHAR(1000) NOT NULL COMMENT '用户原始问题',
+  `question_hash` VARCHAR(64) DEFAULT NULL COMMENT '问题文本的MD5哈希(用于去重聚合)',
+  `response_rating` TINYINT DEFAULT NULL COMMENT '用户反馈: 0=差评, 1=中立, 2=好评, NULL=未评价',
+  `report_count` INT DEFAULT 0 COMMENT '被标记为"无帮助"的次数',
+  `token_cost` INT DEFAULT 0 COMMENT '本次消耗token数',
+  `answered` TINYINT DEFAULT 1 COMMENT '是否成功回答: 0=失败/中断, 1=正常',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '提问时间',
+  PRIMARY KEY (`id`),
+  INDEX `idx_created_at` (`created_at`),
+  INDEX `idx_user_id` (`user_id`),
+  INDEX `idx_page_route` (`page_route`),
+  INDEX `idx_org_id` (`org_id`),
+  INDEX `idx_question_hash` (`question_hash`),
+  INDEX `idx_session_id` (`session_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='AI助手问答记录埋点表';
+
+-- 定期清理: 保留 90 天数据用于滚动统计，90 天前归档或删除
+-- CREATE EVENT IF NOT EXISTS `evt_clean_old_question_logs`
+-- ON SCHEDULE EVERY 1 DAY
+-- DO DELETE FROM `question_logs` WHERE `created_at` < DATE_SUB(NOW(), INTERVAL 90 DAY);
+
+-- =====================================================
+-- AI 助手 - 快捷提问配置表
+-- 说明: 存储人工维护的高频问题 + AI 自动提炼的问题
+-- 补齐规则: 前台每页面最多 3 条；人工 ≥ 3 条时不展示 AI 的；
+--           人工 < 3 条时由 AI 自动提炼补齐（取 ai_confidence 最高的）
+-- =====================================================
+
+DROP TABLE IF EXISTS `quick_questions`;
+CREATE TABLE `quick_questions` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `category` ENUM('auto_extracted','manual_curated','ai_suggested') NOT NULL DEFAULT 'manual_curated' COMMENT '分类: auto_extracted=AI自动提炼, manual_curated=人工维护, ai_suggested=AI推荐待采纳',
+  `page_route` VARCHAR(100) DEFAULT NULL COMMENT '归属页面路由名(route.name), NULL=全局',
+  `question_text` VARCHAR(500) NOT NULL COMMENT '问题文本',
+  `weight` INT DEFAULT 50 COMMENT '排序权重(1-100), 数值越大越靠前',
+  `sort_order` INT DEFAULT 0 COMMENT '拖拽排序序号(同权重时优先)',
+  `status` ENUM('enabled','disabled','pending_review') DEFAULT 'enabled' COMMENT '状态',
+  `source` ENUM('user_behavior','admin_manual','ai_suggested','system_default') DEFAULT 'admin_manual' COMMENT '来源',
+  `hit_count` INT DEFAULT 0 COMMENT '近 30 天前台点击次数',
+  `ai_confidence` DECIMAL(3,2) DEFAULT NULL COMMENT 'AI置信度(0.00-1.00), 仅 source=ai_suggested/auto_extracted 时有值',
+  `ai_cluster_id` VARCHAR(64) DEFAULT NULL COMMENT 'AI聚类分组ID(同组相似问题合并)',
+  `created_by` INT UNSIGNED DEFAULT NULL COMMENT '创建人ID(人工创建时记录)',
+  `reviewed_by` INT UNSIGNED DEFAULT NULL COMMENT '审核人ID(采纳 AI 建议时记录)',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  INDEX `idx_category` (`category`),
+  INDEX `idx_page_route` (`page_route`),
+  INDEX `idx_status` (`status`),
+  INDEX `idx_weight_sort` (`weight` DESC, `sort_order`),
+  INDEX `idx_source` (`source`),
+  INDEX `idx_ai_cluster` (`ai_cluster_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='AI助手快捷提问配置表';
+
+-- 前台查询视图(按排序权重取启用的问题)
+-- SELECT * FROM quick_questions 
+-- WHERE status='enabled' AND (page_route=? OR page_route IS NULL)
+-- ORDER BY field(category, 'manual_curated', 'auto_extracted'), weight DESC, sort_order ASC
+-- LIMIT 3
+
+-- =============================================================
+-- 58. 代码管理（Git 模块）表结构，自 dev 库 mysqldump 导出
+-- =============================================================
+
+
+DROP TABLE IF EXISTS `role_group_relations`;
+CREATE TABLE `role_group_relations` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `role_id` int unsigned NOT NULL COMMENT '角色ID',
+  `role_group_id` int unsigned NOT NULL COMMENT '角色组ID',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_role_group` (`role_id`,`role_group_id`),
+  KEY `idx_role_id` (`role_id`),
+  KEY `idx_role_group_id` (`role_group_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='角色组关联表(多对多)';
+DROP TABLE IF EXISTS `git_platforms`;
+CREATE TABLE `git_platforms` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) NOT NULL COMMENT 'å¹³å°åç§°',
+  `platform_type` enum('GITLAB','GITHUB','GITEE','GITEA') NOT NULL COMMENT 'å¹³å°ç±»åž‹',
+  `base_url` varchar(500) NOT NULL COMMENT 'APIåŸºç¡€åœ°å€',
+  `auth_type` enum('TOKEN','SSH_KEY','PASSWORD') NOT NULL DEFAULT 'TOKEN',
+  `credential` text NOT NULL COMMENT 'åŠ å¯†å‡­æ®',
+  `is_default` tinyint DEFAULT '0' COMMENT 'æ˜¯å¦é»˜è®¤å¹³å°',
+  `status` enum('CONNECTED','DISCONNECTED','EXPIRED') DEFAULT 'DISCONNECTED',
+  `last_checked_at` datetime DEFAULT NULL COMMENT 'æœ€è¿‘è¿žæŽ¥æµ‹è¯•æ—¶é—´',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_platform_type` (`platform_type`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Gitå¹³å°é…ç½®';
+DROP TABLE IF EXISTS `repositories`;
+CREATE TABLE `repositories` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `platform_id` bigint unsigned NOT NULL COMMENT 'æ‰€å±žGitå¹³å°ID',
+  `project_id` bigint unsigned DEFAULT NULL COMMENT 'ç»‘å®šé¡¹ç›®ID',
+  `name` varchar(200) NOT NULL COMMENT 'ä»“åº“å',
+  `full_path` varchar(500) NOT NULL COMMENT 'å®Œæ•´è·¯å¾„(å«namespace)',
+  `description` text,
+  `default_branch` varchar(100) DEFAULT 'main',
+  `clone_url_ssh` varchar(500) DEFAULT NULL,
+  `clone_url_https` varchar(500) DEFAULT NULL,
+  `remote_id` varchar(100) DEFAULT NULL COMMENT 'è¿œç«¯ä»“åº“ID',
+  `status` enum('ACTIVE','ARCHIVED','DELETED') DEFAULT 'ACTIVE',
+  `created_by` int unsigned DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_platform` (`platform_id`),
+  KEY `idx_project` (`project_id`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='ä»£ç ä»“åº“';
+DROP TABLE IF EXISTS `merge_requests`;
+CREATE TABLE `merge_requests` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `repo_id` bigint unsigned NOT NULL COMMENT 'æ‰€å±žä»“åº“ID',
+  `source_branch` varchar(200) NOT NULL,
+  `target_branch` varchar(200) NOT NULL,
+  `title` varchar(500) NOT NULL,
+  `description` text,
+  `author_id` int unsigned NOT NULL,
+  `status` enum('OPEN','APPROVED','MERGED','CLOSED','CONFLICT') DEFAULT 'OPEN',
+  `merge_strategy` enum('MERGE','SQUASH','REBASE') DEFAULT 'MERGE',
+  `ci_status` enum('PENDING','RUNNING','SUCCESS','FAILED') DEFAULT NULL,
+  `requirement_id` bigint unsigned DEFAULT NULL COMMENT 'å…³è”éœ€æ±‚ID',
+  `remote_mr_id` varchar(50) DEFAULT NULL COMMENT 'è¿œç«¯MR IID',
+  `merged_by` int unsigned DEFAULT NULL,
+  `merged_at` datetime DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_repo` (`repo_id`),
+  KEY `idx_author` (`author_id`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='åˆå¹¶è¯·æ±‚';
+DROP TABLE IF EXISTS `branch_protection_rules`;
+CREATE TABLE `branch_protection_rules` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `repo_id` bigint unsigned NOT NULL COMMENT 'æ‰€å±žä»“åº“ID',
+  `rule_set_id` bigint unsigned DEFAULT NULL COMMENT 'æ‰€å±žè§„åˆ™é›†ID',
+  `rule_name` varchar(100) NOT NULL COMMENT 'è§„åˆ™åç§°',
+  `branch_pattern` varchar(200) NOT NULL COMMENT 'åˆ†æ”¯åŒ¹é…æ¨¡å¼(fnmatch)',
+  `priority` int DEFAULT '0' COMMENT 'ä¼˜å…ˆçº§(è¶Šå¤§è¶Šä¼˜å…ˆ)',
+  `forbid_push` tinyint DEFAULT '1' COMMENT 'ç¦æ­¢ç›´æŽ¥æŽ¨é€',
+  `forbid_force_push` tinyint DEFAULT '1' COMMENT 'ç¦æ­¢å¼ºåˆ¶æŽ¨é€',
+  `forbid_delete` tinyint DEFAULT '1' COMMENT 'ç¦æ­¢åˆ é™¤åˆ†æ”¯',
+  `require_mr` tinyint DEFAULT '1' COMMENT 'è¦æ±‚MR/PR',
+  `min_approvals` int DEFAULT '1' COMMENT 'æœ€å°‘å®¡æ‰¹äººæ•°',
+  `dismiss_stale_approvals` tinyint DEFAULT '1' COMMENT 'é©³å›žè¿‡æœŸå®¡æ‰¹',
+  `block_self_approve` tinyint DEFAULT '1' COMMENT 'ç¦æ­¢ä½œè€…è‡ªæ‰¹',
+  `require_codeowner_approval` tinyint DEFAULT '0' COMMENT 'CODEOWNERSå®¡æ‰¹',
+  `require_thread_resolved` tinyint DEFAULT '0' COMMENT 'è®¨è®ºä¸²å…¨éƒ¨è§£å†³',
+  `require_ci_pass` tinyint DEFAULT '0' COMMENT 'è¦æ±‚CIé€šè¿‡',
+  `require_up_to_date` tinyint DEFAULT '0' COMMENT 'åˆ†æ”¯å¿…é¡»åŒæ­¥',
+  `ci_contexts` varchar(500) DEFAULT NULL COMMENT 'CIæ£€æŸ¥é¡¹(é€—å·åˆ†éš”)',
+  `whitelist_users` text COMMENT 'ç™½åå•ç”¨æˆ·ID(JSONæ•°ç»„)',
+  `whitelist_roles` text COMMENT 'ç™½åå•è§’è‰²(JSONæ•°ç»„)',
+  `enabled` tinyint DEFAULT '1' COMMENT 'æ˜¯å¦å¯ç”¨',
+  `created_by` int unsigned DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_repo` (`repo_id`),
+  KEY `idx_rule_set` (`rule_set_id`),
+  KEY `idx_enabled` (`enabled`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='åˆ†æ”¯ä¿æŠ¤è§„åˆ™';
+DROP TABLE IF EXISTS `protection_rule_sets`;
+CREATE TABLE `protection_rule_sets` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) NOT NULL COMMENT 'è§„åˆ™é›†åç§°',
+  `description` text,
+  `created_by` int unsigned DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='ä¿æŠ¤è§„åˆ™é›†';
+DROP TABLE IF EXISTS `git_audit_logs`;
+CREATE TABLE `git_audit_logs` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `operator_id` int unsigned DEFAULT NULL COMMENT 'æ“ä½œäººID',
+  `operator_ip` varchar(64) DEFAULT NULL COMMENT 'æ¥æºIP',
+  `user_agent` varchar(500) DEFAULT NULL COMMENT 'æ“ä½œè®¾å¤‡',
+  `target_type` varchar(50) NOT NULL COMMENT 'æ“ä½œå¯¹è±¡ç±»åž‹(platform/repo/rule/mr)',
+  `target_id` bigint unsigned DEFAULT NULL COMMENT 'æ“ä½œå¯¹è±¡ID',
+  `target_name` varchar(200) DEFAULT NULL COMMENT 'æ“ä½œå¯¹è±¡åç§°',
+  `action` varchar(100) NOT NULL COMMENT 'æ“ä½œç±»åž‹',
+  `detail` text COMMENT 'å˜æ›´å†…å®¹(JSON)',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_operator` (`operator_id`),
+  KEY `idx_target` (`target_type`,`target_id`),
+  KEY `idx_action` (`action`),
+  KEY `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='ä»£ç ç®¡ç†æ“ä½œå®¡è®¡æ—¥å¿—';
+
+
+
+-- =============================================================
+-- 59. 知识事件 / 实体 / 需求引用 / 节点处理人（仅存在于实体定义，历史迁移缺失）
+-- =============================================================
+
+CREATE TABLE IF NOT EXISTS `workflow_node_assignees` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `workflow_version_id` BIGINT UNSIGNED NOT NULL COMMENT '工作流版本ID',
+  `node_id` VARCHAR(64) NOT NULL COMMENT '节点ID',
+  `assignee_type` VARCHAR(30) NOT NULL COMMENT '处理人类型: user/role/role_group/org',
+  `assignee_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '处理人ID',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `idx_version_node` (`workflow_version_id`, `node_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='工作流节点处理人配置';
+
+CREATE TABLE IF NOT EXISTS `knowledge_document_requirement_refs` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `document_id` BIGINT UNSIGNED NOT NULL COMMENT '知识库文档ID',
+  `requirement_id` BIGINT UNSIGNED NOT NULL COMMENT '需求ID',
+  `requirement_code` VARCHAR(64) DEFAULT NULL COMMENT '需求编号',
+  `requirement_title` VARCHAR(255) DEFAULT NULL COMMENT '需求标题',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_document_requirement` (`document_id`, `requirement_id`),
+  KEY `idx_requirement_id` (`requirement_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='知识文档-需求关联';
+
+CREATE TABLE IF NOT EXISTS `knowledge_entities` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `knowledge_base_id` BIGINT UNSIGNED NOT NULL COMMENT '知识库ID',
+  `type` VARCHAR(50) NOT NULL COMMENT '实体类型',
+  `name` VARCHAR(255) NOT NULL COMMENT '实体名称',
+  `normalized_name` VARCHAR(255) NOT NULL COMMENT '归一化名称',
+  `description` TEXT COMMENT '实体描述',
+  `embedding` TEXT COMMENT '实体向量',
+  `event_count` INT DEFAULT 0 COMMENT '关联事件数',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_base_id` (`knowledge_base_id`),
+  KEY `idx_normalized_name` (`normalized_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='知识库实体';
+
+CREATE TABLE IF NOT EXISTS `knowledge_events` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `knowledge_base_id` BIGINT UNSIGNED NOT NULL COMMENT '知识库ID',
+  `document_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '来源文档ID',
+  `chunk_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '来源分块ID',
+  `title` VARCHAR(255) DEFAULT NULL COMMENT '事件标题',
+  `summary` VARCHAR(1000) DEFAULT NULL COMMENT '事件摘要',
+  `content` MEDIUMTEXT COMMENT '事件内容',
+  `category` VARCHAR(50) DEFAULT NULL COMMENT '事件分类',
+  `keywords` VARCHAR(500) DEFAULT NULL COMMENT '关键词',
+  `priority` VARCHAR(20) DEFAULT NULL COMMENT '优先级',
+  `status` VARCHAR(20) DEFAULT 'active' COMMENT '状态',
+  `title_embedding` TEXT COMMENT '标题向量',
+  `content_embedding` TEXT COMMENT '内容向量',
+  `chunk_rank` INT DEFAULT NULL COMMENT '分块排序',
+  `deleted_at` DATETIME DEFAULT NULL COMMENT '软删除时间',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_base_id` (`knowledge_base_id`),
+  KEY `idx_document_id` (`document_id`),
+  KEY `idx_chunk_id` (`chunk_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='知识库事件';
+
+CREATE TABLE IF NOT EXISTS `knowledge_event_entities` (
+  `event_id` BIGINT UNSIGNED NOT NULL COMMENT '事件ID',
+  `entity_id` BIGINT UNSIGNED NOT NULL COMMENT '实体ID',
+  `embedding` TEXT COMMENT '关系上下文向量',
+  PRIMARY KEY (`event_id`, `entity_id`),
+  KEY `idx_entity_id` (`entity_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='知识事件-实体关联';

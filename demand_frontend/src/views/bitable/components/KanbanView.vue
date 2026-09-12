@@ -80,15 +80,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { Plus, Edit } from '@element-plus/icons-vue'
-import type { BitableField, BitableRecord, BitableTable, CellValue } from '@/types/bitable'
+import type { BitableField, BitableRecord, BitableTable, CellValue, ViewConfig } from '@/types/bitable'
 
 const props = defineProps<{
   table: BitableTable | null
   fields: BitableField[]
   records: BitableRecord[]
   loading: boolean
+  viewConfig?: ViewConfig | null
 }>()
 
 const emit = defineEmits<{
@@ -100,14 +101,30 @@ const emit = defineEmits<{
 // 当前选中的分组字段 ID
 const groupFieldId = ref<number | null>(null)
 
-// 拖拽状态
-const dragRecordId = ref<number | null>(null)
-const dragFromGroup = ref<string>('')
-
 // 可选作分组的字段（单选/多选）
 const selectFields = computed(() =>
   props.fields.filter((f) => f.fieldType === 'single_select' || f.fieldType === 'multi_select')
 )
+
+// 视图配置与看板分组双轨合一：进入/切换视图时从视图配置初始化
+watch(
+  () => [props.viewConfig, props.fields],
+  () => {
+    const configGroupFieldId = props.viewConfig?.kanban?.groupFieldId
+    if (configGroupFieldId && props.fields.some((f) => f.id === configGroupFieldId)) {
+      groupFieldId.value = configGroupFieldId
+    } else if (groupFieldId.value == null || !props.fields.some((f) => f.id === groupFieldId.value)) {
+      // 无视图配置时回退到第一个可选字段
+      const first = selectFields.value[0]
+      groupFieldId.value = first ? first.id : null
+    }
+  },
+  { immediate: true },
+)
+
+// 拖拽状态
+const dragRecordId = ref<number | null>(null)
+const dragFromGroup = ref<string>('')
 
 // 分组字段
 const groupField = computed(() =>
@@ -164,10 +181,14 @@ const groups = computed(() => {
     }
   }
 
-  // 过滤掉空的"未分组"桶
+  // "未分组"桶始终保留并置底，卡片可拖回未分组
   return Array.from(groupMap.entries())
-    .filter(([key, g]) => key !== '__ungrouped__' || g.records.length > 0)
     .map(([key, g]) => ({ value: key, ...g }))
+    .sort((a, b) => {
+      if (a.value === '__ungrouped__') return 1
+      if (b.value === '__ungrouped__') return -1
+      return 0
+    })
 })
 
 function handleGroupChange() {

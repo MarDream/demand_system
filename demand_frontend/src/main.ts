@@ -21,7 +21,7 @@ import '@/utils/bitableCellRenderers'
 // ECharts 按需引入 graphic 组件（修复 [ECharts] Component graphic is used but not imported 报错）
 import * as echarts from 'echarts/core'
 import { GraphicComponent } from 'echarts/components'
-import { PieChart, BarChart } from 'echarts/charts'
+import { PieChart, BarChart, LineChart } from 'echarts/charts'
 import { TitleComponent, TooltipComponent, LegendComponent, GridComponent } from 'echarts/components'
 import { LabelLayout, UniversalTransition } from 'echarts/features'
 import { CanvasRenderer } from 'echarts/renderers'
@@ -30,6 +30,7 @@ echarts.use([
   GraphicComponent,
   PieChart,
   BarChart,
+  LineChart,
   TitleComponent,
   TooltipComponent,
   LegendComponent,

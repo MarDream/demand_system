@@ -13,7 +13,9 @@ import com.demand.system.module.bitable.mapper.BitableFieldMapper;
 import com.demand.system.module.bitable.mapper.BitableCellMapper;
 import com.demand.system.module.bitable.service.BitableFieldService;
 import com.demand.system.module.bitable.service.BitableFormulaDependencyService;
+import com.demand.system.module.bitable.util.BitableAuditHelper;
 import com.demand.system.module.bitable.util.BitableJsonUtils;
+import com.demand.system.module.bitable.constant.OperationType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,15 +34,18 @@ public class BitableFieldServiceImpl implements BitableFieldService {
     private final BitableCellMapper cellMapper;
     private final BitableConverter converter;
     private final BitableFormulaDependencyService formulaDependencyService;
+    private final BitableAuditHelper auditHelper;
 
     public BitableFieldServiceImpl(BitableFieldMapper fieldMapper,
                                    BitableCellMapper cellMapper,
                                    BitableConverter converter,
-                                   BitableFormulaDependencyService formulaDependencyService) {
+                                   BitableFormulaDependencyService formulaDependencyService,
+                                   BitableAuditHelper auditHelper) {
         this.fieldMapper = fieldMapper;
         this.cellMapper = cellMapper;
         this.converter = converter;
         this.formulaDependencyService = formulaDependencyService;
+        this.auditHelper = auditHelper;
     }
 
     @Override
@@ -100,13 +105,16 @@ public class BitableFieldServiceImpl implements BitableFieldService {
             }
         }
 
+        // 审计
+        auditHelper.recordByTable(tableId, null, OperationType.ADD_FIELD,
+                "{\"fieldId\":" + field.getId() + ",\"name\":\"" + dto.getName() + "\",\"fieldType\":\"" + dto.getFieldType() + "\"}");
+
         return field.getId();
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void updateField(Long id, BitableFieldUpdateDTO dto) {
-        BitableField existing = fieldMapper.selectById(id);
+    public void updateField(Long id, BitableFieldUpdateDTO dto) {        BitableField existing = fieldMapper.selectById(id);
         if (existing == null) {
             throw new BusinessException("字段不存在");
         }
@@ -146,6 +154,10 @@ public class BitableFieldServiceImpl implements BitableFieldService {
             wrapper.set("description", dto.getDescription());
         }
         fieldMapper.update(null, wrapper);
+
+        // 审计
+        auditHelper.recordByTable(existing.getTableId(), null, OperationType.UPDATE_FIELD,
+                "{\"fieldId\":" + id + "}");
 
         // 公式字段更新时：重新解析依赖并检测循环引用
         String effectiveFieldType = dto.getFieldType() != null ? dto.getFieldType() : existing.getFieldType();
@@ -189,6 +201,10 @@ public class BitableFieldServiceImpl implements BitableFieldService {
 
         // 软删字段（MyBatis-Plus @TableLogic 自动设置 deleted_at=1）
         fieldMapper.deleteById(id);
+
+        // 审计
+        auditHelper.recordByTable(existing.getTableId(), null, OperationType.DELETE_FIELD,
+                "{\"fieldId\":" + id + ",\"name\":\"" + existing.getName() + "\"}");
     }
 
     private BitableFieldVO toFieldVO(BitableField field) {
@@ -212,6 +228,17 @@ public class BitableFieldServiceImpl implements BitableFieldService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void sortFields(Long tableId, List<Long> fieldIds) {
+        // 校验所有字段确实属于当前表，防止跨表篡改其他 Base 的字段排序
+        List<BitableField> fields = fieldMapper.selectBatchIds(fieldIds);
+        if (fields.size() != fieldIds.stream().distinct().count()) {
+            throw new BusinessException("存在无效的字段ID");
+        }
+        for (BitableField field : fields) {
+            if (!tableId.equals(field.getTableId())) {
+                throw new BusinessException("字段不属于当前数据表");
+            }
+        }
+
         List<Map<String, Object>> sortList = new ArrayList<>();
         for (int i = 0; i < fieldIds.size(); i++) {
             Map<String, Object> item = new HashMap<>();

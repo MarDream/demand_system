@@ -26,6 +26,18 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: '文档分享', publicAccess: true },
   },
   {
+    path: '/public/bitable/form/:token',
+    name: 'BitablePublicForm',
+    component: () => import('@/views/public/PublicFormPage.vue'),
+    meta: { title: '表单填写', publicAccess: true },
+  },
+  {
+    path: '/public/bitable/view/:token',
+    name: 'BitablePublicView',
+    component: () => import('@/views/public/PublicShareViewPage.vue'),
+    meta: { title: '数据视图', publicAccess: true },
+  },
+  {
     path: '/',
     component: () => import('@/layouts/DefaultLayout.vue'),
     redirect: '/dashboard',
@@ -71,6 +83,12 @@ export const routes: RouteRecordRaw[] = [
         name: 'BitableEditor',
         component: () => import('@/views/bitable/editor.vue'),
         meta: { title: '多维表格编辑', hidden: true, activeMenu: '/bitable' },
+      },
+      {
+        path: 'bitable/:baseId/dashboard',
+        name: 'BitableDashboard',
+        component: () => import('@/views/bitable/dashboard.vue'),
+        meta: { title: '多维表格仪表盘', hidden: true, activeMenu: '/bitable' },
       },
       {
         path: 'settings/knowledge',

@@ -54,6 +54,7 @@ import { ElMessage } from 'element-plus'
 import { Upload, Delete } from '@element-plus/icons-vue'
 import { getKnowledgeBases, uploadDocument, type KnowledgeBase } from '@/api/modules/knowledge'
 import { PREVIEW_SUPPORTED_EXTENSION_SET, normalizeFileExtension } from '@/constants/knowledgeDocument'
+import { formatFileSize } from '@/utils/format'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
@@ -125,12 +126,6 @@ function openWithFiles(files?: File[] | FileList) {
 
 function removeFile(index: number) {
   uploadFileList.value.splice(index, 1)
-}
-
-function formatFileSize(size: number) {
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-  return `${(size / 1024 / 1024).toFixed(1)} MB`
 }
 
 function triggerFileSelect() {

@@ -391,6 +391,8 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             doc.setRequirementId(requirementId);
             doc.setSourceType(REQUIREMENT_BODY_SOURCE_TYPE);
             doc.setSourceId(requirementId);
+            // file_name 列 NOT NULL，首插时即需生成展示文件名，否则 SQL 报错
+            doc.setFileName(buildRequirementBodyFileName(requirementCode, requirementTitle));
             doc.setUploaderId(uploaderOrZero(uploaderId));
             doc.setDownloadCount(0);
             doc.setChunkCount(0);

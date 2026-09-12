@@ -23,6 +23,30 @@ export function formatFileSize(size: number | null | undefined): string {
   return `${(size / 1024 / 1024).toFixed(1)} MB`
 }
 
+/**
+ * 把时间格式化为相对时间（刚刚 / x分钟前 / x小时前 / x天前）。
+ * 超过 dayLimit 天后按 beyondFormat 输出绝对时间，默认 "YYYY-MM-DD HH:mm"。
+ */
+export function formatRelativeTime(
+  value: string | Date | null | undefined,
+  options: { dayLimit?: number; beyondFormat?: string } = {},
+): string {
+  if (!value) return ''
+  const date = value instanceof Date ? value : new Date(value)
+  if (isNaN(date.getTime())) return ''
+  const { dayLimit = 30, beyondFormat = 'YYYY-MM-DD HH:mm' } = options
+
+  const diffMs = Date.now() - date.getTime()
+  const diffMin = Math.floor(diffMs / 60000)
+  if (diffMin < 1) return '刚刚'
+  if (diffMin < 60) return `${diffMin}分钟前`
+  const diffHour = Math.floor(diffMs / 3600000)
+  if (diffHour < 24) return `${diffHour}小时前`
+  const diffDay = Math.floor(diffMs / 86400000)
+  if (diffDay < dayLimit) return `${diffDay}天前`
+  return dayjs(date).format(beyondFormat)
+}
+
 export function formatLabel(value: string, map?: Record<string, string>): string {
   const normalizedValue = normalizeText(value)
   if (!map) return normalizedValue

@@ -46,4 +46,12 @@ public interface BitableCellMapper extends BaseMapper<BitableCellValue> {
      * @return 删除行数
      */
     int deleteByRecordId(@Param("recordId") Long recordId);
+
+    /**
+     * 物理删除指定数据表下所有记录的单元格值（含已软删记录的残留数据）
+     *
+     * @param tableId 数据表ID
+     * @return 删除行数
+     */
+    int deleteByTableId(@Param("tableId") Long tableId);
 }

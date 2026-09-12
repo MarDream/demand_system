@@ -62,9 +62,26 @@
               >
                 {{ getRecordTitle(record) }}
               </div>
-              <div v-if="day.records.length > 3" class="calendar-more">
-                +{{ day.records.length - 3 }} 更多
-              </div>
+              <el-popover
+                v-if="day.records.length > 3"
+                placement="bottom"
+                trigger="click"
+                :width="240"
+              >
+                <template #reference>
+                  <div class="calendar-more">+{{ day.records.length - 3 }} 更多</div>
+                </template>
+                <div class="calendar-more-list">
+                  <div
+                    v-for="record in day.records"
+                    :key="record.id"
+                    class="calendar-more-list__item"
+                    @click="handleRecordClick(record)"
+                  >
+                    {{ getRecordTitle(record) }}
+                  </div>
+                </div>
+              </el-popover>
             </div>
           </div>
         </div>
@@ -93,10 +110,20 @@ const dateFieldId = ref<number | null>(null)
 const currentMonth = ref(new Date())
 
 const dateFields = computed(() =>
-  props.fields.filter((f) => f.fieldType === 'date')
+  props.fields.filter((f) =>
+    ['date', 'created_time', 'modified_time', 'last_modified_time'].includes(f.fieldType)
+  )
 )
 
 const weekdays = ['日', '一', '二', '三', '四', '五', '六']
+
+/** 本地日期格式化为 yyyy-MM-dd。不能用 toISOString()：UTC+8 等东半球时区会把本地零点转成前一天 */
+function toLocalDateStr(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
 
 const currentMonthLabel = computed(() => {
   const y = currentMonth.value.getFullYear()
@@ -169,12 +196,14 @@ const calendarDays = computed(() => {
   // 本月日期
   for (let i = 1; i <= daysInMonth; i++) {
     const d = new Date(year, month, i)
-    const dateStr = d.toISOString().split('T')[0]
+    const dateStr = toLocalDateStr(d)
     const matchingRecords = props.records.filter((r) => {
       if (!dateFieldId.value || !r.cells?.[dateFieldId.value]) return false
       const cell = r.cells[dateFieldId.value]
       const cellDate = cell.valueDate || cell.valueText
-      return cellDate === dateStr
+      if (!cellDate) return false
+      // 兼容 "yyyy-MM-dd" 与 "yyyy-MM-dd HH:mm:ss" 两种格式，取日期部分比较
+      return cellDate.slice(0, 10) === dateStr
     })
     days.push({
       date: d,
@@ -408,6 +437,32 @@ const calendarDays = computed(() => {
     &:hover {
       background: var(--color-surface-alt, #f1f5f9);
     }
+  }
+}
+</style>
+
+<style lang="scss">
+// "+N 更多"弹层列表：popover 挂载在 body 下，scoped 样式无法命中，需用全局样式
+.calendar-more-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.calendar-more-list__item {
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: var(--radius-tag, 6px);
+  cursor: pointer;
+  color: var(--color-text-primary, #0f172a);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  &:hover {
+    background: var(--color-surface-alt, #f1f5f9);
   }
 }
 </style>

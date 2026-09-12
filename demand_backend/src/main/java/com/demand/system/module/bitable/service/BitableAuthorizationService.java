@@ -109,6 +109,22 @@ public interface BitableAuthorizationService {
     Long getBaseIdByCommentId(Long commentId);
 
     /**
+     * 从 dashboardId 反查 baseId
+     *
+     * @param dashboardId 仪表盘ID
+     * @return 多维表格容器ID
+     */
+    Long getBaseIdByDashboardId(Long dashboardId);
+
+    /**
+     * 从 webhook 订阅 ID 反查 baseId
+     *
+     * @param webhookId Webhook订阅ID
+     * @return 多维表格容器ID
+     */
+    Long getBaseIdByWebhookId(Long webhookId);
+
+    /**
      * 清除指定 Base 的角色缓存
      *
      * @param baseId 多维表格容器ID

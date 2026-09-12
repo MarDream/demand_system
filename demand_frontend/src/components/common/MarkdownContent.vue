@@ -31,7 +31,7 @@ const containerRef = ref<HTMLElement>()
 const renderedHtml = computed(() => {
   if (!props.content) return ''
   const html = renderMarkdown(props.content)
-  return replaceCitationLinks(html, props.citations)
+  return replaceCitationLinks(html, props.citations || [])
 })
 
 function handleContentClick(e: MouseEvent) {

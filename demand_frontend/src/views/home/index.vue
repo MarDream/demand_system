@@ -252,7 +252,7 @@
               <div v-for="item in recentRequirements" :key="item.id" class="recent-item" @click="router.push(`/requirements/${item.id}`)">
                 <div class="recent-title">{{ item.title }}</div>
                 <div class="recent-meta">
-                  <el-tag :type="getStatusType(item.status)" size="small">{{ item.status }}</el-tag>
+                  <StatusTag :value="item.status" />
                   <el-tag :type="getPriorityType(item.priority)" :style="getPriorityStyle(item.priority)" size="small">{{ getPriorityLabel(item.priority) }}</el-tag>
                   <span class="recent-date">{{ formatDate(item.createdAt) }}</span>
                 </div>
@@ -711,11 +711,6 @@ function getProgressColor(rate: number) {
   if (rate >= 50) return COLORS.accent
   if (rate >= 30) return COLORS.amberHover
   return COLORS.red
-}
-
-function getStatusType(status: string) {
-  const map: Record<string, string | undefined> = { '待处理': 'info', '进行中': 'warning', '已完成': 'success', '已关闭': undefined, '已逾期': 'danger' }
-  return map[status] ?? 'info'
 }
 
 // 优先级配置（来自"需求配置-优先级"，动态加载）

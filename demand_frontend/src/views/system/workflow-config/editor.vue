@@ -557,6 +557,7 @@ import * as roleApi from '@/api/modules/role'
 import * as userApi from '@/api/modules/user'
 import { getAllKnowledgeBases, type KnowledgeBase } from '@/api/modules/knowledge'
 import { resolveActiveMenuPath } from '@/utils/menuNavigation'
+import { loadOrgTree } from '@/composables/useOrgTree'
 import {
   compareWorkflowVersion,
   isWorkflowVersion,
@@ -593,6 +594,7 @@ const roleTreeSelectOptions = ref<Array<{ groupId: number | null; groupName: str
 const roleGroupList = ref<Array<{ id: number; name: string }>>([])
 const allUserList = ref<Array<{ id: number; realName: string; username: string }>>([])
 const knowledgeBases = ref<KnowledgeBase[]>([])
+// 组织树数据：来自共享缓存（useOrgTree 模块级单例）
 const orgTreeData = ref<any[]>([])
 const assigneeOptionsLoading = ref(false)
 
@@ -2817,12 +2819,12 @@ onMounted(() => {
 async function loadRoleAndUserList() {
   assigneeOptionsLoading.value = true
   try {
-    const [rolesRes, roleGroupsRes, roleTreeRes, usersRes, orgTreeRes, kbRes]: any[] = await Promise.all([
+    const [rolesRes, roleGroupsRes, roleTreeRes, usersRes, orgTree, kbRes]: any[] = await Promise.all([
       roleApi.getRoleList(),
       roleApi.getRoleGroups(),
       roleApi.getRoleTree(),
       userApi.getUserList({ pageNum: 1, pageSize: 999 }),
-      userApi.getOrgTree(),
+      loadOrgTree(),
       getAllKnowledgeBases()
     ])
     roleList.value = (rolesRes?.data ?? rolesRes ?? [])
@@ -2841,7 +2843,7 @@ async function loadRoleAndUserList() {
       }))
     }))
     allUserList.value = (usersRes?.list ?? [])
-    orgTreeData.value = (orgTreeRes?.data ?? orgTreeRes ?? [])
+    orgTreeData.value = orgTree
     knowledgeBases.value = Array.isArray(kbRes) ? kbRes : (kbRes?.data ?? [])
   } catch {
     // ignore

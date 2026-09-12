@@ -446,6 +446,7 @@ import { requirementConfigApi } from '@/api/modules/requirementConfig'
 import { getTabBadgeCounts } from '@/api/modules/statistics'
 import { downloadRequirementAttachment, uploadRequirementAttachment } from '@/api/modules/file'
 import { usePermission } from '@/composables/usePermission'
+import { useOrgTree } from '@/composables/useOrgTree'
 import type { RelationItem } from '@/api/modules/relation'
 import { buildRichTextImagePreviewUrl, hydrateRichTextImageHtml, serializeRichTextImageHtml } from '@/utils/richTextFileImage'
 import { formatDate, getFileExt, normalizeText, stripPriorityPrefix } from '@/utils/format'
@@ -482,7 +483,7 @@ const dynamicFieldsRef = ref<InstanceType<typeof DynamicFieldsForm> | null>(null
 // Data
 const projects = ref<any[]>([])
 const users = ref<User[]>([])
-const orgTree = ref<OrgNode[]>([])
+const { orgTree, loadOrgTree } = useOrgTree()
 const iterations = ref<any[]>([])
 const allRequirements = ref<any[]>([])
 
@@ -961,12 +962,10 @@ async function loadProjects() {
   }
 }
 
-async function loadOrgTree() {
+async function loadOrgTreeData() {
   try {
-    const res = await userApi.getOrgTree() as any
-    orgTree.value = Array.isArray(res) ? res : []
+    await loadOrgTree()
   } catch {
-    orgTree.value = []
     // ignore
   }
 }

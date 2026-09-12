@@ -126,6 +126,39 @@ a {
   }
 }
 
+// ===== 设置类页面共享骨架（config-container / config-header） =====
+// 抽取自 settings/llm.vue 与 settings/requirements.vue 的重复实现
+
+.config-container {
+  padding: var(--page-padding-lg);
+
+  // 需要占满视口并内部滚动的页面（如 llm.vue 两栏布局）加此修饰符
+  &--fill {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+.config-header {
+  margin-bottom: var(--spacing-lg);
+  flex-shrink: 0;
+
+  h2 {
+    margin: 0 0 6px;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text-primary);
+    letter-spacing: var(--letter-spacing-tight);
+  }
+
+  .config-desc {
+    margin: 0;
+    color: var(--color-muted-text);
+    font-size: var(--font-size-sm);
+  }
+}
+
 // ===== 对话框增强（毛玻璃遮罩 + 精致交互） =====
 
 .app-draggable-dialog {
@@ -231,15 +264,15 @@ a {
   overflow: hidden;
 
   .el-dialog__body {
-    padding: 24px 28px 20px;
+    padding: 16px 20px 12px;
   }
 
   .el-dialog__footer {
-    padding: 4px 28px 24px;
+    padding: 4px 20px 16px;
   }
 
   .el-form-item {
-    margin-bottom: 22px;
+    margin-bottom: 18px;
   }
 
   .el-form-item__label {
@@ -263,45 +296,6 @@ a {
     margin-top: 8px;
     line-height: 1.6;
     color: var(--color-muted-text);
-  }
-}
-
-// ===== 表格专业样式（交互增强） =====
-
-.table-pro {
-  --el-table-row-hover-bg-color: var(--color-info-light);
-  --el-table-header-bg-color: var(--color-surface-alt);
-
-  // 斑马纹
-  .el-table__row:nth-child(even) {
-    background-color: var(--color-surface-alt);
-  }
-
-  .el-table__row {
-    cursor: pointer;
-    transition: background-color var(--transition-fast);
-  }
-
-  // 表头
-  .el-table__header th {
-    font-weight: var(--font-weight-semibold);
-    font-size: var(--font-size-sm);
-    color: var(--color-text-secondary);
-    text-transform: none;
-    letter-spacing: 0;
-  }
-
-  // 操作列按钮组
-  .action-group {
-    display: flex;
-    gap: var(--spacing-xs);
-    align-items: center;
-
-    .el-button {
-      .el-icon {
-        margin-right: 2px;
-      }
-    }
   }
 }
 

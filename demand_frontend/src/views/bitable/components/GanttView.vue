@@ -100,7 +100,9 @@ const rangeFieldId = ref<number | null>(null)
 
 // 日期字段列表
 const dateFields = computed(() =>
-  props.fields.filter((f) => f.fieldType === 'date')
+  props.fields.filter((f) =>
+    ['date', 'created_time', 'modified_time', 'last_modified_time'].includes(f.fieldType)
+  )
 )
 
 // 日期范围字段列表
@@ -108,16 +110,46 @@ const rangeFields = computed(() =>
   props.fields.filter((f) => f.fieldType === 'date_range')
 )
 
-// 甘特图时间轴（未来 30 天）
+/** 本地日期格式化为 yyyy-MM-dd。不能用 toISOString()：东半球时区会把本地零点转成前一天 */
+function toLocalDateStr(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/** 甘特图时间轴：随数据范围伸缩，最少 30 天，让历史与远期任务都可见 */
 const chartDays = computed(() => {
   const days: { date: string; label: string }[] = []
   const today = new Date()
-  for (let i = 0; i < 30; i++) {
-    const d = new Date(today)
-    d.setDate(today.getDate() + i)
-    const dateStr = d.toISOString().split('T')[0]
-    const label = `${d.getMonth() + 1}/${d.getDate()}`
-    days.push({ date: dateStr, label })
+  today.setHours(0, 0, 0, 0)
+
+  // 取所有记录的最早/最晚日期，确定时间轴范围
+  let min: Date | null = null
+  let max: Date | null = null
+  for (const record of props.records) {
+    const range = getRecordDateRange(record)
+    if (!range) continue
+    const s = new Date(range.start)
+    const e = new Date(range.end)
+    if (isNaN(s.getTime()) || isNaN(e.getTime())) continue
+    s.setHours(0, 0, 0, 0)
+    e.setHours(0, 0, 0, 0)
+    if (!min || s < min) min = s
+    if (!max || e > max) max = e
+  }
+
+  // 时间轴：数据范围与"今天起 30 天"的并集，并前后各留 1 天余量
+  const first = min ? new Date(Math.min(min.getTime(), today.getTime())) : new Date(today)
+  const last = max ? new Date(Math.max(max.getTime(), today.getTime() + 29 * 86400000)) : new Date(today.getTime() + 29 * 86400000)
+  first.setDate(first.getDate() - 1)
+  last.setDate(last.getDate() + 1)
+
+  const totalDays = Math.max(30, Math.ceil((last.getTime() - first.getTime()) / 86400000))
+  for (let i = 0; i < totalDays; i++) {
+    const d = new Date(first)
+    d.setDate(first.getDate() + i)
+    days.push({ date: toLocalDateStr(d), label: `${d.getMonth() + 1}/${d.getDate()}` })
   }
   return days
 })
@@ -139,8 +171,12 @@ function getRecordDateRange(record: BitableRecord): { start: string; end: string
   if (rangeFieldId.value && record.cells?.[rangeFieldId.value]) {
     const cell = record.cells[rangeFieldId.value]
     const json = cell.valueJson as unknown
+    // 兼容两种存储格式：{start, end} 对象 与 [start, end] 数组（FormView 提交格式）
+    if (Array.isArray(json) && json.length === 2 && json[0] && json[1]) {
+      return { start: String(json[0]), end: String(json[1]) }
+    }
     if (json && typeof json === 'object' && 'start' in json && 'end' in json) {
-      return { start: (json as any).start, end: (json as any).end }
+      return { start: String((json as any).start), end: String((json as any).end) }
     }
   }
   if (dateFieldId.value && record.cells?.[dateFieldId.value]) {
@@ -158,21 +194,29 @@ function getBarStyle(record: BitableRecord): Record<string, string> {
   const range = getRecordDateRange(record)
   if (!range) return {}
 
+  const days = chartDays.value
+  if (!days.length) return {}
+
+  const timelineStart = new Date(days[0].date)
+  timelineStart.setHours(0, 0, 0, 0)
   const startDate = new Date(range.start)
   const endDate = new Date(range.end)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  startDate.setHours(0, 0, 0, 0)
+  endDate.setHours(0, 0, 0, 0)
 
-  const firstChartDate = new Date(today)
-  const lastChartDate = new Date(today)
-  lastChartDate.setDate(today.getDate() + 29)
+  // 按天偏移计算位置（相对时间轴起点，而非固定"今天"）
+  const dayMs = 1000 * 60 * 60 * 24
+  const startOffset = Math.floor((startDate.getTime() - timelineStart.getTime()) / dayMs)
+  const endOffset = Math.floor((endDate.getTime() - timelineStart.getTime()) / dayMs)
 
-  // 计算在图表中的位置
-  const startOffset = Math.max(0, Math.floor((startDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)))
-  const endOffset = Math.min(29, Math.floor((endDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)))
+  const totalDays = days.length
+  // 记录超出时间轴时裁剪到可见范围内，并保证条宽至少 1 天、不为负
+  const clampedStart = Math.min(Math.max(startOffset, 0), totalDays - 1)
+  const clampedEnd = Math.min(Math.max(endOffset, 0), totalDays - 1)
+  const span = Math.max(clampedEnd - clampedStart + 1, 1)
 
-  const widthPercent = ((endOffset - startOffset + 1) / 30) * 100
-  const leftPercent = (startOffset / 30) * 100
+  const widthPercent = (span / totalDays) * 100
+  const leftPercent = (clampedStart / totalDays) * 100
 
   return {
     left: `${leftPercent}%`,

@@ -102,9 +102,13 @@ public class BitableBaseController {
         if (role == null || role.isBlank()) {
             return Result.fail("role 不能为空");
         }
-        bitableBaseMemberService.addMember(baseId, targetUserId, role);
-        // 清除新成员的角色缓存
-        authorizationService.clearRoleCache(baseId, targetUserId);
+        bitableBaseMemberService.addMember(baseId, targetUserId, role, userId);
+        // 清除新成员的角色缓存；涉及所有权转移时清空整个 Base 的角色缓存
+        if ("owner".equals(role)) {
+            authorizationService.clearRoleCache(baseId);
+        } else {
+            authorizationService.clearRoleCache(baseId, targetUserId);
+        }
         return Result.success();
     }
 
@@ -119,9 +123,13 @@ public class BitableBaseController {
         if (role == null || role.isBlank()) {
             return Result.fail("role 不能为空");
         }
-        bitableBaseMemberService.updateMemberRole(baseId, userId, role);
-        // 清除被修改成员的角色缓存
-        authorizationService.clearRoleCache(baseId, userId);
+        bitableBaseMemberService.updateMemberRole(baseId, userId, role, currentUserId);
+        // 清除被修改成员的角色缓存；涉及所有权转移时清空整个 Base 的角色缓存
+        if ("owner".equals(role)) {
+            authorizationService.clearRoleCache(baseId);
+        } else {
+            authorizationService.clearRoleCache(baseId, userId);
+        }
         return Result.success();
     }
 

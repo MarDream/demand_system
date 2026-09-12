@@ -117,6 +117,10 @@
           @open-members="showMemberManager = true"
           @open-ai-panel="showAiPanel = true"
           @open-import-export="showImportExport = true"
+          @open-export="showExport = true"
+          @open-share-view="showShareViewDialog = true"
+          @open-form-publish="showFormPublishDialog = true"
+          @open-integration="showIntegrationDialog = true"
           @open-field-config="fieldConfigDrawerVisible = true"
           @open-ai-fill="showAiFillDialog = true"
           @open-ai-classify="showAiClassifyDialog = true"
@@ -136,6 +140,7 @@
           @rename-field="(fieldId: number) => handleRenameField(fieldId)"
           @clone-field="handleCloneField"
           @hide-field="handleHideField"
+          @delete-field="handleGridDeleteField"
           @header-dragend="handleHeaderDragend"
           @ai-fill-column="handleAiFillColumn"
           @ai-classify-column="handleAiClassifyColumn"
@@ -168,6 +173,7 @@
           :records="records"
           :loading="loadingRecords"
           :viewConfig="activeView?.config ?? null"
+          @record-click="handleOpenRecordComments"
         />
         <GalleryView
           v-else-if="currentViewType === 'gallery'"
@@ -176,6 +182,7 @@
           :records="records"
           :loading="loadingRecords"
           :viewConfig="activeView?.config ?? null"
+          @card-click="handleOpenRecordComments"
         />
         <FormView
           v-else-if="currentViewType === 'form'"
@@ -186,6 +193,17 @@
           :viewConfig="activeView?.config ?? null"
           @submit="handleFormSubmit"
         />
+
+        <!-- 记录分页 -->
+        <div v-if="currentViewType !== 'form' && recordsTotal > recordsPageSize" class="records-pager">
+          <el-pagination
+            layout="total, prev, pager, next"
+            :total="recordsTotal"
+            :page-size="recordsPageSize"
+            :current-page="recordsPage"
+            @current-change="handlePageChange"
+          />
+        </div>
       </div>
     </div>
 
@@ -634,6 +652,35 @@
       @close="showExport = false"
     />
 
+    <!-- 记录编辑（看板卡片编辑等入口） -->
+    <RecordEditDialog
+      :visible="recordEditVisible"
+      :record="recordEditTarget"
+      :fields="fields"
+      @close="recordEditVisible = false"
+      @save="handleRecordEditSave"
+    />
+
+    <!-- 分享视图 / 发布表单 -->
+    <ShareViewDialog
+      :visible="showShareViewDialog"
+      :view-id="activeViewId"
+      @close="showShareViewDialog = false"
+    />
+    <FormPublishDialog
+      :visible="showFormPublishDialog"
+      :table-id="activeTableId"
+      :view-id="activeViewId"
+      @close="showFormPublishDialog = false"
+    />
+
+    <!-- API 与 Webhook 集成管理 -->
+    <IntegrationDialog
+      :visible="showIntegrationDialog"
+      :base-id="baseId"
+      @close="showIntegrationDialog = false"
+    />
+
     <!-- 筛选面板 -->
     <FilterPanel
       v-if="activeTableId != null"
@@ -686,6 +733,7 @@ import { updateTable } from '@/api/modules/bitable'
 import { ArrowLeft, Plus, Delete, Edit, CopyDocument, ArrowRight, MagicStick, Grid, Menu, Calendar, Picture, Tickets, View } from '@element-plus/icons-vue'
 import { useCollapsibleSidebar } from '@/composables/useCollapsibleSidebar'
 import { useToast } from '@/composables/useToast'
+import { useUserStore } from '@/stores'
 import TableSidebar from './components/TableSidebar.vue'
 import Toolbar from './components/Toolbar.vue'
 import GridView from './components/GridView.vue'
@@ -706,9 +754,13 @@ import AiSummarizeDialog from './components/AiSummarizeDialog.vue'
 import AiBuildTableDialog from './components/AiBuildTableDialog.vue'
 import ImportDialog from './components/ImportDialog.vue'
 import ExportDialog from './components/ExportDialog.vue'
+import RecordEditDialog from './components/RecordEditDialog.vue'
+import FormPublishDialog from './components/FormPublishDialog.vue'
+import ShareViewDialog from './components/ShareViewDialog.vue'
+import IntegrationDialog from './components/IntegrationDialog.vue'
 import LinkFieldSelector from './components/LinkFieldSelector.vue'
 import FormulaEditor from './components/FormulaEditor.vue'
-import { useBitableWebSocket, type CellUpdateEvent, type ConflictEvent } from '@/composables/useBitableWebSocket'
+import { useBitableWebSocket, type CellUpdateEvent, type ConflictEvent, type RecordCreatedEvent, type RecordDeletedEvent } from '@/composables/useBitableWebSocket'
 import {
   getBase,
   listTables,
@@ -796,6 +848,20 @@ const showImport = ref(false)
 const showExport = ref(false)
 const showImportExport = ref(false)
 const commentRecordId = ref<number | null>(null)
+
+// 看板/记录编辑对话框
+const recordEditVisible = ref(false)
+const recordEditTarget = ref<BitableRecord | null>(null)
+
+// 分享视图 / 发布表单 / 集成管理
+const showShareViewDialog = ref(false)
+const showFormPublishDialog = ref(false)
+const showIntegrationDialog = ref(false)
+
+// 记录分页状态
+const recordsPage = ref(1)
+const recordsPageSize = ref(50)
+const recordsTotal = ref(0)
 const sidebar = useCollapsibleSidebar({
   defaultWidth: 240,
   minWidth: 200,
@@ -956,11 +1022,15 @@ function isReadonlyFieldType(type?: string) {
 }
 
 // WebSocket 实时协作
+const userStore = useUserStore()
+const currentUserId = computed(() => userStore.userInfo?.id)
 const {
   connect: wsConnect,
   onlineUsers,
   onCellUpdated,
   onConflict,
+  onRecordCreated,
+  onRecordDeleted,
 } = useBitableWebSocket(baseId)
 const conflictVisible = ref(false)
 const conflictMessage = ref('')
@@ -975,6 +1045,22 @@ onCellUpdated.value = (event: CellUpdateEvent) => {
     }
     record.updatedBy = event.userId
     record.version = event.version
+  }
+}
+
+// 其他成员删除记录时，实时移除本端对应行
+onRecordDeleted.value = (event: RecordDeletedEvent) => {
+  if (event.userId === currentUserId.value) return
+  if (event.tableId !== activeTableId.value) return
+  records.value = records.value.filter((r) => r.id !== event.recordId)
+}
+
+// 其他成员新增记录时，重载以获取完整行数据
+onRecordCreated.value = (event: RecordCreatedEvent) => {
+  if (event.userId === currentUserId.value) return
+  if (event.tableId !== activeTableId.value) return
+  if (activeTableId.value) {
+    loadRecords(activeTableId.value)
   }
 }
 
@@ -1128,32 +1214,48 @@ async function handleGroupApply(fieldId: number | null) {
   }
 }
 
-async function loadRecords(tableId: number) {
+async function loadRecords(tableId: number, page = 1) {
   loadingRecords.value = true
+  recordsPage.value = page
   try {
     const view = activeView.value
     const currentFilter = view?.filterConfig ?? null
     filterConfig.value = currentFilter
     const hasFilter = currentFilter && filterRuleCount(currentFilter) > 0
-    if (view && (hasFilter || (view.sortConfig?.length ?? 0) > 0)) {
-      // 视图有筛选/排序配置时，走高级查询接口
+    // 分组生效：分组字段作为第一排序键，让同组记录相邻展示
+    const currentGroup = groupFieldId.value
+    const sortConfig = view?.sortConfig?.length
+      ? [...view.sortConfig]
+      : currentGroup != null
+        ? [{ fieldId: currentGroup, direction: 'asc' as const }]
+        : undefined
+    if (view && (hasFilter || sortConfig)) {
+      // 视图有筛选/排序/分组配置时，走高级查询接口
       const res = await queryRecords(tableId, {
         filterConfig: currentFilter ?? undefined,
-        sortConfig: view.sortConfig,
+        sortConfig,
+        groupByFieldId: currentGroup ?? undefined,
         viewId: view.id,
-        pageNum: 1,
-        pageSize: 1000,
+        pageNum: page,
+        pageSize: recordsPageSize.value,
       })
       records.value = res.list || []
+      recordsTotal.value = res.total
     } else {
-      const res = await listRecords(tableId, { pageNum: 1, pageSize: 1000 })
+      const res = await listRecords(tableId, { pageNum: page, pageSize: recordsPageSize.value })
       records.value = res.list || []
+      recordsTotal.value = res.total
     }
   } catch (e: any) {
     toast.error(resolveErrorMessage(e, '加载记录失败'))
   } finally {
     loadingRecords.value = false
   }
+}
+
+async function handlePageChange(page: number) {
+  if (!activeTableId.value) return
+  await loadRecords(activeTableId.value, page)
 }
 
 async function handleCreateTable(name: string) {
@@ -1865,7 +1967,15 @@ async function handleRowInsert(data?: { position?: 'above' | 'below'; rowId?: nu
     const cells: BitableRecordCreateDTO['cells'] = {}
     // 看板视图传入 groupValue + fieldId
     if (data?.fieldId && data?.groupValue !== undefined) {
-      cells[data.fieldId] = { valueText: data.groupValue === '__ungrouped__' ? '' : data.groupValue }
+      const insertField = fields.value.find((f) => f.id === data.fieldId)
+      if (data.groupValue === '__ungrouped__') {
+        cells[data.fieldId] = { valueText: '' }
+      } else if (insertField?.fieldType === 'multi_select') {
+        // 多选字段以 JSON 数组存储选项标签
+        cells[data.fieldId] = { valueJson: [data.groupValue] }
+      } else {
+        cells[data.fieldId] = { valueText: data.groupValue }
+      }
     }
     await createRecord(activeTableId.value, { cells })
     toast.success('记录已添加')
@@ -1901,8 +2011,40 @@ async function handleRowDelete(rowId: number) {
 }
 
 function handleKanbanRecordUpdate(record: BitableRecord) {
+  // 打开记录编辑对话框（此前误绑定为评论面板）
+  recordEditTarget.value = record
+  recordEditVisible.value = true
+}
+
+async function handleRecordEditSave(data: { recordId: number; version: number; cells: Record<number, { valueText?: string; valueNumber?: number; valueDate?: string }> }) {
+  try {
+    // 逐字段提交（乐观锁），任一字段版本冲突即提示刷新
+    let latestVersion = data.version
+    for (const [fieldIdStr, value] of Object.entries(data.cells)) {
+      const newVersion = await updateCell(data.recordId, Number(fieldIdStr), { version: latestVersion, ...value })
+      latestVersion = newVersion
+    }
+    toast.success('保存成功')
+    recordEditVisible.value = false
+    if (activeTableId.value) {
+      await loadRecords(activeTableId.value)
+    }
+  } catch (e: any) {
+    toast.error(resolveErrorMessage(e, '保存失败'))
+  }
+}
+
+// 日历/画廊点击记录：打开评论面板作为记录详情入口
+function handleOpenRecordComments(record: BitableRecord) {
   commentRecordId.value = record.id
   showCommentPanel.value = true
+}
+
+// 网格右键删除列
+async function handleGridDeleteField(fieldId: number) {
+  const field = fields.value.find((f) => f.id === fieldId)
+  if (!field) return
+  await handleDeleteField(field)
 }
 
 async function handleCardMove(data: { recordId: number; fieldId: number; fromGroup: string; toGroup: string }) {
@@ -1914,9 +2056,29 @@ async function handleCardMove(data: { recordId: number; fieldId: number; fromGro
     return
   }
   try {
-    const updateData: CellUpdateDTO = {
-      version: record.version,
-      valueText: data.toGroup === '__ungrouped__' ? '' : data.toGroup,
+    const updateData: CellUpdateDTO = { version: record.version }
+    if (selectField.fieldType === 'multi_select') {
+      // 多选字段以 valueJson 数组存储：保留原有选项，追加/移除目标标签
+      const currentCell = record.cells?.[selectField.id]
+      let current: string[] = []
+      const raw = currentCell?.valueJson
+      if (Array.isArray(raw)) {
+        current = raw.filter((v): v is string => typeof v === 'string')
+      } else if (typeof raw === 'string' && raw.trim().startsWith('[')) {
+        try {
+          const parsed = JSON.parse(raw)
+          current = Array.isArray(parsed) ? parsed.filter((v: unknown): v is string => typeof v === 'string') : []
+        } catch { current = [] }
+      } else if (currentCell?.valueText) {
+        current = [currentCell.valueText]
+      }
+      const next = data.toGroup === '__ungrouped__'
+        ? current.filter((label) => label !== data.fromGroup)
+        : Array.from(new Set([...current, data.toGroup]))
+      updateData.valueJson = next
+      if (next.length === 0) updateData.valueText = ''
+    } else {
+      updateData.valueText = data.toGroup === '__ungrouped__' ? '' : data.toGroup
     }
     const newVersion: number = await updateCell(data.recordId, selectField.id, updateData)
     record.version = newVersion
@@ -1949,9 +2111,10 @@ function handleAiUpdated() {
   }
 }
 
-function handleAiTableCreated(tableId: number) {
-  loadTables()
-  handleSelectTable(tableId)
+async function handleAiTableCreated(tableId: number) {
+  // 先等表列表加载完成，再选中新表，否则 activeTable 解析不到
+  await loadTables()
+  await handleSelectTable(tableId)
 }
 
 function handleAiFillColumn(fieldId: number) {
@@ -2001,6 +2164,15 @@ watch(showImportExport, (val) => {
   background: var(--color-background);
   height: 100vh;
   overflow: hidden;
+}
+
+.records-pager {
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px 16px;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
 }
 
 .editor-header {

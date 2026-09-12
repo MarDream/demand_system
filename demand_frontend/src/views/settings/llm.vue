@@ -1,5 +1,5 @@
 <template>
-  <div class="config-container">
+  <div class="config-container config-container--fill">
     <div class="config-header">
       <h2>模型配置</h2>
       <p class="config-desc">管理大模型接入组和模型实例，支持 OpenAI 和 Anthropic 协议</p>
@@ -294,14 +294,14 @@
                 已选 {{ selectedModelRows.length }} / {{ selectedProviderModels.length }} 项
               </span>
             </div>
-            <el-pagination
-              v-if="selectedProviderModels.length > modelPageSize"
-              v-model:current-page="modelCurrentPage"
-              :page-size="modelPageSize"
+            <AppPagination
+              v-model:page-num="modelCurrentPage"
+              v-model:page-size="modelPageSize"
               :total="selectedProviderModels.length"
               layout="total, prev, pager, next"
               size="small"
               class="model-pagination"
+              hide-on-single-page
             />
           </div>
 
@@ -812,7 +812,7 @@ const modelTypeFilters = computed(() => {
 
 // Model pagination
 const modelCurrentPage = ref(1)
-const modelPageSize = 20
+const modelPageSize = ref(20)
 const pagedModels = computed(() => {
   let all = selectedProviderModels.value
   if (modelTypeFilter.value === 'embedding') {
@@ -824,9 +824,9 @@ const pagedModels = computed(() => {
   } else if (modelTypeFilter.value === 'chat') {
     all = all.filter(m => m.modelType !== 'embedding' && m.modelType !== 'rerank' && m.modelType !== 'vision')
   }
-  if (all.length <= modelPageSize) return all
-  const start = (modelCurrentPage.value - 1) * modelPageSize
-  return all.slice(start, start + modelPageSize)
+  if (all.length <= modelPageSize.value) return all
+  const start = (modelCurrentPage.value - 1) * modelPageSize.value
+  return all.slice(start, start + modelPageSize.value)
 })
 
 // Model batch selection
@@ -1603,20 +1603,6 @@ async function handleSniffImport() {
 </script>
 
 <style scoped lang="scss">
-.config-container {
-  padding: 20px;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.config-header {
-  margin-bottom: 20px;
-  flex-shrink: 0;
-  h2 { margin: 0 0 8px; font-size: 22px; color: var(--color-text-primary); }
-  .config-desc { margin: 0; color: var(--color-muted-text); font-size: 14px; }
-}
-
 // ==================== 两栏布局 ====================
 .config-layout {
   flex: 1;

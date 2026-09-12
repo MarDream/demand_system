@@ -77,6 +77,7 @@
 import { ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { resolveErrorMessage } from '@/utils/error'
+import { formatRelativeTime } from '@/utils/format'
 import { listComments, createComment, deleteComment } from '@/api/modules/bitable'
 import type { BitableComment } from '@/types/bitable'
 
@@ -162,26 +163,9 @@ async function handleDelete(commentId: number) {
   }
 }
 
+// 相对时间展示（30 天内），超过后显示完整日期时间
 function formatTime(dateStr: string): string {
-  if (!dateStr) return ''
-  const date = new Date(dateStr)
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const diffMin = Math.floor(diffMs / 60000)
-  const diffHour = Math.floor(diffMs / 3600000)
-  const diffDay = Math.floor(diffMs / 86400000)
-
-  if (diffMin < 1) return '刚刚'
-  if (diffMin < 60) return `${diffMin}分钟前`
-  if (diffHour < 24) return `${diffHour}小时前`
-  if (diffDay < 30) return `${diffDay}天前`
-
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  const h = String(date.getHours()).padStart(2, '0')
-  const mi = String(date.getMinutes()).padStart(2, '0')
-  return `${y}-${m}-${d} ${h}:${mi}`
+  return formatRelativeTime(dateStr)
 }
 </script>
 

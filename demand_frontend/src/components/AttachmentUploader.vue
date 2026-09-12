@@ -84,7 +84,7 @@ import { ElMessage } from 'element-plus'
 import { Upload, Document, DocumentCopy, Picture, VideoCamera, Folder, Delete, View } from '@element-plus/icons-vue'
 import { uploadRequirementAttachment, downloadRequirementAttachment } from '@/api/modules/file'
 import type { RequirementAttachment } from '@/types/requirement'
-import dayjs from 'dayjs'
+import { formatDate } from '@/utils/format'
 
 interface Props {
   modelValue: RequirementAttachment[]
@@ -340,7 +340,7 @@ function formatFileSize(bytes: number): string {
 }
 
 function formatAttachmentTime(time: string): string {
-  return dayjs(time).format('YYYY-MM-DD HH:mm:ss')
+  return formatDate(time)
 }
 </script>
 

@@ -207,8 +207,8 @@
             </el-table>
 
             <div class="pagination-container">
-              <el-pagination
-                v-model:current-page="pagination.page"
+              <AppPagination
+                v-model:page-num="pagination.page"
                 v-model:page-size="pagination.size"
                 :total="filteredVersions.length"
                 :page-sizes="[10, 20, 50, 100]"
@@ -337,12 +337,11 @@
               </el-table-column>
             </el-table>
             <div class="pagination-container">
-              <el-pagination
-                v-model:current-page="approvalPagination.page"
+              <AppPagination
+                v-model:page-num="approvalPagination.page"
                 v-model:page-size="approvalPagination.size"
                 :total="filteredApprovals.length"
                 :page-sizes="[10, 20, 50]"
-                layout="total, sizes, prev, pager, next"
               />
             </div>
           </el-tab-pane>
@@ -615,6 +614,7 @@ import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import { formatDate as formatDateTime } from '@/utils/format'
 import { resolveActiveMenuPath } from '@/utils/menuNavigation'
 import { resolveErrorMessage } from '@/utils/error'
+import { saveBlob } from '@/utils/download'
 import { isWorkflowVersion, normalizeWorkflowVersion, sameWorkflowVersion } from '@/utils/workflowVersion'
 import { usePermission } from '@/composables/usePermission'
 import {
@@ -1396,12 +1396,7 @@ async function handleExportWorkflow(row: WorkflowVersionDTO) {
     const blob = new Blob([JSON.stringify(data, null, 2)], {
       type: 'application/json',
     })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = filename
-    link.click()
-    URL.revokeObjectURL(url)
+    await saveBlob(blob, filename)
 
     ElMessage.success('工作流已导出')
   }

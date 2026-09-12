@@ -3,7 +3,7 @@ package com.demand.system.common.config;
 import com.demand.system.common.filter.RateLimitFilter;
 import com.demand.system.common.result.ErrorCode;
 import com.demand.system.common.result.Result;
-import com.demand.system.common.utils.JwtUtils;
+import com.demand.system.common.util.JwtUtils;
 import com.demand.system.module.auth.security.UserPrincipal;
 import com.demand.system.module.rbac.support.RbacPermissionResolver;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -101,7 +101,16 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(org.springframework.http.HttpMethod.OPTIONS).permitAll()
                 .requestMatchers("/api/v1/auth/login", "/api/v1/auth/refresh").permitAll()
+                // 注册/找回密码流程必须匿名可用（验证码发送、注册、重置密码）
+                .requestMatchers(
+                    "/api/v1/auth/register",
+                    "/api/v1/auth/send-verification-code",
+                    "/api/v1/auth/request-password-reset",
+                    "/api/v1/auth/confirm-password-reset"
+                ).permitAll()
                 .requestMatchers("/api/v1/public/**").permitAll()
+                // 开放 API：由 BitableOpenApiController 内做 API Key 认证与 scope 校验
+                .requestMatchers("/api/v1/open/bitable/**").permitAll()
                 .requestMatchers("/api/v1/meta/**").permitAll()
                 .requestMatchers(
                     "/swagger-ui/**",

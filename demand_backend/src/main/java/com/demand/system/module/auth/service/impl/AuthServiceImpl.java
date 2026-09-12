@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.demand.system.common.constant.RedisConstants;
 import com.demand.system.common.exception.BusinessException;
-import com.demand.system.common.utils.JwtUtils;
+import com.demand.system.common.util.JwtUtils;
 import com.demand.system.module.auth.dto.*;
 import com.demand.system.module.auth.entity.SysUser;
 import com.demand.system.module.organization.dto.SysOrgVO;
@@ -328,7 +328,9 @@ public class AuthServiceImpl implements AuthService {
         user.setRealName(request.getRealName());
         user.setEmail(request.getEmail());
         user.setPhone(request.getPhone());
-        user.setStatus("inactive");
+        // 注册流程已通过邮箱验证码完成邮箱验证，直接激活账号。
+        // 此前写死 "inactive" 且无任何激活流程，导致新注册用户永远无法登录（Account disabled）。
+        user.setStatus("active");
         user.setCreatedAt(LocalDateTime.now());
         user.setUpdatedAt(LocalDateTime.now());
 

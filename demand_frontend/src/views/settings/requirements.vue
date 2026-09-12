@@ -1877,26 +1877,6 @@ watch(activeTab, (tab) => {
 </script>
 
 <style lang="scss" scoped>
-.config-container {
-  padding: 20px;
-}
-
-.config-header {
-  margin-bottom: 24px;
-
-  h2 {
-    margin: 0 0 8px;
-    font-size: 22px;
-    color: var(--color-text-primary);
-  }
-
-  .config-desc {
-    margin: 0;
-    color: var(--color-muted-text);
-    font-size: 14px;
-  }
-}
-
 .config-tabs {
   :deep(.el-tabs__header) {
     margin-bottom: 20px;

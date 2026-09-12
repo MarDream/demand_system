@@ -194,8 +194,11 @@ public class BitableAiServiceImpl implements BitableAiService {
             throw new BusinessException("目标字段不存在");
         }
 
-        // 读取记录上下文
+        // 读取记录上下文（必须校验记录归属，防止跨表读写）
         BitableRecordVO record = recordService.getRecordById(recordId);
+        if (record == null || !tableId.equals(record.getTableId())) {
+            throw new BusinessException("记录不属于当前数据表");
+        }
         StringBuilder contextBuilder = new StringBuilder();
         contextBuilder.append("当前记录的字段值：\n");
         if (record.getCells() != null) {
@@ -261,6 +264,29 @@ public class BitableAiServiceImpl implements BitableAiService {
         log.info("AI批量填充任务已发送到MQ: tableId={}, fieldId={}, userId={}", tableId, fieldId, userId);
     }
 
+    @Override
+    public void processFillBatch(Long tableId, Long fieldId, Long userId) {
+        // 批量上限与单条失败跳过：LLM 调用耗时长且不稳定，逐条独立处理避免整体回滚
+        final int maxRecords = 200;
+        PageResult<BitableRecordVO> pageResult = recordService.listRecords(tableId, 1, maxRecords);
+        List<BitableRecordVO> records = pageResult.getList();
+
+        int succeeded = 0;
+        int failed = 0;
+        for (BitableRecordVO record : records) {
+            try {
+                fillCell(tableId, record.getId(), fieldId, userId);
+                succeeded++;
+            } catch (Exception e) {
+                failed++;
+                log.warn("AI批量填充单条失败，跳过: tableId={}, recordId={}, fieldId={}, error={}",
+                        tableId, record.getId(), fieldId, e.getMessage());
+            }
+        }
+        log.info("AI批量填充完成: tableId={}, fieldId={}, 总数={}, 成功={}, 失败={}",
+                tableId, fieldId, records.size(), succeeded, failed);
+    }
+
     // ==================== AI 对话式查询 ====================
 
     @Override
@@ -274,6 +300,12 @@ public class BitableAiServiceImpl implements BitableAiService {
                 throw new BusinessException("该 Base 下没有数据表");
             }
             queryTableId = tables.get(0).getId();
+        } else {
+            // 校验表归属，防止跨 Base 读取数据
+            BitableTableVO table = tableService.getTableById(queryTableId);
+            if (table == null || !baseId.equals(table.getBaseId())) {
+                throw new BusinessException("数据表不属于当前多维表格");
+            }
         }
 
         // 读取字段列表
@@ -480,7 +512,6 @@ public class BitableAiServiceImpl implements BitableAiService {
     // ==================== AI 自动摘要 ====================
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public void summarizeRecords(Long tableId, Long sourceFieldId, String targetFieldName, Long userId) {
         // 读取所有记录（Phase 3 取前200条）
         PageResult<BitableRecordVO> pageResult = recordService.listRecords(tableId, 1, 200);
@@ -492,25 +523,40 @@ public class BitableAiServiceImpl implements BitableAiService {
         fieldDTO.setFieldType("text");
         Long targetFieldId = fieldService.createField(tableId, fieldDTO);
 
-        // 逐条调用 LLM 生成摘要（简化实现）
+        // 逐条调用 LLM 生成摘要。
+        // 注意：不能把整个循环包在事务里 —— LLM 调用耗时长会长期占用数据库连接，
+        // 且中途任何一条乐观锁冲突都会导致全部回滚。这里逐条独立提交，单条失败仅记录并跳过。
+        int failed = 0;
         for (BitableRecordVO r : records) {
             if (r.getCells() == null) continue;
             BitableCellValueVO cell = r.getCells().get(sourceFieldId);
             if (cell == null || cell.getValueText() == null || cell.getValueText().isBlank()) continue;
 
-            String systemPrompt = "你是一个文本摘要生成助手。将输入文本压缩为简短摘要，保留关键信息。直接输出摘要文本，不要JSON格式。";
-            String userMessage = "请为以下文本生成摘要：\n" + cell.getValueText();
+            try {
+                String systemPrompt = "你是一个文本摘要生成助手。将输入文本压缩为简短摘要，保留关键信息。直接输出摘要文本，不要JSON格式。";
+                String userMessage = "请为以下文本生成摘要：\n" + cell.getValueText();
 
-            String summary = callChat(systemPrompt, userMessage);
-            summary = cleanJsonResponse(summary).trim();
-            // 截断过长摘要
-            if (summary.length() > 500) {
-                summary = summary.substring(0, 500);
+                String summary = callChat(systemPrompt, userMessage);
+                summary = cleanJsonResponse(summary).trim();
+                // 截断过长摘要
+                if (summary.length() > 500) {
+                    summary = summary.substring(0, 500);
+                }
+
+                // 写入前重读版本号，避免长时间 LLM 调用期间记录被并发编辑导致乐观锁冲突
+                BitableRecordVO latest = recordService.getRecordById(r.getId());
+                if (latest == null) continue;
+
+                CellValueDTO cellValue = new CellValueDTO();
+                cellValue.setValueText(summary);
+                recordService.updateCell(r.getId(), targetFieldId, cellValue, latest.getVersion(), userId);
+            } catch (Exception e) {
+                failed++;
+                log.warn("AI摘要写入失败，跳过记录 recordId={}: {}", r.getId(), e.getMessage());
             }
-
-            CellValueDTO cellValue = new CellValueDTO();
-            cellValue.setValueText(summary);
-            recordService.updateCell(r.getId(), targetFieldId, cellValue, r.getVersion(), userId);
+        }
+        if (failed > 0) {
+            log.info("AI摘要完成，{} 条记录处理失败被跳过, tableId={}", failed, tableId);
         }
     }
 }

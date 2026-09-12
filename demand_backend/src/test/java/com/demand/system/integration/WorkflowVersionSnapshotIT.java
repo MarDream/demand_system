@@ -9,6 +9,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -65,7 +66,11 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
 
     @BeforeEach
     void setUpMockMvc() {
-        this.mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext).build();
+        // 必须挂载 springSecurity() 过滤器链，否则请求不经过 JWT 认证，
+        // @PreAuthorize 会抛 AuthenticationCredentialsNotFoundException 导致 500
+        this.mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext)
+                .apply(SecurityMockMvcConfigurers.springSecurity())
+                .build();
         this.adminToken = obtainAccessToken("admin", DEFAULT_PASSWORD);
     }
 

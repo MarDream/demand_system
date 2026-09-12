@@ -49,6 +49,22 @@ export interface CursorMoveEvent {
   fieldId: number
 }
 
+export interface RecordCreatedEvent {
+  type: 'record_created'
+  tableId: number
+  recordId: number
+  userId: number
+  userName: string
+}
+
+export interface RecordDeletedEvent {
+  type: 'record_deleted'
+  tableId: number
+  recordId: number
+  userId: number
+  userName: string
+}
+
 const WS_BASE = (import.meta.env.VITE_WS_URL || 'ws://localhost:8081').replace(/\/$/, '')
 
 export function useBitableWebSocket(baseId: number) {
@@ -60,6 +76,8 @@ export function useBitableWebSocket(baseId: number) {
 
   const onCellUpdated = ref<((event: CellUpdateEvent) => void) | null>(null)
   const onConflict = ref<((event: ConflictEvent) => void) | null>(null)
+  const onRecordCreated = ref<((event: RecordCreatedEvent) => void) | null>(null)
+  const onRecordDeleted = ref<((event: RecordDeletedEvent) => void) | null>(null)
 
   function connect() {
     if (ws.value?.readyState === WebSocket.OPEN || ws.value?.readyState === WebSocket.CONNECTING) return
@@ -70,8 +88,10 @@ export function useBitableWebSocket(baseId: number) {
       return
     }
 
-    const url = `${WS_BASE}/ws/bitable/${baseId}?accessToken=${encodeURIComponent(token)}`
-    ws.value = new WebSocket(url)
+    // token 经 Sec-WebSocket-Protocol 子协议头传输（bearer,<token>），
+    // 避免明文出现在 URL 中被访问日志记录；服务端握手后回显子协议。
+    const url = `${WS_BASE}/ws/bitable/${baseId}`
+    ws.value = new WebSocket(url, ['bearer', token])
 
     ws.value.onopen = () => {
       connected.value = true
@@ -85,11 +105,17 @@ export function useBitableWebSocket(baseId: number) {
           | ConflictEvent
           | CursorMoveEvent
           | PresenceUpdatedEvent
+          | RecordCreatedEvent
+          | RecordDeletedEvent
 
         if (msg.type === 'cell_updated' && onCellUpdated.value) {
           onCellUpdated.value(msg)
         } else if (msg.type === 'conflict' && onConflict.value) {
           onConflict.value(msg)
+        } else if (msg.type === 'record_created' && onRecordCreated.value) {
+          onRecordCreated.value(msg)
+        } else if (msg.type === 'record_deleted' && onRecordDeleted.value) {
+          onRecordDeleted.value(msg)
         } else if (msg.type === 'cursor_moved') {
           const key = `${msg.tableId}_${msg.recordId}_${msg.fieldId}`
           cursors.value.set(key, { ...msg, timestamp: Date.now() })
@@ -120,25 +146,8 @@ export function useBitableWebSocket(baseId: number) {
     onlineUsers.value = []
   }
 
-  function sendCellUpdate(
-    tableId: number,
-    recordId: number,
-    fieldId: number,
-    value: unknown,
-    version: number
-  ) {
-    if (!ws.value || ws.value.readyState !== WebSocket.OPEN) return
-    ws.value.send(
-      JSON.stringify({
-        type: 'cell_update',
-        tableId,
-        recordId,
-        fieldId,
-        value,
-        version,
-      })
-    )
-  }
+  // 单元格写入已统一走 REST（updateCell 成功后由后端广播 cell_updated），
+  // WebSocket 不再提供 cell_update 上行，服务端也会拒绝该消息类型。
 
   function sendCursorMove(tableId: number, recordId: number, fieldId: number) {
     if (!ws.value || ws.value.readyState !== WebSocket.OPEN) return
@@ -175,9 +184,10 @@ export function useBitableWebSocket(baseId: number) {
     reconnectAttempts,
     onCellUpdated,
     onConflict,
+    onRecordCreated,
+    onRecordDeleted,
     connect,
     disconnect,
-    sendCellUpdate,
     sendCursorMove,
   }
 }

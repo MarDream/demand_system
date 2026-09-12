@@ -1545,22 +1545,19 @@ public class WorkflowEngineService {
             }
         }
 
-        // 合并：操作人 + 文件上传人共用一次 sys_user 批量查询，结果分别归类
-        Map<Long, String> operatorNameMap = new HashMap<>();
-        Map<Long, String> fileUploaderNameMap = new HashMap<>();
+        // 合并：操作人 + 文件上传人共用一次用户名称批量解析（走二级缓存）
         Set<Long> allUserIds = new LinkedHashSet<>();
         allUserIds.addAll(operatorIds);
         allUserIds.addAll(fileUploaderIds);
-        if (!allUserIds.isEmpty()) {
-            for (User u : userMapper.selectBatchIds(allUserIds)) {
-                if (u == null) continue;
-                String name = StringUtils.hasText(u.getRealName()) ? u.getRealName() : u.getUsername();
-                if (operatorIds.contains(u.getId())) {
-                    operatorNameMap.put(u.getId(), name);
-                }
-                if (fileUploaderIds.contains(u.getId())) {
-                    fileUploaderNameMap.put(u.getId(), name);
-                }
+        Map<Long, String> resolvedNames = userNameResolver.resolveUserNames(allUserIds);
+        Map<Long, String> operatorNameMap = new HashMap<>();
+        Map<Long, String> fileUploaderNameMap = new HashMap<>();
+        for (Map.Entry<Long, String> entry : resolvedNames.entrySet()) {
+            if (operatorIds.contains(entry.getKey())) {
+                operatorNameMap.put(entry.getKey(), entry.getValue());
+            }
+            if (fileUploaderIds.contains(entry.getKey())) {
+                fileUploaderNameMap.put(entry.getKey(), entry.getValue());
             }
         }
 

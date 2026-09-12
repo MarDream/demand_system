@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -55,6 +56,10 @@ public class BitableLinkServiceImpl implements BitableLinkService {
         this.objectMapper = objectMapper;
     }
 
+    /** 关联记录搜索的最大扫描行数 */
+    private static final int LINK_SEARCH_SCAN_LIMIT = 2000;
+    private static final int LINK_SEARCH_PAGE_SIZE = 500;
+
     @Override
     public List<BitableRecordVO> listLinkableRecords(Long targetTableId, String keyword, Integer pageSize) {
         if (pageSize == null || pageSize <= 0) {
@@ -65,12 +70,7 @@ public class BitableLinkServiceImpl implements BitableLinkService {
         // 查询目标表的记录
         List<BitableRecord> records;
         if (keyword != null && !keyword.isBlank()) {
-            // 简单实现：按关键词在前 200 条中过滤
-            List<BitableRecord> all = recordMapper.selectByTableId(targetTableId, 0, 200);
-            records = all.stream()
-                    .filter(r -> matchesKeyword(r, keyword))
-                    .limit(limit)
-                    .collect(Collectors.toList());
+            records = searchRecordsByKeyword(targetTableId, keyword, limit);
         } else {
             records = recordMapper.selectByTableId(targetTableId, 0, limit);
         }
@@ -111,13 +111,34 @@ public class BitableLinkServiceImpl implements BitableLinkService {
             throw new BusinessException("字段不是关联类型");
         }
 
-        List<Long> oldTargetRecordIds = getLinkedRecordIds(fieldId, recordId);
-
-        // 验证当前记录存在
+        // 验证当前记录存在且属于字段所在表，防止向其他表的记录写入关联值
         BitableRecord record = recordMapper.selectById(recordId);
         if (record == null) {
             throw new BusinessException("记录不存在");
         }
+        if (!field.getTableId().equals(record.getTableId())) {
+            throw new BusinessException("记录不属于该关联字段所在的数据表");
+        }
+
+        // 验证目标记录都属于关联字段配置的目标表，防止建立跨 Base 的非法关联
+        if (targetRecordIds != null && !targetRecordIds.isEmpty()) {
+            Long linkTargetTableId = parseLinkTargetTableId(field);
+            if (linkTargetTableId == null) {
+                throw new BusinessException("关联字段未配置目标表");
+            }
+            List<Long> distinctIds = targetRecordIds.stream().distinct().collect(Collectors.toList());
+            List<BitableRecord> targetRecords = recordMapper.selectBatchIds(distinctIds);
+            if (targetRecords.size() != distinctIds.size()) {
+                throw new BusinessException("部分关联记录不存在");
+            }
+            for (BitableRecord targetRecord : targetRecords) {
+                if (!linkTargetTableId.equals(targetRecord.getTableId())) {
+                    throw new BusinessException("关联记录不属于字段配置的目标表");
+                }
+            }
+        }
+
+        List<Long> oldTargetRecordIds = getLinkedRecordIds(fieldId, recordId);
 
         // 将目标记录ID列表转为 JSON 数组字符串存储到 valueJson
         String valueJson;
@@ -135,6 +156,26 @@ public class BitableLinkServiceImpl implements BitableLinkService {
         cellMapper.saveOrUpdateCell(cell);
 
         syncBidirectionalReverseLinks(field, recordId, oldTargetRecordIds, targetRecordIds != null ? targetRecordIds : Collections.emptyList());
+    }
+
+    @SuppressWarnings("unchecked")
+    private Long parseLinkTargetTableId(BitableField field) {
+        Object parsed = BitableJsonUtils.parseJson(field.getConfig());
+        if (!(parsed instanceof Map)) {
+            return null;
+        }
+        Object raw = ((Map<String, Object>) parsed).get("linkTargetTableId");
+        if (raw instanceof Number number) {
+            return number.longValue();
+        }
+        if (raw instanceof String str && !str.isBlank()) {
+            try {
+                return Long.parseLong(str);
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     @Override
@@ -216,11 +257,54 @@ public class BitableLinkServiceImpl implements BitableLinkService {
     }
 
     /**
-     * 简单的关键词匹配（基于记录的 sortOrder 和创建者名称）
+     * 关键词搜索：分页扫描最多 2000 行，匹配首个 text 字段的值或创建人姓名（原先仅扫描前 200 条且只匹配创建人）
      */
-    private boolean matchesKeyword(BitableRecord record, String keyword) {
+    private List<BitableRecord> searchRecordsByKeyword(Long targetTableId, String keyword, int limit) {
         String lowerKeyword = keyword.toLowerCase();
-        String createdByName = userNameResolver.resolveUserName(record.getCreatedBy(), "");
-        return createdByName != null && createdByName.toLowerCase().contains(lowerKeyword);
+
+        // 找到目标表第一个 text 字段，用于按内容匹配
+        List<BitableField> fields = fieldMapper.selectByTableId(targetTableId);
+        Long textFieldId = fields.stream()
+                .filter(f -> "text".equals(f.getFieldType()))
+                .map(BitableField::getId)
+                .findFirst()
+                .orElse(null);
+
+        List<BitableRecord> matched = new ArrayList<>();
+        int total = recordMapper.countByTableId(targetTableId);
+        int scanLimit = Math.min(total, LINK_SEARCH_SCAN_LIMIT);
+        Set<Long> seen = new LinkedHashSet<>();
+
+        for (int offset = 0; offset < scanLimit && matched.size() < limit; offset += LINK_SEARCH_PAGE_SIZE) {
+            List<BitableRecord> page = recordMapper.selectByTableId(targetTableId, offset, LINK_SEARCH_PAGE_SIZE);
+            if (page.isEmpty()) {
+                break;
+            }
+            // 批量取本页 text 字段值
+            List<Long> pageIds = page.stream().map(BitableRecord::getId).collect(Collectors.toList());
+            Map<Long, String> textByRecord = new HashMap<>();
+            if (textFieldId != null) {
+                for (BitableCellValue cell : cellMapper.selectByRecordIds(pageIds)) {
+                    if (textFieldId.equals(cell.getFieldId()) && cell.getValueText() != null) {
+                        textByRecord.putIfAbsent(cell.getRecordId(), cell.getValueText());
+                    }
+                }
+            }
+            for (BitableRecord record : page) {
+                if (seen.add(record.getId())) {
+                    String text = textByRecord.get(record.getId());
+                    String creator = userNameResolver.resolveUserName(record.getCreatedBy(), "");
+                    boolean hit = (text != null && text.toLowerCase().contains(lowerKeyword))
+                            || (creator != null && creator.toLowerCase().contains(lowerKeyword));
+                    if (hit) {
+                        matched.add(record);
+                        if (matched.size() >= limit) {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        return matched;
     }
 }

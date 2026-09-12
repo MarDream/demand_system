@@ -27,6 +27,7 @@
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { resolveErrorMessage } from '@/utils/error'
+import { saveBlob } from '@/utils/download'
 import { exportExcel, exportCsv } from '@/api/modules/bitableTemplate'
 
 const props = defineProps<{
@@ -54,7 +55,7 @@ async function handleExport() {
       blob = await exportCsv(props.tableId)
       fileName = props.tableName + '.csv'
     }
-    downloadBlob(blob, fileName)
+    await saveBlob(blob, fileName)
     ElMessage.success('导出成功')
     emit('close')
   } catch (e: any) {
@@ -62,15 +63,6 @@ async function handleExport() {
   } finally {
     exporting.value = false
   }
-}
-
-function downloadBlob(blob: Blob, fileName: string) {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = fileName
-  link.click()
-  URL.revokeObjectURL(url)
 }
 </script>
 

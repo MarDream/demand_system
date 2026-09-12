@@ -7,7 +7,7 @@ import com.demand.system.module.knowledge.mapper.KnowledgeChunkMapper;
 import com.demand.system.module.knowledge.mapper.KnowledgeDocumentMapper;
 import com.demand.system.module.knowledge.service.EmbeddingService;
 import com.demand.system.module.knowledge.service.ImageUnderstandingService;
-import com.demand.system.module.knowledge.service.IntentRecognizer;
+import com.demand.system.module.knowledge.service.QueryRewriteService;
 import com.demand.system.module.knowledge.service.RagAnswerService;
 import com.demand.system.module.knowledge.vectorstore.MilvusVectorStore;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
@@ -28,12 +28,13 @@ class KnowledgeSearchServiceImplTest {
                 mock(MilvusVectorStore.class),
                 mock(KnowledgeConfig.class),
                 mock(RagAnswerService.class),
-                mock(IntentRecognizer.class),
+                mock(QueryRewriteService.class),
                 mock(RequirementMapper.class),
                 mock(KnowledgeDocumentMapper.class),
                 mock(KnowledgeChunkMapper.class),
                 mock(RequirementService.class),
-                disabledImageUnderstandingService());
+                disabledImageUnderstandingService(),
+                Runnable::run);
 
         KnowledgeSearchRequest request = new KnowledgeSearchRequest();
         request.setQuery("只允许有效范围");

@@ -142,7 +142,7 @@
             </el-table-column>
             <el-table-column prop="fileSize" label="大小" width="90">
               <template #default="{ row }">
-                {{ formatSize(row.fileSize) }}
+                {{ formatFileSize(row.fileSize) }}
               </template>
             </el-table-column>
             <el-table-column prop="uploaderName" label="上传人" width="100" show-overflow-tooltip>
@@ -232,15 +232,14 @@
             共 <strong>{{ store.totalDocs }}</strong> 条文档 ·
             第 <strong>{{ paginationStart }}-{{ paginationEnd }}</strong> 条
           </div>
-          <el-pagination
-            v-model:current-page="documentFilters.pageNum"
+          <AppPagination
+            v-model:page-num="documentFilters.pageNum"
             v-model:page-size="documentFilters.pageSize"
             :total="store.totalDocs"
             :page-sizes="[10, 20, 50, 100]"
             layout="sizes, prev, pager, next"
             class="pagination"
-            @current-change="handlePageChange"
-            @size-change="handleSizeChange"
+            @change="fetchDocumentList(documentFilters.pageNum)"
           />
         </div>
       </main>
@@ -295,7 +294,7 @@
         </div>
         <el-descriptions :column="2" border size="small" class="log-info">
           <el-descriptions-item label="文件类型">{{ logDocument?.fileType }}</el-descriptions-item>
-          <el-descriptions-item label="文件大小">{{ formatSize(logDocument?.fileSize || 0) }}</el-descriptions-item>
+          <el-descriptions-item label="文件大小">{{ formatFileSize(logDocument?.fileSize || 0) }}</el-descriptions-item>
           <el-descriptions-item label="上传者">{{ logDocument?.uploaderName || '-' }}</el-descriptions-item>
           <el-descriptions-item label="上传时间">{{ formatDateTime(logDocument?.createdAt) }}</el-descriptions-item>
           <el-descriptions-item label="分块数">{{ logDocument?.chunkCount ?? 0 }}</el-descriptions-item>
@@ -354,6 +353,8 @@ import QRCode from 'qrcode'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { resolveErrorMessage } from '@/utils/error'
+import { saveBlob } from '@/utils/download'
+import { formatFileSize } from '@/utils/format'
 import { Loading, View, Download, Share, RefreshRight, Delete, Document, Search, Upload, CircleClose } from '@element-plus/icons-vue'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppDialog from '@/components/common/AppDialog.vue'
@@ -506,16 +507,6 @@ function removeFilterChip(key: string) {
   fetchDocumentList(1)
 }
 
-function handlePageChange(page: number) {
-  fetchDocumentList(page)
-}
-
-function handleSizeChange(size: number) {
-  documentFilters.pageSize = size
-  documentFilters.pageNum = 1
-  fetchDocumentList(1)
-}
-
 function handleDocumentDownloaded() {
   fetchDocumentList()
 }
@@ -603,12 +594,7 @@ async function handleBatchDownload() {
       filename = 'documents.zip'
     }
 
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    a.click()
-    URL.revokeObjectURL(url)
+    await saveBlob(blob, filename)
     ElMessage.success('下载成功')
   } catch (err: unknown) {
     ElMessage.error(resolveErrorMessage(err, '下载失败'))
@@ -673,14 +659,7 @@ function handlePreview(doc: KnowledgeDocument) {
 async function handleDownload(doc: KnowledgeDocument) {
   try {
     const blob = await downloadDocumentBlob(kbId, doc.id)
-    const url = window.URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = doc.fileName || 'document'
-    document.body.appendChild(anchor)
-    anchor.click()
-    anchor.remove()
-    window.URL.revokeObjectURL(url)
+    await saveBlob(blob, doc.fileName || 'document')
     await fetchDocumentList()
   } catch (error) {
     ElMessage.error(resolveErrorMessage(error, '下载失败'))
@@ -758,12 +737,6 @@ async function copyCurrentShareLink() {
   } catch (error) {
     ElMessage.error(resolveErrorMessage(error, '复制失败'))
   }
-}
-
-function formatSize(bytes: number) {
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / 1024 / 1024).toFixed(1) + ' MB'
 }
 
 function formatDateTime(value?: string) {

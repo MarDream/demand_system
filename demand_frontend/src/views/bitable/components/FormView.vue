@@ -70,6 +70,16 @@
 
           <el-switch v-else-if="field.fieldType === 'checkbox' || field.fieldType === 'check'" v-model="formModel[field.id]" />
 
+          <!-- 关联字段：弹窗选择目标表记录 -->
+          <div v-else-if="field.fieldType === 'link' || field.fieldType === 'bidirectional_link'" class="form-view__link-field">
+            <el-button size="small" @click="openLinkSelector(field)">
+              <el-icon><Link /></el-icon> 选择关联记录
+            </el-button>
+            <span class="form-view__link-count">
+              {{ (formModel[field.id] as number[] | undefined)?.length || 0 }} 条已选
+            </span>
+          </div>
+
           <el-input
             v-else-if="field.fieldType === 'location'"
             v-model="formModel[field.id]"
@@ -99,14 +109,24 @@
 
       <el-empty v-else description="暂无可填写字段，请先添加字段" />
     </el-card>
+
+    <!-- 关联记录选择弹窗 -->
+    <LinkFieldSelector
+      :visible="linkSelectorVisible"
+      :target-table-id="linkFieldTargetTableId"
+      :selected-ids="linkSelectedIds"
+      @confirm="handleLinkConfirm"
+      @close="linkSelectorVisible = false"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, reactive } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { QuestionFilled } from '@element-plus/icons-vue'
+import { QuestionFilled, Link } from '@element-plus/icons-vue'
 import type { BitableField, BitableTable } from '@/types/bitable'
+import LinkFieldSelector from './LinkFieldSelector.vue'
 
 const props = defineProps<{
   table: BitableTable | null
@@ -119,6 +139,36 @@ const emit = defineEmits<{
 }>()
 
 const formModel = reactive<Record<number, any>>({})
+
+// 关联字段选择器状态
+const linkSelectorVisible = ref(false)
+const linkEditingFieldId = ref<number | null>(null)
+const linkFieldTargetTableId = computed<number | null>(() => {
+  const field = props.fields.find((f) => f.id === linkEditingFieldId.value)
+  const target = field?.config?.linkTargetTableId
+  return typeof target === 'number' ? target : null
+})
+const linkSelectedIds = computed<number[]>(() => {
+  const v = linkEditingFieldId.value != null ? formModel[linkEditingFieldId.value] : null
+  return Array.isArray(v) ? v : []
+})
+
+function openLinkSelector(field: BitableField) {
+  const target = field.config?.linkTargetTableId
+  if (!target) {
+    ElMessage.warning('该关联字段未配置目标表')
+    return
+  }
+  linkEditingFieldId.value = field.id
+  linkSelectorVisible.value = true
+}
+
+function handleLinkConfirm(ids: number[]) {
+  if (linkEditingFieldId.value != null) {
+    formModel[linkEditingFieldId.value] = ids
+  }
+  linkSelectorVisible.value = false
+}
 
 const readonlyTypes = new Set([
   'auto_number',
@@ -152,9 +202,16 @@ function fieldTypeLabel(type: string) {
 
 function validateRequired() {
   for (const field of editableFields.value) {
-    const value = formModel[field.id]
     if (!field.required) continue
-    if (value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)) {
+    const value = formModel[field.id]
+    const isEmpty =
+      value === undefined ||
+      value === null ||
+      value === '' ||
+      (Array.isArray(value) && value.length === 0) ||
+      // 复选框必填 = 必须勾选；false 与未填写同义
+      ((field.fieldType === 'checkbox' || field.fieldType === 'check') && value === false)
+    if (isEmpty) {
       ElMessage.warning(`请填写必填字段：${field.name}`)
       return false
     }
@@ -280,6 +337,17 @@ defineExpose({ reset })
   margin-top: 4px;
   display: block;
   line-height: 1.5;
+}
+
+.form-view__link-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.form-view__link-count {
+  font-size: 12px;
+  color: var(--color-text-secondary, #64748b);
 }
 
 // 提交操作区

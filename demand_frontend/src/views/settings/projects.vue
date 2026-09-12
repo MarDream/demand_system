@@ -62,7 +62,7 @@
         </el-table-column>
         <el-table-column v-if="isColumnVisible('status')" prop="status" label="状态" min-width="90">
           <template #default="{ row }">
-            <el-tag :type="getStatusType(row)">{{ getStatusLabel(row) }}</el-tag>
+            <StatusTag :value="getStatusLabel(row)" />
           </template>
         </el-table-column>
         <el-table-column v-if="isColumnVisible('createdAt')" label="创建时间" min-width="160">
@@ -82,14 +82,12 @@
       </template>
 
       <template #pagination>
-        <el-pagination
-          v-model:current-page="pageNum"
+        <AppPagination
+          v-model:page-num="pageNum"
           v-model:page-size="pageSize"
           :total="total"
           :page-sizes="[10, 20, 50]"
-          layout="total, sizes, prev, pager, next"
-          @size-change="fetchList"
-          @current-change="fetchList"
+          @change="fetchList"
         />
       </template>
     </TableCard>
@@ -194,10 +192,10 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Download, EditPen, Delete, Setting } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
-import { saveAs } from 'file-saver'
 import { exportToExcel } from '@/utils/excel'
+import { saveBlob } from '@/utils/download'
+import { loadOrgTree, findOrgNodeById, extractOrgNodesByType } from "@/composables/useOrgTree"
 import * as projectApi from '@/api/modules/project'
-import { getOrgTree } from '@/api/modules/organization'
 import type { OrgNode } from '@/types/user'
 import * as userApi from '@/api/modules/user'
 import type { ProjectImportFailure, ProjectImportResult } from '@/types/project'
@@ -308,12 +306,6 @@ const rules: FormRules = {
   name: [{ required: true, message: '请输入项目名称', trigger: 'blur' }],
 }
 
-function getStatusType(row: any) {
-  if (row.status === 'expired' || (row.endDate && new Date(row.endDate) < new Date())) return 'info'
-  if (row.status === 'active') return 'success'
-  return 'info'
-}
-
 function getStatusLabel(row: any) {
   if (row.status === 'expired' || (row.endDate && new Date(row.endDate) < new Date())) return '已截止'
   if (row.status === 'active') return '进行中'
@@ -324,42 +316,6 @@ function getLeaderName(leaderId?: number | null) {
   if (!leaderId) return '-'
   const user = userMap.value.get(leaderId)
   return user ? (user.realName || user.username || '-') : '-'
-}
-
-function findOrgNodeById(nodes: OrgNode[], targetId: number | null): OrgNode | null {
-  if (!targetId) return null
-  for (const node of nodes) {
-    if (node.id === targetId) return node
-    if (node.children?.length) {
-      const matched = findOrgNodeById(node.children, targetId)
-      if (matched) return matched
-    }
-  }
-  return null
-}
-
-function normalizeArray<T>(value: unknown): T[] {
-  if (Array.isArray(value)) return value as T[]
-  const data = (value as any)?.data
-  if (Array.isArray(data)) return data as T[]
-  if (Array.isArray(data?.data)) return data.data as T[]
-  return []
-}
-
-function extractOrgNodesByType(nodes: OrgNode[], targetType: OrgNode['orgType']): OrgNode[] {
-  const result: OrgNode[] = []
-  const walk = (items: OrgNode[]) => {
-    items.forEach(item => {
-      if (item.orgType === targetType) {
-        result.push({ ...item, children: undefined })
-      }
-      if (item.children?.length) {
-        walk(item.children)
-      }
-    })
-  }
-  walk(nodes)
-  return result
 }
 
 function toCompanyOptions(nodes: OrgNode[]) {
@@ -412,8 +368,7 @@ function handleCompanyChange() {
 
 async function loadOrgData() {
   try {
-    const orgRes = await getOrgTree()
-    orgTree.value = normalizeArray<OrgNode>(orgRes)
+    orgTree.value = await loadOrgTree()
     companyOptions.value = toCompanyOptions(orgTree.value)
     if (form.companyId) {
       syncTeamWithCompany(true)
@@ -468,7 +423,7 @@ function handleExport() {
 async function handleDownloadTemplate() {
   try {
     const blob = await projectApi.downloadProjectTemplate() as Blob
-    saveAs(blob, '项目导入模板.xlsx')
+    await saveBlob(blob, '项目导入模板.xlsx')
   } catch {
     ElMessage.error('下载模板失败')
   }

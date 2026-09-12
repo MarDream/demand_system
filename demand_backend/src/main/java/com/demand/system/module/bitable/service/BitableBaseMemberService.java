@@ -20,20 +20,22 @@ public interface BitableBaseMemberService {
     /**
      * 添加成员（已存在则更新角色）
      *
-     * @param baseId Base ID
-     * @param userId 用户ID
-     * @param role   角色
+     * @param baseId     Base ID
+     * @param userId     用户ID
+     * @param role       角色
+     * @param operatorId 操作者用户ID（授予 owner 角色时必须为 Owner 本人）
      */
-    void addMember(Long baseId, Long userId, String role);
+    void addMember(Long baseId, Long userId, String role, Long operatorId);
 
     /**
      * 更新成员角色
      *
-     * @param baseId Base ID
-     * @param userId 用户ID
-     * @param role   角色
+     * @param baseId     Base ID
+     * @param userId     用户ID
+     * @param role       角色
+     * @param operatorId 操作者用户ID（授予 owner 角色时必须为 Owner 本人）
      */
-    void updateMemberRole(Long baseId, Long userId, String role);
+    void updateMemberRole(Long baseId, Long userId, String role, Long operatorId);
 
     /**
      * 移除成员

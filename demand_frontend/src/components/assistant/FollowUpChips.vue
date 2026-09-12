@@ -37,7 +37,7 @@ const emit = defineEmits<{
   select: [question: string]
 }>()
 
-const questions = computed(() => props.questions.filter((item) => !!item?.trim()))
+const questions = computed(() => (props.questions || []).filter((item) => !!item?.trim()))
 </script>
 
 <style scoped>

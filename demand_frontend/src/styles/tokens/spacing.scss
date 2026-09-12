@@ -14,12 +14,12 @@
   --spacing-4xl: 64px;
   --spacing-5xl: 96px;
 
-  // 语义间距
+  // 语义间距（精凑节奏：页面 20px、卡片 14px、区块间隔 24px）
   --page-padding: var(--spacing-lg);
-  --page-padding-lg: var(--spacing-xl);
-  --card-padding: var(--spacing-lg);
-  --card-padding-lg: var(--spacing-xl);
-  --section-gap: var(--spacing-2xl);
+  --page-padding-lg: 20px;
+  --card-padding: 14px;
+  --card-padding-lg: var(--spacing-lg);
+  --section-gap: var(--spacing-xl);
   --group-gap: var(--spacing-lg);
   --item-gap: var(--spacing-sm);
 

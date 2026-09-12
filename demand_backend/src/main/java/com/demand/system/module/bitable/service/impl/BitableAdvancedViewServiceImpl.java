@@ -53,11 +53,7 @@ public class BitableAdvancedViewServiceImpl implements BitableAdvancedViewServic
 
     @Override
     public GanttViewData getGanttView(Long viewId, Long tableId) {
-        BitableView view = viewMapper.selectById(viewId);
-        if (view == null) {
-            throw new BusinessException("视图不存在");
-        }
-
+        BitableView view = requireViewOfTable(viewId, tableId);
         List<BitableFieldVO> fields = converter.toFieldVOList(fieldMapper.selectByTableId(tableId));
         List<BitableRecordVO> records = loadRecordsWithCells(tableId);
 
@@ -72,11 +68,7 @@ public class BitableAdvancedViewServiceImpl implements BitableAdvancedViewServic
 
     @Override
     public CalendarViewData getCalendarView(Long viewId, Long tableId) {
-        BitableView view = viewMapper.selectById(viewId);
-        if (view == null) {
-            throw new BusinessException("视图不存在");
-        }
-
+        BitableView view = requireViewOfTable(viewId, tableId);
         List<BitableFieldVO> fields = converter.toFieldVOList(fieldMapper.selectByTableId(tableId));
         List<BitableRecordVO> records = loadRecordsWithCells(tableId);
 
@@ -91,11 +83,7 @@ public class BitableAdvancedViewServiceImpl implements BitableAdvancedViewServic
 
     @Override
     public GalleryViewData getGalleryView(Long viewId, Long tableId) {
-        BitableView view = viewMapper.selectById(viewId);
-        if (view == null) {
-            throw new BusinessException("视图不存在");
-        }
-
+        BitableView view = requireViewOfTable(viewId, tableId);
         List<BitableFieldVO> fields = converter.toFieldVOList(fieldMapper.selectByTableId(tableId));
         List<BitableRecordVO> records = loadRecordsWithCells(tableId);
 
@@ -109,12 +97,33 @@ public class BitableAdvancedViewServiceImpl implements BitableAdvancedViewServic
     }
 
     /**
-     * 加载表的所有记录及其单元格值
+     * 校验视图存在且确实属于指定数据表，防止用他表 viewId 读取任意 tableId 的数据
+     */
+    private BitableView requireViewOfTable(Long viewId, Long tableId) {
+        BitableView view = viewMapper.selectById(viewId);
+        if (view == null || tableId == null || !tableId.equals(view.getTableId())) {
+            throw new BusinessException("视图不存在或不属于当前数据表");
+        }
+        return view;
+    }
+
+    /** 高级视图单次加载行数硬上限（防病态数据量拖垮内存），循环分页加载 */
+    private static final int MAX_VIEW_ROWS = 20_000;
+    private static final int VIEW_PAGE_SIZE = 1000;
+
+    /**
+     * 分页加载表的所有记录及其单元格值（不再静默截断 1000 行）
      */
     private List<BitableRecordVO> loadRecordsWithCells(Long tableId) {
+        List<BitableRecord> records = new java.util.ArrayList<>();
         int total = recordMapper.countByTableId(tableId);
-        int limit = Math.min(total, 1000);
-        List<BitableRecord> records = recordMapper.selectByTableId(tableId, 0, limit);
+        int limit = Math.min(total, MAX_VIEW_ROWS);
+        for (int offset = 0; offset < limit; offset += VIEW_PAGE_SIZE) {
+            records.addAll(recordMapper.selectByTableId(tableId, offset, VIEW_PAGE_SIZE));
+            if (records.size() >= limit) {
+                break;
+            }
+        }
         List<BitableRecordVO> voList = converter.toRecordVOList(records);
 
         if (!records.isEmpty()) {

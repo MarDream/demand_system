@@ -16,6 +16,7 @@ import org.apache.commons.jexl3.JexlContext;
 import org.apache.commons.jexl3.JexlEngine;
 import org.apache.commons.jexl3.JexlExpression;
 import org.apache.commons.jexl3.MapContext;
+import org.apache.commons.jexl3.introspection.JexlPermissions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -46,6 +47,11 @@ public class BitableFormulaServiceImpl implements BitableFormulaService {
      */
     private static final Pattern FIELD_ID_PATTERN = Pattern.compile("f(?:ld)?(\\d+)");
 
+    /**
+     * 公式最大长度，防止超长表达式造成资源耗尽
+     */
+    private static final int MAX_FORMULA_LENGTH = 2000;
+
     private final JexlEngine jexl;
     private final BitableFieldMapper fieldMapper;
     private final BitableCellMapper cellMapper;
@@ -60,8 +66,13 @@ public class BitableFormulaServiceImpl implements BitableFormulaService {
         this.cellMapper = cellMapper;
         this.linkService = linkService;
         this.dependencyService = dependencyService;
+        // 沙箱化 JEXL：RESTRICTIVE 拒绝一切反射调用（对象方法/构造器/静态调用），
+        // 仅放行白名单内的公式函数类 BitableFunctions，用户公式无法触达 JVM 类、文件与 Bean
+        JexlPermissions permissions = JexlPermissions.parse(
+                "com.demand.system.module.bitable.formula.BitableFunctions");
         this.jexl = new JexlBuilder()
                 .namespaces(Map.of("bf", BitableFunctions.class))
+                .permissions(permissions)
                 .strict(false)
                 .silent(false)
                 .create();
@@ -71,6 +82,10 @@ public class BitableFormulaServiceImpl implements BitableFormulaService {
     public Object evaluateFormula(String formula, Map<String, Object> fieldValues) {
         if (formula == null || formula.isBlank()) {
             return null;
+        }
+        if (formula.length() > MAX_FORMULA_LENGTH) {
+            log.warn("公式超过最大长度限制: length={}", formula.length());
+            return FormulaErrorType.ERROR.getDisplay();
         }
 
         try {
@@ -174,6 +189,12 @@ public class BitableFormulaServiceImpl implements BitableFormulaService {
             return result;
         }
 
+        if (formula.length() > MAX_FORMULA_LENGTH) {
+            result.put("errorType", FormulaErrorType.ERROR.getDisplay());
+            result.put("errorMessage", "公式长度超过限制（最大 " + MAX_FORMULA_LENGTH + " 字符）");
+            return result;
+        }
+
         // 1. 解析字段引用
         Set<Long> referencedFieldIds = new HashSet<>();
         Set<String> referencedFieldNames = new HashSet<>();
@@ -232,6 +253,11 @@ public class BitableFormulaServiceImpl implements BitableFormulaService {
 
         result.put("valid", true);
         return result;
+    }
+
+    @Override
+    public Object aggregateValues(List<Object> values, String aggregation) {
+        return aggregate(values, aggregation);
     }
 
     /**

@@ -1,18 +1,28 @@
 package com.demand.system.module.bitable.service.impl;
 
 import com.demand.system.common.exception.BusinessException;
+import com.demand.system.common.result.PageResult;
 import com.demand.system.module.bitable.constant.FieldType;
-import com.demand.system.module.bitable.dto.CellValueDTO;
+import com.demand.system.module.bitable.dto.BitableCellValueVO;
+import com.demand.system.module.bitable.dto.BitableFieldVO;
 import com.demand.system.module.bitable.dto.BitableRecordCreateDTO;
+import com.demand.system.module.bitable.dto.BitableRecordVO;
+import com.demand.system.module.bitable.dto.CellValueDTO;
 import com.demand.system.module.bitable.entity.*;
 import com.demand.system.module.bitable.mapper.BitableCellMapper;
 import com.demand.system.module.bitable.mapper.BitableFieldMapper;
 import com.demand.system.module.bitable.mapper.BitableRecordMapper;
 import com.demand.system.module.bitable.mapper.BitableTableMapper;
 import com.demand.system.module.bitable.service.BitableImportExportService;
+import com.demand.system.module.bitable.service.BitableAutomationService;
+import com.demand.system.module.bitable.service.BitableRecordService;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.ss.util.CellReference;
+import org.apache.poi.xssf.streaming.SXSSFSheet;
+import org.apache.poi.xssf.streaming.SXSSFWorkbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,21 +42,51 @@ import java.util.stream.Collectors;
 @Service
 public class BitableImportExportServiceImpl implements BitableImportExportService {
 
+    private static final Logger log = LoggerFactory.getLogger(BitableImportExportServiceImpl.class);
+
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+
+    /** 导出行数硬上限，超过则记录告警并截断（防止病态数据量拖垮导出） */
+    private static final int EXPORT_MAX_ROWS = 100_000;
+
+    /** 分页加载记录的页大小 */
+    private static final int EXPORT_PAGE_SIZE = 1000;
 
     private final BitableTableMapper tableMapper;
     private final BitableFieldMapper fieldMapper;
     private final BitableRecordMapper recordMapper;
     private final BitableCellMapper cellMapper;
+    private final BitableRecordService recordService;
+    private final BitableAutomationService automationService;
+
+    /** 导入行数上限 */
+    private static final int IMPORT_MAX_ROWS = 50_000;
 
     public BitableImportExportServiceImpl(BitableTableMapper tableMapper,
                                             BitableFieldMapper fieldMapper,
                                             BitableRecordMapper recordMapper,
-                                            BitableCellMapper cellMapper) {
+                                            BitableCellMapper cellMapper,
+                                            BitableRecordService recordService,
+                                            BitableAutomationService automationService) {
         this.tableMapper = tableMapper;
         this.fieldMapper = fieldMapper;
         this.recordMapper = recordMapper;
         this.cellMapper = cellMapper;
+        this.recordService = recordService;
+        this.automationService = automationService;
+    }
+
+    /**
+     * 只读/计算字段类型：导入时跳过这些列（值由系统合成，写入无意义）
+     */
+    private boolean isImportSkippableType(String fieldType) {
+        return "auto_number".equals(fieldType) || "formula".equals(fieldType)
+                || "lookup".equals(fieldType) || "rollup".equals(fieldType)
+                || "button".equals(fieldType)
+                || "created_by".equals(fieldType) || "created_user".equals(fieldType)
+                || "modified_by".equals(fieldType) || "modified_user".equals(fieldType)
+                || "created_time".equals(fieldType) || "last_modified_time".equals(fieldType)
+                || "modified_time".equals(fieldType);
     }
 
     @Override
@@ -57,93 +97,91 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
         }
 
         List<BitableField> fields = fieldMapper.selectByTableId(tableId);
-        List<BitableRecord> records = recordMapper.selectByTableId(tableId, 0, 10000);
 
-        List<Long> recordIds = records.stream().map(BitableRecord::getId).collect(Collectors.toList());
-        List<BitableCellValue> cells = recordIds.isEmpty()
-                ? List.of()
-                : cellMapper.selectByRecordIds(recordIds);
+        SXSSFWorkbook workbook = new SXSSFWorkbook(200);
+        try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            try {
+                Sheet sheet = workbook.createSheet(safeSheetName(table.getName()));
 
-        // Map<recordId, Map<fieldId, cell>>
-        Map<Long, Map<Long, BitableCellValue>> cellMap = new HashMap<>();
-        for (BitableCellValue cell : cells) {
-            cellMap.computeIfAbsent(cell.getRecordId(), k -> new HashMap<>())
-                    .put(cell.getFieldId(), cell);
-        }
+                // 表头样式
+                CellStyle headerStyle = workbook.createCellStyle();
+                Font headerFont = workbook.createFont();
+                headerFont.setBold(true);
+                headerStyle.setFont(headerFont);
+                headerStyle.setAlignment(HorizontalAlignment.CENTER);
 
-        try (XSSFWorkbook workbook = new XSSFWorkbook();
-             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-
-            Sheet sheet = workbook.createSheet(safeSheetName(table.getName()));
-
-            // 表头样式
-            CellStyle headerStyle = workbook.createCellStyle();
-            Font headerFont = workbook.createFont();
-            headerFont.setBold(true);
-            headerStyle.setFont(headerFont);
-            headerStyle.setAlignment(HorizontalAlignment.CENTER);
-
-            // 写表头
-            Row headerRow = sheet.createRow(0);
-            for (int i = 0; i < fields.size(); i++) {
-                Cell cell = headerRow.createCell(i);
-                cell.setCellValue(fields.get(i).getName());
-                cell.setCellStyle(headerStyle);
-            }
-
-            // 写数据行
-            for (int rowIdx = 0; rowIdx < records.size(); rowIdx++) {
-                BitableRecord record = records.get(rowIdx);
-                Row row = sheet.createRow(rowIdx + 1);
-                Map<Long, BitableCellValue> recordCells = cellMap.getOrDefault(record.getId(), Collections.emptyMap());
-
-                for (int colIdx = 0; colIdx < fields.size(); colIdx++) {
-                    BitableField field = fields.get(colIdx);
-                    BitableCellValue cell = recordCells.get(field.getId());
-                    if (cell == null) {
-                        continue;
-                    }
-                    Cell excelCell = row.createCell(colIdx);
-                    populateExcelCell(excelCell, cell, field);
+                // 写表头
+                Row headerRow = sheet.createRow(0);
+                for (int i = 0; i < fields.size(); i++) {
+                    Cell cell = headerRow.createCell(i);
+                    cell.setCellValue(fields.get(i).getName());
+                    cell.setCellStyle(headerStyle);
                 }
+
+                // 分页加载记录（含计算字段/系统字段合成结果），逐批写入
+                int exportedRows = 0;
+                boolean truncated = false;
+                while (exportedRows < EXPORT_MAX_ROWS) {
+                    PageResult<BitableRecordVO> page = recordService.listRecords(tableId, exportedRows / EXPORT_PAGE_SIZE + 1, EXPORT_PAGE_SIZE);
+                    List<BitableRecordVO> records = page.getList();
+                    if (records.isEmpty()) {
+                        break;
+                    }
+                    for (BitableRecordVO record : records) {
+                        if (exportedRows >= EXPORT_MAX_ROWS) {
+                            truncated = true;
+                            break;
+                        }
+                        Row row = sheet.createRow(exportedRows + 1);
+                        writeExcelDataRow(row, record, fields);
+                        exportedRows++;
+                    }
+                    if (truncated || records.size() < EXPORT_PAGE_SIZE || exportedRows >= page.getTotal()) {
+                        break;
+                    }
+                }
+                if (truncated) {
+                    log.warn("导出 Excel 达到 {} 行硬上限，已截断: tableId={}", EXPORT_MAX_ROWS, tableId);
+                }
+
+                // SXSSF 自动列宽需先注册跟踪；大表全量计算代价高，改为固定列宽
+                for (int i = 0; i < fields.size(); i++) {
+                    if (exportedRows <= 5000 && sheet instanceof SXSSFSheet sxssfSheet) {
+                        sxssfSheet.trackColumnForAutoSizing(i);
+                        sheet.autoSizeColumn(i);
+                    } else {
+                        sheet.setColumnWidth(i, 18 * 256);
+                    }
+                }
+
+                workbook.write(out);
+                return out.toByteArray();
+            } finally {
+                // 清理 SXSSF 写盘产生的临时文件
+                workbook.dispose();
             }
-
-            // 自动列宽
-            for (int i = 0; i < fields.size(); i++) {
-                sheet.autoSizeColumn(i);
-            }
-
-            workbook.write(out);
-            return out.toByteArray();
-
         } catch (IOException e) {
             throw new BusinessException("导出 Excel 失败: " + e.getMessage());
         }
     }
 
-    private void populateExcelCell(Cell excelCell, BitableCellValue cell, BitableField field) {
-        FieldType fieldType = FieldType.fromCode(field.getFieldType());
-        if (fieldType == null) {
-            if (cell.getValueText() != null) {
-                excelCell.setCellValue(cell.getValueText());
+    private void writeExcelDataRow(Row row, BitableRecordVO record, List<BitableField> fields) {
+        for (int colIdx = 0; colIdx < fields.size(); colIdx++) {
+            BitableField field = fields.get(colIdx);
+            BitableCellValueVO cell = record.getCells() != null ? record.getCells().get(field.getId()) : null;
+            if (cell == null) {
+                continue;
             }
-            return;
-        }
-
-        switch (fieldType) {
-            case NUMBER, PROGRESS, RATING -> {
-                if (cell.getValueNumber() != null) {
-                    excelCell.setCellValue(cell.getValueNumber().doubleValue());
-                }
-            }
-            case DATE -> {
-                if (cell.getValueDate() != null) {
-                    excelCell.setCellValue(cell.getValueDate().format(DATE_FORMATTER));
-                }
-            }
-            default -> {
-                if (cell.getValueText() != null) {
-                    excelCell.setCellValue(cell.getValueText());
+            Cell excelCell = row.createCell(colIdx);
+            // 数值优先（number/currency/rollup/formula 的数值结果），其次日期，最后文本化
+            if (cell.getValueNumber() != null) {
+                excelCell.setCellValue(cell.getValueNumber().doubleValue());
+            } else if (cell.getValueDate() != null) {
+                excelCell.setCellValue(cell.getValueDate().format(DATE_FORMATTER));
+            } else {
+                String text = cellDisplayText(cell);
+                if (!text.isEmpty()) {
+                    excelCell.setCellValue(text);
                 }
             }
         }
@@ -157,73 +195,115 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
         }
 
         List<BitableField> fields = fieldMapper.selectByTableId(tableId);
-        List<BitableRecord> records = recordMapper.selectByTableId(tableId, 0, 10000);
 
-        List<Long> recordIds = records.stream().map(BitableRecord::getId).collect(Collectors.toList());
-        List<BitableCellValue> cells = recordIds.isEmpty()
-                ? List.of()
-                : cellMapper.selectByRecordIds(recordIds);
-
-        Map<Long, Map<Long, BitableCellValue>> cellMap = new HashMap<>();
-        for (BitableCellValue cell : cells) {
-            cellMap.computeIfAbsent(cell.getRecordId(), k -> new HashMap<>())
-                    .put(cell.getFieldId(), cell);
-        }
-
-        StringBuilder sb = new StringBuilder();
+        StringBuilder sb = new StringBuilder(64 * 1024);
 
         // 写 UTF-8 BOM 以便 Excel 正确识别
         sb.append('﻿');
 
         // 表头
         sb.append(fields.stream()
-                .map(f -> escapeCsvField(f.getName()))
+                .map(f -> escapeCsvField(f.getName(), true))
                 .collect(Collectors.joining(",")));
         sb.append("\r\n");
 
-        // 数据行
-        for (BitableRecord record : records) {
-            Map<Long, BitableCellValue> recordCells = cellMap.getOrDefault(record.getId(), Collections.emptyMap());
-            List<String> values = new ArrayList<>();
-            for (BitableField field : fields) {
-                BitableCellValue cell = recordCells.get(field.getId());
-                values.add(cellToCsvString(cell, field));
+        // 分页加载记录（含计算字段/系统字段合成结果），逐批写出
+        int exportedRows = 0;
+        boolean truncated = false;
+        while (exportedRows < EXPORT_MAX_ROWS) {
+            PageResult<BitableRecordVO> page = recordService.listRecords(tableId, exportedRows / EXPORT_PAGE_SIZE + 1, EXPORT_PAGE_SIZE);
+            List<BitableRecordVO> records = page.getList();
+            if (records.isEmpty()) {
+                break;
             }
-            sb.append(String.join(",", values));
-            sb.append("\r\n");
+            for (BitableRecordVO record : records) {
+                if (exportedRows >= EXPORT_MAX_ROWS) {
+                    truncated = true;
+                    break;
+                }
+                List<String> values = new ArrayList<>(fields.size());
+                for (BitableField field : fields) {
+                    BitableCellValueVO cell = record.getCells() != null ? record.getCells().get(field.getId()) : null;
+                    // 数值/日期原样输出（不可能是 CSV 公式注入载体）；文本走转义+注入中和
+                    if (cell != null && cell.getValueNumber() != null) {
+                        values.add(cell.getValueNumber().toPlainString());
+                    } else if (cell != null && cell.getValueDate() != null) {
+                        values.add(cell.getValueDate().format(DATE_FORMATTER));
+                    } else {
+                        values.add(escapeCsvField(cell != null ? cellDisplayText(cell) : "", true));
+                    }
+                }
+                sb.append(String.join(",", values));
+                sb.append("\r\n");
+                exportedRows++;
+            }
+            if (truncated || records.size() < EXPORT_PAGE_SIZE || exportedRows >= page.getTotal()) {
+                break;
+            }
+        }
+        if (truncated) {
+            log.warn("导出 CSV 达到 {} 行硬上限，已截断: tableId={}", EXPORT_MAX_ROWS, tableId);
         }
 
         return sb.toString().getBytes(StandardCharsets.UTF_8);
     }
 
-    private String escapeCsvField(String value) {
+    /**
+     * CSV 单元格转义：含分隔符/引号/换行时加引号包裹。
+     * {@code guardFormulas} 为 true 时中和以 = + - @ 制表符开头的文本，
+     * 防止 Excel/WPS 打开导出文件时将单元格当公式执行（CSV 公式注入）。
+     */
+    private String escapeCsvField(String value, boolean guardFormulas) {
         if (value == null) {
             return "";
         }
-        if (value.contains(",") || value.contains("\"") || value.contains("\n") || value.contains("\r")) {
-            return "\"" + value.replace("\"", "\"\"") + "\"";
+        String safe = value;
+        if (guardFormulas && !safe.isEmpty()) {
+            char first = safe.charAt(0);
+            if (first == '=' || first == '+' || first == '@' || first == '\t' || first == '\r'
+                    || (first == '-' && !isNumericCsv(safe))) {
+                safe = "'" + safe;
+            }
         }
-        return value;
+        if (safe.contains(",") || safe.contains("\"") || safe.contains("\n") || safe.contains("\r")) {
+            return "\"" + safe.replace("\"", "\"\"") + "\"";
+        }
+        return safe;
     }
 
-    private String cellToCsvString(BitableCellValue cell, BitableField field) {
-        if (cell == null) {
-            return "";
+    private boolean isNumericCsv(String value) {
+        try {
+            new BigDecimal(value);
+            return true;
+        } catch (NumberFormatException e) {
+            return false;
         }
-        FieldType fieldType = FieldType.fromCode(field.getFieldType());
-        if (fieldType == null) {
-            return escapeCsvField(cell.getValueText());
-        }
+    }
 
-        return switch (fieldType) {
-            case NUMBER, PROGRESS, RATING -> cell.getValueNumber() != null
-                    ? cell.getValueNumber().toPlainString()
-                    : "";
-            case DATE -> cell.getValueDate() != null
-                    ? cell.getValueDate().format(DATE_FORMATTER)
-                    : "";
-            default -> escapeCsvField(cell.getValueText());
-        };
+    /**
+     * 单元格展示文本：优先 valueText，其次数值/日期，最后 JSON 集合拼接（关联/多选等）
+     */
+    private String cellDisplayText(BitableCellValueVO cell) {
+        if (cell.getValueText() != null && !cell.getValueText().isBlank()) {
+            return cell.getValueText();
+        }
+        if (cell.getValueNumber() != null) {
+            return cell.getValueNumber().toPlainString();
+        }
+        if (cell.getValueDate() != null) {
+            return cell.getValueDate().format(DATE_FORMATTER);
+        }
+        Object json = cell.getValueJson();
+        if (json instanceof Collection<?> col) {
+            return col.stream()
+                    .filter(Objects::nonNull)
+                    .map(String::valueOf)
+                    .collect(Collectors.joining(", "));
+        }
+        if (json != null) {
+            return String.valueOf(json);
+        }
+        return "";
     }
 
     @Override
@@ -279,11 +359,18 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
                     fieldNameMap.put(trimmedName, field);
                     fields.add(field);
                 }
+                // 只读/计算字段由系统合成，导入写入无意义，直接跳过该列
+                if (isImportSkippableType(field.getFieldType())) {
+                    continue;
+                }
                 colToField.put(col, field);
             }
 
             // 遍历数据行（从第二行开始）
             for (int rowIdx = 1; rowIdx <= sheet.getLastRowNum(); rowIdx++) {
+                if (rowIdx > IMPORT_MAX_ROWS) {
+                    throw new BusinessException("导入数据超过 " + IMPORT_MAX_ROWS + " 行上限，请拆分后分批导入");
+                }
                 Row row = sheet.getRow(rowIdx);
                 if (row == null) {
                     continue;
@@ -314,6 +401,13 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
                     if (cellValue != null) {
                         cellMapper.saveOrUpdateCell(cellValue);
                     }
+                }
+
+                // 与单条创建保持一致：触发 record_created 自动化事件（失败不影响导入主流程）
+                try {
+                    automationService.onRecordChanged(tableId, record.getId(), "record_created", null);
+                } catch (Exception e) {
+                    log.warn("导入触发自动化事件失败: tableId={}, recordId={}", tableId, record.getId(), e);
                 }
 
                 createdIds.add(record.getId());
@@ -537,11 +631,18 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
                 fieldNameMap.put(trimmedName, field);
                 fields.add(field);
             }
+            // 只读/计算字段由系统合成，导入写入无意义，直接跳过该列
+            if (isImportSkippableType(field.getFieldType())) {
+                continue;
+            }
             colToField.put(col, field);
         }
 
         // 遍历数据行
         for (int rowIdx = 1; rowIdx < rows.size(); rowIdx++) {
+            if (rowIdx > IMPORT_MAX_ROWS) {
+                throw new BusinessException("导入数据超过 " + IMPORT_MAX_ROWS + " 行上限，请拆分后分批导入");
+            }
             List<String> row = rows.get(rowIdx);
             if (row.isEmpty() || row.stream().allMatch(v -> v == null || v.isEmpty())) {
                 continue;
@@ -569,6 +670,13 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
                 if (cell != null) {
                     cellMapper.saveOrUpdateCell(cell);
                 }
+            }
+
+            // 与单条创建保持一致：触发 record_created 自动化事件（失败不影响导入主流程）
+            try {
+                automationService.onRecordChanged(tableId, record.getId(), "record_created", null);
+            } catch (Exception e) {
+                log.warn("导入触发自动化事件失败: tableId={}, recordId={}", tableId, record.getId(), e);
             }
 
             createdIds.add(record.getId());

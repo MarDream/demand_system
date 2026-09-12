@@ -19,6 +19,7 @@ import java.util.List;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 public abstract class BaseIntegrationTest {
 
+
     private static final DockerImageName MYSQL_IMAGE = DockerImageName.parse("mysql:8.0");
     private static final DockerImageName REDIS_IMAGE = DockerImageName.parse("redis:7-alpine");
     private static final DockerImageName RABBIT_IMAGE = DockerImageName.parse("rabbitmq:management");

@@ -423,14 +423,12 @@
       </div>
 
       <div class="pagination-row">
-        <el-pagination
-          v-model:current-page="pageNum"
+        <AppPagination
+          v-model:page-num="pageNum"
           v-model:page-size="pageSize"
           :total="total"
           :page-sizes="[10, 20, 50]"
-          layout="total, sizes, prev, pager, next"
-          @size-change="fetchList"
-          @current-change="fetchList"
+          @change="fetchList"
         />
       </div>
     </div>
@@ -640,6 +638,7 @@ import { pinyin } from 'pinyin-pro'
 import { useUserStore } from '@/stores/modules/user'
 import { useCollapsibleSidebar } from '@/composables/useCollapsibleSidebar'
 import { usePermission } from '@/composables/usePermission'
+import { loadOrgTree, normalizeArray } from '@/composables/useOrgTree'
 import Sortable, { type SortableEvent } from 'sortablejs'
 
 interface FlatOrgNode {
@@ -1009,14 +1008,6 @@ const departmentRules: FormRules = {
   ],
 }
 
-function normalizeArray<T>(value: unknown): T[] {
-  if (Array.isArray(value)) return value as T[]
-  const data = (value as any)?.data
-  if (Array.isArray(data)) return data as T[]
-  if (Array.isArray(data?.data)) return data.data as T[]
-  return []
-}
-
 function filterOrgTree(nodes: OrgNode[], targetType: string): OrgNode[] {
   return nodes
     .filter(n => n.orgType === targetType || n.children?.some(child => hasOrgType(child, targetType)))
@@ -1045,15 +1036,14 @@ function hasOrgTypeMulti(node: OrgNode, types: string[]): boolean {
 
 async function loadOrgData() {
   try {
-    const [orgRes, rolesRes] = await Promise.all([
-      userApi.getOrgTree(),
+    const [org, rolesRes] = await Promise.all([
+      loadOrgTree(),
       getRoleList(),
     ])
-    orgTree.value = normalizeArray<OrgNode>(orgRes)
+    orgTree.value = org
     regionTree.value = filterOrgTreeMulti(orgTree.value, ['region', 'company', 'bureau'])
     departmentTree.value = filterOrgTreeMulti(orgTree.value, ['company', 'bureau', 'department'])
     roleList.value = normalizeArray<RoleItem>(rolesRes)
-
     if (!activeOrgKey.value && orgTree.value.length > 0) {
       activeOrgKey.value = resolveInitialOrgKey()
       expandedKeys.value = new Set(orgTree.value.map(n => `org-${n.id}`))

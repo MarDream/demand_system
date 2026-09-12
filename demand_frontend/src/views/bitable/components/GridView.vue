@@ -48,6 +48,7 @@ const emit = defineEmits<{
   renameField: [fieldId: number]
   cloneField: [fieldId: number]
   hideField: [fieldId: number]
+  deleteField: [fieldId: number]
   headerDragend: [fields: { fieldId: number; newIndex: number }[]]
   aiFillColumn: [fieldId: number]
   aiClassifyColumn: [fieldId: number]
@@ -85,8 +86,6 @@ const menuConfig = reactive({
         { code: 'renameCol', name: '重命名列' },
         { code: 'cloneCol', name: '克隆列' },
         { code: 'hideCol', name: '隐藏列' },
-        { code: 'insertColLeft', name: '在左侧插入列' },
-        { code: 'insertColRight', name: '在右侧插入列' },
         { code: 'deleteCol', name: '删除列' },
       ],
       [
@@ -390,6 +389,14 @@ function handleMenuClick({ menu, row, column }: any) {
         const hideFieldId = Number(column.field)
         if (!Number.isNaN(hideFieldId)) {
           emit('hideField', hideFieldId)
+        }
+      }
+      break
+    case 'deleteCol':
+      if (column) {
+        const delFieldId = Number(column.field)
+        if (!Number.isNaN(delFieldId)) {
+          emit('deleteField', delFieldId)
         }
       }
       break

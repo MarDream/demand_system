@@ -1,0 +1,33 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #f7f8fa;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica,
+    Segoe UI, Arial, Roboto, 'PingFang SC', 'miui', 'Hiragino Sans GB',
+    'Microsoft Yahei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+.page {
+  min-height: 100vh;
+  padding-bottom: 50px;
+}
+
+.page--tabbar {
+  padding-bottom: calc(50px + env(safe-area-inset-bottom));
+}
+
+/* 通用卡片内文字 */
+.pre-wrap {
+  white-space: pre-wrap;
+  word-break: break-word;
+}

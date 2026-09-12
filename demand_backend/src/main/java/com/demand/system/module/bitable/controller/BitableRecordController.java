@@ -41,7 +41,10 @@ public class BitableRecordController {
         Long userId = SecurityUtils.getCurrentUserId();
         Long baseId = authorizationService.getBaseIdByTableId(tableId);
         authorizationService.checkReadPermission(baseId, userId);
-        PageResult<BitableRecordVO> pageResult = bitableRecordService.listRecords(tableId, pageNum, pageSize);
+        // 参数钳制：避免负数分页导致 SQL 错误，限制单页大小防止全表拉取
+        int page = pageNum != null && pageNum > 0 ? pageNum : 1;
+        int size = pageSize != null && pageSize > 0 ? Math.min(pageSize, 1000) : 20;
+        PageResult<BitableRecordVO> pageResult = bitableRecordService.listRecords(tableId, page, size);
         return Result.success(pageResult);
     }
 

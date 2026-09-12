@@ -6,6 +6,7 @@ package com.demand.system.module.bitable.constant;
 public enum OperationType {
 
     INSERT_RECORD("insert_record", "新增记录"),
+    UPDATE_RECORD("update_record", "更新记录"),
     UPDATE_CELL("update_cell", "更新单元格"),
     DELETE_RECORD("delete_record", "删除记录"),
     ADD_FIELD("add_field", "新增字段"),
@@ -19,6 +20,7 @@ public enum OperationType {
     DELETE_TABLE("delete_table", "删除数据表"),
     UPDATE_BASE("update_base", "更新多维表格"),
     ADD_MEMBER("add_member", "新增成员"),
+    UPDATE_MEMBER_ROLE("update_member_role", "变更成员角色"),
     REMOVE_MEMBER("remove_member", "移除成员");
 
     private final String code;

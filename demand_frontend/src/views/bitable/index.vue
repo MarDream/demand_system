@@ -25,7 +25,8 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="edit">重命名</el-dropdown-item>
-                <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
+                <el-dropdown-item command="dashboard" divided>仪表盘</el-dropdown-item>
+                <el-dropdown-item command="delete">删除</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -118,6 +119,8 @@ function handleAction(command: string, base: BitableBase) {
     editingBase.value = base
     form.value = { name: base.name, description: base.description || '' }
     showDialog.value = true
+  } else if (command === 'dashboard') {
+    router.push({ name: 'BitableDashboard', params: { baseId: base.id } })
   } else if (command === 'delete') {
     ElMessageBox.confirm(`确定删除多维表格「${base.name}」吗？此操作不可恢复。`, '删除确认', {
       confirmButtonText: '删除',

@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getOrgTree } from '@/api/modules/user'
 import { useUserStore } from '@/stores/modules/user'
-import type { OrgNode } from '@/types/user'
+import { useOrgTree } from '@/composables/useOrgTree'
 
 const userStore = useUserStore()
-const orgTree = ref<OrgNode[]>([])
+const { orgTree, loadOrgTree } = useOrgTree()
 const selectedOrgId = ref<number | null>(null)
 const submitting = ref(false)
 const loading = ref(false)
@@ -19,18 +18,10 @@ const visible = computed({
   },
 })
 
-function normalizeArray<T>(value: unknown): T[] {
-  if (Array.isArray(value)) return value as T[]
-  const data = (value as any)?.data
-  if (Array.isArray(data)) return data as T[]
-  if (Array.isArray(data?.data)) return data.data as T[]
-  return []
-}
-
 async function loadTree() {
   loading.value = true
   try {
-    orgTree.value = normalizeArray<OrgNode>(await getOrgTree())
+    await loadOrgTree()
   } catch (e) {
     // ignore, request interceptor already toasts
   } finally {

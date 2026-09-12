@@ -6,6 +6,7 @@ import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.ErrorCode;
 import com.demand.system.common.result.PageResult;
 import com.demand.system.common.util.UserNameResolver;
+import com.demand.system.module.bitable.constant.OperationType;
 import com.demand.system.module.bitable.converter.BitableConverter;
 import com.demand.system.module.bitable.dto.BitableCellValueVO;
 import com.demand.system.module.bitable.dto.BitableRecordCreateDTO;
@@ -34,6 +35,7 @@ import com.demand.system.module.bitable.service.BitableFormulaService;
 import com.demand.system.module.bitable.service.BitableLinkService;
 import com.demand.system.module.bitable.service.BitableRecordService;
 import com.demand.system.module.bitable.service.BitableViewService;
+import com.demand.system.module.bitable.util.BitableAuditHelper;
 import com.demand.system.module.bitable.util.BitableJsonUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,6 +72,7 @@ public class BitableRecordServiceImpl implements BitableRecordService {
     private final UserNameResolver userNameResolver;
     private final BitableAutomationService automationService;
     private final BitableCollaborationService collaborationService;
+    private final BitableAuditHelper auditHelper;
 
     public BitableRecordServiceImpl(BitableRecordMapper recordMapper,
                                     BitableCellMapper cellMapper,
@@ -82,7 +85,8 @@ public class BitableRecordServiceImpl implements BitableRecordService {
                                     BitableConverter converter,
                                     UserNameResolver userNameResolver,
                                     @Lazy BitableAutomationService automationService,
-                                    BitableCollaborationService collaborationService) {
+                                    BitableCollaborationService collaborationService,
+                                    BitableAuditHelper auditHelper) {
         this.recordMapper = recordMapper;
         this.cellMapper = cellMapper;
         this.commentMapper = commentMapper;
@@ -95,6 +99,7 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         this.userNameResolver = userNameResolver;
         this.automationService = automationService;
         this.collaborationService = collaborationService;
+        this.auditHelper = auditHelper;
     }
 
     @Override
@@ -125,8 +130,8 @@ public class BitableRecordServiceImpl implements BitableRecordService {
                 vo.setCells(recordCellsMap.getOrDefault(vo.getId(), new LinkedHashMap<>()));
                 vo.setCreatedByName(userNameResolver.resolveUserName(vo.getCreatedBy(), "未知用户"));
                 vo.setUpdatedByName(userNameResolver.resolveUserName(vo.getUpdatedBy(), "未知用户"));
-                appendComputedCells(vo, fields);
             }
+            appendComputedCellsBatch(voList, fields);
         }
 
         return new PageResult<>(voList, total, pageNum, pageSize);
@@ -194,6 +199,12 @@ public class BitableRecordServiceImpl implements BitableRecordService {
             log.warn("自动化事件发布失败: tableId={}, recordId={}", tableId, record.getId(), e);
         }
 
+        // 广播记录创建，让协作端实时新增行
+        broadcastRecordChanged(tableId, record.getId(), "record_created", userId);
+
+        // 审计
+        auditHelper.recordByTable(tableId, userId, OperationType.INSERT_RECORD, "{\"recordId\":" + record.getId() + "}");
+
         return record.getId();
     }
 
@@ -241,15 +252,23 @@ public class BitableRecordServiceImpl implements BitableRecordService {
             Map<String, Object> changedFields = new HashMap<>();
             if (dto.getCells() != null) {
                 for (Map.Entry<Long, CellValueDTO> entry : dto.getCells().entrySet()) {
-                    changedFields.put(String.valueOf(entry.getKey()), Map.of(
-                            "newValue", entry.getValue().getValueText() != null ? entry.getValue().getValueText() : entry.getValue().getValueJson()
-                    ));
+                    Object newValue = entry.getValue().getValueText() != null
+                            ? entry.getValue().getValueText()
+                            : entry.getValue().getValueJson();
+                    // Map.of 不允许 null 值（清空单元格是合法操作），先归一
+                    Map<String, Object> change = new HashMap<>();
+                    change.put("newValue", newValue);
+                    changedFields.put(String.valueOf(entry.getKey()), change);
                 }
             }
             automationService.onRecordChanged(existing.getTableId(), id, "record_updated", changedFields);
         } catch (Exception e) {
             log.warn("自动化事件发布失败: tableId={}, recordId={}", existing.getTableId(), id, e);
         }
+
+        // 审计
+        auditHelper.recordByTable(existing.getTableId(), userId, OperationType.UPDATE_RECORD,
+                "{\"recordId\":" + id + ",\"changedFields\":" + (dto.getCells() != null ? dto.getCells().size() : 0) + "}");
     }
 
     @Override
@@ -277,16 +296,28 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         } catch (Exception e) {
             log.warn("自动化事件发布失败: tableId={}, recordId={}", existing.getTableId(), id, e);
         }
+
+        // 广播记录删除，让协作端实时移除行
+        broadcastRecordChanged(existing.getTableId(), id, "record_deleted", null);
+
+        // 审计
+        auditHelper.recordByTable(existing.getTableId(), null, OperationType.DELETE_RECORD, "{\"recordId\":" + id + "}");
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long batchCreateRecords(Long tableId, List<BitableRecordCreateDTO> dtos, Long userId) {
-        Long lastId = null;
-        for (BitableRecordCreateDTO dto : dtos) {
-            lastId = createRecord(tableId, dto, userId);
+        // 单次批量上限，防止超大批量请求拖垮数据库
+        final int maxBatchSize = 500;
+        if (dtos.size() > maxBatchSize) {
+            throw new BusinessException("单次批量创建不能超过 " + maxBatchSize + " 条记录");
         }
-        return lastId;
+        long created = 0;
+        for (BitableRecordCreateDTO dto : dtos) {
+            createRecord(tableId, dto, userId);
+            created++;
+        }
+        return created;
     }
 
     private void copyCellValue(CellValueDTO source, BitableCellValue target) {
@@ -348,31 +379,211 @@ public class BitableRecordServiceImpl implements BitableRecordService {
 
 
     private void appendComputedCells(BitableRecordVO record, List<BitableField> fields) {
-        if (record.getCells() == null) {
-            record.setCells(new LinkedHashMap<>());
-        }
+        appendComputedCellsBatch(List.of(record), fields);
+    }
+
+    /**
+     * 批量计算字段的批量版：系统字段/自动编号/公式逐条内存计算，
+     * Lookup/Rollup 通过批量预取关联目标值，把原来"每记录×每字段 2 次 SQL"的 N×M 查询
+     * 压缩为"每字段 1 次批量查询"。
+     */
+    private void appendComputedCellsBatch(List<BitableRecordVO> records, List<BitableField> fields) {
+        List<BitableField> lookupFields = new ArrayList<>();
+        List<BitableField> rollupFields = new ArrayList<>();
+        List<BitableField> formulaFields = new ArrayList<>();
         for (BitableField field : fields) {
-            String type = field.getFieldType();
-            BitableCellValueVO computed = null;
-            try {
-                if (isSystemFieldType(type)) {
-                    computed = buildSystemCell(record, field);
-                } else if ("auto_number".equals(type)) {
-                    computed = buildAutoNumberCell(record, field);
-                } else if ("lookup".equals(type)) {
-                    computed = buildLookupCell(record, field);
-                } else if ("rollup".equals(type)) {
-                    computed = buildRollupCell(record, field);
-                } else if ("formula".equals(type)) {
-                    computed = buildFormulaCell(record, field, fields);
-                }
-            } catch (Exception e) {
-                computed = buildErrorComputedCell(record, field, e.getMessage());
-            }
-            if (computed != null) {
-                record.getCells().put(field.getId(), computed);
+            switch (field.getFieldType()) {
+                case "lookup" -> lookupFields.add(field);
+                case "rollup" -> rollupFields.add(field);
+                case "formula" -> formulaFields.add(field);
+                default -> { }
             }
         }
+
+        // Pass 1：系统字段 + 自动编号（纯内存）
+        for (BitableRecordVO record : records) {
+            if (record.getCells() == null) {
+                record.setCells(new LinkedHashMap<>());
+            }
+            for (BitableField field : fields) {
+                String type = field.getFieldType();
+                try {
+                    if (isSystemFieldType(type)) {
+                        putComputedCell(record, buildSystemCell(record, field));
+                    } else if ("auto_number".equals(type)) {
+                        putComputedCell(record, buildAutoNumberCell(record, field));
+                    }
+                } catch (Exception e) {
+                    putComputedCell(record, buildErrorComputedCell(record, field, e.getMessage()));
+                }
+            }
+        }
+
+        // Pass 2：Lookup / Rollup 批量预取
+        appendBatchLookupCells(records, lookupFields);
+        appendBatchRollupCells(records, rollupFields);
+
+        // Pass 3：公式（最后计算，可引用前面已合成的 lookup/rollup/系统字段值）
+        for (BitableRecordVO record : records) {
+            for (BitableField field : formulaFields) {
+                try {
+                    putComputedCell(record, buildFormulaCell(record, field, fields));
+                } catch (Exception e) {
+                    putComputedCell(record, buildErrorComputedCell(record, field, e.getMessage()));
+                }
+            }
+        }
+    }
+
+    private void putComputedCell(BitableRecordVO record, BitableCellValueVO computed) {
+        if (computed != null) {
+            record.getCells().put(computed.getFieldId(), computed);
+        }
+    }
+
+    /**
+     * 批量计算 Lookup 字段：按字段收集所有关联目标记录 ID，一次 IN 查询取回目标单元格值
+     */
+    private void appendBatchLookupCells(List<BitableRecordVO> records, List<BitableField> lookupFields) {
+        if (lookupFields.isEmpty() || records.isEmpty()) {
+            return;
+        }
+
+        // 预解析每个 lookup 字段的配置
+        for (BitableField field : lookupFields) {
+            Map<String, Object> config = parseConfig(field);
+            Long targetFieldId = asLong(firstNonNull(config.get("targetFieldId"), config.get("lookupFieldId")));
+            Long linkFieldId = asLong(firstNonNull(config.get("linkFieldId"), config.get("linkField")));
+            if (targetFieldId == null || linkFieldId == null) {
+                // 与原单条路径一致：配置缺失按计算错误处理
+                for (BitableRecordVO record : records) {
+                    putComputedCell(record, buildErrorComputedCell(record, field, "lookup 字段缺少关联字段配置"));
+                }
+                continue;
+            }
+
+            // 收集各记录的关联记录 ID（来自 link 字段已加载的 valueJson）
+            Map<Long, List<Long>> linksByRecord = new LinkedHashMap<>();
+            Set<Long> unionTargetIds = new LinkedHashSet<>();
+            for (BitableRecordVO record : records) {
+                BitableCellValueVO linkCell = record.getCells().get(linkFieldId);
+                List<Long> linkedIds = linkCell == null ? Collections.emptyList() : extractLongList(linkCell.getValueJson());
+                linksByRecord.put(record.getId(), linkedIds);
+                unionTargetIds.addAll(linkedIds);
+            }
+
+            // 一次查询取回所有目标单元格值
+            Map<Long, BitableCellValue> targetCellMap = loadTargetCells(unionTargetIds, targetFieldId);
+
+            for (BitableRecordVO record : records) {
+                List<Object> values = new ArrayList<>();
+                for (Long targetId : linksByRecord.getOrDefault(record.getId(), Collections.emptyList())) {
+                    BitableCellValue targetCell = targetCellMap.get(targetId);
+                    if (targetCell != null) {
+                        Object value = extractEntityCellValue(targetCell);
+                        if (value != null) {
+                            values.add(value);
+                        }
+                    }
+                }
+                BitableCellValueVO vo = buildBaseComputedCell(record, field);
+                vo.setValueJson(values);
+                vo.setValueText(values.stream().map(String::valueOf).collect(Collectors.joining(", ")));
+                putComputedCell(record, vo);
+            }
+        }
+    }
+
+    /**
+     * 批量计算 Rollup 字段：同样批量预取目标值后内存聚合
+     */
+    private void appendBatchRollupCells(List<BitableRecordVO> records, List<BitableField> rollupFields) {
+        if (rollupFields.isEmpty() || records.isEmpty()) {
+            return;
+        }
+
+        for (BitableField field : rollupFields) {
+            Map<String, Object> config = parseConfig(field);
+            Long targetFieldId = asLong(firstNonNull(config.get("targetFieldId"), config.get("rollupFieldId")));
+            Long linkFieldId = asLong(firstNonNull(config.get("linkFieldId"), config.get("linkField")));
+            String aggregation = asString(firstNonNull(config.get("aggregation"), config.get("function"), config.get("aggregate")));
+            if (targetFieldId == null || linkFieldId == null) {
+                for (BitableRecordVO record : records) {
+                    putComputedCell(record, buildErrorComputedCell(record, field, "rollup 字段缺少关联字段配置"));
+                }
+                continue;
+            }
+
+            Map<Long, List<Long>> linksByRecord = new LinkedHashMap<>();
+            Set<Long> unionTargetIds = new LinkedHashSet<>();
+            for (BitableRecordVO record : records) {
+                BitableCellValueVO linkCell = record.getCells().get(linkFieldId);
+                List<Long> linkedIds = linkCell == null ? Collections.emptyList() : extractLongList(linkCell.getValueJson());
+                linksByRecord.put(record.getId(), linkedIds);
+                unionTargetIds.addAll(linkedIds);
+            }
+
+            Map<Long, BitableCellValue> targetCellMap = loadTargetCells(unionTargetIds, targetFieldId);
+
+            for (BitableRecordVO record : records) {
+                List<Object> values = new ArrayList<>();
+                for (Long targetId : linksByRecord.getOrDefault(record.getId(), Collections.emptyList())) {
+                    BitableCellValue targetCell = targetCellMap.get(targetId);
+                    if (targetCell != null) {
+                        Object value = extractEntityCellValue(targetCell);
+                        if (value != null) {
+                            values.add(value);
+                        }
+                    }
+                }
+                Object result = formulaService.aggregateValues(values, aggregation == null ? "count" : aggregation);
+                BitableCellValueVO vo = buildBaseComputedCell(record, field);
+                if (result instanceof BigDecimal bd) {
+                    vo.setValueNumber(bd);
+                } else if (result instanceof Number num) {
+                    vo.setValueNumber(new BigDecimal(num.toString()));
+                } else if (result != null) {
+                    vo.setValueText(String.valueOf(result));
+                }
+                putComputedCell(record, vo);
+            }
+        }
+    }
+
+    /**
+     * 一次 IN 查询取回目标记录集中 targetFieldId 的单元格值，Map<recordId, cell>（重复取首条）
+     */
+    private Map<Long, BitableCellValue> loadTargetCells(Set<Long> targetRecordIds, Long targetFieldId) {
+        if (targetRecordIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<BitableCellValue> cells = cellMapper.selectByRecordIds(new ArrayList<>(targetRecordIds));
+        Map<Long, BitableCellValue> map = new HashMap<>();
+        for (BitableCellValue cell : cells) {
+            if (targetFieldId.equals(cell.getFieldId())) {
+                map.putIfAbsent(cell.getRecordId(), cell);
+            }
+        }
+        return map;
+    }
+
+    /**
+     * 与公式引擎 extractCellValue 同序的实体值提取：number → text → date → json
+     */
+    private Object extractEntityCellValue(BitableCellValue cell) {
+        if (cell.getValueNumber() != null) {
+            return cell.getValueNumber();
+        }
+        if (cell.getValueText() != null && !cell.getValueText().isBlank()) {
+            return cell.getValueText();
+        }
+        if (cell.getValueDate() != null) {
+            return cell.getValueDate();
+        }
+        if (cell.getValueJson() != null && !cell.getValueJson().isBlank()) {
+            return BitableJsonUtils.parseJson(cell.getValueJson());
+        }
+        return null;
     }
 
     private boolean isSystemFieldType(String type) {
@@ -450,38 +661,6 @@ public class BitableRecordServiceImpl implements BitableRecordService {
             }
         }
         vo.setValueText(prefix + datePart + String.format("%0" + Math.max(digits, 1) + "d", record.getId()) + suffix);
-        return vo;
-    }
-
-    private BitableCellValueVO buildLookupCell(BitableRecordVO record, BitableField field) {
-        Map<String, Object> config = parseConfig(field);
-        Long targetFieldId = asLong(firstNonNull(config.get("targetFieldId"), config.get("lookupFieldId")));
-        if (targetFieldId == null) {
-            return null;
-        }
-        List<Object> values = formulaService.calculateLookup(field.getId(), record.getId(), targetFieldId);
-        BitableCellValueVO vo = buildBaseComputedCell(record, field);
-        vo.setValueJson(values);
-        vo.setValueText(values.stream().map(String::valueOf).collect(Collectors.joining(", ")));
-        return vo;
-    }
-
-    private BitableCellValueVO buildRollupCell(BitableRecordVO record, BitableField field) {
-        Map<String, Object> config = parseConfig(field);
-        Long targetFieldId = asLong(firstNonNull(config.get("targetFieldId"), config.get("rollupFieldId")));
-        String aggregation = asString(firstNonNull(config.get("aggregation"), config.get("function"), config.get("aggregate")));
-        if (targetFieldId == null) {
-            return null;
-        }
-        Object result = formulaService.calculateRollup(field.getId(), record.getId(), targetFieldId, aggregation == null ? "count" : aggregation);
-        BitableCellValueVO vo = buildBaseComputedCell(record, field);
-        if (result instanceof BigDecimal bd) {
-            vo.setValueNumber(bd);
-        } else if (result instanceof Number num) {
-            vo.setValueNumber(new BigDecimal(num.toString()));
-        } else if (result != null) {
-            vo.setValueText(String.valueOf(result));
-        }
         return vo;
     }
 
@@ -719,12 +898,36 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         }
     }
 
+    /**
+     * 写库成功后广播记录创建/删除事件（事务提交后执行）。
+     * 让其他在线协作客户端实时感知行的增删。
+     */
+    private void broadcastRecordChanged(Long tableId, Long recordId, String changeType, Long userId) {
+        BitableTable table = tableMapper.selectById(tableId);
+        if (table == null) {
+            log.warn("广播记录变更失败：table 不存在 tableId={}", tableId);
+            return;
+        }
+        Long baseId = table.getBaseId();
+
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    collaborationService.broadcastRecordChanged(baseId, tableId, recordId, changeType, userId);
+                }
+            });
+        } else {
+            collaborationService.broadcastRecordChanged(baseId, tableId, recordId, changeType, userId);
+        }
+    }
+
     // ==================== 筛选/排序/分组查询 ====================
 
     @Override
     public PageResult<BitableRecordVO> queryRecords(Long tableId, RecordQueryDTO query) {
         // 1. 如果传了 viewId，从视图配置加载筛选/排序
-        resolveViewConfig(query);
+        resolveViewConfig(tableId, query);
 
         // 2. 加载所有字段定义（用于字段类型判断和计算字段）
         List<BitableField> fields = fieldMapper.selectByTableId(tableId);
@@ -732,7 +935,12 @@ public class BitableRecordServiceImpl implements BitableRecordService {
                 .collect(Collectors.toMap(BitableField::getId, f -> f));
 
         // 3. 查询该表所有记录（两阶段查询：先查全部记录，应用层筛选排序后分页）
+        // 全量内存查询保护上限：超过 5 万行拒绝执行，提示缩小范围或使用索引字段筛选
+        final int MAX_INMEMORY_QUERY_ROWS = 50_000;
         int totalRecords = recordMapper.countByTableId(tableId);
+        if (totalRecords > MAX_INMEMORY_QUERY_ROWS) {
+            throw new BusinessException("该表数据量过大（" + totalRecords + " 行），无法执行全量筛选查询，请缩小筛选范围");
+        }
         List<BitableRecord> allRecords = totalRecords > 0
                 ? recordMapper.selectByTableId(tableId, 0, totalRecords)
                 : Collections.emptyList();
@@ -749,14 +957,14 @@ public class BitableRecordServiceImpl implements BitableRecordService {
             }
         }
 
-        // 5. 组装 VO 列表（含计算字段）
+        // 5. 组装 VO 列表（含计算字段，批量预取 Lookup/Rollup）
         List<BitableRecordVO> voList = converter.toRecordVOList(allRecords);
         for (BitableRecordVO vo : voList) {
             vo.setCells(recordCellsMap.getOrDefault(vo.getId(), new LinkedHashMap<>()));
             vo.setCreatedByName(userNameResolver.resolveUserName(vo.getCreatedBy(), "未知用户"));
             vo.setUpdatedByName(userNameResolver.resolveUserName(vo.getUpdatedBy(), "未知用户"));
-            appendComputedCells(vo, fields);
         }
+        appendComputedCellsBatch(voList, fields);
 
         // 6. 应用层筛选
         List<BitableRecordVO> filtered = applyFilter(voList, query.getFilterConfig(), fieldMap);
@@ -778,7 +986,7 @@ public class BitableRecordServiceImpl implements BitableRecordService {
     @Override
     public List<RecordGroupVO> queryGroupedRecords(Long tableId, RecordQueryDTO query) {
         // 1. 如果传了 viewId，从视图配置加载筛选/排序/分组
-        resolveViewConfig(query);
+        resolveViewConfig(tableId, query);
 
         // 2. 加载所有字段定义
         List<BitableField> fields = fieldMapper.selectByTableId(tableId);
@@ -809,8 +1017,8 @@ public class BitableRecordServiceImpl implements BitableRecordService {
             vo.setCells(recordCellsMap.getOrDefault(vo.getId(), new LinkedHashMap<>()));
             vo.setCreatedByName(userNameResolver.resolveUserName(vo.getCreatedBy(), "未知用户"));
             vo.setUpdatedByName(userNameResolver.resolveUserName(vo.getUpdatedBy(), "未知用户"));
-            appendComputedCells(vo, fields);
         }
+        appendComputedCellsBatch(voList, fields);
 
         // 6. 应用层筛选
         List<BitableRecordVO> filtered = applyFilter(voList, query.getFilterConfig(), fieldMap);
@@ -847,12 +1055,18 @@ public class BitableRecordServiceImpl implements BitableRecordService {
      * 如果 query 传了 viewId，从视图配置加载筛选/排序/分组，
      * 与直接传入的参数合并（直接传入优先）
      */
-    private void resolveViewConfig(RecordQueryDTO query) {
+    private void resolveViewConfig(Long tableId, RecordQueryDTO query) {
         if (query.getViewId() == null) {
             return;
         }
         BitableViewVO view = viewService.getViewById(query.getViewId());
         if (view == null) {
+            return;
+        }
+        // 视图必须属于当前查询的表，防止套用其他表的视图配置导致字段错位
+        if (view.getTableId() == null || !view.getTableId().equals(tableId)) {
+            log.warn("查询引用了不属于当前表的视图: tableId={}, viewId={}, viewTableId={}",
+                    tableId, query.getViewId(), view.getTableId());
             return;
         }
         // 视图配置作为默认值，直接传入的参数优先
@@ -1030,7 +1244,17 @@ public class BitableRecordServiceImpl implements BitableRecordService {
             }
         }
 
-        return 0;
+        // JSON 值（关联/多选等仅存 valueJson 的字段）：文本化后比较，避免"恒等/恒不等"
+        if (cell.getValueJson() != null) {
+            String jsonText = asString(cell.getValueJson());
+            String filterText = asString(filterValue);
+            if (jsonText != null && filterText != null) {
+                return jsonText.compareToIgnoreCase(filterText);
+            }
+        }
+
+        // 双方类型不可比：视为不相等（返回非 0），确保 eq/ne 语义正确
+        return -1;
     }
 
     /**
@@ -1147,7 +1371,16 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         // 文本比较
         String t1 = c1.getValueText() != null ? c1.getValueText() : "";
         String t2 = c2.getValueText() != null ? c2.getValueText() : "";
-        return t1.compareToIgnoreCase(t2);
+        if (!t1.isEmpty() || !t2.isEmpty()) {
+            return t1.compareToIgnoreCase(t2);
+        }
+
+        // JSON 值（关联/多选等）文本化后比较
+        String j1 = c1.getValueJson() != null ? asString(c1.getValueJson()) : "";
+        String j2 = c2.getValueJson() != null ? asString(c2.getValueJson()) : "";
+        if (j1 == null) j1 = "";
+        if (j2 == null) j2 = "";
+        return j1.compareToIgnoreCase(j2);
     }
 
     // ==================== 私有辅助方法：分组 ====================
@@ -1179,9 +1412,14 @@ public class BitableRecordServiceImpl implements BitableRecordService {
             return cell.getValueDate().toString();
         }
 
-        // JSON值（多选等）
+        // JSON值（多选等）：集合元素用逗号拼接展示，避免分组键显示原始 JSON
+        if (cell.getValueJson() instanceof Collection<?> col) {
+            return col.stream().map(item -> item != null ? asString(item) : null)
+                    .filter(s -> s != null && !s.isBlank())
+                    .collect(Collectors.joining(", "));
+        }
         if (cell.getValueJson() != null) {
-            return String.valueOf(cell.getValueJson());
+            return asString(cell.getValueJson());
         }
 
         return "(空)";

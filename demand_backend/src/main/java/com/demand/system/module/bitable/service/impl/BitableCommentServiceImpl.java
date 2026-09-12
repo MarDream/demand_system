@@ -6,7 +6,9 @@ import com.demand.system.common.util.UserNameResolver;
 import com.demand.system.module.bitable.converter.BitableConverter;
 import com.demand.system.module.bitable.dto.BitableCommentVO;
 import com.demand.system.module.bitable.entity.BitableComment;
+import com.demand.system.module.bitable.entity.BitableRecord;
 import com.demand.system.module.bitable.mapper.BitableCommentMapper;
+import com.demand.system.module.bitable.mapper.BitableRecordMapper;
 import com.demand.system.module.bitable.service.BitableCommentService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,14 +21,20 @@ import java.util.List;
 @Service
 public class BitableCommentServiceImpl implements BitableCommentService {
 
+    /** 评论内容长度上限 */
+    private static final int MAX_CONTENT_LENGTH = 5000;
+
     private final BitableCommentMapper commentMapper;
+    private final BitableRecordMapper recordMapper;
     private final BitableConverter converter;
     private final UserNameResolver userNameResolver;
 
     public BitableCommentServiceImpl(BitableCommentMapper commentMapper,
+                                     BitableRecordMapper recordMapper,
                                      BitableConverter converter,
                                      UserNameResolver userNameResolver) {
         this.commentMapper = commentMapper;
+        this.recordMapper = recordMapper;
         this.converter = converter;
         this.userNameResolver = userNameResolver;
     }
@@ -45,14 +53,23 @@ public class BitableCommentServiceImpl implements BitableCommentService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Long createComment(Long recordId, Long tableId, String content, Long quoteFieldId, Long parentId, Long userId) {
+    public Long createComment(Long recordId, String content, Long quoteFieldId, Long parentId, Long userId) {
         if (content == null || content.isBlank()) {
             throw new BusinessException("评论内容不能为空");
+        }
+        if (content.length() > MAX_CONTENT_LENGTH) {
+            throw new BusinessException("评论内容不能超过 " + MAX_CONTENT_LENGTH + " 字");
+        }
+
+        // tableId 由记录本身反查，保证评论归属正确，不信任外部传入
+        BitableRecord record = recordMapper.selectById(recordId);
+        if (record == null) {
+            throw new BusinessException("记录不存在");
         }
 
         BitableComment comment = new BitableComment();
         comment.setRecordId(recordId);
-        comment.setTableId(tableId);
+        comment.setTableId(record.getTableId());
         comment.setUserId(userId);
         comment.setContent(content);
         comment.setQuoteFieldId(quoteFieldId);
@@ -60,6 +77,11 @@ public class BitableCommentServiceImpl implements BitableCommentService {
         commentMapper.insert(comment);
 
         return comment.getId();
+    }
+
+    @Override
+    public BitableComment getCommentById(Long id) {
+        return commentMapper.selectById(id);
     }
 
     @Override

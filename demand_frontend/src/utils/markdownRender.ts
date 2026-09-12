@@ -37,7 +37,8 @@ export function renderMarkdown(content: string): string {
  * N 对应 citations 数组的序号（1-based）
  */
 export function replaceCitationLinks(html: string, citations: RagCitationLike[] = []): string {
-  if (!citations.length) return html
+  // 默认参数不兜底 null（历史消息 citations 可能为 null），此处显式判空
+  if (!citations || !citations.length) return html
   return html.replace(/\[(\d+)\]/g, (_, num: string) => {
     const idx = parseInt(num, 10) - 1
     if (idx >= 0 && idx < citations.length) {

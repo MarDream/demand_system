@@ -35,6 +35,7 @@ public class BitableBaseServiceImpl implements BitableBaseService {
     private final BitableViewMapper viewMapper;
     private final BitableCommentMapper commentMapper;
     private final BitableBaseMemberMapper memberMapper;
+    private final BitableAutomationMapper automationMapper;
     private final BitableConverter converter;
     private final UserNameResolver userNameResolver;
 
@@ -46,6 +47,7 @@ public class BitableBaseServiceImpl implements BitableBaseService {
                                   BitableViewMapper viewMapper,
                                   BitableCommentMapper commentMapper,
                                   BitableBaseMemberMapper memberMapper,
+                                  BitableAutomationMapper automationMapper,
                                   BitableConverter converter,
                                   UserNameResolver userNameResolver) {
         this.baseMapper = baseMapper;
@@ -56,6 +58,7 @@ public class BitableBaseServiceImpl implements BitableBaseService {
         this.viewMapper = viewMapper;
         this.commentMapper = commentMapper;
         this.memberMapper = memberMapper;
+        this.automationMapper = automationMapper;
         this.converter = converter;
         this.userNameResolver = userNameResolver;
     }
@@ -154,14 +157,15 @@ public class BitableBaseServiceImpl implements BitableBaseService {
             throw new BusinessException("多维表格不存在");
         }
 
-        // 级联删除：逐表删字段/记录/单元格/视图/评论，再删成员，最后软删 base
+        // 级联删除：逐表删字段/单元格/记录/视图/评论，再删成员与自动化，最后软删 base
         List<BitableTable> tables = tableMapper.selectByBaseId(id);
         for (BitableTable table : tables) {
             Long tableId = table.getId();
             // 软删字段
             fieldMapper.delete(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.demand.system.module.bitable.entity.BitableField>()
                     .eq(com.demand.system.module.bitable.entity.BitableField::getTableId, tableId));
-            // 物理删记录 + 单元格
+            // 物理删单元格（需在记录删除前按表清理）+ 记录
+            cellMapper.deleteByTableId(tableId);
             recordMapper.deleteByTableId(tableId);
             // 软删视图
             viewMapper.delete(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.demand.system.module.bitable.entity.BitableView>()
@@ -175,6 +179,9 @@ public class BitableBaseServiceImpl implements BitableBaseService {
 
         // 删除成员（物理删除，无 deleted_at）
         memberMapper.deleteByBaseId(id);
+
+        // 停用该 Base 下的自动化规则，防止残留规则对已删数据继续触发
+        automationMapper.disableByBaseId(id);
 
         // 软删 base
         baseMapper.deleteById(id);

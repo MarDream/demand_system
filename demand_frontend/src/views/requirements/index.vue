@@ -500,6 +500,7 @@ import type { Requirement, RequirementMyListQuery, RequirementQuery } from '@/ty
 import type { User } from '@/types/user'
 import { normalizeText, formatDate, stripPriorityPrefix } from '@/utils/format'
 import { resolveErrorMessage } from '@/utils/error'
+import { saveBlob } from '@/utils/download'
 import { usePermission } from '@/composables/usePermission'
 import { useRequirementTag } from '@/composables/useRequirementTag'
 import { useToast } from '@/composables/useToast'
@@ -1169,43 +1170,15 @@ async function handleExport() {
       }
     }
 
-    // 优先使用 File System Access API 让用户选择保存位置
-    if ('showSaveFilePicker' in window) {
-      try {
-        const handle = await (window as any).showSaveFilePicker({
-          suggestedName: fileName,
-          types: [{
-            description: 'Excel 文件',
-            accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] },
-          }],
-        })
-        const writable = await handle.createWritable()
-        await writable.write(response.data)
-        await writable.close()
-        toast.success('导出成功，文件已下载')
-        return
-      } catch (err: any) {
-        // 用户取消选择保存位置
-        if (err?.name === 'AbortError') {
-          toast.info('已取消导出')
-          return
-        }
-        // File System API 失败，降级为传统下载
-      }
-    }
-
-    // 降级方案：Blob + createObjectURL 触发浏览器下载
+    // saveBlob 内部优先使用 File System Access API，用户取消时返回 false；否则降级为锚点下载
     const blob = new Blob([response.data], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = fileName
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
+    const saved = await saveBlob(blob, fileName)
+    if (!saved) {
+      toast.info('已取消导出')
+      return
+    }
 
     toast.success('导出成功，文件已下载')
   } catch (err: any) {

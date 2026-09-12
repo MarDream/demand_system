@@ -18,6 +18,8 @@ import com.demand.system.module.bitable.mapper.BitableCellMapper;
 import com.demand.system.module.bitable.mapper.BitableViewMapper;
 import com.demand.system.module.bitable.mapper.BitableCommentMapper;
 import com.demand.system.module.bitable.service.BitableTableService;
+import com.demand.system.module.bitable.util.BitableAuditHelper;
+import com.demand.system.module.bitable.constant.OperationType;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +39,7 @@ public class BitableTableServiceImpl implements BitableTableService {
     private final BitableViewMapper viewMapper;
     private final BitableCommentMapper commentMapper;
     private final BitableConverter converter;
+    private final BitableAuditHelper auditHelper;
 
     public BitableTableServiceImpl(BitableTableMapper tableMapper,
                                    BitableFieldMapper fieldMapper,
@@ -44,7 +47,8 @@ public class BitableTableServiceImpl implements BitableTableService {
                                    BitableCellMapper cellMapper,
                                    BitableViewMapper viewMapper,
                                    BitableCommentMapper commentMapper,
-                                   BitableConverter converter) {
+                                   BitableConverter converter,
+                                   BitableAuditHelper auditHelper) {
         this.tableMapper = tableMapper;
         this.fieldMapper = fieldMapper;
         this.recordMapper = recordMapper;
@@ -52,6 +56,7 @@ public class BitableTableServiceImpl implements BitableTableService {
         this.viewMapper = viewMapper;
         this.commentMapper = commentMapper;
         this.converter = converter;
+        this.auditHelper = auditHelper;
     }
 
     @Override
@@ -103,6 +108,10 @@ public class BitableTableServiceImpl implements BitableTableService {
                 .set("default_view_id", defaultView.getId());
         tableMapper.update(null, updateWrapper);
 
+        // 审计
+        auditHelper.record(baseId, table.getId(), userId, OperationType.ADD_TABLE,
+                "{\"tableId\":" + table.getId() + ",\"name\":\"" + dto.getName() + "\"}");
+
         return table.getId();
     }
 
@@ -129,6 +138,10 @@ public class BitableTableServiceImpl implements BitableTableService {
             wrapper.set("sort_order", dto.getSortOrder());
         }
         tableMapper.update(null, wrapper);
+
+        // 审计
+        auditHelper.record(existing.getBaseId(), id, null, OperationType.UPDATE_TABLE,
+                "{\"tableId\":" + id + "}");
     }
 
     @Override
@@ -139,9 +152,11 @@ public class BitableTableServiceImpl implements BitableTableService {
             throw new BusinessException("数据表不存在");
         }
 
-        // 级联删除：字段(软删) / 记录(物理删) / 单元格(物理删) / 视图(软删) / 评论(软删)
+        // 级联删除：字段(软删) / 单元格(物理删，含软删记录的残留) / 记录(物理删) / 视图(软删) / 评论(软删)
         fieldMapper.delete(new LambdaQueryWrapper<BitableField>()
                 .eq(BitableField::getTableId, id));
+        // 单元格需在记录删除前按表清理（cell_values 通过 record_id 关联，无 table_id）
+        cellMapper.deleteByTableId(id);
         recordMapper.deleteByTableId(id);
         viewMapper.delete(new LambdaQueryWrapper<BitableView>()
                 .eq(BitableView::getTableId, id));
@@ -150,5 +165,9 @@ public class BitableTableServiceImpl implements BitableTableService {
 
         // 软删数据表
         tableMapper.deleteById(id);
+
+        // 审计
+        auditHelper.record(existing.getBaseId(), id, null, OperationType.DELETE_TABLE,
+                "{\"tableId\":" + id + ",\"name\":\"" + existing.getName() + "\"}");
     }
 }

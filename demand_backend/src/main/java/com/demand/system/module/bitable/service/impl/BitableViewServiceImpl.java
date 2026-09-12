@@ -13,6 +13,8 @@ import com.demand.system.module.bitable.entity.BitableView;
 import com.demand.system.module.bitable.mapper.BitableTableMapper;
 import com.demand.system.module.bitable.mapper.BitableViewMapper;
 import com.demand.system.module.bitable.service.BitableViewService;
+import com.demand.system.module.bitable.util.BitableAuditHelper;
+import com.demand.system.module.bitable.constant.OperationType;
 import com.demand.system.module.bitable.util.BitableJsonUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,13 +30,16 @@ public class BitableViewServiceImpl implements BitableViewService {
     private final BitableViewMapper viewMapper;
     private final BitableTableMapper tableMapper;
     private final BitableConverter converter;
+    private final BitableAuditHelper auditHelper;
 
     public BitableViewServiceImpl(BitableViewMapper viewMapper,
                                   BitableTableMapper tableMapper,
-                                  BitableConverter converter) {
+                                  BitableConverter converter,
+                                  BitableAuditHelper auditHelper) {
         this.viewMapper = viewMapper;
         this.tableMapper = tableMapper;
         this.converter = converter;
+        this.auditHelper = auditHelper;
     }
 
     @Override
@@ -81,6 +86,9 @@ public class BitableViewServiceImpl implements BitableViewService {
         if (viewCount == 1) {
             setDefaultView(tableId, view.getId());
         }
+
+        auditHelper.recordByTable(tableId, userId, OperationType.ADD_VIEW,
+                "{\"viewId\":" + view.getId() + ",\"name\":\"" + dto.getName() + "\"}");
 
         return view.getId();
     }
@@ -145,6 +153,9 @@ public class BitableViewServiceImpl implements BitableViewService {
         if (rows == 0) {
             throw new BusinessException("视图已被他人修改，请刷新后重试");
         }
+
+        auditHelper.recordByTable(existing.getTableId(), null, OperationType.UPDATE_VIEW,
+                "{\"viewId\":" + id + "}");
     }
 
     @Override
@@ -169,6 +180,9 @@ public class BitableViewServiceImpl implements BitableViewService {
         }
 
         viewMapper.deleteById(id);
+
+        auditHelper.recordByTable(existing.getTableId(), null, OperationType.DELETE_VIEW,
+                "{\"viewId\":" + id + ",\"name\":\"" + existing.getName() + "\"}");
     }
 
     @Override

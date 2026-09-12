@@ -65,4 +65,15 @@ public class BitableCollaborationServiceImpl implements BitableCollaborationServ
         message.put("version", newVersion);
         redisTemplate.convertAndSend("bitable:update:" + baseId, message);
     }
+
+    @Override
+    public void broadcastRecordChanged(Long baseId, Long tableId, Long recordId, String changeType, Long userId) {
+        Map<String, Object> message = new LinkedHashMap<>();
+        message.put("type", changeType);
+        message.put("tableId", tableId);
+        message.put("recordId", recordId);
+        message.put("userId", userId);
+        message.put("userName", userNameResolver.resolveUserName(userId, "未知用户"));
+        redisTemplate.convertAndSend("bitable:update:" + baseId, message);
+    }
 }

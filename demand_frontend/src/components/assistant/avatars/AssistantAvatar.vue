@@ -46,12 +46,12 @@
       <ellipse class="assistant-fab__cheek" cx="16" cy="29" rx="2.2" ry="1.2" fill="#ff9bb3" opacity="0.55" />
       <ellipse class="assistant-fab__cheek" cx="32" cy="29" rx="2.2" ry="1.2" fill="#ff9bb3" opacity="0.55" />
       <!-- 大眼睛（圆眼 + 高光） -->
-      <ellipse class="assistant-fab__eye" cx="19" cy="26" rx="1.6" ry="2.2" fill="#1f2329" />
-      <ellipse class="assistant-fab__eye" cx="29" cy="26" rx="1.6" ry="2.2" fill="#1f2329" />
+      <ellipse class="assistant-fab__eye" cx="19" cy="26" rx="1.6" ry="2.2" fill="var(--color-text-primary)" />
+      <ellipse class="assistant-fab__eye" cx="29" cy="26" rx="1.6" ry="2.2" fill="var(--color-text-primary)" />
       <circle class="assistant-fab__twinkle" cx="19.6" cy="25.2" r="0.6" fill="#fff" />
       <circle class="assistant-fab__twinkle" cx="29.6" cy="25.2" r="0.6" fill="#fff" />
       <!-- 嘴（O 形惊讶） -->
-      <ellipse class="assistant-fab__mouth" cx="24" cy="32" rx="1.2" ry="1.5" fill="#1f2329" opacity="0.85" />
+      <ellipse class="assistant-fab__mouth" cx="24" cy="32" rx="1.2" ry="1.5" fill="var(--color-text-primary)" opacity="0.85" />
     </g>
 
     <!-- B. 小狐狸（程序员风） -->
@@ -73,17 +73,17 @@
       <ellipse class="assistant-fab__cheek" cx="17" cy="28" rx="1.8" ry="1" fill="#ff9b6a" opacity="0.55" />
       <ellipse class="assistant-fab__cheek" cx="31" cy="28" rx="1.8" ry="1" fill="#ff9b6a" opacity="0.55" />
       <!-- 眯眼（弯月） -->
-      <path class="assistant-fab__eye" d="M16 25 Q19 22 22 25" stroke="#1f2329" stroke-width="1.6" stroke-linecap="round" fill="none" />
-      <path class="assistant-fab__eye" d="M26 25 Q29 22 32 25" stroke="#1f2329" stroke-width="1.6" stroke-linecap="round" fill="none" />
+      <path class="assistant-fab__eye" d="M16 25 Q19 22 22 25" stroke="var(--color-text-primary)" stroke-width="1.6" stroke-linecap="round" fill="none" />
+      <path class="assistant-fab__eye" d="M26 25 Q29 22 32 25" stroke="var(--color-text-primary)" stroke-width="1.6" stroke-linecap="round" fill="none" />
       <!-- 小鼻子 -->
-      <path d="M24 28 L22.5 30 L25.5 30 Z" fill="#1f2329" />
+      <path d="M24 28 L22.5 30 L25.5 30 Z" fill="var(--color-text-primary)" />
       <!-- 小嘴（上扬微笑） -->
-      <path class="assistant-fab__mouth" d="M22 31 Q24 33 26 31" stroke="#1f2329" stroke-width="1.4" stroke-linecap="round" fill="none" />
+      <path class="assistant-fab__mouth" d="M22 31 Q24 33 26 31" stroke="var(--color-text-primary)" stroke-width="1.4" stroke-linecap="round" fill="none" />
       <!-- 眼镜 -->
       <g class="avatar-fox__glasses" opacity="0.85">
-        <circle cx="19" cy="25" r="3.5" stroke="#1f2329" stroke-width="1.1" fill="none" />
-        <circle cx="29" cy="25" r="3.5" stroke="#1f2329" stroke-width="1.1" fill="none" />
-        <path d="M22.5 25 L25.5 25" stroke="#1f2329" stroke-width="1.1" />
+        <circle cx="19" cy="25" r="3.5" stroke="var(--color-text-primary)" stroke-width="1.1" fill="none" />
+        <circle cx="29" cy="25" r="3.5" stroke="var(--color-text-primary)" stroke-width="1.1" fill="none" />
+        <path d="M22.5 25 L25.5 25" stroke="var(--color-text-primary)" stroke-width="1.1" />
       </g>
     </g>
 
@@ -105,16 +105,16 @@
       <ellipse class="assistant-fab__cheek" cx="16" cy="30" rx="2.2" ry="1.2" fill="#ff9bb3" opacity="0.55" />
       <ellipse class="assistant-fab__cheek" cx="32" cy="30" rx="2.2" ry="1.2" fill="#ff9bb3" opacity="0.55" />
       <!-- 猫眼（椭圆竖瞳） -->
-      <ellipse class="assistant-fab__eye" cx="19" cy="27" rx="1.6" ry="2.2" fill="#1f2329" />
-      <ellipse class="assistant-fab__eye" cx="29" cy="27" rx="1.6" ry="2.2" fill="#1f2329" />
+      <ellipse class="assistant-fab__eye" cx="19" cy="27" rx="1.6" ry="2.2" fill="var(--color-text-primary)" />
+      <ellipse class="assistant-fab__eye" cx="29" cy="27" rx="1.6" ry="2.2" fill="var(--color-text-primary)" />
       <ellipse class="assistant-fab__twinkle" cx="19" cy="26" rx="0.5" ry="0.9" fill="#fff" />
       <ellipse class="assistant-fab__twinkle" cx="29" cy="26" rx="0.5" ry="0.9" fill="#fff" />
       <!-- 鼻子 + 小嘴（w 形猫嘴） -->
       <path d="M24 31 L22.5 33 L25.5 33 Z" fill="#ff7ab0" />
-      <path class="assistant-fab__mouth" d="M22 33 Q23 34 24 33 Q25 34 26 33" stroke="#1f2329" stroke-width="1.2" stroke-linecap="round" fill="none" />
+      <path class="assistant-fab__mouth" d="M22 33 Q23 34 24 33 Q25 34 26 33" stroke="var(--color-text-primary)" stroke-width="1.2" stroke-linecap="round" fill="none" />
       <!-- 胡须 -->
-      <path d="M14 31 L18 31 M14 33 L18 32" stroke="#909399" stroke-width="0.6" stroke-linecap="round" />
-      <path d="M34 31 L30 31 M34 33 L30 32" stroke="#909399" stroke-width="0.6" stroke-linecap="round" />
+      <path d="M14 31 L18 31 M14 33 L18 32" stroke="var(--color-muted-text)" stroke-width="0.6" stroke-linecap="round" />
+      <path d="M34 31 L30 31 M34 33 L30 32" stroke="var(--color-muted-text)" stroke-width="0.6" stroke-linecap="round" />
     </g>
 
     <!-- D. 魔法少女（精灵） -->
@@ -150,7 +150,7 @@
       <circle class="assistant-fab__twinkle" cx="19" cy="26.4" r="0.5" fill="#fff" />
       <circle class="assistant-fab__twinkle" cx="29" cy="26.4" r="0.5" fill="#fff" />
       <!-- 微笑 -->
-      <path class="assistant-fab__mouth" d="M21 32 Q24 35 27 32" stroke="#1f2329" stroke-width="1.4" stroke-linecap="round" fill="none" />
+      <path class="assistant-fab__mouth" d="M21 32 Q24 35 27 32" stroke="var(--color-text-primary)" stroke-width="1.4" stroke-linecap="round" fill="none" />
       <!-- 头顶星星闪烁 -->
       <g class="assistant-fab__twinkle-star">
         <path d="M24 3 L24.7 4.5 L26 5 L24.7 5.5 L24 7 L23.3 5.5 L22 5 L23.3 4.5 Z" fill="#ffd54a" />
@@ -172,11 +172,11 @@
         d="M11 22 C12 14, 18 10, 24 10 C30 10, 36 14, 37 22 C34 19, 30 18, 24 18 C18 18, 14 19, 11 22 Z"
         fill="#7c4dff"
       />
-      <path class="assistant-fab__eye" d="M18 25 Q20 22 22 25" stroke="#1f2329" stroke-width="1.6" stroke-linecap="round" fill="none" />
-      <path class="assistant-fab__eye" d="M26 25 Q28 22 30 25" stroke="#1f2329" stroke-width="1.6" stroke-linecap="round" fill="none" />
+      <path class="assistant-fab__eye" d="M18 25 Q20 22 22 25" stroke="var(--color-text-primary)" stroke-width="1.6" stroke-linecap="round" fill="none" />
+      <path class="assistant-fab__eye" d="M26 25 Q28 22 30 25" stroke="var(--color-text-primary)" stroke-width="1.6" stroke-linecap="round" fill="none" />
       <circle class="assistant-fab__twinkle" cx="21" cy="24" r="0.6" fill="#fff" opacity="0.9" />
       <circle class="assistant-fab__twinkle" cx="29" cy="24" r="0.6" fill="#fff" opacity="0.9" />
-      <path class="assistant-fab__mouth" d="M21 31 Q24 34 27 31" stroke="#1f2329" stroke-width="1.4" stroke-linecap="round" fill="none" />
+      <path class="assistant-fab__mouth" d="M21 31 Q24 34 27 31" stroke="var(--color-text-primary)" stroke-width="1.4" stroke-linecap="round" fill="none" />
       <path class="assistant-fab__bangs" d="M13 19 Q15 16 17 18" stroke="#5b3acc" stroke-width="1.2" stroke-linecap="round" fill="none" />
       <path class="assistant-fab__bangs" d="M31 18 Q33 16 35 19" stroke="#5b3acc" stroke-width="1.2" stroke-linecap="round" fill="none" />
     </g>

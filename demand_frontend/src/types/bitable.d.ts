@@ -142,6 +142,8 @@ export interface ViewConfig {
   calendar?: { startFieldId?: number; endFieldId?: number; titleFieldId?: number; colorFieldId?: number }
   gantt?: { startFieldId?: number; endFieldId?: number; dependencyFieldId?: number; milestoneFieldId?: number }
   form?: { fieldOrder?: number[]; hiddenFieldIds?: number[]; requiredFieldIds?: number[]; descriptions?: Record<number, string>; successMessage?: string; redirectUrl?: string }
+  /** 看板视图的分组字段 */
+  kanban?: { groupFieldId?: number }
 }
 
 // 视图

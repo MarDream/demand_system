@@ -1,6 +1,8 @@
 package com.demand.system.module.bitable.controller;
 
 import com.demand.system.common.result.Result;
+import com.demand.system.module.auth.security.SecurityUtils;
+import com.demand.system.module.bitable.service.BitableAuthorizationService;
 import com.demand.system.module.bitable.service.BitableFormulaService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -15,9 +17,12 @@ import java.util.Map;
 public class BitableFormulaController {
 
     private final BitableFormulaService bitableFormulaService;
+    private final BitableAuthorizationService authorizationService;
 
-    public BitableFormulaController(BitableFormulaService bitableFormulaService) {
+    public BitableFormulaController(BitableFormulaService bitableFormulaService,
+                                    BitableAuthorizationService authorizationService) {
         this.bitableFormulaService = bitableFormulaService;
+        this.authorizationService = authorizationService;
     }
 
     /**
@@ -31,11 +36,22 @@ public class BitableFormulaController {
         Object tableIdObj = request.get("tableId");
         Long tableId = null;
         if (tableIdObj != null) {
-            tableId = Long.valueOf(tableIdObj.toString());
+            try {
+                tableId = Long.valueOf(tableIdObj.toString());
+            } catch (NumberFormatException e) {
+                return Result.fail("tableId 格式错误");
+            }
         }
 
         if (formula == null || formula.isBlank()) {
             return Result.fail("公式不能为空");
+        }
+
+        // 指定表时校验读取权限，防止借助字段名解析探测任意表的字段
+        if (tableId != null) {
+            Long userId = SecurityUtils.getCurrentUserId();
+            Long baseId = authorizationService.getBaseIdByTableId(tableId);
+            authorizationService.checkReadPermission(baseId, userId);
         }
 
         Map<String, Object> result = bitableFormulaService.validateFormula(formula, tableId);

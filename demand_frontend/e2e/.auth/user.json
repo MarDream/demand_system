@@ -1,0 +1,25 @@
+{
+  "cookies": [
+    {
+      "name": "access_token",
+      "value": "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbiIsInVzZXJJZCI6MSwicm9sZXMiOlsiYWRtaW4iLCJTVVBFUl9BRE1JTiJdLCJpYXQiOjE3ODkxODM0ODEsImV4cCI6MTc4OTE5MDY4MX0.bjimT3IW8p1TjNJ7jX98aMJD9qmmsTXCL-zK1-m0FRkTVkaK28v5KcD2HBsMgb9U5MZtzzOkMu6gWWnNt3uwpw",
+      "domain": "localhost",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "refresh_token",
+      "value": "e6a4137f-50ab-40c6-9deb-1b17aa064426",
+      "domain": "localhost",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": []
+}
