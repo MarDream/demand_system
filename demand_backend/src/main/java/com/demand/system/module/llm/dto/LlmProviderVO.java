@@ -8,6 +8,7 @@ public class LlmProviderVO {
     private String name;
     private String protocol;
     private String baseUrl;
+    private String websiteUrl;
     private String maskedApiKey;
     private Boolean enabled;
     private List<LlmModelVO> models;
@@ -22,6 +23,8 @@ public class LlmProviderVO {
     public void setProtocol(String protocol) { this.protocol = protocol; }
     public String getBaseUrl() { return baseUrl; }
     public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
+    public String getWebsiteUrl() { return websiteUrl; }
+    public void setWebsiteUrl(String websiteUrl) { this.websiteUrl = websiteUrl; }
     public String getMaskedApiKey() { return maskedApiKey; }
     public void setMaskedApiKey(String maskedApiKey) { this.maskedApiKey = maskedApiKey; }
     public Boolean getEnabled() { return enabled; }

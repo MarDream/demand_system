@@ -71,6 +71,8 @@ public class LlmProviderServiceImpl implements LlmProviderService {
         entity.setName(dto.getName());
         entity.setProtocol(dto.getProtocol());
         entity.setBaseUrl(dto.getBaseUrl());
+        entity.setWebsiteUrl(dto.getWebsiteUrl() != null && !dto.getWebsiteUrl().isBlank()
+                ? dto.getWebsiteUrl().trim() : null);
         entity.setEnabled(dto.getEnabled());
 
         if (dto.getApiKey() != null && !dto.getApiKey().isEmpty() && !dto.getApiKey().contains("****")) {
@@ -376,6 +378,42 @@ public class LlmProviderServiceImpl implements LlmProviderService {
             vo.setAlreadyExists(existingModelIds.contains(m.getId()));
             return vo;
         }).collect(Collectors.toList());
+    }
+
+    @Override
+    public LlmTestResultVO testProviderConfig(LlmProviderTestDTO dto) {
+        LlmGatewayConfig.Provider gwProvider = new LlmGatewayConfig.Provider();
+        gwProvider.setProtocol(dto.getProtocol());
+        gwProvider.setBaseUrl(dto.getBaseUrl());
+        // 与 update 的语义一致：空 Key 或打码值（含****）都视为"未修改"，复用已保存的 Key
+        String apiKey = dto.getApiKey();
+        if ((apiKey == null || apiKey.isBlank() || apiKey.contains("****")) && dto.getProviderId() != null) {
+            LlmProvider existing = providerMapper.selectById(dto.getProviderId());
+            if (existing != null) {
+                apiKey = existing.getApiKey();
+            }
+        }
+        gwProvider.setApiKey(apiKey);
+
+        long start = System.currentTimeMillis();
+        try {
+            List<LlmGateway.ModelInfo> models = llmGateway.fetchModelList(gwProvider);
+            return LlmTestResultVO.builder()
+                    .success(true)
+                    .durationMs(System.currentTimeMillis() - start)
+                    .content("连接成功，发现 " + models.size() + " 个可用模型")
+                    .build();
+        } catch (Exception e) {
+            String reason = e.getMessage();
+            if (reason != null && reason.startsWith("获取模型列表失败: ")) {
+                reason = reason.substring("获取模型列表失败: ".length());
+            }
+            return LlmTestResultVO.builder()
+                    .success(false)
+                    .durationMs(System.currentTimeMillis() - start)
+                    .errorMessage(reason != null ? reason : "连接失败")
+                    .build();
+        }
     }
 
     // ==================== Private ====================

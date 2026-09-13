@@ -28,7 +28,7 @@
                 SELECT COUNT(*) AS cnt FROM question_logs
                 WHERE created_at >= DATE_SUB(NOW(), INTERVAL #{windowDays} DAY)
                 GROUP BY question_hash
-            ) AS sub)), 1) * 0.7 + COALESCE(AVG(ql.response_rating), 1) * 0.3, 2), 1.00) AS aiConfidence,
+            ) AS sub), 1)) * 0.7 + COALESCE(AVG(ql.response_rating), 1) * 0.3, 2), 1.00) AS aiConfidence,
             MAX(ql.created_at) AS lastAskedAt,
             CASE
                 WHEN COUNT(*) >= 20 THEN '丰富'

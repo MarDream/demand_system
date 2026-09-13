@@ -1,7 +1,8 @@
 package com.demand.system.module.bitable.dto;
 
 /**
- * 多维表格-更新字段的DTO
+ * 多维表格-更新字段的DTO。
+ * required/isAiField 为 0/1 语义；前端传 boolean 时由 JacksonCoercionConfig 全局宽松化处理。
  */
 public class BitableFieldUpdateDTO {
 

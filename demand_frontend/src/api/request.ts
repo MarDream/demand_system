@@ -44,6 +44,16 @@ function isAuthExpired(code?: number) {
   return code === 401
 }
 
+/**
+ * 构造带标记的 API 错误：拦截器自身不再弹提示，
+ * 已被调用方 catch 的错误由调用方弹一次；
+ * 未被 catch 的由 main.ts 的 unhandledrejection 兜底弹一次，
+ * 两边配合保证每个失败请求只出现一条错误提示。
+ */
+function apiReject(message: string, code?: number, extra?: Record<string, unknown>) {
+  return Promise.reject(Object.assign(new Error(message), { code, apiError: true }, extra))
+}
+
 service.interceptors.request.use(
   (config) => {
     const token = getToken()
@@ -64,12 +74,11 @@ service.interceptors.response.use(
     }
     const res = response.data
     if (res.code !== 200) {
-      ElMessage.error(res.message || '请求失败')
       if (isAuthExpired(res.code)) {
         handleAuthExpired(window.location.pathname + window.location.search + window.location.hash)
       }
       // 在 Error 上附加业务码，便于业务 catch 区分（如业务 403 已弹过提示则静默）
-      return Promise.reject(Object.assign(new Error(res.message || '请求失败'), { code: res.code }))
+      return apiReject(res.message || '请求失败', res.code)
     }
     return res.data as unknown as AxiosResponse
   },
@@ -156,27 +165,24 @@ service.interceptors.response.use(
       }
 
       // 真正的 403 业务权限不足
-      ElMessage.error(msg)
       // 已登录用户的业务 403（如越权操作）只是拒绝操作，不踢出。
       // 登录页面的 403（Invalid CORS）在上面已拦截，到这里的 403 即使是未登录用户
       // 也由登录页的 catch 处理，不在此处调用 handleAuthExpired 以免误跳转。
       // 优先保留后端 body.code（可能与 403 不同，如细粒度权限码），确保 error.code 语义稳定
       const bodyCode = (error.response?.data as ApiResponse | undefined)?.code
-      return Promise.reject(Object.assign(new Error(msg), { code: bodyCode ?? 403 }))
+      return apiReject(msg, bodyCode ?? 403)
     }
 
     // 网络错误（包括 CORS 被浏览器拦截无法获取响应的情况）
     if (!error.response) {
-      ElMessage.error('网络连接异常，请检查网络或后端服务是否正常')
-      return Promise.reject(error)
+      return apiReject('网络连接异常，请检查网络或后端服务是否正常')
     }
 
     // 其他 HTTP 错误：提取后端返回的 message，而非暴露 HTTP 状态码
     const msg = resolveErrorMessage(error, '网络异常')
-    ElMessage.error(msg)
     // 优先保留后端 body.code（细分业务码），确保依赖 error.code 的既有逻辑（如 detail.vue 的 403 分支）零回归
     const bodyCode = (error.response?.data as ApiResponse | undefined)?.code
-    return Promise.reject(Object.assign(new Error(msg), { code: bodyCode ?? error.response?.status }))
+    return apiReject(msg, bodyCode ?? error.response?.status)
   },
 )
 

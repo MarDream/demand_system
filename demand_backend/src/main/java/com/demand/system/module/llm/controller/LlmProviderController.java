@@ -130,6 +130,15 @@ public class LlmProviderController {
         return ResponseEntity.ok(Map.of("code", 200, "message", "测试完成", "data", result));
     }
 
+    /** 保存前测试接入配置连通性（不落库）；编辑态 apiKey 留空时复用该接入组已保存的 Key。 */
+    @PostMapping("/test-config")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:llm-provider:test')")
+    public ResponseEntity<Map<String, Object>> testProviderConfig(
+            @Validated @RequestBody LlmProviderTestDTO dto) {
+        LlmTestResultVO result = providerService.testProviderConfig(dto);
+        return ResponseEntity.ok(Map.of("code", 200, "message", "测试完成", "data", result));
+    }
+
     // ==================== Roles ====================
 
     @GetMapping("/models/roles")

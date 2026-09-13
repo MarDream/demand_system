@@ -97,13 +97,24 @@
 
       <div class="assistant-panel" :class="{ 'assistant-panel--fullscreen': assistantFullscreen }">
         <div class="assistant-panel__body">
-          <aside class="assistant-session-list">
+          <aside class="assistant-session-list" :class="{ 'is-collapsed': sessionListCollapsed }">
+            <template v-if="!sessionListCollapsed">
             <div class="assistant-session-list__header">
               <el-icon class="assistant-session-list__header-icon"><Folder /></el-icon>
               <span>会话</span>
               <el-tooltip content="新会话" placement="right">
                 <button type="button" class="assistant-session-list__new-btn" @click="handleCreateSession">
                   <el-icon><Plus /></el-icon>
+                </button>
+              </el-tooltip>
+              <el-tooltip :content="sessionListCollapsed ? '展开会话栏' : '收起会话栏'" placement="right">
+                <button
+                  type="button"
+                  class="assistant-session-list__fold-btn"
+                  :aria-label="sessionListCollapsed ? '展开会话栏' : '收起会话栏'"
+                  @click="toggleSessionList"
+                >
+                  <el-icon><Fold /></el-icon>
                 </button>
               </el-tooltip>
             </div>
@@ -163,6 +174,22 @@
             <!-- 底部信息 -->
             <div class="assistant-session-list__footer">
               {{ sessions.length }} 个会话
+            </div>
+            </template>
+
+            <!-- 收起态：窄条，仅保留展开按钮 -->
+            <div v-else class="assistant-session-list__rail">
+              <el-tooltip content="展开会话栏" placement="right">
+                <button
+                  type="button"
+                  class="assistant-session-list__fold-btn"
+                  aria-label="展开会话栏"
+                  @click="toggleSessionList"
+                >
+                  <el-icon><Expand /></el-icon>
+                </button>
+              </el-tooltip>
+              <span class="assistant-session-list__rail-text">会话</span>
             </div>
           </aside>
 
@@ -664,7 +691,7 @@ import type { CSSProperties } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ChatDotRound, CopyDocument, Cpu, Delete, Document, FolderAdd, InfoFilled, MagicStick, Promotion, ArrowDown, FullScreen, RefreshRight, ScaleToOriginal, Plus, Close, VideoPause, Link, Search, Folder, CaretRight } from '@element-plus/icons-vue'
+import { ChatDotRound, CopyDocument, Cpu, Delete, Document, FolderAdd, InfoFilled, MagicStick, Promotion, ArrowDown, FullScreen, RefreshRight, ScaleToOriginal, Plus, Close, VideoPause, Link, Search, Folder, CaretRight, Fold, Expand } from '@element-plus/icons-vue'
 import MarkdownContent from '@/components/common/MarkdownContent.vue'
 import FollowUpChips from '@/components/assistant/FollowUpChips.vue'
 import AssistantAvatar from '@/components/assistant/avatars/AssistantAvatar.vue'
@@ -703,6 +730,26 @@ const quickQuestions = useQuickQuestions({
 const sessionSearchKeyword = ref('')
 // 历史会话按时间分组，各组可独立折叠；折叠偏好持久化到 localStorage
 const { toggle: toggleGroupFold, isFolded: isGroupFolded } = useFoldState('assistant.session-groups-folded')
+
+// ===== 会话侧栏收起/展开 =====
+// 收起后侧栏变为窄条（仅保留展开按钮），偏好持久化到 localStorage
+const SESSION_LIST_COLLAPSED_KEY = 'assistant.session-list-collapsed'
+const sessionListCollapsed = ref((() => {
+  try {
+    return window.localStorage.getItem(SESSION_LIST_COLLAPSED_KEY) === '1'
+  } catch {
+    return false
+  }
+})())
+
+function toggleSessionList() {
+  sessionListCollapsed.value = !sessionListCollapsed.value
+  try {
+    window.localStorage.setItem(SESSION_LIST_COLLAPSED_KEY, sessionListCollapsed.value ? '1' : '0')
+  } catch {
+    // 存储不可用时静默降级
+  }
+}
 
 interface SessionGroup {
   key: string
@@ -2207,6 +2254,7 @@ onBeforeUnmount(() => {
   border-right: 1px solid var(--color-border);
   background: var(--color-background);
   overflow: hidden;
+  transition: width 0.2s ease;
 }
 
 .assistant-session-list__header {
@@ -2245,6 +2293,46 @@ onBeforeUnmount(() => {
 .assistant-session-list__new-btn:hover {
   background: #e2e8f0;
   color: var(--color-text-primary);
+}
+
+.assistant-session-list__fold-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.15s;
+}
+
+.assistant-session-list__fold-btn:hover {
+  background: var(--color-surface-alt);
+  color: var(--color-text-primary);
+}
+
+.assistant-session-list.is-collapsed {
+  width: 44px;
+}
+
+.assistant-session-list__rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding-top: 10px;
+  width: 100%;
+}
+
+.assistant-session-list__rail-text {
+  writing-mode: vertical-lr;
+  letter-spacing: 2px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
 }
 
 .assistant-session-list__search {

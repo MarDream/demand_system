@@ -3,7 +3,8 @@ package com.demand.system.module.bitable.dto;
 import jakarta.validation.constraints.NotBlank;
 
 /**
- * 多维表格-创建字段的DTO
+ * 多维表格-创建字段的DTO。
+ * required/isAiField 为 0/1 语义；前端传 boolean 时由 JacksonCoercionConfig 全局宽松化处理。
  */
 public class BitableFieldCreateDTO {
 

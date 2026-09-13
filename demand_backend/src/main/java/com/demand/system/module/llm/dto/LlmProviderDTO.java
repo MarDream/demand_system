@@ -9,6 +9,8 @@ public class LlmProviderDTO {
     private String protocol;
     @NotBlank(message = "API Base URL不能为空")
     private String baseUrl;
+    /** 官网地址（可选）。 */
+    private String websiteUrl;
     private String apiKey;
     private Boolean enabled = true;
 
@@ -18,6 +20,8 @@ public class LlmProviderDTO {
     public void setProtocol(String protocol) { this.protocol = protocol; }
     public String getBaseUrl() { return baseUrl; }
     public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
+    public String getWebsiteUrl() { return websiteUrl; }
+    public void setWebsiteUrl(String websiteUrl) { this.websiteUrl = websiteUrl; }
     public String getApiKey() { return apiKey; }
     public void setApiKey(String apiKey) { this.apiKey = apiKey; }
     public Boolean getEnabled() { return enabled; }

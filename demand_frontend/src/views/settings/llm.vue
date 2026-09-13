@@ -70,7 +70,18 @@
                       {{ p.protocol === 'openai' ? 'OpenAI' : 'Anthropic' }}
                     </el-tag>
                   </div>
-                  <div class="provider-meta">{{ p.baseUrl }}</div>
+                  <div class="provider-meta">
+                    {{ p.baseUrl }}
+                    <a
+                      v-if="p.websiteUrl"
+                      :href="normalizeWebsiteUrl(p.websiteUrl)"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="provider-website-link"
+                      title="打开官网"
+                      @click.stop
+                    ><el-icon><Link /></el-icon></a>
+                  </div>
                 </div>
                 <div class="provider-item-right">
                   <span v-permission="'button:llm-provider:update'">
@@ -151,7 +162,7 @@
                   @click="openColumnConfig"
                 />
               </el-tooltip>
-              <el-tooltip content="批量测试所有模型连通性" placement="top">
+              <el-tooltip :content="modelTypeFilter === 'all' ? '批量测试所有模型连通性' : `批量测试「${activeModelTypeLabel}」类型的模型连通性`" placement="top">
                 <AppButton
                   size="small"
                   :icon="Connection"
@@ -170,13 +181,18 @@
 
           <!-- 模型类型快捷筛选 -->
           <div class="model-type-filter">
-            <span
+            <el-tooltip
               v-for="ft in modelTypeFilters"
               :key="ft.value"
-              class="model-type-filter-item"
-              :class="{ 'is-active': modelTypeFilter === ft.value }"
-              @click="modelTypeFilter = ft.value"
-            >{{ ft.label }} <sup v-if="ft.count > 0">{{ ft.count }}</sup></span>
+              :content="MODEL_TYPE_HINTS[ft.value]"
+              placement="bottom"
+            >
+              <span
+                class="model-type-filter-item"
+                :class="{ 'is-active': modelTypeFilter === ft.value }"
+                @click="modelTypeFilter = ft.value"
+              >{{ ft.label }} <sup v-if="ft.count > 0">{{ ft.count }}</sup></span>
+            </el-tooltip>
           </div>
 
           <el-table :data="pagedModels" border style="width: 100%" size="small" row-key="id" :row-class-name="modelRowClassName" @selection-change="handleModelSelectionChange">
@@ -358,6 +374,9 @@
           <el-form-item label="API Base URL" prop="baseUrl">
             <el-input v-model="providerForm.baseUrl" placeholder="https://api.openai.com" />
           </el-form-item>
+          <el-form-item label="官网地址" prop="websiteUrl">
+            <el-input v-model="providerForm.websiteUrl" placeholder="https://example.com（可选）" clearable />
+          </el-form-item>
           <el-form-item label="API Key" prop="apiKey">
             <el-input
               v-model="providerForm.apiKey"
@@ -371,6 +390,25 @@
                 </el-icon>
               </template>
             </el-input>
+          </el-form-item>
+          <el-form-item label-width="126px">
+            <div class="provider-test-row">
+              <AppButton
+                size="small"
+                :icon="Connection"
+                :loading="providerTesting"
+                :disabled="!providerForm.baseUrl"
+                permission="button:llm-provider:test"
+                @click="handleTestProviderConfig"
+              >
+                测试连通性
+              </AppButton>
+              <span v-if="providerTestResult" class="provider-test-result" :class="providerTestResult.success ? 'is-success' : 'is-fail'">
+                {{ providerTestResult.success
+                  ? `连接成功（${providerTestResult.durationMs}ms）${providerTestResult.content ?? ''}`
+                  : `连接失败：${providerTestResult.errorMessage ?? '未知错误'}` }}
+              </span>
+            </div>
           </el-form-item>
         </section>
       </el-form>
@@ -458,12 +496,20 @@
     <el-dialog v-model="sniffDialogVisible" title="嗅探模型" width="620px">
       <div v-loading="sniffing" style="min-height: 100px;">
         <el-alert
-          v-if="!sniffing && sniffedModels.length > 0"
+          v-if="!sniffing && sniffedModels.length > 0 && modelTypeFilter === 'all'"
           type="info"
           :closable="false"
           style="margin-bottom: 12px;"
         >
           发现 {{ sniffedModels.length }} 个可用模型，已自动选择未导入的模型。已导入的模型将显示为灰色。
+        </el-alert>
+        <el-alert
+          v-if="!sniffing && sniffedModels.length > 0 && modelTypeFilter !== 'all'"
+          type="info"
+          :closable="false"
+          style="margin-bottom: 12px;"
+        >
+          当前仅显示「{{ activeModelTypeLabel }}」类型：{{ typeFilteredSniffedCount }} / {{ sniffedModels.length }} 个（按模型名称识别，未匹配的不展示）。切换到「全部」可查看所有嗅探结果。
         </el-alert>
         <el-empty v-if="!sniffing && sniffedModels.length === 0" description="未发现可用模型" />
         <template v-if="sniffedModels.length > 0">
@@ -630,7 +676,27 @@
                 <div>
                   <div class="application-name">
                     <span>{{ application.name }}</span>
-                    <el-tag v-if="application.modelType === 'vision'" type="warning" size="small">多模态</el-tag>
+                    <el-popover
+                      trigger="click"
+                      placement="bottom-start"
+                      :width="300"
+                      popper-class="application-type-popover"
+                    >
+                      <template #reference>
+                        <el-tag
+                          size="small"
+                          :type="applicationModelTypeMeta(application).tagType"
+                          class="application-type-badge"
+                        >
+                          <el-icon class="application-type-badge-icon"><InfoFilled /></el-icon>
+                          {{ applicationModelTypeMeta(application).label }}
+                        </el-tag>
+                      </template>
+                      <div class="application-type-hint">
+                        <div class="application-type-hint-title">可选模型类型说明</div>
+                        <p>{{ applicationModelTypeMeta(application).hint }}</p>
+                      </div>
+                    </el-popover>
                   </div>
                   <div class="application-code">{{ application.code }}</div>
                 </div>
@@ -701,7 +767,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Loading, View, Hide, Setting, EditPen, Delete, Connection, Search, Document, ArrowLeft, ArrowRight, Fold } from '@element-plus/icons-vue'
+import { Plus, Loading, View, Hide, Setting, EditPen, Delete, Connection, Search, Document, ArrowLeft, ArrowRight, Fold, InfoFilled, Link } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
   llmProviderApi,
@@ -711,6 +777,7 @@ import {
   type LlmModelForm,
   type SniffedModel,
   type LlmApplication,
+  type LlmTestResult,
 } from '@/api/modules/llmProvider'
 import { getRagConfig, type RagConfig } from '@/api/modules/knowledge'
 import { resolveErrorMessage } from '@/utils/error'
@@ -794,6 +861,17 @@ const providerPanel = useCollapsibleSidebar({
 
 // 模型类型快捷筛选
 const modelTypeFilter = ref('all')
+// 各模型类型的用途说明（悬浮提示 + 嗅探过滤提示）
+const MODEL_TYPE_HINTS: Record<string, string> = {
+  all: '全部类型的模型',
+  chat: '对话模型：用于 AI 助手、知识库问答、意图识别、文本翻译等 LLM 推理任务',
+  embedding: '向量化模型：将文本转为向量，用于知识库检索与相似度匹配，输出维度需与 Milvus 集合一致',
+  rerank: '重排模型：对知识库召回的片段做相关性精排，提升检索命中质量',
+  vision: '多模态模型：同时理解图片与文字输入，用于工单图片识别等多模态任务',
+}
+const activeModelTypeLabel = computed(() =>
+  modelTypeFilters.value.find(ft => ft.value === modelTypeFilter.value)?.label ?? modelTypeFilter.value
+)
 const modelTypeFilters = computed(() => {
   const all = selectedProviderModels.value
   const countByType = (type: string) => type === 'all'
@@ -865,6 +943,7 @@ const providerForm = reactive<LlmProviderForm>({
   name: '',
   protocol: 'openai',
   baseUrl: '',
+  websiteUrl: '',
   apiKey: '',
   enabled: true,
 })
@@ -873,6 +952,32 @@ const providerRules = reactive<FormRules>({
   protocol: [{ required: true, message: '请选择协议类型', trigger: 'change' }],
   baseUrl: [{ required: true, message: '请输入 API Base URL', trigger: 'blur' }],
 })
+
+// 接入组保存前连通性测试
+const providerTesting = ref(false)
+const providerTestResult = ref<LlmTestResult | null>(null)
+
+async function handleTestProviderConfig() {
+  if (!providerForm.baseUrl) {
+    ElMessage.warning('请先填写 API Base URL')
+    return
+  }
+  providerTesting.value = true
+  providerTestResult.value = null
+  try {
+    const res = await llmProviderApi.testProviderConfig({
+      providerId: editingProviderId.value ?? undefined,
+      protocol: providerForm.protocol,
+      baseUrl: providerForm.baseUrl,
+      apiKey: providerForm.apiKey || undefined,
+    }) as any
+    providerTestResult.value = res?.data ?? res ?? null
+  } catch (error) {
+    // 错误提示由 request 拦截器统一弹出，这里不再重复 toast
+  } finally {
+    providerTesting.value = false
+  }
+}
 
 // Model dialog
 const modelDialogVisible = ref(false)
@@ -919,13 +1024,28 @@ const sniffSelectedModelIds = ref<string[]>([])
 const sniffProviderId = ref<number | null>(null)
 const sniffSearchKeyword = ref('')
 
+/**
+ * 模型是否属于指定类型 tab（嗅探结果过滤用，与表格筛选口径一致）。
+ * 嗅探类型按名称推断：general 即对话类。
+ */
+function sniffedModelMatchesType(inferredType: string, type: string): boolean {
+  if (type === 'all') return true
+  if (type === 'chat') return inferredType !== 'embedding' && inferredType !== 'rerank' && inferredType !== 'vision'
+  return inferredType === type
+}
+
 const filteredSniffedModels = computed(() => {
+  let list = sniffedModels.value.filter(m => sniffedModelMatchesType(m.inferredType || inferModelType(m.modelId), modelTypeFilter.value))
   const kw = sniffSearchKeyword.value.trim().toLowerCase()
-  if (!kw) return sniffedModels.value
-  return sniffedModels.value.filter(m =>
-    m.modelId.toLowerCase().includes(kw) || (m.ownedBy?.toLowerCase().includes(kw))
-  )
+  if (kw) {
+    list = list.filter(m =>
+      m.modelId.toLowerCase().includes(kw) || (m.ownedBy?.toLowerCase().includes(kw))
+    )
+  }
+  return list
 })
+
+const typeFilteredSniffedCount = computed(() => filteredSniffedModels.value.length)
 
 const sniffIsAllFilteredSelected = computed(() => {
   const selectable = filteredSniffedModels.value.filter(m => !m.alreadyExists)
@@ -1007,6 +1127,40 @@ function isImageUnderstandingApplication(application: LlmApplication) {
   return application.code === 'knowledge.image-understanding'
 }
 
+// 每个功能点可选的模型类型说明（角标点击展示）
+const APPLICATION_MODEL_TYPE_META: Record<string, { label: string; tagType: 'primary' | 'success' | 'info' | 'warning' | 'danger'; hint: string }> = {
+  chat: {
+    label: '对话模型',
+    tagType: 'primary',
+    hint: '可绑定对话类或多模态（vision）模型（排除 Embedding / Reranker）。未单独指定时自动回退到全局默认对话模型。',
+  },
+  embedding: {
+    label: 'Embedding',
+    tagType: 'info',
+    hint: '仅可绑定 Embedding 向量化模型，输出维度需与向量库集合一致；用于文档切片与查询向量生成。',
+  },
+  rerank: {
+    label: 'Reranker',
+    tagType: 'danger',
+    hint: '仅可绑定 Reranker 重排模型，对检索结果做相关性精排，提升检索命中质量。',
+  },
+  vision: {
+    label: '多模态',
+    tagType: 'warning',
+    hint: '仅可绑定多模态（vision）模型，可理解图片中的文字、图表与页面内容；未配置时该功能将自动跳过图片处理。',
+  },
+}
+
+function applicationModelTypeMeta(application: LlmApplication) {
+  const meta = APPLICATION_MODEL_TYPE_META[application.modelType]
+  if (meta) return meta
+  return {
+    label: application.modelType || '通用',
+    tagType: 'info' as const,
+    hint: `仅可绑定「${application.modelType || '通用'}」类型的模型；未单独指定时自动回退到全局默认模型。`,
+  }
+}
+
 function applicationModelLabel(application: LlmApplication) {
   return application.modelType === 'vision' ? '多模态模型' : '默认模型'
 }
@@ -1073,6 +1227,7 @@ function resetProviderForm() {
   providerForm.name = ''
   providerForm.protocol = 'openai'
   providerForm.baseUrl = ''
+  providerForm.websiteUrl = ''
   providerForm.apiKey = ''
   providerForm.enabled = true
   providerFormRef.value?.resetFields()
@@ -1080,6 +1235,7 @@ function resetProviderForm() {
 
 function openCreateProvider() {
   resetProviderForm()
+  providerTestResult.value = null
   providerDialogVisible.value = true
 }
 
@@ -1089,9 +1245,17 @@ function openEditProvider(row: LlmProvider) {
   providerForm.name = row.name
   providerForm.protocol = row.protocol
   providerForm.baseUrl = row.baseUrl
+  providerForm.websiteUrl = row.websiteUrl ?? ''
   providerForm.apiKey = row.maskedApiKey
   providerForm.enabled = row.enabled
+  providerTestResult.value = null
   providerDialogVisible.value = true
+}
+
+/** 官网地址未带协议时补 https://，避免渲染成相对链接。 */
+function normalizeWebsiteUrl(url: string): string {
+  if (!url) return ''
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`
 }
 
 async function handleProviderSubmit() {
@@ -1351,15 +1515,20 @@ async function handleBatchTest() {
   }
 
   batchTesting.value = true
-  const models = selectedProviderModels.value.filter(m => m.enabled)
+  // 仅测试当前类型 tab 下的模型；"全部"tab 才测试所有模型
+  const models = selectedProviderModels.value
+    .filter(m => m.enabled)
+    .filter(m => sniffedModelMatchesType(m.modelType || 'chat', modelTypeFilter.value))
 
   if (models.length === 0) {
-    ElMessage.warning('没有启用的模型可测试')
+    ElMessage.warning(modelTypeFilter.value === 'all' ? '没有启用的模型可测试' : `「${activeModelTypeLabel.value}」类型下没有启用的模型可测试`)
     batchTesting.value = false
     return
   }
 
-  ElMessage.info(`开始并行测试 ${models.length} 个模型...`)
+  ElMessage.info(modelTypeFilter.value === 'all'
+    ? `开始并行测试 ${models.length} 个模型...`
+    : `开始并行测试「${activeModelTypeLabel.value}」类型的 ${models.length} 个模型...`)
 
   let successCount = 0
   let failCount = 0
@@ -1491,6 +1660,7 @@ function sniffTypeTagType(modelType: string): string {
   const map: Record<string, string> = {
     embedding: 'info',
     rerank: 'danger',
+    vision: 'warning',
   }
   return map[modelType] ?? 'info'
 }
@@ -1511,9 +1681,12 @@ async function handleSniff(row: LlmProvider) {
       ...m,
       inferredType: m.inferredType || inferModelType(m.modelId),
     }))
-    sniffSelectedModelIds.value = sniffedModels.value.filter((m: SniffedModel) => !m.alreadyExists).map((m: SniffedModel) => m.modelId)
+    // 仅自动勾选当前类型 tab 匹配且未导入的模型
+    sniffSelectedModelIds.value = sniffedModels.value
+      .filter((m: SniffedModel) => !m.alreadyExists && sniffedModelMatchesType(m.inferredType, modelTypeFilter.value))
+      .map((m: SniffedModel) => m.modelId)
   } catch (error) {
-    ElMessage.error(formatSniffError(error))
+    // 错误提示由 request 拦截器统一弹出，这里不再重复 toast
     sniffDialogVisible.value = false
   } finally {
     sniffing.value = false
@@ -1522,8 +1695,9 @@ async function handleSniff(row: LlmProvider) {
 
 /**
  * 根据模型 ID 推断 modelType：
- * - embedding: 包含 embed/embedding/text-embedding/bge/m3e/gte 等关键词
  * - rerank: 包含 rerank/reranker 等关键词
+ * - embedding: 包含 embed/embedding/text-embedding/bge/m3e/gte 等关键词
+ * - vision: 包含 vision/vl/omni/4v 等多模态关键词
  * - 其他: general
  */
 function inferModelType(modelId: string): string {
@@ -1541,6 +1715,16 @@ function inferModelType(modelId: string): string {
   ) {
     return 'embedding'
   }
+  if (
+    id.includes('vision') ||
+    id.includes('vl-') ||
+    id.includes('-vl') ||
+    id.includes('omni') ||
+    id.includes('4v') ||
+    id.includes('internvl')
+  ) {
+    return 'vision'
+  }
   return 'general'
 }
 
@@ -1556,11 +1740,6 @@ function formatCreatedDate(val: number | null): string {
   const d = new Date(val * 1000)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
-
-function formatSniffError(error: unknown): string {
-  const message = resolveErrorMessage(error, '')
-  return message ? `嗅探模型失败：${message}` : '嗅探模型失败，请检查接入配置'
 }
 
 async function handleSniffImport() {
@@ -1595,7 +1774,7 @@ async function handleSniffImport() {
     sniffDialogVisible.value = false
     await loadProviders()
   } catch (error) {
-    ElMessage.error(resolveErrorMessage(error, '导入模型失败'))
+    // 错误提示由 request 拦截器统一弹出，这里不再重复 toast
   } finally {
     submitting.value = false
   }
@@ -1777,6 +1956,17 @@ async function handleSniffImport() {
   white-space: nowrap;
 }
 
+.provider-website-link {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 6px;
+  color: #9ca3af;
+
+  &:hover { color: var(--el-color-primary); }
+
+  .el-icon { font-size: 13px; }
+}
+
 .provider-item-right {
   display: flex;
   flex-direction: column;
@@ -1904,6 +2094,22 @@ async function handleSniffImport() {
 
 .provider-form {
   .el-form-item { margin-bottom: 18px; }
+}
+
+.provider-test-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-height: 24px;
+}
+
+.provider-test-result {
+  font-size: 12px;
+  line-height: 1.5;
+
+  &.is-success { color: var(--el-color-success); }
+  &.is-fail { color: var(--el-color-danger); }
 }
 
 .form-row {
@@ -2364,6 +2570,29 @@ async function handleSniffImport() {
   min-height: 24px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+
+.application-type-badge {
+  cursor: pointer;
+  font-weight: 400;
+}
+
+.application-type-badge-icon {
+  vertical-align: -2px;
+  margin-right: 2px;
+}
+
+.application-type-hint-title {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  margin-bottom: 6px;
+}
+
+.application-type-hint p {
+  margin: 0;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 </style>

@@ -40,4 +40,10 @@ public interface LlmProviderService {
 
     // Sniff
     List<SniffedModelVO> sniffModels(Long id);
+
+    /**
+     * 按提交的接入配置测试连通性（不落库），成功时返回发现的模型数量。
+     * apiKey 为空且 dto.providerId 非空时，使用该接入组已保存的 Key。
+     */
+    LlmTestResultVO testProviderConfig(LlmProviderTestDTO dto);
 }

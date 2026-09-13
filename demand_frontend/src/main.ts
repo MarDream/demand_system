@@ -77,5 +77,20 @@ app.config.errorHandler = (err, _instance, info) => {
   }
 }
 
+// API 错误统一兜底：request.ts 拦截器只负责打标记不再弹提示，
+// 被 catch 的错误由调用方弹一次；未被 catch 的在此兜底弹一次，
+// 两边配合保证每个失败请求只出现一条错误提示。
+window.addEventListener('unhandledrejection', (event) => {
+  const reason = event.reason as (Error & { apiError?: boolean }) | null
+  if (reason && reason.apiError) {
+    event.preventDefault()
+    const now = Date.now()
+    if (now - lastErrorToastAt > 300) {
+      lastErrorToastAt = now
+      ElMessage.error(reason.message || '请求失败')
+    }
+  }
+})
+
 app.mount('#app')
 setupDialogEnhancer()

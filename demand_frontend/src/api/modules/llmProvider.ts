@@ -7,6 +7,7 @@ export interface LlmProvider {
   name: string
   protocol: 'openai' | 'anthropic'
   baseUrl: string
+  websiteUrl?: string | null
   maskedApiKey: string
   enabled: boolean
   models?: LlmModel[]
@@ -18,6 +19,7 @@ export interface LlmProviderForm {
   name: string
   protocol: string
   baseUrl: string
+  websiteUrl?: string | null
   apiKey: string
   enabled: boolean
 }
@@ -188,4 +190,8 @@ export const llmProviderApi = {
   // Sniff
   sniffModels: (id: number) =>
     request.post<SniffedModel[]>(`/v1/llm-providers/${id}/sniff-models`, null, { timeout: 30000 }),
+
+  // 保存前测试接入配置连通性（不落库）
+  testProviderConfig: (data: { providerId?: number; protocol: string; baseUrl: string; apiKey?: string }) =>
+    request.post<LlmTestResult>('/v1/llm-providers/test-config', data, { timeout: 60000 }),
 }

@@ -1,5 +1,6 @@
 package com.demand.system.module.requirement.entity;
 
+import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -10,7 +11,7 @@ import java.util.Objects;
 @TableName(value = "custom_fields")
 public class CustomField {
 
-    @TableId
+    @TableId(type = IdType.AUTO)
     private Long id;
 
     private Long projectId;

@@ -11,6 +11,8 @@ public class LlmProvider {
     private String name;
     private String protocol;
     private String baseUrl;
+    /** 官网地址（可选）。 */
+    private String websiteUrl;
     private String apiKey;
     private Boolean enabled;
     @TableField(fill = FieldFill.INSERT)
@@ -26,6 +28,8 @@ public class LlmProvider {
     public void setProtocol(String protocol) { this.protocol = protocol; }
     public String getBaseUrl() { return baseUrl; }
     public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
+    public String getWebsiteUrl() { return websiteUrl; }
+    public void setWebsiteUrl(String websiteUrl) { this.websiteUrl = websiteUrl; }
     public String getApiKey() { return apiKey; }
     public void setApiKey(String apiKey) { this.apiKey = apiKey; }
     public Boolean getEnabled() { return enabled; }

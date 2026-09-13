@@ -1,5 +1,6 @@
 package com.demand.system.module.requirement.entity;
 
+import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
@@ -12,7 +13,7 @@ import java.util.Objects;
 @TableName("requirement_custom_field_multi_values")
 public class CustomFieldMultiValue {
 
-    @TableId
+    @TableId(type = IdType.AUTO)
     private Long id;
 
     private Long requirementId;

@@ -1357,6 +1357,7 @@ CREATE TABLE `llm_providers` (
   `name` VARCHAR(200) NOT NULL COMMENT '接入组名称',
   `protocol` VARCHAR(20) NOT NULL DEFAULT 'openai' COMMENT '协议: openai/anthropic',
   `base_url` VARCHAR(500) NOT NULL COMMENT 'API Base URL',
+  `website_url` VARCHAR(500) DEFAULT NULL COMMENT '官网地址（可选）',
   `api_key` VARCHAR(500) NOT NULL COMMENT 'API Key',
   `enabled` TINYINT DEFAULT 1 COMMENT '启用状态',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,

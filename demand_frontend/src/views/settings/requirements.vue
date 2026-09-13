@@ -411,12 +411,29 @@
           <el-input v-model="fieldForm.name" placeholder="如：验收标准" />
         </el-form-item>
         <el-form-item label="字段编码" prop="fieldCode">
-          <el-input
-            v-model="fieldForm.fieldCode"
-            placeholder="如：acceptance_criteria"
-            :disabled="!!editingField"
-          />
-          <div v-if="!editingField" class="form-tip">字母开头，仅含字母/数字/下划线，创建后不可修改</div>
+          <div style="display: flex; gap: 8px; width: 100%;">
+            <el-input
+              v-model="fieldForm.fieldCode"
+              placeholder="如：acceptance_criteria"
+              :disabled="!!editingField"
+              style="flex: 1"
+              @input="fieldCodeManuallyEdited = true"
+            />
+            <el-tooltip
+              v-if="!editingField"
+              :content="fieldCodeAiGenerating ? 'AI 正在生成编码...' : 'AI 自动生成编码'"
+              placement="top"
+            >
+              <el-button
+                :loading="fieldCodeAiGenerating"
+                :disabled="!fieldForm.name.trim() || !!editingField"
+                @click="handleFieldAiGenerateCode"
+              >
+                <el-icon v-if="!fieldCodeAiGenerating"><MagicStick /></el-icon>
+              </el-button>
+            </el-tooltip>
+          </div>
+          <div v-if="!editingField" class="form-tip">根据字段名称自动生成英文编码，可手动修改或点击 AI 按钮重新生成；字母开头，仅含字母/数字/下划线，创建后不可修改</div>
         </el-form-item>
         <el-form-item label="字段类型" prop="fieldType">
           <el-select v-model="fieldForm.fieldType" style="width: 100%">
@@ -1096,6 +1113,109 @@ function generateOptionKey() {
   return `opt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
 }
 
+/* ── 字段编码自动生成（字段名称 → 英文 snake_case，可手动修改或点 AI 按钮翻译生成） ── */
+// 用户手动改过编码后就不再随名称联动覆盖
+const fieldCodeManuallyEdited = ref(false)
+const fieldCodeAiGenerating = ref(false)
+
+// 常见字段词中英对照，key 最长 4 字，按最长优先匹配；未命中的汉字不参与本地编码
+const FIELD_CODE_DICT: Record<string, string> = {
+  验收标准: 'acceptance_criteria', 验收: 'acceptance', 标准: 'criteria', 规范: 'spec',
+  名称: 'name', 标题: 'title', 描述: 'description', 说明: 'description', 摘要: 'summary',
+  优先级: 'priority', 状态: 'status', 类型: 'type', 分类: 'category', 类别: 'category',
+  负责人: 'owner', 经办人: 'assignee', 处理人: 'assignee', 提出人: 'reporter', 创建人: 'creator',
+  评审人: 'reviewer', 审批人: 'approver', 参与人: 'participant', 相关方: 'stakeholder',
+  截止日期: 'due_date', 截止时间: 'deadline', 日期: 'date', 时间: 'time', 期限: 'deadline',
+  开始日期: 'start_date', 结束日期: 'end_date', 开始: 'start', 结束: 'end', 完成: 'finish',
+  计划: 'plan', 实际: 'actual', 预计: 'estimated', 排期: 'schedule', 工时: 'workload',
+  数量: 'quantity', 金额: 'amount', 费用: 'cost', 预算: 'budget', 单价: 'unit_price',
+  版本: 'version', 模块: 'module', 组件: 'component', 环境: 'environment', 系统: 'system',
+  备注: 'remark', 评论: 'comment', 附件: 'attachment', 链接: 'link', 地址: 'address', 网址: 'url',
+  电话: 'phone', 手机: 'mobile', 邮箱: 'email', 部门: 'department', 团队: 'team', 公司: 'company',
+  客户: 'customer', 供应商: 'supplier', 项目: 'project', 产品: 'product', 需求: 'requirement',
+  任务: 'task', 缺陷: 'bug', 测试: 'test', 用例: 'case', 结果: 'result', 原因: 'reason',
+  方案: 'solution', 目标: 'objective', 背景: 'background', 范围: 'scope', 级别: 'level',
+  编号: 'no', 序号: 'index', 代码: 'code', 编码: 'code', 来源: 'source', 渠道: 'channel',
+  标签: 'tag', 标记: 'flag', 期望: 'expectation', 目的: 'purpose', 建议: 'suggestion',
+  评审: 'review', 审批: 'approval', 审核: 'audit', 确认: 'confirm', 签署: 'sign',
+  是否: 'is', 启用: 'enabled', 有效: 'valid', 公开: 'public', 内容: 'content',
+  文本: 'text', 数值: 'number', 选项: 'option', 图片: 'image', 文件: 'file',
+  上线: 'online', 反馈: 'feedback', 流程: 'process', 节点: 'node', 评估: 'evaluation',
+  预估: 'estimate', 评分: 'score', 需求方: 'requester', 品牌: 'brand', 区域: 'region',
+}
+
+/** 中文段 → 英文词序列：最长匹配词典，未命中的汉字跳过（本地不产生拼音） */
+function zhRunToWords(run: string): string[] {
+  const words: string[] = []
+  let i = 0
+  while (i < run.length) {
+    let matched = ''
+    for (let len = 4; len >= 2; len--) {
+      const seg = run.slice(i, i + len)
+      if (FIELD_CODE_DICT[seg]) {
+        matched = FIELD_CODE_DICT[seg]
+        i += len
+        break
+      }
+    }
+    if (matched) {
+      matched.split('_').forEach((w) => words.push(w))
+      continue
+    }
+    i++
+  }
+  return words
+}
+
+/** 字段名称 → 可读英文 snake_case 编码；词典未覆盖时用 field_ 哈希兜底 */
+function generateFieldCode(name: string): string {
+  const trimmed = name.trim()
+  if (!trimmed) return ''
+  const words: string[] = []
+  const segs = trimmed.match(/[\u4e00-\u9fa5]+|[^\u4e00-\u9fa5]+/g) || []
+  for (const seg of segs) {
+    if (/^[\u4e00-\u9fa5]+$/.test(seg)) {
+      words.push(...zhRunToWords(seg))
+    } else {
+      words.push(...seg.toLowerCase().split(/[^a-zA-Z0-9]+/).filter(Boolean))
+    }
+  }
+  let code = words.join('_').replace(/_+/g, '_').replace(/^_|_$/g, '')
+  if (code && !/^[a-zA-Z]/.test(code)) code = `f_${code}`
+  if (code.length > 50) code = code.slice(0, 50).replace(/_[a-zA-Z0-9]*$/, '')
+  return code || `field_${shortHash(trimmed).toLowerCase()}`
+}
+
+/** 手动点击 AI 按钮生成字段编码（LLM 翻译，纯英文） */
+async function handleFieldAiGenerateCode() {
+  const name = fieldForm.name.trim()
+  if (!name) return
+
+  try {
+    fieldCodeAiGenerating.value = true
+    const result = await llmProviderApi.translate(name) as any
+    const translated = result?.data ?? result
+    if (translated && typeof translated === 'string' && /^[a-zA-Z][a-zA-Z0-9_]*$/.test(translated)) {
+      fieldForm.fieldCode = translated.toLowerCase().slice(0, 50)
+      fieldCodeManuallyEdited.value = false
+    } else {
+      fieldForm.fieldCode = generateFieldCode(name)
+      ElMessage.info('未配置可用模型，已使用本地词典生成编码')
+    }
+  } catch {
+    fieldForm.fieldCode = generateFieldCode(name)
+    ElMessage.info('AI 服务暂不可用，已使用本地词典生成编码')
+  } finally {
+    fieldCodeAiGenerating.value = false
+  }
+}
+
+// 名称变化时联动生成编码；手动改过或编辑已有字段时不覆盖
+watch(() => fieldForm.name, (name) => {
+  if (editingField.value || fieldCodeManuallyEdited.value) return
+  fieldForm.fieldCode = generateFieldCode(name)
+})
+
 function fieldOptionsText(row: CustomFieldRow) {
   const opts = parseFieldOptions(row.options)
   return opts.length ? opts.map((o) => o.label).join('、') : ''
@@ -1145,6 +1265,7 @@ function removeOption(idx: number) {
 
 function openFieldDialog(row?: CustomFieldRow) {
   editingField.value = row || null
+  fieldCodeManuallyEdited.value = false
   if (row) {
     const isBool = row.fieldType === 'BOOLEAN'
     fieldForm.name = row.name || ''
@@ -1164,6 +1285,7 @@ function openFieldDialog(row?: CustomFieldRow) {
 
 function resetFieldForm() {
   editingField.value = null
+  fieldCodeManuallyEdited.value = false
   Object.assign(fieldForm, createFieldForm())
 }
 
