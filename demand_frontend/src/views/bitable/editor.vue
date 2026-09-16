@@ -7,9 +7,25 @@
       </el-button>
       <div class="editor-header__divider" />
       <div class="editor-header__breadcrumbs">
-        <span class="editor-header__crumb">多维表格</span>
+        <button type="button" class="editor-header__crumb is-clickable" @click="handleBackToBaseList">
+          多维表格
+        </button>
         <el-icon class="editor-header__sep"><ArrowRight /></el-icon>
-        <span class="editor-header__crumb editor-header__crumb--active">{{ base?.name || '加载中…' }}</span>
+        <button
+          type="button"
+          class="editor-header__crumb is-clickable"
+          :class="{ 'editor-header__crumb--active': !activeTable }"
+          :title="activeTable ? '回到该多维表格的默认数据表' : ''"
+          @click="handleBackToBaseRoot"
+        >
+          {{ base?.name || '加载中…' }}
+        </button>
+        <template v-if="activeTable">
+          <el-icon class="editor-header__sep"><ArrowRight /></el-icon>
+          <span class="editor-header__crumb editor-header__crumb--active" :title="activeTable.name">
+            {{ activeTable.name }}
+          </span>
+        </template>
         <el-tag v-if="activeView" size="small" round class="editor-header__view-tag">
           <el-icon class="mr-4"><component :is="getViewIcon(activeView.viewType)" /></el-icon>
           {{ activeView.name }}
@@ -81,12 +97,20 @@
       <!-- 左侧数据表侧边栏 -->
       <aside class="editor-sidebar" :class="{ 'is-collapsed': sidebar.collapsed }">
         <div class="editor-sidebar__inner">
-          <TableSidebar
+          <TableGroupTree
+            :baseId="baseId"
+            :groups="tableGroups"
             :tables="tables"
             :activeTableId="activeTableId"
             @select="handleSelectTable"
-            @create="handleCreateTable"
-            @delete="handleDeleteTable"
+            @create-group="handleCreateGroup"
+            @rename-group="handleRenameGroup"
+            @delete-group="handleDeleteGroup"
+            @move-group="handleMoveGroup"
+            @move-table="handleMoveTableToGroup"
+            @create-table="handleCreateTable"
+            @rename-table="handleRenameTable"
+            @delete-table="handleDeleteTable"
           />
         </div>
       </aside>
@@ -114,7 +138,7 @@
           @set-default-view="handleSetDefaultView"
           @delete-view="handleDeleteView"
           @open-comments="handleOpenComments"
-          @open-members="showMemberManager = true"
+          @open-operations="showOperationHistory = true"
           @open-ai-panel="showAiPanel = true"
           @open-import-export="showImportExport = true"
           @open-export="showExport = true"
@@ -126,6 +150,7 @@
           @open-ai-classify="showAiClassifyDialog = true"
           @open-ai-summarize="showAiSummarizeDialog = true"
           @open-ai-build-table="showAiBuildTableDialog = true"
+          @open-permission="showPermissionDialog = true"
         />
         <GridView
           v-if="currentViewType === 'grid'"
@@ -165,6 +190,7 @@
           :records="records"
           :loading="loadingRecords"
           :viewConfig="activeView?.config ?? null"
+          @field-change="handleGanttFieldChange"
         />
         <CalendarView
           v-else-if="currentViewType === 'calendar'"
@@ -174,6 +200,7 @@
           :loading="loadingRecords"
           :viewConfig="activeView?.config ?? null"
           @record-click="handleOpenRecordComments"
+          @field-change="handleCalendarFieldChange"
         />
         <GalleryView
           v-else-if="currentViewType === 'gallery'"
@@ -250,224 +277,22 @@
         <!-- 编辑区域 -->
         <div v-if="editingField" class="field-editor">
           <h4 class="field-editor__title">字段配置</h4>
-          <el-form :model="editForm" label-width="100px" size="small">
-            <!-- 公共配置 -->
-            <el-form-item label="字段名称">
-              <el-input v-model="editForm.name" placeholder="字段名称" maxlength="200" />
-            </el-form-item>
-            <el-form-item label="字段描述">
-              <el-input v-model="editForm.description" type="textarea" :rows="2" placeholder="字段描述" />
-            </el-form-item>
-            <el-form-item label="字段宽度">
-              <el-input-number v-model="editForm.width" :min="50" :max="500" />
-            </el-form-item>
-            <el-form-item label="是否必填">
-              <el-switch v-model="editForm.required" />
-            </el-form-item>
-            <el-form-item label="表单隐藏">
-              <el-switch v-model="editForm.formHidden" />
-            </el-form-item>
-            <el-form-item label="表单占位">
-              <el-input v-model="editForm.formPlaceholder" placeholder="表单填写提示，可覆盖字段描述" />
-            </el-form-item>
+          <FieldAttributeForm
+            :field-type="editingField.fieldType"
+            :config="editConfig"
+            :base="editBase"
+            :fields="fields"
+            :tables="tables"
+            :active-table-id="activeTableId"
+            :editing-field-id="editingFieldId"
+          >
 
-            <!-- 文本特有配置 -->
-            <template v-if="editingField.fieldType === 'text'">
-              <el-divider content-position="left">文本配置</el-divider>
-              <el-form-item label="默认值">
-                <el-input v-model="editForm.defaultValue" placeholder="默认文本" />
-              </el-form-item>
+            <template #formula-extra>
+              <el-button size="small" @click="openFormulaEditorForConfig">
+                <el-icon><MagicStick /></el-icon> 公式编辑器
+              </el-button>
             </template>
-
-            <!-- 数字特有配置 -->
-            <template v-if="editingField.fieldType === 'number'">
-              <el-divider content-position="left">数字配置</el-divider>
-              <el-form-item label="小数位数">
-                <el-input-number v-model="editForm.precision" :min="0" :max="10" />
-              </el-form-item>
-              <el-form-item label="默认值">
-                <el-input-number v-model="editForm.defaultNumber" :min="-999999999" :max="999999999" />
-              </el-form-item>
-            </template>
-
-            <!-- 日期特有配置 -->
-            <template v-if="editingField.fieldType === 'date'">
-              <el-divider content-position="left">日期配置</el-divider>
-              <el-form-item label="日期格式">
-                <el-select v-model="editForm.dateFormat" style="width: 100%;">
-                  <el-option label="YYYY-MM-DD" value="YYYY-MM-DD" />
-                  <el-option label="YYYY/MM/DD" value="YYYY/MM/DD" />
-                  <el-option label="DD/MM/YYYY" value="DD/MM/YYYY" />
-                  <el-option label="MM/DD/YYYY" value="MM/DD/YYYY" />
-                  <el-option label="YYYY年MM月DD日" value="YYYY年MM月DD日" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="默认值">
-                <el-date-picker v-model="editForm.defaultDate" type="date" placeholder="选择默认日期" style="width: 100%;" value-format="YYYY-MM-DD" />
-              </el-form-item>
-            </template>
-
-            <!-- 单选/多选特有配置 -->
-            <template v-if="isOptionField(editingField.fieldType)">
-              <el-divider content-position="left">选项配置</el-divider>
-              <div class="option-list">
-                <div v-for="(opt, idx) in editForm.options" :key="idx" class="option-item">
-                  <span class="option-color-dot" :style="{ background: opt.color || '#409eff' }" />
-                  <el-input v-model="opt.label" placeholder="选项名称" size="small" />
-                  <el-color-picker v-model="opt.color" size="small" />
-                  <el-button link size="small" @click="removeEditOption(idx)">
-                    <el-icon><Delete /></el-icon>
-                  </el-button>
-                </div>
-                <el-button link type="primary" size="small" @click="addEditOption">
-                  <el-icon><Plus /></el-icon> 添加选项
-                </el-button>
-              </div>
-            </template>
-
-            <!-- 评分特有配置 -->
-            <template v-if="editingField.fieldType === 'rating'">
-              <el-divider content-position="left">评分配置</el-divider>
-              <el-form-item label="评分符号">
-                <el-input v-model="editForm.ratingSymbol" placeholder="★" maxlength="10" style="width: 120px;" />
-              </el-form-item>
-              <el-form-item label="最大分值">
-                <el-input-number v-model="editForm.maxRating" :min="1" :max="10" />
-              </el-form-item>
-            </template>
-
-            <!-- 进度特有配置 -->
-            <template v-if="editingField.fieldType === 'progress'">
-              <el-divider content-position="left">进度配置</el-divider>
-              <el-form-item label="显示格式">
-                <el-select v-model="editForm.progressFormat" style="width: 100%;">
-                  <el-option label="百分比" value="percent" />
-                  <el-option label="数值" value="value" />
-                </el-select>
-              </el-form-item>
-            </template>
-
-            <!-- 公式特有配置 -->
-            <template v-if="editingField.fieldType === 'formula'">
-              <el-divider content-position="left">公式配置</el-divider>
-              <el-form-item label="公式表达式">
-                <el-input v-model="editForm.formulaExpr" type="textarea" :rows="3" placeholder="例如: {单价} * {数量}" />
-              </el-form-item>
-              <el-form-item>
-                <el-button size="small" @click="openFormulaEditorForConfig">
-                  <el-icon><MagicStick /></el-icon> 公式编辑器
-                </el-button>
-              </el-form-item>
-            </template>
-
-
-
-            <!-- 查找/汇总配置 -->
-            <template v-if="editingField.fieldType === 'lookup' || editingField.fieldType === 'rollup'">
-              <el-divider content-position="left">引用计算配置</el-divider>
-              <el-form-item label="关联字段">
-                <el-select v-model="editForm.linkFieldId" placeholder="选择当前表关联字段" style="width: 100%;" clearable @change="handleLookupLinkFieldChange">
-                  <el-option
-                    v-for="f in fields.filter(f => f.id !== editingFieldId && (f.fieldType === 'link' || f.fieldType === 'bidirectional_link'))"
-                    :key="f.id"
-                    :label="f.name"
-                    :value="f.id"
-                  />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="目标字段">
-                <el-select v-model="editForm.targetFieldId" placeholder="选择关联表中要引用/汇总的字段" style="width: 100%;" clearable>
-                  <el-option v-for="f in linkTargetFields" :key="f.id" :label="f.name" :value="f.id" />
-                </el-select>
-              </el-form-item>
-              <el-form-item v-if="editingField.fieldType === 'rollup'" label="汇总方式">
-                <el-select v-model="editForm.aggregation" style="width: 100%;">
-                  <el-option label="计数" value="count" />
-                  <el-option label="求和" value="sum" />
-                  <el-option label="平均值" value="average" />
-                  <el-option label="最小值" value="min" />
-                  <el-option label="最大值" value="max" />
-                </el-select>
-              </el-form-item>
-            </template>
-
-            <!-- 关联特有配置 -->
-            <template v-if="isLinkField(editingField.fieldType)">
-              <el-divider content-position="left">关联配置</el-divider>
-              <el-form-item label="目标表">
-                <el-select v-model="editForm.linkTargetTableId" placeholder="选择关联数据表" style="width: 100%;" @change="loadLinkTargetFields">
-                  <el-option v-for="t in tables.filter(t => t.id !== activeTableId)" :key="t.id" :label="t.name" :value="t.id" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="显示字段">
-                <el-select v-model="editForm.linkDisplayFieldId" placeholder="选择显示字段" style="width: 100%;" clearable>
-                  <el-option
-                    v-for="f in linkTargetFields"
-                    :key="f.id"
-                    :label="f.name"
-                    :value="f.id"
-                  />
-                </el-select>
-              </el-form-item>
-              <el-form-item v-if="editingField.fieldType === 'bidirectional_link'" label="反向字段">
-                <el-select v-model="editForm.reverseFieldId" placeholder="选择目标表中的反向关联字段" style="width: 100%;" clearable>
-                  <el-option
-                    v-for="f in linkTargetFields.filter(f => f.fieldType === 'link' || f.fieldType === 'bidirectional_link')"
-                    :key="f.id"
-                    :label="f.name"
-                    :value="f.id"
-                  />
-                </el-select>
-              </el-form-item>
-            </template>
-
-            <!-- AI 字段捷径配置 -->
-            <template v-if="editingField.fieldType === 'ai_text' || editingField.fieldType === 'ai_select'">
-              <el-divider content-position="left">AI 字段捷径配置</el-divider>
-              <el-form-item label="AI 提示词">
-                <el-input
-                  v-model="editForm.aiPrompt"
-                  type="textarea"
-                  :rows="3"
-                  placeholder="例如：根据{需求描述}和{优先级}，生成一段概要"
-                />
-              </el-form-item>
-              <el-form-item label="源字段">
-                <el-select
-                  v-model="editForm.sourceFieldIds"
-                  multiple
-                  placeholder="选择参与生成的源字段"
-                  style="width: 100%;"
-                >
-                  <el-option
-                    v-for="f in fields.filter(f => f.id !== editingFieldId && f.fieldType !== 'ai_text' && f.fieldType !== 'ai_select')"
-                    :key="f.id"
-                    :label="f.name"
-                    :value="f.id"
-                  />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="自动计算">
-                <el-switch v-model="editForm.autoCompute" />
-                <span style="margin-left: 8px; font-size: 12px; color: var(--el-text-color-secondary);">
-                  源字段数据变更时自动重新计算
-                </span>
-              </el-form-item>
-              <el-form-item v-if="editingField.fieldType === 'ai_select'" label="选项列表">
-                <div class="option-list">
-                  <div v-for="(opt, idx) in editForm.options" :key="idx" class="option-item">
-                    <el-input v-model="opt.label" placeholder="选项名称" size="small" />
-                    <el-button link size="small" @click="removeEditOption(idx)">
-                      <el-icon><Delete /></el-icon>
-                    </el-button>
-                  </div>
-                  <el-button link type="primary" size="small" @click="addEditOption">
-                    <el-icon><Plus /></el-icon> 添加选项
-                  </el-button>
-                </div>
-              </el-form-item>
-            </template>
-          </el-form>
+          </FieldAttributeForm>
 
           <div class="field-editor__actions">
             <el-button size="small" @click="cancelFieldEdit">取消</el-button>
@@ -477,79 +302,17 @@
         <el-empty v-else-if="fields.length" description="请选择要编辑的字段" />
       </div>
     </el-drawer>
-    <el-dialog v-model="addFieldDialogVisible" title="添加字段" width="500px">
-      <el-form :model="addFieldForm" label-width="80px">
-        <el-form-item label="字段名称" required>
-          <el-input v-model="addFieldForm.name" placeholder="输入字段名称" maxlength="200" />
-        </el-form-item>
-        <el-form-item label="字段类型" required>
-          <el-select v-model="addFieldForm.fieldType" placeholder="选择字段类型" style="width: 100%;">
-            <el-option-group label="常规">
-              <el-option label="文本" value="text" />
-              <el-option label="数字" value="number" />
-              <el-option label="日期" value="date" />
-              <el-option label="单选" value="single_select" />
-              <el-option label="多选" value="multi_select" />
-              <el-option label="人员" value="user" />
-              <el-option label="群组" value="group" />
-              <el-option label="复选框" value="checkbox" />
-              <el-option label="附件" value="attachment" />
-              <el-option label="超链接" value="url" />
-            </el-option-group>
-            <el-option-group label="业务">
-              <el-option label="流程" value="process" />
-              <el-option label="按钮" value="button" />
-              <el-option label="自动编号" value="auto_number" />
-              <el-option label="电话" value="phone" />
-              <el-option label="邮箱" value="email" />
-              <el-option label="地理位置" value="location" />
-              <el-option label="条码" value="barcode" />
-              <el-option label="进度" value="progress" />
-              <el-option label="货币" value="currency" />
-              <el-option label="评分" value="rating" />
-            </el-option-group>
-            <el-option-group label="高级">
-              <el-option label="单向关联" value="link" />
-              <el-option label="双向关联" value="bidirectional_link" />
-              <el-option label="汇总" value="rollup" />
-              <el-option label="查找引用" value="lookup" />
-              <el-option label="公式" value="formula" />
-              <el-option label="创建人" value="created_by" />
-              <el-option label="修改人" value="modified_by" />
-              <el-option label="创建时间" value="created_time" />
-              <el-option label="最后更新时间" value="last_modified_time" />
-            </el-option-group>
-            <el-option-group label="AI 捷径">
-              <el-option label="AI 文本" value="ai_text" />
-              <el-option label="AI 选择" value="ai_select" />
-            </el-option-group>
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="isOptionField(addFieldForm.fieldType)" label="选项">
-          <div class="option-list">
-            <div v-for="(opt, idx) in addFieldOptionList" :key="idx" class="option-item">
-              <el-input v-model="opt.label" placeholder="选项名称" size="small" />
-              <el-button link size="small" @click="removeOption(idx)">
-                <el-icon><Delete /></el-icon>
-              </el-button>
-            </div>
-            <el-button link type="primary" size="small" @click="addOption">
-              <el-icon><Plus /></el-icon> 添加选项
-            </el-button>
-          </div>
-        </el-form-item>
-        <el-form-item v-if="isLinkField(addFieldForm.fieldType)" label="目标表">
-          <el-select v-model="linkTargetTableId" placeholder="选择关联数据表" style="width: 100%;">
-            <el-option v-for="t in tables.filter(t => t.id !== activeTableId)" :key="t.id" :label="t.name" :value="t.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="addFieldForm.fieldType === 'formula'" label="公式">
-          <el-input v-model="formulaExpr" type="textarea" :rows="2" placeholder="例如: {单价} * {数量}" />
-        </el-form-item>
-        <el-form-item v-if="addFieldForm.fieldType === 'auto_number'" label="编号前缀">
-          <el-input v-model="autoNumberPrefix" placeholder="例如：ORD-" />
-        </el-form-item>
-      </el-form>
+    <el-dialog v-model="addFieldDialogVisible" title="添加字段" width="560px">
+      <FieldAttributeForm
+        v-model:field-type="addFieldType"
+        :config="addFieldConfig"
+        :base="addFieldBase"
+        :fields="fields"
+        :tables="tables"
+        :active-table-id="activeTableId"
+        show-type-selector
+        :type-groups="FIELD_TYPE_GROUPS"
+      />
       <template #footer>
         <el-button @click="addFieldDialogVisible = false">取消</el-button>
         <el-button type="primary" @click="submitAddField" :loading="savingField">添加</el-button>
@@ -582,11 +345,13 @@
       @close="showCommentPanel = false"
     />
 
-    <!-- 成员管理 -->
-    <MemberManager
-      :visible="showMemberManager"
+    <!-- 操作记录 -->
+    <OperationHistoryPanel
+      :visible="showOperationHistory"
       :base-id="baseId"
-      @close="showMemberManager = false"
+      :table-id="activeTableId"
+      :fields="fields"
+      @close="showOperationHistory = false"
     />
 
     <!-- AI 面板 -->
@@ -681,6 +446,14 @@
       @close="showIntegrationDialog = false"
     />
 
+    <!-- 权限管理 -->
+    <PermissionManageDialog
+      v-model="showPermissionDialog"
+      :base-id="baseId"
+      :tables="tables"
+      :table-groups="tableGroups"
+    />
+
     <!-- 筛选面板 -->
     <FilterPanel
       v-if="activeTableId != null"
@@ -734,7 +507,7 @@ import { ArrowLeft, Plus, Delete, Edit, CopyDocument, ArrowRight, MagicStick, Gr
 import { useCollapsibleSidebar } from '@/composables/useCollapsibleSidebar'
 import { useToast } from '@/composables/useToast'
 import { useUserStore } from '@/stores'
-import TableSidebar from './components/TableSidebar.vue'
+import TableGroupTree from './components/TableGroupTree.vue'
 import Toolbar from './components/Toolbar.vue'
 import GridView from './components/GridView.vue'
 import KanbanView from './components/KanbanView.vue'
@@ -743,7 +516,7 @@ import CalendarView from './components/CalendarView.vue'
 import GalleryView from './components/GalleryView.vue'
 import FormView from './components/FormView.vue'
 import CommentPanel from './components/CommentPanel.vue'
-import MemberManager from './components/MemberManager.vue'
+import OperationHistoryPanel from './components/OperationHistoryPanel.vue'
 import FilterPanel from './components/FilterPanel.vue'
 import GroupPanel from './components/GroupPanel.vue'
 import ConflictDialog from './components/ConflictDialog.vue'
@@ -758,9 +531,12 @@ import RecordEditDialog from './components/RecordEditDialog.vue'
 import FormPublishDialog from './components/FormPublishDialog.vue'
 import ShareViewDialog from './components/ShareViewDialog.vue'
 import IntegrationDialog from './components/IntegrationDialog.vue'
+import PermissionManageDialog from './components/PermissionManageDialog.vue'
 import LinkFieldSelector from './components/LinkFieldSelector.vue'
 import FormulaEditor from './components/FormulaEditor.vue'
+import FieldAttributeForm from './components/FieldAttributeForm.vue'
 import { useBitableWebSocket, type CellUpdateEvent, type ConflictEvent, type RecordCreatedEvent, type RecordDeletedEvent } from '@/composables/useBitableWebSocket'
+import { createDefaultFieldConfig, LINK_FIELD_TYPES, normalizeFieldConfig, sanitizeFieldConfig } from '@/utils/bitableFieldConfig'
 import {
   getBase,
   listTables,
@@ -785,10 +561,17 @@ import {
   deleteView,
   duplicateView,
   setDefaultView,
+  listTableGroups,
+  createTableGroup,
+  renameTableGroup,
+  moveTableGroup,
+  deleteTableGroup,
+  moveTableToGroup,
 } from '@/api/modules/bitable'
 import type {
   BitableBase,
   BitableTable,
+  BitableTableGroup,
   BitableField,
   BitableRecord,
   BitableView,
@@ -800,7 +583,63 @@ import type {
   FilterGroup,
   FilterItem,
   RecordGroupVO,
+  FieldConfig,
 } from '@/types/bitable'
+
+/** 字段类型下拉分组（新增字段与字段配置共用） */
+const FIELD_TYPE_GROUPS: { label: string; options: { label: string; value: string }[] }[] = [
+  {
+    label: '常规',
+    options: [
+      { label: '文本', value: 'text' },
+      { label: '数字', value: 'number' },
+      { label: '日期', value: 'date' },
+      { label: '单选', value: 'single_select' },
+      { label: '多选', value: 'multi_select' },
+      { label: '人员', value: 'user' },
+      { label: '群组', value: 'group' },
+      { label: '复选框', value: 'checkbox' },
+      { label: '附件', value: 'attachment' },
+      { label: '超链接', value: 'url' },
+    ],
+  },
+  {
+    label: '业务',
+    options: [
+      { label: '流程', value: 'process' },
+      { label: '按钮', value: 'button' },
+      { label: '自动编号', value: 'auto_number' },
+      { label: '电话', value: 'phone' },
+      { label: '邮箱', value: 'email' },
+      { label: '地理位置', value: 'location' },
+      { label: '条码', value: 'barcode' },
+      { label: '进度', value: 'progress' },
+      { label: '货币', value: 'currency' },
+      { label: '评分', value: 'rating' },
+    ],
+  },
+  {
+    label: '高级',
+    options: [
+      { label: '单向关联', value: 'link' },
+      { label: '双向关联', value: 'bidirectional_link' },
+      { label: '汇总', value: 'rollup' },
+      { label: '查找引用', value: 'lookup' },
+      { label: '公式', value: 'formula' },
+      { label: '创建人', value: 'created_by' },
+      { label: '修改人', value: 'modified_by' },
+      { label: '创建时间', value: 'created_time' },
+      { label: '最后更新时间', value: 'last_modified_time' },
+    ],
+  },
+  {
+    label: 'AI 捷径',
+    options: [
+      { label: 'AI 文本', value: 'ai_text' },
+      { label: 'AI 选择', value: 'ai_select' },
+    ],
+  },
+]
 
 const route = useRoute()
 const router = useRouter()
@@ -809,6 +648,7 @@ const toast = useToast()
 const baseId = Number(route.params.baseId)
 const base = ref<BitableBase | null>(null)
 const tables = ref<BitableTable[]>([])
+const tableGroups = ref<BitableTableGroup[]>([])
 const activeTableId = ref<number | null>(null)
 const fields = ref<BitableField[]>([])
 const records = ref<BitableRecord[]>([])
@@ -837,7 +677,7 @@ const groupFieldId = computed<number | null>(() => {
 })
 const renameInputRef = ref<any>(null)
 const showCommentPanel = ref(false)
-const showMemberManager = ref(false)
+const showOperationHistory = ref(false)
 const showAiPanel = ref(false)
 const showAiFillDialog = ref(false)
 const showAiClassifyDialog = ref(false)
@@ -853,10 +693,11 @@ const commentRecordId = ref<number | null>(null)
 const recordEditVisible = ref(false)
 const recordEditTarget = ref<BitableRecord | null>(null)
 
-// 分享视图 / 发布表单 / 集成管理
+// 分享视图 / 发布表单 / 集成管理 / 权限管理
 const showShareViewDialog = ref(false)
 const showFormPublishDialog = ref(false)
 const showIntegrationDialog = ref(false)
+const showPermissionDialog = ref(false)
 
 // 记录分页状态
 const recordsPage = ref(1)
@@ -882,7 +723,6 @@ const renameFieldName = ref('')
 
 const formulaEditorVisible = ref(false)
 const formulaExpr = ref('')
-const autoNumberPrefix = ref('')
 const formViewRef = ref<InstanceType<typeof FormView> | null>(null)
 
 // 字段配置弹窗
@@ -894,64 +734,32 @@ const editingField = computed<BitableField | null>(() => {
   return fields.value.find((f) => f.id === editingFieldId.value) ?? null
 })
 
-// 字段编辑表单
-const editForm = ref<{
+/**
+ * 字段属性表单模型。
+ * - `base` 承载后端列级字段（name/description/width/required/aiPrompt）
+ * - `config` 承载 JSON 配置（各类型属性 + 唯一/表单隐藏等），键位见 `utils/bitableFieldConfig`
+ * 两个对象都由本组件持有，属性面板就地修改，保存时读取同一对象。
+ */
+interface FieldBaseForm {
   name: string
   description: string
   width: number
   required: boolean
-  defaultValue: string
-  defaultNumber: number
-  defaultDate: string
-  precision: number
-  dateFormat: string
-  options: { label: string; color?: string }[]
-  ratingSymbol: string
-  maxRating: number
-  progressFormat: string
-  formulaExpr: string
-  linkTargetTableId: number | null
-  linkDisplayFieldId: number | null
-  reverseFieldId: number | null
-  linkFieldId: number | null
-  targetFieldId: number | null
-  aggregation: 'count' | 'sum' | 'average' | 'min' | 'max'
-  formHidden: boolean
-  formPlaceholder: string
-  // AI 字段捷径配置
   aiPrompt: string
-  sourceFieldIds: number[]
-  autoCompute: boolean
-}>({
-  name: '',
-  description: '',
-  width: 200,
-  required: false,
-  defaultValue: '',
-  defaultNumber: 0,
-  defaultDate: '',
-  precision: 0,
-  dateFormat: 'YYYY-MM-DD',
-  options: [],
-  ratingSymbol: '★',
-  maxRating: 5,
-  progressFormat: 'percent',
-  formulaExpr: '',
-  linkTargetTableId: null,
-  linkDisplayFieldId: null,
-  reverseFieldId: null,
-  linkFieldId: null,
-  targetFieldId: null,
-  aggregation: 'count',
-  formHidden: false,
-  formPlaceholder: '',
-  aiPrompt: '',
-  sourceFieldIds: [],
-  autoCompute: false,
-})
+}
 
-// 关联目标表的字段列表
-const linkTargetFields = ref<BitableField[]>([])
+function createBaseForm(): FieldBaseForm {
+  return { name: '', description: '', width: 200, required: false, aiPrompt: '' }
+}
+
+/** 字段配置抽屉：当前编辑字段的属性模型 */
+const editBase = ref<FieldBaseForm>(createBaseForm())
+const editConfig = ref<FieldConfig>({})
+
+/** 新增字段弹窗：字段类型 + 属性模型 */
+const addFieldType = ref<string>('text')
+const addFieldBase = ref<FieldBaseForm>(createBaseForm())
+const addFieldConfig = ref<FieldConfig>(createDefaultFieldConfig('text'))
 
 // 字段类型中文标签
 const fieldTypeLabelMap: Record<string, string> = {
@@ -1002,6 +810,9 @@ function normalizeField(field: BitableField): BitableField {
       field.config = undefined
     }
   }
+  // 统一迁移到规范键：历史字段可能存的是 format/digits/allowedFileTypes 等旧键，
+  // 各视图（网格/看板/画廊/日历）都直接读 field.config，所以在此一次性归一。
+  field.config = normalizeFieldConfig(field.fieldType, field.config)
   return field
 }
 
@@ -1009,16 +820,8 @@ function fieldTypeLabel(type: string): string {
   return fieldTypeLabelMap[type] || type
 }
 
-function isOptionField(type?: string) {
-  return type === 'single_select' || type === 'multi_select' || type === 'process'
-}
-
 function isLinkField(type?: string) {
-  return type === 'link' || type === 'bidirectional_link'
-}
-
-function isReadonlyFieldType(type?: string) {
-  return ['auto_number', 'created_time', 'modified_time', 'last_modified_time', 'created_user', 'modified_user', 'created_by', 'modified_by', 'formula', 'lookup', 'rollup'].includes(type || '')
+  return LINK_FIELD_TYPES.has(type || '')
 }
 
 // WebSocket 实时协作
@@ -1070,12 +873,6 @@ onConflict.value = (event: ConflictEvent) => {
 }
 
 const addFieldDialogVisible = ref(false)
-const addFieldForm = ref<BitableFieldCreateDTO>({
-  name: '',
-  fieldType: 'text',
-})
-const addFieldOptionList = ref<{ label: string; color?: string }[]>([])
-const linkTargetTableId = ref<number | null>(null)
 
 const activeTable = computed<BitableTable | null>(() => {
   if (!activeTableId.value) return null
@@ -1103,6 +900,7 @@ const visibleFields = computed<BitableField[]>(() => {
 
 onMounted(async () => {
   await loadBase()
+  await loadTableGroups()
   await loadTables()
   if (tables.value.length > 0) {
     handleSelectTable(tables.value[0].id)
@@ -1127,12 +925,45 @@ async function loadTables() {
   }
 }
 
+async function loadTableGroups() {
+  try {
+    const res = await listTableGroups(baseId)
+    tableGroups.value = Array.isArray(res) ? res : (res as any).data || []
+  } catch (e: any) {
+    toast.error(resolveErrorMessage(e, '加载分组失败'))
+  }
+}
+
+/** 分组树发生变更后，重新拉取分组与数据表，保证归属与计数一致 */
+async function reloadTableTree() {
+  await Promise.all([loadTableGroups(), loadTables()])
+}
+
 async function handleSelectTable(tableId: number) {
   activeTableId.value = tableId
   await loadViews(tableId)
   await loadFields(tableId)
   setActiveView()
   await loadRecords(tableId)
+}
+
+/** 面包屑「多维表格」：回退到多维表格列表页 */
+function handleBackToBaseList() {
+  router.push('/bitable')
+}
+
+/**
+ * 面包屑「{多维表格名称}」：回退到该多维表格的默认数据表 + 默认视图。
+ * 先清掉 URL 上的 viewId，setActiveView 才会回落到数据表的 defaultViewId，
+ * 否则会沿用上一个数据表带过来的视图 ID。
+ */
+async function handleBackToBaseRoot() {
+  const first = tables.value[0]
+  if (!first) return
+  const rest = { ...route.query }
+  delete rest.viewId
+  await router.replace({ query: rest })
+  await handleSelectTable(first.id)
 }
 
 async function loadViews(tableId: number) {
@@ -1172,6 +1003,14 @@ async function loadFields(tableId: number) {
     toast.error(resolveErrorMessage(e, '加载字段失败'))
   }
 }
+
+// 关闭权限弹框后重新拉取字段与记录：
+// 字段级权限会改变 fields[].permission（隐藏/只读），也影响后端是否下发隐藏字段的单元格值。
+watch(showPermissionDialog, async (open, wasOpen) => {
+  if (open || !wasOpen || !activeTableId.value) return
+  await loadFields(activeTableId.value)
+  await loadRecords(activeTableId.value)
+})
 
 function filterRuleCount(config: FilterGroup | FilterItem[] | null): number {
   if (!config) return 0
@@ -1258,12 +1097,24 @@ async function handlePageChange(page: number) {
   await loadRecords(activeTableId.value, page)
 }
 
-async function handleCreateTable(name: string) {
+async function handleCreateTable(groupId: number | null) {
+  let name: string
   try {
-    const newId = await createTable(baseId, { name })
+    const { value } = await ElMessageBox.prompt('', '新建数据表', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      inputValue: '新建数据表',
+      inputValidator: (v: string) => (v && v.trim() ? true : '数据表名称不能为空'),
+    })
+    name = (value || '').trim()
+  } catch {
+    return
+  }
+  try {
+    const newId = await createTable(baseId, { name, groupId })
     toast.success('创建成功')
     const newTableId = typeof newId === 'number' ? newId : Number(newId)
-    tables.value.push({ id: newTableId, name, baseId } as BitableTable)
+    await reloadTableTree()
     handleSelectTable(newTableId)
   } catch (e: any) {
     toast.error(resolveErrorMessage(e, '创建失败'))
@@ -1274,7 +1125,7 @@ async function handleDeleteTable(tableId: number) {
   try {
     await deleteTable(tableId)
     toast.success('删除成功')
-    tables.value = tables.value.filter((t) => t.id !== tableId)
+    await reloadTableTree()
     if (activeTableId.value === tableId) {
       if (tables.value.length > 0) {
         handleSelectTable(tables.value[0].id)
@@ -1289,25 +1140,66 @@ async function handleDeleteTable(tableId: number) {
   }
 }
 
+async function handleCreateGroup(payload: { name: string; parentId: number | null }) {
+  try {
+    await createTableGroup(baseId, { name: payload.name, parentId: payload.parentId })
+    toast.success('分组已创建')
+    await loadTableGroups()
+  } catch (e: any) {
+    toast.error(resolveErrorMessage(e, '创建分组失败'))
+  }
+}
+
+async function handleRenameGroup(payload: { id: number; name: string }) {
+  try {
+    await renameTableGroup(payload.id, payload.name)
+    toast.success('分组已重命名')
+    await loadTableGroups()
+  } catch (e: any) {
+    toast.error(resolveErrorMessage(e, '重命名失败'))
+  }
+}
+
+async function handleDeleteGroup(id: number) {
+  try {
+    await deleteTableGroup(id)
+    toast.success('分组已删除')
+    await reloadTableTree()
+  } catch (e: any) {
+    toast.error(resolveErrorMessage(e, '删除分组失败'))
+  }
+}
+
+async function handleMoveGroup(payload: { id: number; parentId: number | null }) {
+  try {
+    await moveTableGroup(payload.id, { parentId: payload.parentId })
+    toast.success('分组已移动')
+    await loadTableGroups()
+  } catch (e: any) {
+    toast.error(resolveErrorMessage(e, '移动分组失败'))
+  }
+}
+
+async function handleMoveTableToGroup(payload: { tableId: number; groupId: number | null }) {
+  try {
+    await moveTableToGroup(payload.tableId, payload.groupId)
+    toast.success('数据表已移动')
+    await reloadTableTree()
+  } catch (e: any) {
+    toast.error(resolveErrorMessage(e, '移动数据表失败'))
+  }
+}
+
 function handleAddField() {
-  addFieldForm.value = { name: '', fieldType: 'text' }
-  addFieldOptionList.value = []
-  linkTargetTableId.value = null
-  formulaExpr.value = ''
-  autoNumberPrefix.value = ''
+  addFieldType.value = 'text'
+  addFieldBase.value = createBaseForm()
+  addFieldConfig.value = createDefaultFieldConfig('text')
   addFieldDialogVisible.value = true
 }
 
-function addOption() {
-  addFieldOptionList.value.push({ label: '' })
-}
-
-function removeOption(idx: number) {
-  addFieldOptionList.value.splice(idx, 1)
-}
-
 async function submitAddField() {
-  if (!addFieldForm.value.name.trim()) {
+  const name = addFieldBase.value.name.trim()
+  if (!name) {
     toast.warning('请输入字段名称')
     return
   }
@@ -1315,28 +1207,26 @@ async function submitAddField() {
     toast.warning('请先选择数据表')
     return
   }
+  // 字段名同表内不可重名（后端也会兜底校验，这里先给出即时反馈）
+  if (fields.value.some((f) => f.name === name)) {
+    toast.warning(`字段「${name}」已存在`)
+    return
+  }
   savingField.value = true
   try {
+    const config = sanitizeFieldConfig(addFieldType.value, addFieldConfig.value)
     const data: BitableFieldCreateDTO = {
-      name: addFieldForm.value.name,
-      fieldType: addFieldForm.value.fieldType,
+      name,
+      fieldType: addFieldType.value as BitableFieldCreateDTO['fieldType'],
+      description: addFieldBase.value.description || undefined,
+      width: addFieldBase.value.width,
+      // 后端 required 为 Integer(tinyint)，传 0/1
+      required: addFieldBase.value.required ? 1 : 0,
+      config,
     }
-    if (isOptionField(addFieldForm.value.fieldType)) {
-      data.config = { options: addFieldOptionList.value.filter((o) => o.label.trim()) }
-    }
-    if (isLinkField(addFieldForm.value.fieldType) && linkTargetTableId.value) {
-      data.config = { ...(data.config || {}), linkTargetTableId: linkTargetTableId.value }
-    }
-    if (addFieldForm.value.fieldType === 'formula' && formulaExpr.value) {
-      data.config = { ...(data.config || {}), formulaExpr: formulaExpr.value }
-    }
-    if (addFieldForm.value.fieldType === 'auto_number') {
-      data.config = { ...(data.config || {}), prefix: autoNumberPrefix.value, digits: 4 }
-    }
-    if (addFieldForm.value.fieldType === 'ai_text' || addFieldForm.value.fieldType === 'ai_select') {
-      // 后端 isAiField 为 Integer(tinyint)，传 1 而非 boolean true
+    if (addFieldType.value === 'ai_text' || addFieldType.value === 'ai_select') {
       data.isAiField = 1
-      data.aiPrompt = ''
+      data.aiPrompt = addFieldBase.value.aiPrompt
     }
     await createField(activeTableId.value, data)
     toast.success('添加成功')
@@ -1601,114 +1491,15 @@ function handleRenameConfirm() {
 // 字段配置弹窗方法
 function selectFieldForEdit(field: BitableField) {
   editingFieldId.value = field.id
-  editForm.value.name = field.name
-  editForm.value.description = ''
-  editForm.value.width = field.width || 200
-  editForm.value.required = Boolean(field.required)
-  editForm.value.defaultValue = ''
-  editForm.value.defaultNumber = 0
-  editForm.value.defaultDate = ''
-  editForm.value.precision = 0
-  editForm.value.dateFormat = 'YYYY-MM-DD'
-  editForm.value.options = []
-  editForm.value.ratingSymbol = '★'
-  editForm.value.maxRating = 5
-  editForm.value.progressFormat = 'percent'
-  editForm.value.formulaExpr = ''
-  editForm.value.linkTargetTableId = null
-  editForm.value.linkDisplayFieldId = null
-  editForm.value.reverseFieldId = null
-  editForm.value.linkFieldId = null
-  editForm.value.targetFieldId = null
-  editForm.value.aggregation = 'count'
-  editForm.value.formHidden = false
-  editForm.value.formPlaceholder = ''
-
-  const config = field.config || {}
-  if (config.options) {
-    editForm.value.options = JSON.parse(JSON.stringify(config.options))
+  editBase.value = {
+    name: field.name,
+    description: field.description || '',
+    width: field.width || 200,
+    required: Boolean(field.required),
+    aiPrompt: field.aiPrompt || '',
   }
-  if (config.format) {
-    editForm.value.dateFormat = config.format
-  }
-  if (config.precision !== undefined) {
-    editForm.value.precision = config.precision
-  }
-  if (config.defaultValue !== undefined) {
-    if (['number', 'currency', 'progress', 'rating'].includes(field.fieldType)) {
-      editForm.value.defaultNumber = Number(config.defaultValue) || 0
-    } else if (field.fieldType === 'date') {
-      editForm.value.defaultDate = String(config.defaultValue) || ''
-    } else {
-      editForm.value.defaultValue = String(config.defaultValue) || ''
-    }
-  }
-  if (config.formulaExpr) {
-    editForm.value.formulaExpr = config.formulaExpr
-  }
-  if (config.linkTargetTableId) {
-    editForm.value.linkTargetTableId = config.linkTargetTableId
-    loadLinkTargetFields(config.linkTargetTableId)
-  }
-  if (config.symbol) {
-    editForm.value.ratingSymbol = config.symbol
-  }
-  if ((config as any).maxRating !== undefined) {
-    editForm.value.maxRating = (config as any).maxRating
-  }
-  if ((config as any).progressFormat) {
-    editForm.value.progressFormat = (config as any).progressFormat
-  }
-  if ((config as any).linkDisplayFieldId) {
-    editForm.value.linkDisplayFieldId = (config as any).linkDisplayFieldId
-  }
-  if ((config as any).reverseFieldId) {
-    editForm.value.reverseFieldId = (config as any).reverseFieldId
-  }
-  if ((config as any).linkFieldId) {
-    editForm.value.linkFieldId = (config as any).linkFieldId
-    handleLookupLinkFieldChange((config as any).linkFieldId)
-  }
-  if ((config as any).targetFieldId || (config as any).lookupFieldId || (config as any).rollupFieldId) {
-    editForm.value.targetFieldId = (config as any).targetFieldId || (config as any).lookupFieldId || (config as any).rollupFieldId
-  }
-  if ((config as any).aggregation) {
-    editForm.value.aggregation = (config as any).aggregation
-  }
-  if ((config as any).formHidden !== undefined) {
-    editForm.value.formHidden = Boolean((config as any).formHidden)
-  }
-  if ((config as any).formPlaceholder) {
-    editForm.value.formPlaceholder = String((config as any).formPlaceholder)
-  }
-  // AI 字段捷径配置
-  editForm.value.aiPrompt = field.aiPrompt || (config as any).aiPrompt || ''
-  editForm.value.sourceFieldIds = (config as any).sourceFieldIds || []
-  editForm.value.autoCompute = (config as any).autoCompute ?? false
-}
-
-async function loadLinkTargetFields(tableId?: number | null) {
-  if (!tableId) {
-    linkTargetFields.value = []
-    return
-  }
-  try {
-    const res = await listFields(tableId)
-    linkTargetFields.value = Array.isArray(res) ? res : (res as any).data || []
-  } catch {
-    linkTargetFields.value = []
-  }
-}
-
-function handleLookupLinkFieldChange(fieldId?: number) {
-  editForm.value.targetFieldId = null
-  const linkField = fields.value.find((f) => f.id === fieldId)
-  const targetTableId = linkField?.config?.linkTargetTableId
-  if (targetTableId) {
-    loadLinkTargetFields(targetTableId)
-  } else {
-    linkTargetFields.value = []
-  }
+  // 归一化：迁移历史键 + 按字段类型补默认值，面板与保存共用同一份配置对象
+  editConfig.value = normalizeFieldConfig(field.fieldType, field.config)
 }
 
 async function saveFieldConfig() {
@@ -1716,95 +1507,34 @@ async function saveFieldConfig() {
     toast.warning('请选择要编辑的字段')
     return
   }
+  const name = editBase.value.name.trim()
+  if (!name) {
+    toast.warning('请输入字段名称')
+    return
+  }
+  if (fields.value.some((f) => f.name === name && f.id !== editingFieldId.value)) {
+    toast.warning(`字段「${name}」已存在`)
+    return
+  }
   savingFieldConfig.value = true
   try {
-    const data: any = {
-      name: editForm.value.name,
-      width: editForm.value.width,
-      // 后端 required 为 Integer(tinyint)，前端 editForm.required 是 boolean，需转为 0/1
-      required: editForm.value.required ? 1 : 0,
+    const fieldType = editingField.value.fieldType
+    const data: Partial<BitableFieldCreateDTO> = {
+      name,
+      description: editBase.value.description,
+      width: editBase.value.width,
+      // 后端 required 为 Integer(tinyint)，前端是 boolean，需转为 0/1
+      required: editBase.value.required ? 1 : 0,
+      // 清洗：只保留该字段类型允许的键，避免切换类型后残留无关配置
+      config: sanitizeFieldConfig(fieldType, editConfig.value),
     }
 
-    const config: any = {}
-    if (editForm.value.formHidden) {
-      config.formHidden = true
-    }
-    if (editForm.value.formPlaceholder) {
-      config.formPlaceholder = editForm.value.formPlaceholder
-    }
-
-    if (editingField.value.fieldType === 'text' && editForm.value.defaultValue) {
-      config.defaultValue = editForm.value.defaultValue
-    }
-
-    if (editingField.value.fieldType === 'number') {
-      config.precision = editForm.value.precision
-      if (editForm.value.defaultNumber !== 0) {
-        config.defaultValue = editForm.value.defaultNumber
-      }
-    }
-
-    if (editingField.value.fieldType === 'date') {
-      config.format = editForm.value.dateFormat
-      if (editForm.value.defaultDate) {
-        config.defaultValue = editForm.value.defaultDate
-      }
-    }
-
-    if (isOptionField(editingField.value.fieldType)) {
-      config.options = editForm.value.options.filter((o) => o.label.trim())
-    }
-
-    if (editingField.value.fieldType === 'rating') {
-      config.symbol = editForm.value.ratingSymbol || '★'
-      config.maxRating = editForm.value.maxRating
-    }
-
-    if (editingField.value.fieldType === 'progress') {
-      config.progressFormat = editForm.value.progressFormat
-    }
-
-    if (editingField.value.fieldType === 'formula' && editForm.value.formulaExpr) {
-      config.formulaExpr = editForm.value.formulaExpr
-    }
-
-    if (editingField.value.fieldType === 'lookup' || editingField.value.fieldType === 'rollup') {
-      if (editForm.value.linkFieldId) {
-        config.linkFieldId = editForm.value.linkFieldId
-      }
-      if (editForm.value.targetFieldId) {
-        config.targetFieldId = editForm.value.targetFieldId
-      }
-      if (editingField.value.fieldType === 'rollup') {
-        config.aggregation = editForm.value.aggregation
-      }
-    }
-
-    if (isLinkField(editingField.value.fieldType)) {
-      if (editForm.value.linkTargetTableId) {
-        config.linkTargetTableId = editForm.value.linkTargetTableId
-      }
-      if (editForm.value.linkDisplayFieldId) {
-        config.linkDisplayFieldId = editForm.value.linkDisplayFieldId
-      }
-      if (editingField.value.fieldType === 'bidirectional_link' && editForm.value.reverseFieldId) {
-        config.reverseFieldId = editForm.value.reverseFieldId
-      }
-    }
-
-    // AI 字段捷径配置
-    if (editingField.value.fieldType === 'ai_text' || editingField.value.fieldType === 'ai_select') {
-      data.aiPrompt = editForm.value.aiPrompt
-      // 后端 isAiField 为 Integer(tinyint)，传 1 而非 boolean true
+    // AI 字段捷径：提示词是后端列，单独回传
+    if (fieldType === 'ai_text' || fieldType === 'ai_select') {
+      data.aiPrompt = editBase.value.aiPrompt
       data.isAiField = 1
-      config.sourceFieldIds = editForm.value.sourceFieldIds
-      config.autoCompute = editForm.value.autoCompute
-      if (editingField.value.fieldType === 'ai_select') {
-        config.options = editForm.value.options.filter((o) => o.label.trim())
-      }
     }
 
-    data.config = config
     await updateField(editingFieldId.value, data)
     toast.success('配置保存成功')
     if (activeTableId.value) {
@@ -1861,11 +1591,45 @@ async function handleHideField(fieldId: number) {
 
   try {
     await updateView(view.id, { config, version: view.version })
-    toast.success(willHide ? '列已隐藏，可在字段配置中恢复' : '列已恢复显示')
+    toast.success(willHide ? '列已隐藏' : '列已恢复显示')
     await loadViews(activeTableId.value!)
   } catch (e: any) {
     toast.error(resolveErrorMessage(e, '更新视图配置失败'))
   }
+}
+
+/**
+ * 视图级字段绑定（日历的日期字段、甘特的起止字段）改动后落库。
+ * 不弹成功 toast：选择框里的值本身就是结果，日历/甘特会立刻重绘，再提示一遍是噪音。
+ */
+async function persistViewFieldConfig(patch: Partial<ViewConfig>) {
+  const view = activeView.value
+  if (!view) return
+  const config: ViewConfig = { ...(view.config || { schemaVersion: 1 }), ...patch }
+  try {
+    await updateView(view.id, { config, version: view.version })
+    await loadViews(activeTableId.value!)
+  } catch (e: any) {
+    toast.error(resolveErrorMessage(e, '更新视图配置失败'))
+  }
+}
+
+function handleCalendarFieldChange(patch: { startFieldId: number | null }) {
+  const view = activeView.value
+  persistViewFieldConfig({
+    calendar: { ...(view?.config?.calendar || {}), startFieldId: patch.startFieldId ?? undefined },
+  })
+}
+
+function handleGanttFieldChange(patch: { startFieldId: number | null; endFieldId: number | null }) {
+  const view = activeView.value
+  persistViewFieldConfig({
+    gantt: {
+      ...(view?.config?.gantt || {}),
+      startFieldId: patch.startFieldId ?? undefined,
+      endFieldId: patch.endFieldId ?? undefined,
+    },
+  })
 }
 
 async function handleCopyField(field: BitableField) {
@@ -1909,21 +1673,16 @@ async function handleDeleteField(field: BitableField) {
   }
 }
 
-function addEditOption() {
-  editForm.value.options.push({ label: '', color: '#409eff' })
-}
-
-function removeEditOption(idx: number) {
-  editForm.value.options.splice(idx, 1)
-}
-
 function openFormulaEditorForConfig() {
-  formulaExpr.value = editForm.value.formulaExpr
+  formulaExpr.value = editConfig.value.formulaExpr || ''
   formulaEditorVisible.value = true
 }
 
+// 公式编辑器回填到字段配置（配置对象由 FieldAttributeForm 持有）
 watch(formulaExpr, (val) => {
-  editForm.value.formulaExpr = val
+  if (formulaEditorVisible.value) {
+    editConfig.value.formulaExpr = val
+  }
 })
 
 async function handleCloneField(fieldId: number) {
@@ -2016,7 +1775,7 @@ function handleKanbanRecordUpdate(record: BitableRecord) {
   recordEditVisible.value = true
 }
 
-async function handleRecordEditSave(data: { recordId: number; version: number; cells: Record<number, { valueText?: string; valueNumber?: number; valueDate?: string }> }) {
+async function handleRecordEditSave(data: { recordId: number; version: number; cells: Record<number, { valueText?: string; valueNumber?: number; valueDate?: string; valueJson?: unknown }> }) {
   try {
     // 逐字段提交（乐观锁），任一字段版本冲突即提示刷新
     let latestVersion = data.version
@@ -2091,7 +1850,7 @@ async function handleCardMove(data: { recordId: number; fieldId: number; fromGro
 
 function handleOpenComments() {
   if (!records.value.length) {
-    toast.warning('暂无记录，请先添加数据')
+    toast.warning('暂无记录')
     return
   }
   commentRecordId.value = records.value[0].id
@@ -2215,6 +1974,29 @@ watch(showImportExport, (val) => {
     &--active {
       color: var(--color-text-primary, #0f172a);
       font-weight: 700;
+    }
+
+    /* 面包屑可点击回退：用 button 承载，需要抹掉浏览器默认按钮样式 */
+    &.is-clickable {
+      padding: 2px 6px;
+      margin: 0 -2px;
+      border: none;
+      background: none;
+      font-family: inherit;
+      line-height: inherit;
+      border-radius: var(--border-radius-sm, 4px);
+      cursor: pointer;
+      transition: background 0.12s ease, color 0.12s ease;
+
+      &:hover {
+        background: var(--color-surface-alt, #f1f5f9);
+        color: var(--color-primary, #2563eb);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--color-primary, #2563eb);
+        outline-offset: 1px;
+      }
     }
   }
 

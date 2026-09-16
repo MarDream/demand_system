@@ -245,6 +245,7 @@
                     <el-avatar :size="28" class="approval-evaluation-avatar">{{ item.evaluatorName?.charAt(0) || '审' }}</el-avatar>
                     <div class="approval-evaluation-meta">
                       <div class="approval-evaluation-title">
+                        <span v-if="item.assigneeRoleName" class="approval-evaluation-role">{{ item.assigneeRoleName }}</span>
                         <strong>{{ item.evaluatorName || '处理人' }}</strong>
                         <el-tag v-if="item.id !== -1" size="small" effect="dark" round :type="approvalResultTagType(item.result)">
                           {{ item.resultLabel || item.actionLabel || '审核' }}
@@ -284,8 +285,7 @@
                       <div class="approval-supplement-item__header">
                         <span class="approval-supplement-item__tag">补充</span>
                         <strong>{{ supplement.evaluatorName || '处理人' }}</strong>
-                        <span class="approval-supplement-item__time">{{ formatDate(supplement.createdAt) }}</span>
-                      </div>
+                        <span class="approval-supplement-item__time">{{ formatDate(supplement.createdAt) }}</span>                      </div>
                       <p class="approval-supplement-item__content">{{ supplement.content || '未填写补充意见' }}</p>
                       <div v-if="supplement.attachments?.length" class="approval-evaluation-attachments">
                         <span class="approval-evaluation-attachments__label">附件：</span>
@@ -387,32 +387,36 @@
             v-if="showWorkflowActionPanel"
             :class="['workflow-sidebar', { 'is-collapsed': workflowPanelCollapsed }]"
           >
-            <div class="workflow-sidebar__rail">
-              <el-button
-                class="workflow-sidebar__toggle-button"
-                text
-                circle
-                :aria-label="workflowPanelCollapsed ? '展开审批面板' : '折叠审批面板'"
-                :aria-expanded="!workflowPanelCollapsed"
-                @click="workflowPanelCollapsed = !workflowPanelCollapsed"
-              >
-                <el-icon>
-                  <ArrowRightBold v-if="workflowPanelCollapsed" />
-                  <ArrowLeftBold v-else />
-                </el-icon>
-              </el-button>
-              <span v-if="workflowPanelCollapsed" class="workflow-sidebar__collapsed-title">审批功能</span>
-            </div>
+            <button
+              v-if="workflowPanelCollapsed"
+              type="button"
+              class="workflow-sidebar__expand"
+              aria-label="展开审批面板"
+              :aria-expanded="false"
+              @click="workflowPanelCollapsed = false"
+            >
+              <el-icon><ArrowRightBold /></el-icon>
+              <span class="workflow-sidebar__collapsed-title">审批功能</span>
+            </button>
 
-            <div v-if="!workflowPanelCollapsed" class="workflow-action-panel">
+            <div v-else class="workflow-action-panel">
               <div class="workflow-action-panel__header">
                 <div class="workflow-action-panel__header-icon">
                   <el-icon><CircleCheck /></el-icon>
                 </div>
-                <div>
+                <div class="workflow-action-panel__heading">
                   <div class="workflow-action-panel__title">审批操作</div>
                   <div class="workflow-action-panel__subtitle">当前节点决策与流转</div>
                 </div>
+                <button
+                  type="button"
+                  class="workflow-sidebar__toggle-button"
+                  aria-label="折叠审批面板"
+                  :aria-expanded="true"
+                  @click="workflowPanelCollapsed = true"
+                >
+                  <el-icon><ArrowLeftBold /></el-icon>
+                </button>
               </div>
 
               <div v-if="showCurrentNodeStatus" class="workflow-action-panel__status-bar">
@@ -533,16 +537,115 @@
                 </div>
 
                 <div class="workflow-action-panel__section">
-                  <div class="workflow-action-panel__section-title">操作</div>
+                  <div class="workflow-action-panel__section-title">审核信息</div>
 
-                  <div class="workflow-action-panel__actions">
+                  <div v-if="workflowRuntime.evaluationRequired" class="workflow-action-panel__field workflow-action-panel__field--vertical">
+                    <span class="workflow-action-panel__field-label">评分</span>
+                    <el-rate
+                      v-model="approvalRating"
+                      :max="5"
+                      show-text
+                      :texts="['不满意', '一般', '满意', '比较满意', '非常满意']"
+                    />
+                  </div>
+
+                  <div v-if="workflowRuntime.canModifyType && approvalTypeOptions.length > 0" class="workflow-action-panel__field workflow-action-panel__field--vertical">
+                    <span class="workflow-action-panel__field-label">工单类型</span>
+                    <el-select
+                      v-model="selectedNewType"
+                      placeholder="选择变更后的工单类型（选填）"
+                      class="workflow-action-panel__control"
+                      clearable
+                    >
+                      <el-option
+                        v-for="opt in approvalTypeOptions"
+                        :key="opt.code"
+                        :label="opt.name"
+                        :value="opt.code"
+                      >
+                        <span v-if="opt.color" :style="{ color: opt.color }">● </span>
+                        {{ opt.name }}
+                      </el-option>
+                    </el-select>
+                  </div>
+
+                  <div class="workflow-action-panel__field workflow-action-panel__field--vertical">
+                    <span class="workflow-action-panel__field-label">
+                      审核意见<span v-if="isCommentRequired" class="workflow-action-panel__required-mark">*</span>
+                    </span>
+                    <el-input
+                      v-model="approvalComment"
+                      type="textarea"
+                      :rows="3"
+                      :placeholder="isCommentRequired ? '请输入审核意见（必填）' : '请输入审核意见（选填）'"
+                      maxlength="1000"
+                      show-word-limit
+                    />
+                    <div v-if="approvalCommentError" class="workflow-action-panel__field-error">
+                      {{ approvalCommentError }}
+                    </div>
+                  </div>
+
+                  <div v-if="canSubmitApproval" class="workflow-action-panel__field workflow-action-panel__field--vertical">
+                    <div class="workflow-action-panel__field-label-row">
+                      <span class="workflow-action-panel__field-label">
+                        附件材料<span v-if="isAttachmentRequired" class="workflow-action-panel__required-mark">*</span>
+                      </span>
+                      <el-tooltip :content="attachmentAreaExpanded ? '收起上传区' : '上传附件（点击/拖拽/粘贴）'" placement="top">
+                        <button
+                          type="button"
+                          class="workflow-action-panel__icon-button"
+                          :class="{ 'is-active': attachmentAreaExpanded, 'has-files': approvalAttachments.length > 0 }"
+                          :aria-expanded="attachmentAreaExpanded"
+                          @click="attachmentAreaExpanded = !attachmentAreaExpanded"
+                        >
+                          <el-icon :size="14"><Upload /></el-icon>
+                          <span v-if="approvalAttachments.length > 0" class="workflow-action-panel__icon-badge">
+                            {{ approvalAttachments.length }}
+                          </span>
+                        </button>
+                      </el-tooltip>
+                    </div>
+                    <AttachmentUploader
+                      v-show="attachmentAreaExpanded"
+                      v-model="approvalAttachments"
+                      :show-preview="false"
+                      :required="isAttachmentRequired"
+                    />
+                    <div
+                      v-if="!attachmentAreaExpanded && approvalAttachments.length > 0"
+                      class="workflow-action-panel__attachment-summary"
+                    >
+                      已添加 {{ approvalAttachments.length }} 个附件
+                    </div>
+                  </div>
+                </div>
+
+                <div class="workflow-action-panel__section">
+                  <div
+                    v-if="usingUnifiedEngine && (workflowRuntime.canCountersign || workflowRuntime.canCancel)"
+                    class="workflow-action-panel__actions"
+                  >
                     <AppButton
                       v-if="usingUnifiedEngine && workflowRuntime.canCountersign"
+                      size="small"
                       permission="button:requirement:submit"
                       @click="openCountersignDialog(workflowRuntime.currentNodeId || '')"
                     >
                       会签审批
                     </AppButton>
+                    <AppButton
+                      v-if="usingUnifiedEngine && workflowRuntime.canCancel"
+                      size="small"
+                      :loading="transitionLoading"
+                      permission="button:requirement:cancel"
+                      @click="handleCancel"
+                    >
+                      取消
+                    </AppButton>
+                  </div>
+
+                  <div class="workflow-action-panel__action-bar">
                     <AppButton
                       v-if="usingUnifiedEngine && workflowRuntime.canRollback"
                       type="danger"
@@ -553,17 +656,6 @@
                     >
                       驳回
                     </AppButton>
-                    <AppButton
-                      v-if="usingUnifiedEngine && workflowRuntime.canCancel"
-                      :loading="transitionLoading"
-                      permission="button:requirement:cancel"
-                      @click="handleCancel"
-                    >
-                      取消
-                    </AppButton>
-                  </div>
-
-                  <div class="workflow-action-panel__submit-actions">
                     <AppButton
                       type="primary"
                       permission="button:requirement:submit"
@@ -613,86 +705,7 @@
           </template>
         </el-dialog>
 
-        <el-dialog
-          v-model="approvalDialogVisible"
-          title="审核操作"
-          width="480px"
-          :close-on-click-modal="false"
-          @closed="resetApprovalDialog"
-        >
-          <p class="approval-dialog-tip">
-            提交到下一节点前{{ workflowRuntime.evaluationRequired ? '请补充审核信息' : '可补充审核信息（选填）' }}。
-          </p>
-          <el-form-item
-            v-if="workflowRuntime.evaluationRequired"
-            label="评分"
-            :required="true"
-            class="approval-dialog-rate-item"
-          >
-            <el-rate
-              v-model="approvalRating"
-              :max="5"
-              show-text
-              :texts="['不满意', '一般', '满意', '比较满意', '非常满意']"
-              class="approval-dialog-rate"
-            />
-          </el-form-item>
-          <el-form-item
-            v-if="workflowRuntime.canModifyType && approvalTypeOptions.length > 0"
-            label="工单类型"
-          >
-            <el-select
-              v-model="selectedNewType"
-              placeholder="选择变更后的工单类型（选填）"
-              style="width: 100%"
-              clearable
-            >
-              <el-option
-                v-for="opt in approvalTypeOptions"
-                :key="opt.code"
-                :label="opt.name"
-                :value="opt.code"
-              >
-                <span v-if="opt.color" :style="{ color: opt.color }">● </span>
-                {{ opt.name }}
-              </el-option>
-            </el-select>
-            <div class="approval-dialog-tip" style="margin-top: 4px; font-size: 12px;">
-              变更工单类型后将按照新类型的工作流从初始节点开始流转
-            </div>
-          </el-form-item>
-          <el-form-item
-            label="审核意见"
-            :required="isCommentRequired"
-            :error="approvalCommentError"
-            style="margin-bottom: 12px;"
-          >
-            <el-input
-              v-model="approvalComment"
-              type="textarea"
-              :rows="4"
-              :placeholder="isCommentRequired ? '请输入审核意见（必填）' : '请输入审核意见（选填）'"
-              maxlength="1000"
-              show-word-limit
-            />
-          </el-form-item>
-          <div v-if="canSubmitApproval" class="approval-attachment-section">
-            <div class="approval-attachment-header">
-              <span>附件材料</span>
-            </div>
-            <AttachmentUploader
-              v-model="approvalAttachments"
-              :show-preview="false"
-              :required="isAttachmentRequired"
-            />
-          </div>
-          <template #footer>
-            <el-button @click="approvalDialogVisible = false">取消</el-button>
-            <el-button type="primary" :loading="transitionLoading" @click="confirmApprovalTransition">
-              确认提交
-            </el-button>
-          </template>
-        </el-dialog>
+        <!-- 审核意见与附件已内联至右侧"审批操作"面板，提交不再弹窗 -->
 
         <!-- 会签审批对话框 -->
         <el-dialog
@@ -800,7 +813,7 @@
 import { computed, ref, onMounted, watch, nextTick, type Ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
-import { ArrowLeftBold, ArrowRightBold, Document, Picture, List, ChatLineRound, ChatDotRound, View, Download, Edit, Delete, ZoomIn, ZoomOut, RefreshLeft, CircleCheck } from '@element-plus/icons-vue'
+import { ArrowLeftBold, ArrowRightBold, Document, Picture, List, ChatLineRound, ChatDotRound, View, Download, Edit, Delete, ZoomIn, ZoomOut, RefreshLeft, CircleCheck, Upload } from '@element-plus/icons-vue'
 import { requirementApi, projectApi, relationApi } from '@/api'
 import { downloadRequirementAttachment, uploadRequirementAttachment } from '@/api/modules/file'
 import type { RelationItem } from '@/api/modules/relation'
@@ -1026,10 +1039,16 @@ watch(dynamicFields, () => { void loadActiveUsers() }, { immediate: true })
 const relatedRequirements = ref<any[]>([])
 const comments = ref<RequirementComment[]>([])
 const approvalEvaluations = ref<RequirementApprovalEvaluation[]>([])
-const approvalDialogVisible = ref(false)
 const approvalRating = ref(0)
 const approvalComment = ref('')
 const approvalAttachments = ref<RequirementAttachment[]>([])
+// 附件上传区默认折叠，点图标展开；添加文件后自动展开以显示列表
+const attachmentAreaExpanded = ref(false)
+watch(() => approvalAttachments.value.length, (len) => {
+  if (len > 0) {
+    attachmentAreaExpanded.value = true
+  }
+})
 const supplementDialogVisible = ref(false)
 const supplementSubmitting = ref(false)
 const supplementContent = ref('')
@@ -1414,15 +1433,17 @@ function resetApprovalDialog() {
   approvalRating.value = 0
   approvalComment.value = ''
   approvalAttachments.value = []
+  attachmentAreaExpanded.value = false
   selectedNewType.value = null
 }
 
-function initializeApprovalDialog() {
+// 切换目标节点时重置审核信息（新节点可能有不同的意见/附件要求）
+watch(selectedTransitionTargetId, () => {
   resetApprovalDialog()
   if (workflowRuntime.value.canModifyType) {
     selectedNewType.value = detail.value?.type || null
   }
-}
+})
 
 function resetSupplementDialog() {
   supplementTarget.value = null
@@ -1465,7 +1486,6 @@ async function executeTransition(extra?: { rating?: number; ratingDimensions?: R
     })
     toast.success('需求已更新')
     selectedTransitionTargetId.value = null
-    approvalDialogVisible.value = false
     resetApprovalDialog()
 
     // 智能跳转：检查待办数量决定跳转目标
@@ -1887,8 +1907,8 @@ async function handleStatusTransition() {
     return
   }
 
-  initializeApprovalDialog()
-  approvalDialogVisible.value = true
+  // 审核意见与附件已在右侧"审批操作"面板内填写，直接校验并提交，不再弹窗
+  await confirmApprovalTransition()
 }
 
 // 会签审批方法
@@ -2326,48 +2346,65 @@ onMounted(() => {
   position: sticky;
   top: 16px;
   flex: 0 0 340px;
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
   min-width: 0;
 }
 
 .workflow-sidebar.is-collapsed {
-  flex-basis: 56px;
-}
-
-.workflow-sidebar__rail {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--spacing-sm);
-  width: 40px;
-  padding: 14px 4px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-sm);
+  flex-basis: 28px;
 }
 
 .workflow-sidebar__toggle-button {
-  color: var(--color-accent);
-  padding: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
   border-radius: var(--radius-sm);
-  transition: background-color var(--duration-fast) var(--ease-standard);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
 
   &:hover {
     background: var(--el-color-primary-light-9);
+    color: var(--color-accent);
+  }
+}
+
+.workflow-sidebar__expand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 14px;
+  transition: color var(--duration-fast) var(--ease-standard);
+
+  &:hover {
+    color: var(--color-accent);
   }
 }
 
 .workflow-sidebar__collapsed-title {
-  margin-top: 4px;
   color: var(--color-text-secondary);
   font-size: var(--font-size-xs);
   line-height: 1.4;
   writing-mode: vertical-rl;
   letter-spacing: 2px;
   user-select: none;
+}
+
+.workflow-action-panel__heading {
+  flex: 1;
+  min-width: 0;
 }
 
 .workflow-action-panel {
@@ -2570,31 +2607,112 @@ onMounted(() => {
 
 .workflow-action-panel__actions {
   display: flex;
-  justify-content: flex-start;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  padding-top: 4px;
+  padding-top: 2px;
 }
 
 .workflow-action-panel__actions :deep(.el-button),
 .workflow-action-panel__actions :deep(button) {
-  min-width: 80px;
+  margin: 0;
+  padding: 5px 14px;
+  font-size: 12px;
+  border-radius: 6px;
 }
 
-.workflow-action-panel__submit-actions {
+.workflow-action-panel__action-bar {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 8px;
-  padding-top: 18px;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
   border-top: 1px solid var(--color-border);
 }
 
-.workflow-action-panel__submit-actions :deep(.el-button),
-.workflow-action-panel__submit-actions :deep(button) {
-  min-width: 96px;
+.workflow-action-panel__action-bar :deep(.el-button),
+.workflow-action-panel__action-bar :deep(button) {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 7px 0;
+  font-size: 13px;
+  border-radius: 6px;
+}
+
+.workflow-action-panel__action-bar :deep(.el-button--primary) {
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.22);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.workflow-action-panel__action-bar :deep(.el-button--primary:hover) {
+  box-shadow: 0 3px 12px rgba(37, 99, 235, 0.32);
+  transform: translateY(-1px);
+}
+
+.workflow-action-panel__required-mark {
+  color: var(--el-color-danger, #f56c6c);
+  margin-left: 2px;
+}
+
+/* 附件材料：紧凑上传图标（点击展开/收起上传区） */
+.workflow-action-panel__icon-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    color: var(--color-primary, #2563eb);
+    border-color: var(--color-primary, #2563eb);
+    background: var(--color-primary-subtle, #eff6ff);
+  }
+
+  &.is-active {
+    color: var(--color-primary, #2563eb);
+    border-color: var(--color-primary, #2563eb);
+    background: var(--color-primary-subtle, #eff6ff);
+  }
+
+  &.has-files {
+    color: var(--color-primary, #2563eb);
+    border-color: var(--color-primary, #2563eb);
+  }
+}
+
+.workflow-action-panel__icon-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--color-primary, #2563eb);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  text-align: center;
+}
+
+.workflow-action-panel__attachment-summary {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.workflow-action-panel__field-error {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--el-color-danger, #f56c6c);
 }
 
 /* ===== 当前节点状态栏 ===== */
@@ -2664,8 +2782,15 @@ onMounted(() => {
     width: 100%;
   }
 
-  .workflow-sidebar__rail {
-    display: none;
+  .workflow-sidebar__expand {
+    flex-direction: row;
+    justify-content: center;
+    width: 100%;
+    padding: 8px 0;
+  }
+
+  .workflow-sidebar__collapsed-title {
+    writing-mode: horizontal-tb;
   }
 
   .workflow-action-panel {
@@ -3272,6 +3397,18 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.approval-evaluation-username {
+  color: var(--color-muted-text);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.approval-evaluation-role {
+  color: var(--color-muted-text);
+  font-size: 13px;
+  font-weight: 400;
 }
 
 .approval-evaluation-node {

@@ -91,19 +91,22 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { ArrowLeft, ArrowRight, Loading } from '@element-plus/icons-vue'
-import type { BitableField, BitableRecord, BitableTable } from '@/types/bitable'
+import { resolveRecordTitle } from '@/utils/bitableFieldConfig'
+import type { BitableField, BitableRecord, BitableTable, ViewConfig } from '@/types/bitable'
 
 const props = defineProps<{
   table: BitableTable | null
   fields: BitableField[]
   records: BitableRecord[]
   loading: boolean
+  viewConfig?: ViewConfig | null
 }>()
 
 const emit = defineEmits<{
   recordClick: [record: BitableRecord]
+  fieldChange: [patch: { startFieldId: number | null }]
 }>()
 
 const dateFieldId = ref<number | null>(null)
@@ -132,8 +135,24 @@ const currentMonthLabel = computed(() => {
 })
 
 function handleFieldChange() {
-  // 字段切换无需额外处理
+  emit('fieldChange', { startFieldId: dateFieldId.value })
 }
+
+/** 日期字段：优先取视图配置里存过的值，失效或未配置时落到第一个可用日期字段 */
+function resolveDateFieldId(): number | null {
+  const configured = props.viewConfig?.calendar?.startFieldId
+  if (configured && props.fields.some((f) => f.id === configured)) return configured
+  return dateFields.value[0]?.id ?? null
+}
+
+watch(
+  () => [props.fields, props.viewConfig?.calendar?.startFieldId] as const,
+  () => {
+    const next = resolveDateFieldId()
+    if (next !== dateFieldId.value) dateFieldId.value = next
+  },
+  { immediate: true },
+)
 
 function isToday(day: { date: Date }): boolean {
   const today = new Date()
@@ -157,10 +176,7 @@ function nextMonth() {
 }
 
 function getRecordTitle(record: BitableRecord): string {
-  const textFields = props.fields.filter((f) => f.fieldType === 'text')
-  if (textFields.length === 0) return `记录 ${record.id}`
-  const cell = record.cells?.[textFields[0].id]
-  return cell?.valueText || `记录 ${record.id}`
+  return resolveRecordTitle(props.fields, record, props.viewConfig?.calendar?.titleFieldId)
 }
 
 function handleRecordClick(record: BitableRecord) {

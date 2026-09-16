@@ -14,6 +14,11 @@ public class BitableTableCreateDTO {
 
     private String icon;
 
+    /**
+     * 所属分组ID，null=未分组
+     */
+    private Long groupId;
+
     public String getName() {
         return name;
     }
@@ -36,5 +41,13 @@ public class BitableTableCreateDTO {
 
     public void setIcon(String icon) {
         this.icon = icon;
+    }
+
+    public Long getGroupId() {
+        return groupId;
+    }
+
+    public void setGroupId(Long groupId) {
+        this.groupId = groupId;
     }
 }

@@ -6,6 +6,7 @@ import java.util.List;
 
 import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse.CitationReference;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse.ThinkingStep;
+import com.demand.system.module.nl2sql.dto.DataQueryResult;
 
 public class AssistantMessageVO {
 
@@ -29,6 +30,8 @@ public class AssistantMessageVO {
     private Integer inputTokens;
     private Integer outputTokens;
     private Integer totalTokens;
+    /** NL2SQL 数据问答结果（含 SQL、结果集与图表建议） */
+    private DataQueryResult dataResult;
     private LocalDateTime createdAt;
 
     public Long getId() {
@@ -173,6 +176,14 @@ public class AssistantMessageVO {
 
     public void setReasoning(String reasoning) {
         this.reasoning = reasoning;
+    }
+
+    public DataQueryResult getDataResult() {
+        return dataResult;
+    }
+
+    public void setDataResult(DataQueryResult dataResult) {
+        this.dataResult = dataResult;
     }
 
     public Integer getInputTokens() {

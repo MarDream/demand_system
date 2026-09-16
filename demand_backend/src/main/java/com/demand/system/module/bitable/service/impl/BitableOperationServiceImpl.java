@@ -3,6 +3,7 @@ package com.demand.system.module.bitable.service.impl;
 import com.demand.system.common.result.PageResult;
 import com.demand.system.common.util.UserNameResolver;
 import com.demand.system.module.bitable.constant.OperationType;
+import com.demand.system.module.bitable.dto.BitableOperationQueryDTO;
 import com.demand.system.module.bitable.dto.BitableOperationVO;
 import com.demand.system.module.bitable.entity.BitableOperation;
 import com.demand.system.module.bitable.mapper.BitableOperationMapper;
@@ -39,11 +40,15 @@ public class BitableOperationServiceImpl implements BitableOperationService {
     }
 
     @Override
-    public PageResult<BitableOperationVO> listOperationsByBaseId(Long baseId, Integer pageNum, Integer pageSize) {
-        int total = operationMapper.countByBaseId(baseId);
+    public PageResult<BitableOperationVO> listOperationsByBaseId(Long baseId, BitableOperationQueryDTO query) {
+        int pageNum = query.getPageNum() != null && query.getPageNum() > 0 ? query.getPageNum() : 1;
+        int pageSize = query.getPageSize() != null && query.getPageSize() > 0 ? query.getPageSize() : 20;
         int offset = (pageNum - 1) * pageSize;
 
-        List<BitableOperation> operations = operationMapper.selectByBaseId(baseId, offset, pageSize);
+        int total = operationMapper.countByBaseId(baseId, query.getOperationTypes(), query.getUserId(),
+                query.getStartTime(), query.getEndTime());
+        List<BitableOperation> operations = operationMapper.selectByBaseId(baseId, offset, pageSize,
+                query.getOperationTypes(), query.getUserId(), query.getStartTime(), query.getEndTime());
         List<BitableOperationVO> voList = operations.stream()
                 .map(this::toOperationVO)
                 .collect(Collectors.toList());
@@ -52,11 +57,15 @@ public class BitableOperationServiceImpl implements BitableOperationService {
     }
 
     @Override
-    public PageResult<BitableOperationVO> listOperationsByTableId(Long baseId, Long tableId, Integer pageNum, Integer pageSize) {
-        int total = operationMapper.countByTableId(baseId, tableId);
+    public PageResult<BitableOperationVO> listOperationsByTableId(Long baseId, Long tableId, BitableOperationQueryDTO query) {
+        int pageNum = query.getPageNum() != null && query.getPageNum() > 0 ? query.getPageNum() : 1;
+        int pageSize = query.getPageSize() != null && query.getPageSize() > 0 ? query.getPageSize() : 20;
         int offset = (pageNum - 1) * pageSize;
 
-        List<BitableOperation> operations = operationMapper.selectByTableId(baseId, tableId, offset, pageSize);
+        int total = operationMapper.countByTableId(baseId, tableId, query.getOperationTypes(), query.getUserId(),
+                query.getStartTime(), query.getEndTime());
+        List<BitableOperation> operations = operationMapper.selectByTableId(baseId, tableId, offset, pageSize,
+                query.getOperationTypes(), query.getUserId(), query.getStartTime(), query.getEndTime());
         List<BitableOperationVO> voList = operations.stream()
                 .map(this::toOperationVO)
                 .collect(Collectors.toList());

@@ -67,6 +67,12 @@ public class AssistantChatRequest {
     private List<String> searchScopes;
 
     /**
+     * 是否启用"数据问答"（NL2SQL）：把自然语言问题翻译为只读 SQL 查询数据库并整合回答。
+     * <p>true 时助手直接走 NL2SQL 链路；为 null 时由后端按问题特征自动路由（可用配置关闭）。</p>
+     */
+    private Boolean dataQuery;
+
+    /**
      * 多轮对话历史（旧→新），用于查询改写（消解指代）与回答上下文；
      * 建议由前端截取最近 3~6 条，后端会再做长度限制。
      */
@@ -134,6 +140,14 @@ public class AssistantChatRequest {
 
     public void setSearchScopes(List<String> searchScopes) {
         this.searchScopes = searchScopes;
+    }
+
+    public Boolean getDataQuery() {
+        return dataQuery;
+    }
+
+    public void setDataQuery(Boolean dataQuery) {
+        this.dataQuery = dataQuery;
     }
 
     public List<ConversationTurn> getHistory() {

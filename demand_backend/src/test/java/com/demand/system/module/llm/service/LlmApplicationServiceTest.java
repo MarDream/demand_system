@@ -7,6 +7,7 @@ import com.demand.system.module.llm.dto.LlmApplicationVO;
 import com.demand.system.module.llm.entity.LlmApplication;
 import com.demand.system.module.llm.entity.LlmModel;
 import com.demand.system.module.llm.entity.LlmProvider;
+import com.demand.system.module.llm.mapper.LlmApplicationGroupMapper;
 import com.demand.system.module.llm.mapper.LlmApplicationMapper;
 import com.demand.system.module.llm.mapper.LlmModelMapper;
 import com.demand.system.module.llm.mapper.LlmProviderMapper;
@@ -30,6 +31,7 @@ class LlmApplicationServiceTest {
     private LlmApplicationMapper applicationMapper;
     private LlmModelMapper modelMapper;
     private LlmProviderMapper providerMapper;
+    private LlmApplicationGroupMapper applicationGroupMapper;
     private LlmApplicationService service;
 
     @BeforeEach
@@ -37,7 +39,8 @@ class LlmApplicationServiceTest {
         applicationMapper = mock(LlmApplicationMapper.class);
         modelMapper = mock(LlmModelMapper.class);
         providerMapper = mock(LlmProviderMapper.class);
-        service = new LlmApplicationService(applicationMapper, modelMapper, providerMapper);
+        applicationGroupMapper = mock(LlmApplicationGroupMapper.class);
+        service = new LlmApplicationService(applicationMapper, modelMapper, providerMapper, applicationGroupMapper);
     }
 
     @Test

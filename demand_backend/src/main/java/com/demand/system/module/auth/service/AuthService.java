@@ -13,6 +13,19 @@ public interface AuthService {
     UserInfoResponse getCurrentUser();
 
     /**
+     * 个人设置：修改本人邮箱/手机号（其余信息只读，接口层面仅接受这两个字段）。
+     *
+     * @param request 邮箱/手机号
+     * @return 更新后的当前用户信息
+     */
+    UserInfoResponse updateProfile(UpdateProfileRequest request);
+
+    /**
+     * 个人设置：修改本人密码（需验证旧密码）。
+     */
+    void changePassword(ChangePasswordRequest request);
+
+    /**
      * 用户注册
      *
      * @param request 注册请求

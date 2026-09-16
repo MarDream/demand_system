@@ -22,6 +22,15 @@
           AND field_id = #{fieldId}
     </select>
 
+    <!-- 查询某字段在整张表内的所有非空单元格值（仅未软删记录），用于「唯一」约束校验 -->
+    <select id="selectByFieldId" resultType="com.demand.system.module.bitable.entity.BitableCellValue">
+        SELECT c.id, c.record_id, c.field_id, c.value_text, c.value_number, c.value_date, c.value_json,
+               c.created_at, c.updated_at
+        FROM `bitable_cell_values` c
+        INNER JOIN `bitable_records` r ON r.id = c.record_id AND r.deleted_at = 0
+        WHERE c.field_id = #{fieldId}
+    </select>
+
     <!-- 插入或更新单元格值（依赖 record_id + field_id 唯一索引） -->
     <insert id="saveOrUpdateCell">
         INSERT INTO `bitable_cell_values` (record_id, field_id, value_text, value_number, value_date, value_json)

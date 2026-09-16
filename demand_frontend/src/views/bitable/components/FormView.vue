@@ -11,12 +11,19 @@
         </div>
       </template>
 
-      <el-form v-if="editableFields.length" :model="formModel" label-width="120px" class="form-view__form">
+      <el-form
+        v-if="editableFields.length"
+        ref="formRef"
+        :model="formModel"
+        :rules="rules"
+        label-width="120px"
+        class="form-view__form"
+      >
         <el-form-item
           v-for="field in editableFields"
           :key="field.id"
           :label="field.name"
-          :required="Boolean(field.required)"
+          :prop="String(field.id)"
         >
           <template #label>
             <span>{{ field.name }}</span>
@@ -30,28 +37,35 @@
             v-model="formModel[field.id]"
             :type="field.fieldType === 'text' ? 'textarea' : 'text'"
             :rows="field.fieldType === 'text' ? 3 : undefined"
+            :maxlength="Number(field.config?.maxLength) || undefined"
+            :disabled="isFieldReadonly(field)"
             :placeholder="fieldPlaceholder(field)"
           />
 
           <el-input-number
             v-else-if="field.fieldType === 'number' || field.fieldType === 'currency' || field.fieldType === 'progress' || field.fieldType === 'rating'"
             v-model="formModel[field.id]"
-            :min="field.fieldType === 'progress' ? 0 : undefined"
-            :max="field.fieldType === 'progress' ? 100 : (field.fieldType === 'rating' ? (field.config?.maxRating || 10) : undefined)"
+            :disabled="isFieldReadonly(field)"
+            :precision="field.fieldType === 'progress' || field.fieldType === 'rating' ? 0 : (Number(field.config?.precision) || 0)"
+            :min="numberMin(field)"
+            :max="numberMax(field)"
             style="width: 100%;"
           />
 
           <el-date-picker
             v-else-if="field.fieldType === 'date' || field.fieldType === 'date_range'"
             v-model="formModel[field.id]"
-            :type="field.fieldType === 'date_range' ? 'daterange' : 'date'"
-            value-format="YYYY-MM-DD"
+            :type="field.fieldType === 'date_range' ? 'daterange' : (field.config?.withTime ? 'datetime' : 'date')"
+            :value-format="field.config?.withTime ? 'YYYY-MM-DD HH:mm:ss' : 'YYYY-MM-DD'"
+            :disabled="isFieldReadonly(field)"
             style="width: 100%;"
           />
 
           <el-select
             v-else-if="field.fieldType === 'single_select' || field.fieldType === 'process'"
             v-model="formModel[field.id]"
+            :disabled="isFieldReadonly(field)"
+            :allow-create="Boolean(field.config?.allowAddOption)"
             :placeholder="fieldPlaceholder(field)"
             style="width: 100%;"
           >
@@ -62,17 +76,24 @@
             v-else-if="field.fieldType === 'multi_select'"
             v-model="formModel[field.id]"
             multiple
+            :disabled="isFieldReadonly(field)"
+            :allow-create="Boolean(field.config?.allowAddOption)"
+            :multiple-limit="Number(field.config?.maxSelect) || 0"
             :placeholder="fieldPlaceholder(field)"
             style="width: 100%;"
           >
             <el-option v-for="opt in fieldOptions(field)" :key="opt.label" :label="opt.label" :value="opt.label" />
           </el-select>
 
-          <el-switch v-else-if="field.fieldType === 'checkbox' || field.fieldType === 'check'" v-model="formModel[field.id]" />
+          <el-switch
+            v-else-if="field.fieldType === 'checkbox' || field.fieldType === 'check'"
+            v-model="formModel[field.id]"
+            :disabled="isFieldReadonly(field)"
+          />
 
           <!-- 关联字段：弹窗选择目标表记录 -->
           <div v-else-if="field.fieldType === 'link' || field.fieldType === 'bidirectional_link'" class="form-view__link-field">
-            <el-button size="small" @click="openLinkSelector(field)">
+            <el-button size="small" :disabled="isFieldReadonly(field)" @click="openLinkSelector(field)">
               <el-icon><Link /></el-icon> 选择关联记录
             </el-button>
             <span class="form-view__link-count">
@@ -83,18 +104,21 @@
           <el-input
             v-else-if="field.fieldType === 'location'"
             v-model="formModel[field.id]"
+            :disabled="isFieldReadonly(field)"
             :placeholder="fieldPlaceholder(field, '地址或经纬度，例如：上海市浦东新区 / 31.2304,121.4737')"
           />
 
           <el-input
             v-else-if="field.fieldType === 'user' || field.fieldType === 'group'"
             v-model="formModel[field.id]"
+            :disabled="isFieldReadonly(field)"
             :placeholder="fieldPlaceholder(field, `请输入${fieldTypeLabel(field.fieldType)}`)"
           />
 
           <el-input
             v-else
             v-model="formModel[field.id]"
+            :disabled="isFieldReadonly(field)"
             :placeholder="fieldPlaceholder(field)"
           />
         </el-form-item>
@@ -122,10 +146,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
 import { QuestionFilled, Link } from '@element-plus/icons-vue'
 import type { BitableField, BitableTable } from '@/types/bitable'
+import {
+  buildFieldRules,
+  isFieldHidden,
+  isFieldReadonly,
+  resolveFieldDefault,
+} from '@/utils/bitableFieldConfig'
 import LinkFieldSelector from './LinkFieldSelector.vue'
 
 const props = defineProps<{
@@ -138,6 +169,7 @@ const emit = defineEmits<{
   submit: [cells: Record<number, { valueText?: string; valueNumber?: number; valueDate?: string; valueJson?: unknown }>]
 }>()
 
+const formRef = ref<FormInstance>()
 const formModel = reactive<Record<number, any>>({})
 
 // 关联字段选择器状态
@@ -185,7 +217,61 @@ const readonlyTypes = new Set([
   'button',
 ])
 
-const editableFields = computed(() => props.fields.filter((field) => !readonlyTypes.has(field.fieldType) && !field.config?.formHidden))
+const editableFields = computed(() =>
+  props.fields.filter(
+    (field) =>
+      !readonlyTypes.has(field.fieldType) &&
+      !field.config?.formHidden &&
+      // 字段级权限为「隐藏」的字段不出现在表单里
+      !isFieldHidden(field),
+  ),
+)
+
+/** 按字段属性生成校验规则（必填 / 长度 / 正则 / 数值区间 / 格式 / 多选上限） */
+const rules = computed<FormRules>(() => {
+  const result: FormRules = {}
+  for (const field of editableFields.value) {
+    const fieldRules = buildFieldRules(field)
+    if (fieldRules.length) {
+      result[String(field.id)] = fieldRules
+    }
+  }
+  return result
+})
+
+/** 数字类字段的取值范围 */
+function numberMin(field: BitableField) {
+  if (field.fieldType === 'progress' || field.fieldType === 'rating') return 0
+  return field.config?.min != null ? Number(field.config.min) : undefined
+}
+
+function numberMax(field: BitableField) {
+  if (field.fieldType === 'progress') return 100
+  if (field.fieldType === 'rating') return Number(field.config?.maxRating) || 5
+  return field.config?.max != null ? Number(field.config.max) : undefined
+}
+
+/** 套用字段默认值（新建记录时的初始值） */
+function applyDefaults() {
+  for (const field of editableFields.value) {
+    const fallback = resolveFieldDefault(field)
+    if (fallback === undefined) continue
+    if (field.fieldType === 'date' || field.fieldType === 'date_range') {
+      formModel[field.id] = typeof fallback === 'string' ? fallback.slice(0, field.config?.withTime ? 19 : 10).replace('T', ' ') : fallback
+    } else {
+      formModel[field.id] = fallback
+    }
+  }
+}
+
+// 字段列表变化时（切换数据表 / 新增字段）重新套用默认值
+watch(
+  () => props.fields,
+  () => {
+    reset()
+  },
+  { immediate: true },
+)
 
 function fieldOptions(field: BitableField) {
   return field.config?.options || field.config?.processNodes || []
@@ -200,28 +286,11 @@ function fieldTypeLabel(type: string) {
   return map[type] || '内容'
 }
 
-function validateRequired() {
-  for (const field of editableFields.value) {
-    if (!field.required) continue
-    const value = formModel[field.id]
-    const isEmpty =
-      value === undefined ||
-      value === null ||
-      value === '' ||
-      (Array.isArray(value) && value.length === 0) ||
-      // 复选框必填 = 必须勾选；false 与未填写同义
-      ((field.fieldType === 'checkbox' || field.fieldType === 'check') && value === false)
-    if (isEmpty) {
-      ElMessage.warning(`请填写必填字段：${field.name}`)
-      return false
-    }
-  }
-  return true
-}
-
 function buildCells() {
   const cells: Record<number, { valueText?: string; valueNumber?: number; valueDate?: string; valueJson?: unknown }> = {}
   for (const field of editableFields.value) {
+    // 字段级权限为只读时不提交，避免把未改动的展示值回写成新值
+    if (isFieldReadonly(field)) continue
     const value = formModel[field.id]
     if (value === undefined || value === null || value === '') continue
     if (['number', 'currency', 'progress', 'rating'].includes(field.fieldType)) {
@@ -244,8 +313,9 @@ function buildCells() {
   return cells
 }
 
-function submit() {
-  if (!validateRequired()) return
+async function submit() {
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (valid === false) return
   emit('submit', buildCells())
 }
 
@@ -253,6 +323,8 @@ function reset() {
   for (const key of Object.keys(formModel)) {
     delete formModel[Number(key)]
   }
+  formRef.value?.clearValidate()
+  applyDefaults()
 }
 
 defineExpose({ reset })

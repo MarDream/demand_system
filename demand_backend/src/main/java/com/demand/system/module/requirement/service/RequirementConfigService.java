@@ -238,7 +238,7 @@ public class RequirementConfigService {
         config.setRequiredFields(normalizeFields(parseStringList(permission.getRequiredFields())));
 
         // 动态字段 schema：按需求类型 + 初始节点权限计算可见/可编辑集合（创建场景无当前值）
-        List<CustomField> typeFields = requirementFieldService.listEnabledFields(projectId, defaultType.getCode());
+        List<CustomField> typeFields = requirementFieldService.listEnabledFields(defaultType.getCode());
         config.setDynamicFields(requirementFieldService.buildSchema(typeFields, permission, Collections.emptyMap()));
         return Result.success(config);
     }

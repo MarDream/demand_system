@@ -10,11 +10,11 @@ import java.util.List;
 /** 需求动态字段定义管理服务。 */
 public interface CustomFieldConfigService {
 
-    /** 查询某项目/需求类型下全部启用的字段定义。 */
-    Result<List<CustomFieldConfigDTO>> listFields(Long projectId, String typeCode);
+    /** 查询某需求类型下全部字段定义（含停用字段）。 */
+    Result<List<CustomFieldConfigDTO>> listFields(String typeCode);
 
     /** 构建创建态字段 schema：字段定义 + 流程首节点权限 + 默认值。 */
-    Result<List<CustomFieldConfigDTO>> buildCreateSchema(Long projectId, String typeCode);
+    Result<List<CustomFieldConfigDTO>> buildCreateSchema(String typeCode);
 
     /** 创建字段。校验 fieldCode 唯一性、格式、固定字段冲突、类型配置。 */
     Result<Void> createField(CustomField field);

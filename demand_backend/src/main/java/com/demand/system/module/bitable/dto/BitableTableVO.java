@@ -11,6 +11,11 @@ public class BitableTableVO {
 
     private Long baseId;
 
+    /**
+     * 所属分组ID，null=未分组
+     */
+    private Long groupId;
+
     private String name;
 
     private String description;
@@ -43,6 +48,14 @@ public class BitableTableVO {
 
     public void setBaseId(Long baseId) {
         this.baseId = baseId;
+    }
+
+    public Long getGroupId() {
+        return groupId;
+    }
+
+    public void setGroupId(Long groupId) {
+        this.groupId = groupId;
     }
 
     public String getName() {

@@ -8,7 +8,12 @@
     :clearable="clearable"
     :filterable="filterable"
     :loading="loading"
-    node-key="nodeKey"
+    :multiple="multiple"
+    :show-checkbox="multiple"
+    :collapse-tags="multiple"
+    :collapse-tags-tooltip="multiple"
+    :max-collapse-tags="3"
+    :node-key="multiple ? 'id' : 'nodeKey'"
     check-strictly
     :render-after-expand="false"
     :style="{ width: '100%', ...(style || {}) }"
@@ -147,8 +152,12 @@ interface PermTreeNode {
 
 const props = withDefaults(
   defineProps<{
-    /** 选中的角色 ID（叶子节点） */
-    modelValue?: number | null
+    /** 单选：选中的角色 ID；多选：角色 ID 数组 */
+    modelValue?: number | null | number[]
+    /** 多选模式（分组节点勾选值会被自动过滤，仅叶子角色可生效） */
+    multiple?: boolean
+    /** 需要排除的角色编码（如超级管理员不允许在此分配） */
+    excludeCodes?: string[]
     placeholder?: string
     disabled?: boolean
     clearable?: boolean
@@ -157,6 +166,8 @@ const props = withDefaults(
   }>(),
   {
     modelValue: undefined,
+    multiple: false,
+    excludeCodes: undefined,
     placeholder: '请选择角色',
     disabled: false,
     clearable: true,
@@ -166,8 +177,8 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  'update:modelValue': [value: number | null | undefined]
-  change: [value: number | null | undefined]
+  'update:modelValue': [value: number | null | number[]]
+  change: [value: number | null | number[]]
 }>()
 
 const treeProps = {
@@ -291,9 +302,21 @@ async function loadRoleTree(force = false): Promise<any[]> {
 
 onMounted(() => {
   loadRoleTree().then((data) => {
-    treeData.value = data
+    treeData.value = applyMode(data)
   })
 })
+
+/** 按实例模式加工树：剔除需要排除的角色编码，清空后隐藏空分组 */
+function applyMode(data: any[]): any[] {
+  const excluded = new Set(props.excludeCodes || [])
+  if (excluded.size === 0) return data
+  return data
+    .map((group) => ({
+      ...group,
+      children: (group.children || []).filter((role: any) => !excluded.has(role.code)),
+    }))
+    .filter((group) => (group.children || []).length > 0)
+}
 
 /* ── 权限懒加载：按 roleId 缓存 ── */
 const permMap = ref<Record<number, string[]>>({})
@@ -384,10 +407,19 @@ const permTreeMap = computed<Record<number, PermTreeNode[]>>(() => {
 })
 
 /**
- * 选中值变化：仅当为叶子节点（角色 ID 数字）时向上抛；
+ * 选中值变化：多选模式过滤出角色 ID（数字）数组，分组节点的勾选会被自动剔除；
+ * 单选仅当为叶子节点（角色 ID 数字）时向上抛；
  * 父节点不应被当作有效选择，避免脏值。
  */
 function handleChange(val: any) {
+  if (props.multiple) {
+    const arr = Array.isArray(val)
+      ? val.filter((item): item is number => typeof item === 'number')
+      : []
+    emit('update:modelValue', arr)
+    emit('change', arr)
+    return
+  }
   if (val === null || val === undefined) {
     emit('update:modelValue', null)
     emit('change', null)
@@ -406,7 +438,7 @@ function handleChange(val: any) {
 /* 暴露给上层：组件外主动重新拉取（角色组/角色变更后调用） */
 defineExpose({
   refresh: () => loadRoleTree(true).then((data) => {
-    treeData.value = data
+    treeData.value = applyMode(data)
   }),
 })
 </script>

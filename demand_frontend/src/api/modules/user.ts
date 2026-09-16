@@ -6,9 +6,9 @@ export function getUserList(params: UserQuery) {
   return request.get<PageResult<User>>('/v1/users', { params })
 }
 
-/** 获取活跃用户列表（仅 id/username/realName），供前端筛选框使用 */
+/** 获取活跃用户列表（仅 id/username/realName/avatar），供前端筛选框、成员选择器使用 */
 export function getFilterUsers() {
-  return request.get<Array<{ id: number; username: string; realName: string }>>('/v1/users/active')
+  return request.get<Array<{ id: number; username: string; realName: string; avatar?: string | null }>>('/v1/users/active')
 }
 
 export function getUserById(id: number) {
@@ -25,6 +25,16 @@ export function updateUser(id: number, data: Partial<User>) {
 
 export function deleteUser(id: number) {
   return request.delete<void>('/v1/users/' + id)
+}
+
+/** 批量启用 / 批量停用，返回实际生效的用户数 */
+export function batchUpdateUserStatus(ids: number[], status: 'active' | 'inactive') {
+  return request.post<number>('/v1/users/batch/status', { ids, status }) as unknown as Promise<number>
+}
+
+/** 批量删除，返回实际删除的用户数 */
+export function batchDeleteUsers(ids: number[]) {
+  return request.post<number>('/v1/users/batch/delete', { ids }) as unknown as Promise<number>
 }
 
 export function sendInitialPassword(id: number) {

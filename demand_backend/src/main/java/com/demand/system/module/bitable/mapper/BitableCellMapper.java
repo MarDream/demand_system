@@ -31,6 +31,14 @@ public interface BitableCellMapper extends BaseMapper<BitableCellValue> {
     BitableCellValue selectByRecordAndField(@Param("recordId") Long recordId, @Param("fieldId") Long fieldId);
 
     /**
+     * 查询某字段在整张表内的所有非空单元格值（仅未软删记录），用于「唯一」约束校验。
+     *
+     * @param fieldId 字段ID
+     * @return 单元格值列表
+     */
+    List<BitableCellValue> selectByFieldId(@Param("fieldId") Long fieldId);
+
+    /**
      * 插入或更新单元格值（依赖 record_id + field_id 唯一索引）
      * 注意：方法名不能用 insertOrUpdate，与 MyBatis-Plus BaseMapper 的同名方法冲突
      *

@@ -300,16 +300,6 @@
         <div class="tab-content">
           <div class="field-scope-bar">
             <el-select
-              v-model="fieldScopeProjectId"
-              placeholder="选择项目"
-              filterable
-              clearable
-              style="width: 220px"
-              @change="loadCustomFields"
-            >
-              <el-option v-for="p in projectOptions" :key="p.id" :label="p.name" :value="p.id" />
-            </el-select>
-            <el-select
               v-model="fieldScopeTypeCode"
               placeholder="选择需求类型"
               clearable
@@ -318,11 +308,11 @@
             >
               <el-option v-for="t in types" :key="t.code" :label="t.name" :value="t.code" />
             </el-select>
-            <el-button type="primary" :disabled="!fieldScopeProjectId" @click="openFieldDialog()">
+            <el-button type="primary" @click="openFieldDialog()">
               <el-icon><Plus /></el-icon>新增字段
             </el-button>
             <span class="field-scope-hint">
-              字段按「项目 + 需求类型」隔离；未选类型时维护项目级通用字段。字段在各环节的可见/可编辑/必填请在「系统设置 → 流程配置」的节点中配置。
+              字段按「需求类型」全局隔离，不再区分项目；未选类型时维护全类型通用字段。字段在各环节的可见/可编辑/必填请在「系统设置 → 流程配置」的节点中配置。
             </span>
           </div>
 
@@ -349,7 +339,8 @@
             </el-table-column>
             <el-table-column label="默认值" min-width="110">
               <template #default="{ row }">
-                <span>{{ row.defaultValue || '—' }}</span>
+                <span v-if="fieldDefaultValueText(row)">{{ fieldDefaultValueText(row) }}</span>
+                <span v-else class="text-muted">—</span>
               </template>
             </el-table-column>
             <el-table-column label="必填" width="70" align="center">
@@ -370,23 +361,28 @@
                 />
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="150" fixed="right">
+            <el-table-column label="操作" width="120" fixed="right">
               <template #default="{ row, $index }">
                 <div class="table-actions">
-                  <el-button link type="primary" size="small" :disabled="$index === 0" @click="moveField(row, -1)">
-                    上移
-                  </el-button>
-                  <el-button
-                    link
-                    type="primary"
-                    size="small"
-                    :disabled="$index === customFields.length - 1"
-                    @click="moveField(row, 1)"
-                  >
-                    下移
-                  </el-button>
-                  <el-button link type="primary" size="small" @click="openFieldDialog(row)">编辑</el-button>
-                  <el-button link type="danger" size="small" @click="deleteField(row)">删除</el-button>
+                  <el-tooltip content="上移">
+                    <el-button link type="primary" size="small" :icon="Top" :disabled="$index === 0" @click="moveField(row, -1)" />
+                  </el-tooltip>
+                  <el-tooltip content="下移">
+                    <el-button
+                      link
+                      type="primary"
+                      size="small"
+                      :icon="Bottom"
+                      :disabled="$index === customFields.length - 1"
+                      @click="moveField(row, 1)"
+                    />
+                  </el-tooltip>
+                  <el-tooltip content="编辑">
+                    <el-button link type="primary" size="small" :icon="EditPen" @click="openFieldDialog(row)" />
+                  </el-tooltip>
+                  <el-tooltip content="删除">
+                    <el-button link type="danger" size="small" :icon="Delete" @click="deleteField(row)" />
+                  </el-tooltip>
                 </div>
               </template>
             </el-table-column>
@@ -410,7 +406,19 @@
         <el-form-item label="字段名称" prop="name">
           <el-input v-model="fieldForm.name" placeholder="如：验收标准" />
         </el-form-item>
-        <el-form-item label="字段编码" prop="fieldCode">
+        <el-form-item prop="fieldCode">
+          <template #label>
+            <span class="field-label-with-tip">
+              字段编码
+              <el-tooltip placement="top" effect="dark">
+                <template #content>
+                  根据字段名称自动生成英文编码，可手动修改或点击 AI 按钮重新生成；<br />
+                  字母开头，仅含字母/数字/下划线，创建后不可修改
+                </template>
+                <el-icon class="field-tip-badge"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </span>
+          </template>
           <div style="display: flex; gap: 8px; width: 100%;">
             <el-input
               v-model="fieldForm.fieldCode"
@@ -433,21 +441,31 @@
               </el-button>
             </el-tooltip>
           </div>
-          <div v-if="!editingField" class="form-tip">根据字段名称自动生成英文编码，可手动修改或点击 AI 按钮重新生成；字母开头，仅含字母/数字/下划线，创建后不可修改</div>
         </el-form-item>
         <el-form-item label="字段类型" prop="fieldType">
           <el-select v-model="fieldForm.fieldType" style="width: 100%">
             <el-option v-for="opt in FIELD_TYPE_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="needsOptions" label="选项" prop="options">
+        <el-form-item v-if="needsOptions" prop="options">
+          <template #label>
+            <span class="field-label-with-tip">
+              选项
+              <el-tooltip
+                placement="top"
+                effect="dark"
+                content="选项名称可随时修改，已填写的数据不受影响；被数据引用的选项无法删除"
+              >
+                <el-icon class="field-tip-badge"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </span>
+          </template>
           <div class="options-editor">
             <div v-for="(opt, idx) in fieldForm.options" :key="opt.key" class="option-row">
               <el-input v-model="opt.label" placeholder="选项名称" maxlength="100" />
               <el-button link type="danger" :icon="Delete" @click="removeOption(idx)" />
             </div>
             <el-button link type="primary" :icon="Plus" @click="addOption">添加选项</el-button>
-            <div class="form-tip">选项名称可随时修改，已填写的数据不受影响；被数据引用的选项无法删除</div>
           </div>
         </el-form-item>
         <el-form-item label="默认值">
@@ -478,9 +496,20 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="必填">
+        <el-form-item>
+          <template #label>
+            <span class="field-label-with-tip">
+              必填
+              <el-tooltip
+                placement="top"
+                effect="dark"
+                content="开启后所有环节均要求填写，也可在流程节点单独追加必填"
+              >
+                <el-icon class="field-tip-badge"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </span>
+          </template>
           <el-switch v-model="fieldForm.required" />
-          <span class="form-tip-inline">开启后所有环节均要求填写，也可在流程节点单独追加必填</span>
         </el-form-item>
         <el-form-item label="启用">
           <el-switch v-model="fieldForm.enabled" />
@@ -582,9 +611,11 @@
         <el-form-item label="编码" prop="code">
           <el-input v-model="priorityForm.code" placeholder="如: P0" />
         </el-form-item>
-        <el-form-item label="级别" prop="level">
+        <el-form-item prop="level">
+          <template #label>
+            <FieldLabelTip tip="数字越小优先级越高">级别</FieldLabelTip>
+          </template>
           <el-input-number v-model="priorityForm.level" :min="0" />
-          <span class="form-tip">数字越小优先级越高</span>
         </el-form-item>
         <el-form-item label="颜色" prop="color">
           <el-color-picker v-model="priorityForm.color" show-alpha />
@@ -657,7 +688,8 @@
 import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { Plus, Rank, Operation, EditPen, Delete, Document, Setting, MagicStick } from '@element-plus/icons-vue'
+import { Plus, Rank, Operation, EditPen, Delete, Document, Setting, MagicStick, QuestionFilled, Top, Bottom } from '@element-plus/icons-vue'
+import FieldLabelTip from '@/components/common/FieldLabelTip.vue'
 import {
   requirementConfigApi,
   parseFieldOptions,
@@ -668,7 +700,6 @@ import {
   type RequirementType,
   type SortItem,
 } from '@/api/modules/requirementConfig'
-import { getProjectList } from '@/api/modules/project'
 import {
   backfillRequirementBodies,
   rebuildRequirementBody,
@@ -1056,10 +1087,8 @@ const FIELD_TYPE_OPTIONS = [
 
 type CustomFieldRow = CustomFieldDef & { _enabledLoading?: boolean }
 
-const projectOptions = ref<Array<{ id: number; name: string }>>([])
 const customFields = ref<CustomFieldRow[]>([])
 const fieldsLoading = ref(false)
-const fieldScopeProjectId = ref<number | undefined>(undefined)
 const fieldScopeTypeCode = ref<string | undefined>(undefined)
 
 const fieldDialogVisible = ref(false)
@@ -1221,24 +1250,18 @@ function fieldOptionsText(row: CustomFieldRow) {
   return opts.length ? opts.map((o) => o.label).join('、') : ''
 }
 
-async function loadProjectOptions() {
-  try {
-    const res = await getProjectList({ pageNum: 1, pageSize: 200 }) as any
-    projectOptions.value = res?.list || []
-  } catch {
-    projectOptions.value = []
-  }
+// 默认值存的是选项 key（历史字段 key=label），展示时映射回中文 label
+function fieldDefaultValueText(row: CustomFieldRow) {
+  if (!row.defaultValue) return ''
+  if (row.fieldType === 'BOOLEAN') return row.defaultValue === 'true' ? '是' : '否'
+  const hit = parseFieldOptions(row.options).find((o) => o.key === row.defaultValue)
+  return hit?.label || row.defaultValue
 }
 
 async function loadCustomFields() {
-  if (!fieldScopeProjectId.value) {
-    customFields.value = []
-    return
-  }
   fieldsLoading.value = true
   try {
     const res = await requirementConfigApi.listCustomFields(
-      fieldScopeProjectId.value,
       fieldScopeTypeCode.value || null,
     ) as any
     const list = Array.isArray(res) ? res : res?.data || []
@@ -1290,7 +1313,7 @@ function resetFieldForm() {
 }
 
 async function submitField() {
-  if (!fieldFormRef.value || !fieldScopeProjectId.value) return
+  if (!fieldFormRef.value) return
   const valid = await fieldFormRef.value.validate().catch(() => false)
   if (!valid) return
 
@@ -1311,7 +1334,6 @@ async function submitField() {
   fieldSubmitting.value = true
   try {
     const payload: CustomFieldDef = {
-      projectId: fieldScopeProjectId.value,
       requirementTypeCode: fieldScopeTypeCode.value || null,
       fieldCode: editingField.value?.fieldCode || fieldForm.fieldCode.trim(),
       name: fieldForm.name.trim(),
@@ -1343,7 +1365,6 @@ async function toggleFieldEnabled(row: CustomFieldRow, value: boolean) {
   try {
     await requirementConfigApi.updateCustomField({
       id: row.id,
-      projectId: row.projectId,
       fieldCode: row.fieldCode,
       name: row.name,
       fieldType: row.fieldType,
@@ -1987,12 +2008,11 @@ onMounted(() => {
   loadTypeColumnConfig()
   loadPriorityColumnConfig()
   loadNodeStatusColumnConfig()
-  void loadProjectOptions()
 })
 
-// 切到动态字段页签且已选项目时自动加载
+// 切到动态字段页签时自动加载
 watch(activeTab, (tab) => {
-  if (tab === 'customFields' && fieldScopeProjectId.value && customFields.value.length === 0) {
+  if (tab === 'customFields' && customFields.value.length === 0) {
     void loadCustomFields()
   }
 })
@@ -2035,6 +2055,24 @@ watch(activeTab, (tab) => {
   margin-left: 10px;
   color: var(--color-muted-text);
   font-size: 12px;
+}
+
+/* 表单标签角标：悬浮显示字段操作提示 */
+.field-label-with-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.field-tip-badge {
+  color: var(--el-color-info, #909399);
+  font-size: 14px;
+  cursor: help;
+  transition: color 0.15s ease;
+
+  &:hover {
+    color: var(--el-color-primary, #409eff);
+  }
 }
 
 .field-scope-bar {

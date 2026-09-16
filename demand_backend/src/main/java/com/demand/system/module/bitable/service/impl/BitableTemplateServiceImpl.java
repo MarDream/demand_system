@@ -158,7 +158,7 @@ public class BitableTemplateServiceImpl implements BitableTemplateService {
             }
             case "date" -> {
                 try {
-                    cell.setValueDate(java.time.LocalDate.parse(rawValue));
+                    cell.setValueDate(parseTemplateDate(rawValue));
                 } catch (Exception e) {
                     cell.setValueText(rawValue);
                 }
@@ -184,6 +184,24 @@ public class BitableTemplateServiceImpl implements BitableTemplateService {
     }
 
     // ======================== 字段定义 ========================
+
+    /**
+     * 模板内置日期值解析：兼容 {@code yyyy-MM-dd} 与 {@code yyyy-MM-dd HH:mm:ss}，
+     * 统一返回 {@link java.time.LocalDateTime}（纯日期补 00:00:00）。
+     */
+    private static java.time.LocalDateTime parseTemplateDate(String rawValue) {
+        if (rawValue == null || rawValue.isBlank()) {
+            throw new IllegalArgumentException("日期为空");
+        }
+        String text = rawValue.trim();
+        try {
+            return java.time.LocalDate.parse(text).atStartOfDay();
+        } catch (Exception ignored) {
+            // 继续尝试带时间
+        }
+        return java.time.LocalDateTime.parse(text,
+                java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+    }
 
     private record FieldDef(String name, String fieldType, String config, boolean required) {}
 

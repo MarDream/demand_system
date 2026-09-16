@@ -32,6 +32,9 @@ import java.util.stream.Collectors;
 @Service
 public class UserServiceImpl implements UserService {
 
+    /** 主管理员账号ID（前端在成员列表里以 id=1 标记「主管理员」） */
+    private static final long PRIMARY_ADMIN_ID = 1L;
+
     private final UserMapper userMapper;
     private final SysOrgService sysOrgService;
     private final PasswordEncoder passwordEncoder;
@@ -101,7 +104,7 @@ public class UserServiceImpl implements UserService {
     public List<Map<String, Object>> listActiveUsers() {
         LambdaQueryWrapper<User> baseWrapper = new LambdaQueryWrapper<User>()
                 .eq(User::getStatus, User.STATUS_ACTIVE)
-                .select(User::getId, User::getUsername, User::getRealName)
+                .select(User::getId, User::getUsername, User::getRealName, User::getAvatar)
                 .orderByAsc(User::getUsername);
 
         // 非超管按组织范围过滤
@@ -116,13 +119,7 @@ public class UserServiceImpl implements UserService {
                 Long currentUserId = SecurityUtils.getCurrentUserId();
                 baseWrapper.eq(User::getId, currentUserId);
                 return userMapper.selectList(baseWrapper).stream()
-                        .map(u -> {
-                            Map<String, Object> m = new HashMap<>();
-                            m.put("id", u.getId());
-                            m.put("username", u.getUsername());
-                            m.put("realName", u.getRealName());
-                            return m;
-                        })
+                        .map(this::toActiveUserMap)
                         .toList();
             }
         } else {
@@ -138,14 +135,23 @@ public class UserServiceImpl implements UserService {
         }
 
         return userMapper.selectList(baseWrapper).stream()
-                .map(u -> {
-                    Map<String, Object> m = new HashMap<>();
-                    m.put("id", u.getId());
-                    m.put("username", u.getUsername());
-                    m.put("realName", u.getRealName());
-                    return m;
-                })
+                .map(this::toActiveUserMap)
                 .toList();
+    }
+
+    /**
+     * 活跃用户的精简视图，供前端筛选框 / 成员选择器使用。
+     * <p>
+     * 带 avatar 是为了让选择器能直接渲染头像缩略图；realName 为空时回退 username，
+     * 避免前端出现空标签。
+     */
+    private Map<String, Object> toActiveUserMap(User user) {
+        Map<String, Object> m = new HashMap<>();
+        m.put("id", user.getId());
+        m.put("username", user.getUsername());
+        m.put("realName", user.getRealName());
+        m.put("avatar", user.getAvatar());
+        return m;
     }
 
     /**
@@ -339,7 +345,106 @@ public class UserServiceImpl implements UserService {
         if (user == null) {
             throw new BusinessException("用户不存在");
         }
+        removeUser(id);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int batchUpdateStatus(List<Long> ids, String status) {
+        List<Long> targets = normalizeBatchIds(ids);
+        String normalizedStatus = normalizeStatus(status);
+
+        Long currentUserId = SecurityUtils.getCurrentUserId();
+        if (currentUserId != null && targets.contains(currentUserId)) {
+            throw new BusinessException("不能修改自己的账号状态，请由其他管理员操作");
+        }
+        if (User.STATUS_INACTIVE.equals(normalizedStatus) && targets.contains(PRIMARY_ADMIN_ID)) {
+            throw new BusinessException("主管理员账号不可停用");
+        }
+
+        List<Long> existing = userMapper.selectList(new LambdaQueryWrapper<User>()
+                        .in(User::getId, targets)
+                        .select(User::getId))
+                .stream()
+                .map(User::getId)
+                .filter(Objects::nonNull)
+                .toList();
+        if (existing.isEmpty()) {
+            throw new BusinessException("所选成员已不存在，请刷新列表后重试");
+        }
+
+        User patch = new User();
+        patch.setStatus(normalizedStatus);
+        return userMapper.update(patch, new LambdaQueryWrapper<User>().in(User::getId, existing));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int batchDelete(List<Long> ids) {
+        List<Long> targets = normalizeBatchIds(ids);
+
+        Long currentUserId = SecurityUtils.getCurrentUserId();
+        if (currentUserId != null && targets.contains(currentUserId)) {
+            throw new BusinessException("不能删除自己的账号");
+        }
+        if (targets.contains(PRIMARY_ADMIN_ID)) {
+            throw new BusinessException("主管理员账号不可删除");
+        }
+
+        int affected = 0;
+        for (Long id : targets) {
+            if (userMapper.selectById(id) == null) {
+                continue;
+            }
+            removeUser(id);
+            affected++;
+        }
+        if (affected == 0) {
+            throw new BusinessException("所选成员已不存在，请刷新列表后重试");
+        }
+        return affected;
+    }
+
+    /**
+     * 删除用户并清理其角色关系。
+     * <p>
+     * 角色关系一定要一起删：users 是物理删除，残留的 user_roles 行会在
+     * 「按角色统计成员」等场景里被算进去，出现"幽灵成员"。
+     */
+    private void removeUser(Long id) {
         userMapper.deleteById(id);
+        userRoleMapper.delete(new LambdaQueryWrapper<UserRole>().eq(UserRole::getUserId, id));
+    }
+
+    private List<Long> normalizeBatchIds(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            throw new BusinessException("请先勾选要操作的成员");
+        }
+        List<Long> targets = ids.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (targets.isEmpty()) {
+            throw new BusinessException("请先勾选要操作的成员");
+        }
+        return targets;
+    }
+
+    /**
+     * 归一化状态值。
+     * <p>
+     * 历史前端曾用 'disabled' 表示停用，而 users.status 是
+     * ENUM('active','inactive')，直接写 'disabled' 在严格模式下会报
+     * 数据截断错误。这里统一收口成 active / inactive，并兼容旧值。
+     */
+    private String normalizeStatus(String status) {
+        if (User.STATUS_ACTIVE.equals(status)) {
+            return User.STATUS_ACTIVE;
+        }
+        if (User.STATUS_INACTIVE.equals(status) || "disabled".equals(status)) {
+            return User.STATUS_INACTIVE;
+        }
+        throw new BusinessException("不支持的账号状态");
     }
 
     @Override

@@ -103,10 +103,9 @@ export function fieldOptionLabel(options: CustomFieldOption[] | null | undefined
 /** 动态字段定义（配置管理视角） */
 export interface CustomFieldDef {
   id?: number
-  projectId: number
   /** 稳定字段编码，创建后不可修改 */
   fieldCode: string
-  /** 所属需求类型编码，空表示项目级全局字段 */
+  /** 所属需求类型编码，空表示全类型通用字段 */
   requirementTypeCode?: string | null
   name: string
   fieldType: CustomFieldType
@@ -204,16 +203,16 @@ export const requirementConfigApi = {
 
   // ============ 动态字段 ============
 
-  /** 查询某项目/需求类型下的动态字段定义 */
-  listCustomFields: (projectId: number, typeCode?: string | null) =>
+  /** 查询需求类型下的动态字段定义 */
+  listCustomFields: (typeCode?: string | null) =>
     request.get<CustomFieldDef[]>('/v1/requirement-config/fields', {
-      params: typeCode ? { projectId, typeCode } : { projectId },
+      params: typeCode ? { typeCode } : {},
     }),
 
   /** 获取创建态字段 schema（含流程首节点权限与默认值） */
-  getCustomFieldSchema: (projectId: number, typeCode: string) =>
+  getCustomFieldSchema: (typeCode: string) =>
     request.get<DynamicFieldSchema[]>('/v1/requirement-config/fields/schema', {
-      params: { projectId, typeCode },
+      params: { typeCode },
     }),
 
   createCustomField: (data: CustomFieldDef) => request.post('/v1/requirement-config/fields', data),

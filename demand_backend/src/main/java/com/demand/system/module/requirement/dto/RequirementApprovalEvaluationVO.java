@@ -18,6 +18,10 @@ public class RequirementApprovalEvaluationVO {
     private Boolean canSupplement;
     private Long evaluatorId;
     private String evaluatorName;
+    /** 操作人登录账号，用于区分以角色命名的共享账号 */
+    private String evaluatorUsername;
+    /** 操作人所处节点配置的处理角色名（节点未按角色指派时为空） */
+    private String assigneeRoleName;
     private String action;
     private String actionLabel;
     private String result;
@@ -131,6 +135,22 @@ public class RequirementApprovalEvaluationVO {
 
     public void setEvaluatorName(String evaluatorName) {
         this.evaluatorName = evaluatorName;
+    }
+
+    public String getEvaluatorUsername() {
+        return evaluatorUsername;
+    }
+
+    public void setEvaluatorUsername(String evaluatorUsername) {
+        this.evaluatorUsername = evaluatorUsername;
+    }
+
+    public String getAssigneeRoleName() {
+        return assigneeRoleName;
+    }
+
+    public void setAssigneeRoleName(String assigneeRoleName) {
+        this.assigneeRoleName = assigneeRoleName;
     }
 
     public String getAction() {

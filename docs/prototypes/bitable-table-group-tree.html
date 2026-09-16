@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>多维表格 · 数据表分组目录树（效果原型）</title>
+<style>
+  :root{
+    --color-primary:#2563EB;
+    --color-primary-hover:#3B82F6;
+    --color-primary-subtle:#EFF6FF;
+    --color-primary-bg:rgba(37,99,235,.10);
+    --color-background:#F8FAFC;
+    --color-surface:#FFFFFF;
+    --color-surface-alt:#F1F5F9;
+    --color-border:#E2E8F0;
+    --color-border-hover:#CBD5E1;
+    --color-text-primary:#0F172A;
+    --color-text-secondary:#475569;
+    --color-muted-text:#6B7280;
+    --color-text-placeholder:#94A3B8;
+    --color-success:#10B981;
+    --color-warning:#F59E0B;
+    --color-danger:#EF4444;
+    --color-danger-bg:rgba(239,68,68,.12);
+    --shadow-sm:0 1px 2px rgba(15,23,42,.06);
+    --shadow-md:0 4px 12px rgba(15,23,42,.08);
+    --radius-sm:4px;
+    --radius-md:6px;
+    --radius-lg:8px;
+    --sidebar-w:272px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--color-background);
+    color:var(--color-text-primary);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1240px;margin:0 auto;padding:20px 20px 64px;}
+
+  .banner{
+    display:flex;align-items:flex-start;gap:10px;
+    background:var(--color-primary-subtle);border:1px solid #BFDBFE;
+    border-radius:var(--radius-lg);padding:10px 14px;margin-bottom:14px;
+    color:#1E40AF;font-size:12.5px;line-height:1.7;
+  }
+  .banner svg{flex:none;margin-top:2px;}
+  .banner b{color:#1D4ED8;}
+  .banner code{
+    background:#fff;border:1px solid #DBEAFE;border-radius:4px;
+    padding:1px 5px;font-family:ui-monospace,Consolas,monospace;font-size:11.5px;color:#1E40AF;
+  }
+
+  .app{
+    background:var(--color-surface);border:1px solid var(--color-border);
+    border-radius:10px;box-shadow:var(--shadow-md);overflow:hidden;
+  }
+  .topbar{
+    display:flex;align-items:center;gap:10px;height:48px;padding:0 14px;
+    border-bottom:1px solid var(--color-border);
+    background:linear-gradient(180deg,#fff 0%,#F8FAFC 100%);
+  }
+  .topbar__logo{
+    width:22px;height:22px;border-radius:6px;
+    background:linear-gradient(135deg,#2563EB,#6366F1);
+    display:flex;align-items:center;justify-content:center;color:#fff;flex:none;
+  }
+  .topbar__title{font-weight:600;font-size:13.5px;}
+  .topbar__sub{color:var(--color-muted-text);font-size:12px;}
+  .topbar__spacer{flex:1;}
+  .seg{display:flex;border:1px solid var(--color-border);border-radius:var(--radius-md);overflow:hidden;}
+  .seg button{border:0;background:#fff;padding:4px 12px;font-size:12px;cursor:pointer;color:var(--color-text-secondary);font-family:inherit;}
+  .seg button+button{border-left:1px solid var(--color-border);}
+  .seg button.is-active{background:var(--color-primary);color:#fff;font-weight:500;}
+
+  .body{display:grid;grid-template-columns:var(--sidebar-w) minmax(0,1fr);min-height:580px;}
+
+  .sidebar{
+    border-right:1px solid var(--color-border);background:var(--color-surface);
+    display:flex;flex-direction:column;min-height:580px;
+  }
+  .sidebar__top{padding:10px 10px 8px;border-bottom:1px solid var(--color-border);}
+  .search{position:relative;display:flex;align-items:center;}
+  .search>svg{position:absolute;left:8px;color:var(--color-text-placeholder);}
+  .search input{
+    width:100%;height:30px;padding:0 26px 0 28px;
+    border:1px solid var(--color-border);border-radius:var(--radius-md);
+    background:var(--color-surface-alt);font-size:12.5px;font-family:inherit;
+    color:var(--color-text-primary);outline:none;
+  }
+  .search input:focus{background:#fff;border-color:var(--color-primary);box-shadow:0 0 0 2px rgba(37,99,235,.12);}
+  .search__clear{position:absolute;right:6px;border:0;background:transparent;cursor:pointer;color:var(--color-text-placeholder);padding:2px;display:none;line-height:1;}
+  .search.has-value .search__clear{display:block;}
+
+  .sidebar__actions{display:flex;gap:6px;margin-top:8px;}
+  .btn{
+    display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 10px;
+    border-radius:var(--radius-md);border:1px solid var(--color-border);background:#fff;
+    color:var(--color-text-secondary);font-size:12px;font-family:inherit;cursor:pointer;
+    white-space:nowrap;transition:.15s;
+  }
+  .btn:hover{border-color:var(--color-primary);color:var(--color-primary);background:var(--color-primary-subtle);}
+  .btn--primary{background:var(--color-primary);border-color:var(--color-primary);color:#fff;font-weight:500;}
+  .btn--primary:hover{background:var(--color-primary-hover);border-color:var(--color-primary-hover);color:#fff;}
+
+  .tree{flex:1;overflow-y:auto;padding:6px 6px 12px;}
+  .tree__hint{padding:10px;color:var(--color-text-placeholder);font-size:11.5px;line-height:1.7;}
+  .node{
+    position:relative;display:flex;align-items:center;gap:5px;
+    height:30px;padding-right:6px;border-radius:var(--radius-md);
+    cursor:pointer;user-select:none;color:var(--color-text-primary);transition:background .12s;
+  }
+  .node:hover{background:var(--color-surface-alt);}
+  .node.is-active{background:var(--color-primary-bg);color:var(--color-primary);font-weight:500;}
+  .node.is-active .node__count{color:var(--color-primary);background:rgba(37,99,235,.12);}
+  .node.is-dragging{opacity:.4;}
+  .node.is-drop{background:var(--color-primary-subtle);box-shadow:inset 0 0 0 1.5px var(--color-primary);}
+  .node.is-reject{background:var(--color-danger-bg);box-shadow:inset 0 0 0 1.5px var(--color-danger);}
+
+  .node__chev{
+    width:16px;height:16px;flex:none;display:flex;align-items:center;justify-content:center;
+    color:var(--color-muted-text);border-radius:3px;transition:transform .15s;
+  }
+  .node__chev:hover{background:rgba(15,23,42,.07);}
+  .node__chev.is-open{transform:rotate(90deg);}
+  .node__chev.is-leaf{visibility:hidden;}
+  .node__icon{width:16px;height:16px;flex:none;display:flex;align-items:center;justify-content:center;}
+  .node__icon--folder{color:#F59E0B;}
+  .node__icon--all{color:var(--color-primary);}
+  .node__icon--ungrouped{color:#94A3B8;}
+  .node__name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;}
+  .node__name em{font-style:normal;background:#FEF3C7;border-radius:2px;color:#92400E;padding:0 1px;}
+  .node__count{flex:none;font-size:11px;color:var(--color-muted-text);background:var(--color-surface-alt);border-radius:9px;padding:0 6px;line-height:16px;}
+  .node__tools{display:none;align-items:center;gap:1px;flex:none;}
+  .node:hover .node__tools{display:flex;}
+  .node__tools button{
+    width:18px;height:18px;border:0;background:transparent;border-radius:3px;cursor:pointer;
+    color:var(--color-muted-text);display:flex;align-items:center;justify-content:center;padding:0;
+  }
+  .node__tools button:hover{background:rgba(15,23,42,.09);color:var(--color-text-primary);}
+
+  .node__editor{padding:2px 6px 4px;}
+  .node__editor input{
+    width:100%;height:26px;padding:0 7px;border:1px solid var(--color-primary);
+    border-radius:var(--radius-md);font-size:12.5px;font-family:inherit;outline:none;
+    box-shadow:0 0 0 2px rgba(37,99,235,.12);
+  }
+
+  .sidebar__foot{
+    border-top:1px solid var(--color-border);padding:7px 12px;font-size:11.5px;
+    color:var(--color-muted-text);display:flex;justify-content:space-between;align-items:center;gap:8px;
+  }
+  .legend{display:flex;gap:10px;}
+  .legend span{display:inline-flex;align-items:center;gap:3px;}
+  .dot{width:6px;height:6px;border-radius:50%;display:inline-block;}
+
+  .main{display:flex;flex-direction:column;min-width:0;background:var(--color-surface);}
+  .main__head{
+    padding:12px 16px;border-bottom:1px solid var(--color-border);
+    display:flex;align-items:flex-start;justify-content:space-between;gap:12px;
+  }
+  .crumb{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12.5px;color:var(--color-muted-text);}
+  .crumb b{color:var(--color-text-primary);font-weight:600;font-size:14px;}
+  .crumb .sep{color:var(--color-text-placeholder);}
+  .crumb__tag{font-size:11px;padding:1px 6px;border-radius:9px;background:var(--color-surface-alt);color:var(--color-muted-text);border:1px solid var(--color-border);}
+  .main__meta{margin-top:4px;font-size:11.5px;color:var(--color-muted-text);}
+
+  .main__grid{padding:12px 16px 20px;overflow:auto;flex:1;}
+  table.g{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px;}
+  table.g th{
+    text-align:left;font-weight:600;color:var(--color-text-secondary);font-size:11.5px;
+    background:var(--color-surface-alt);padding:7px 10px;border-bottom:1px solid var(--color-border);
+    position:sticky;top:0;white-space:nowrap;
+  }
+  table.g th:first-child{border-radius:var(--radius-md) 0 0 0;}
+  table.g th:last-child{border-radius:0 var(--radius-md) 0 0;}
+  table.g td{padding:7px 10px;border-bottom:1px solid var(--color-border);vertical-align:middle;}
+  table.g tbody tr{cursor:grab;transition:background .12s;}
+  table.g tbody tr:hover{background:var(--color-primary-subtle);}
+  table.g tbody tr.is-dragging{opacity:.4;}
+  .tname{display:flex;align-items:center;gap:7px;font-weight:500;color:var(--color-text-primary);}
+  .tname svg{color:var(--color-primary);flex:none;}
+  .path{display:inline-flex;align-items:center;gap:4px;color:var(--color-text-secondary);font-size:11.5px;background:var(--color-surface-alt);border-radius:4px;padding:1px 6px;}
+  .num{font-variant-numeric:tabular-nums;color:var(--color-text-secondary);}
+  .tag-empty{font-size:11.5px;color:var(--color-muted-text);background:var(--color-surface-alt);border:1px dashed var(--color-border-hover);border-radius:4px;padding:1px 6px;}
+  .empty{padding:56px 20px;text-align:center;color:var(--color-muted-text);font-size:12.5px;}
+  .empty b{display:block;color:var(--color-text-secondary);font-size:13.5px;margin-bottom:6px;font-weight:600;}
+
+  .spec{margin-top:18px;background:var(--color-surface);border:1px solid var(--color-border);border-radius:10px;overflow:hidden;}
+  .spec__head{padding:12px 16px;border-bottom:1px solid var(--color-border);display:flex;align-items:center;gap:8px;font-weight:600;font-size:13.5px;background:var(--color-surface-alt);}
+  .spec__body{padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;}
+  .card{border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:13px 15px;background:#fff;}
+  .card h4{margin:0 0 9px;font-size:12.5px;color:var(--color-primary);display:flex;align-items:center;gap:6px;}
+  .card ul{margin:0;padding-left:17px;color:var(--color-text-secondary);font-size:12px;line-height:1.85;}
+  .card li b{color:var(--color-text-primary);}
+  .card pre{margin:0;background:#0F172A;color:#E2E8F0;border-radius:var(--radius-md);padding:11px 13px;font-size:11.5px;line-height:1.65;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;}
+  .card pre .k{color:#93C5FD;}
+  .card pre .c{color:#64748B;}
+  .pill{display:inline-block;font-size:11px;padding:1px 7px;border-radius:9px;background:var(--color-primary-subtle);color:#1D4ED8;border:1px solid #BFDBFE;margin:0 4px 4px 0;}
+  .pill--warn{background:#FFFBEB;color:#92400E;border-color:#FDE68A;}
+  .qlist{margin:0;padding-left:17px;font-size:12px;color:var(--color-text-secondary);line-height:1.9;}
+  .qlist b{color:var(--color-text-primary);}
+
+  .menu{position:fixed;z-index:99;min-width:168px;background:#fff;border:1px solid var(--color-border);border-radius:var(--radius-lg);box-shadow:0 8px 24px rgba(15,23,42,.14);padding:4px;display:none;max-height:60vh;overflow-y:auto;}
+  .menu.is-open{display:block;}
+  .menu button{display:flex;align-items:center;gap:8px;width:100%;border:0;background:transparent;padding:6px 9px;border-radius:var(--radius-md);font-size:12.5px;font-family:inherit;color:var(--color-text-primary);cursor:pointer;text-align:left;}
+  .menu button:hover{background:var(--color-primary-subtle);color:var(--color-primary);}
+  .menu button.danger:hover{background:var(--color-danger-bg);color:var(--color-danger);}
+  .menu button svg{flex:none;}
+  .menu hr{border:0;border-top:1px solid var(--color-border);margin:4px 2px;}
+  .menu .menu__label{font-size:11px;color:var(--color-text-placeholder);padding:4px 9px 2px;}
+
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(12px);background:#0F172A;color:#fff;font-size:12.5px;padding:8px 15px;border-radius:8px;opacity:0;pointer-events:none;transition:.22s;z-index:200;box-shadow:0 8px 22px rgba(15,23,42,.25);}
+  .toast.is-show{opacity:1;transform:translateX(-50%) translateY(0);}
+  .toast.is-error{background:#B91C1C;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="banner">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+    <div>
+      <b>效果原型 · 多维表格「数据表」分组目录树</b> — 目标位置：<code>views/bitable/editor.vue</code> 左侧
+      <code>TableSidebar.vue</code>。可试：折叠展开 / 点击切换范围 / 从右侧表格行拖到左侧分组 / 悬浮 <b>＋</b> 与 <b>···</b> 建分组·改名·删除 / 搜索过滤 / 「全部折叠」。
+    </div>
+  </div>
+
+  <div class="app">
+    <div class="topbar">
+      <div class="topbar__logo">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+      </div>
+      <div>
+        <div class="topbar__title">企业数据中台</div>
+        <div class="topbar__sub">多维表格 · Base</div>
+      </div>
+      <div class="topbar__spacer"></div>
+      <div class="seg">
+        <button class="is-active">表格</button>
+        <button>看板</button>
+        <button>甘特</button>
+      </div>
+    </div>
+
+    <div class="body">
+      <aside class="sidebar">
+        <div class="sidebar__top">
+          <div class="search" id="searchBox">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="searchInput" type="text" placeholder="搜索数据表或分组…" autocomplete="off">
+            <button class="search__clear" id="searchClear" title="清空">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+          <div class="sidebar__actions">
+            <button class="btn btn--primary" style="flex:1;justify-content:center" id="btnNewGroup">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+              新建分组
+            </button>
+            <button class="btn" id="btnCollapseAll" title="全部展开/折叠">折叠</button>
+          </div>
+        </div>
+
+        <div class="tree" id="tree"></div>
+
+        <div class="sidebar__foot">
+          <div class="legend">
+            <span><i class="dot" style="background:#F59E0B"></i>分组</span>
+            <span><i class="dot" style="background:#2563EB"></i>全部</span>
+            <span><i class="dot" style="background:#94A3B8"></i>未分组</span>
+          </div>
+          <span id="footStat">—</span>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="main__head">
+          <div>
+            <div class="crumb" id="crumb"></div>
+            <div class="main__meta" id="meta"></div>
+          </div>
+          <button class="btn" id="btnNewTable">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+            新建数据表
+          </button>
+        </div>
+        <div class="main__grid" id="grid"></div>
+      </main>
+    </div>
+  </div>
+
+  <section class="spec">
+    <div class="spec__head">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+      实现前请确认：数据模型 / 接口 / 交互规则
+    </div>
+    <div class="spec__body">
+
+      <div class="card">
+        <h4>① 数据模型（新增 1 张表 + 加 1 列）</h4>
+        <pre><span class="c">-- 分组只加在「数据表」这一层，Base 表不动</span>
+<span class="k">CREATE TABLE</span> bitable_table_groups (
+  id         <span class="k">BIGINT</span> <span class="k">PRIMARY KEY</span> AUTO_INCREMENT,
+  base_id    <span class="k">BIGINT</span> <span class="k">NOT NULL</span>,   <span class="c">-- 所属多维表格</span>
+  parent_id  <span class="k">BIGINT</span> <span class="k">NULL</span>,       <span class="c">-- NULL=根层级，自关联</span>
+  name       <span class="k">VARCHAR</span>(100) <span class="k">NOT NULL</span>,
+  sort_order <span class="k">INT</span> <span class="k">NOT NULL</span> <span class="k">DEFAULT</span> 0,
+  creator_id <span class="k">BIGINT</span> <span class="k">NULL</span>,
+  created_at DATETIME,
+  updated_at DATETIME,
+  deleted_at <span class="k">BIGINT</span> <span class="k">NULL</span>,
+  <span class="k">KEY</span> idx_base_parent (base_id, parent_id)
+);
+
+<span class="c">-- 数据表挂到分组上（可空 = 未分组）</span>
+<span class="k">ALTER TABLE</span> bitable_tables
+  <span class="k">ADD COLUMN</span> group_id <span class="k">BIGINT</span> <span class="k">NULL</span> AFTER base_id,
+  <span class="k">ADD KEY</span> idx_group (group_id);</pre>
+        <p style="margin:10px 0 0;font-size:11.5px;color:#6B7280">
+          「全部实体」「未分组」都是<b>前端虚拟节点</b>，不落库；删除走 <code>deleted_at</code> 软删除，与项目既有约定一致。
+        </p>
+      </div>
+
+      <div class="card">
+        <h4>② 接口（新增 TableGroupController，与 BitableTableController 同域）</h4>
+        <ul>
+          <li><span class="pill">GET</span><code>/api/v1/bitable/bases/{baseId}/table-groups</code> → 树（含各节点表数）</li>
+          <li><span class="pill">POST</span><code>…/table-groups</code> 建分组 <code>{name, parentId}</code></li>
+          <li><span class="pill">PUT</span><code>…/table-groups/{id}</code> 重命名</li>
+          <li><span class="pill">PUT</span><code>…/table-groups/{id}/move</code> 移动 <code>{parentId, sortOrder}</code></li>
+          <li><span class="pill">DELETE</span><code>…/table-groups/{id}</code> 删除分组</li>
+          <li><span class="pill">PUT</span><code>/api/v1/bitable/tables/{id}/group</code> 数据表归组 <code>{groupId}</code></li>
+        </ul>
+        <p style="margin:10px 0 0;font-size:11.5px;color:#6B7280">
+          树接口<b>一次返回全量</b>（单个 Base 的表量级为几十到几百，不做懒加载），折叠状态由前端本地维护。
+        </p>
+      </div>
+
+      <div class="card">
+        <h4>③ 交互规则（原型已实现）</h4>
+        <ul>
+          <li><b>任意层级嵌套</b>：<code>parent_id</code> 自关联，无深度上限</li>
+          <li><b>「未分组」按需显示</b>：该层级没有未归组数据表时自动隐藏（对齐你的截图：CRM 下无未分组）</li>
+          <li><b>拖拽数据表</b> → 落到分组 = 归入该分组；落到「未分组」= 移出分组</li>
+          <li><b>拖拽分组</b> → 改父级 / 调同级顺序；拖到自身或子孙节点<b>禁止</b>（防环，有红色提示）</li>
+          <li><b>「全部实体」只读</b>：不可拖入、不可改名删除，点击=平铺全部数据表</li>
+          <li><b>搜索</b>：命中分组名或表名，自动展开命中路径并高亮</li>
+          <li><b>折叠状态</b>按 base 存 localStorage，下次进入保持</li>
+          <li>删除分组：子分组与数据表<b>上移到父级</b>，不级联删除</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h4>④ 需要你拍板的点</h4>
+        <ul class="qlist">
+          <li><b>删除非空分组</b>：子项上移到父级（原型方案）／ 弹窗让你选「一并删除数据表」？</li>
+          <li><b>分组能否建在「未分组」下</b>：原型禁止（未分组是虚拟节点）</li>
+          <li><b>权限</b>：分组是否直接跟随 Base 成员权限，还是要单独的「分组可见性」？</li>
+          <li><b>侧边栏是否显示数据表叶子节点</b>：原型只在右侧列表展示（对齐截图）；若要左侧直接看到表名，树会更深更长</li>
+          <li><b>是否要拖拽排序手柄、右键菜单</b>，还是保持原型里的悬浮 <b>···</b> 菜单</li>
+        </ul>
+        <p style="margin:10px 0 0;font-size:11.5px;color:#6B7280">
+          <span class="pill pill--warn">确认后</span>再落地：迁移 SQL + <code>bitable_table_groups</code> 实体/Mapper/Service/Controller + 树组件替换 <code>TableSidebar.vue</code>。
+        </p>
+      </div>
+
+    </div>
+  </section>
+</div>
+
+<div class="menu" id="menu"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---------- 图标 ---------- */
+  var I = {
+    chev: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="m9 6 6 6-6 6"/></svg>',
+    folder: '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4h3.2c.5 0 1 .2 1.3.6l1 1.1c.2.2.4.3.7.3h6.8A2.5 2.5 0 0 1 21 8.5v9A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5v-11Z"/></svg>',
+    folderSm: '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4h3.2c.5 0 1 .2 1.3.6l1 1.1c.2.2.4.3.7.3h6.8A2.5 2.5 0 0 1 21 8.5v9A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5v-11Z"/></svg>',
+    all: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v13c0 1.7 3.6 3 8 3s8-1.3 8-3v-13"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>',
+    ungrouped: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4h3.2l2 2.3h7.8A2.5 2.5 0 0 1 21 8.8v8.7A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5v-11Z"/><path d="M8 14h8" stroke-dasharray="2 2"/></svg>',
+    table: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 9v12"/></svg>',
+    plus: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>',
+    more: '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>',
+    pencil: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
+    trash: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>',
+    folderPlus: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4h3.2l2 2.3h7.8A2.5 2.5 0 0 1 21 8.8v8.7A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5v-11Z"/><path d="M12 11v5M9.5 13.5h5"/></svg>'
+  };
+
+  /* ---------- 数据 ---------- */
+  var seq = 1000;
+  var state = {
+    groups: [
+      { id: 'g1',     name: '进销存系统（JXC）',  parentId: null,   sort: 1, open: true },
+      { id: 'g2',     name: '客户管理系统（CRM）', parentId: null,   sort: 2, open: true },
+      { id: 'g1-1',   name: '销售',               parentId: 'g1',   sort: 1, open: true },
+      { id: 'g1-2',   name: '采购',               parentId: 'g1',   sort: 2, open: true },
+      { id: 'g1-2-1', name: '供应商',             parentId: 'g1-2', sort: 1, open: true },
+      { id: 'g2-1',   name: '跟进中',             parentId: 'g2',   sort: 1, open: true },
+      { id: 'g2-2',   name: '已成交',             parentId: 'g2',   sort: 2, open: true }
+    ],
+    tables: [
+      { id: 't1',  name: '系统配置表', groupId: null,     fields: 8,  records: 32,   updated: '09-12' },
+      { id: 't2',  name: '数据字典',   groupId: null,     fields: 6,  records: 148,  updated: '09-10' },
+      { id: 't3',  name: '库存总览',   groupId: 'g1',     fields: 12, records: 860,  updated: '09-14' },
+      { id: 't4',  name: '销售订单',   groupId: 'g1-1',   fields: 18, records: 1240, updated: '09-15' },
+      { id: 't5',  name: '销售退货',   groupId: 'g1-1',   fields: 14, records: 96,   updated: '09-13' },
+      { id: 't6',  name: '客户报价',   groupId: 'g1-1',   fields: 11, records: 318,  updated: '09-11' },
+      { id: 't7',  name: '采购订单',   groupId: 'g1-2',   fields: 16, records: 542,  updated: '09-15' },
+      { id: 't8',  name: '供应商档案', groupId: 'g1-2-1', fields: 20, records: 74,   updated: '09-09' },
+      { id: 't9',  name: '供应商评级', groupId: 'g1-2-1', fields: 9,  records: 74,   updated: '09-08' },
+      { id: 't10', name: '商机登记',   groupId: 'g2-1',   fields: 13, records: 210,  updated: '09-14' },
+      { id: 't11', name: '拜访记录',   groupId: 'g2-1',   fields: 10, records: 486,  updated: '09-15' },
+      { id: 't12', name: '合同台账',   groupId: 'g2-2',   fields: 17, records: 132,  updated: '09-15' },
+      { id: 't13', name: '回款计划',   groupId: 'g2-2',   fields: 12, records: 132,  updated: '09-12' }
+    ]
+  };
+
+  var sel = { type: 'all', id: null };      // type: all | ungrouped | group
+  var query = '';
+  var editor = null;                        // { mode:'create'|'rename', parentId, id }
+  var drag = null;                          // { kind:'table'|'group', id }
+
+  /* ---------- 工具 ---------- */
+  function uid(p) { return (p || 'n') + '-' + (++seq); }
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); }
+  function group(id) { for (var i = 0; i < state.groups.length; i++) { if (state.groups[i].id === id) return state.groups[i]; } return null; }
+  function childGroups(pid) {
+    return state.groups.filter(function (g) { return g.parentId === pid; })
+      .sort(function (a, b) { return a.sort - b.sort || a.name.localeCompare(b.name, 'zh'); });
+  }
+  function tablesOfGroup(gid) { return state.tables.filter(function (t) { return t.groupId === gid; }); }
+  function descendantGroupIds(gid) {
+    var out = [gid];
+    childGroups(gid).forEach(function (c) { out = out.concat(descendantGroupIds(c.id)); });
+    return out;
+  }
+  function groupPath(gid) {
+    var out = [], cur = group(gid);
+    while (cur) { out.unshift(cur.name); cur = group(cur.parentId); }
+    return out;
+  }
+  function tablesInScope() {
+    if (sel.type === 'all') return state.tables.slice();
+    if (sel.type === 'ungrouped') return tablesOfGroup(sel.id);
+    var ids = descendantGroupIds(sel.id);
+    return state.tables.filter(function (t) { return ids.indexOf(t.groupId) >= 0; });
+  }
+  function subtreeCount(gid) {
+    var ids = descendantGroupIds(gid);
+    return state.tables.filter(function (t) { return ids.indexOf(t.groupId) >= 0; }).length;
+  }
+  function isAncestor(a, b) {                 // a 是 b 的祖先（含自身）
+    var cur = group(b);
+    while (cur) { if (cur.id === a) return true; cur = group(cur.parentId); }
+    return false;
+  }
+  function hi(text) {
+    var s = esc(text);
+    if (!query) return s;
+    var i = text.toLowerCase().indexOf(query.toLowerCase());
+    if (i < 0) return s;
+    return esc(text.slice(0, i)) + '<em>' + esc(text.slice(i, i + query.length)) + '</em>' + esc(text.slice(i + query.length));
+  }
+  function matches(t) { return t.toLowerCase().indexOf(query.toLowerCase()) >= 0; }
+
+  /* ---------- 搜索：算出保留的分组 ---------- */
+  function visibleGroupIds() {
+    if (!query) return null;
+    var keep = {};
+    state.groups.forEach(function (g) {
+      var ids = descendantGroupIds(g.id);
+      var hit = matches(g.name) ||
+        state.tables.some(function (t) { return ids.indexOf(t.groupId) >= 0 && matches(t.name); });
+      if (hit) {
+        keep[g.id] = true;
+        var cur = group(g.parentId);
+        while (cur) { keep[cur.id] = true; cur = group(cur.parentId); }
+      }
+    });
+    return keep;
+  }
+
+  /* ---------- 渲染：树 ---------- */
+  function rowHtml(cfg) {
+    var cls = 'node' + (cfg.active ? ' is-active' : '');
+    var toolsHtml = '';
+    if (!cfg.isAll) {
+      toolsHtml = '<span class="node__tools">' +
+        (cfg.virtual ? '' : '<button data-act="addChild" title="新建子分组">' + I.folderPlus + '</button>') +
+        '<button data-act="more" title="更多操作">' + I.more + '</button></span>';
+    }
+    return '<div class="' + cls + '"' +
+      ' data-ntype="' + cfg.ntype + '"' +
+      ' data-nid="' + (cfg.nid == null ? '' : cfg.nid) + '"' +
+      ' data-depth="' + cfg.depth + '"' +
+      ' style="padding-left:' + (6 + cfg.depth * 15) + 'px"' +
+      (cfg.draggable ? ' draggable="true"' : '') + '>' +
+      '<span class="node__chev ' + (cfg.hasKids ? (cfg.open ? 'is-open' : '') : 'is-leaf') + '">' + I.chev + '</span>' +
+      '<span class="node__icon node__icon--' + cfg.iconKind + '">' + cfg.icon + '</span>' +
+      '<span class="node__name">' + hi(cfg.name) + '</span>' +
+      (cfg.dim ? '<span class="tag-empty">0</span>' : '<span class="node__count">' + cfg.count + '</span>') +
+      toolsHtml + '</div>';
+  }
+
+  function groupNodes(pid, depth, keep) {
+    var html = '';
+    childGroups(pid).forEach(function (g) {
+      if (keep && !keep[g.id]) return;
+      var kids = childGroups(g.id);
+      var own = tablesOfGroup(g.id);
+      var open = query ? true : g.open;
+      var hasKids = kids.length > 0 || own.length > 0;
+
+      html += rowHtml({
+        ntype: 'group', nid: g.id, name: g.name, depth: depth,
+        count: subtreeCount(g.id), icon: I.folder, iconKind: 'folder',
+        hasKids: hasKids, open: open,
+        active: sel.type === 'group' && sel.id === g.id, virtual: false, draggable: true
+      });
+
+      if (open) {
+        if (own.length && (!query || own.some(function (t) { return matches(t.name); }))) {
+          html += rowHtml({
+            ntype: 'ungrouped', nid: g.id, name: '未分组', depth: depth + 1, count: own.length,
+            icon: I.ungrouped, iconKind: 'ungrouped', hasKids: false, open: false,
+            active: sel.type === 'ungrouped' && sel.id === g.id, virtual: true, draggable: false
+          });
+        }
+        html += groupNodes(g.id, depth + 1, keep);
+      }
+    });
+    return html;
+  }
+
+  function renderTree() {
+    var keep = visibleGroupIds();
+    var html = '';
+
+    html += rowHtml({
+      ntype: 'all', nid: null, name: '全部实体', depth: 0, count: state.tables.length,
+      icon: I.all, iconKind: 'all', hasKids: false, open: false,
+      active: sel.type === 'all', virtual: true, isAll: true, draggable: false
+    });
+
+    var rootUn = tablesOfGroup(null);
+    var showRootUn = rootUn.length > 0 || (sel.type === 'ungrouped' && sel.id === null);
+    if (showRootUn && (!query || rootUn.some(function (t) { return matches(t.name); }))) {
+      html += rowHtml({
+        ntype: 'ungrouped', nid: null, name: '未分组', depth: 0, count: rootUn.length,
+        icon: I.ungrouped, iconKind: 'ungrouped', hasKids: false, open: false,
+        active: sel.type === 'ungrouped' && sel.id === null, virtual: true,
+        dim: rootUn.length === 0, draggable: false
+      });
+    }
+
+    html += groupNodes(null, 0, keep);
+
+    document.getElementById('tree').innerHTML = html ||
+      '<div class="tree__hint">没有匹配的分组或数据表<br>换个关键词，或点「新建分组」开始整理</div>';
+    document.getElementById('footStat').textContent = state.tables.length + ' 表 · ' + state.groups.length + ' 分组';
+    mountEditor();
+  }
+
+  /* ---------- 渲染：右侧 ---------- */
+  function renderMain() {
+    var rows = tablesInScope();
+    var crumb = document.getElementById('crumb');
+    var meta = document.getElementById('meta');
+
+    if (sel.type === 'all') {
+      crumb.innerHTML = '<b>全部实体</b><span class="crumb__tag">平铺 · 不分组</span>';
+    } else if (sel.type === 'ungrouped') {
+      var p = groupPath(sel.id);
+      crumb.innerHTML = (p.length ? p.map(esc).join(' <span class="sep">/</span> ') + ' <span class="sep">/</span> ' : '') +
+        '<b>未分组</b><span class="crumb__tag">未归入任何分组</span>';
+    } else {
+      var path = groupPath(sel.id);
+      crumb.innerHTML = path.map(function (n, i) {
+        return i === path.length - 1 ? '<b>' + esc(n) + '</b>' : esc(n);
+      }).join(' <span class="sep">/</span> ');
+    }
+
+    var gcount = sel.type === 'group' ? descendantGroupIds(sel.id).length - 1 : 0;
+    meta.textContent = '共 ' + rows.length + ' 个数据表' +
+      (gcount ? ' · 含 ' + gcount + ' 个子分组' : '') +
+      (sel.type === 'group' ? '（含所有子孙分组）' : '');
+
+    if (!rows.length) {
+      document.getElementById('grid').innerHTML =
+        '<div class="empty"><b>该范围内暂无数据表</b>把右侧列表里的数据表拖到这里，或点右上角「新建数据表」</div>';
+      return;
+    }
+
+    var html = '<table class="g"><thead><tr>' +
+      '<th style="width:32%">数据表</th><th style="width:26%">所在分组</th>' +
+      '<th style="width:9%">字段</th><th style="width:10%">记录</th>' +
+      '<th style="width:12%">最后更新</th><th style="width:11%"></th>' +
+      '</tr></thead><tbody>';
+
+    rows.forEach(function (t) {
+      var path = groupPath(t.groupId);
+      html += '<tr draggable="true" data-tid="' + t.id + '">' +
+        '<td><span class="tname">' + I.table + hi(t.name) + '</span></td>' +
+        '<td>' + (path.length
+          ? '<span class="path">' + I.folderSm + esc(path.join(' / ')) + '</span>'
+          : '<span class="tag-empty">未分组</span>') + '</td>' +
+        '<td class="num">' + t.fields + '</td>' +
+        '<td class="num">' + t.records.toLocaleString('zh-CN') + '</td>' +
+        '<td class="num">' + t.updated + '</td>' +
+        '<td style="text-align:right;white-space:nowrap">' +
+        '<button class="btn" data-tmove="' + t.id + '" style="height:24px;padding:0 8px">归组</button>' +
+        '</td></tr>';
+    });
+    document.getElementById('grid').innerHTML = html + '</tbody></table>';
+  }
+
+  function render() { renderTree(); renderMain(); }
+
+  /* ---------- 行内输入（创建/重命名分组） ---------- */
+  function mountEditor() {
+    if (!editor) return;
+    var host = null;
+    if (editor.mode === 'rename') {
+      host = document.querySelector('.node[data-ntype="group"][data-nid="' + editor.id + '"]');
+    } else if (editor.parentId) {
+      host = document.querySelector('.node[data-nid="' + editor.parentId + '"]');
+    }
+    var depth = host ? Number(host.getAttribute('data-depth')) : 0;
+    var indent = (editor.mode === 'rename' || editor.parentId) ? (depth * 15 + 28) : 28;
+
+    var wrap = document.createElement('div');
+    wrap.className = 'node__editor';
+    wrap.style.paddingLeft = indent + 'px';
+    wrap.innerHTML = '<input type="text" placeholder="输入分组名称，回车确认，Esc 取消" maxlength="100">';
+
+    var treeEl = document.getElementById('tree');
+    if (host) {
+      host.parentNode.insertBefore(wrap, host.nextSibling);
+    } else {
+      var firstGroup = treeEl.querySelector('.node[data-ntype="group"]');
+      if (firstGroup) treeEl.insertBefore(wrap, firstGroup);
+      else treeEl.appendChild(wrap);
+    }
+
+    var input = wrap.querySelector('input');
+    input.value = editor.mode === 'rename' ? ((group(editor.id) || {}).name || '') : '';
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); commitEditor(input.value); }
+      if (e.key === 'Escape') { e.preventDefault(); editor = null; render(); }
+    });
+    input.addEventListener('blur', function () {
+      setTimeout(function () { if (editor) commitEditor(input.value); }, 130);
+    });
+    input.focus();
+    if (editor.mode === 'rename') input.select();
+  }
+
+  function commitEditor(val) {
+    if (!editor) return;
+    var ed = editor; editor = null;
+    var name = (val || '').trim();
+    if (!name) { render(); return; }
+    if (ed.mode === 'create') {
+      var pid = ed.parentId || null;
+      state.groups.push({ id: uid('g'), name: name, parentId: pid, sort: childGroups(pid).length + 1, open: true });
+      if (pid) { var pg = group(pid); if (pg) pg.open = true; }
+      toast('已创建分组「' + name + '」');
+    } else {
+      var g = group(ed.id);
+      if (g) { g.name = name; toast('已重命名为「' + name + '」'); }
+    }
+    render();
+  }
+
+  function removeGroup(gid) {
+    var g = group(gid); if (!g) return;
+    var ids = descendantGroupIds(gid);
+    var sub = ids.length - 1;
+    var cnt = subtreeCount(gid);
+    var tip = '确定删除分组「' + g.name + '」吗？';
+    if (cnt || sub) tip += '\n\n其下 ' + sub + ' 个子分组、' + cnt + ' 个数据表将上移到父级，不会被删除。';
+    if (!window.confirm(tip)) return;
+    state.groups = state.groups.filter(function (x) { return x.id !== gid; });
+    state.groups.forEach(function (x) { if (x.parentId === gid) x.parentId = g.parentId; });
+    state.tables.forEach(function (t) { if (t.groupId === gid) t.groupId = g.parentId; });
+    if (sel.type === 'group' && ids.indexOf(sel.id) >= 0) sel = { type: 'all', id: null };
+    toast('已删除分组「' + g.name + '」');
+    render();
+  }
+
+  function createTable(gid) {
+    var n = window.prompt('新建数据表名称', '新建数据表');
+    if (!n || !n.trim()) return;
+    state.tables.push({ id: uid('t'), name: n.trim(), groupId: gid, fields: 1, records: 0, updated: '刚刚' });
+    if (gid) { var g = group(gid); if (g) g.open = true; }
+    toast('已在「' + (gid ? groupPath(gid).join(' / ') : '未分组') + '」新建数据表');
+    render();
+  }
+
+  function moveTableTo(tid, gid) {
+    var t = null;
+    state.tables.forEach(function (x) { if (x.id === tid) t = x; });
+    if (!t || t.groupId === gid) return;
+    t.groupId = gid;
+    if (gid) { var g = group(gid); if (g) g.open = true; }
+    toast('「' + t.name + '」已移动到「' + (gid ? groupPath(gid).join(' / ') : '未分组') + '」');
+    render();
+  }
+
+  function moveGroupTo(gid, pid) {
+    var g = group(gid); if (!g) return;
+    if (gid === pid) { toast('不能把分组移到自己下面', true); return; }
+    if (pid && isAncestor(gid, pid)) { toast('不能把分组移到自己的子分组下面', true); return; }
+    if (g.parentId === pid) { g.open = true; render(); return; }
+    g.parentId = pid;
+    g.sort = childGroups(pid).length + 1;
+    if (pid) { var pg = group(pid); if (pg) pg.open = true; }
+    toast('「' + g.name + '」已移动到「' + (pid ? groupPath(pid).join(' / ') : '根层级') + '」');
+    render();
+  }
+
+  /* ---------- 悬浮菜单 ---------- */
+  var menuEl = document.getElementById('menu');
+  var menuCtx = {};
+
+  function closeMenu() { menuEl.classList.remove('is-open'); menuEl.innerHTML = ''; menuCtx = {}; }
+  function openMenu(x, y, items, ctx) {
+    var html = '';
+    items.forEach(function (it) {
+      if (it.label != null) html += '<div class="menu__label">' + esc(it.label) + '</div>';
+      else if (it.hr) html += '<hr>';
+      else html += '<button data-mi="' + it.act + '"' + (it.danger ? ' class="danger"' : '') + '>' + (it.icon || '') + esc(it.text) + '</button>';
+    });
+    menuEl.innerHTML = html;
+    menuEl.classList.add('is-open');
+    menuCtx = ctx || {};
+    var r = menuEl.getBoundingClientRect();
+    menuEl.style.left = Math.max(8, Math.min(x, window.innerWidth - r.width - 10)) + 'px';
+    menuEl.style.top = Math.max(8, Math.min(y, window.innerHeight - r.height - 10)) + 'px';
+  }
+  document.addEventListener('click', function (e) { if (!menuEl.contains(e.target)) closeMenu(); });
+
+  menuEl.addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-mi]'); if (!b) return;
+    var act = b.getAttribute('data-mi');
+    var ctx = menuCtx;
+    closeMenu();
+    if (act === 'newSub') { editor = { mode: 'create', parentId: ctx.gid }; renderTree(); return; }
+    if (act === 'rename') { editor = { mode: 'rename', id: ctx.gid }; renderTree(); return; }
+    if (act === 'delete') { removeGroup(ctx.gid); return; }
+    if (act === 'newTable') { createTable(ctx.gid == null ? null : ctx.gid); return; }
+    if (act.indexOf('pick:') === 0) {
+      var v = act.slice(5);
+      moveTableTo(ctx.tid, v === '' ? null : v);
+    }
+  });
+
+  function openMovePicker(tid, anchor) {
+    var opts = [{ id: null, label: '未分组（根层级）' }];
+    (function walk(pid, d) {
+      childGroups(pid).forEach(function (g) {
+        opts.push({ id: g.id, label: new Array(d + 1).join('　') + g.name });
+        walk(g.id, d + 1);
+      });
+    })(null, 0);
+    var r = anchor.getBoundingClientRect();
+    openMenu(r.left - 130, r.bottom + 4, opts.map(function (o) {
+      return { text: o.label, act: 'pick:' + (o.id || ''), icon: o.id ? I.folder : I.ungrouped };
+    }), { tid: tid });
+  }
+
+  /* ---------- toast ---------- */
+  var toastEl = document.getElementById('toast'), toastTimer = null;
+  function toast(msg, isErr) {
+    toastEl.textContent = msg;
+    toastEl.className = 'toast is-show' + (isErr ? ' is-error' : '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.className = 'toast'; }, 2200);
+  }
+
+  /* ---------- 树事件 ---------- */
+  var treeEl = document.getElementById('tree');
+
+  treeEl.addEventListener('click', function (e) {
+    var node = e.target.closest('.node'); if (!node) return;
+    var ntype = node.getAttribute('data-ntype');
+    var nid = node.getAttribute('data-nid') || null;
+
+    var actBtn = e.target.closest('button[data-act]');
+    if (actBtn) {
+      e.stopPropagation();
+      var a = actBtn.getAttribute('data-act');
+      var r = actBtn.getBoundingClientRect();
+      if (a === 'addChild') { editor = { mode: 'create', parentId: nid }; renderTree(); return; }
+      if (a === 'more') {
+        if (ntype === 'ungrouped') {
+          openMenu(r.left - 130, r.bottom + 4, [
+            { label: nid ? '未分组 · ' + groupPath(nid).join(' / ') : '未分组 · 根层级' },
+            { text: '新建数据表', act: 'newTable', icon: I.plus }
+          ], { gid: nid });
+        } else {
+          openMenu(r.left - 150, r.bottom + 4, [
+            { label: groupPath(nid).join(' / ') },
+            { text: '新建子分组', act: 'newSub', icon: I.folderPlus },
+            { text: '新建数据表', act: 'newTable', icon: I.plus },
+            { hr: true },
+            { text: '重命名', act: 'rename', icon: I.pencil },
+            { text: '删除分组', act: 'delete', icon: I.trash, danger: true }
+          ], { gid: nid });
+        }
+      }
+      return;
+    }
+
+    if (e.target.closest('.node__chev') && ntype === 'group') {
+      var g = group(nid);
+      if (g) { g.open = !g.open; renderTree(); }
+      return;
+    }
+
+    if (ntype === 'all') sel = { type: 'all', id: null };
+    else if (ntype === 'ungrouped') sel = { type: 'ungrouped', id: nid };
+    else sel = { type: 'group', id: nid };
+    render();
+  });
+
+  /* ---------- 拖拽 ---------- */
+  function clearDropMarks() {
+    Array.prototype.forEach.call(document.querySelectorAll('.is-drop,.is-reject'), function (el) {
+      el.classList.remove('is-drop', 'is-reject');
+    });
+  }
+  function dropTargetOk(ntype, nid) {
+    if (!drag) return false;
+    if (ntype === 'all') return false;
+    if (drag.kind === 'table') return ntype === 'group' || ntype === 'ungrouped';
+    if (drag.kind === 'group') {
+      if (ntype === 'ungrouped') return true;
+      if (ntype === 'group') return !(nid === drag.id || isAncestor(drag.id, nid));
+      return false;
+    }
+    return false;
+  }
+
+  document.addEventListener('dragstart', function (e) {
+    if (!e.target.closest) return;
+    var node = e.target.closest('.node[draggable="true"]');
+    if (node && node.getAttribute('data-ntype') === 'group') {
+      drag = { kind: 'group', id: node.getAttribute('data-nid') };
+      node.classList.add('is-dragging');
+    } else {
+      var tr = e.target.closest('tr[data-tid]');
+      if (!tr) return;
+      drag = { kind: 'table', id: tr.getAttribute('data-tid') };
+      tr.classList.add('is-dragging');
+    }
+    if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', drag.id); } catch (err) {} }
+  });
+
+  document.addEventListener('dragend', function () {
+    drag = null;
+    Array.prototype.forEach.call(document.querySelectorAll('.is-dragging'), function (el) { el.classList.remove('is-dragging'); });
+    clearDropMarks();
+  });
+
+  document.addEventListener('dragover', function (e) {
+    if (!drag || !e.target.closest) return;
+    var node = e.target.closest('.node');
+    if (!node) return;
+    e.preventDefault();
+    clearDropMarks();
+    node.classList.add(dropTargetOk(node.getAttribute('data-ntype'), node.getAttribute('data-nid') || null) ? 'is-drop' : 'is-reject');
+  });
+
+  document.addEventListener('drop', function (e) {
+    if (!drag || !e.target.closest) return;
+    var node = e.target.closest('.node');
+    if (!node) return;
+    e.preventDefault();
+    var ntype = node.getAttribute('data-ntype');
+    var nid = node.getAttribute('data-nid') || null;
+    var d = drag;
+    var ok = dropTargetOk(ntype, nid);   // 必须先判定，再清空 drag
+    drag = null;
+    clearDropMarks();
+
+    if (!ok) {
+      toast(ntype === 'all' ? '「全部实体」是汇总视图，不能拖入' : '不能把分组移到自己的子分组下面', true);
+      return;
+    }
+    if (d.kind === 'table') moveTableTo(d.id, nid);
+    else moveGroupTo(d.id, nid);
+  });
+
+  /* ---------- 右侧 / 顶部 / 搜索 ---------- */
+  document.getElementById('grid').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-tmove]');
+    if (b) { e.stopPropagation(); openMovePicker(b.getAttribute('data-tmove'), b); }
+  });
+
+  document.getElementById('btnNewGroup').addEventListener('click', function () {
+    editor = { mode: 'create', parentId: null };
+    sel = { type: 'all', id: null };
+    render();
+  });
+
+  document.getElementById('btnCollapseAll').addEventListener('click', function () {
+    var anyOpen = state.groups.some(function (g) { return g.open; });
+    state.groups.forEach(function (g) { g.open = !anyOpen; });
+    editor = null;
+    renderTree();
+  });
+
+  document.getElementById('btnNewTable').addEventListener('click', function () {
+    createTable(sel.type === 'group' || sel.type === 'ungrouped' ? sel.id : null);
+  });
+
+  var searchInput = document.getElementById('searchInput');
+  var searchBox = document.getElementById('searchBox');
+  searchInput.addEventListener('input', function () {
+    query = searchInput.value.trim();
+    searchBox.classList.toggle('has-value', !!query);
+    editor = null;
+    render();
+  });
+  document.getElementById('searchClear').addEventListener('click', function () {
+    searchInput.value = ''; query = ''; searchBox.classList.remove('has-value'); render(); searchInput.focus();
+  });
+
+  /* ---------- 启动 ---------- */
+  render();
+})();
+</script>
+</body>
+</html>

@@ -65,7 +65,7 @@ public class BitableBaseController {
     public Result<Void> updateBase(@PathVariable Long id, @RequestBody BitableBaseUpdateDTO dto) {
         Long userId = SecurityUtils.getCurrentUserId();
         authorizationService.checkOwnerPermission(id, userId);
-        bitableBaseService.updateBase(id, dto);
+        bitableBaseService.updateBase(id, dto, userId);
         return Result.success();
     }
 
@@ -138,7 +138,7 @@ public class BitableBaseController {
     public Result<Void> removeMember(@PathVariable Long baseId, @PathVariable Long userId) {
         Long currentUserId = SecurityUtils.getCurrentUserId();
         authorizationService.checkManagePermission(baseId, currentUserId);
-        bitableBaseMemberService.removeMember(baseId, userId);
+        bitableBaseMemberService.removeMember(baseId, userId, currentUserId);
         // 清除被移除成员的角色缓存
         authorizationService.clearRoleCache(baseId, userId);
         return Result.success();

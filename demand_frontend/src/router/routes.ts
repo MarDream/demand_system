@@ -38,6 +38,12 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: '数据视图', publicAccess: true },
   },
   {
+    path: '/public/invite/:code',
+    name: 'InviteAccept',
+    component: () => import('@/views/public/InviteAcceptPage.vue'),
+    meta: { title: '接受邀请', publicAccess: true },
+  },
+  {
     path: '/',
     component: () => import('@/layouts/DefaultLayout.vue'),
     redirect: '/dashboard',
@@ -113,6 +119,12 @@ export const routes: RouteRecordRaw[] = [
         name: 'Settings',
         component: () => import('@/views/settings/index.vue'),
         meta: { title: '系统配置', icon: 'Setting', requiredPermissions: ['menu:system-config'] },
+      },
+      {
+        path: 'profile',
+        name: 'Profile',
+        component: () => import('@/views/settings/profile.vue'),
+        meta: { title: '个人设置', hidden: true },
       },
       {
         path: 'settings/projects',

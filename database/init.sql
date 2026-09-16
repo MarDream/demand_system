@@ -1,8 +1,14 @@
 -- =====================================================
--- 需求管理系统 - 数据库初始化脚本
+-- 需求管理系统 - 数据库初始化脚本（唯一入口）
 -- 字符集: utf8mb4, 引擎: InnoDB
 -- 说明: 一次性完整建表 + 基础数据初始化
 -- 注: 此脚本基于当前数据库（demand_system）实际数据生成
+--
+-- 2026-09-14 整合：以下 SQL 已全部合并进本文件，原文件已删除
+--   · migrations/ 下 34 个迁移脚本（V20260716_02 ~ V20260914_01）
+--   · code_management_init.sql / question_logs.sql
+--   · quick_questions.sql / workflow_history.sql
+-- 备份: ../database_sql_backup_20260914.zip
 -- =====================================================
 
 SET NAMES utf8mb4;
@@ -264,9 +270,8 @@ CREATE TABLE `project_members` (
 DROP TABLE IF EXISTS `custom_fields`;
 CREATE TABLE `custom_fields` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `project_id` INT UNSIGNED NOT NULL COMMENT '项目ID',
   `field_code` VARCHAR(64) NOT NULL COMMENT '稳定字段编码',
-  `requirement_type_code` VARCHAR(50) DEFAULT NULL COMMENT '需求类型编码(空=全类型)',
+  `requirement_type_code` VARCHAR(50) DEFAULT NULL COMMENT '需求类型编码(空=全类型通用)',
   `name` VARCHAR(100) NOT NULL COMMENT '字段名称',
   `field_type` VARCHAR(50) NOT NULL COMMENT '字段类型(text/number/date/select/multi_select/user)',
   `options` JSON DEFAULT NULL COMMENT '选项( select/multi_select 类型使用，[{key,label}] 或历史字符串数组)',
@@ -276,9 +281,8 @@ CREATE TABLE `custom_fields` (
   `enabled` TINYINT NOT NULL DEFAULT 1 COMMENT '是否启用 0=禁用 1=启用',
   `deleted_at` DATETIME DEFAULT NULL COMMENT '软删除时间',
   PRIMARY KEY (`id`),
-  UNIQUE INDEX `uk_type_field_code` (`project_id`, `requirement_type_code`, `field_code`),
-  INDEX `idx_type_enabled` (`project_id`, `requirement_type_code`, `enabled`, `deleted_at`),
-  INDEX `idx_project_id` (`project_id`)
+  UNIQUE INDEX `uk_type_field_code` (`requirement_type_code`, `field_code`),
+  INDEX `idx_type_enabled` (`requirement_type_code`, `enabled`, `deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='自定义字段表';
 
 -- 15. 工作流状态表 workflow_states
@@ -730,6 +734,7 @@ DROP TABLE IF EXISTS `bitable_tables`;
 CREATE TABLE `bitable_tables` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `base_id` BIGINT UNSIGNED NOT NULL COMMENT '所属多维表格ID',
+  `group_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '所属分组ID，NULL=未分组',
   `name` VARCHAR(200) NOT NULL COMMENT '表名',
   `description` TEXT DEFAULT NULL COMMENT '表描述',
   `icon` VARCHAR(50) DEFAULT NULL COMMENT '图标',
@@ -740,8 +745,100 @@ CREATE TABLE `bitable_tables` (
   `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
   PRIMARY KEY (`id`),
   INDEX `idx_base_id` (`base_id`),
+  INDEX `idx_group_id` (`group_id`),
   INDEX `idx_deleted_at` (`deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='多维表格-数据表';
+
+-- 29.5.1 多维表格-数据表分组（目录树，parent_id 自关联）
+DROP TABLE IF EXISTS `bitable_table_groups`;
+CREATE TABLE `bitable_table_groups` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `base_id` BIGINT UNSIGNED NOT NULL COMMENT '所属多维表格ID',
+  `parent_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '父分组ID，NULL=根层级',
+  `name` VARCHAR(100) NOT NULL COMMENT '分组名称',
+  `sort_order` INT DEFAULT 0 COMMENT '同级排序',
+  `creator_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '创建人ID',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
+  PRIMARY KEY (`id`),
+  INDEX `idx_base_parent` (`base_id`, `parent_id`),
+  INDEX `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='多维表格-数据表分组';
+
+-- 29.5.2 多维表格-自定义角色（按 Base 隔离）
+DROP TABLE IF EXISTS `bitable_base_custom_roles`;
+CREATE TABLE `bitable_base_custom_roles` (
+  `id`              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `base_id`         BIGINT UNSIGNED NOT NULL COMMENT '多维表格ID',
+  `name`            VARCHAR(100) NOT NULL COMMENT '角色名称',
+  `sort_order`      INT DEFAULT 0 COMMENT '排序号',
+  `creator_id`      BIGINT UNSIGNED NOT NULL COMMENT '创建人ID',
+  `created_at`      DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at`      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted_at`      TINYINT DEFAULT 0 COMMENT '软删除标志(0=正常,1=删除)',
+  PRIMARY KEY (`id`),
+  INDEX `idx_base_id` (`base_id`),
+  INDEX `idx_base_deleted` (`base_id`, `deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='多维表格-自定义角色';
+
+-- 29.5.3 多维表格-自定义角色成员（用户或部门）
+DROP TABLE IF EXISTS `bitable_base_custom_role_members`;
+CREATE TABLE `bitable_base_custom_role_members` (
+  `id`              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `role_id`         BIGINT UNSIGNED NOT NULL COMMENT '自定义角色ID',
+  `member_type`     VARCHAR(20) NOT NULL COMMENT '成员类型: user=用户, dept=部门',
+  `member_id`       BIGINT UNSIGNED NOT NULL COMMENT '成员ID(用户ID或部门ID)',
+  `creator_id`      BIGINT UNSIGNED NOT NULL COMMENT '创建人ID',
+  `created_at`      DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at`      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  UNIQUE KEY `uk_role_member` (`role_id`, `member_type`, `member_id`),
+  INDEX `idx_role_id` (`role_id`),
+  INDEX `idx_member` (`member_type`, `member_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='多维表格-自定义角色成员';
+
+-- 29.5.4 多维表格-角色数据表权限（系统角色 + 自定义角色）
+DROP TABLE IF EXISTS `bitable_base_role_permissions`;
+CREATE TABLE `bitable_base_role_permissions` (
+  `id`                  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `base_id`             BIGINT UNSIGNED NOT NULL COMMENT '多维表格ID',
+  `role_type`           VARCHAR(20) NOT NULL COMMENT '角色类型: system=系统角色, custom=自定义角色',
+  `system_role_code`    VARCHAR(50) DEFAULT NULL COMMENT '系统角色编码(OWNER/ADMIN/EDITOR/COMMENTER/VIEWER)',
+  `custom_role_id`      BIGINT UNSIGNED DEFAULT NULL COMMENT '自定义角色ID',
+  `table_id`            BIGINT UNSIGNED NOT NULL COMMENT '数据表ID',
+  `permission_type`     VARCHAR(20) NOT NULL DEFAULT 'data' COMMENT '权限类型: data=数据权限, automation=自动化权限',
+  `permission_level`    VARCHAR(20) NOT NULL DEFAULT 'none' COMMENT '权限级别: full=完全权限, edit=可编辑, view=可查看, none=无权限',
+  `creator_id`          BIGINT UNSIGNED NOT NULL COMMENT '创建人ID',
+  `created_at`          DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at`          DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `role_identifier`     VARCHAR(120) AS (CONCAT(`role_type`, ':', COALESCE(`system_role_code`, ''), ':', COALESCE(`custom_role_id`, ''))) STORED,
+  UNIQUE KEY `uk_permission` (`base_id`, `role_identifier`, `table_id`, `permission_type`),
+  INDEX `idx_base_table` (`base_id`, `table_id`),
+  INDEX `idx_custom_role` (`custom_role_id`),
+  INDEX `idx_system_role` (`base_id`, `system_role_code`, `permission_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='多维表格-角色数据表权限';
+
+-- 29.5.5 多维表格-角色字段权限（可见/隐藏/只读/可编辑，按字段粒度）
+DROP TABLE IF EXISTS `bitable_field_permissions`;
+CREATE TABLE `bitable_field_permissions` (
+  `id`                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `base_id`           BIGINT UNSIGNED NOT NULL COMMENT '多维表格ID',
+  `role_type`         VARCHAR(20) NOT NULL COMMENT '角色类型: system=系统角色, custom=自定义角色',
+  `system_role_code`  VARCHAR(50) DEFAULT NULL COMMENT '系统角色编码(owner/admin/editor/commenter/viewer)',
+  `custom_role_id`    BIGINT UNSIGNED DEFAULT NULL COMMENT '自定义角色ID',
+  `table_id`          BIGINT UNSIGNED NOT NULL COMMENT '数据表ID',
+  `field_id`          BIGINT UNSIGNED NOT NULL COMMENT '字段ID',
+  `permission_level`  VARCHAR(20) NOT NULL DEFAULT 'editable' COMMENT '字段权限级别: editable=可编辑, readonly=只读, hidden=隐藏',
+  `creator_id`        BIGINT UNSIGNED NOT NULL COMMENT '创建人ID',
+  `created_at`        DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at`        DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `role_identifier`   VARCHAR(120) AS (CONCAT(`role_type`, ':', COALESCE(`system_role_code`, ''), ':', COALESCE(`custom_role_id`, ''))) STORED,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_field_permission` (`base_id`, `role_identifier`, `field_id`),
+  INDEX `idx_base_table` (`base_id`, `table_id`),
+  INDEX `idx_field` (`field_id`),
+  INDEX `idx_custom_role` (`custom_role_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='多维表格-角色字段权限';
 
 -- 29.6 多维表格-字段定义
 DROP TABLE IF EXISTS `bitable_fields`;
@@ -790,13 +887,16 @@ CREATE TABLE `bitable_cell_values` (
   `field_id` BIGINT UNSIGNED NOT NULL COMMENT '字段ID',
   `value_text` TEXT DEFAULT NULL COMMENT '文本值',
   `value_number` DECIMAL(20,4) DEFAULT NULL COMMENT '数值',
-  `value_date` DATE DEFAULT NULL COMMENT '日期值',
+  `value_date` DATETIME DEFAULT NULL COMMENT '日期时间值（日期字段未开启“包含时间”时仅日期部分有效）',
   `value_json` JSON DEFAULT NULL COMMENT '复杂值(多选数组/关联ID列表/附件列表等)',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   UNIQUE INDEX `uk_record_field` (`record_id`, `field_id`),
-  INDEX `idx_field_id` (`field_id`)
+  INDEX `idx_field_id` (`field_id`),
+  INDEX `idx_field_value_number` (`field_id`, `value_number`),
+  INDEX `idx_field_value_date` (`field_id`, `value_date`),
+  INDEX `idx_field_value_text` (`field_id`, `value_text`(50))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='多维表格-单元格值';
 
 -- 29.9 多维表格-视图定义
@@ -863,7 +963,7 @@ CREATE TABLE `bitable_operations` (
   `base_id` BIGINT UNSIGNED NOT NULL COMMENT '多维表格ID',
   `table_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '数据表ID',
   `user_id` BIGINT UNSIGNED NOT NULL COMMENT '操作人ID',
-  `operation_type` VARCHAR(30) NOT NULL COMMENT '操作类型: insert_record/update_cell/delete_record/add_field/update_field/delete_field/add_view/update_view/delete_view/add_table/delete_table/update_base',
+  `operation_type` VARCHAR(30) NOT NULL COMMENT '操作类型: insert_record/update_record/update_cell/delete_record/add_field/update_field/delete_field/add_view/update_view/delete_view/add_table/update_table/delete_table/add_table_group/update_table_group/delete_table_group/move_table_group/move_table_to_group/create_base/update_base/import_records/export_records/share_view/unshare_view/add_member/update_member_role/remove_member',
   `detail` JSON DEFAULT NULL COMMENT '操作详情(变更前后值)',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '操作时间',
   PRIMARY KEY (`id`),
@@ -925,9 +1025,9 @@ CREATE TABLE `requirements` (
   `requirement_no` VARCHAR(64) DEFAULT NULL COMMENT '需求编号',
   `title` VARCHAR(500) NOT NULL COMMENT '标题',
   `description` LONGTEXT COMMENT '描述',
-  `type` VARCHAR(50) NOT NULL COMMENT '类型(feature/bug/improvement等)',
-  `priority` VARCHAR(50) NOT NULL COMMENT '优先级(critical/high/medium/low)',
-  `status` VARCHAR(50) NOT NULL COMMENT '状态',
+  `type` VARCHAR(50) NOT NULL COMMENT '需求类型编码，取值见 requirement_types.code',
+  `priority` VARCHAR(50) NOT NULL COMMENT '优先级编码，取值见 priorities.code',
+  `status` VARCHAR(50) NOT NULL COMMENT '需求状态名，取值见 workflow_states.name（随项目工作流而异）',
   `module_id` INT UNSIGNED DEFAULT NULL COMMENT '模块ID',
   `iteration_id` INT UNSIGNED DEFAULT NULL COMMENT '所属迭代ID',
   `workflow_instance_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '工作流实例ID',
@@ -1322,6 +1422,7 @@ CREATE TABLE `assistant_messages` (
   `warnings` JSON DEFAULT NULL COMMENT '检索降级与能力提示',
   `suggested_follow_ups` JSON DEFAULT NULL COMMENT '推荐追问问题',
   `reasoning` LONGTEXT DEFAULT NULL COMMENT '深度思考内容（LLM reasoning）',
+  `data_result` JSON DEFAULT NULL COMMENT 'NL2SQL 数据问答结果（SQL/结果集/图表建议）',
   `input_tokens` INT DEFAULT NULL COMMENT '输入（提示词）token 数',
   `output_tokens` INT DEFAULT NULL COMMENT '输出（生成）token 数',
   `total_tokens` INT DEFAULT NULL COMMENT '总 token 数',
@@ -1411,13 +1512,30 @@ CREATE TABLE `llm_applications` (
   `model_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '指定的模型实例ID',
   `enabled` TINYINT NOT NULL DEFAULT 1 COMMENT '是否启用该功能点配置',
   `sort_order` INT NOT NULL DEFAULT 0,
+  `group_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '所属分组ID，NULL=未分组',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_llm_application_code` (`code`),
   INDEX `idx_llm_application_model_id` (`model_id`),
-  INDEX `idx_llm_application_sort_order` (`sort_order`)
+  INDEX `idx_llm_application_sort_order` (`sort_order`),
+  INDEX `idx_llm_application_group_id` (`group_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='LLM 功能点模型应用配置';
+
+-- 53. LLM 功能点模型应用分组表 llm_application_groups
+DROP TABLE IF EXISTS `llm_application_groups`;
+CREATE TABLE `llm_application_groups` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `parent_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '父分组ID，NULL=根层级',
+  `name` VARCHAR(100) NOT NULL COMMENT '分组名称',
+  `sort_order` INT NOT NULL DEFAULT 0 COMMENT '同级排序',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted_at` TINYINT NOT NULL DEFAULT 0 COMMENT '0=未删除, 1=已删除',
+  PRIMARY KEY (`id`),
+  INDEX `idx_llm_app_group_parent` (`parent_id`),
+  INDEX `idx_llm_app_group_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='LLM 功能点模型应用分组';
 
 -- =====================================================
 -- 初始化数据
@@ -1523,18 +1641,25 @@ INSERT IGNORE INTO `node_statuses` (`id`, `code`, `name`, `color`, `sort_order`,
 (8, 'ACCEPTED', '已验收', '#909399', 8, 0, 1, 0),
 (9, 'CANCELLED', '已取消', '#909399', 9, 0, 0, 1);
 
+-- LLM 功能点模型应用分组（目录树）
+INSERT IGNORE INTO `llm_application_groups` (`id`, `parent_id`, `name`, `sort_order`) VALUES
+(1, NULL, '智能助手', 10),
+(2, NULL, '知识库', 20),
+(3, NULL, '其他能力', 30);
+
 -- LLM 功能点应用配置
-INSERT IGNORE INTO `llm_applications` (`code`, `name`, `description`, `model_type`, `model_id`, `enabled`, `sort_order`)
+INSERT IGNORE INTO `llm_applications` (`code`, `name`, `description`, `model_type`, `model_id`, `enabled`, `sort_order`, `group_id`)
 VALUES
-  ('assistant.chat', '智能助手对话', '右下角智能助手及页面上下文问答', 'chat', NULL, 1, 10),
-  ('knowledge.intent', '知识库意图识别', '知识库搜索前的问题意图识别与检索词归一化', 'chat', NULL, 1, 20),
-  ('knowledge.answer', '知识库问答', '基于检索结果生成知识库回答', 'chat', NULL, 1, 30),
-  ('knowledge.embedding', '知识库向量化', '文档切片及查询向量生成', 'embedding', NULL, 1, 40),
-  ('knowledge.rerank', '知识库重排', '知识库检索结果的模型重排', 'rerank', NULL, 1, 50),
-  ('knowledge.event-rerank', '知识事件 LLM 精排', '知识事件检索结果的 LLM 相关性精排', 'chat', NULL, 1, 60),
-  ('knowledge.image-understanding', '工单正文图片理解', '识别工单正文图片中的文字、页面、图表、错误信息和关键数值', 'vision', NULL, 0, 65),
-  ('bitable.ai', '多维表格 AI', '多维表格字段、记录及模板的 AI 能力', 'chat', NULL, 1, 70),
-  ('llm.translation', '文本翻译', '角色编码及其他系统文本的英文转换', 'chat', NULL, 1, 80);
+  ('assistant.chat', '智能助手对话', '右下角智能助手及页面上下文问答', 'chat', NULL, 1, 10, 1),
+  ('assistant.nl2sql', 'AI助手-数据问答(NL2SQL)', '自然语言转只读SQL查询业务数据并整合回答', 'chat', NULL, 1, 15, 1),
+  ('knowledge.intent', '知识库意图识别', '知识库搜索前的问题意图识别与检索词归一化', 'chat', NULL, 1, 20, 2),
+  ('knowledge.answer', '知识库问答', '基于检索结果生成知识库回答', 'chat', NULL, 1, 30, 2),
+  ('knowledge.embedding', '知识库向量化', '文档切片及查询向量生成', 'embedding', NULL, 1, 40, 2),
+  ('knowledge.rerank', '知识库重排', '知识库检索结果的模型重排', 'rerank', NULL, 1, 50, 2),
+  ('knowledge.event-rerank', '知识事件 LLM 精排', '知识事件检索结果的 LLM 相关性精排', 'chat', NULL, 1, 60, 2),
+  ('knowledge.image-understanding', '工单正文图片理解', '识别工单正文图片中的文字、页面、图表、错误信息和关键数值', 'vision', NULL, 0, 65, 2),
+  ('bitable.ai', '多维表格 AI', '多维表格字段、记录及模板的 AI 能力', 'chat', NULL, 1, 70, 3),
+  ('llm.translation', '文本翻译', '角色编码及其他系统文本的英文转换', 'chat', NULL, 1, 80, 3);
 
 -- =====================================================
 -- 权限数据（基于数据库实际数据生成）
@@ -1765,6 +1890,25 @@ INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, 
 -- 工作流配置
 (224, 14, '工作流配置', 'BUTTON', NULL, NULL, NULL, NULL, 8, 'button:workflow:config', 1, 1, 0);
 
+-- AI 助手设置菜单（系统配置 → AI 助手设置；来源 V20260807_02）
+-- 说明: sys_menus.id 使用自增（不写死 id，避免与既有数据冲突）；parent_id=7 为「系统配置」目录
+INSERT IGNORE INTO `sys_menus`
+  (`parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`)
+SELECT
+  7, 'AI 助手设置', 'MENU', '/settings/assistant', 'AssistantSettings', 'views/settings/assistant.vue', 'ChatDotRound', 8, 'menu:system-config', 1, 1, 0
+WHERE NOT EXISTS (
+  SELECT 1 FROM `sys_menus` WHERE `path` = '/settings/assistant' OR `route_name` = 'AssistantSettings'
+);
+
+-- 仓库管理菜单（系统配置 → 仓库管理；来源 V20260809_01）
+INSERT IGNORE INTO `sys_menus`
+  (`parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`)
+SELECT
+  7, '仓库管理', 'MENU', '/settings/git/repositories', 'GitRepositories', 'views/settings/git/repositories.vue', 'FolderOpened', 10, 'menu:system-config', 1, 1, 0
+WHERE NOT EXISTS (
+  SELECT 1 FROM `sys_menus` WHERE `path` = '/settings/git/repositories' OR `route_name` = 'GitRepositories'
+);
+
 -- 角色权限数据（基于数据库实际数据生成）
 -- SUPER_ADMIN(id=1) 获得全部权限
 INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_by`) VALUES
@@ -1910,6 +2054,378 @@ INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target
 SELECT @workflow_template_id, 'edge_3', 'tpl_tpl-1_3_0_release', 'tpl_tpl-1_3_0_end' FROM DUAL
 WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'edge_3');
 
+-- 高级工作流模板：条件分支、AND/OR 并行、站内消息抄送、只读查阅待办抄送及综合示例。
+-- 模板属于全局项目（project_id=0），使用 WHERE NOT EXISTS 保证重复执行幂等。
+-- 来源: migrations/V20260805_02__seed_advanced_workflow_templates.sql（已合并，原文件已删除）
+START TRANSACTION;
+INSERT INTO workflow_versions (project_id, version, name, definition, is_active, is_template, copy_count, activation_status, change_log, submitted_for_approval_at, approved_at, approved_by, creator_id)
+SELECT 0, 'tpl-2.0.0', '条件分支审批', '{"id":null,"name":"条件分支审批","nodes":[{"nodeId":"tpl_tpl_2_0_0_start","type":"start","name":"开始","sortOrder":1,"properties":{"nodeStatusCode":"DRAFT"}},{"nodeId":"tpl_tpl_2_0_0_condition","type":"condition","name":"优先级条件分支","sortOrder":2,"properties":{"conditionDesc":"高优需求进入技术评审，其他需求走普通评审"}},{"nodeId":"tpl_tpl_2_0_0_normal","type":"approval","name":"普通产品评审","sortOrder":3,"properties":{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"PENDING_REVIEW","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},"assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},{"nodeId":"tpl_tpl_2_0_0_high","type":"approval","name":"高优产品评审","sortOrder":4,"properties":{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"PENDING_REVIEW","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},"assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},{"nodeId":"tpl_tpl_2_0_0_tech","type":"approval","name":"技术评审","sortOrder":5,"properties":{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"IN_DEVELOPMENT","assigneeType":"SPECIFIED_USER","assigneeUserIds":[2]},"assigneeType":"SPECIFIED_USER","assigneeUserIds":[2]},{"nodeId":"tpl_tpl_2_0_0_end","type":"end","name":"结束","sortOrder":6,"properties":{"nodeStatusCode":"ACCEPTED"}}],"edges":[{"edgeId":"tpl2_0_0_e1","source":"tpl_tpl_2_0_0_start","target":"tpl_tpl_2_0_0_condition","label":null,"condition":{},"properties":{"condition":{}}},{"edgeId":"tpl2_0_0_e2","source":"tpl_tpl_2_0_0_condition","target":"tpl_tpl_2_0_0_high","label":"高优分支","condition":{"logic":"AND","rules":[{"field":"priority","operator":"eq","value":"HIGH"}],"expr":"priority == ''HIGH''"},"properties":{"condition":{"logic":"AND","rules":[{"field":"priority","operator":"eq","value":"HIGH"}],"expr":"priority == ''HIGH''"}}},{"edgeId":"tpl2_0_0_e3","source":"tpl_tpl_2_0_0_condition","target":"tpl_tpl_2_0_0_normal","label":"默认分支","condition":{"defaultFlow":true},"properties":{"condition":{"defaultFlow":true}}},{"edgeId":"tpl2_0_0_e4","source":"tpl_tpl_2_0_0_high","target":"tpl_tpl_2_0_0_tech","label":null,"condition":{},"properties":{"condition":{}}},{"edgeId":"tpl2_0_0_e5","source":"tpl_tpl_2_0_0_tech","target":"tpl_tpl_2_0_0_end","label":null,"condition":{},"properties":{"condition":{}}},{"edgeId":"tpl2_0_0_e6","source":"tpl_tpl_2_0_0_normal","target":"tpl_tpl_2_0_0_end","label":null,"condition":{},"properties":{"condition":{}}}]}', 0, 1, 0, 'approved', '按需求优先级选择普通评审或高优评审+技术评审；包含默认分支示例。', NOW(), NOW(), 1, 1
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM workflow_versions WHERE project_id = 0 AND version = 'tpl-2.0.0');
+SET @workflow_template_id := (SELECT id FROM workflow_versions WHERE project_id = 0 AND version = 'tpl-2.0.0' LIMIT 1);
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_0_0_start', 'start', '开始', 180, 180, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"nodeStatusCode":"DRAFT"}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_0_0_start');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_0_0_condition', 'condition', '优先级条件分支', 420, 180, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"conditionDesc":"高优需求进入技术评审，其他需求走普通评审"}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_0_0_condition');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_0_0_normal', 'approval', '普通产品评审', 700, 280, 'SPECIFIED_USER', NULL, NULL, NULL, '[1]', NULL, NULL, '{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"PENDING_REVIEW","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_0_0_normal');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_0_0_high', 'approval', '高优产品评审', 700, 80, 'SPECIFIED_USER', NULL, NULL, NULL, '[1]', NULL, NULL, '{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"PENDING_REVIEW","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_0_0_high');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_0_0_tech', 'approval', '技术评审', 980, 80, 'SPECIFIED_USER', NULL, NULL, NULL, '[2]', NULL, NULL, '{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"IN_DEVELOPMENT","assigneeType":"SPECIFIED_USER","assigneeUserIds":[2]}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_0_0_tech');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_0_0_end', 'end', '结束', 1260, 180, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"nodeStatusCode":"ACCEPTED"}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_0_0_end');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl2_0_0_e1', 'tpl_tpl_2_0_0_start', 'tpl_tpl_2_0_0_condition', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl2_0_0_e1');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl2_0_0_e2', 'tpl_tpl_2_0_0_condition', 'tpl_tpl_2_0_0_high', '高优分支', '{"logic":"AND","rules":[{"field":"priority","operator":"eq","value":"HIGH"}],"expr":"priority == ''HIGH''"}', '{"condition":{"logic":"AND","rules":[{"field":"priority","operator":"eq","value":"HIGH"}],"expr":"priority == ''HIGH''"}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl2_0_0_e2');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl2_0_0_e3', 'tpl_tpl_2_0_0_condition', 'tpl_tpl_2_0_0_normal', '默认分支', '{"defaultFlow":true}', '{"condition":{"defaultFlow":true}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl2_0_0_e3');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl2_0_0_e4', 'tpl_tpl_2_0_0_high', 'tpl_tpl_2_0_0_tech', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl2_0_0_e4');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl2_0_0_e5', 'tpl_tpl_2_0_0_tech', 'tpl_tpl_2_0_0_end', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl2_0_0_e5');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl2_0_0_e6', 'tpl_tpl_2_0_0_normal', 'tpl_tpl_2_0_0_end', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl2_0_0_e6');
+INSERT INTO workflow_versions (project_id, version, name, definition, is_active, is_template, copy_count, activation_status, change_log, submitted_for_approval_at, approved_at, approved_by, creator_id)
+SELECT 0, 'tpl-2.1.0', 'AND并行会签', '{"id":null,"name":"AND并行会签","nodes":[{"nodeId":"tpl_tpl_2_1_0_start","type":"start","name":"开始","sortOrder":1,"properties":{"nodeStatusCode":"DRAFT"}},{"nodeId":"tpl_tpl_2_1_0_parallel","type":"parallel","name":"AND并行评审","sortOrder":2,"properties":{"parallelType":"AND","branches":[{"branchId":"tpl_tpl_2_1_0_product","branchName":"产品评审","condition":{}},{"branchId":"tpl_tpl_2_1_0_tech","branchName":"技术评审","condition":{}},{"branchId":"tpl_tpl_2_1_0_finance","branchName":"财务评审","condition":{}}]}},{"nodeId":"tpl_tpl_2_1_0_product","type":"approval","name":"产品评审","sortOrder":3,"properties":{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"PENDING_REVIEW","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},"assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},{"nodeId":"tpl_tpl_2_1_0_tech","type":"approval","name":"技术评审","sortOrder":4,"properties":{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"IN_DEVELOPMENT","assigneeType":"SPECIFIED_USER","assigneeUserIds":[2]},"assigneeType":"SPECIFIED_USER","assigneeUserIds":[2]},{"nodeId":"tpl_tpl_2_1_0_finance","type":"approval","name":"财务评审","sortOrder":5,"properties":{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"PENDING_CONFIRM","assigneeType":"SPECIFIED_USER","assigneeUserIds":[3]},"assigneeType":"SPECIFIED_USER","assigneeUserIds":[3]},{"nodeId":"tpl_tpl_2_1_0_merge","type":"parallel","name":"并行汇聚","sortOrder":6,"properties":{"parallelType":"AND"}},{"nodeId":"tpl_tpl_2_1_0_owner","type":"approval","name":"汇聚负责人确认","sortOrder":7,"properties":{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"PENDING_CONFIRM","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},"assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},{"nodeId":"tpl_tpl_2_1_0_end","type":"end","name":"结束","sortOrder":8,"properties":{"nodeStatusCode":"ACCEPTED"}}],"edges":[{"edgeId":"tpl_tpl_2_1_0_e1","source":"tpl_tpl_2_1_0_start","target":"tpl_tpl_2_1_0_parallel","label":null,"condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_1_0_e2","source":"tpl_tpl_2_1_0_parallel","target":"tpl_tpl_2_1_0_product","label":"产品评审","condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_1_0_b1","source":"tpl_tpl_2_1_0_product","target":"tpl_tpl_2_1_0_merge","label":null,"condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_1_0_e3","source":"tpl_tpl_2_1_0_parallel","target":"tpl_tpl_2_1_0_tech","label":"技术评审","condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_1_0_b2","source":"tpl_tpl_2_1_0_tech","target":"tpl_tpl_2_1_0_merge","label":null,"condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_1_0_e4","source":"tpl_tpl_2_1_0_parallel","target":"tpl_tpl_2_1_0_finance","label":"财务评审","condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_1_0_b3","source":"tpl_tpl_2_1_0_finance","target":"tpl_tpl_2_1_0_merge","label":null,"condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_1_0_e_merge","source":"tpl_tpl_2_1_0_merge","target":"tpl_tpl_2_1_0_owner","label":null,"condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_1_0_e_end","source":"tpl_tpl_2_1_0_owner","target":"tpl_tpl_2_1_0_end","label":null,"condition":{},"properties":{"condition":{}}}]}', 0, 1, 0, 'approved', '三个评审分支全部完成后进入汇聚负责人确认；当前运行时按并行分支记录顺序切换活动分支。', NOW(), NOW(), 1, 1
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM workflow_versions WHERE project_id = 0 AND version = 'tpl-2.1.0');
+SET @workflow_template_id := (SELECT id FROM workflow_versions WHERE project_id = 0 AND version = 'tpl-2.1.0' LIMIT 1);
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_1_0_start', 'start', '开始', 150, 220, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"nodeStatusCode":"DRAFT"}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_1_0_start');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_1_0_parallel', 'parallel', 'AND并行评审', 390, 220, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"parallelType":"AND","branches":[{"branchId":"tpl_tpl_2_1_0_product","branchName":"产品评审","condition":{}},{"branchId":"tpl_tpl_2_1_0_tech","branchName":"技术评审","condition":{}},{"branchId":"tpl_tpl_2_1_0_finance","branchName":"财务评审","condition":{}}]}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_1_0_parallel');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_1_0_product', 'approval', '产品评审', 690, 80, 'SPECIFIED_USER', NULL, NULL, NULL, '[1]', NULL, NULL, '{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"PENDING_REVIEW","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_1_0_product');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_1_0_tech', 'approval', '技术评审', 690, 220, 'SPECIFIED_USER', NULL, NULL, NULL, '[2]', NULL, NULL, '{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"IN_DEVELOPMENT","assigneeType":"SPECIFIED_USER","assigneeUserIds":[2]}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_1_0_tech');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_1_0_finance', 'approval', '财务评审', 690, 360, 'SPECIFIED_USER', NULL, NULL, NULL, '[3]', NULL, NULL, '{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"PENDING_CONFIRM","assigneeType":"SPECIFIED_USER","assigneeUserIds":[3]}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_1_0_finance');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_1_0_merge', 'parallel', '并行汇聚', 980, 220, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"parallelType":"AND"}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_1_0_merge');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_1_0_owner', 'approval', '汇聚负责人确认', 1250, 220, 'SPECIFIED_USER', NULL, NULL, NULL, '[1]', NULL, NULL, '{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"PENDING_CONFIRM","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_1_0_owner');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_1_0_end', 'end', '结束', 1510, 220, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"nodeStatusCode":"ACCEPTED"}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_1_0_end');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_1_0_e1', 'tpl_tpl_2_1_0_start', 'tpl_tpl_2_1_0_parallel', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_1_0_e1');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_1_0_e2', 'tpl_tpl_2_1_0_parallel', 'tpl_tpl_2_1_0_product', '产品评审', '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_1_0_e2');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_1_0_b1', 'tpl_tpl_2_1_0_product', 'tpl_tpl_2_1_0_merge', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_1_0_b1');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_1_0_e3', 'tpl_tpl_2_1_0_parallel', 'tpl_tpl_2_1_0_tech', '技术评审', '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_1_0_e3');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_1_0_b2', 'tpl_tpl_2_1_0_tech', 'tpl_tpl_2_1_0_merge', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_1_0_b2');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_1_0_e4', 'tpl_tpl_2_1_0_parallel', 'tpl_tpl_2_1_0_finance', '财务评审', '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_1_0_e4');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_1_0_b3', 'tpl_tpl_2_1_0_finance', 'tpl_tpl_2_1_0_merge', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_1_0_b3');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_1_0_e_merge', 'tpl_tpl_2_1_0_merge', 'tpl_tpl_2_1_0_owner', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_1_0_e_merge');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_1_0_e_end', 'tpl_tpl_2_1_0_owner', 'tpl_tpl_2_1_0_end', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_1_0_e_end');
+INSERT INTO workflow_versions (project_id, version, name, definition, is_active, is_template, copy_count, activation_status, change_log, submitted_for_approval_at, approved_at, approved_by, creator_id)
+SELECT 0, 'tpl-2.2.0', 'OR并行任选一', '{"id":null,"name":"OR并行任选一","nodes":[{"nodeId":"tpl_tpl_2_2_0_start","type":"start","name":"开始","sortOrder":1,"properties":{"nodeStatusCode":"DRAFT"}},{"nodeId":"tpl_tpl_2_2_0_parallel","type":"parallel","name":"OR并行评审","sortOrder":2,"properties":{"parallelType":"OR","branches":[{"branchId":"tpl_tpl_2_2_0_legal","branchName":"法务评审","condition":{}},{"branchId":"tpl_tpl_2_2_0_tech","branchName":"技术评审","condition":{}}]}},{"nodeId":"tpl_tpl_2_2_0_legal","type":"approval","name":"法务评审","sortOrder":3,"properties":{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"PENDING_REVIEW","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},"assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},{"nodeId":"tpl_tpl_2_2_0_tech","type":"approval","name":"技术评审","sortOrder":4,"properties":{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"IN_DEVELOPMENT","assigneeType":"SPECIFIED_USER","assigneeUserIds":[2]},"assigneeType":"SPECIFIED_USER","assigneeUserIds":[2]},{"nodeId":"tpl_tpl_2_2_0_merge","type":"parallel","name":"并行汇聚","sortOrder":5,"properties":{"parallelType":"OR"}},{"nodeId":"tpl_tpl_2_2_0_owner","type":"approval","name":"汇聚负责人确认","sortOrder":6,"properties":{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"PENDING_CONFIRM","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},"assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},{"nodeId":"tpl_tpl_2_2_0_end","type":"end","name":"结束","sortOrder":7,"properties":{"nodeStatusCode":"ACCEPTED"}}],"edges":[{"edgeId":"tpl_tpl_2_2_0_e1","source":"tpl_tpl_2_2_0_start","target":"tpl_tpl_2_2_0_parallel","label":null,"condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_2_0_e2","source":"tpl_tpl_2_2_0_parallel","target":"tpl_tpl_2_2_0_legal","label":"法务评审","condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_2_0_b1","source":"tpl_tpl_2_2_0_legal","target":"tpl_tpl_2_2_0_merge","label":null,"condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_2_0_e3","source":"tpl_tpl_2_2_0_parallel","target":"tpl_tpl_2_2_0_tech","label":"技术评审","condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_2_0_b2","source":"tpl_tpl_2_2_0_tech","target":"tpl_tpl_2_2_0_merge","label":null,"condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_2_0_e_merge","source":"tpl_tpl_2_2_0_merge","target":"tpl_tpl_2_2_0_owner","label":null,"condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_2_0_e_end","source":"tpl_tpl_2_2_0_owner","target":"tpl_tpl_2_2_0_end","label":null,"condition":{},"properties":{"condition":{}}}]}', 0, 1, 0, 'approved', '法务或技术任一分支完成后即可进入汇聚负责人确认；当前运行时按并行分支记录顺序切换活动分支。', NOW(), NOW(), 1, 1
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM workflow_versions WHERE project_id = 0 AND version = 'tpl-2.2.0');
+SET @workflow_template_id := (SELECT id FROM workflow_versions WHERE project_id = 0 AND version = 'tpl-2.2.0' LIMIT 1);
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_2_0_start', 'start', '开始', 150, 220, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"nodeStatusCode":"DRAFT"}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_2_0_start');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_2_0_parallel', 'parallel', 'OR并行评审', 390, 220, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"parallelType":"OR","branches":[{"branchId":"tpl_tpl_2_2_0_legal","branchName":"法务评审","condition":{}},{"branchId":"tpl_tpl_2_2_0_tech","branchName":"技术评审","condition":{}}]}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_2_0_parallel');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_2_0_legal', 'approval', '法务评审', 690, 80, 'SPECIFIED_USER', NULL, NULL, NULL, '[1]', NULL, NULL, '{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"PENDING_REVIEW","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_2_0_legal');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_2_0_tech', 'approval', '技术评审', 690, 220, 'SPECIFIED_USER', NULL, NULL, NULL, '[2]', NULL, NULL, '{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"IN_DEVELOPMENT","assigneeType":"SPECIFIED_USER","assigneeUserIds":[2]}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_2_0_tech');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_2_0_merge', 'parallel', '并行汇聚', 980, 220, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"parallelType":"OR"}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_2_0_merge');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_2_0_owner', 'approval', '汇聚负责人确认', 1250, 220, 'SPECIFIED_USER', NULL, NULL, NULL, '[1]', NULL, NULL, '{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"PENDING_CONFIRM","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_2_0_owner');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_2_0_end', 'end', '结束', 1510, 220, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"nodeStatusCode":"ACCEPTED"}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_2_0_end');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_2_0_e1', 'tpl_tpl_2_2_0_start', 'tpl_tpl_2_2_0_parallel', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_2_0_e1');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_2_0_e2', 'tpl_tpl_2_2_0_parallel', 'tpl_tpl_2_2_0_legal', '法务评审', '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_2_0_e2');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_2_0_b1', 'tpl_tpl_2_2_0_legal', 'tpl_tpl_2_2_0_merge', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_2_0_b1');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_2_0_e3', 'tpl_tpl_2_2_0_parallel', 'tpl_tpl_2_2_0_tech', '技术评审', '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_2_0_e3');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_2_0_b2', 'tpl_tpl_2_2_0_tech', 'tpl_tpl_2_2_0_merge', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_2_0_b2');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_2_0_e_merge', 'tpl_tpl_2_2_0_merge', 'tpl_tpl_2_2_0_owner', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_2_0_e_merge');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_2_0_e_end', 'tpl_tpl_2_2_0_owner', 'tpl_tpl_2_2_0_end', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_2_0_e_end');
+INSERT INTO workflow_versions (project_id, version, name, definition, is_active, is_template, copy_count, activation_status, change_log, submitted_for_approval_at, approved_at, approved_by, creator_id)
+SELECT 0, 'tpl-2.3.0', '站内消息抄送', '{"id":null,"name":"站内消息抄送","nodes":[{"nodeId":"tpl_tpl_2_3_0_start","type":"start","name":"开始","sortOrder":1,"properties":{"nodeStatusCode":"DRAFT"}},{"nodeId":"tpl_tpl_2_3_0_review","type":"approval","name":"产品评审","sortOrder":2,"properties":{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"PENDING_REVIEW","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},"assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},{"nodeId":"tpl_tpl_2_3_0_cc","type":"cc","name":"项目相关人抄送","sortOrder":3,"properties":{"ccMode":"MESSAGE","assigneeType":"SPECIFIED_USER","assigneeUserIds":[2,3]}},{"nodeId":"tpl_tpl_2_3_0_confirm","type":"approval","name":"负责人确认","sortOrder":4,"properties":{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"PENDING_CONFIRM","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},"assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},{"nodeId":"tpl_tpl_2_3_0_end","type":"end","name":"结束","sortOrder":5,"properties":{"nodeStatusCode":"ACCEPTED"}}],"edges":[{"edgeId":"tpl_tpl_2_3_0_e1","source":"tpl_tpl_2_3_0_start","target":"tpl_tpl_2_3_0_review","label":null,"condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_3_0_e2","source":"tpl_tpl_2_3_0_review","target":"tpl_tpl_2_3_0_cc","label":null,"condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_3_0_e3","source":"tpl_tpl_2_3_0_cc","target":"tpl_tpl_2_3_0_confirm","label":null,"condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_3_0_e4","source":"tpl_tpl_2_3_0_confirm","target":"tpl_tpl_2_3_0_end","label":null,"condition":{},"properties":{"condition":{}}}]}', 0, 1, 0, 'approved', '抄送节点示例：发送站内消息，不生成待办。', NOW(), NOW(), 1, 1
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM workflow_versions WHERE project_id = 0 AND version = 'tpl-2.3.0');
+SET @workflow_template_id := (SELECT id FROM workflow_versions WHERE project_id = 0 AND version = 'tpl-2.3.0' LIMIT 1);
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_3_0_start', 'start', '开始', 150, 120, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"nodeStatusCode":"DRAFT"}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_3_0_start');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_3_0_review', 'approval', '产品评审', 450, 120, 'SPECIFIED_USER', NULL, NULL, NULL, '[1]', NULL, NULL, '{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"PENDING_REVIEW","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_3_0_review');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_3_0_cc', 'cc', '项目相关人抄送', 730, 120, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"ccMode":"MESSAGE","assigneeType":"SPECIFIED_USER","assigneeUserIds":[2,3]}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_3_0_cc');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_3_0_confirm', 'approval', '负责人确认', 1010, 120, 'SPECIFIED_USER', NULL, NULL, NULL, '[1]', NULL, NULL, '{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"PENDING_CONFIRM","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_3_0_confirm');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_3_0_end', 'end', '结束', 1280, 120, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"nodeStatusCode":"ACCEPTED"}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_3_0_end');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_3_0_e1', 'tpl_tpl_2_3_0_start', 'tpl_tpl_2_3_0_review', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_3_0_e1');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_3_0_e2', 'tpl_tpl_2_3_0_review', 'tpl_tpl_2_3_0_cc', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_3_0_e2');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_3_0_e3', 'tpl_tpl_2_3_0_cc', 'tpl_tpl_2_3_0_confirm', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_3_0_e3');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_3_0_e4', 'tpl_tpl_2_3_0_confirm', 'tpl_tpl_2_3_0_end', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_3_0_e4');
+INSERT INTO workflow_versions (project_id, version, name, definition, is_active, is_template, copy_count, activation_status, change_log, submitted_for_approval_at, approved_at, approved_by, creator_id)
+SELECT 0, 'tpl-2.4.0', '只读查阅待办抄送', '{"id":null,"name":"只读查阅待办抄送","nodes":[{"nodeId":"tpl_tpl_2_4_0_start","type":"start","name":"开始","sortOrder":1,"properties":{"nodeStatusCode":"DRAFT"}},{"nodeId":"tpl_tpl_2_4_0_review","type":"approval","name":"产品评审","sortOrder":2,"properties":{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"PENDING_REVIEW","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},"assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},{"nodeId":"tpl_tpl_2_4_0_cc","type":"cc","name":"项目相关人抄送","sortOrder":3,"properties":{"ccMode":"READ_ONLY_TODO","assigneeType":"SPECIFIED_USER","assigneeUserIds":[2,3]}},{"nodeId":"tpl_tpl_2_4_0_confirm","type":"approval","name":"负责人确认","sortOrder":4,"properties":{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"PENDING_CONFIRM","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},"assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},{"nodeId":"tpl_tpl_2_4_0_end","type":"end","name":"结束","sortOrder":5,"properties":{"nodeStatusCode":"ACCEPTED"}}],"edges":[{"edgeId":"tpl_tpl_2_4_0_e1","source":"tpl_tpl_2_4_0_start","target":"tpl_tpl_2_4_0_review","label":null,"condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_4_0_e2","source":"tpl_tpl_2_4_0_review","target":"tpl_tpl_2_4_0_cc","label":null,"condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_4_0_e3","source":"tpl_tpl_2_4_0_cc","target":"tpl_tpl_2_4_0_confirm","label":null,"condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_4_0_e4","source":"tpl_tpl_2_4_0_confirm","target":"tpl_tpl_2_4_0_end","label":null,"condition":{},"properties":{"condition":{}}}]}', 0, 1, 0, 'approved', '抄送节点示例：生成只读查阅待办，不允许审批或流转。', NOW(), NOW(), 1, 1
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM workflow_versions WHERE project_id = 0 AND version = 'tpl-2.4.0');
+SET @workflow_template_id := (SELECT id FROM workflow_versions WHERE project_id = 0 AND version = 'tpl-2.4.0' LIMIT 1);
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_4_0_start', 'start', '开始', 150, 120, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"nodeStatusCode":"DRAFT"}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_4_0_start');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_4_0_review', 'approval', '产品评审', 450, 120, 'SPECIFIED_USER', NULL, NULL, NULL, '[1]', NULL, NULL, '{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"PENDING_REVIEW","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_4_0_review');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_4_0_cc', 'cc', '项目相关人抄送', 730, 120, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"ccMode":"READ_ONLY_TODO","assigneeType":"SPECIFIED_USER","assigneeUserIds":[2,3]}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_4_0_cc');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_4_0_confirm', 'approval', '负责人确认', 1010, 120, 'SPECIFIED_USER', NULL, NULL, NULL, '[1]', NULL, NULL, '{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"PENDING_CONFIRM","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_4_0_confirm');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_4_0_end', 'end', '结束', 1280, 120, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"nodeStatusCode":"ACCEPTED"}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_4_0_end');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_4_0_e1', 'tpl_tpl_2_4_0_start', 'tpl_tpl_2_4_0_review', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_4_0_e1');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_4_0_e2', 'tpl_tpl_2_4_0_review', 'tpl_tpl_2_4_0_cc', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_4_0_e2');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_4_0_e3', 'tpl_tpl_2_4_0_cc', 'tpl_tpl_2_4_0_confirm', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_4_0_e3');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_4_0_e4', 'tpl_tpl_2_4_0_confirm', 'tpl_tpl_2_4_0_end', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_4_0_e4');
+INSERT INTO workflow_versions (project_id, version, name, definition, is_active, is_template, copy_count, activation_status, change_log, submitted_for_approval_at, approved_at, approved_by, creator_id)
+SELECT 0, 'tpl-2.5.0', '条件+并行+只读抄送综合示例', '{"id":null,"name":"条件+并行+只读抄送综合示例","nodes":[{"nodeId":"tpl_tpl_2_5_0_start","type":"start","name":"开始","sortOrder":1,"properties":{"nodeStatusCode":"DRAFT"}},{"nodeId":"tpl_tpl_2_5_0_condition","type":"condition","name":"优先级分支","sortOrder":2,"properties":{"conditionDesc":"按优先级选择普通评审或高优评审"}},{"nodeId":"tpl_tpl_2_5_0_normal","type":"approval","name":"普通产品评审","sortOrder":3,"properties":{"allowCancel":true,"projectRequired":true,"nodeStatusCode":"PENDING_REVIEW","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},"assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},{"nodeId":"tpl_tpl_2_5_0_high","type":"approval","name":"高优产品评审","sortOrder":4,"properties":{"allowCancel":true,"projectRequired":true,"nodeStatusCode":"PENDING_REVIEW","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},"assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},{"nodeId":"tpl_tpl_2_5_0_parallel","type":"parallel","name":"多角色并行评审","sortOrder":5,"properties":{"parallelType":"AND","branches":[{"branchId":"tpl_tpl_2_5_0_product","branchName":"产品评审","condition":{}},{"branchId":"tpl_tpl_2_5_0_tech","branchName":"技术评审","condition":{}}]}},{"nodeId":"tpl_tpl_2_5_0_product","type":"approval","name":"产品评审","sortOrder":6,"properties":{"allowCancel":true,"projectRequired":true,"nodeStatusCode":"PENDING_REVIEW","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},"assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},{"nodeId":"tpl_tpl_2_5_0_tech","type":"approval","name":"技术评审","sortOrder":7,"properties":{"allowCancel":true,"projectRequired":true,"nodeStatusCode":"IN_DEVELOPMENT","assigneeType":"SPECIFIED_USER","assigneeUserIds":[2]},"assigneeType":"SPECIFIED_USER","assigneeUserIds":[2]},{"nodeId":"tpl_tpl_2_5_0_merge","type":"parallel","name":"并行汇聚","sortOrder":8,"properties":{"parallelType":"AND"}},{"nodeId":"tpl_tpl_2_5_0_cc","type":"cc","name":"项目干系人抄送","sortOrder":9,"properties":{"ccMode":"READ_ONLY_TODO","assigneeType":"SPECIFIED_USER","assigneeUserIds":[2,3]}},{"nodeId":"tpl_tpl_2_5_0_final","type":"approval","name":"负责人最终确认","sortOrder":10,"properties":{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"PENDING_CONFIRM","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},"assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]},{"nodeId":"tpl_tpl_2_5_0_end","type":"end","name":"结束","sortOrder":11,"properties":{"nodeStatusCode":"ACCEPTED"}}],"edges":[{"edgeId":"tpl_tpl_2_5_0_e1","source":"tpl_tpl_2_5_0_start","target":"tpl_tpl_2_5_0_condition","label":null,"condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_5_0_e2","source":"tpl_tpl_2_5_0_condition","target":"tpl_tpl_2_5_0_normal","label":"默认分支","condition":{"defaultFlow":true},"properties":{"condition":{"defaultFlow":true}}},{"edgeId":"tpl_tpl_2_5_0_e3","source":"tpl_tpl_2_5_0_condition","target":"tpl_tpl_2_5_0_high","label":"高优分支","condition":{"logic":"AND","rules":[{"field":"priority","operator":"eq","value":"HIGH"}],"expr":"priority == ''HIGH''"},"properties":{"condition":{"logic":"AND","rules":[{"field":"priority","operator":"eq","value":"HIGH"}],"expr":"priority == ''HIGH''"}}},{"edgeId":"tpl_tpl_2_5_0_e4","source":"tpl_tpl_2_5_0_normal","target":"tpl_tpl_2_5_0_parallel","label":null,"condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_5_0_e5","source":"tpl_tpl_2_5_0_high","target":"tpl_tpl_2_5_0_parallel","label":null,"condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_5_0_e6","source":"tpl_tpl_2_5_0_parallel","target":"tpl_tpl_2_5_0_product","label":"产品分支","condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_5_0_e7","source":"tpl_tpl_2_5_0_parallel","target":"tpl_tpl_2_5_0_tech","label":"技术分支","condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_5_0_b1","source":"tpl_tpl_2_5_0_product","target":"tpl_tpl_2_5_0_merge","label":null,"condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_5_0_b2","source":"tpl_tpl_2_5_0_tech","target":"tpl_tpl_2_5_0_merge","label":null,"condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_5_0_e8","source":"tpl_tpl_2_5_0_merge","target":"tpl_tpl_2_5_0_cc","label":null,"condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_5_0_e9","source":"tpl_tpl_2_5_0_cc","target":"tpl_tpl_2_5_0_final","label":null,"condition":{},"properties":{"condition":{}}},{"edgeId":"tpl_tpl_2_5_0_e10","source":"tpl_tpl_2_5_0_final","target":"tpl_tpl_2_5_0_end","label":null,"condition":{},"properties":{"condition":{}}}]}', 0, 1, 0, 'approved', '综合展示条件分支、AND并行评审、只读查阅待办抄送和最终确认的组合用法。', NOW(), NOW(), 1, 1
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM workflow_versions WHERE project_id = 0 AND version = 'tpl-2.5.0');
+SET @workflow_template_id := (SELECT id FROM workflow_versions WHERE project_id = 0 AND version = 'tpl-2.5.0' LIMIT 1);
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_5_0_start', 'start', '开始', 120, 240, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"nodeStatusCode":"DRAFT"}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_5_0_start');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_5_0_condition', 'condition', '优先级分支', 330, 240, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"conditionDesc":"按优先级选择普通评审或高优评审"}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_5_0_condition');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_5_0_normal', 'approval', '普通产品评审', 570, 380, 'SPECIFIED_USER', NULL, NULL, NULL, '[1]', NULL, NULL, '{"allowCancel":true,"projectRequired":true,"nodeStatusCode":"PENDING_REVIEW","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_5_0_normal');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_5_0_high', 'approval', '高优产品评审', 570, 100, 'SPECIFIED_USER', NULL, NULL, NULL, '[1]', NULL, NULL, '{"allowCancel":true,"projectRequired":true,"nodeStatusCode":"PENDING_REVIEW","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_5_0_high');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_5_0_parallel', 'parallel', '多角色并行评审', 820, 240, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"parallelType":"AND","branches":[{"branchId":"tpl_tpl_2_5_0_product","branchName":"产品评审","condition":{}},{"branchId":"tpl_tpl_2_5_0_tech","branchName":"技术评审","condition":{}}]}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_5_0_parallel');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_5_0_product', 'approval', '产品评审', 1050, 130, 'SPECIFIED_USER', NULL, NULL, NULL, '[1]', NULL, NULL, '{"allowCancel":true,"projectRequired":true,"nodeStatusCode":"PENDING_REVIEW","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_5_0_product');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_5_0_tech', 'approval', '技术评审', 1050, 350, 'SPECIFIED_USER', NULL, NULL, NULL, '[2]', NULL, NULL, '{"allowCancel":true,"projectRequired":true,"nodeStatusCode":"IN_DEVELOPMENT","assigneeType":"SPECIFIED_USER","assigneeUserIds":[2]}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_5_0_tech');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_5_0_merge', 'parallel', '并行汇聚', 1280, 240, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"parallelType":"AND"}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_5_0_merge');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_5_0_cc', 'cc', '项目干系人抄送', 1510, 240, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"ccMode":"READ_ONLY_TODO","assigneeType":"SPECIFIED_USER","assigneeUserIds":[2,3]}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_5_0_cc');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_5_0_final', 'approval', '负责人最终确认', 1760, 240, 'SPECIFIED_USER', NULL, NULL, NULL, '[1]', NULL, NULL, '{"allowCancel":true,"projectRequired":true,"notifyOnEnter":true,"nodeStatusCode":"PENDING_CONFIRM","assigneeType":"SPECIFIED_USER","assigneeUserIds":[1]}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_5_0_final');
+INSERT INTO workflow_nodes (workflow_version_id, node_id, node_type, node_name, position_x, position_y, assignee_type, assignee_role_id, assignee_role_group_id, assignee_org_id, assignee_user_ids, timeout_hours, timeout_action, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_5_0_end', 'end', '结束', 2020, 240, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"nodeStatusCode":"ACCEPTED"}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_nodes WHERE workflow_version_id = @workflow_template_id AND node_id = 'tpl_tpl_2_5_0_end');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_5_0_e1', 'tpl_tpl_2_5_0_start', 'tpl_tpl_2_5_0_condition', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_5_0_e1');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_5_0_e2', 'tpl_tpl_2_5_0_condition', 'tpl_tpl_2_5_0_normal', '默认分支', '{"defaultFlow":true}', '{"condition":{"defaultFlow":true}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_5_0_e2');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_5_0_e3', 'tpl_tpl_2_5_0_condition', 'tpl_tpl_2_5_0_high', '高优分支', '{"logic":"AND","rules":[{"field":"priority","operator":"eq","value":"HIGH"}],"expr":"priority == ''HIGH''"}', '{"condition":{"logic":"AND","rules":[{"field":"priority","operator":"eq","value":"HIGH"}],"expr":"priority == ''HIGH''"}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_5_0_e3');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_5_0_e4', 'tpl_tpl_2_5_0_normal', 'tpl_tpl_2_5_0_parallel', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_5_0_e4');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_5_0_e5', 'tpl_tpl_2_5_0_high', 'tpl_tpl_2_5_0_parallel', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_5_0_e5');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_5_0_e6', 'tpl_tpl_2_5_0_parallel', 'tpl_tpl_2_5_0_product', '产品分支', '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_5_0_e6');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_5_0_e7', 'tpl_tpl_2_5_0_parallel', 'tpl_tpl_2_5_0_tech', '技术分支', '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_5_0_e7');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_5_0_b1', 'tpl_tpl_2_5_0_product', 'tpl_tpl_2_5_0_merge', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_5_0_b1');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_5_0_b2', 'tpl_tpl_2_5_0_tech', 'tpl_tpl_2_5_0_merge', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_5_0_b2');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_5_0_e8', 'tpl_tpl_2_5_0_merge', 'tpl_tpl_2_5_0_cc', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_5_0_e8');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_5_0_e9', 'tpl_tpl_2_5_0_cc', 'tpl_tpl_2_5_0_final', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_5_0_e9');
+INSERT INTO workflow_edges (workflow_version_id, edge_id, source_node_id, target_node_id, label, `condition`, properties)
+SELECT @workflow_template_id, 'tpl_tpl_2_5_0_e10', 'tpl_tpl_2_5_0_final', 'tpl_tpl_2_5_0_end', NULL, '{}', '{"condition":{}}'
+FROM DUAL
+WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_5_0_e10');
+COMMIT;
+
 SET FOREIGN_KEY_CHECKS = 1;
 -- =============================================================
 -- 56. 迁移补齐区：将以下迁移脚本中的表结构同步进初始化脚本
@@ -1963,6 +2479,7 @@ CREATE TABLE IF NOT EXISTS `bitable_automations` (
   `trigger_config` JSON DEFAULT NULL COMMENT '触发器配置(字段变更条件/定时cron等)',
   `action_type` VARCHAR(50) NOT NULL COMMENT '动作类型: update_record/create_record/send_message/http_request',
   `action_config` JSON DEFAULT NULL COMMENT '动作配置(目标字段/消息模板/URL等)',
+  `last_fired_at` DATETIME DEFAULT NULL COMMENT '定时触发器上次触发时间',
   `created_by` BIGINT UNSIGNED NOT NULL COMMENT '创建人ID',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -2266,9 +2783,10 @@ CREATE TABLE `quick_questions` (
 -- LIMIT 3
 
 -- =============================================================
--- 58. 代码管理（Git 模块）表结构，自 dev 库 mysqldump 导出
 -- =============================================================
-
+-- 58. 代码管理（Git 模块）表结构
+--     来源: code_management_init.sql（已合并进本脚本，原文件已删除）
+-- =============================================================
 
 DROP TABLE IF EXISTS `role_group_relations`;
 CREATE TABLE `role_group_relations` (
@@ -2281,127 +2799,153 @@ CREATE TABLE `role_group_relations` (
   KEY `idx_role_id` (`role_id`),
   KEY `idx_role_group_id` (`role_group_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='角色组关联表(多对多)';
+
+-- 1. Git 平台配置表
+-- =====================================================
 DROP TABLE IF EXISTS `git_platforms`;
 CREATE TABLE `git_platforms` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `name` varchar(100) NOT NULL COMMENT 'å¹³å°åç§°',
-  `platform_type` enum('GITLAB','GITHUB','GITEE','GITEA') NOT NULL COMMENT 'å¹³å°ç±»åž‹',
-  `base_url` varchar(500) NOT NULL COMMENT 'APIåŸºç¡€åœ°å€',
-  `auth_type` enum('TOKEN','SSH_KEY','PASSWORD') NOT NULL DEFAULT 'TOKEN',
-  `credential` text NOT NULL COMMENT 'åŠ å¯†å‡­æ®',
-  `is_default` tinyint DEFAULT '0' COMMENT 'æ˜¯å¦é»˜è®¤å¹³å°',
-  `status` enum('CONNECTED','DISCONNECTED','EXPIRED') DEFAULT 'DISCONNECTED',
-  `last_checked_at` datetime DEFAULT NULL COMMENT 'æœ€è¿‘è¿žæŽ¥æµ‹è¯•æ—¶é—´',
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name` VARCHAR(100) NOT NULL COMMENT '平台名称',
+  `platform_type` ENUM('GITLAB','GITHUB','GITEE','GITEA') NOT NULL COMMENT '平台类型',
+  `base_url` VARCHAR(500) NOT NULL COMMENT 'API基础地址',
+  `auth_type` ENUM('TOKEN','SSH_KEY','PASSWORD') NOT NULL DEFAULT 'TOKEN',
+  `credential` TEXT NOT NULL COMMENT '加密凭据',
+  `is_default` TINYINT DEFAULT 0 COMMENT '是否默认平台',
+  `status` ENUM('CONNECTED','DISCONNECTED','EXPIRED') DEFAULT 'DISCONNECTED',
+  `last_checked_at` DATETIME DEFAULT NULL COMMENT '最近连接测试时间',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  KEY `idx_platform_type` (`platform_type`),
-  KEY `idx_status` (`status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Gitå¹³å°é…ç½®';
+  INDEX `idx_platform_type` (`platform_type`),
+  INDEX `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Git平台配置';
+-- =====================================================
+-- 2. 代码仓库表
+-- =====================================================
 DROP TABLE IF EXISTS `repositories`;
 CREATE TABLE `repositories` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `platform_id` bigint unsigned NOT NULL COMMENT 'æ‰€å±žGitå¹³å°ID',
-  `project_id` bigint unsigned DEFAULT NULL COMMENT 'ç»‘å®šé¡¹ç›®ID',
-  `name` varchar(200) NOT NULL COMMENT 'ä»“åº“å',
-  `full_path` varchar(500) NOT NULL COMMENT 'å®Œæ•´è·¯å¾„(å«namespace)',
-  `description` text,
-  `default_branch` varchar(100) DEFAULT 'main',
-  `clone_url_ssh` varchar(500) DEFAULT NULL,
-  `clone_url_https` varchar(500) DEFAULT NULL,
-  `remote_id` varchar(100) DEFAULT NULL COMMENT 'è¿œç«¯ä»“åº“ID',
-  `status` enum('ACTIVE','ARCHIVED','DELETED') DEFAULT 'ACTIVE',
-  `created_by` int unsigned DEFAULT NULL,
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `platform_id` BIGINT UNSIGNED NOT NULL COMMENT '所属Git平台ID',
+  `project_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '绑定项目ID',
+  `name` VARCHAR(200) NOT NULL COMMENT '仓库名',
+  `full_path` VARCHAR(500) NOT NULL COMMENT '完整路径(含namespace)',
+  `description` TEXT DEFAULT NULL,
+  `default_branch` VARCHAR(100) DEFAULT 'main',
+  `clone_url_ssh` VARCHAR(500) DEFAULT NULL,
+  `clone_url_https` VARCHAR(500) DEFAULT NULL,
+  `remote_id` VARCHAR(100) DEFAULT NULL COMMENT '远端仓库ID',
+  `status` ENUM('ACTIVE','ARCHIVED','DELETED') DEFAULT 'ACTIVE',
+  `created_by` INT UNSIGNED DEFAULT NULL,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  KEY `idx_platform` (`platform_id`),
-  KEY `idx_project` (`project_id`),
-  KEY `idx_status` (`status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='ä»£ç ä»“åº“';
-DROP TABLE IF EXISTS `merge_requests`;
-CREATE TABLE `merge_requests` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `repo_id` bigint unsigned NOT NULL COMMENT 'æ‰€å±žä»“åº“ID',
-  `source_branch` varchar(200) NOT NULL,
-  `target_branch` varchar(200) NOT NULL,
-  `title` varchar(500) NOT NULL,
-  `description` text,
-  `author_id` int unsigned NOT NULL,
-  `status` enum('OPEN','APPROVED','MERGED','CLOSED','CONFLICT') DEFAULT 'OPEN',
-  `merge_strategy` enum('MERGE','SQUASH','REBASE') DEFAULT 'MERGE',
-  `ci_status` enum('PENDING','RUNNING','SUCCESS','FAILED') DEFAULT NULL,
-  `requirement_id` bigint unsigned DEFAULT NULL COMMENT 'å…³è”éœ€æ±‚ID',
-  `remote_mr_id` varchar(50) DEFAULT NULL COMMENT 'è¿œç«¯MR IID',
-  `merged_by` int unsigned DEFAULT NULL,
-  `merged_at` datetime DEFAULT NULL,
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `idx_repo` (`repo_id`),
-  KEY `idx_author` (`author_id`),
-  KEY `idx_status` (`status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='åˆå¹¶è¯·æ±‚';
+  INDEX `idx_platform` (`platform_id`),
+  INDEX `idx_project` (`project_id`),
+  INDEX `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='代码仓库';
+-- =====================================================
+-- 3. 分支保护规则表 (核心)
+-- =====================================================
 DROP TABLE IF EXISTS `branch_protection_rules`;
 CREATE TABLE `branch_protection_rules` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `repo_id` bigint unsigned NOT NULL COMMENT 'æ‰€å±žä»“åº“ID',
-  `rule_set_id` bigint unsigned DEFAULT NULL COMMENT 'æ‰€å±žè§„åˆ™é›†ID',
-  `rule_name` varchar(100) NOT NULL COMMENT 'è§„åˆ™åç§°',
-  `branch_pattern` varchar(200) NOT NULL COMMENT 'åˆ†æ”¯åŒ¹é…æ¨¡å¼(fnmatch)',
-  `priority` int DEFAULT '0' COMMENT 'ä¼˜å…ˆçº§(è¶Šå¤§è¶Šä¼˜å…ˆ)',
-  `forbid_push` tinyint DEFAULT '1' COMMENT 'ç¦æ­¢ç›´æŽ¥æŽ¨é€',
-  `forbid_force_push` tinyint DEFAULT '1' COMMENT 'ç¦æ­¢å¼ºåˆ¶æŽ¨é€',
-  `forbid_delete` tinyint DEFAULT '1' COMMENT 'ç¦æ­¢åˆ é™¤åˆ†æ”¯',
-  `require_mr` tinyint DEFAULT '1' COMMENT 'è¦æ±‚MR/PR',
-  `min_approvals` int DEFAULT '1' COMMENT 'æœ€å°‘å®¡æ‰¹äººæ•°',
-  `dismiss_stale_approvals` tinyint DEFAULT '1' COMMENT 'é©³å›žè¿‡æœŸå®¡æ‰¹',
-  `block_self_approve` tinyint DEFAULT '1' COMMENT 'ç¦æ­¢ä½œè€…è‡ªæ‰¹',
-  `require_codeowner_approval` tinyint DEFAULT '0' COMMENT 'CODEOWNERSå®¡æ‰¹',
-  `require_thread_resolved` tinyint DEFAULT '0' COMMENT 'è®¨è®ºä¸²å…¨éƒ¨è§£å†³',
-  `require_ci_pass` tinyint DEFAULT '0' COMMENT 'è¦æ±‚CIé€šè¿‡',
-  `require_up_to_date` tinyint DEFAULT '0' COMMENT 'åˆ†æ”¯å¿…é¡»åŒæ­¥',
-  `ci_contexts` varchar(500) DEFAULT NULL COMMENT 'CIæ£€æŸ¥é¡¹(é€—å·åˆ†éš”)',
-  `whitelist_users` text COMMENT 'ç™½åå•ç”¨æˆ·ID(JSONæ•°ç»„)',
-  `whitelist_roles` text COMMENT 'ç™½åå•è§’è‰²(JSONæ•°ç»„)',
-  `enabled` tinyint DEFAULT '1' COMMENT 'æ˜¯å¦å¯ç”¨',
-  `created_by` int unsigned DEFAULT NULL,
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `repo_id` BIGINT UNSIGNED NOT NULL COMMENT '所属仓库ID',
+  `rule_set_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '所属规则集ID',
+  `rule_name` VARCHAR(100) NOT NULL COMMENT '规则名称',
+  `branch_pattern` VARCHAR(200) NOT NULL COMMENT '分支匹配模式(fnmatch)',
+  `priority` INT DEFAULT 0 COMMENT '优先级(越大越优先)',
+  -- 推送控制
+  `forbid_push` TINYINT DEFAULT 1 COMMENT '禁止直接推送',
+  `forbid_force_push` TINYINT DEFAULT 1 COMMENT '禁止强制推送',
+  `forbid_delete` TINYINT DEFAULT 1 COMMENT '禁止删除分支',
+  `require_mr` TINYINT DEFAULT 1 COMMENT '要求MR/PR',
+  -- 合并审批
+  `min_approvals` INT DEFAULT 1 COMMENT '最少审批人数',
+  `dismiss_stale_approvals` TINYINT DEFAULT 1 COMMENT '驳回过期审批',
+  `block_self_approve` TINYINT DEFAULT 1 COMMENT '禁止作者自批',
+  `require_codeowner_approval` TINYINT DEFAULT 0 COMMENT 'CODEOWNERS审批',
+  `require_thread_resolved` TINYINT DEFAULT 0 COMMENT '讨论串全部解决',
+  -- 状态检查
+  `require_ci_pass` TINYINT DEFAULT 0 COMMENT '要求CI通过',
+  `require_up_to_date` TINYINT DEFAULT 0 COMMENT '分支必须同步',
+  `ci_contexts` VARCHAR(500) DEFAULT NULL COMMENT 'CI检查项(逗号分隔)',
+  -- 白名单
+  `whitelist_users` TEXT DEFAULT NULL COMMENT '白名单用户ID(JSON数组)',
+  `whitelist_roles` TEXT DEFAULT NULL COMMENT '白名单角色(JSON数组)',
+  `enabled` TINYINT DEFAULT 1 COMMENT '是否启用',
+  `created_by` INT UNSIGNED DEFAULT NULL,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  KEY `idx_repo` (`repo_id`),
-  KEY `idx_rule_set` (`rule_set_id`),
-  KEY `idx_enabled` (`enabled`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='åˆ†æ”¯ä¿æŠ¤è§„åˆ™';
+  INDEX `idx_repo` (`repo_id`),
+  INDEX `idx_rule_set` (`rule_set_id`),
+  INDEX `idx_enabled` (`enabled`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='分支保护规则';
+-- =====================================================
+-- 4. 保护规则集表 (跨仓库复用)
+-- =====================================================
 DROP TABLE IF EXISTS `protection_rule_sets`;
 CREATE TABLE `protection_rule_sets` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `name` varchar(100) NOT NULL COMMENT 'è§„åˆ™é›†åç§°',
-  `description` text,
-  `created_by` int unsigned DEFAULT NULL,
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name` VARCHAR(100) NOT NULL COMMENT '规则集名称',
+  `description` TEXT DEFAULT NULL,
+  `created_by` INT UNSIGNED DEFAULT NULL,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='ä¿æŠ¤è§„åˆ™é›†';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='保护规则集';
+-- =====================================================
+-- 5. 合并请求表
+-- =====================================================
+DROP TABLE IF EXISTS `merge_requests`;
+CREATE TABLE `merge_requests` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `repo_id` BIGINT UNSIGNED NOT NULL COMMENT '所属仓库ID',
+  `source_branch` VARCHAR(200) NOT NULL,
+  `target_branch` VARCHAR(200) NOT NULL,
+  `title` VARCHAR(500) NOT NULL,
+  `description` TEXT DEFAULT NULL,
+  `author_id` INT UNSIGNED NOT NULL,
+  `status` ENUM('OPEN','APPROVED','MERGED','CLOSED','CONFLICT') DEFAULT 'OPEN',
+  `merge_strategy` ENUM('MERGE','SQUASH','REBASE') DEFAULT 'MERGE',
+  `ci_status` ENUM('PENDING','RUNNING','SUCCESS','FAILED') DEFAULT NULL,
+  `requirement_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联需求ID',
+  `remote_mr_id` VARCHAR(50) DEFAULT NULL COMMENT '远端MR IID',
+  `merged_by` INT UNSIGNED DEFAULT NULL,
+  `merged_at` DATETIME DEFAULT NULL,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `idx_repo` (`repo_id`),
+  INDEX `idx_author` (`author_id`),
+  INDEX `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='合并请求';
+-- =====================================================
+-- 6. 审计日志表 (五元组)
+-- =====================================================
 DROP TABLE IF EXISTS `git_audit_logs`;
 CREATE TABLE `git_audit_logs` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `operator_id` int unsigned DEFAULT NULL COMMENT 'æ“ä½œäººID',
-  `operator_ip` varchar(64) DEFAULT NULL COMMENT 'æ¥æºIP',
-  `user_agent` varchar(500) DEFAULT NULL COMMENT 'æ“ä½œè®¾å¤‡',
-  `target_type` varchar(50) NOT NULL COMMENT 'æ“ä½œå¯¹è±¡ç±»åž‹(platform/repo/rule/mr)',
-  `target_id` bigint unsigned DEFAULT NULL COMMENT 'æ“ä½œå¯¹è±¡ID',
-  `target_name` varchar(200) DEFAULT NULL COMMENT 'æ“ä½œå¯¹è±¡åç§°',
-  `action` varchar(100) NOT NULL COMMENT 'æ“ä½œç±»åž‹',
-  `detail` text COMMENT 'å˜æ›´å†…å®¹(JSON)',
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `operator_id` INT UNSIGNED DEFAULT NULL COMMENT '操作人ID',
+  `operator_ip` VARCHAR(64) DEFAULT NULL COMMENT '来源IP',
+  `user_agent` VARCHAR(500) DEFAULT NULL COMMENT '操作设备',
+  `target_type` VARCHAR(50) NOT NULL COMMENT '操作对象类型(platform/repo/rule/mr)',
+  `target_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '操作对象ID',
+  `target_name` VARCHAR(200) DEFAULT NULL COMMENT '操作对象名称',
+  `action` VARCHAR(100) NOT NULL COMMENT '操作类型',
+  `detail` TEXT DEFAULT NULL COMMENT '变更内容(JSON)',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  KEY `idx_operator` (`operator_id`),
-  KEY `idx_target` (`target_type`,`target_id`),
-  KEY `idx_action` (`action`),
-  KEY `idx_created_at` (`created_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='ä»£ç ç®¡ç†æ“ä½œå®¡è®¡æ—¥å¿—';
-
-
+  INDEX `idx_operator` (`operator_id`),
+  INDEX `idx_target` (`target_type`, `target_id`),
+  INDEX `idx_action` (`action`),
+  INDEX `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='代码管理操作审计日志';
+-- =====================================================
+-- 种子数据: 示例保护规则集
+-- =====================================================
+INSERT INTO `protection_rule_sets` (`name`, `description`, `created_by`) VALUES
+('生产环境标准', '适用于生产仓库，要求双人审批 + CI 通过', 1),
+('开发环境宽松', '适用于内部开发仓库，单审批即可', 1);
 
 -- =============================================================
 -- 59. 知识事件 / 实体 / 需求引用 / 节点处理人（仅存在于实体定义，历史迁移缺失）
@@ -2478,3 +3022,75 @@ CREATE TABLE IF NOT EXISTS `knowledge_event_entities` (
   PRIMARY KEY (`event_id`, `entity_id`),
   KEY `idx_entity_id` (`entity_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='知识事件-实体关联';
+
+-- ============================================================
+-- 用户管理：邀请成员 / 添加·申请记录
+-- 同步自 database/migrations/2026-09-15-user-invitation.sql
+-- ============================================================
+
+-- 邀请记录表（链接邀请 + 批量邀请）
+CREATE TABLE IF NOT EXISTS `sys_invitations` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `invite_code` VARCHAR(64) NOT NULL COMMENT '邀请码，链接邀请拼在 URL 上（/public/invite/{code}）',
+  `invite_type` VARCHAR(16) NOT NULL DEFAULT 'link' COMMENT 'link=通过链接邀请, batch=批量邀请',
+  `target` VARCHAR(128) DEFAULT NULL COMMENT '被邀请人手机号或邮箱；链接邀请为空（谁拿到链接都能用）',
+  `target_name` VARCHAR(64) DEFAULT NULL COMMENT '被邀请人姓名，批量邀请时填写',
+  `org_id` INT UNSIGNED DEFAULT NULL COMMENT '预分配组织ID，接受后自动归入',
+  `role_ids` VARCHAR(255) DEFAULT NULL COMMENT '预分配角色ID，逗号分隔；为空则不授角色',
+  `status` VARCHAR(16) NOT NULL DEFAULT 'pending' COMMENT 'pending=待接受, accepted=已接受, expired=已过期, revoked=已撤回',
+  `max_uses` INT NOT NULL DEFAULT 0 COMMENT '链接最多可用次数，0=不限次',
+  `used_count` INT NOT NULL DEFAULT 0 COMMENT '已使用次数',
+  `expires_at` DATETIME DEFAULT NULL COMMENT '过期时间，NULL=永不过期',
+  `invited_by` INT UNSIGNED DEFAULT NULL COMMENT '邀请人用户ID',
+  `accepted_by` INT UNSIGNED DEFAULT NULL COMMENT '接受人用户ID（审批通过后回填）',
+  `accepted_at` DATETIME DEFAULT NULL COMMENT '接受时间',
+  `remark` VARCHAR(255) DEFAULT NULL COMMENT '备注',
+  `deleted_at` TINYINT NOT NULL DEFAULT 0 COMMENT '0=未删除, 1=已删除',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `uk_invite_code` (`invite_code`),
+  INDEX `idx_invitation_status` (`status`),
+  INDEX `idx_invitation_type` (`invite_type`),
+  INDEX `idx_invitation_invited_by` (`invited_by`),
+  INDEX `idx_invitation_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户邀请记录（链接/批量）';
+
+-- 加入申请记录表
+CREATE TABLE IF NOT EXISTS `sys_join_requests` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `invitation_id` INT UNSIGNED DEFAULT NULL COMMENT '来源邀请ID，管理员直接添加时为空',
+  `user_id` INT UNSIGNED DEFAULT NULL COMMENT '审批通过后创建/关联的用户ID',
+  `applicant_name` VARCHAR(64) NOT NULL COMMENT '申请人姓名',
+  `applicant_phone` VARCHAR(32) DEFAULT NULL COMMENT '申请人手机号',
+  `applicant_email` VARCHAR(128) DEFAULT NULL COMMENT '申请人邮箱',
+  `org_id` INT UNSIGNED DEFAULT NULL COMMENT '申请加入的组织ID',
+  `role_ids` VARCHAR(255) DEFAULT NULL COMMENT '申请授予的角色ID，逗号分隔',
+  `source` VARCHAR(16) NOT NULL DEFAULT 'link' COMMENT 'link=邀请链接, batch=批量邀请, admin=管理员添加, self=自助申请',
+  `status` VARCHAR(16) NOT NULL DEFAULT 'pending' COMMENT 'pending=待处理, approved=已通过, rejected=已拒绝',
+  `apply_remark` VARCHAR(255) DEFAULT NULL COMMENT '申请人留言',
+  `reviewed_by` INT UNSIGNED DEFAULT NULL COMMENT '审批人用户ID',
+  `reviewed_at` DATETIME DEFAULT NULL COMMENT '审批时间',
+  `review_remark` VARCHAR(255) DEFAULT NULL COMMENT '审批意见（拒绝原因等）',
+  `deleted_at` TINYINT NOT NULL DEFAULT 0 COMMENT '0=未删除, 1=已删除',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '申请时间',
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  INDEX `idx_join_request_status` (`status`),
+  INDEX `idx_join_request_invitation` (`invitation_id`),
+  INDEX `idx_join_request_user` (`user_id`),
+  INDEX `idx_join_request_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户加入申请记录';
+
+-- 批量管理独立权限码（原与删除共用一个码，拆开后可单独授予）
+INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `status`) VALUES
+(140, 'button:user:batch-update', '批量启用/停用用户', 'BUTTON', '用户管理-批量启用/停用', 1);
+
+INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
+(240, 11, '批量启用/停用用户', 'BUTTON', NULL, NULL, NULL, NULL, 12, 'button:user:batch-update', 1, 1, 0);
+
+-- 补授给已有「批量启停/删除用户」权限的角色
+INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`)
+SELECT rp.`role_id`, 140
+FROM `sys_role_permissions` rp
+JOIN `sys_permissions` p ON p.`id` = rp.`permission_id` AND p.`code` = 'button:user:batch-delete';

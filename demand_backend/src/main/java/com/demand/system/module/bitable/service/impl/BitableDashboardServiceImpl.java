@@ -329,7 +329,8 @@ public class BitableDashboardServiceImpl implements BitableDashboardService {
             return cell.getValueNumber().toPlainString();
         }
         if (cell.getValueDate() != null) {
-            return cell.getValueDate().toString();
+            // 图表分组按「天」聚合：即使字段开启了「包含时间」，同一时刻序列归入同一天更符合看图直觉
+            return cell.getValueDate().toLocalDate().toString();
         }
         Object json = cell.getValueJson();
         if (json instanceof Collection<?> col && !col.isEmpty()) {

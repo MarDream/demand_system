@@ -17,6 +17,16 @@ export interface AuthUserInfo {
   /** 无组织用户首次登录需强制选择组织 */
   needOrgBind?: boolean
   positionId?: number
+  /** 用户全部角色编码（供角色切换下拉，不受激活角色影响） */
+  allRoles?: string[]
+  /** 与 allRoles 一一对应的显示名 */
+  allRoleNames?: string[]
+  /** 当前生效的激活角色（未切换时为空） */
+  activeRole?: string | null
+  /** 工号（只读展示） */
+  jobNumber?: string | null
+  /** 所属组织名称（只读展示） */
+  orgName?: string | null
 }
 
 export function login(username: string, password: string) {
@@ -38,6 +48,16 @@ export function refreshToken(refreshToken: string) {
 
 export function getMe() {
   return request.get<AuthUserInfo>('/v1/auth/me')
+}
+
+/** 个人设置：仅允许修改本人邮箱/手机号，其余信息只读 */
+export function updateProfile(data: { email: string; phone?: string }) {
+  return request.put<AuthUserInfo>('/v1/auth/profile', data)
+}
+
+/** 个人设置：验证旧密码后修改本人密码 */
+export function changePassword(data: { oldPassword: string; newPassword: string }) {
+  return request.put<void>('/v1/auth/password', data)
 }
 
 export function bindOrg(orgId: number) {

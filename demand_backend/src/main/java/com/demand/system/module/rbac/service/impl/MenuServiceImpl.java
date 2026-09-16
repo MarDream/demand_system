@@ -45,7 +45,9 @@ public class MenuServiceImpl implements MenuService {
     @Override
     public Result<List<MenuVO>> listCurrentUserMenus() {
         Long userId = requireCurrentUserId();
-        List<String> roles = rbacPermissionResolver.resolveRoles(userId);
+        // 角色切换：与 JwtAuthenticationFilter 同源，按激活角色收窄菜单可见范围
+        List<String> roles = rbacPermissionResolver.resolveRoles(
+                userId, rbacPermissionResolver.currentActiveRole());
         Set<String> permissions = new LinkedHashSet<>(rbacPermissionResolver.resolvePermissions(userId, roles));
         return Result.success(buildTree(listAllEnabledMenus(), permissions));
     }

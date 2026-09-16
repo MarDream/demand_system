@@ -22,8 +22,12 @@ public interface BitableViewShareService {
 
     /**
      * 启用/停用分享
+     *
+     * @param viewId  视图ID
+     * @param enabled 是否启用
+     * @param userId  操作人ID
      */
-    void updateStatus(Long viewId, boolean enabled);
+    void updateStatus(Long viewId, boolean enabled, Long userId);
 
     /**
      * 获取公开只读视图数据（匿名访问，凭 token）

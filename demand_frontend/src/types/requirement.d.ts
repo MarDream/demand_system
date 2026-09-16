@@ -223,6 +223,9 @@ export interface RequirementApprovalEvaluation {
   canSupplement?: boolean | null
   evaluatorId: number
   evaluatorName?: string | null
+  evaluatorUsername?: string | null
+  /** 操作人所处节点配置的处理角色名（节点未按角色指派时为空） */
+  assigneeRoleName?: string | null
   action?: string | null
   actionLabel?: string | null
   result?: 'SUBMIT' | 'PASS' | 'REJECT' | 'CANCEL' | 'SUPPLEMENT' | string | null

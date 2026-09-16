@@ -375,7 +375,10 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="isDefaultRole" label="关联分组">
+        <el-form-item v-if="isDefaultRole">
+          <template #label>
+            <FieldLabelTip tip="默认角色可同时关联到多个非默认分组，在角色树中会同时显示">关联分组</FieldLabelTip>
+          </template>
           <el-select v-model="form.groupIds" multiple clearable collapse-tags collapse-tags-tooltip placeholder="选择关联分组（默认角色可关联多个分组）">
             <el-option
               v-for="group in availableRoleGroups"
@@ -384,7 +387,6 @@
               :value="group.id"
             />
           </el-select>
-          <div v-if="isDefaultRole" class="form-tip">默认角色可同时关联到多个非默认分组，在角色树中会同时显示</div>
         </el-form-item>
         <el-form-item label="角色编码" prop="code">
           <div style="display: flex; gap: 8px; width: 100%;">
@@ -439,7 +441,10 @@
             placeholder="用于区分角色分类和职责范围"
           />
         </el-form-item>
-        <el-form-item v-if="!editingRoleGroup" label="关联角色">
+        <el-form-item v-if="!editingRoleGroup">
+          <template #label>
+            <FieldLabelTip tip="仅显示未纳入其他角色组的角色，创建后可通过拖拽调整">关联角色</FieldLabelTip>
+          </template>
           <el-select
             v-model="roleGroupForm.roleIds"
             multiple
@@ -456,7 +461,6 @@
               :value="role.id"
             />
           </el-select>
-          <div class="form-tip">仅显示未纳入其他角色组的角色，创建后可通过拖拽调整</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -475,6 +479,7 @@ import Sortable from 'sortablejs'
 import * as XLSX from 'xlsx'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppButton from '@/components/common/AppButton.vue'
+import FieldLabelTip from '@/components/common/FieldLabelTip.vue'
 import { useCollapsibleSidebar } from '@/composables/useCollapsibleSidebar'
 import { useUserStore } from '@/stores/modules/user'
 import { exportToExcel } from '@/utils/excel'

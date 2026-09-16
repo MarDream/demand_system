@@ -292,13 +292,17 @@
         <el-form-item label="规则名称" prop="ruleName">
           <el-input v-model="ruleDialog.form.ruleName" placeholder="例如：主干分支保护" />
         </el-form-item>
-        <el-form-item label="分支模式" prop="branchPattern">
+        <el-form-item prop="branchPattern">
+          <template #label>
+            <FieldLabelTip tip="支持精确匹配或通配符 *，如 main、feature/*">分支模式</FieldLabelTip>
+          </template>
           <el-input v-model="ruleDialog.form.branchPattern" placeholder="例如：main、feature/*、^release-.*$" class="mono-input" />
-          <div class="form-tip">支持精确匹配或通配符 *，如 main、feature/*</div>
         </el-form-item>
-        <el-form-item label="优先级" prop="priority">
+        <el-form-item prop="priority">
+          <template #label>
+            <FieldLabelTip tip="数值越小优先级越高，冲突时高优先级规则生效">优先级</FieldLabelTip>
+          </template>
           <el-input-number v-model="ruleDialog.form.priority" :min="0" :max="999" controls-position="right" />
-          <div class="form-tip">数值越小优先级越高，冲突时高优先级规则生效</div>
         </el-form-item>
         <el-form-item label="推送控制">
           <el-checkbox-group v-model="ruleDialog.pushChecks">
@@ -485,6 +489,7 @@ import {
 } from '@element-plus/icons-vue'
 import AppButton from '@/components/common/AppButton.vue'
 import PageContainer from '@/components/common/PageContainer.vue'
+import FieldLabelTip from '@/components/common/FieldLabelTip.vue'
 import { formatDate } from '@/utils/format'
 import { getFilterUsers } from '@/api/modules/user'
 import type { BranchProtectionRule, GitRepository, MergeRequest, GitAuditLog } from '@/types/git'

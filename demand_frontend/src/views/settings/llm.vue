@@ -140,7 +140,7 @@
       <!-- 右侧：模型管理 -->
       <div class="model-panel">
         <div v-if="!selectedProviderId" class="model-empty">
-          <el-empty description="请选择左侧接入组" />
+          <el-empty description="请选择接入组" />
         </div>
         <template v-else-if="selectedProvider">
           <div class="panel-header">
@@ -432,31 +432,43 @@
             <el-input v-model="modelForm.modelId" placeholder="如 gpt-4o" />
           </el-form-item>
         </div>
-        <el-form-item label="模型类型" prop="modelType">
+        <el-form-item prop="modelType">
+          <template #label>
+            <FieldLabelTip
+              :tip="modelForm.modelType === 'vision' ? '用于图片 OCR、截图、图表和页面内容理解，并在“模型应用”中按功能点绑定' : '模型输入类型（chat/embedding/vision/rerank 等）'"
+            >模型类型</FieldLabelTip>
+          </template>
           <el-select v-model="modelForm.modelType" allow-create filterable default-first-option style="width: 100%">
             <el-option v-for="r in presetTypes" :key="r" :label="modelTypeOptionLabel(r)" :value="r" />
           </el-select>
-          <div v-if="modelForm.modelType === 'vision'" class="form-hint">用于图片 OCR、截图、图表和页面内容理解，并在“模型应用”中按功能点绑定</div>
         </el-form-item>
-        <el-form-item v-if="modelForm.modelType === 'embedding'" label="向量维度" class="form-row-item">
+        <el-form-item v-if="modelForm.modelType === 'embedding'" class="form-row-item">
+          <template #label>
+            <FieldLabelTip tip="Embedding 模型输出维度，需与 Milvus 集合维度一致">向量维度</FieldLabelTip>
+          </template>
           <el-input-number v-model="modelForm.dimension" :min="1" :max="8192" :step="256" placeholder="如 1024、2048" style="width: 100%" />
-          <div class="form-hint">Embedding 模型输出维度，需与 Milvus 集合维度一致</div>
         </el-form-item>
         <template v-if="modelForm.modelType === 'embedding'">
           <div class="form-section-title">Embedding 参数</div>
           <div class="form-row">
-            <el-form-item label="分块大小" class="form-row-item">
+            <el-form-item class="form-row-item">
+              <template #label>
+                <FieldLabelTip tip="每个文本块的字符数">分块大小</FieldLabelTip>
+              </template>
               <el-input-number v-model="modelForm.chunkSize" :min="1" :max="10000" :step="64" placeholder="如 512" style="width: 100%" />
-              <div class="form-hint">每个文本块的字符数</div>
             </el-form-item>
-            <el-form-item label="分块重叠" class="form-row-item">
+            <el-form-item class="form-row-item">
+              <template #label>
+                <FieldLabelTip tip="相邻块之间的重叠字符数">分块重叠</FieldLabelTip>
+              </template>
               <el-input-number v-model="modelForm.chunkOverlap" :min="0" :max="5000" :step="32" placeholder="如 128" style="width: 100%" />
-              <div class="form-hint">相邻块之间的重叠字符数</div>
             </el-form-item>
           </div>
-          <el-form-item label="检索 TopK">
+          <el-form-item>
+            <template #label>
+              <FieldLabelTip tip="检索时返回的最相关结果数量">检索 TopK</FieldLabelTip>
+            </template>
             <el-input-number v-model="modelForm.searchTopK" :min="1" :max="1000" :step="5" placeholder="如 20" style="width: 100%" />
-            <div class="form-hint">检索时返回的最相关结果数量</div>
           </el-form-item>
         </template>
         <div class="form-row">
@@ -653,13 +665,30 @@
       </el-tab-pane>
 
       <el-tab-pane label="模型应用" name="applications">
-        <div class="application-panel" v-loading="applicationsLoading">
+        <div class="application-layout">
+          <!-- 左侧：功能点分组目录树（按业务分类管理，与管理多维表格的方式一致） -->
+          <aside class="application-sidebar" v-loading="applicationGroupsLoading">
+            <ApplicationGroupTree
+              :groups="applicationGroups"
+              :applications="applications"
+              :selection="applicationSelection"
+              @select="handleApplicationSelect"
+              @create-group="handleCreateApplicationGroup"
+              @rename-group="handleRenameApplicationGroup"
+              @delete-group="handleDeleteApplicationGroup"
+              @move-group="handleMoveApplicationGroup"
+              @move-application="handleMoveApplicationToGroup"
+            />
+          </aside>
+
+          <!-- 右侧：当前选中范围下的功能点配置 -->
+          <section class="application-main" v-loading="applicationsLoading">
           <div class="application-intro">
             <div>
-              <h3>功能点模型应用</h3>
+              <h3>{{ applicationScopeTitle }}</h3>
               <p>为不同业务功能单独指定默认模型；未指定时普通功能会自动回退，图片理解功能未配置时会跳过图片处理。</p>
             </div>
-            <el-tag type="info">共 {{ applications.length }} 个功能点</el-tag>
+            <el-tag type="info">共 {{ scopedApplications.length }} 个功能点</el-tag>
           </div>
 
           <el-alert
@@ -670,8 +699,8 @@
             class="application-alert"
           />
 
-          <div class="application-grid">
-            <div v-for="application in applications" :key="application.code" class="application-card">
+          <div v-if="scopedApplications.length" class="application-grid">
+            <div v-for="application in scopedApplications" :key="application.code" class="application-card">
               <div class="application-card-header">
                 <div>
                   <div class="application-name">
@@ -757,7 +786,8 @@
               </div>
             </div>
           </div>
-          <el-empty v-if="!applicationsLoading && applications.length === 0" description="暂无模型应用配置" />
+          <el-empty v-else description="该范围下暂无功能点" />
+          </section>
         </div>
       </el-tab-pane>
     </el-tabs>
@@ -777,12 +807,16 @@ import {
   type LlmModelForm,
   type SniffedModel,
   type LlmApplication,
+  type LlmApplicationGroup,
   type LlmTestResult,
 } from '@/api/modules/llmProvider'
 import { getRagConfig, type RagConfig } from '@/api/modules/knowledge'
 import { resolveErrorMessage } from '@/utils/error'
 import AppButton from '@/components/common/AppButton.vue'
+import FieldLabelTip from '@/components/common/FieldLabelTip.vue'
 import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
+import ApplicationGroupTree from './components/ApplicationGroupTree.vue'
+import type { ApplicationTreeSelection } from './components/application-tree.types'
 import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import { usePermission } from '@/composables/usePermission'
 import { useCollapsibleSidebar } from '@/composables/useCollapsibleSidebar'
@@ -827,6 +861,11 @@ const loading = ref(false)
 const applicationsLoading = ref(false)
 const savingApplicationCode = ref<string | null>(null)
 const applications = ref<LlmApplication[]>([])
+
+// 功能点分组目录树（模型应用页左侧）
+const applicationGroupsLoading = ref(false)
+const applicationGroups = ref<LlmApplicationGroup[]>([])
+const applicationSelection = ref<ApplicationTreeSelection>({ type: 'all', groupId: null, code: null })
 const submitting = ref(false)
 const providers = ref<LlmProvider[]>([])
 const selectedProviderId = ref<number | null>(null)
@@ -1076,6 +1115,7 @@ onMounted(() => {
   loadColumnConfig()
   loadRoles()
   loadRagConfig()
+  loadApplicationGroups()
   loadApplications()
 })
 
@@ -1120,6 +1160,154 @@ async function loadApplications() {
     applications.value = []
   } finally {
     applicationsLoading.value = false
+  }
+}
+
+/** 加载功能点分组目录树 */
+async function loadApplicationGroups() {
+  applicationGroupsLoading.value = true
+  try {
+    const res = await llmProviderApi.listApplicationGroups() as any
+    applicationGroups.value = res?.data ?? res ?? []
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '加载功能点分组失败'))
+    applicationGroups.value = []
+  } finally {
+    applicationGroupsLoading.value = false
+  }
+  resetSelectionIfMissing()
+}
+
+/** 拍平嵌套分组，便于按 parentId 查找子分组与子孙分组 */
+const flatApplicationGroups = computed<LlmApplicationGroup[]>(() => {
+  const out: LlmApplicationGroup[] = []
+  const walk = (list?: LlmApplicationGroup[]) => {
+    ;(list || []).forEach((group) => {
+      out.push(group)
+      walk(group.children)
+    })
+  }
+  walk(applicationGroups.value)
+  return out
+})
+
+/** 某分组及其所有子孙分组的ID集合（用于「按分组」范围过滤功能点） */
+function collectApplicationGroupIds(groupId: number): number[] {
+  const childrenMap = new Map<number, number[]>()
+  for (const group of flatApplicationGroups.value) {
+    if (group.parentId != null) {
+      const list = childrenMap.get(group.parentId) ?? []
+      list.push(group.id)
+      childrenMap.set(group.parentId, list)
+    }
+  }
+  const ids: number[] = []
+  const queue: number[] = [groupId]
+  while (queue.length) {
+    const current = queue.shift() as number
+    ids.push(current)
+    for (const child of childrenMap.get(current) ?? []) queue.push(child)
+  }
+  return ids
+}
+
+/** 右侧展示的功能点：由左侧树的选中范围决定 */
+const scopedApplications = computed<LlmApplication[]>(() => {
+  const selection = applicationSelection.value
+  if (selection.type === 'application') {
+    return applications.value.filter((item) => item.code === selection.code)
+  }
+  if (selection.type === 'ungrouped') {
+    const target = selection.groupId ?? null
+    return applications.value.filter((item) => (item.groupId ?? null) === target)
+  }
+  if (selection.type === 'group' && selection.groupId != null) {
+    const ids = collectApplicationGroupIds(selection.groupId)
+    return applications.value.filter((item) => item.groupId != null && ids.includes(item.groupId))
+  }
+  return applications.value
+})
+
+/** 右侧标题：全部应用 / 分组名 / 未分组 / 功能点名 */
+const applicationScopeTitle = computed(() => {
+  const selection = applicationSelection.value
+  if (selection.type === 'application') {
+    return applications.value.find((item) => item.code === selection.code)?.name ?? '功能点'
+  }
+  if (selection.type === 'group' && selection.groupId != null) {
+    return flatApplicationGroups.value.find((group) => group.id === selection.groupId)?.name ?? '分组'
+  }
+  if (selection.type === 'ungrouped') {
+    const parent = selection.groupId == null
+      ? null
+      : flatApplicationGroups.value.find((group) => group.id === selection.groupId)
+    return parent ? `${parent.name} / 未分组` : '未分组'
+  }
+  return '全部应用'
+})
+
+/** 选中分组被删除后回退到「全部应用」，避免右侧停留在空范围 */
+function resetSelectionIfMissing() {
+  const selection = applicationSelection.value
+  if (selection.type !== 'group' || selection.groupId == null) return
+  if (!flatApplicationGroups.value.some((group) => group.id === selection.groupId)) {
+    applicationSelection.value = { type: 'all', groupId: null, code: null }
+  }
+}
+
+function handleApplicationSelect(payload: ApplicationTreeSelection) {
+  applicationSelection.value = payload
+}
+
+async function handleCreateApplicationGroup(payload: { name: string; parentId: number | null }) {
+  try {
+    await llmProviderApi.createApplicationGroup({ name: payload.name, parentId: payload.parentId })
+    ElMessage.success('分组已创建')
+    await loadApplicationGroups()
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '创建分组失败'))
+  }
+}
+
+async function handleRenameApplicationGroup(payload: { id: number; name: string }) {
+  try {
+    await llmProviderApi.renameApplicationGroup(payload.id, payload.name)
+    ElMessage.success('分组已重命名')
+    await loadApplicationGroups()
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '重命名分组失败'))
+  }
+}
+
+async function handleDeleteApplicationGroup(id: number) {
+  try {
+    await llmProviderApi.deleteApplicationGroup(id)
+    ElMessage.success('分组已删除')
+    // 分组删除后其子分组与功能点会上移到父级，需同步刷新分组树与功能点归属
+    await Promise.all([loadApplicationGroups(), loadApplications()])
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '删除分组失败'))
+  }
+}
+
+async function handleMoveApplicationGroup(payload: { id: number; parentId: number | null }) {
+  try {
+    await llmProviderApi.moveApplicationGroup(payload.id, { parentId: payload.parentId })
+    ElMessage.success('分组已移动')
+    await loadApplicationGroups()
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '移动分组失败'))
+  }
+}
+
+async function handleMoveApplicationToGroup(payload: { code: string; groupId: number | null }) {
+  try {
+    await llmProviderApi.moveApplicationToGroup(payload.code, payload.groupId)
+    ElMessage.success('功能点已移动')
+    // 分组计数依赖功能点归属，两处一起刷新
+    await Promise.all([loadApplicationGroups(), loadApplications()])
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '移动功能点失败'))
   }
 }
 
@@ -2490,7 +2678,29 @@ async function handleSniffImport() {
   margin-top: 16px;
 }
 
-.application-panel {
+/* 「模型应用」页：左侧功能点分组目录树 + 右侧配置区 */
+.application-layout {
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+  min-height: 420px;
+}
+
+.application-sidebar {
+  flex: none;
+  width: 260px;
+  min-width: 200px;
+  max-width: 320px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.application-main {
+  flex: 1;
+  min-width: 0;
   min-height: 360px;
 }
 

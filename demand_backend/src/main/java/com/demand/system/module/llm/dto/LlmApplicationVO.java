@@ -13,6 +13,8 @@ public class LlmApplicationVO {
     private Boolean modelAvailable;
     private Boolean enabled;
     private Integer sortOrder;
+    /** 所属分组ID，null=未分组 */
+    private Long groupId;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -38,4 +40,6 @@ public class LlmApplicationVO {
     public void setEnabled(Boolean enabled) { this.enabled = enabled; }
     public Integer getSortOrder() { return sortOrder; }
     public void setSortOrder(Integer sortOrder) { this.sortOrder = sortOrder; }
+    public Long getGroupId() { return groupId; }
+    public void setGroupId(Long groupId) { this.groupId = groupId; }
 }

@@ -455,7 +455,7 @@ public class RequirementServiceImpl implements RequirementService {
 
         if (dto.getCustomFields() != null) {
             requirementFieldService.validateAndPersist(requirement,
-                    requirementFieldService.resolveCreatePermission(projectId, requirement.getType()),
+                    requirementFieldService.resolveCreatePermission(requirement.getType()),
                     dto.getCustomFields());
         }
 
@@ -496,7 +496,7 @@ public class RequirementServiceImpl implements RequirementService {
             requirementFieldService.validateAndPersist(existing,
                     existing.getWorkflowInstanceId() != null
                             ? requirementFieldService.resolveRequirementPermission(existing)
-                            : requirementFieldService.resolveCreatePermission(existing.getProjectId(), existing.getType()),
+                            : requirementFieldService.resolveCreatePermission(existing.getType()),
                     dto.getCustomFields());
         }
 
@@ -650,7 +650,7 @@ public class RequirementServiceImpl implements RequirementService {
         insertRequirementWithGeneratedNo(requirement);
         if (dto.getCustomFields() != null) {
             requirementFieldService.validateAndPersist(requirement,
-                    requirementFieldService.resolveCreatePermission(requirement.getProjectId(), requirement.getType()),
+                    requirementFieldService.resolveCreatePermission(requirement.getType()),
                     dto.getCustomFields());
         }
         recordHistory(requirement.getId(), creatorId, "create", null, "保存草稿");
@@ -785,7 +785,7 @@ public class RequirementServiceImpl implements RequirementService {
 
         if (dto.getCustomFields() != null) {
             requirementFieldService.validateAndPersist(existing,
-                    requirementFieldService.resolveCreatePermission(existing.getProjectId(), existing.getType()),
+                    requirementFieldService.resolveCreatePermission(existing.getType()),
                     dto.getCustomFields());
         }
 
@@ -1753,6 +1753,8 @@ public class RequirementServiceImpl implements RequirementService {
                     SysOrgVO org = sysOrgService.getDetail(creator.getOrgId());
                     if (org != null) {
                         vo.setDepartmentName(org.getName());
+                        // 所属组织：提需求人所在组织名称
+                        vo.setCreatorOrgName(org.getName());
                     }
                 } else if (creator.getDepartmentId() != null) {
                     SysOrgVO dept = sysOrgService.getDetail(creator.getDepartmentId());
@@ -1827,6 +1829,14 @@ public class RequirementServiceImpl implements RequirementService {
         String assigneeType = currentNode.getAssigneeType();
         Long operatorId = SecurityUtils.getCurrentUserId();
         List<AssigneeCandidateDTO> candidates = workflowEngineService.resolveAssigneeCandidates(currentNode, requirement, operatorId);
+        // 当前登录用户的角色可处理当前节点时，直接显示当前登录用户姓名
+        if (operatorId != null && candidates != null
+                && candidates.stream().anyMatch(c -> c.getId() != null && c.getId().longValue() == operatorId)) {
+            User operator = userMapper.selectById(operatorId);
+            if (operator != null) {
+                return resolveUserDisplayName(operator);
+            }
+        }
         String display = workflowEngineService.resolveHandlerDisplay(currentNode, candidates, assigneeType, requirement, operatorId);
         // resolveHandlerDisplay 返回 "-" 表示无处理人，这里转为 null 以保持兼容
         String result = "-".equals(display) ? null : display;
@@ -1859,11 +1869,10 @@ public class RequirementServiceImpl implements RequirementService {
     }
 
     private void fillDynamicFields(RequirementVO vo, Requirement requirement) {
-        List<CustomField> fields = requirementFieldService.listEnabledFields(
-                requirement.getProjectId(), requirement.getType());
+        List<CustomField> fields = requirementFieldService.listEnabledFields(requirement.getType());
         WorkflowNodePermission permission = requirement.getWorkflowInstanceId() != null
                 ? requirementFieldService.resolveRequirementPermission(requirement)
-                : requirementFieldService.resolveCreatePermission(requirement.getProjectId(), requirement.getType());
+                : requirementFieldService.resolveCreatePermission(requirement.getType());
         vo.setDynamicFields(requirementFieldService.buildSchema(
                 fields, permission, requirementFieldService.loadValues(requirement.getId())));
     }
@@ -2757,13 +2766,13 @@ public class RequirementServiceImpl implements RequirementService {
      */
     /** 将可见动态字段值追加到导出行 Map，字段 key = fieldCode。 */
     private void appendDynamicFieldsToExportRow(Map<String, Object> row, Requirement r, DynamicExportContext ctx) {
-        String typeKey = r.getProjectId() + ":" + r.getType();
+        String typeKey = r.getType();
         List<CustomField> fields = ctx.fieldsByTypeKey.computeIfAbsent(typeKey,
-                k -> requirementFieldService.listEnabledFields(r.getProjectId(), r.getType()));
+                k -> requirementFieldService.listEnabledFields(r.getType()));
         WorkflowNodePermission permission = r.getWorkflowInstanceId() != null
                 ? ctx.permissionByRequirement.get(r.getId())
                 : ctx.createPermissionByTypeKey.computeIfAbsent(typeKey,
-                        k -> requirementFieldService.resolveCreatePermission(r.getProjectId(), r.getType()));
+                        k -> requirementFieldService.resolveCreatePermission(r.getType()));
         List<CustomFieldConfigDTO> schema = requirementFieldService.buildSchema(
                 fields, permission, ctx.valuesByRequirement.getOrDefault(r.getId(), Collections.emptyMap()));
         if (schema == null || schema.isEmpty()) {

@@ -35,6 +35,12 @@ import com.demand.system.module.knowledge.llm.LlmGateway;
 import com.demand.system.module.knowledge.llm.LlmGatewayConfig;
 import com.demand.system.module.llm.constant.LlmApplicationCode;
 import com.demand.system.module.llm.service.LlmModelResolver;
+import com.demand.system.module.nl2sql.dto.DataQueryResult;
+import com.demand.system.module.nl2sql.dto.Nl2SqlContext;
+import com.demand.system.module.nl2sql.dto.Nl2SqlOutcome;
+import com.demand.system.module.nl2sql.service.Nl2SqlAnswerStream;
+import com.demand.system.module.nl2sql.service.Nl2SqlService;
+import com.demand.system.module.requirement.service.impl.RequirementServiceImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -68,6 +74,8 @@ public class AssistantServiceImpl implements AssistantService {
     private final KnowledgeSearchService knowledgeSearchService;
     private final QueryRewriteService queryRewriteService;
     private final RagAnswerService ragAnswerService;
+    private final Nl2SqlService nl2SqlService;
+    private final RequirementServiceImpl requirementService;
     private final Executor sseExecutor;
 
     public AssistantServiceImpl(AssistantSessionMapper sessionMapper,
@@ -80,6 +88,8 @@ public class AssistantServiceImpl implements AssistantService {
                                 KnowledgeSearchService knowledgeSearchService,
                                 QueryRewriteService queryRewriteService,
                                 RagAnswerService ragAnswerService,
+                                Nl2SqlService nl2SqlService,
+                                RequirementServiceImpl requirementService,
                                 @Qualifier(SseExecutorConfig.SSE_TASK_EXECUTOR) Executor sseExecutor) {
         this.sessionMapper = sessionMapper;
         this.messageMapper = messageMapper;
@@ -91,6 +101,8 @@ public class AssistantServiceImpl implements AssistantService {
         this.knowledgeSearchService = knowledgeSearchService;
         this.queryRewriteService = queryRewriteService;
         this.ragAnswerService = ragAnswerService;
+        this.nl2SqlService = nl2SqlService;
+        this.requirementService = requirementService;
         this.sseExecutor = sseExecutor;
     }
 
@@ -233,7 +245,7 @@ public class AssistantServiceImpl implements AssistantService {
         return emitter;
     }
 
-    /** 按请求意图分发到知识库问答 / 联网搜索 / 通用操作导航三条流式链路 */
+    /** 按请求意图分发到数据问答 / 知识库问答 / 联网搜索 / 通用操作导航四条流式链路 */
     private void dispatchByIntent(SseEmitter emitter,
                                   AssistantChatRequest request,
                                   String userContent,
@@ -244,7 +256,24 @@ public class AssistantServiceImpl implements AssistantService {
                                   boolean superAdmin,
                                   List<String> permissions,
                                   boolean regenerate) {
-        if (request.getKnowledgeBaseId() != null
+        boolean explicitDataQuery = Boolean.TRUE.equals(request.getDataQuery());
+        boolean autoDataQuery = request.getDataQuery() == null
+                && nl2SqlService.isEnabled()
+                && request.getKnowledgeBaseId() == null
+                && !Boolean.TRUE.equals(request.getWebSearch())
+                && !hasExplicitSearchScope(request)
+                && nl2SqlService.looksLikeDataQuery(userContent);
+        if (explicitDataQuery || autoDataQuery) {
+            // 数据问答分支（NL2SQL）：自然语言 → 只读 SQL → 数据库 → 整合智能回答
+            assistantMessage.setIntent("data_query");
+            messageMapper.updateById(assistantMessage);
+            if (!regenerate) {
+                updateSessionAfterInteraction(session, buildPreview(userContent));
+            }
+            CompletableFuture.runAsync(() -> doStreamDataQueryReply(
+                    emitter, request, userContent, userMessageId, assistantMessage,
+                    questionLogId, superAdmin, permissions), sseExecutor);
+        } else if (request.getKnowledgeBaseId() != null
                 || hasExplicitSearchScopeValue(request, KnowledgeSearchScope.REQUIREMENT_BODY)
                 || hasExplicitSearchScopeValue(request, KnowledgeSearchScope.KNOWLEDGE_BASE)) {
             // 知识库检索问答分支：跨全部或指定知识库做 RAG 问答
@@ -296,6 +325,7 @@ public class AssistantServiceImpl implements AssistantService {
         chatRequest.setSearchScopes(request.getSearchScopes());
         chatRequest.setFiles(request.getFiles());
         chatRequest.setHistory(request.getHistory());
+        chatRequest.setDataQuery(request.getDataQuery());
         return chatRequest;
     }
 
@@ -452,6 +482,171 @@ public class AssistantServiceImpl implements AssistantService {
             messageMapper.updateById(assistantMessage);
             markQuestionAnswered(questionLogId, false);
             sendErrorAndComplete(emitter, e, "操作助手响应失败");
+        }
+    }
+
+    /**
+     * 数据问答流式回复（NL2SQL）：
+     * <ol>
+     *   <li>问题理解与 SQL 生成（LLM 严格 JSON 输出）</li>
+     *   <li>安全校验（单条只读 SELECT + 表白名单）与数据权限 / 软删除过滤注入</li>
+     *   <li>只读执行查询，先下发结构化结果（表格与图表），再逐字输出整合性回答</li>
+     * </ol>
+     * 当模型判定问题与数据库数据无关时，自动回退到通用操作导航链路，避免用户白问一次。
+     */
+    private void doStreamDataQueryReply(SseEmitter emitter,
+                                        AssistantChatRequest request,
+                                        String userMessage,
+                                        Long userMessageId,
+                                        AssistantMessage assistantMessage,
+                                        Long questionLogId,
+                                        boolean superAdmin,
+                                        List<String> permissions) {
+        StringBuilder answer = new StringBuilder();
+        StringBuilder reasoning = new StringBuilder();
+        List<AssistantTask> tasks = new ArrayList<>();
+        try {
+            emitter.send(SseEmitter.event().name("meta").data(Map.of(
+                    "sessionId", assistantMessage.getSessionId(),
+                    "userMessageId", userMessageId,
+                    "assistantMessageId", assistantMessage.getId()
+            )));
+
+            Long userId = assistantMessage.getUserId();
+            // 数据权限范围由后端按登录态计算，绝不信任前端传入
+            List<Long> visibleOrgIds = requirementService.resolveVisibleOrgIds(userId, superAdmin);
+            Nl2SqlContext context = new Nl2SqlContext(
+                    userMessage,
+                    request.getHistory(),
+                    request.getLlmModelId(),
+                    userId,
+                    superAdmin,
+                    visibleOrgIds,
+                    request.getPageContext());
+
+            Nl2SqlOutcome outcome = nl2SqlService.query(context,
+                    task -> {
+                        mergeTask(tasks, task);
+                        pushTaskUpdate(emitter, task);
+                    },
+                    new Nl2SqlAnswerStream() {
+                        @Override
+                        public void onDataResult(DataQueryResult result) {
+                            sendDataResult(emitter, result);
+                        }
+
+                        @Override
+                        public void onToken(String token) {
+                            pushDelta(emitter, answer, token);
+                        }
+
+                        @Override
+                        public void onReasoning(String token) {
+                            pushReasoningDelta(emitter, reasoning, token);
+                        }
+
+                        @Override
+                        public void onUsage(LlmGateway.ChatUsage usage) {
+                            applyTokenUsage(assistantMessage, usage);
+                        }
+                    });
+
+            if (!outcome.isDataQuery()) {
+                // 判定为非数据问题：回退到通用操作导航链路（同一 emitter 内继续，不重复建立连接）
+                log.info("assistant data query degraded to navigation, sessionId={}", assistantMessage.getSessionId());
+                AssistantOperationAdvice advice = catalogService.advise(
+                        userMessage, request.getPageContext(), permissions, superAdmin);
+                List<AssistantAction> validatedActions =
+                        actionValidator.sanitize(advice.getActions(), permissions, superAdmin);
+                advice.setActions(validatedActions);
+                doStreamReply(emitter, advice, userMessage, request.getPageContext(), userMessageId,
+                        assistantMessage, request.getLlmModelId(), request.getFiles(), questionLogId);
+                return;
+            }
+
+            // 失败时若链路上没有任何文字下发给用户，必须补一条可读说明：
+            // 否则前端只会看到任务面板变红、对话区一片空白，用户不知道发生了什么。
+            if (!outcome.success() && answer.length() == 0) {
+                String reason = outcome.errorMessage() == null || outcome.errorMessage().isBlank()
+                        ? "未知原因"
+                        : outcome.errorMessage().trim();
+                // 上游异常信息常自带句末标点，避免拼接出"。。"
+                while (reason.endsWith("。") || reason.endsWith(".") || reason.endsWith("；")) {
+                    reason = reason.substring(0, reason.length() - 1);
+                }
+                pushDelta(emitter, answer, "数据问答暂时不可用：" + reason
+                        + "。可以稍后重试；若持续失败，请联系管理员检查"
+                        + "【系统设置 → 模型配置】中模型的额度与可用性。");
+            }
+
+            assistantMessage.setDataResult(outcome.dataResult());
+            assistantMessage.setTasks(tasks);
+            assistantMessage.setIntent("data_query");
+            if (outcome.warnings() != null && !outcome.warnings().isEmpty()) {
+                assistantMessage.setWarnings(outcome.warnings());
+            }
+            if (reasoning.length() > 0) {
+                assistantMessage.setReasoning(reasoning.toString());
+            }
+            assistantMessage.setContent(answer.toString());
+            assistantMessage.setStatus(outcome.success() ? "completed" : "failed");
+            messageMapper.updateById(assistantMessage);
+            markQuestionAnswered(questionLogId, outcome.success());
+
+            emitter.send(SseEmitter.event().name("actions").data(Map.of(
+                    "intent", "data_query",
+                    "actions", List.of(),
+                    "sources", List.of(),
+                    "tasks", tasks,
+                    "warnings", assistantMessage.getWarnings() == null ? List.of() : assistantMessage.getWarnings()
+            )));
+            emitter.send(SseEmitter.event().name("done").data(toMessageVO(assistantMessage)));
+            emitter.complete();
+        } catch (Exception e) {
+            log.warn("assistant data query stream failed, sessionId={}", assistantMessage.getSessionId(), e);
+            String fallback = "数据查询失败：" + (e.getMessage() != null ? e.getMessage() : "请稍后重试");
+            if (answer.length() == 0) {
+                answer.append(fallback);
+            }
+            assistantMessage.setContent(answer.toString());
+            assistantMessage.setReasoning(reasoning.length() > 0 ? reasoning.toString() : null);
+            assistantMessage.setStatus("failed");
+            assistantMessage.setIntent("data_query");
+            assistantMessage.setTasks(tasks);
+            messageMapper.updateById(assistantMessage);
+            markQuestionAnswered(questionLogId, false);
+            sendErrorAndComplete(emitter, e, fallback);
+        }
+    }
+
+    /** 合并任务节点（同 id 覆盖），保证 SSE 与最终消息体一致 */
+    private void mergeTask(List<AssistantTask> tasks, AssistantTask task) {
+        if (task == null) {
+            return;
+        }
+        int index = -1;
+        for (int i = 0; i < tasks.size(); i++) {
+            if (Objects.equals(tasks.get(i).getId(), task.getId())) {
+                index = i;
+                break;
+            }
+        }
+        if (index >= 0) {
+            tasks.set(index, task);
+        } else {
+            tasks.add(task);
+        }
+    }
+
+    /** 下发结构化数据结果；发送失败（如客户端已断开）不影响主流程 */
+    private void sendDataResult(SseEmitter emitter, DataQueryResult result) {
+        if (result == null) {
+            return;
+        }
+        try {
+            emitter.send(SseEmitter.event().name("dataResult").data(result));
+        } catch (Exception e) {
+            log.debug("下发数据结果事件失败（客户端可能已断开）", e);
         }
     }
 
@@ -1212,6 +1407,7 @@ public class AssistantServiceImpl implements AssistantService {
         vo.setWarnings(message.getWarnings());
         vo.setSuggestedFollowUps(message.getSuggestedFollowUps());
         vo.setReasoning(message.getReasoning());
+        vo.setDataResult(message.getDataResult());
         vo.setInputTokens(message.getInputTokens());
         vo.setOutputTokens(message.getOutputTokens());
         vo.setTotalTokens(message.getTotalTokens());

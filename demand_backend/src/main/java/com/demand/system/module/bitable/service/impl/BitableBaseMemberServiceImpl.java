@@ -129,7 +129,7 @@ public class BitableBaseMemberServiceImpl implements BitableBaseMemberService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void removeMember(Long baseId, Long userId) {
+    public void removeMember(Long baseId, Long userId, Long operatorId) {
         BitableBaseMember existing = memberMapper.selectByBaseAndUser(baseId, userId);
         if (existing == null) {
             throw new BusinessException("成员不存在");
@@ -146,8 +146,9 @@ public class BitableBaseMemberServiceImpl implements BitableBaseMemberService {
                 .eq(BitableBaseMember::getUserId, userId);
         memberMapper.delete(wrapper);
 
-        // 审计
-        auditHelper.record(baseId, null, null, OperationType.REMOVE_MEMBER,
+        // 审计：operatorId 必须透传，传 null 会被 bitable_operations.user_id 的 NOT NULL 拒绝，
+        // 异常又被 BitableAuditHelper 吞成 WARN，导致「移除成员」记录静默丢失
+        auditHelper.record(baseId, null, operatorId, OperationType.REMOVE_MEMBER,
                 "{\"userId\":" + userId + "}");
     }
 

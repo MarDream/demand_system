@@ -14,12 +14,10 @@ public class CustomField {
     @TableId(type = IdType.AUTO)
     private Long id;
 
-    private Long projectId;
-
     /** 稳定字段编码，不可变，跨节点权限/导出/统计使用。 */
     private String fieldCode;
 
-    /** 所属需求类型编码（为 NULL 时表示兼容旧的项目级全局字段）。 */
+    /** 所属需求类型编码（为 NULL 时表示全类型通用字段）。 */
     private String requirementTypeCode;
 
     private String name;
@@ -36,7 +34,8 @@ public class CustomField {
 
     private Integer enabled;
 
-    @TableLogic
+    /** DATETIME 软删除列：全局 db-config 是 1/0（适配 Integer deletedAt），这里必须显式覆盖为 IS NULL 语义。 */
+    @TableLogic(value = "null", delval = "NOW()")
     private LocalDateTime deletedAt;
 
     public Long getId() {
@@ -45,14 +44,6 @@ public class CustomField {
 
     public void setId(Long id) {
         this.id = id;
-    }
-
-    public Long getProjectId() {
-        return projectId;
-    }
-
-    public void setProjectId(Long projectId) {
-        this.projectId = projectId;
     }
 
     public String getFieldCode() {

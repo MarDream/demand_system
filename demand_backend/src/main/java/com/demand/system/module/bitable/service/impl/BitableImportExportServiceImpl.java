@@ -16,6 +16,8 @@ import com.demand.system.module.bitable.mapper.BitableTableMapper;
 import com.demand.system.module.bitable.service.BitableImportExportService;
 import com.demand.system.module.bitable.service.BitableAutomationService;
 import com.demand.system.module.bitable.service.BitableRecordService;
+import com.demand.system.module.bitable.util.BitableJsonUtils;
+import com.demand.system.module.bitable.util.BitableUniqueConstraintChecker;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.ss.util.CellReference;
 import org.apache.poi.xssf.streaming.SXSSFSheet;
@@ -32,6 +34,8 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -46,6 +50,8 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
+    private static final DateTimeFormatter DATETIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
     /** 导出行数硬上限，超过则记录告警并截断（防止病态数据量拖垮导出） */
     private static final int EXPORT_MAX_ROWS = 100_000;
 
@@ -58,6 +64,7 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
     private final BitableCellMapper cellMapper;
     private final BitableRecordService recordService;
     private final BitableAutomationService automationService;
+    private final BitableUniqueConstraintChecker uniqueChecker;
 
     /** 导入行数上限 */
     private static final int IMPORT_MAX_ROWS = 50_000;
@@ -67,13 +74,15 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
                                             BitableRecordMapper recordMapper,
                                             BitableCellMapper cellMapper,
                                             BitableRecordService recordService,
-                                            BitableAutomationService automationService) {
+                                            BitableAutomationService automationService,
+                                            BitableUniqueConstraintChecker uniqueChecker) {
         this.tableMapper = tableMapper;
         this.fieldMapper = fieldMapper;
         this.recordMapper = recordMapper;
         this.cellMapper = cellMapper;
         this.recordService = recordService;
         this.automationService = automationService;
+        this.uniqueChecker = uniqueChecker;
     }
 
     /**
@@ -177,9 +186,9 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
             if (cell.getValueNumber() != null) {
                 excelCell.setCellValue(cell.getValueNumber().doubleValue());
             } else if (cell.getValueDate() != null) {
-                excelCell.setCellValue(cell.getValueDate().format(DATE_FORMATTER));
+                excelCell.setCellValue(formatCellDate(cell.getValueDate(), field));
             } else {
-                String text = cellDisplayText(cell);
+                String text = cellDisplayText(cell, field);
                 if (!text.isEmpty()) {
                     excelCell.setCellValue(text);
                 }
@@ -228,9 +237,9 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
                     if (cell != null && cell.getValueNumber() != null) {
                         values.add(cell.getValueNumber().toPlainString());
                     } else if (cell != null && cell.getValueDate() != null) {
-                        values.add(cell.getValueDate().format(DATE_FORMATTER));
+                        values.add(formatCellDate(cell.getValueDate(), field));
                     } else {
-                        values.add(escapeCsvField(cell != null ? cellDisplayText(cell) : "", true));
+                        values.add(escapeCsvField(cell != null ? cellDisplayText(cell, field) : "", true));
                     }
                 }
                 sb.append(String.join(",", values));
@@ -281,9 +290,50 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
     }
 
     /**
+     * 按字段配置格式化日期，导出时与网格展示保持一致。
+     * <p>
+     * 优先读规范键 {@code dateFormat}（兼容历史键 {@code format}）；
+     * 未配置时按「包含时间」属性回落：开启输出到秒，关闭只输出日期。
+     */
+    private String formatCellDate(LocalDateTime dateTime, BitableField field) {
+        if (dateTime == null) {
+            return "";
+        }
+        String pattern = null;
+        if (field != null && field.getConfig() != null && !field.getConfig().isBlank()) {
+            Object parsed = BitableJsonUtils.parseJson(field.getConfig());
+            if (parsed instanceof Map<?, ?> map) {
+                Object raw = map.get("dateFormat");
+                if (raw == null || String.valueOf(raw).isBlank()) {
+                    raw = map.get("format");
+                }
+                if (raw != null && !String.valueOf(raw).isBlank()) {
+                    pattern = String.valueOf(raw);
+                } else {
+                    Object withTime = map.get("withTime");
+                    boolean hasTime = withTime instanceof Boolean b ? b
+                            : withTime instanceof Number n ? n.intValue() != 0
+                            : withTime != null && Boolean.parseBoolean(String.valueOf(withTime));
+                    if (hasTime) {
+                        pattern = "yyyy-MM-dd HH:mm:ss";
+                    }
+                }
+            }
+        }
+        if (pattern == null || pattern.isBlank()) {
+            return dateTime.format(DATE_FORMATTER);
+        }
+        try {
+            return dateTime.format(DateTimeFormatter.ofPattern(pattern));
+        } catch (IllegalArgumentException e) {
+            return dateTime.format(DATE_FORMATTER);
+        }
+    }
+
+    /**
      * 单元格展示文本：优先 valueText，其次数值/日期，最后 JSON 集合拼接（关联/多选等）
      */
-    private String cellDisplayText(BitableCellValueVO cell) {
+    private String cellDisplayText(BitableCellValueVO cell, BitableField field) {
         if (cell.getValueText() != null && !cell.getValueText().isBlank()) {
             return cell.getValueText();
         }
@@ -291,7 +341,7 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
             return cell.getValueNumber().toPlainString();
         }
         if (cell.getValueDate() != null) {
-            return cell.getValueDate().format(DATE_FORMATTER);
+            return formatCellDate(cell.getValueDate(), field);
         }
         Object json = cell.getValueJson();
         if (json instanceof Collection<?> col) {
@@ -391,6 +441,7 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
                 recordMapper.insert(record);
 
                 // 填充单元格
+                List<BitableCellValue> rowCells = new ArrayList<>();
                 for (Map.Entry<Integer, BitableField> entry : colToField.entrySet()) {
                     Cell cell = row.getCell(entry.getKey());
                     if (cell == null) {
@@ -399,8 +450,18 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
                     BitableField field = entry.getValue();
                     BitableCellValue cellValue = excelCellToCellValue(record.getId(), field.getId(), cell, field);
                     if (cellValue != null) {
-                        cellMapper.saveOrUpdateCell(cellValue);
+                        rowCells.add(cellValue);
                     }
+                }
+
+                // 「唯一」字段校验：冲突时定位到具体行，便于用户回表格修改后重试
+                try {
+                    uniqueChecker.check(tableId, rowCells, null);
+                } catch (BusinessException e) {
+                    throw new BusinessException("第 " + (rowIdx + 1) + " 行导入失败：" + e.getMessage());
+                }
+                for (BitableCellValue cellValue : rowCells) {
+                    cellMapper.saveOrUpdateCell(cellValue);
                 }
 
                 // 与单条创建保持一致：触发 record_created 自动化事件（失败不影响导入主流程）
@@ -455,16 +516,13 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
                 }
             }
             case DATE -> {
-                LocalDate date = getCellAsDate(cell);
+                LocalDateTime date = getCellAsDate(cell);
                 if (date != null) {
                     value.setValueDate(date);
                 } else {
                     String text = getCellAsString(cell);
                     if (text != null && !text.isEmpty()) {
-                        try {
-                            value.setValueDate(LocalDate.parse(text.trim(), DATE_FORMATTER));
-                        } catch (Exception ignored) {
-                        }
+                        value.setValueDate(parseImportDate(text));
                     }
                 }
             }
@@ -539,7 +597,7 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
         };
     }
 
-    private LocalDate getCellAsDate(Cell cell) {
+    private LocalDateTime getCellAsDate(Cell cell) {
         if (cell == null) {
             return null;
         }
@@ -547,18 +605,54 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
             java.util.Date date = cell.getDateCellValue();
             if (date != null) {
                 return date.toInstant()
-                        .atZone(java.time.ZoneId.systemDefault())
-                        .toLocalDate();
+                        .atZone(ZoneId.systemDefault())
+                        .toLocalDateTime();
             }
         }
         if (cell.getCellType() == CellType.STRING) {
+            String text = cell.getStringCellValue().trim();
+            if (text.isEmpty()) {
+                return null;
+            }
+            // 先试纯日期，再试带时间的写法
             try {
-                return LocalDate.parse(cell.getStringCellValue().trim(), DATE_FORMATTER);
+                return LocalDate.parse(text, DATE_FORMATTER).atStartOfDay();
+            } catch (Exception ignored) {
+                // 继续尝试带时间
+            }
+            try {
+                return LocalDateTime.parse(text, DATETIME_FORMATTER);
             } catch (Exception e) {
                 return null;
             }
         }
         return null;
+    }
+
+    /**
+     * 解析导入文本中的日期，兼容 {@code yyyy-MM-dd} 与 {@code yyyy-MM-dd HH:mm:ss}；
+     * 无法解析返回 null（由调用方决定是否降级为文本）。
+     */
+    private static LocalDateTime parseImportDate(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        String trimmed = text.trim();
+        try {
+            return LocalDate.parse(trimmed, DATE_FORMATTER).atStartOfDay();
+        } catch (Exception ignored) {
+            // 继续尝试带时间
+        }
+        try {
+            return LocalDateTime.parse(trimmed, DATETIME_FORMATTER);
+        } catch (Exception ignored) {
+            // 再试 Excel 常见的斜杠写法
+        }
+        try {
+            return LocalDate.parse(trimmed, DateTimeFormatter.ofPattern("yyyy/M/d")).atStartOfDay();
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private boolean isRowEmpty(Row row, Set<Integer> cols) {
@@ -656,6 +750,7 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
             record.setVersion(0);
             recordMapper.insert(record);
 
+            List<BitableCellValue> rowCells = new ArrayList<>();
             for (Map.Entry<Integer, BitableField> entry : colToField.entrySet()) {
                 int col = entry.getKey();
                 if (col >= row.size()) {
@@ -668,8 +763,18 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
                 BitableField field = entry.getValue();
                 BitableCellValue cell = csvCellToCellValue(record.getId(), field.getId(), cellValue, field);
                 if (cell != null) {
-                    cellMapper.saveOrUpdateCell(cell);
+                    rowCells.add(cell);
                 }
+            }
+
+            // 「唯一」字段校验：冲突时定位到具体行，便于用户回文件修改后重试
+            try {
+                uniqueChecker.check(tableId, rowCells, null);
+            } catch (BusinessException e) {
+                throw new BusinessException("第 " + (rowIdx + 1) + " 行导入失败：" + e.getMessage());
+            }
+            for (BitableCellValue cell : rowCells) {
+                cellMapper.saveOrUpdateCell(cell);
             }
 
             // 与单条创建保持一致：触发 record_created 自动化事件（失败不影响导入主流程）
@@ -705,9 +810,10 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
                 }
             }
             case DATE -> {
-                try {
-                    value.setValueDate(LocalDate.parse(rawValue.trim(), DATE_FORMATTER));
-                } catch (Exception e) {
+                LocalDateTime parsed = parseImportDate(rawValue);
+                if (parsed != null) {
+                    value.setValueDate(parsed);
+                } else {
                     value.setValueText(rawValue);
                 }
             }

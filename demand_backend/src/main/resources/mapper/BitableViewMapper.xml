@@ -3,9 +3,14 @@
 <mapper namespace="com.demand.system.module.bitable.mapper.BitableViewMapper">
 
     <!-- 按数据表ID查询所有未删除的视图 -->
+    <!-- 注意：config（视图配置）与 version（乐观锁）必须查出来。
+         漏查 config 会让「隐藏列 / 看板分组字段 / 日历-甘特字段绑定」等配置写完读不回，
+         前端 activeView.config 恒为 null，表现为设置保存成功但一切都不生效；
+         漏查 version 则 updateView 传 version=null，乐观锁形同虚设。 -->
     <select id="selectByTableId" resultType="com.demand.system.module.bitable.entity.BitableView">
         SELECT id, table_id, name, view_type, sort_config, filter_config, group_config,
-               column_config, color_config, sort_order, created_by, created_at, updated_at
+               column_config, color_config, config, sort_order, version,
+               created_by, created_at, updated_at
         FROM `bitable_views`
         WHERE table_id = #{tableId}
           AND deleted_at = 0

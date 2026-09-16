@@ -145,10 +145,26 @@ const priorityOptions = ref<Priority[]>([])
 
 async function loadUsers() {
   try {
-    const res = await userApi.getUserList({ pageNum: 1, pageSize: 100 }) as any
-    userList.value = res.list
+    // 全量活跃用户，避免分页截断导致下拉框匹配不到选项而回显用户ID
+    const res = await userApi.getFilterUsers() as any
+    userList.value = Array.isArray(res) ? res : (res?.data ?? [])
+    ensureAssigneeInList(internalValue.assigneeId)
   } catch (error) {
     ElMessage.error(resolveErrorMessage(error, '加载用户列表失败'))
+  }
+}
+
+/** 编辑回显兜底：负责人可能是已停用用户，不在活跃列表里，单独补拉保证显示姓名 */
+async function ensureAssigneeInList(assigneeId?: number) {
+  if (!assigneeId || userList.value.some((u: User) => u.id === assigneeId)) return
+  try {
+    const detail = await userApi.getUserById(assigneeId) as any
+    const user = detail?.data ?? detail
+    if (user?.id && !userList.value.some((u: User) => u.id === user.id)) {
+      userList.value.push({ ...user, realName: user.realName || user.username })
+    }
+  } catch {
+    // 单个用户信息拉取失败不阻断表单
   }
 }
 
@@ -203,6 +219,7 @@ watch(
     internalValue.type = val.type || ''
     internalValue.priority = val.priority || ''
     internalValue.assigneeId = val.assigneeId
+    ensureAssigneeInList(val.assigneeId)
     internalValue.iterationId = val.iterationId
     internalValue.dueDate = val.dueDate
     internalValue.estimatedHours = val.estimatedHours

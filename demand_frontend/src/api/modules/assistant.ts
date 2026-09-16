@@ -3,6 +3,7 @@ import { getToken } from '@/utils/auth'
 import type {
   AssistantActionPayload,
   AssistantChatRequest,
+  AssistantDataResult,
   AssistantMessage,
   AssistantMetaPayload,
   AssistantSession,
@@ -32,6 +33,8 @@ export interface AssistantStreamHandlers {
   onActions?: (payload: AssistantActionPayload) => void
   onThinkingSteps?: (steps: ThinkingStep[]) => void
   onTaskUpdate?: (task: AssistantTask) => void
+  /** 数据问答结构化结果（NL2SQL，在回答正文开始前下发） */
+  onDataResult?: (result: AssistantDataResult) => void
   onDelta?: (delta: string) => void
   /** 深度思考内容增量（reasoningDelta 事件，流式） */
   onReasoningDelta?: (delta: string) => void
@@ -164,6 +167,8 @@ function handleStreamEvent(eventBlock: string, handlers: AssistantStreamHandlers
     handlers.onThinkingSteps?.(parsed as ThinkingStep[])
   } else if (eventName === 'taskUpdate') {
     handlers.onTaskUpdate?.(parsed as AssistantTask)
+  } else if (eventName === 'dataResult') {
+    handlers.onDataResult?.(parsed as AssistantDataResult)
   } else if (eventName === 'done') {
     handlers.onDone?.(parsed as AssistantMessage)
   }

@@ -90,9 +90,11 @@
             :placeholder="dialog.isEdit ? '留空则不修改（当前已脱敏）' : '请输入 Token / SSH Key / 密码'"
           />
         </el-form-item>
-        <el-form-item label="设为默认">
+        <el-form-item>
+          <template #label>
+            <FieldLabelTip tip="默认平台在新建仓库时自动选中">设为默认</FieldLabelTip>
+          </template>
           <el-switch v-model="dialog.form.isDefault" :active-value="1" :inactive-value="0" />
-          <div class="form-tip">默认平台在新建仓库时自动选中</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -111,6 +113,7 @@ import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'elem
 import { Connection, Delete, EditPen, Plus } from '@element-plus/icons-vue'
 import AppButton from '@/components/common/AppButton.vue'
 import PageContainer from '@/components/common/PageContainer.vue'
+import FieldLabelTip from '@/components/common/FieldLabelTip.vue'
 import { formatDate } from '@/utils/format'
 import type { GitPlatform } from '@/types/git'
 import {

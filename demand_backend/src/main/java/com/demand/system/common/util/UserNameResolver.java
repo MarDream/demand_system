@@ -42,6 +42,23 @@ public class UserNameResolver {
     }
 
     /**
+     * 根据用户 ID 获取登录账号，查不到返回 null
+     *
+     * @param userId 用户 ID
+     * @return 登录账号，或 null
+     */
+    public String resolveUserAccount(Long userId) {
+        if (userId == null) {
+            return null;
+        }
+        User user = userLocalCache.getUserById(userId);
+        if (user == null || !StringUtils.hasText(user.getUsername())) {
+            return null;
+        }
+        return user.getUsername().trim();
+    }
+
+    /**
      * 根据用户 ID 获取用户显示名称，查不到返回 null
      *
      * @param userId 用户 ID

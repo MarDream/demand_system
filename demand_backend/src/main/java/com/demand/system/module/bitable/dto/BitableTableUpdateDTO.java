@@ -13,6 +13,11 @@ public class BitableTableUpdateDTO {
 
     private Integer sortOrder;
 
+    /**
+     * 所属分组ID，非 null 时才更新（移出分组请用归组接口）
+     */
+    private Long groupId;
+
     public String getName() {
         return name;
     }
@@ -43,5 +48,13 @@ public class BitableTableUpdateDTO {
 
     public void setSortOrder(Integer sortOrder) {
         this.sortOrder = sortOrder;
+    }
+
+    public Long getGroupId() {
+        return groupId;
+    }
+
+    public void setGroupId(Long groupId) {
+        this.groupId = groupId;
     }
 }

@@ -25,7 +25,12 @@ public class BitableCellValue {
 
     private BigDecimal valueNumber;
 
-    private LocalDate valueDate;
+    /**
+     * 日期时间值。
+     * <p>数据库为 DATETIME：日期字段未开启「包含时间」时只写入日期部分（时间恒为 00:00:00），
+     * 开启后写入完整日期时间。
+     */
+    private LocalDateTime valueDate;
 
     private String valueJson;
 
@@ -75,11 +80,11 @@ public class BitableCellValue {
         this.valueNumber = valueNumber;
     }
 
-    public LocalDate getValueDate() {
+    public LocalDateTime getValueDate() {
         return valueDate;
     }
 
-    public void setValueDate(LocalDate valueDate) {
+    public void setValueDate(LocalDateTime valueDate) {
         this.valueDate = valueDate;
     }
 

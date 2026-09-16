@@ -3,6 +3,7 @@ package com.demand.system.module.bitable.service.impl;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.util.UserNameResolver;
+import com.demand.system.module.bitable.constant.OperationType;
 import com.demand.system.module.bitable.converter.BitableConverter;
 import com.demand.system.module.bitable.dto.BitableBaseCreateDTO;
 import com.demand.system.module.bitable.dto.BitableBaseUpdateDTO;
@@ -12,6 +13,8 @@ import com.demand.system.module.bitable.entity.BitableBaseMember;
 import com.demand.system.module.bitable.entity.BitableTable;
 import com.demand.system.module.bitable.mapper.*;
 import com.demand.system.module.bitable.service.BitableBaseService;
+import com.demand.system.module.bitable.util.BitableAuditHelper;
+import com.demand.system.module.bitable.util.BitableJsonUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +41,7 @@ public class BitableBaseServiceImpl implements BitableBaseService {
     private final BitableAutomationMapper automationMapper;
     private final BitableConverter converter;
     private final UserNameResolver userNameResolver;
+    private final BitableAuditHelper auditHelper;
 
     public BitableBaseServiceImpl(BitableBaseMapper baseMapper,
                                   BitableTableMapper tableMapper,
@@ -49,7 +53,8 @@ public class BitableBaseServiceImpl implements BitableBaseService {
                                   BitableBaseMemberMapper memberMapper,
                                   BitableAutomationMapper automationMapper,
                                   BitableConverter converter,
-                                  UserNameResolver userNameResolver) {
+                                  UserNameResolver userNameResolver,
+                                  BitableAuditHelper auditHelper) {
         this.baseMapper = baseMapper;
         this.tableMapper = tableMapper;
         this.fieldMapper = fieldMapper;
@@ -61,6 +66,7 @@ public class BitableBaseServiceImpl implements BitableBaseService {
         this.automationMapper = automationMapper;
         this.converter = converter;
         this.userNameResolver = userNameResolver;
+        this.auditHelper = auditHelper;
     }
 
     @Override
@@ -121,12 +127,18 @@ public class BitableBaseServiceImpl implements BitableBaseService {
         member.setRole("owner");
         memberMapper.insert(member);
 
+        // 审计
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("name", dto.getName());
+        auditHelper.record(base.getId(), null, userId, OperationType.CREATE_BASE,
+                BitableJsonUtils.toJsonString(detail));
+
         return base.getId();
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void updateBase(Long id, BitableBaseUpdateDTO dto) {
+    public void updateBase(Long id, BitableBaseUpdateDTO dto, Long userId) {
         BitableBase existing = baseMapper.selectById(id);
         if (existing == null) {
             throw new BusinessException("多维表格不存在");
@@ -147,6 +159,14 @@ public class BitableBaseServiceImpl implements BitableBaseService {
             wrapper.set("cover_color", dto.getCoverColor());
         }
         baseMapper.update(null, wrapper);
+
+        // 审计：记录变更的字段
+        Map<String, Object> detail = new LinkedHashMap<>();
+        if (dto.getName() != null) {
+            detail.put("before", existing.getName());
+            detail.put("after", dto.getName());
+        }
+        auditHelper.record(id, null, userId, OperationType.UPDATE_BASE, BitableJsonUtils.toJsonString(detail));
     }
 
     @Override

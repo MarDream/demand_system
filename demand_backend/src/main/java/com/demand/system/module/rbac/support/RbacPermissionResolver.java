@@ -16,6 +16,7 @@ import org.springframework.util.StringUtils;
 
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -26,6 +27,9 @@ import java.util.stream.Collectors;
 
 @Component
 public class RbacPermissionResolver {
+
+    /** 角色切换功能：前端每次请求携带的当前生效角色请求头。 */
+    public static final String ACTIVE_ROLE_HEADER = "X-Active-Role";
 
     private final UserOrganizationMapper userOrganizationMapper;
     private final UserRoleMapper userRoleMapper;
@@ -50,6 +54,78 @@ public class RbacPermissionResolver {
         return List.copyOf(roles);
     }
 
+    /**
+     * 按激活角色过滤角色列表（角色切换功能）。
+     * 仅当 activeRole 确实属于该用户的角色之一时才收窄到该角色；
+     * 否则忽略该值，保持全部角色，防止伪造请求头越权。
+     */
+    public List<String> resolveRoles(Long userId, String activeRole) {
+        List<String> roles = resolveRoles(userId);
+        if (!StringUtils.hasText(activeRole)) {
+            return roles;
+        }
+        String candidate = activeRole.trim();
+        return roles.contains(candidate) ? List.of(candidate) : roles;
+    }
+
+    /** 读取当前请求的激活角色请求头；不在请求上下文中（如定时任务）时返回 null。 */
+    public String currentActiveRole() {
+        org.springframework.web.context.request.RequestAttributes attrs =
+                org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+        if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes servletAttrs) {
+            return servletAttrs.getRequest().getHeader(ACTIVE_ROLE_HEADER);
+        }
+        return null;
+    }
+
+    /** 激活角色是否真实生效（属于该用户且非空）。 */
+    public boolean isActiveRoleApplied(Long userId, String activeRole) {
+        return StringUtils.hasText(activeRole) && resolveRoles(userId).contains(activeRole.trim());
+    }
+
+    /** 用户的角色编码 → 显示名映射（优先 roles 表中文名，legacy 体系角色兜底内置中文名）。 */
+    public Map<String, String> resolveRoleNameMap(Long userId) {
+        Map<String, String> names = new LinkedHashMap<>();
+        List<String> legacyCodes = resolveLegacyRoles(userId);
+        for (String legacy : legacyCodes) {
+            names.put(legacy, legacy);
+        }
+        for (Role role : loadRolesByUserId(userId)) {
+            String code = role.getCode();
+            if (StringUtils.hasText(code)) {
+                names.put(code, StringUtils.hasText(role.getName()) ? role.getName() : code);
+            }
+        }
+        // legacy 编码在 roles 表中无对应行时，用内置中文名兜底，避免把编码直接展示给用户
+        if (!legacyCodes.isEmpty()) {
+            List<Role> matched = roleMapper.selectList(new LambdaQueryWrapper<Role>()
+                    .in(Role::getCode, legacyCodes)
+                    .eq(Role::getDeletedAt, 0));
+            for (Role role : matched) {
+                if (StringUtils.hasText(role.getCode()) && StringUtils.hasText(role.getName())) {
+                    names.put(role.getCode(), role.getName());
+                }
+            }
+            for (String legacy : legacyCodes) {
+                if (legacy.equals(names.get(legacy))) {
+                    names.put(legacy, LEGACY_ROLE_DISPLAY_NAMES.getOrDefault(legacy, legacy));
+                }
+            }
+        }
+        // 无任何角色时 resolveRoles 会兜底 USER，这里同步给中文名
+        names.putIfAbsent("USER", "普通用户");
+        return names;
+    }
+
+    /** legacy 体系角色编码的中文显示名（roles 表无对应行时的兜底）。 */
+    private static final Map<String, String> LEGACY_ROLE_DISPLAY_NAMES = Map.of(
+            RbacConstants.ROLE_ADMIN, "超级管理员",
+            "super_admin", "超级管理员",
+            RbacConstants.ROLE_SUPER_ADMIN_DB, "超级管理员",
+            RbacConstants.ROLE_WORKFLOW_CONFIG, "流程配置",
+            "USER", "普通用户"
+    );
+
     public List<String> resolvePermissions(Long userId, Collection<String> roles) {
         LinkedHashSet<String> permissions = new LinkedHashSet<>();
         LinkedHashSet<String> normalizedRoles = roles == null
@@ -67,12 +143,11 @@ public class RbacPermissionResolver {
     }
 
     public List<String> resolveRoleDisplayNames(Long userId) {
-        LinkedHashSet<String> roleNames = new LinkedHashSet<>(resolveLegacyRoles(userId));
-        roleNames.addAll(resolveRoleNamesFromUserRoles(userId));
-        if (roleNames.isEmpty()) {
-            roleNames.add("USER");
-        }
-        return List.copyOf(roleNames);
+        List<String> roles = resolveRoles(userId);
+        Map<String, String> nameMap = resolveRoleNameMap(userId);
+        return roles.stream()
+                .map(code -> nameMap.getOrDefault(code, code))
+                .toList();
     }
 
     public boolean isSuperAdmin(Collection<String> roles) {
@@ -103,15 +178,6 @@ public class RbacPermissionResolver {
         List<Role> roles = loadRolesByUserId(userId);
         return roles.stream()
                 .map(Role::getCode)
-                .filter(StringUtils::hasText)
-                .distinct()
-                .toList();
-    }
-
-    private List<String> resolveRoleNamesFromUserRoles(Long userId) {
-        List<Role> roles = loadRolesByUserId(userId);
-        return roles.stream()
-                .map(role -> StringUtils.hasText(role.getName()) ? role.getName() : role.getCode())
                 .filter(StringUtils::hasText)
                 .distinct()
                 .toList();

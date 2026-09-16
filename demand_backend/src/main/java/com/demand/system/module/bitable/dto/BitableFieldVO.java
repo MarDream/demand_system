@@ -33,6 +33,21 @@ public class BitableFieldVO {
 
     private LocalDateTime updatedAt;
 
+    /**
+     * 当前用户对该字段的生效权限级别：
+     * {@code editable}（可编辑，默认）/ {@code readonly}（只读）/ {@code hidden}（隐藏）。
+     * 由 {@code BitableFieldPermissionService} 在查询时按当前用户角色解析后填充。
+     */
+    private String permission;
+
+    public String getPermission() {
+        return permission;
+    }
+
+    public void setPermission(String permission) {
+        this.permission = permission;
+    }
+
     public Long getId() {
         return id;
     }

@@ -35,14 +35,14 @@ public interface BitableViewService {
      * @param id  视图ID
      * @param dto 更新参数
      */
-    void updateView(Long id, BitableViewUpdateDTO dto);
+    void updateView(Long id, BitableViewUpdateDTO dto, Long userId);
 
     /**
      * 删除视图
      *
      * @param id 视图ID
      */
-    void deleteView(Long id);
+    void deleteView(Long id, Long userId);
 
     /**
      * 复制视图（不复制记录）

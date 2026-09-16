@@ -8,8 +8,10 @@ import com.demand.system.module.knowledge.llm.LlmGatewayConfig;
 import com.demand.system.module.llm.dto.LlmApplicationUpdateDTO;
 import com.demand.system.module.llm.dto.LlmApplicationVO;
 import com.demand.system.module.llm.entity.LlmApplication;
+import com.demand.system.module.llm.entity.LlmApplicationGroup;
 import com.demand.system.module.llm.entity.LlmModel;
 import com.demand.system.module.llm.entity.LlmProvider;
+import com.demand.system.module.llm.mapper.LlmApplicationGroupMapper;
 import com.demand.system.module.llm.mapper.LlmApplicationMapper;
 import com.demand.system.module.llm.mapper.LlmModelMapper;
 import com.demand.system.module.llm.mapper.LlmProviderMapper;
@@ -26,13 +28,16 @@ public class LlmApplicationService {
     private final LlmApplicationMapper applicationMapper;
     private final LlmModelMapper modelMapper;
     private final LlmProviderMapper providerMapper;
+    private final LlmApplicationGroupMapper applicationGroupMapper;
 
     public LlmApplicationService(LlmApplicationMapper applicationMapper,
                                  LlmModelMapper modelMapper,
-                                 LlmProviderMapper providerMapper) {
+                                 LlmProviderMapper providerMapper,
+                                 LlmApplicationGroupMapper applicationGroupMapper) {
         this.applicationMapper = applicationMapper;
         this.modelMapper = modelMapper;
         this.providerMapper = providerMapper;
+        this.applicationGroupMapper = applicationGroupMapper;
     }
 
     public List<LlmApplicationVO> list() {
@@ -72,6 +77,37 @@ public class LlmApplicationService {
         return toVO(applicationMapper.selectById(application.getId()));
     }
 
+    /**
+     * 把功能点归入指定分组（groupId 为 null 表示移出分组、回到未分组）。
+     * <p>
+     * 仅调整分组归属，不影响该功能点的模型绑定与启用状态。
+     *
+     * @param code    功能点编码
+     * @param groupId 目标分组ID，null=未分组
+     * @return 更新后的功能点视图对象
+     */
+    @Transactional
+    public LlmApplicationVO moveToGroup(String code, Long groupId) {
+        LlmApplication application = getApplication(code);
+        if (groupId != null) {
+            LlmApplicationGroup group = applicationGroupMapper.selectById(groupId);
+            if (group == null) {
+                throw new BusinessException(ErrorCode.NOT_FOUND, "指定分组不存在");
+            }
+        }
+
+        // 显式使用 UpdateWrapper 写入 group_id，确保移出分组时能真正落库 NULL
+        UpdateWrapper<LlmApplication> updateWrapper = new UpdateWrapper<LlmApplication>()
+                .eq("id", application.getId());
+        if (groupId == null) {
+            updateWrapper.setSql("group_id = NULL");
+        } else {
+            updateWrapper.set("group_id", groupId);
+        }
+        applicationMapper.update(null, updateWrapper);
+        return toVO(applicationMapper.selectById(application.getId()));
+    }
+
     public LlmApplication getApplication(String code) {
         LlmApplication application = applicationMapper.selectOne(
                 new LambdaQueryWrapper<LlmApplication>().eq(LlmApplication::getCode, code)
@@ -92,6 +128,7 @@ public class LlmApplicationService {
         vo.setModelId(application.getModelId());
         vo.setEnabled(application.getEnabled());
         vo.setSortOrder(application.getSortOrder());
+        vo.setGroupId(application.getGroupId());
 
         if (application.getModelId() != null) {
             LlmModel model = modelMapper.selectById(application.getModelId());

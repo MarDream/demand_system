@@ -114,31 +114,31 @@
               添加成员
             </AppButton>
             <AppButton permission="button:user:invite">
-              <el-dropdown @command="showTodo">
+              <el-dropdown @command="handleInviteCommand">
                 <span>
                   邀请成员
                   <el-icon class="el-icon--right"><ArrowDown /></el-icon>
                 </span>
                 <template #dropdown>
                   <el-dropdown-menu>
-                    <el-dropdown-item command="通过链接邀请">通过链接邀请</el-dropdown-item>
-                    <el-dropdown-item command="批量邀请">批量邀请</el-dropdown-item>
+                    <el-dropdown-item command="link">通过链接邀请</el-dropdown-item>
+                    <el-dropdown-item command="batch">批量邀请</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
             </AppButton>
-            <AppButton permission="button:user:update" @click="showTodo('添加/申请记录')">添加/申请记录</AppButton>
+            <AppButton permission="button:user:update" @click="openApplicationRecords">添加/申请记录</AppButton>
             <AppButton permission="button:user:batch-delete">
-              <el-dropdown @command="showTodo">
+              <el-dropdown @command="handleBatchCommand">
                 <span>
                   批量管理
                   <el-icon class="el-icon--right"><ArrowDown /></el-icon>
                 </span>
                 <template #dropdown>
                   <el-dropdown-menu>
-                    <el-dropdown-item command="批量启用">批量启用</el-dropdown-item>
-                    <el-dropdown-item command="批量停用">批量停用</el-dropdown-item>
-                    <el-dropdown-item command="批量删除">批量删除</el-dropdown-item>
+                    <el-dropdown-item command="enable">批量启用</el-dropdown-item>
+                    <el-dropdown-item command="disable">批量停用</el-dropdown-item>
+                    <el-dropdown-item command="delete" divided>批量删除</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
@@ -178,7 +178,7 @@
                   <el-switch
                     v-model="row.status"
                     active-value="active"
-                    inactive-value="disabled"
+                    inactive-value="inactive"
                     inline-prompt
                     active-text="启用"
                     inactive-text="停用"
@@ -372,8 +372,8 @@
               </template>
             </el-input>
             <el-select v-model="queryParams.status" placeholder="实名认证" clearable>
-              <el-option label="已认证" value="active" />
-              <el-option label="未认证/停用" value="disabled" />
+              <el-option label="启用" value="active" />
+              <el-option label="停用" value="inactive" />
             </el-select>
             <el-button @click="showTodo('高级筛选')">
               高级筛选
@@ -494,8 +494,13 @@
             </template>
           </el-tree-select>
         </el-form-item>
-        <el-form-item label="角色" prop="roleId">
-          <RoleSelect v-model="form.roleId" placeholder="请选择角色" />
+        <el-form-item label="角色" prop="roleIds">
+          <RoleSelect
+            v-model="form.roleIds"
+            multiple
+            :exclude-codes="['SUPER_ADMIN']"
+            placeholder="请选择角色（可多选）"
+          />
         </el-form-item>
 
         <el-form-item v-if="isEdit" label="工号">
@@ -505,7 +510,7 @@
           <el-switch
             v-model="form.status"
             active-value="active"
-            inactive-value="disabled"
+            inactive-value="inactive"
             inline-prompt
             active-text="启用"
             inactive-text="停用"
@@ -581,6 +586,22 @@
       </template>
     </el-drawer>
 
+    <!-- 邀请成员（通过链接邀请 / 批量邀请） -->
+    <InviteMemberDialog
+      v-model="inviteDialogVisible"
+      :org-tree="orgTree"
+      :default-org-id="activeOrgId"
+      :initial-tab="inviteDialogTab"
+      @invited="handleInvited"
+    />
+
+    <!-- 添加/申请记录 -->
+    <ApplicationRecordsDialog
+      v-model="recordsDialogVisible"
+      :org-tree="orgTree"
+      @changed="fetchList"
+    />
+
     <!-- 列配置弹窗 -->
     <ColumnConfigDialog
       v-model="showColumnConfig"
@@ -629,6 +650,8 @@ import PageContainer from '@/components/common/PageContainer.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
 import RoleSelect from '@/components/common/RoleSelect.vue'
+import InviteMemberDialog from './components/InviteMemberDialog.vue'
+import ApplicationRecordsDialog from './components/ApplicationRecordsDialog.vue'
 import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import { formatDate as formatDateTime } from '@/utils/format'
 import { getRoleList } from '@/api/modules/role'
@@ -671,7 +694,7 @@ interface UserForm {
   orgId: number | null
   regionId: number | null
   departmentId: number | null
-  roleId: number | null
+  roleIds: number[]
   status: string
 }
 
@@ -743,6 +766,10 @@ const rosterSidebar = useCollapsibleSidebar({
 })
 
 const dialogVisible = ref(false)
+const inviteDialogVisible = ref(false)
+const inviteDialogTab = ref<'link' | 'batch'>('link')
+const recordsDialogVisible = ref(false)
+const batchSubmitting = ref(false)
 const departmentDrawerVisible = ref(false)
 const isEdit = ref(false)
 const editId = ref<number | null>(null)
@@ -755,6 +782,8 @@ const orgTree = ref<OrgNode[]>([])
 const regionTree = ref<OrgNode[]>([])
 const departmentTree = ref<OrgNode[]>([])
 const roleList = ref<RoleItem[]>([])
+/** 已有的超级管理员角色 ID（本表单不管理，保存时原样保留） */
+const preservedSuperRoleIds = ref<number[]>([])
 
 const queryParams = reactive({
   username: '',
@@ -773,7 +802,7 @@ const form = reactive<UserForm>({
   orgId: null,
   regionId: null,
   departmentId: null,
-  roleId: null,
+  roleIds: [] as number[],
   status: 'active',
 })
 
@@ -791,6 +820,8 @@ const hrNavItems = ['入职管理', '新人成长', '转正管理', '异动管�
 const activeUsers = computed(() => userList.value.filter(user => user.status === 'active'))
 const activeOrgNode = computed(() => flatOrgNodes.value.find(node => node.key === activeOrgKey.value))
 const activeOrgName = computed(() => activeOrgNode.value?.name || '')
+/** 当前选中组织的真实ID（组织树节点的 key 带 `org-` 前缀，不能当 id 用） */
+const activeOrgId = computed(() => activeOrgNode.value?.id ?? null)
 const editOrgButtonText = computed(() => {
   const t = activeOrgNode.value?.orgType
   if (t === 'region') return '编辑区域'
@@ -1187,9 +1218,14 @@ async function handleEdit(row: UserInfo) {
     form.regionId = userDetail.regionId || null
     form.departmentId = userDetail.departmentId || null
     editJobNumber.value = userDetail.jobNumber || null
-    // 加载用户角色
+    // 加载用户角色：超级管理员角色不在本表单管理范围，单独保留避免保存时丢失
     const roleIds: any = await userApi.getUserRoles(row.id)
-    form.roleId = roleIds?.[0] || null
+    const list: number[] = Array.isArray(roleIds) ? roleIds : []
+    const superIds = new Set(
+      roleList.value.filter((r) => r.code === 'SUPER_ADMIN').map((r) => r.id),
+    )
+    preservedSuperRoleIds.value = list.filter((id) => superIds.has(id))
+    form.roleIds = list.filter((id) => !superIds.has(id))
 
   } catch {
     ElMessage.error('加载成员信息失败')
@@ -1231,7 +1267,9 @@ const canToggleUser = computed(() => hasPermission('button:user:update'))
 
 async function toggleUserStatus(row: UserInfo): Promise<boolean> {
   const nextActive = row.status !== 'active'
-  const newStatus = nextActive ? 'active' : 'disabled'
+  // 必须用 inactive：users.status 是 ENUM('active','inactive')，
+  // 写 'disabled' 在严格模式下会直接报数据截断错误
+  const newStatus = nextActive ? 'active' : 'inactive'
   const statusText = nextActive ? '启用' : '停用'
   try {
     await ElMessageBox.confirm(`确定要${statusText}成员"${row.realName || row.username}"吗？`, '状态切换', {
@@ -1273,10 +1311,8 @@ async function handleSubmit() {
 
       })
       ElMessage.success('更新成功')
-      // 分配角色
-      if (form.roleId) {
-        await userApi.assignRoles(editId.value, [form.roleId])
-      }
+      // 分配角色（合并保留已有的超级管理员角色）
+      await userApi.assignRoles(editId.value, [...form.roleIds, ...preservedSuperRoleIds.value])
     } else {
       const createResult: any = await userApi.createUser({
         username: form.username,
@@ -1291,8 +1327,8 @@ async function handleSubmit() {
       // 获取新创建用户的ID（响应拦截器已解包 data 字段，createResult 直接就是 userId）
       const newUserId = createResult
       // 新建用户后立即分配角色
-      if (form.roleId && newUserId) {
-        await userApi.assignRoles(newUserId, [form.roleId])
+      if (newUserId) {
+        await userApi.assignRoles(newUserId, [...form.roleIds, ...preservedSuperRoleIds.value])
       }
       ElMessage.success('创建成功，系统已按默认规则生成初始密码并尝试发送邮件')
     }
@@ -1326,7 +1362,8 @@ function resetForm() {
   form.orgId = null
   form.regionId = null
   form.departmentId = null
-  form.roleId = null
+  form.roleIds = []
+  preservedSuperRoleIds.value = []
   form.status = 'active'
   editJobNumber.value = null
   resetUsernameAutoState()
@@ -1576,6 +1613,70 @@ function maskPhone(phone?: string | null) {
 
 function showTodo(action: string) {
   ElMessage.info(`${action}能力将在后续接口完善后接入`)
+}
+
+/* ── 邀请成员（通过链接邀请 / 批量邀请） ── */
+function handleInviteCommand(command: string) {
+  inviteDialogTab.value = command === 'batch' ? 'batch' : 'link'
+  inviteDialogVisible.value = true
+}
+
+function handleInvited() {
+  // 邀请本身不新增成员，但组织人数等统计可能已经变化，顺手刷新一次
+  fetchList()
+}
+
+/* ── 添加/申请记录 ── */
+function openApplicationRecords() {
+  recordsDialogVisible.value = true
+}
+
+/* ── 批量管理（批量启用 / 批量停用 / 批量删除） ── */
+const BATCH_ACTION_META: Record<string, { label: string; verb: string; danger: boolean }> = {
+  enable: { label: '批量启用', verb: '启用', danger: false },
+  disable: { label: '批量停用', verb: '停用', danger: false },
+  delete: { label: '批量删除', verb: '删除', danger: true },
+}
+
+async function handleBatchCommand(command: string) {
+  if (batchSubmitting.value) return
+  const meta = BATCH_ACTION_META[command]
+  if (!meta) return
+
+  const rows = selectedUsers.value
+  if (rows.length === 0) {
+    ElMessage.warning('请先在列表中勾选要操作的成员')
+    return
+  }
+
+  const ids = rows.map(user => user.id)
+  const tip = meta.danger
+    ? `确定要删除选中的 ${ids.length} 位成员吗？删除后不可恢复。`
+    : `确定要${meta.verb}选中的 ${ids.length} 位成员吗？`
+
+  try {
+    await ElMessageBox.confirm(tip, meta.label, {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: meta.danger ? 'error' : 'warning',
+    })
+  } catch {
+    return
+  }
+
+  batchSubmitting.value = true
+  try {
+    const affected = command === 'delete'
+      ? await userApi.batchDeleteUsers(ids)
+      : await userApi.batchUpdateUserStatus(ids, command === 'enable' ? 'active' : 'inactive')
+    ElMessage.success(`${meta.label}完成，共 ${affected} 位成员`)
+    selectedUsers.value = []
+    await fetchList()
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, `${meta.label}失败，请稍后重试`))
+  } finally {
+    batchSubmitting.value = false
+  }
 }
 
 function validateEmail(_rule: unknown, value: string, callback: (error?: Error) => void) {

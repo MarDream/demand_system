@@ -3,8 +3,9 @@
 <mapper namespace="com.demand.system.module.bitable.mapper.BitableBaseMapper">
 
     <!-- 查询某用户创建的所有多维表格容器 -->
+    <!-- group_id 必须查出：列表页左侧分组树依赖它把 Base 挂到分组下（漏查会让所有 Base 都落到「未分组」） -->
     <select id="selectByCreator" resultType="com.demand.system.module.bitable.entity.BitableBase">
-        SELECT id, name, description, icon, cover_color, project_id, creator_id,
+        SELECT id, name, description, icon, cover_color, project_id, group_id, creator_id,
                is_template, sort_order, created_at, updated_at
         FROM `bitable_bases`
         WHERE creator_id = #{userId}
@@ -15,7 +16,7 @@
     <!-- 查询某用户是成员的所有多维表格容器（去重） -->
     <select id="selectByMember" resultType="com.demand.system.module.bitable.entity.BitableBase">
         SELECT DISTINCT b.id, b.name, b.description, b.icon, b.cover_color,
-               b.project_id, b.creator_id, b.is_template, b.sort_order,
+               b.project_id, b.group_id, b.creator_id, b.is_template, b.sort_order,
                b.created_at, b.updated_at
         FROM `bitable_bases` b
         INNER JOIN `bitable_base_members` m ON m.base_id = b.id
@@ -27,7 +28,7 @@
     <!-- 查询多维表格容器详情，包含数据表数量聚合 -->
     <select id="selectDetailById" resultType="com.demand.system.module.bitable.entity.BitableBase">
         SELECT b.id, b.name, b.description, b.icon, b.cover_color,
-               b.project_id, b.creator_id, b.is_template, b.sort_order,
+               b.project_id, b.group_id, b.creator_id, b.is_template, b.sort_order,
                b.created_at, b.updated_at,
                COUNT(t.id) AS table_count
         FROM `bitable_bases` b

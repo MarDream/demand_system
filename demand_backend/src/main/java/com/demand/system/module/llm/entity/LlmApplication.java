@@ -19,6 +19,8 @@ public class LlmApplication {
     private Long modelId;
     private Boolean enabled;
     private Integer sortOrder;
+    /** 所属分组ID，null=未分组 */
+    private Long groupId;
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
     @TableField(fill = FieldFill.INSERT_UPDATE)
@@ -40,6 +42,8 @@ public class LlmApplication {
     public void setEnabled(Boolean enabled) { this.enabled = enabled; }
     public Integer getSortOrder() { return sortOrder; }
     public void setSortOrder(Integer sortOrder) { this.sortOrder = sortOrder; }
+    public Long getGroupId() { return groupId; }
+    public void setGroupId(Long groupId) { this.groupId = groupId; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }

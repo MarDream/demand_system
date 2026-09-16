@@ -198,7 +198,7 @@ async function saveWidgets() {
 
 async function handleCreate() {
   try {
-    const { value } = await ElMessageBox.prompt('请输入仪表盘名称', '新建仪表盘', {
+    const { value } = await ElMessageBox.prompt('', '新建仪表盘', {
       inputValue: '新建仪表盘',
       inputPattern: /\S+/,
       inputErrorMessage: '名称不能为空',

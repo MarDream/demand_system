@@ -8,6 +8,7 @@
       :loading="loading"
       border
       :edit-config="{ trigger: 'click', mode: 'cell' }"
+      :keyboard-config="{ isArrow: false, isDel: false, isEnter: true, isTab: false, isEdit: false, isChecked: false, isEsc: true }"
       :checkbox-config="{ checkMethod: () => false }"
       :menu-config="menuConfig"
       :header-drag-config="{ enabled: true }"
@@ -33,6 +34,7 @@
 import { computed, ref, reactive, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { BitableField, BitableRecord, BitableTable } from '@/types/bitable'
+import { isFieldReadonly, validateFieldValue } from '@/utils/bitableFieldConfig'
 
 const props = defineProps<{
   table: BitableTable | null
@@ -58,9 +60,6 @@ const emit = defineEmits<{
 
 const gridRef = ref<any>()
 const gridContainerRef = ref<HTMLElement | null>(null)
-
-// 不可编辑字段类型
-const readonlyFieldTypes = new Set(['auto_number', 'created_time', 'modified_time', 'last_modified_time', 'created_user', 'modified_user', 'created_by', 'modified_by', 'formula', 'lookup', 'rollup', 'button'])
 
 // 右键菜单配置
 const menuConfig = reactive({
@@ -102,145 +101,285 @@ const menuConfig = reactive({
 
 // 构建列配置
 const tableColumns = computed(() => {
-  const cols = props.fields.map((field) => {
-    const isReadonly = readonlyFieldTypes.has(field.fieldType)
-    const config = field.config || {}
-    const column: Record<string, any> = {
-      field: String(field.id),
-      title: field.name,
-      width: field.width || 150,
-      minWidth: 80,
-      sortable: true,
-      showOverflow: true,
-    }
+  // 字段级权限为 hidden 的列整列不渲染（后端同时会剔除这些字段的单元格值）
+  const cols = props.fields
+    .filter((field) => field.permission !== 'hidden')
+    .map((field) => {
+      // 字段级权限为 readonly 的列只读，等价于系统只读字段
+      const isReadonly = isFieldReadonly(field)
+      const config = field.config || {}
+      const column: Record<string, any> = {
+        field: String(field.id),
+        title: field.name,
+        width: field.width || 150,
+        minWidth: 80,
+        sortable: true,
+        showOverflow: true,
+      }
 
-    // 单选 / 多选 / 流程 的选项构造
-    const buildSelectOptions = () => {
-      const opts = (config.options || []) as Array<{ label: string; color?: string }>
-      // options 直接保留 color 字段，value 用 label（与后端 valueText 一致）
-      return opts.map((opt) => ({ label: opt.label, value: opt.label, color: opt.color }))
-    }
+      // 单选 / 多选 / 流程 的选项构造
+      const buildSelectOptions = () => {
+        const opts = (config.options || []) as Array<{ label: string; color?: string }>
+        // options 直接保留 color 字段，value 用 label（与后端 valueText 一致）
+        return opts.map((opt) => ({ label: opt.label, value: opt.label, color: opt.color }))
+      }
 
-    const isMulti = field.fieldType === 'multi_select'
+      const isMulti = field.fieldType === 'multi_select'
 
-    if (!isReadonly) {
-      switch (field.fieldType) {
-        case 'date': {
-          // 存储层 bitable_cell_values.value_date 为 DATE 类型，前端统一使用 date(仅日期) 编辑器，
-          // 避免提交 "yyyy-MM-dd HH:mm:ss" 被后端 LocalDate.parse 解析失败导致保存报错。
-          // 修复：废弃的 transfer 已改为 popupConfig.transfer
-          column.editRender = {
-            name: 'VxeDatePicker',
-            props: {
-              placeholder: '选择日期',
-              type: 'date',
-              valueFormat: 'yyyy-MM-dd',
-              labelFormat: 'yyyy-MM-dd',
-              popupConfig: { transfer: true },
-              clearable: true,
-              editable: true,
-            },
+      if (!isReadonly) {
+        switch (field.fieldType) {
+          case 'date': {
+            // 开启「包含时间」时提交 yyyy-MM-dd HH:mm:ss，否则只提交日期
+            const withTime = !!config.withTime
+            const valueFormat = withTime ? 'yyyy-MM-dd HH:mm:ss' : 'yyyy-MM-dd'
+            column.editRender = {
+              // name 指向 BitableDate：vxe 在「列有 editRender」时用编辑渲染器的
+              // renderTableCell 做展示，用 renderTableEdit 进编辑态。
+              // 直接写 VxeDatePicker 的话，dateFormat / withTime 只会作用于选择器，
+              // 单元格展示仍是原生纯文本（见 bitableCellRenderers.ts 的 EDITOR_BINDINGS）。
+              name: 'BitableDate',
+              config,
+              props: {
+                placeholder: '',
+                type: withTime ? 'datetime' : 'date',
+                valueFormat,
+                labelFormat: valueFormat,
+                popupConfig: { transfer: true },
+                clearable: true,
+                editable: true,
+              },
+            }
+            // 展示用自定义只读渲染器（文本 + 图标），不把 VxeDatePicker 当作 display 渲染器，
+            // 以避免在大量单元格中渲染完整日期选择器引发的渲染异常/卡顿
+            column.cellRender = { name: 'BitableDate', config }
+            break
           }
-          // 展示用自定义只读渲染器（文本 + 图标），不把 VxeDatePicker 当作 display 渲染器，
-          // 以避免在大量单元格中渲染完整日期选择器引发的渲染异常/卡顿
-          column.cellRender = { name: 'BitableDate' }
-          break
-        }
-        case 'single_select':
-        case 'multi_select':
-        case 'process': {
-          const options = buildSelectOptions()
-          // cellRender: 彩色标签展示
-          column.cellRender = {
-            name: 'BitableSelectTag',
-            options,
-            optionProps: { label: 'label', value: 'value' },
-            props: { multiple: isMulti },
+          case 'single_select':
+          case 'multi_select':
+          case 'process': {
+            const options = buildSelectOptions()
+            // cellRender: 彩色标签展示
+            column.cellRender = {
+              name: 'BitableSelectTag',
+              options,
+              optionProps: { label: 'label', value: 'value' },
+              props: { multiple: isMulti },
+            }
+            // editRender: VxeSelect 下拉，修复闪退
+            // 关键：
+            //   1) immediate: true 实时回写 model 值，避免编辑关闭时丢失选择
+            //   2) popupConfig.transfer 替代已废弃的 transfer，避免 vxe-table 误判外部点击
+            //   3) autoClose: true 选择后立即关闭编辑
+            column.editRender = {
+              name: 'BitableSelectTag',
+              config,
+              options,
+              optionProps: { label: 'label', value: 'value' },
+              props: {
+                placeholder: '',
+                immediate: true,
+                autoClose: !isMulti,
+                clearable: true,
+                popupConfig: { transfer: true },
+                ...(isMulti ? { multiple: true } : {}),
+              },
+            }
+            break
           }
-          // editRender: VxeSelect 下拉，修复闪退
-          // 关键：
-          //   1) immediate: true 实时回写 model 值，避免编辑关闭时丢失选择
-          //   2) popupConfig.transfer 替代已废弃的 transfer，避免 vxe-table 误判外部点击
-          //   3) autoClose: true 选择后立即关闭编辑
-          column.editRender = {
-            name: 'VxeSelect',
-            options,
-            optionProps: { label: 'label', value: 'value' },
-            props: {
-              placeholder: isMulti ? '请选择（可多选）' : '请选择',
-              immediate: true,
-              autoClose: true,
-              clearable: true,
-              popupConfig: { transfer: true },
-              ...(isMulti ? { multiple: true } : {}),
-            },
+          case 'progress': {
+            // 进度条展示 + 数字编辑（0-100）
+            column.cellRender = { name: 'BitableProgress', config }
+            column.editRender = {
+              name: 'BitableProgress',
+              config,
+              props: {
+                type: 'integer',
+                min: 0,
+                max: 100,
+                placeholder: '',
+                align: 'right',
+              },
+            }
+            break
           }
-          break
-        }
-        case 'progress': {
-          // 进度条展示 + 数字编辑（0-100）
-          column.cellRender = { name: 'BitableProgress' }
-          column.editRender = {
-            name: 'VxeNumberInput',
-            props: {
-              type: 'integer',
-              min: 0,
-              max: 100,
-              placeholder: '0-100',
-              align: 'right',
-            },
+          case 'rating': {
+            // 星级展示 + VxeRate 编辑
+            const max = Number(config.maxRating) || 5
+            column.cellRender = { name: 'BitableRate', config }
+            column.editRender = {
+              name: 'BitableRate',
+              config,
+              props: {
+                max,
+                readonly: false,
+                ...(config.allowHalf ? { allowHalf: true } : {}),
+              },
+            }
+            break
           }
-          break
-        }
-        case 'rating': {
-          // 星级展示 + VxeRate 编辑
-          const max = Number(config.maxRating) || 5
-          column.cellRender = { name: 'BitableRate', props: { max } }
-          column.editRender = { name: 'VxeRate', props: { max, readonly: false } }
-          break
-        }
-        case 'check':
-        case 'checkbox': {
-          // 复选框：只配置 cellRender，编辑通过 cell-click 直接 toggle（避免编辑态翻转歧义）
-          column.cellRender = { name: 'BitableCheckbox' }
-          column.editRender = null
-          break
-        }
-        case 'number':
-        case 'currency': {
-          column.editRender = {
-            name: 'VxeNumberInput',
-            props: {
-              type: 'float',
-              placeholder: '',
-              digits: config.precision ?? 2,
-              align: 'right',
-            },
+          case 'check':
+          case 'checkbox': {
+            // 复选框：只配置 cellRender，编辑通过 cell-click 直接 toggle（避免编辑态翻转歧义）
+            column.cellRender = { name: 'BitableCheckbox', config }
+            column.editRender = null
+            break
           }
-          break
+          case 'number': {
+            column.cellRender = { name: 'BitableNumber', config }
+            column.editRender = {
+              name: 'BitableNumber',
+              config,
+              props: {
+                type: 'float',
+                placeholder: '',
+                digits: config.precision ?? 0,
+                align: 'right',
+                ...(config.min != null ? { min: config.min } : {}),
+                ...(config.max != null ? { max: config.max } : {}),
+              },
+            }
+            break
+          }
+          case 'currency': {
+            column.cellRender = { name: 'BitableCurrency', config }
+            column.editRender = {
+              name: 'BitableCurrency',
+              config,
+              props: {
+                type: 'float',
+                placeholder: '',
+                digits: config.precision ?? 2,
+                align: 'right',
+                ...(config.min != null ? { min: config.min } : {}),
+                ...(config.max != null ? { max: config.max } : {}),
+              },
+            }
+            break
+          }
+          case 'url': {
+            column.cellRender = { name: 'BitableUrl', config }
+            column.editRender = { name: 'BitableUrl', config, props: { placeholder: '' } }
+            break
+          }
+          case 'phone': {
+            column.cellRender = { name: 'BitablePhone', config }
+            column.editRender = { name: 'BitablePhone', config, props: { placeholder: '' } }
+            break
+          }
+          case 'attachment': {
+            column.cellRender = { name: 'BitableAttachment', config }
+            // 附件走记录详情弹框上传，网格内不做内联编辑
+            column.editRender = null
+            break
+          }
+          case 'location': {
+            // 地理位置是结构化值（{name, address, lat, lng}），若给文本编辑器，
+            // String(对象) 会写回库变成 "[object Object]"，因此网格内只读展示
+            column.cellRender = { name: 'BitableLocation', config }
+            column.editRender = null
+            break
+          }
+          case 'date_range': {
+            // 日期范围同样是结构化值（{start, end}），网格内只读展示，编辑走记录详情弹框
+            column.cellRender = { name: 'BitableDateRange' }
+            column.editRender = null
+            break
+          }
+          case 'user':
+          case 'group':
+          case 'link':
+          case 'bidirectional_link': {
+            // 关联 / 人员 / 群组是结构化值（id 数组或对象数组），若给文本编辑器，
+            // handleEditClosed 会把 String(数组) 写回库（变成 "1,2"）从而破坏关联，
+            // 因此网格内只读展示，编辑走记录详情弹框。
+            column.cellRender = { name: 'BitableRelation' }
+            column.editRender = null
+            break
+          }
+          case 'email':
+          case 'text':
+          default: {
+            column.cellRender = { name: 'BitableText', config }
+            column.editRender = {
+              name: 'BitableText',
+              config,
+              props: {
+                placeholder: '',
+                ...(config.maxLength ? { maxlength: config.maxLength } : {}),
+              },
+            }
+            break
+          }
         }
-        case 'url':
-        case 'email':
-        case 'phone':
-        case 'text':
-        default: {
-          column.editRender = { name: 'VxeInput', props: { placeholder: '' } }
-          break
+      } else {
+        // 只读列也按类型展示格式化结果，只是不提供编辑器
+        switch (field.fieldType) {
+          case 'date':
+            column.cellRender = { name: 'BitableDate', config }
+            break
+          case 'number':
+            column.cellRender = { name: 'BitableNumber', config }
+            break
+          case 'currency':
+            column.cellRender = { name: 'BitableCurrency', config }
+            break
+          case 'rating':
+            column.cellRender = { name: 'BitableRate', config }
+            break
+          case 'progress':
+            column.cellRender = { name: 'BitableProgress', config }
+            break
+          case 'checkbox':
+          case 'check':
+            column.cellRender = { name: 'BitableCheckbox', config }
+            break
+          case 'url':
+            column.cellRender = { name: 'BitableUrl', config }
+            break
+          case 'phone':
+            column.cellRender = { name: 'BitablePhone', config }
+            break
+          case 'attachment':
+            column.cellRender = { name: 'BitableAttachment', config }
+            break
+          case 'single_select':
+          case 'multi_select':
+          case 'process':
+            column.cellRender = {
+              name: 'BitableSelectTag',
+              options: buildSelectOptions(),
+              optionProps: { label: 'label', value: 'value' },
+              props: { multiple: isMulti },
+            }
+            break
+          case 'location':
+            column.cellRender = { name: 'BitableLocation', config }
+            break
+          case 'date_range':
+            column.cellRender = { name: 'BitableDateRange' }
+            break
+          case 'user':
+          case 'group':
+          case 'link':
+          case 'bidirectional_link':
+            column.cellRender = { name: 'BitableRelation' }
+            break
+          default:
+            column.cellRender = { name: 'BitableText', config }
         }
       }
-    }
 
-    // select 字段可筛选
-    if (field.fieldType === 'single_select' || field.fieldType === 'multi_select' || field.fieldType === 'process') {
-      const options = config.options || []
-      column.filters = options.map((opt: { label: string; value?: string }) => ({
-        label: opt.label,
-        value: opt.label,
-      }))
-    }
+      // select 字段可筛选
+      if (field.fieldType === 'single_select' || field.fieldType === 'multi_select' || field.fieldType === 'process') {
+        const options = config.options || []
+        column.filters = options.map((opt: { label: string; value?: string }) => ({
+          label: opt.label,
+          value: opt.label,
+        }))
+      }
 
-    return column
-  })
+      return column
+    })
 
   return cols
 })
@@ -267,6 +406,10 @@ function buildRecordData() {
     //   - checkbox 强制转 boolean，让 BitableCheckbox 正确显示勾选态
     //   - date 优先取 valueDate，避免被 valueText 截胡
     props.fields.forEach((field) => {
+      // 隐藏字段不出现在列里，也不必构建单元格数据
+      if (field.permission === 'hidden') {
+        return
+      }
       const cell = record.cells?.[field.id]
       let value: unknown = cell?.displayText ?? cell?.valueText ?? cell?.valueNumber ?? cell?.valueDate ?? cell?.valueJson ?? ''
 
@@ -325,6 +468,18 @@ function buildRecordData() {
           value = cell?.valueDate ?? (typeof value === 'string' ? value : '')
           break
         }
+        case 'attachment':
+        case 'location':
+        case 'date_range':
+        case 'user':
+        case 'group':
+        case 'link':
+        case 'bidirectional_link': {
+          // 结构化值：保留原始 JSON（数组 / 对象），交给对应渲染器解析。
+          // 不能落到 default 分支，否则 String(对象) 会变成 "[object Object]"
+          value = cell?.valueJson ?? value
+          break
+        }
         default: {
           value = value == null ? '' : String(value)
         }
@@ -349,8 +504,10 @@ function handleCellClick(params: { row: Record<string, any>; column: any }) {
   const fieldId = Number(column.field)
   if (Number.isNaN(fieldId)) return
   const field = props.fields.find((f) => f.id === fieldId)
+  // 字段级权限为只读的列不允许任何就地编辑
+  if (!field || field.permission === 'readonly') return
   // 复选框字段：点击直接 toggle，不走 vxe-table 编辑态
-  if (field && (field.fieldType === 'check' || field.fieldType === 'checkbox')) {
+  if (field.fieldType === 'check' || field.fieldType === 'checkbox') {
     const raw = row[column.field]
     const checked = raw === true || raw === 'true' || raw === 'True' || raw === 1 || raw === '1'
     emit('cellChange', {
@@ -468,7 +625,7 @@ function handleEditClosed({ row, column }: any) {
   const fieldId = Number(column.field)
   if (Number.isNaN(fieldId)) return
   const field = props.fields.find((item) => item.id === fieldId)
-  if (!field || readonlyFieldTypes.has(field.fieldType)) return
+  if (!field || isFieldReadonly(field)) return
 
   // 从行数据获取当前值（VxeSelect 在 model update 时通过 setCellValue 写回）
   let newValue = row[column.field]
@@ -514,6 +671,19 @@ function handleEditClosed({ row, column }: any) {
     default: {
       newValue = newValue == null ? '' : String(newValue)
     }
+  }
+
+  // 字段属性校验：长度 / 正则 / 数值区间 / 邮箱 / 网址 / 电话 / 多选上限
+  const error = validateFieldValue(field, newValue)
+  if (error) {
+    ElMessage.warning(error)
+    // 回滚到 records 里的原值，避免界面停留在非法状态
+    const original = props.records.find((r) => r.id === row._recordId)
+    const originalCell = original?.cells?.[fieldId]
+    row[column.field] =
+      originalCell?.valueDate ?? originalCell?.valueText ?? originalCell?.valueNumber ?? ''
+    buildRecordData()
+    return
   }
 
   emit('cellChange', {
@@ -750,12 +920,142 @@ function handleHeaderDragend({ startIndex, endIndex, columns }: any) {
   :deep(.bitable-rate-cell--active) {
     color: var(--color-rating-active, #f59e0b) !important;
   }
+  // 未点亮的图标（心形/点赞/旗帜等自定义图标同色处理）
+  :deep(.bitable-rate-cell i.is-empty) {
+    color: var(--color-rating-inactive, #e2e8f0);
+  }
+  // 半星：allowHalf 开启且分值落在半格上
+  :deep(.bitable-rate-cell i.is-half) {
+    opacity: 0.55;
+  }
   :deep(.bitable-rate-cell__text) {
     margin-left: 6px;
     font-size: 12px;
     font-weight: 500;
     color: var(--color-text-secondary, #475569);
     font-variant-numeric: tabular-nums;
+  }
+
+  // 开关样式的复选框
+  :deep(.bitable-switch-cell) {
+    display: inline-flex;
+    align-items: center;
+    width: 32px;
+    height: 18px;
+    padding: 2px;
+    border-radius: 9px;
+    background: var(--color-fill, #e2e8f0);
+    transition: background 150ms var(--ease-standard, ease);
+  }
+  :deep(.bitable-switch-cell__dot) {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--color-background, #fff);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.2);
+    transition: transform 150ms var(--ease-standard, ease);
+  }
+  :deep(.bitable-switch-cell.is-checked) {
+    background: var(--color-primary, #2563eb);
+  }
+  :deep(.bitable-switch-cell.is-checked .bitable-switch-cell__dot) {
+    transform: translateX(14px);
+  }
+
+  // 数字 / 货币
+  :deep(.bitable-number-cell) {
+    display: block;
+    width: 100%;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  // 超链接
+  :deep(.bitable-link-cell) {
+    display: block;
+    width: 100%;
+    color: var(--color-primary, #2563eb);
+    text-decoration: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  // 电话
+  :deep(.bitable-phone-cell) {
+    font-variant-numeric: tabular-nums;
+  }
+
+  // 文本
+  :deep(.bitable-text-cell) {
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  // 地理位置
+  :deep(.bitable-location-cell) {
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  :deep(.bitable-daterange-cell) {
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  // 关联 / 人员 / 群组
+  :deep(.bitable-relation-cell) {
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  // 附件
+  :deep(.bitable-attachment-cell) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+  :deep(.bitable-attachment-cell__item) {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    max-width: 100%;
+    color: var(--color-primary, #2563eb);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  :deep(.bitable-attachment-cell__icon) {
+    color: var(--color-text-placeholder, #94a3b8);
+  }
+  :deep(.bitable-attachment-cell.is-thumbnail) {
+    gap: 4px;
+  }
+  :deep(.bitable-attachment-cell__thumb) {
+    width: 24px;
+    height: 24px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid var(--color-border, #e2e8f0);
   }
 
   // 日期单元格

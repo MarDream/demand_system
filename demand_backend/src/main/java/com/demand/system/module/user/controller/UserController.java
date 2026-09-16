@@ -2,6 +2,7 @@ package com.demand.system.module.user.controller;
 
 import com.demand.system.common.result.PageResult;
 import com.demand.system.common.result.Result;
+import com.demand.system.module.user.dto.BatchUserActionDTO;
 import com.demand.system.module.user.dto.UserCreateDTO;
 import com.demand.system.module.user.dto.UserQueryDTO;
 import com.demand.system.module.user.dto.UserUpdateDTO;
@@ -65,6 +66,20 @@ public class UserController {
     public Result<Void> delete(@PathVariable Long id) {
         userService.delete(id);
         return Result.success();
+    }
+
+    /** 批量启用 / 批量停用 */
+    @PostMapping("/batch/status")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:batch-update', 'button:user:update')")
+    public Result<Integer> batchUpdateStatus(@RequestBody BatchUserActionDTO dto) {
+        return Result.success(userService.batchUpdateStatus(dto.getIds(), dto.getStatus()));
+    }
+
+    /** 批量删除 */
+    @PostMapping("/batch/delete")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:batch-delete')")
+    public Result<Integer> batchDelete(@RequestBody BatchUserActionDTO dto) {
+        return Result.success(userService.batchDelete(dto.getIds()));
     }
 
     @PostMapping("/{id}/send-init-password")

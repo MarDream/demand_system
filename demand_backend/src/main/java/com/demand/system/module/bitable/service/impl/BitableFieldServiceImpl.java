@@ -12,7 +12,9 @@ import com.demand.system.module.bitable.entity.BitableField;
 import com.demand.system.module.bitable.mapper.BitableFieldMapper;
 import com.demand.system.module.bitable.mapper.BitableCellMapper;
 import com.demand.system.module.bitable.service.BitableFieldService;
+import com.demand.system.module.bitable.service.BitableFieldPermissionService;
 import com.demand.system.module.bitable.service.BitableFormulaDependencyService;
+import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.bitable.util.BitableAuditHelper;
 import com.demand.system.module.bitable.util.BitableJsonUtils;
 import com.demand.system.module.bitable.constant.OperationType;
@@ -35,40 +37,50 @@ public class BitableFieldServiceImpl implements BitableFieldService {
     private final BitableConverter converter;
     private final BitableFormulaDependencyService formulaDependencyService;
     private final BitableAuditHelper auditHelper;
+    private final BitableFieldPermissionService fieldPermissionService;
 
     public BitableFieldServiceImpl(BitableFieldMapper fieldMapper,
                                    BitableCellMapper cellMapper,
                                    BitableConverter converter,
                                    BitableFormulaDependencyService formulaDependencyService,
-                                   BitableAuditHelper auditHelper) {
+                                   BitableAuditHelper auditHelper,
+                                   BitableFieldPermissionService fieldPermissionService) {
         this.fieldMapper = fieldMapper;
         this.cellMapper = cellMapper;
         this.converter = converter;
         this.formulaDependencyService = formulaDependencyService;
         this.auditHelper = auditHelper;
+        this.fieldPermissionService = fieldPermissionService;
     }
 
     @Override
     public List<BitableFieldVO> listFields(Long tableId) {
         List<BitableField> fields = fieldMapper.selectByTableId(tableId);
+        // 按当前用户角色解析字段级权限（readonly / hidden），前端据此渲染只读或隐藏列
+        Map<Long, String> permissionMap = fieldPermissionService.resolveFieldPermissions(
+                tableId, SecurityUtils.getCurrentUserId());
         List<BitableFieldVO> result = new ArrayList<>();
         for (BitableField field : fields) {
-            result.add(toFieldVO(field));
+            BitableFieldVO vo = toFieldVO(field);
+            vo.setPermission(permissionMap.getOrDefault(field.getId(), "editable"));
+            result.add(vo);
         }
         return result;
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Long createField(Long tableId, BitableFieldCreateDTO dto) {
+    public Long createField(Long tableId, BitableFieldCreateDTO dto, Long userId) {
         // 验证 fieldType 是合法枚举值
         FieldType fieldType = FieldType.fromCode(dto.getFieldType());
         if (fieldType == null) {
             throw new BusinessException("不支持的字段类型: " + dto.getFieldType());
         }
+        // 字段名称：非空 + 长度 + 表内唯一
+        String fieldName = validateFieldName(tableId, dto.getName(), null);
 
         BitableField field = new BitableField();
-        field.setName(dto.getName());
+        field.setName(fieldName);
         field.setFieldType(dto.getFieldType());
         field.setConfig(BitableJsonUtils.toJsonString(dto.getConfig()));
         field.setRequired(dto.getRequired());
@@ -106,15 +118,15 @@ public class BitableFieldServiceImpl implements BitableFieldService {
         }
 
         // 审计
-        auditHelper.recordByTable(tableId, null, OperationType.ADD_FIELD,
-                "{\"fieldId\":" + field.getId() + ",\"name\":\"" + dto.getName() + "\",\"fieldType\":\"" + dto.getFieldType() + "\"}");
+        auditHelper.recordByTable(tableId, userId, OperationType.ADD_FIELD,
+                "{\"fieldId\":" + field.getId() + ",\"name\":\"" + fieldName + "\",\"fieldType\":\"" + dto.getFieldType() + "\"}");
 
         return field.getId();
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void updateField(Long id, BitableFieldUpdateDTO dto) {        BitableField existing = fieldMapper.selectById(id);
+    public void updateField(Long id, BitableFieldUpdateDTO dto, Long userId) {        BitableField existing = fieldMapper.selectById(id);
         if (existing == null) {
             throw new BusinessException("字段不存在");
         }
@@ -130,7 +142,8 @@ public class BitableFieldServiceImpl implements BitableFieldService {
         UpdateWrapper<BitableField> wrapper = new UpdateWrapper<>();
         wrapper.eq("id", id);
         if (dto.getName() != null) {
-            wrapper.set("name", dto.getName());
+            // 字段名称：非空 + 长度 + 表内唯一（排除自身）
+            wrapper.set("name", validateFieldName(existing.getTableId(), dto.getName(), id));
         }
         if (dto.getFieldType() != null) {
             wrapper.set("field_type", dto.getFieldType());
@@ -156,7 +169,7 @@ public class BitableFieldServiceImpl implements BitableFieldService {
         fieldMapper.update(null, wrapper);
 
         // 审计
-        auditHelper.recordByTable(existing.getTableId(), null, OperationType.UPDATE_FIELD,
+        auditHelper.recordByTable(existing.getTableId(), userId, OperationType.UPDATE_FIELD,
                 "{\"fieldId\":" + id + "}");
 
         // 公式字段更新时：重新解析依赖并检测循环引用
@@ -184,7 +197,7 @@ public class BitableFieldServiceImpl implements BitableFieldService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void deleteField(Long id) {
+    public void deleteField(Long id, Long userId) {
         BitableField existing = fieldMapper.selectById(id);
         if (existing == null) {
             throw new BusinessException("字段不存在");
@@ -199,12 +212,46 @@ public class BitableFieldServiceImpl implements BitableFieldService {
         // 清理公式依赖关系
         formulaDependencyService.deleteDependencies(id);
 
+        // 清理字段级权限（表上无外键，不显式删就会留下指向已删字段的孤儿行）
+        fieldPermissionService.deleteByFieldId(id);
+
         // 软删字段（MyBatis-Plus @TableLogic 自动设置 deleted_at=1）
         fieldMapper.deleteById(id);
 
         // 审计
-        auditHelper.recordByTable(existing.getTableId(), null, OperationType.DELETE_FIELD,
+        auditHelper.recordByTable(existing.getTableId(), userId, OperationType.DELETE_FIELD,
                 "{\"fieldId\":" + id + ",\"name\":\"" + existing.getName() + "\"}");
+    }
+
+    /** 字段名称长度上限（与前端 FieldAttributeForm 的 maxlength 保持一致）。 */
+    private static final int FIELD_NAME_MAX_LENGTH = 50;
+
+    /**
+     * 校验字段名称并返回去除首尾空白后的结果。
+     * <p>
+     * 规则：非空、长度 ≤ {@value #FIELD_NAME_MAX_LENGTH}、同表内不重名（大小写不敏感，
+     * 与数据库 utf8mb4_0900_ai_ci 的排序规则一致）。
+     *
+     * @param excludeFieldId 更新场景下需要排除的自身字段 ID，新建时传 {@code null}
+     */
+    private String validateFieldName(Long tableId, String rawName, Long excludeFieldId) {
+        String name = rawName == null ? "" : rawName.trim();
+        if (name.isEmpty()) {
+            throw new BusinessException("字段名称不能为空");
+        }
+        if (name.length() > FIELD_NAME_MAX_LENGTH) {
+            throw new BusinessException("字段名称不能超过 " + FIELD_NAME_MAX_LENGTH + " 个字符");
+        }
+        List<BitableField> siblings = fieldMapper.selectByTableId(tableId);
+        for (BitableField sibling : siblings) {
+            if (excludeFieldId != null && excludeFieldId.equals(sibling.getId())) {
+                continue;
+            }
+            if (name.equalsIgnoreCase(sibling.getName())) {
+                throw new BusinessException("字段名称「" + name + "」已存在");
+            }
+        }
+        return name;
     }
 
     private BitableFieldVO toFieldVO(BitableField field) {

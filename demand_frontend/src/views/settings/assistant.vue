@@ -245,7 +245,10 @@
               placeholder="例如：如何新建一个需求？"
             />
           </el-form-item>
-          <el-form-item label="归属页面" prop="pageRoute">
+          <el-form-item prop="pageRoute">
+            <template #label>
+              <FieldLabelTip tip="留空则在所有页面展示；填写路由名则仅在该页面展示">归属页面</FieldLabelTip>
+            </template>
             <el-select
               v-model="dialog.form.pageRoute"
               clearable
@@ -257,15 +260,18 @@
               <el-option label="全局（所有页面）" value="" />
               <el-option v-for="r in pageRouteOptions" :key="r.value" :label="r.label" :value="r.value" />
             </el-select>
-            <div class="form-tip">留空则在所有页面展示；填写路由名则仅在该页面展示</div>
           </el-form-item>
-          <el-form-item label="权重" prop="weight">
+          <el-form-item prop="weight">
+            <template #label>
+              <FieldLabelTip tip="数值越大越靠前（1-100，默认 50）">权重</FieldLabelTip>
+            </template>
             <el-input-number v-model="dialog.form.weight" :min="1" :max="100" controls-position="right" style="width: 140px" />
-            <div class="form-tip">数值越大越靠前（1-100，默认 50）</div>
           </el-form-item>
-          <el-form-item label="排序" prop="sortOrder">
+          <el-form-item prop="sortOrder">
+            <template #label>
+              <FieldLabelTip tip="同权重时数字小的优先（默认 0）">排序</FieldLabelTip>
+            </template>
             <el-input-number v-model="dialog.form.sortOrder" :min="0" :max="999" controls-position="right" style="width: 140px" />
-            <div class="form-tip">同权重时数字小的优先（默认 0）</div>
           </el-form-item>
           <el-form-item label="状态" prop="status">
             <el-radio-group v-model="dialog.form.status">
@@ -298,6 +304,7 @@ import {
 } from '@element-plus/icons-vue'
 import AppButton from '@/components/common/AppButton.vue'
 import PageContainer from '@/components/common/PageContainer.vue'
+import FieldLabelTip from '@/components/common/FieldLabelTip.vue'
 import {
   listAllQuickQuestions,
   createQuickQuestion,

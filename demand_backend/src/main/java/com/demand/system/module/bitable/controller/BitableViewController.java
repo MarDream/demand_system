@@ -56,7 +56,7 @@ public class BitableViewController {
         Long userId = SecurityUtils.getCurrentUserId();
         Long baseId = authorizationService.getBaseIdByViewId(id);
         authorizationService.checkWritePermission(baseId, userId);
-        bitableViewService.updateView(id, dto);
+        bitableViewService.updateView(id, dto, userId);
         return Result.success();
     }
 
@@ -86,7 +86,7 @@ public class BitableViewController {
         Long userId = SecurityUtils.getCurrentUserId();
         Long baseId = authorizationService.getBaseIdByViewId(id);
         authorizationService.checkWritePermission(baseId, userId);
-        bitableViewService.deleteView(id);
+        bitableViewService.deleteView(id, userId);
         return Result.success();
     }
 }

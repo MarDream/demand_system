@@ -55,7 +55,7 @@ public interface BitableRecordService {
      *
      * @param id 记录ID
      */
-    void deleteRecord(Long id);
+    void deleteRecord(Long id, Long userId);
 
     /**
      * 批量创建记录行

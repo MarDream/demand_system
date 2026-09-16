@@ -32,6 +32,20 @@ public interface BitableConverter {
 
     List<BitableTableVO> toTableVOList(List<BitableTable> list);
 
+    // ==================== TableGroup ====================
+
+    BitableTableGroup toTableGroup(BitableTableGroupCreateDTO dto);
+
+    BitableTableGroupVO toTableGroupVO(BitableTableGroup group);
+
+    List<BitableTableGroupVO> toTableGroupVOList(List<BitableTableGroup> list);
+
+    // ==================== BaseGroup ====================
+
+    BitableBaseGroupVO toBaseGroupVO(BitableBaseGroup group);
+
+    List<BitableBaseGroupVO> toBaseGroupVOList(List<BitableBaseGroup> list);
+
     // ==================== Field ====================
 
     @Mapping(target = "config", expression = "java(com.demand.system.module.bitable.util.BitableJsonUtils.toJsonString(dto.getConfig()))")

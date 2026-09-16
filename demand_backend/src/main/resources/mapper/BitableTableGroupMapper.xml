@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demand.system.module.bitable.mapper.BitableTableGroupMapper">
+
+    <!-- 查询指定 Base 下所有未删除的分组 -->
+    <select id="selectByBaseId" resultType="com.demand.system.module.bitable.entity.BitableTableGroup">
+        SELECT id, base_id, parent_id, name, sort_order, creator_id, created_at, updated_at
+        FROM `bitable_table_groups`
+        WHERE base_id = #{baseId}
+          AND deleted_at = 0
+        ORDER BY sort_order ASC, id ASC
+    </select>
+
+    <!-- 统计指定 Base 下的分组数量 -->
+    <select id="countByBaseId" resultType="int">
+        SELECT COUNT(*)
+        FROM `bitable_table_groups`
+        WHERE base_id = #{baseId}
+          AND deleted_at = 0
+    </select>
+
+    <!-- 查询指定分组的直接子分组ID -->
+    <select id="selectChildIds" resultType="java.lang.Long">
+        SELECT id
+        FROM `bitable_table_groups`
+        WHERE parent_id = #{parentId}
+          AND deleted_at = 0
+    </select>
+
+    <!-- 某父级下的最大排序号 -->
+    <select id="selectMaxSortOrder" resultType="int">
+        SELECT COALESCE(MAX(sort_order), 0)
+        FROM `bitable_table_groups`
+        WHERE base_id = #{baseId}
+          AND deleted_at = 0
+        <choose>
+            <when test="parentId == null">
+                AND parent_id IS NULL
+            </when>
+            <otherwise>
+                AND parent_id = #{parentId}
+            </otherwise>
+        </choose>
+    </select>
+
+</mapper>

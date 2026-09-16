@@ -108,6 +108,11 @@
         </template>
       </el-dropdown>
 
+      <!-- 高级权限 -->
+      <el-button size="small" @click="emit('openPermission')">
+        <el-icon><Lock /></el-icon> 高级权限
+      </el-button>
+
       <!-- 更多 -->
       <el-dropdown trigger="click" @command="handleMoreCommand">
         <el-button size="small">
@@ -116,7 +121,7 @@
         <template #dropdown>
           <el-dropdown-menu>
             <el-dropdown-item command="comments"><el-icon><ChatDotRound /></el-icon> 评论</el-dropdown-item>
-            <el-dropdown-item command="members"><el-icon><User /></el-icon> 成员管理</el-dropdown-item>
+            <el-dropdown-item command="operations"><el-icon><Clock /></el-icon> 操作记录</el-dropdown-item>
             <el-dropdown-item command="fieldConfig"><el-icon><Setting /></el-icon> 字段配置</el-dropdown-item>
             <el-dropdown-item command="shareView"><el-icon><Share /></el-icon> 分享视图</el-dropdown-item>
             <el-dropdown-item v-if="activeView?.viewType === 'form'" command="publishForm">
@@ -199,7 +204,7 @@ import {
   ArrowDown,
   Menu,
   ChatDotRound,
-  User,
+  Clock,
   MagicStick,
   Upload,
   Download,
@@ -216,6 +221,7 @@ import {
   Share,
   Position,
   Connection,
+  Lock,
 } from '@element-plus/icons-vue'
 import type { BitableTable, BitableView, ViewType } from '@/types/bitable'
 
@@ -239,7 +245,7 @@ const emit = defineEmits<{
   setDefaultView: [tableId: number, viewId: number]
   deleteView: [viewId: number]
   openComments: []
-  openMembers: []
+  openOperations: []
   openAiPanel: []
   openImportExport: []
   openExport: []
@@ -251,6 +257,7 @@ const emit = defineEmits<{
   openAiClassify: []
   openAiSummarize: []
   openAiBuildTable: []
+  openPermission: []
 }>()
 
 const editingName = ref(false)
@@ -365,8 +372,8 @@ function handleMoreCommand(command: string) {
     case 'comments':
       emit('openComments')
       break
-    case 'members':
-      emit('openMembers')
+    case 'operations':
+      emit('openOperations')
       break
     case 'fieldConfig':
       emit('openFieldConfig')

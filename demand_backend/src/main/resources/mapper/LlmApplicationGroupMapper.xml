@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demand.system.module.llm.mapper.LlmApplicationGroupMapper">
+
+    <!-- 查询全部分组（扁平结构，树由 Service 组装） -->
+    <select id="selectAllGroups" resultType="com.demand.system.module.llm.entity.LlmApplicationGroup">
+        SELECT id, parent_id, name, sort_order, created_at, updated_at
+        FROM `llm_application_groups`
+        WHERE deleted_at = 0
+        ORDER BY sort_order ASC, id ASC
+    </select>
+
+    <!-- 某父级下的最大排序号 -->
+    <select id="selectMaxSortOrder" resultType="int">
+        SELECT COALESCE(MAX(sort_order), 0)
+        FROM `llm_application_groups`
+        WHERE deleted_at = 0
+        <choose>
+            <when test="parentId == null">
+                AND parent_id IS NULL
+            </when>
+            <otherwise>
+                AND parent_id = #{parentId}
+            </otherwise>
+        </choose>
+    </select>
+
+</mapper>

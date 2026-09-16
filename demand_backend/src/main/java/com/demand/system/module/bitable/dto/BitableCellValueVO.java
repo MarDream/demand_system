@@ -19,7 +19,8 @@ public class BitableCellValueVO {
 
     private BigDecimal valueNumber;
 
-    private LocalDate valueDate;
+    /** 日期时间值（日期字段未开启「包含时间」时时间部分为 00:00:00） */
+    private LocalDateTime valueDate;
 
     private Object valueJson;
 
@@ -67,11 +68,11 @@ public class BitableCellValueVO {
         this.valueNumber = valueNumber;
     }
 
-    public LocalDate getValueDate() {
+    public LocalDateTime getValueDate() {
         return valueDate;
     }
 
-    public void setValueDate(LocalDate valueDate) {
+    public void setValueDate(LocalDateTime valueDate) {
         this.valueDate = valueDate;
     }
 

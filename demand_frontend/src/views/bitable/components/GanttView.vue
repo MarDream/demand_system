@@ -86,13 +86,19 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { Loading } from '@element-plus/icons-vue'
-import type { BitableField, BitableRecord, BitableTable, CellValue } from '@/types/bitable'
+import { resolveRecordTitle } from '@/utils/bitableFieldConfig'
+import type { BitableField, BitableRecord, BitableTable, CellValue, ViewConfig } from '@/types/bitable'
 
 const props = defineProps<{
   table: BitableTable | null
   fields: BitableField[]
   records: BitableRecord[]
   loading: boolean
+  viewConfig?: ViewConfig | null
+}>()
+
+const emit = defineEmits<{
+  fieldChange: [patch: { startFieldId: number | null; endFieldId: number | null }]
 }>()
 
 const dateFieldId = ref<number | null>(null)
@@ -155,15 +161,39 @@ const chartDays = computed(() => {
 })
 
 function handleFieldChange() {
-  // 字段切换时无需额外处理，computed 会自动更新
+  emit('fieldChange', { startFieldId: dateFieldId.value, endFieldId: rangeFieldId.value })
 }
 
-// 获取记录标题（第一个文本字段）
+/** 起始字段：优先取视图配置里存过的值，失效或未配置时落到第一个可用日期字段 */
+function resolveDateFieldId(): number | null {
+  const configured = props.viewConfig?.gantt?.startFieldId
+  if (configured && props.fields.some((f) => f.id === configured)) return configured
+  return dateFields.value[0]?.id ?? null
+}
+
+/** 范围字段：只接受仍然存在的 date_range 字段 */
+function resolveRangeFieldId(): number | null {
+  const configured = props.viewConfig?.gantt?.endFieldId
+  if (configured && props.fields.some((f) => f.id === configured && f.fieldType === 'date_range')) {
+    return configured
+  }
+  return null
+}
+
+watch(
+  () => [props.fields, props.viewConfig?.gantt?.startFieldId, props.viewConfig?.gantt?.endFieldId] as const,
+  () => {
+    const nextDate = resolveDateFieldId()
+    if (nextDate !== dateFieldId.value) dateFieldId.value = nextDate
+    const nextRange = resolveRangeFieldId()
+    if (nextRange !== rangeFieldId.value) rangeFieldId.value = nextRange
+  },
+  { immediate: true },
+)
+
+// 获取记录标题（视图指定 → 文本字段 → 第一个有值字段）
 function getRecordTitle(record: BitableRecord): string {
-  const textFields = props.fields.filter((f) => f.fieldType === 'text')
-  if (textFields.length === 0) return `记录 ${record.id}`
-  const cell = record.cells?.[textFields[0].id]
-  return cell?.valueText || `记录 ${record.id}`
+  return resolveRecordTitle(props.fields, record)
 }
 
 // 获取记录的日期范围

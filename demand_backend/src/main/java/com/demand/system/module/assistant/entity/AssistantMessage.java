@@ -18,6 +18,7 @@ import java.util.Objects;
 
 import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse.CitationReference;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse.ThinkingStep;
+import com.demand.system.module.nl2sql.dto.DataQueryResult;
 
 @TableName(value = "assistant_messages", autoResultMap = true)
 public class AssistantMessage {
@@ -71,6 +72,10 @@ public class AssistantMessage {
     /** 推荐追问问题（知识库问答查询改写阶段产出） */
     @TableField(typeHandler = JacksonTypeHandler.class)
     private List<String> suggestedFollowUps;
+
+    /** NL2SQL 数据问答结果（含 SQL、结果集与图表建议） */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private DataQueryResult dataResult;
 
     /** 深度思考内容（LLM reasoning，可为 null） */
     private String reasoning;
@@ -227,6 +232,14 @@ public class AssistantMessage {
 
     public void setSuggestedFollowUps(List<String> suggestedFollowUps) {
         this.suggestedFollowUps = suggestedFollowUps;
+    }
+
+    public DataQueryResult getDataResult() {
+        return dataResult;
+    }
+
+    public void setDataResult(DataQueryResult dataResult) {
+        this.dataResult = dataResult;
     }
 
     public String getReasoning() {

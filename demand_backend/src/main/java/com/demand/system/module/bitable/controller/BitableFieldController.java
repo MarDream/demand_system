@@ -46,7 +46,7 @@ public class BitableFieldController {
         Long userId = SecurityUtils.getCurrentUserId();
         Long baseId = authorizationService.getBaseIdByTableId(tableId);
         authorizationService.checkManagePermission(baseId, userId);
-        Long id = bitableFieldService.createField(tableId, dto);
+        Long id = bitableFieldService.createField(tableId, dto, userId);
         return Result.success(id);
     }
 
@@ -56,7 +56,7 @@ public class BitableFieldController {
         Long userId = SecurityUtils.getCurrentUserId();
         Long baseId = authorizationService.getBaseIdByFieldId(id);
         authorizationService.checkManagePermission(baseId, userId);
-        bitableFieldService.updateField(id, dto);
+        bitableFieldService.updateField(id, dto, userId);
         return Result.success();
     }
 
@@ -66,7 +66,7 @@ public class BitableFieldController {
         Long userId = SecurityUtils.getCurrentUserId();
         Long baseId = authorizationService.getBaseIdByFieldId(id);
         authorizationService.checkManagePermission(baseId, userId);
-        bitableFieldService.deleteField(id);
+        bitableFieldService.deleteField(id, userId);
         return Result.success();
     }
 

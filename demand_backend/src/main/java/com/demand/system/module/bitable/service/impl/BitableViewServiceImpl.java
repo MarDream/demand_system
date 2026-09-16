@@ -95,7 +95,7 @@ public class BitableViewServiceImpl implements BitableViewService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void updateView(Long id, BitableViewUpdateDTO dto) {
+    public void updateView(Long id, BitableViewUpdateDTO dto, Long userId) {
         BitableView existing = viewMapper.selectById(id);
         if (existing == null) {
             throw new BusinessException("视图不存在");
@@ -154,13 +154,13 @@ public class BitableViewServiceImpl implements BitableViewService {
             throw new BusinessException("视图已被他人修改，请刷新后重试");
         }
 
-        auditHelper.recordByTable(existing.getTableId(), null, OperationType.UPDATE_VIEW,
+        auditHelper.recordByTable(existing.getTableId(), userId, OperationType.UPDATE_VIEW,
                 "{\"viewId\":" + id + "}");
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void deleteView(Long id) {
+    public void deleteView(Long id, Long userId) {
         BitableView existing = viewMapper.selectById(id);
         if (existing == null) {
             throw new BusinessException("视图不存在");
@@ -181,7 +181,7 @@ public class BitableViewServiceImpl implements BitableViewService {
 
         viewMapper.deleteById(id);
 
-        auditHelper.recordByTable(existing.getTableId(), null, OperationType.DELETE_VIEW,
+        auditHelper.recordByTable(existing.getTableId(), userId, OperationType.DELETE_VIEW,
                 "{\"viewId\":" + id + ",\"name\":\"" + existing.getName() + "\"}");
     }
 
@@ -207,6 +207,11 @@ public class BitableViewServiceImpl implements BitableViewService {
         copy.setVersion(0);
         copy.setCreatedBy(userId);
         viewMapper.insert(copy);
+
+        // 审计
+        auditHelper.recordByTable(source.getTableId(), userId, OperationType.ADD_VIEW,
+                "{\"viewId\":" + copy.getId() + ",\"name\":\"" + copy.getName()
+                        + "\",\"duplicatedFrom\":" + viewId + "}");
 
         return copy.getId();
     }

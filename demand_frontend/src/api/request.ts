@@ -10,6 +10,7 @@ import {
   setRefreshToken,
   clearAuth,
   redirectToLogin,
+  getActiveRole,
 } from '@/utils/auth'
 
 const service: AxiosInstance = axios.create({
@@ -59,6 +60,10 @@ service.interceptors.request.use(
     const token = getToken()
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
+    }
+    const activeRole = getActiveRole()
+    if (activeRole) {
+      config.headers['X-Active-Role'] = activeRole
     }
     return config
   },

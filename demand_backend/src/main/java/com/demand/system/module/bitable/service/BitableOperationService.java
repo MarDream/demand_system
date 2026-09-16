@@ -1,6 +1,7 @@
 package com.demand.system.module.bitable.service;
 
 import com.demand.system.common.result.PageResult;
+import com.demand.system.module.bitable.dto.BitableOperationQueryDTO;
 import com.demand.system.module.bitable.dto.BitableOperationVO;
 
 /**
@@ -20,23 +21,21 @@ public interface BitableOperationService {
     void recordOperation(Long baseId, Long tableId, Long userId, String operationType, String detail);
 
     /**
-     * 分页查询多维表格容器的操作历史
+     * 分页查询多维表格容器的操作历史（支持类型/操作人/时间筛选）
      *
-     * @param baseId   多维表格容器ID
-     * @param pageNum  页码
-     * @param pageSize 每页大小
+     * @param baseId 容器ID
+     * @param query  查询参数
      * @return 分页结果
      */
-    PageResult<BitableOperationVO> listOperationsByBaseId(Long baseId, Integer pageNum, Integer pageSize);
+    PageResult<BitableOperationVO> listOperationsByBaseId(Long baseId, BitableOperationQueryDTO query);
 
     /**
-     * 分页查询数据表的操作历史
+     * 分页查询数据表的操作历史（支持类型/操作人/时间筛选）
      *
-     * @param baseId   多维表格容器ID
-     * @param tableId  数据表ID
-     * @param pageNum  页码
-     * @param pageSize 每页大小
+     * @param baseId  容器ID
+     * @param tableId 数据表ID
+     * @param query   查询参数
      * @return 分页结果
      */
-    PageResult<BitableOperationVO> listOperationsByTableId(Long baseId, Long tableId, Integer pageNum, Integer pageSize);
+    PageResult<BitableOperationVO> listOperationsByTableId(Long baseId, Long tableId, BitableOperationQueryDTO query);
 }

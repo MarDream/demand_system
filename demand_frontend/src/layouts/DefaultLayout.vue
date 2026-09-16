@@ -86,6 +86,26 @@
               </div>
             </div>
           </el-popover>
+          <el-dropdown v-if="switchableRoles.length > 1" trigger="click" @command="handleSwitchRole">
+            <span class="role-switcher">
+              <span class="role-switcher-label">{{ activeRoleName || switchableRoles[0]?.name || '' }}</span>
+              <el-icon class="role-switcher-icon"><ArrowDown /></el-icon>
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item
+                  v-for="r in switchableRoles"
+                  :key="r.code"
+                  :command="r.code"
+                >
+                  <span class="role-option">
+                    <span>{{ r.name }}</span>
+                    <el-icon v-if="r.code === userStore.activeRole" class="role-check"><Check /></el-icon>
+                  </span>
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
           <el-dropdown trigger="click">
             <span class="user-info">
               <el-avatar :size="28">{{ userStore.userInfo?.realName?.charAt(0) || 'U' }}</el-avatar>
@@ -96,7 +116,7 @@
             </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item @click="$router.push('/settings')">个人设置</el-dropdown-item>
+                <el-dropdown-item @click="$router.push('/profile')">个人设置</el-dropdown-item>
                 <el-dropdown-item divided @click="handleLogout">退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -127,7 +147,8 @@ import { useUserStore } from '@/stores/modules/user'
 import { useNotification } from '@/composables/useNotification'
 import { usePermission } from '@/composables/usePermission'
 import * as ElementPlusIcons from '@element-plus/icons-vue'
-import { Fold, Expand, Bell } from '@element-plus/icons-vue'
+import { Fold, Expand, Bell, ArrowDown, Check } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { isRemixIcon } from '@/components/common/RemixIconData'
 import Breadcrumb from '@/components/layout/Breadcrumb.vue'
 import OrgBindDialog from '@/components/OrgBindDialog.vue'
@@ -142,18 +163,53 @@ const router = useRouter()
 const appStore = useAppStore()
 const userStore = useUserStore()
 const { unreadCount } = useNotification()
-const { hasPermission, hasAnyRole } = usePermission()
+const { hasPermission, hasAnyRole, hasAnyPermission } = usePermission()
 
 const recentNotifications = ref<any[]>([])
 const menuList = shallowRef<MenuItem[]>([])
 const roleDisplayText = computed(() => {
   const roleNames = userStore.userInfo?.roleNames?.filter(Boolean) || []
-  if (roleNames.length > 0) {
-    return roleNames.join(' / ')
+  // admin 与 SUPER_ADMIN 等编码可能共享同一中文名，展示层按名去重
+  const uniqueNames = Array.from(new Set(roleNames))
+  if (uniqueNames.length > 0) {
+    return uniqueNames.join(' / ')
   }
   const roles = userStore.userInfo?.roles?.filter(Boolean) || []
   return roles.length > 0 ? roles.join(' / ') : ''
 })
+
+// 角色切换：store 已按显示名去重，仅当仍有多个可选角色时展示
+const switchableRoles = computed(() => {
+  const list = userStore.allRoles || []
+  return list.length > 1 ? list : []
+})
+const activeRoleName = computed(() => {
+  const code = userStore.activeRole
+  if (!code) return ''
+  return userStore.allRoles.find((r) => r.code === code)?.name || code
+})
+
+async function handleSwitchRole(roleCode: string | number) {
+  const code = String(roleCode || '')
+  if (!code || code === (userStore.activeRole || '')) return
+  try {
+    await userStore.switchRole(code)
+    ElMessage.success(`已切换到角色「${activeRoleName.value}」`)
+    // 菜单按新角色重新拉取
+    await fetchMenus()
+    // 当前页面若在新角色下无权限，回到工作台
+    const requiredRoles = Array.isArray(route.meta.requiredRoles) ? (route.meta.requiredRoles as string[]) : []
+    const requiredPermissions = Array.isArray(route.meta.requiredPermissions) ? (route.meta.requiredPermissions as string[]) : []
+    if (
+      (requiredRoles.length > 0 && !hasAnyRole(requiredRoles)) ||
+      (requiredPermissions.length > 0 && !hasAnyPermission(requiredPermissions))
+    ) {
+      router.push('/dashboard')
+    }
+  } catch (error: any) {
+    ElMessage.error(error?.message || '角色切换失败')
+  }
+}
 
 const iconMap: Record<string, Component> = {}
 for (const [name, comp] of Object.entries(ElementPlusIcons)) {
@@ -541,6 +597,48 @@ async function handleLogout() {
   display: flex;
   align-items: center;
   gap: var(--spacing-md);
+}
+
+// 角色切换
+.role-switcher {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--radius-md);
+  transition: background-color var(--transition-fast);
+  max-width: 180px;
+
+  &:hover {
+    background-color: var(--color-surface-alt);
+  }
+}
+
+.role-switcher-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-regular);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.role-switcher-icon {
+  font-size: 12px;
+  color: var(--color-muted-text);
+  flex-shrink: 0;
+}
+
+.role-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 120px;
+}
+
+.role-check {
+  color: var(--color-primary, var(--color-accent));
 }
 
 // 用户信息

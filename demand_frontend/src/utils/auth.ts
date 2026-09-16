@@ -2,6 +2,26 @@ import Cookies from 'js-cookie'
 
 const TOKEN_KEY = 'access_token'
 const REFRESH_TOKEN_KEY = 'refresh_token'
+/** 角色切换：当前生效角色（localStorage，随每次请求通过 X-Active-Role 头发送） */
+const ACTIVE_ROLE_KEY = 'active_role'
+
+export function getActiveRole(): string {
+  try {
+    return localStorage.getItem(ACTIVE_ROLE_KEY) || ''
+  } catch {
+    return ''
+  }
+}
+
+export function setActiveRole(role: string): void {
+  try {
+    if (role) {
+      localStorage.setItem(ACTIVE_ROLE_KEY, role)
+    } else {
+      localStorage.removeItem(ACTIVE_ROLE_KEY)
+    }
+  } catch { /* ignore */ }
+}
 
 export function getToken(): string {
   return Cookies.get(TOKEN_KEY) || ''
@@ -30,6 +50,7 @@ export function removeRefreshToken(): void {
 export function clearAuth(): void {
   removeToken()
   removeRefreshToken()
+  setActiveRole('')
 }
 
 export function buildLoginPath(redirect?: string): string {

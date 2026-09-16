@@ -1,6 +1,7 @@
 package com.demand.system.module.llm.controller;
 
 import com.demand.system.common.result.Result;
+import com.demand.system.module.llm.dto.LlmApplicationMoveGroupDTO;
 import com.demand.system.module.llm.dto.LlmApplicationUpdateDTO;
 import com.demand.system.module.llm.service.LlmApplicationService;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -25,5 +26,14 @@ public class LlmApplicationController {
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:llm-provider:update')")
     public Result<?> update(@PathVariable String code, @RequestBody LlmApplicationUpdateDTO dto) {
         return Result.success(applicationService.update(code, dto));
+    }
+
+    /**
+     * 调整功能点所属分组（groupId 为 null 表示移出分组）
+     */
+    @PutMapping("/{code}/group")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:llm-provider:update')")
+    public Result<?> moveToGroup(@PathVariable String code, @RequestBody LlmApplicationMoveGroupDTO dto) {
+        return Result.success(applicationService.moveToGroup(code, dto == null ? null : dto.getGroupId()));
     }
 }

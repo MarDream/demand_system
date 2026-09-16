@@ -25,19 +25,17 @@ public class CustomFieldConfigController {
 
     @GetMapping
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:requirement-config:update')")
-    @Operation(summary = "查询某项目/需求类型下的动态字段定义")
+    @Operation(summary = "查询需求类型下的动态字段定义")
     public Result<List<com.demand.system.module.requirement.dto.CustomFieldConfigDTO>> listFields(
-            @RequestParam Long projectId,
             @RequestParam(required = false) String typeCode) {
-        return fieldConfigService.listFields(projectId, typeCode);
+        return fieldConfigService.listFields(typeCode);
     }
 
     @GetMapping("/schema")
-    @Operation(summary = "按项目+需求类型返回带节点权限的动态字段 schema（创建态取流程首节点权限）")
+    @Operation(summary = "按需求类型返回带节点权限的动态字段 schema（创建态取流程首节点权限）")
     public Result<List<com.demand.system.module.requirement.dto.CustomFieldConfigDTO>> buildSchema(
-            @RequestParam Long projectId,
             @RequestParam String typeCode) {
-        return fieldConfigService.buildCreateSchema(projectId, typeCode);
+        return fieldConfigService.buildCreateSchema(typeCode);
     }
 
     @PostMapping

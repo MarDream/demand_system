@@ -26,7 +26,7 @@ public interface BitableFieldService {
      * @param dto     创建参数
      * @return 新字段的 ID
      */
-    Long createField(Long tableId, BitableFieldCreateDTO dto);
+    Long createField(Long tableId, BitableFieldCreateDTO dto, Long userId);
 
     /**
      * 更新字段
@@ -34,14 +34,14 @@ public interface BitableFieldService {
      * @param id  字段ID
      * @param dto 更新参数
      */
-    void updateField(Long id, BitableFieldUpdateDTO dto);
+    void updateField(Long id, BitableFieldUpdateDTO dto, Long userId);
 
     /**
      * 删除字段（同时物理删除该字段对应的 cell_values）
      *
      * @param id 字段ID
      */
-    void deleteField(Long id);
+    void deleteField(Long id, Long userId);
 
     /**
      * 排序字段

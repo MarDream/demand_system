@@ -2,12 +2,32 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.demand.system.module.bitable.mapper.BitableOperationMapper">
 
+    <!-- 公共筛选条件：操作类型 / 操作人 / 时间范围 -->
+    <sql id="filterConditions">
+        <if test="operationTypes != null and operationTypes.size() > 0">
+            AND operation_type IN
+            <foreach collection="operationTypes" item="t" open="(" separator="," close=")">
+                #{t}
+            </foreach>
+        </if>
+        <if test="userId != null">
+            AND user_id = #{userId}
+        </if>
+        <if test="startTime != null">
+            AND created_at &gt;= #{startTime}
+        </if>
+        <if test="endTime != null">
+            AND created_at &lt;= #{endTime}
+        </if>
+    </sql>
+
     <!-- 分页查询指定多维表格容器的操作历史 -->
     <select id="selectByBaseId" resultType="com.demand.system.module.bitable.entity.BitableOperation">
         SELECT id, base_id, table_id, user_id, operation_type, detail, created_at
         FROM `bitable_operations`
         WHERE base_id = #{baseId}
-        ORDER BY created_at DESC
+        <include refid="filterConditions"/>
+        ORDER BY created_at DESC, id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
@@ -16,6 +36,7 @@
         SELECT COUNT(*)
         FROM `bitable_operations`
         WHERE base_id = #{baseId}
+        <include refid="filterConditions"/>
     </select>
 
     <!-- 分页查询指定数据表的操作历史 -->
@@ -24,7 +45,8 @@
         FROM `bitable_operations`
         WHERE base_id = #{baseId}
           AND table_id = #{tableId}
-        ORDER BY created_at DESC
+        <include refid="filterConditions"/>
+        ORDER BY created_at DESC, id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
@@ -34,6 +56,7 @@
         FROM `bitable_operations`
         WHERE base_id = #{baseId}
           AND table_id = #{tableId}
+        <include refid="filterConditions"/>
     </select>
 
 </mapper>

@@ -168,7 +168,7 @@ public class BitableAiServiceImpl implements BitableAiService {
                 fieldDTO.setName(fieldDef.getName());
                 fieldDTO.setFieldType(fieldDef.getFieldType());
                 fieldDTO.setConfig(fieldDef.getConfig());
-                fieldService.createField(tableId, fieldDTO);
+                fieldService.createField(tableId, fieldDTO, userId);
             }
         }
 
@@ -481,7 +481,7 @@ public class BitableAiServiceImpl implements BitableAiService {
                 options.add(Map.of("label", cat));
             }
             fieldDTO.setConfig(objectMapper.writeValueAsString(Map.of("options", options)));
-            Long targetFieldId = fieldService.createField(tableId, fieldDTO);
+            Long targetFieldId = fieldService.createField(tableId, fieldDTO, userId);
 
             // 批量更新记录
             Map<String, String> classification = new HashMap<>();
@@ -521,7 +521,7 @@ public class BitableAiServiceImpl implements BitableAiService {
         BitableFieldCreateDTO fieldDTO = new BitableFieldCreateDTO();
         fieldDTO.setName(targetFieldName);
         fieldDTO.setFieldType("text");
-        Long targetFieldId = fieldService.createField(tableId, fieldDTO);
+        Long targetFieldId = fieldService.createField(tableId, fieldDTO, userId);
 
         // 逐条调用 LLM 生成摘要。
         // 注意：不能把整个循环包在事务里 —— LLM 调用耗时长会长期占用数据库连接，

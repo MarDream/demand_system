@@ -13,51 +13,63 @@
       <AssistantAvatar :variant="avatarVariant" />
     </button>
 
-    <el-dialog
-      v-model="visible"
-      width="920px"
-      class="assistant-dialog"
-      :fullscreen="assistantFullscreen"
-      :draggable="!assistantFullscreen"
-      :show-close="false"
-      :close-on-click-modal="false"
-      align-center
-      destroy-on-close
-    >
-      <template #header>
-        <div class="assistant-panel__header">
-          <div class="assistant-panel__title-block">
-            <div class="assistant-panel__title">AI 操作助手</div>
-            <div class="assistant-panel__subtitle" :title="assistantSubtitle">结合当前页面、系统菜单和模型能力，为你提供入口导航与操作建议</div>
-          </div>
-
-          <div class="assistant-panel__header-right">
-            <!-- 信息标签组：纯文本状态展示，无操作语义 -->
-            <div class="assistant-panel__info-group">
-              <el-tag v-if="currentPageContext.pageTitle" type="info" effect="plain" size="small" class="assistant-meta-tag">当前页面：{{ currentPageContext.pageTitle }}</el-tag>
-              <el-tag type="success" effect="plain" size="small" class="assistant-meta-tag">Ctrl/⌘ + K</el-tag>
-              <el-dropdown trigger="click" @command="handleAvatarCommand">
-                <el-tag class="assistant-avatar-tag" type="warning" effect="plain" size="small">
-                  头像：{{ avatarVariantLabel }}
-                  <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-                </el-tag>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item command="girl" :disabled="avatarVariant === 'girl'">圆脸少女 · 双马尾</el-dropdown-item>
-                    <el-dropdown-item command="fox" :disabled="avatarVariant === 'fox'">小狐狸 · 戴眼镜</el-dropdown-item>
-                    <el-dropdown-item command="cat" :disabled="avatarVariant === 'cat'">小猫咪 · 竖瞳</el-dropdown-item>
-                    <el-dropdown-item command="elf" :disabled="avatarVariant === 'elf'">魔法少女 · 尖耳</el-dropdown-item>
-                    <el-dropdown-item command="default" :disabled="avatarVariant === 'default'">经典数字人</el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
+    <Teleport to="body">
+      <Transition name="assistant-window">
+        <div
+          v-if="visible"
+          ref="windowRef"
+          class="assistant-window"
+          :class="[
+            `assistant-window--${windowMode}`,
+            {
+              'is-sidebar-collapsed': sessionListCollapsed,
+              'is-dragging': winDragging,
+            },
+          ]"
+          :style="windowStyle"
+        >
+          <!-- 最小化态：右下角迷你条，仅保留头像/标题/三按钮 -->
+          <div
+            v-if="windowMode === 'minimized'"
+            class="assistant-mini-bar"
+            role="dialog"
+            aria-label="AI 操作助手（已最小化）"
+            @mousedown="onWindowDragStart"
+            @touchstart="onWindowDragStart"
+          >
+            <!-- 还原热区：头像 + 标题 + 副标题合为一个可点击区域。
+                 显式按钮只保留右侧那个「还原」，不再叠加双击/头像独立点击等多余入口 -->
+            <div
+              class="assistant-mini-bar__hit"
+              role="button"
+              tabindex="0"
+              title="点击还原窗口"
+              aria-label="还原窗口"
+              @click="handleRestoreMode"
+              @keydown.enter.prevent="handleRestoreMode"
+              @keydown.space.prevent="handleRestoreMode"
+            >
+              <span class="assistant-mini-bar__avatar" aria-hidden="true">
+                <AssistantAvatar :variant="avatarVariant" />
+              </span>
+              <div class="assistant-mini-bar__body">
+                <div class="assistant-mini-bar__title">
+                  <span class="assistant-mini-bar__title-text">AI 操作助手</span>
+                  <span v-if="sending" class="assistant-mini-bar__status-dot" aria-hidden="true" />
+                </div>
+                <div class="assistant-mini-bar__subtitle" :title="miniBarSubtitle">{{ miniBarSubtitle }}</div>
+              </div>
             </div>
-
-            <!-- 操作按钮组：统一 32x32 圆角按钮，关闭按钮位于组的最右端 -->
-            <div class="assistant-panel__action-group" role="toolbar" aria-label="弹窗操作">
+            <div
+              class="assistant-mini-bar__actions"
+              role="toolbar"
+              aria-label="迷你条操作"
+              @mousedown.stop
+              @touchstart.stop
+            >
               <el-tooltip content="新会话" placement="bottom">
                 <el-button
-                  class="assistant-tool-button"
+                  class="assistant-mini-tool"
                   text
                   aria-label="新会话"
                   @click="handleCreateSession"
@@ -65,26 +77,22 @@
                   <el-icon><Plus /></el-icon>
                 </el-button>
               </el-tooltip>
-              <el-tooltip :content="assistantFullscreen ? '退出全屏' : '全屏'" placement="bottom">
+              <el-tooltip content="还原" placement="bottom">
                 <el-button
-                  class="assistant-tool-button"
+                  class="assistant-mini-tool"
                   text
-                  :aria-label="assistantFullscreen ? '退出全屏' : '全屏'"
-                  @click="toggleAssistantFullscreen"
+                  aria-label="还原"
+                  @click="handleRestoreMode"
                 >
-                  <el-icon>
-                    <ScaleToOriginal v-if="assistantFullscreen" />
-                    <FullScreen v-else />
-                  </el-icon>
+                  <el-icon><BottomRight /></el-icon>
                 </el-button>
               </el-tooltip>
-              <span class="assistant-panel__action-divider" aria-hidden="true" />
+              <span class="assistant-mini-bar__divider" aria-hidden="true" />
               <el-tooltip content="关闭（Esc）" placement="bottom">
                 <el-button
-                  class="assistant-tool-button assistant-tool-button--close"
+                  class="assistant-mini-tool assistant-mini-tool--close"
                   text
                   aria-label="关闭"
-                  @mousedown.stop
                   @click="assistantStore.close()"
                 >
                   <el-icon><Close /></el-icon>
@@ -92,29 +100,107 @@
               </el-tooltip>
             </div>
           </div>
-        </div>
-      </template>
 
-      <div class="assistant-panel" :class="{ 'assistant-panel--fullscreen': assistantFullscreen }">
-        <div class="assistant-panel__body">
+          <!-- 普通 / 全屏态：完整面板（保留原有会话列表 + 聊天 + 输入区） -->
+          <template v-else>
+<div
+              class="assistant-panel__header"
+              @mousedown="onWindowDragStart"
+              @touchstart="onWindowDragStart"
+            >
+              <button
+                type="button"
+                class="assistant-panel__sidebar-toggle"
+                :title="sessionListCollapsed ? '展开会话栏' : '收起会话栏'"
+                :aria-label="sessionListCollapsed ? '展开会话栏' : '收起会话栏'"
+                @click="toggleSessionList"
+              >
+                <el-icon><Fold v-if="!sessionListCollapsed" /><Expand v-else /></el-icon>
+              </button>
+              <div class="assistant-panel__title-block">
+                <div class="assistant-panel__title">
+                  <span class="assistant-panel__title-mark" aria-hidden="true" />
+                  AI 操作助手
+                </div>
+                <div class="assistant-panel__subtitle" :title="assistantSubtitle">{{ assistantSubtitle }}</div>
+              </div>
+
+              <div class="assistant-panel__header-right">
+                <!-- 信息标签组：纯文本状态展示，无操作语义 -->
+                <div class="assistant-panel__info-group">
+                  <el-tag v-if="currentPageContext.pageTitle" type="info" effect="plain" size="small" class="assistant-meta-tag">当前页面：{{ currentPageContext.pageTitle }}</el-tag>
+                  <el-tag type="success" effect="plain" size="small" class="assistant-meta-tag">Ctrl/⌘ + K</el-tag>
+                  <el-dropdown trigger="click" @command="handleAvatarCommand">
+                    <el-tag class="assistant-avatar-tag" type="warning" effect="plain" size="small">
+                      头像：{{ avatarVariantLabel }}
+                      <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                    </el-tag>
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item command="girl" :disabled="avatarVariant === 'girl'">圆脸少女 · 双马尾</el-dropdown-item>
+                        <el-dropdown-item command="fox" :disabled="avatarVariant === 'fox'">小狐狸 · 戴眼镜</el-dropdown-item>
+                        <el-dropdown-item command="cat" :disabled="avatarVariant === 'cat'">小猫咪 · 竖瞳</el-dropdown-item>
+                        <el-dropdown-item command="elf" :disabled="avatarVariant === 'elf'">魔法少女 · 尖耳</el-dropdown-item>
+                        <el-dropdown-item command="default" :disabled="avatarVariant === 'default'">经典数字人</el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
+                </div>
+
+                <!-- 操作按钮组：只保留窗口控制（最小化 / 全屏 / 关闭）。
+                     「新会话」入口统一放在左侧会话列表标题栏，此处不再重复。 -->
+                <div class="assistant-panel__action-group" role="toolbar" aria-label="弹窗操作">
+                  <el-tooltip content="最小化" placement="bottom">
+                    <el-button
+                      class="assistant-tool-button"
+                      text
+                      aria-label="最小化"
+                      @click="handleMinimize"
+                    >
+                      <el-icon><BottomRight /></el-icon>
+                    </el-button>
+                  </el-tooltip>
+                  <el-tooltip :content="windowMode === 'maximized' ? '退出全屏' : '全屏'" placement="bottom">
+                    <el-button
+                      class="assistant-tool-button"
+                      text
+                      :aria-label="windowMode === 'maximized' ? '退出全屏' : '全屏'"
+                      @click="toggleAssistantFullscreen"
+                    >
+                      <el-icon>
+                        <ScaleToOriginal v-if="windowMode === 'maximized'" />
+                        <FullScreen v-else />
+                      </el-icon>
+                    </el-button>
+                  </el-tooltip>
+                  <span class="assistant-panel__action-divider" aria-hidden="true" />
+                  <el-tooltip content="关闭（Esc）" placement="bottom">
+                    <el-button
+                      class="assistant-tool-button assistant-tool-button--close"
+                      text
+                      aria-label="关闭"
+                      @mousedown.stop
+                      @click="assistantStore.close()"
+                    >
+                      <el-icon><Close /></el-icon>
+                    </el-button>
+                  </el-tooltip>
+                </div>
+              </div>
+            </div>
+
+        <div class="assistant-panel" :class="{ 'assistant-panel--fullscreen': windowMode === 'maximized' }">
+          <div class="assistant-panel__body">
           <aside class="assistant-session-list" :class="{ 'is-collapsed': sessionListCollapsed }">
             <template v-if="!sessionListCollapsed">
+            <!-- 标题栏只保留「新会话 +」；侧栏显隐统一交给 header 左侧的折叠按钮，
+                 避免出现"两处都能折叠"的双入口 -->
             <div class="assistant-session-list__header">
               <el-icon class="assistant-session-list__header-icon"><Folder /></el-icon>
               <span>会话</span>
               <el-tooltip content="新会话" placement="right">
                 <button type="button" class="assistant-session-list__new-btn" @click="handleCreateSession">
                   <el-icon><Plus /></el-icon>
-                </button>
-              </el-tooltip>
-              <el-tooltip :content="sessionListCollapsed ? '展开会话栏' : '收起会话栏'" placement="right">
-                <button
-                  type="button"
-                  class="assistant-session-list__fold-btn"
-                  :aria-label="sessionListCollapsed ? '展开会话栏' : '收起会话栏'"
-                  @click="toggleSessionList"
-                >
-                  <el-icon><Fold /></el-icon>
                 </button>
               </el-tooltip>
             </div>
@@ -177,18 +263,20 @@
             </div>
             </template>
 
-            <!-- 收起态：窄条，仅保留展开按钮 -->
-            <div v-else class="assistant-session-list__rail">
-              <el-tooltip content="展开会话栏" placement="right">
-                <button
-                  type="button"
-                  class="assistant-session-list__fold-btn"
-                  aria-label="展开会话栏"
-                  @click="toggleSessionList"
-                >
-                  <el-icon><Expand /></el-icon>
-                </button>
-              </el-tooltip>
+            <!-- 收起态：整条 rail 就是展开热区（隐性交互，不是又一个按钮）。
+                 显式的折叠/展开开关只有 header 左侧那一个。 -->
+            <div
+              v-else
+              class="assistant-session-list__rail"
+              role="button"
+              tabindex="0"
+              title="展开会话栏"
+              aria-label="展开会话栏"
+              @click="toggleSessionList"
+              @keydown.enter.prevent="toggleSessionList"
+              @keydown.space.prevent="toggleSessionList"
+            >
+              <el-icon class="assistant-session-list__rail-icon"><Expand /></el-icon>
               <span class="assistant-session-list__rail-text">会话</span>
             </div>
           </aside>
@@ -198,7 +286,7 @@
               <div v-if="messages.length === 0" class="assistant-empty">
                 <el-icon class="assistant-empty__icon"><ChatDotRound /></el-icon>
                 <div class="assistant-empty__title">告诉我你想完成什么操作</div>
-                <div class="assistant-empty__desc">例如：如何新建需求、去哪里配置工作流、在哪里维护知识库</div>
+                <div class="assistant-empty__desc">例如：如何新建需求、去哪里配置工作流，或切到「数据问答」直接问“各状态的需求数量分布”</div>
 
                 <div v-if="recommendedQuestions.length" class="assistant-empty__quick-asks">
                   <div class="assistant-section-title">你可以这样问我</div>
@@ -251,6 +339,13 @@
                     <!-- 流式输出中，内容末尾闪烁光标 -->
                     <span v-if="message.status === 'streaming' && message.content" class="assistant-streaming-cursor">|</span>
                   </div>
+
+                  <!-- 数据问答结果（NL2SQL：结果表 + 图表 + SQL） -->
+                  <AssistantDataResult
+                    v-if="message.role === 'assistant' && message.dataResult"
+                    :result="message.dataResult"
+                    class="assistant-message__data-result"
+                  />
 
                   <div
                     v-if="message.role === 'assistant' && message.reasoning"
@@ -436,15 +531,8 @@
                 <span v-if="streamHudModelLabel" class="assistant-stream-hud__model">
                   · {{ streamHudModelLabel }}
                 </span>
-                <button
-                  type="button"
-                  class="assistant-stream-hud__stop"
-                  title="停止生成"
-                  @click="handleStop"
-                >
-                  <el-icon><VideoPause /></el-icon>
-                  <span>停止</span>
-                </button>
+                <!-- 停止按钮不在这里：composer 右下角的「发送/停止」互斥按钮是唯一入口，
+                     避免同屏出现两个停止（HUD 只做状态展示） -->
               </div>
             </Transition>
 
@@ -467,7 +555,12 @@
                   <button type="button" class="assistant-file-card__remove" @click="removeAttachedFile(attached.uid)">&times;</button>
                 </div>
               </div>
-              <div v-if="composerQuestions.length" class="assistant-composer__quick-asks">
+              <!-- 空状态时中央已展示完整推荐问题，这里不再重复渲染同一批的前 3 条；
+                   仅在已有对话后作为「继续追问」的快捷入口出现 -->
+              <div
+                v-if="messages.length > 0 && composerQuestions.length"
+                class="assistant-composer__quick-asks"
+              >
                 <div class="assistant-section-title">快捷提问</div>
                 <div class="assistant-chip-list assistant-chip-list--compact">
                   <button
@@ -518,7 +611,7 @@
                     @change="handleFileInputChange"
                   />
 
-                  <el-tooltip content="选择知识库问答范围：通用助手可开启联网搜索并整合本地知识库；全部/指定知识库会基于知识库内容回答" placement="top">
+                  <el-tooltip content="选择问答范围：数据问答可用自然语言直接查询业务数据库；全部/指定知识库基于知识库内容回答；通用助手可开启联网搜索" placement="top">
                     <el-select
                       v-model="selectedScopeKey"
                       size="small"
@@ -529,6 +622,7 @@
                         <el-icon class="assistant-composer__scope-icon"><Document /></el-icon>
                       </template>
                       <el-option label="通用助手" :value="SCOPE_GENERAL" />
+                      <el-option label="数据问答（数据库）" :value="SCOPE_DATA" />
                       <el-option label="全部知识库" :value="-1" />
                       <el-option
                         v-for="kb in knowledgeBases"
@@ -559,7 +653,7 @@
                   </el-popover>
 
                   <el-tooltip
-                    v-if="selectedKbScope == null"
+                    v-if="selectedKbScope == null && !dataQueryMode"
                     content="开启后：轻量检索全部本地知识库 + 大模型联网搜索，综合给出结果"
                     placement="top"
                   >
@@ -671,7 +765,10 @@
           </section>
         </div>
       </div>
-    </el-dialog>
+      </template>
+    </div>
+      </Transition>
+    </Teleport>
 
     <!-- 文档预览弹窗 -->
     <FilePreviewDialog
@@ -691,11 +788,12 @@ import type { CSSProperties } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ChatDotRound, CopyDocument, Cpu, Delete, Document, FolderAdd, InfoFilled, MagicStick, Promotion, ArrowDown, FullScreen, RefreshRight, ScaleToOriginal, Plus, Close, VideoPause, Link, Search, Folder, CaretRight, Fold, Expand } from '@element-plus/icons-vue'
+import { ChatDotRound, CopyDocument, Cpu, Delete, Document, FolderAdd, InfoFilled, MagicStick, Promotion, ArrowDown, FullScreen, RefreshRight, ScaleToOriginal, Plus, Close, VideoPause, Link, Search, Folder, CaretRight, Fold, Expand, BottomRight } from '@element-plus/icons-vue'
 import MarkdownContent from '@/components/common/MarkdownContent.vue'
 import FollowUpChips from '@/components/assistant/FollowUpChips.vue'
 import AssistantAvatar from '@/components/assistant/avatars/AssistantAvatar.vue'
 import AssistantTaskPanel from '@/components/assistant/AssistantTaskPanel.vue'
+import AssistantDataResult from '@/components/assistant/AssistantDataResult.vue'
 import { getToken } from '@/utils/auth'
 import { formatFileSize } from '@/utils/format'
 import { useAssistantStore } from '@/stores/assistant'
@@ -712,12 +810,26 @@ type PathMatchType = 'current-page' | 'current-menu' | 'related' | 'none'
 const router = useRouter()
 const assistantStore = useAssistantStore()
 const { currentPageContext } = useAssistantContext()
-const { visible, sessions, activeSessionId, messages, sending, initialized } = storeToRefs(assistantStore)
+const { visible, windowMode, sessions, activeSessionId, messages, sending, initialized } = storeToRefs(assistantStore)
 
 const draft = ref('')
 const messageListRef = ref<HTMLDivElement | null>(null)
-const assistantFullscreen = ref(false)
 const assistantSubtitle = '结合当前页面、系统菜单和模型能力，为你提供入口导航与操作建议'
+
+/** 迷你条副标题：若有活跃会话则显示会话标题，否则展示「缩为迷你条」提示 */
+const miniBarSubtitle = computed(() => {
+  if (sending.value) return '正在生成回答…'
+  const lastAssistant = [...messages.value].reverse().find(item => item.role === 'assistant' && item.content)
+  if (lastAssistant) {
+    const compact = lastAssistant.content.replace(/\s+/g, ' ').trim()
+    if (compact) return compact.length > 30 ? `${compact.slice(0, 30)}…` : compact
+  }
+  if (activeSessionId.value) {
+    const current = sessions.value.find(item => item.id === activeSessionId.value)
+    if (current?.title && current.title !== '新会话') return current.title
+  }
+  return '点击此处还原窗口'
+})
 
 // ===== 快捷提问（动态轮询） =====
 const quickQuestions = useQuickQuestions({
@@ -819,18 +931,23 @@ function formatSessionTime(value?: string | null) {
 // 注意：el-option.value 不允许 null（prop validator 拒绝），故 UI 绑定到 selectedScopeKey
 //（'general' | -1 | kb.id），再由 watcher 同步到 selectedKbScope（number | null）。
 const SCOPE_GENERAL = '__assistant_general__'
-type ScopeKey = typeof SCOPE_GENERAL | -1 | number
+const SCOPE_DATA = '__assistant_data__'
+type ScopeKey = typeof SCOPE_GENERAL | typeof SCOPE_DATA | -1 | number
 const knowledgeBases = ref<KnowledgeBase[]>([])
 const selectedKbScope = ref<number | null>(null)
 const selectedScopeKey = ref<ScopeKey>(SCOPE_GENERAL)
+/** 数据问答（NL2SQL）模式：自然语言直接查询业务数据库 */
+const dataQueryMode = ref(false)
 
 // UI 变化 → 内部状态
 watch(selectedScopeKey, (key) => {
-  selectedKbScope.value = key === SCOPE_GENERAL ? null : (key as number)
+  dataQueryMode.value = key === SCOPE_DATA
+  selectedKbScope.value = (key === SCOPE_GENERAL || key === SCOPE_DATA) ? null : (key as number)
 })
 
 // 内部状态变化 → UI（兜底，避免外部代码直接改 selectedKbScope 时 UI 不同步）
 watch(selectedKbScope, (val) => {
+  if (dataQueryMode.value) return
   const expected: ScopeKey = val === null ? SCOPE_GENERAL : val
   if (selectedScopeKey.value !== expected) {
     selectedScopeKey.value = expected
@@ -846,6 +963,7 @@ const selectedAssistantSearchScopes = ref<Array<Exclude<AssistantSearchScope, 'W
 ])
 
 function buildAssistantSearchScopes(): AssistantSearchScope[] | undefined {
+  if (dataQueryMode.value) return undefined
   if (selectedKbScope.value == null && !webSearchEnabled.value) return undefined
   const scopes: AssistantSearchScope[] = [...selectedAssistantSearchScopes.value]
   if (selectedKbScope.value == null && webSearchEnabled.value) scopes.push('WEB')
@@ -1278,13 +1396,124 @@ function handleFabResize() {
   fabPos.value = clampPosition(fabPos.value.x, fabPos.value.y)
 }
 
+// ===== 弹框拖动（normal 态拖 header，minimized 态拖迷你条；全屏态不拖） =====
+const windowRef = ref<HTMLElement | null>(null)
+/** null 表示沿用 CSS 默认定位（右下角）；拖动后改为 left/top 内联定位 */
+const windowPos = ref<{ x: number; y: number } | null>(null)
+const winDragging = ref(false)
+const winDragStart = ref({ x: 0, y: 0 })
+const winDragOrigin = ref({ x: 0, y: 0 })
+const winHasMoved = ref(false)
+
+/** 约束窗口不超出视口（用元素实测尺寸，兼容 normal / minimized 两种尺寸） */
+function clampWindow(x: number, y: number) {
+  const el = windowRef.value
+  if (!el || typeof window === 'undefined') return { x, y }
+  const maxX = Math.max(0, window.innerWidth - el.offsetWidth)
+  const maxY = Math.max(0, window.innerHeight - el.offsetHeight)
+  return {
+    x: Math.max(0, Math.min(maxX, x)),
+    y: Math.max(0, Math.min(maxY, y)),
+  }
+}
+
+function onWindowDragStart(e: MouseEvent | TouchEvent) {
+  // 全屏态铺满视口，拖拽没有意义
+  if (windowMode.value === 'maximized') return
+  const el = windowRef.value
+  if (!el) return
+
+  // 落在按钮/输入控件上不启动拖拽，避免抢走点击
+  const target = e.target as HTMLElement | null
+  if (target?.closest('button, .el-button, input, textarea, .el-select, .el-dropdown, .el-tooltip')) return
+
+  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
+  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
+  const rect = el.getBoundingClientRect()
+
+  winDragging.value = true
+  // 每次按下都重置，避免上一次拖拽的 moved 状态吞掉本次点击
+  winHasMoved.value = false
+  winDragStart.value = { x: clientX, y: clientY }
+  winDragOrigin.value = { x: rect.left, y: rect.top }
+  // 立即固化当前实际位置，后续按偏移量移动
+  windowPos.value = { x: rect.left, y: rect.top }
+
+  document.addEventListener('mousemove', onWindowDragMove)
+  document.addEventListener('mouseup', onWindowDragEnd)
+  document.addEventListener('touchmove', onWindowDragMove, { passive: false })
+  document.addEventListener('touchend', onWindowDragEnd)
+}
+
+function onWindowDragMove(e: MouseEvent | TouchEvent) {
+  if (!winDragging.value) return
+  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
+  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
+  const dx = clientX - winDragStart.value.x
+  const dy = clientY - winDragStart.value.y
+
+  // 3px 阈值：区分「点击」与「拖拽」
+  if (!winHasMoved.value && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
+    winHasMoved.value = true
+  }
+  if (!winHasMoved.value) return
+
+  e.preventDefault()
+  windowPos.value = clampWindow(winDragOrigin.value.x + dx, winDragOrigin.value.y + dy)
+}
+
+function onWindowDragEnd() {
+  winDragging.value = false
+  document.removeEventListener('mousemove', onWindowDragMove)
+  document.removeEventListener('mouseup', onWindowDragEnd)
+  document.removeEventListener('touchmove', onWindowDragMove)
+  document.removeEventListener('touchend', onWindowDragEnd)
+}
+
+/** 拖动过就不再把这次交互当作点击（迷你条热区既是还原入口也是拖拽把手） */
+function shouldIgnoreClickAfterDrag() {
+  if (winHasMoved.value) {
+    winHasMoved.value = false
+    return true
+  }
+  return false
+}
+
+function handleWindowResize() {
+  if (windowPos.value) {
+    windowPos.value = clampWindow(windowPos.value.x, windowPos.value.y)
+  }
+}
+
+const windowStyle = computed<CSSProperties>(() => {
+  if (!windowPos.value) return {}
+  return {
+    left: `${windowPos.value.x}px`,
+    top: `${windowPos.value.y}px`,
+    right: 'auto',
+    bottom: 'auto',
+  }
+})
+
+// 三态切换会改变窗口尺寸，等 DOM 更新后重新约束，避免拖到角落再放大/缩小时越界
+watch(windowMode, () => {
+  if (!windowPos.value) return
+  nextTick(() => {
+    windowPos.value = clampWindow(windowPos.value!.x, windowPos.value!.y)
+  })
+})
+
 onMounted(() => {
   window.addEventListener('keydown', handleGlobalKeydown)
   initFabPosition()
   window.addEventListener('resize', handleFabResize)
+  window.addEventListener('resize', handleWindowResize)
 })
 
 const composerPlaceholder = computed(() => {
+  if (dataQueryMode.value) {
+    return '用自然语言提问业务数据，例如：各个状态的需求数量分布、最近30天每天新增需求数'
+  }
   if (selectedKbScope.value == null && webSearchEnabled.value) {
     return '联网搜索已开启，可问任何问题，也可结合本地知识库综合回答'
   }
@@ -1297,6 +1526,9 @@ const composerPlaceholder = computed(() => {
 
 /** 教育性提示：根据当前场景给出轻量化指引（仅在有内容时显示） */
 const currentModeHint = computed(() => {
+  if (dataQueryMode.value) {
+    return '数据问答会把问题翻译为只读 SQL 查询数据库，并自动按你的数据权限范围过滤，不会修改任何数据'
+  }
   if (selectedKbScope.value != null) {
     const scope = selectedKbScope.value === -1 ? '全部知识库' : (knowledgeBases.value.find(k => k.id === selectedKbScope.value)?.name || '指定知识库')
     return `回答仅基于「${scope}」内容生成，未命中片段将明确标注`
@@ -1616,7 +1848,18 @@ function isSourceClickable(source: AssistantSource) {
 }
 
 function toggleAssistantFullscreen() {
-  assistantFullscreen.value = !assistantFullscreen.value
+  // 统一交给 store 维护的 windowMode，避免组件本地状态与全局状态出现分歧
+  assistantStore.toggleMaximize()
+}
+
+function handleMinimize() {
+  assistantStore.minimize()
+}
+
+function handleRestoreMode() {
+  // 迷你条热区同时是拖拽把手：拖完松手会紧随一个 click，此时不能当作还原
+  if (shouldIgnoreClickAfterDrag()) return
+  assistantStore.restoreMode()
 }
 
 async function ensureReady() {
@@ -1682,12 +1925,13 @@ async function submitMessage(message: string, clearDraft = false) {
   await assistantStore.sendMessage({
     message: content,
     pageContext: currentPageContext.value,
-    knowledgeBaseId: selectedKbScope.value,
+    knowledgeBaseId: dataQueryMode.value ? undefined : selectedKbScope.value,
     llmModelId: selectedLlmModelId.value,
-    mode: selectedKbScope.value != null ? searchMode.value : undefined,
-    topK: selectedKbScope.value != null ? topK.value : undefined,
-    webSearch: selectedKbScope.value == null ? webSearchEnabled.value : undefined,
+    mode: !dataQueryMode.value && selectedKbScope.value != null ? searchMode.value : undefined,
+    topK: !dataQueryMode.value && selectedKbScope.value != null ? topK.value : undefined,
+    webSearch: !dataQueryMode.value && selectedKbScope.value == null ? webSearchEnabled.value : undefined,
     searchScopes: buildAssistantSearchScopes(),
+    dataQuery: dataQueryMode.value ? true : undefined,
     files,
   })
 
@@ -2022,33 +2266,285 @@ onBeforeUnmount(() => {
   }
   window.removeEventListener('keydown', handleGlobalKeydown)
   window.removeEventListener('resize', handleFabResize)
+  window.removeEventListener('resize', handleWindowResize)
   document.removeEventListener('mousemove', onFabDragMove)
   document.removeEventListener('mouseup', onFabDragEnd)
   document.removeEventListener('touchmove', onFabDragMove)
   document.removeEventListener('touchend', onFabDragEnd)
+  // 弹框拖拽的全局监听也要一并摘掉，避免组件卸载后残留
+  document.removeEventListener('mousemove', onWindowDragMove)
+  document.removeEventListener('mouseup', onWindowDragEnd)
+  document.removeEventListener('touchmove', onWindowDragMove)
+  document.removeEventListener('touchend', onWindowDragEnd)
 })
 </script>
 
 <style scoped lang="scss">
-:deep(.assistant-dialog) {
-  max-width: calc(100vw - 32px);
+/* ===========================================================
+ * 自管理弹框容器
+ * - normal    右下角浮动 920×720（最大不超过视口 - 32px）
+ * - maximized 100vw × 100vh
+ * - minimized 右下角 320×56 迷你条
+ * =========================================================== */
+.assistant-window {
+  position: fixed;
+  z-index: 1200;
+  background: var(--color-background);
+  color: var(--color-text-primary);
   border-radius: 16px;
+  box-shadow:
+    0 1px 3px rgba(15, 23, 42, 0.06),
+    0 18px 48px rgba(15, 23, 42, 0.18);
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
+  font-family: inherit;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  &--normal {
+    right: 24px;
+    bottom: 24px;
+    width: 920px;
+    height: min(76vh, 720px);
+    max-width: calc(100vw - 48px);
+    max-height: calc(100vh - 48px);
+  }
+
+  &--maximized {
+    right: 0;
+    bottom: 0;
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  &--minimized {
+    right: 24px;
+    bottom: 24px;
+    width: 320px;
+    height: 56px;
+    border-radius: 14px;
+    box-shadow:
+      0 1px 3px rgba(15, 23, 42, 0.08),
+      0 12px 32px rgba(15, 23, 42, 0.16);
+  }
+
+  &.is-sidebar-collapsed .assistant-session-list {
+    width: 0;
+    border-right: none;
+    overflow: hidden;
+  }
+
+  /* 拖拽中：关掉所有过渡，否则位移会被 transition 拖慢、手感发粘 */
+  &.is-dragging {
+    transition: none;
+    user-select: none;
+    -webkit-user-select: none;
+    box-shadow:
+      0 2px 6px rgba(15, 23, 42, 0.1),
+      0 24px 60px rgba(15, 23, 42, 0.24);
+  }
 }
 
-:deep(.assistant-dialog .el-dialog__header) {
-  margin: 0;
-  padding: 0;
+/* 拖拽中禁止整个页面选中文本 */
+.assistant-window.is-dragging * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
 }
 
-:deep(.assistant-dialog .el-dialog__body) {
+/* 三态切换的过渡：尺寸 + 圆角 + 阴影一起过渡 */
+.assistant-window-enter-active,
+.assistant-window-leave-active {
+  transition:
+    opacity 0.22s ease,
+    transform 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    width 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    height 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    border-radius 0.22s ease,
+    box-shadow 0.22s ease;
+}
+
+.assistant-window-enter-from,
+.assistant-window-leave-to {
+  opacity: 0;
+  transform: translateY(8px) scale(0.96);
+}
+
+/* ===========================================================
+ * 迷你条（minimized 态）
+ * 与普通面板共用 Teleport 出口，缩为单行浮条
+ * =========================================================== */
+.assistant-mini-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 100%;
+  padding: 6px 6px 6px 10px;
+  background: var(--color-background);
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+/* 还原热区：头像 + 标题 + 副标题一整块可点，是迷你条的主交互区 */
+.assistant-mini-bar__hit {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 100%;
   padding: 0;
+  border: none;
+  background: transparent;
+  /* 既是可点的还原入口，也是迷你条的拖拽把手 */
+  cursor: grab;
+  border-radius: 8px;
+  outline: none;
+  text-align: left;
+
+  &:active {
+    cursor: grabbing;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  &:hover .assistant-mini-bar__avatar {
+    transform: scale(1.05);
+  }
+
+  &:active .assistant-mini-bar__avatar {
+    transform: scale(0.95);
+  }
+}
+
+.assistant-mini-bar__avatar {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+  display: flex;
+  align-items: center;
+  justify-content: center;
   overflow: hidden;
+  padding: 0;
+  transition: transform 0.15s ease;
 }
 
-:deep(.assistant-dialog.is-fullscreen) {
-  max-width: 100vw;
-  border-radius: 0;
+.assistant-mini-bar__body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  outline: none;
+}
+
+.assistant-mini-bar__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  line-height: 1.2;
+}
+
+.assistant-mini-bar__title-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.assistant-mini-bar__status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  box-shadow: 0 0 0 0 rgba(64, 158, 255, 0.45);
+  animation: assistant-mini-pulse 1.4s ease-in-out infinite;
+  flex: 0 0 auto;
+}
+
+.assistant-mini-bar__subtitle {
+  font-size: 11px;
+  color: var(--color-muted-text);
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.assistant-mini-bar__actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: #f5f7fa;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  /* 阻止点击按钮时冒泡触发外层还原 */
+  cursor: default;
+}
+
+.assistant-mini-bar__divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: var(--color-border);
+  flex-shrink: 0;
+}
+
+.assistant-mini-tool {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  border-radius: 7px;
+  transition: all 0.18s ease;
+  background: transparent;
+
+  &:hover {
+    color: var(--color-primary);
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  }
+
+  &:active {
+    transform: scale(0.92);
+  }
+}
+
+.assistant-mini-tool--close:hover {
+  color: var(--color-danger);
+  background: #fef0f0;
+  box-shadow: 0 1px 3px rgba(245, 108, 108, 0.18);
+}
+
+@keyframes assistant-mini-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(64, 158, 255, 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(64, 158, 255, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(64, 158, 255, 0);
+  }
 }
 
 .assistant-fab {
@@ -2093,14 +2589,17 @@ onBeforeUnmount(() => {
 }
 
 .assistant-panel {
-  height: min(76vh, 720px);
+  /* 自管理窗口外层 .assistant-window 已固定高度，这里用 flex:1 填满剩余空间 */
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--color-background);
 }
 
 .assistant-panel--fullscreen {
-  height: calc(100vh - 74px);
+  /* 全屏态直接铺满 .assistant-window--maximized 的 viewport */
+  flex: 1 1 auto;
 }
 
 .assistant-panel__header {
@@ -2108,12 +2607,38 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 12px 18px;
+  gap: 12px;
+  padding: 12px 14px 12px 12px;
   border-bottom: 1px solid var(--color-border);
   background: #fff;
   cursor: move;
   min-height: 56px;
+}
+
+/* 侧栏折叠按钮：贴在 header 最左侧，仿 WorkBuddy 主窗口侧栏切换 */
+.assistant-panel__sidebar-toggle {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  transition: all 0.18s ease;
+
+  &:hover {
+    background: #f1f5f9;
+    color: var(--color-primary);
+  }
+
+  &:active {
+    transform: scale(0.94);
+  }
 }
 
 .assistant-panel__header-right {
@@ -2229,6 +2754,18 @@ onBeforeUnmount(() => {
   font-weight: 600;
   color: var(--color-text-primary);
   letter-spacing: 0.2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 标题前的小色块：仿 WorkBuddy 顶部品牌色点缀 */
+.assistant-panel__title-mark {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+  flex: 0 0 auto;
 }
 
 .assistant-panel__subtitle {
@@ -2295,30 +2832,11 @@ onBeforeUnmount(() => {
   color: var(--color-text-primary);
 }
 
-.assistant-session-list__fold-btn {
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  font-size: 14px;
-  transition: all 0.15s;
-}
-
-.assistant-session-list__fold-btn:hover {
-  background: var(--color-surface-alt);
-  color: var(--color-text-primary);
-}
-
 .assistant-session-list.is-collapsed {
   width: 44px;
 }
 
+/* 收起态：整条 rail 是展开热区（隐性交互），不是又一个折叠按钮 */
 .assistant-session-list__rail {
   display: flex;
   flex-direction: column;
@@ -2326,6 +2844,36 @@ onBeforeUnmount(() => {
   gap: 8px;
   padding-top: 10px;
   width: 100%;
+  height: 100%;
+  cursor: pointer;
+  background: transparent;
+  transition: background 0.15s ease;
+  outline: none;
+
+  &:hover {
+    background: var(--color-surface-alt);
+  }
+
+  &:hover .assistant-session-list__rail-icon,
+  &:hover .assistant-session-list__rail-text {
+    color: var(--color-primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -2px;
+  }
+
+  &:active {
+    background: #e2e8f0;
+  }
+}
+
+.assistant-session-list__rail-icon {
+  font-size: 15px;
+  color: var(--color-text-secondary);
+  transition: color 0.15s ease;
+  flex: 0 0 auto;
 }
 
 .assistant-session-list__rail-text {
@@ -2333,6 +2881,7 @@ onBeforeUnmount(() => {
   letter-spacing: 2px;
   font-size: 12px;
   color: var(--color-text-secondary);
+  transition: color 0.15s ease;
 }
 
 .assistant-session-list__search {
@@ -2924,28 +3473,6 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.7);
 }
 
-.assistant-stream-hud__stop {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 10px;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  background: #fff;
-  color: var(--color-text-secondary);
-  font-size: 11.5px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  flex-shrink: 0;
-
-  &:hover {
-    border-color: #f43f5e;
-    background: #fff1f2;
-    color: #be123c;
-  }
-}
-
 /* HUD 出现/消失过渡 */
 .stream-hud-enter-active,
 .stream-hud-leave-active {
@@ -3116,6 +3643,11 @@ onBeforeUnmount(() => {
 
 .assistant-message__actions,
 .assistant-message__sources {
+  margin-top: 14px;
+}
+
+/* 数据问答结果（表格 + 图表 + SQL） */
+.assistant-message__data-result {
   margin-top: 14px;
 }
 
@@ -3677,17 +4209,27 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 768px) {
-  :deep(.assistant-dialog) {
-    width: calc(100vw - 16px) !important;
+  .assistant-window--normal {
+    right: 8px;
+    bottom: 8px;
+    width: calc(100vw - 16px);
+    max-width: calc(100vw - 16px);
+    height: 82vh;
+  }
+
+  .assistant-window--minimized {
+    right: 8px;
+    bottom: 8px;
+    width: calc(100vw - 16px);
     max-width: calc(100vw - 16px);
   }
 
   .assistant-panel {
-    height: 82vh;
+    height: auto;
   }
 
   .assistant-panel--fullscreen {
-    height: calc(100vh - 92px);
+    height: auto;
   }
 
   .assistant-panel__header {

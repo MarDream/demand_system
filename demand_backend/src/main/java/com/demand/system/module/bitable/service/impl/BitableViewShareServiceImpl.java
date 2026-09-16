@@ -9,12 +9,14 @@ import com.demand.system.module.bitable.dto.BitableRecordVO;
 import com.demand.system.module.bitable.dto.RecordQueryDTO;
 import com.demand.system.module.bitable.dto.ViewShareCreateDTO;
 import com.demand.system.module.bitable.dto.ViewShareVO;
+import com.demand.system.module.bitable.constant.OperationType;
 import com.demand.system.module.bitable.entity.BitableViewShare;
 import com.demand.system.module.bitable.mapper.BitableViewShareMapper;
 import com.demand.system.module.bitable.service.BitableFieldService;
 import com.demand.system.module.bitable.service.BitableRecordService;
 import com.demand.system.module.bitable.service.BitableViewService;
 import com.demand.system.module.bitable.service.BitableViewShareService;
+import com.demand.system.module.bitable.util.BitableAuditHelper;
 import com.demand.system.module.bitable.util.BitableJsonUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,15 +49,18 @@ public class BitableViewShareServiceImpl implements BitableViewShareService {
     private final BitableViewService viewService;
     private final BitableFieldService fieldService;
     private final BitableRecordService recordService;
+    private final BitableAuditHelper auditHelper;
 
     public BitableViewShareServiceImpl(BitableViewShareMapper shareMapper,
                                        BitableViewService viewService,
                                        BitableFieldService fieldService,
-                                       BitableRecordService recordService) {
+                                       BitableRecordService recordService,
+                                       BitableAuditHelper auditHelper) {
         this.shareMapper = shareMapper;
         this.viewService = viewService;
         this.fieldService = fieldService;
         this.recordService = recordService;
+        this.auditHelper = auditHelper;
     }
 
     @Override
@@ -86,6 +91,15 @@ public class BitableViewShareServiceImpl implements BitableViewShareService {
         } else {
             shareMapper.insert(share);
         }
+
+        // 审计：开启/更新视图分享
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("viewId", viewId);
+        detail.put("viewName", view.getName());
+        detail.put("allowDownload", share.getAllowDownload() != null && share.getAllowDownload() == 1);
+        auditHelper.recordByTable(view.getTableId(), userId, OperationType.SHARE_VIEW,
+                BitableJsonUtils.toJsonString(detail));
+
         return toVO(share);
     }
 
@@ -96,7 +110,7 @@ public class BitableViewShareServiceImpl implements BitableViewShareService {
     }
 
     @Override
-    public void updateStatus(Long viewId, boolean enabled) {
+    public void updateStatus(Long viewId, boolean enabled, Long userId) {
         BitableViewShare share = selectByViewId(viewId);
         if (share == null) {
             throw new BusinessException("该视图尚未开启分享");
@@ -104,6 +118,14 @@ public class BitableViewShareServiceImpl implements BitableViewShareService {
         UpdateWrapper<BitableViewShare> wrapper = new UpdateWrapper<>();
         wrapper.eq("id", share.getId()).set("status", enabled ? "enabled" : "disabled");
         shareMapper.update(null, wrapper);
+
+        // 审计：停用视图分享（重新启用走 share() 路径，记 SHARE_VIEW）
+        if (!enabled && share.getTableId() != null) {
+            Map<String, Object> detail = new LinkedHashMap<>();
+            detail.put("viewId", viewId);
+            auditHelper.recordByTable(share.getTableId(), userId, OperationType.UNSHARE_VIEW,
+                    BitableJsonUtils.toJsonString(detail));
+        }
     }
 
     @Override

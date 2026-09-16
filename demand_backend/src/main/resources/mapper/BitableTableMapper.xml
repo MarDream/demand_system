@@ -4,7 +4,7 @@
 
     <!-- 按 BaseId 查询所有未删除的数据表 -->
     <select id="selectByBaseId" resultType="com.demand.system.module.bitable.entity.BitableTable">
-        SELECT id, base_id, name, description, icon, sort_order, created_at, updated_at
+        SELECT id, base_id, group_id, name, description, icon, sort_order, created_at, updated_at
         FROM `bitable_tables`
         WHERE base_id = #{baseId}
           AND deleted_at = 0

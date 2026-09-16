@@ -86,7 +86,7 @@ public class BitableRecordController {
         Long userId = SecurityUtils.getCurrentUserId();
         Long baseId = authorizationService.getBaseIdByRecordId(id);
         authorizationService.checkWritePermission(baseId, userId);
-        bitableRecordService.deleteRecord(id);
+        bitableRecordService.deleteRecord(id, userId);
         return Result.success();
     }
 

@@ -19,6 +19,11 @@ public class BitableBaseVO {
 
     private Long projectId;
 
+    /**
+     * 所属 Base 分组ID，null=未分组
+     */
+    private Long groupId;
+
     private Long creatorId;
 
     private String creatorName;
@@ -79,6 +84,14 @@ public class BitableBaseVO {
 
     public void setProjectId(Long projectId) {
         this.projectId = projectId;
+    }
+
+    public Long getGroupId() {
+        return groupId;
+    }
+
+    public void setGroupId(Long groupId) {
+        this.groupId = groupId;
     }
 
     public Long getCreatorId() {

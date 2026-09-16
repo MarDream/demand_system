@@ -40,8 +40,10 @@ public interface BitableBaseMemberService {
     /**
      * 移除成员
      *
-     * @param baseId Base ID
-     * @param userId 用户ID
+     * @param baseId     Base ID
+     * @param userId     被移除的用户ID
+     * @param operatorId 操作者用户ID（写入操作记录用，不能为 null ——
+     *                   bitable_operations.user_id 是 NOT NULL 且无默认值，传 null 会导致审计静默丢失）
      */
-    void removeMember(Long baseId, Long userId);
+    void removeMember(Long baseId, Long userId, Long operatorId);
 }

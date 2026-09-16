@@ -71,8 +71,18 @@ function buildHistory(messages: AssistantMessage[], beforeId?: AssistantMessageI
     }))
 }
 
+/**
+ * 弹框窗口模式：
+ * - normal：右下角浮动（默认）
+ * - maximized：全屏铺满 viewport
+ * - minimized：缩成右下角迷你条，仅展示头像 + 标题 + 还原/关闭按钮
+ */
+export type AssistantWindowMode = 'normal' | 'maximized' | 'minimized'
+
 export const useAssistantStore = defineStore('assistant', () => {
   const visible = ref(false)
+  /** 窗口模式：仅当 visible=true 时生效，关闭后会被重置回 'normal' */
+  const windowMode = ref<AssistantWindowMode>('normal')
   const initialized = ref(false)
   const sessions = ref<AssistantSession[]>([])
   const activeSessionId = ref<number | null>(null)
@@ -158,10 +168,14 @@ export const useAssistantStore = defineStore('assistant', () => {
     // 会话记录发送首条消息时才真正创建（见 ensureSession）。
     startNewSession()
     visible.value = true
+    // 始终以 normal 形态唤起，避免上一次遗留的 minimized/maximized 干扰
+    windowMode.value = 'normal'
   }
 
   function close() {
     visible.value = false
+    // 关闭即重置窗口模式，下次打开从 normal 起步
+    windowMode.value = 'normal'
   }
 
   function toggle() {
@@ -170,6 +184,40 @@ export const useAssistantStore = defineStore('assistant', () => {
       return
     }
     open()
+  }
+
+  /** 缩为右下角迷你条；如未在 visible 态则一并打开 */
+  function minimize() {
+    if (!visible.value) {
+      open()
+    }
+    windowMode.value = 'minimized'
+  }
+
+  /** 切到全屏（如未打开则一并打开） */
+  function maximize() {
+    if (!visible.value) {
+      open()
+    }
+    windowMode.value = 'maximized'
+  }
+
+  /** 全屏 ↔ 普通（不含最小化） */
+  function toggleMaximize() {
+    if (!visible.value) {
+      open()
+      return
+    }
+    windowMode.value = windowMode.value === 'maximized' ? 'normal' : 'maximized'
+  }
+
+  /** 从最小化 / 全屏还原为普通浮动窗口 */
+  function restoreMode() {
+    if (!visible.value) {
+      open()
+      return
+    }
+    windowMode.value = 'normal'
   }
 
   function startNewSession() {
@@ -250,6 +298,9 @@ export const useAssistantStore = defineStore('assistant', () => {
           target.sources = payload.sources || []
           target.tasks = payload.tasks || []
           target.warnings = payload.warnings || []
+          if (payload.dataResult) {
+            target.dataResult = payload.dataResult
+          }
         },
         onThinkingSteps(steps) {
           const target = messages.value.find(item => String(item.id) === assistantTempId)
@@ -268,6 +319,11 @@ export const useAssistantStore = defineStore('assistant', () => {
           }
           // 触发响应式更新
           target.tasks = [...target.tasks]
+        },
+        onDataResult(result) {
+          const target = messages.value.find(item => String(item.id) === assistantTempId)
+          if (!target) return
+          target.dataResult = result
         },
         onDelta(delta) {
           const target = messages.value.find(item => String(item.id) === assistantTempId)
@@ -353,6 +409,7 @@ export const useAssistantStore = defineStore('assistant', () => {
     oldMessage.actions = []
     oldMessage.sources = []
     oldMessage.warnings = []
+    oldMessage.dataResult = null
     oldMessage.inputTokens = null
     oldMessage.outputTokens = null
     oldMessage.totalTokens = null
@@ -368,6 +425,7 @@ export const useAssistantStore = defineStore('assistant', () => {
         topK: request.topK,
         webSearch: request.webSearch,
         searchScopes: request.searchScopes,
+        dataQuery: request.dataQuery,
         files: request.files,
         history: buildHistory(messages.value, assistantMessageId),
         assistantMessageId,
@@ -378,6 +436,9 @@ export const useAssistantStore = defineStore('assistant', () => {
           oldMessage.sources = payload.sources || []
           oldMessage.tasks = payload.tasks || []
           oldMessage.warnings = payload.warnings || []
+          if (payload.dataResult) {
+            oldMessage.dataResult = payload.dataResult
+          }
         },
         onThinkingSteps(steps) {
           oldMessage.thinkingSteps = steps
@@ -391,6 +452,9 @@ export const useAssistantStore = defineStore('assistant', () => {
             oldMessage.tasks.push(task)
           }
           oldMessage.tasks = [...oldMessage.tasks]
+        },
+        onDataResult(result) {
+          oldMessage.dataResult = result
         },
         onDelta(delta) {
           oldMessage.content += delta
@@ -439,6 +503,7 @@ export const useAssistantStore = defineStore('assistant', () => {
 
   return {
     visible,
+    windowMode,
     initialized,
     sessions,
     activeSessionId,
@@ -447,6 +512,10 @@ export const useAssistantStore = defineStore('assistant', () => {
     open,
     close,
     toggle,
+    minimize,
+    maximize,
+    toggleMaximize,
+    restoreMode,
     startNewSession,
     loadSessions,
     loadMessages,

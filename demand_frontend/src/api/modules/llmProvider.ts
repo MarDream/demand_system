@@ -127,11 +127,37 @@ export interface LlmApplication {
   modelAvailable: boolean
   enabled: boolean
   sortOrder: number
+  /** 所属分组ID，null=未分组 */
+  groupId?: number | null
 }
 
 export interface LlmApplicationUpdateForm {
   modelId: number | null
   enabled?: boolean
+}
+
+// ---- 功能点分组（目录树） ----
+
+export interface LlmApplicationGroup {
+  id: number
+  parentId: number | null
+  name: string
+  sortOrder: number
+  /** 该分组下直接挂载的功能点数量（不含子分组） */
+  applicationCount?: number
+  /** 该分组及其子孙分组下的功能点总数 */
+  totalApplicationCount?: number
+  children?: LlmApplicationGroup[]
+}
+
+export interface LlmApplicationGroupCreateForm {
+  name: string
+  parentId?: number | null
+}
+
+export interface LlmApplicationGroupMoveForm {
+  parentId: number | null
+  sortOrder?: number | null
 }
 
 export interface ChatModelOption {
@@ -180,6 +206,18 @@ export const llmProviderApi = {
   listApplications: () => request.get<LlmApplication[]>('/v1/llm-applications'),
   updateApplication: (code: string, data: LlmApplicationUpdateForm) =>
     request.put<LlmApplication>(`/v1/llm-applications/${encodeURIComponent(code)}`, data),
+  moveApplicationToGroup: (code: string, groupId: number | null) =>
+    request.put<LlmApplication>(`/v1/llm-applications/${encodeURIComponent(code)}/group`, { groupId }),
+
+  // 功能点分组（目录树，模型应用页左侧）
+  listApplicationGroups: () => request.get<LlmApplicationGroup[]>('/v1/llm-application-groups/tree'),
+  createApplicationGroup: (data: LlmApplicationGroupCreateForm) =>
+    request.post<number>('/v1/llm-application-groups', data),
+  renameApplicationGroup: (id: number, name: string) =>
+    request.put(`/v1/llm-application-groups/${id}`, { name }),
+  moveApplicationGroup: (id: number, data: LlmApplicationGroupMoveForm) =>
+    request.put(`/v1/llm-application-groups/${id}/move`, data),
+  deleteApplicationGroup: (id: number) => request.delete(`/v1/llm-application-groups/${id}`),
 
   // Chat Models (for RAG)
   listChatModels: () => request.get<ChatModelOption[]>('/v1/llm-providers/chat-models'),

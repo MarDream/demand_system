@@ -65,9 +65,11 @@
         <el-form-item label="模板名称">
           <el-input v-model="form.templateName" placeholder="如: 功能需求模板" />
         </el-form-item>
-        <el-form-item label="设为默认">
+        <el-form-item>
+          <template #label>
+            <FieldLabelTip tip="同一类型下只能有一个默认模板">设为默认</FieldLabelTip>
+          </template>
           <el-switch v-model="isDefaultSwitch" />
-          <span class="form-tip">同一类型下只能有一个默认模板</span>
         </el-form-item>
         <el-form-item label="模板内容">
           <div class="template-editor" v-loading="saving">
@@ -90,6 +92,7 @@
 
 <script setup lang="ts">
 import { Setting } from '@element-plus/icons-vue'
+import FieldLabelTip from '@/components/common/FieldLabelTip.vue'
 import { computed, ref, onBeforeUnmount, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {

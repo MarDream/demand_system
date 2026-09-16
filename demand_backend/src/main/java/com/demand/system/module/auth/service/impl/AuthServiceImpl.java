@@ -29,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -194,8 +195,20 @@ public class AuthServiceImpl implements AuthService {
         // 同步读取 users 表上的组织字段，确保前后端一致
         User userEntity = userMapper.selectById(userId);
 
-        List<String> roles = rbacPermissionResolver.resolveRoles(userId);
-        List<String> roleNames = rbacPermissionResolver.resolveRoleDisplayNames(userId);
+        // 角色切换：allRoles 是用户完整角色（供下拉选择），roles 是激活角色过滤后的生效角色
+        List<String> allRoles = rbacPermissionResolver.resolveRoles(userId);
+        Map<String, String> roleNameMap = rbacPermissionResolver.resolveRoleNameMap(userId);
+        List<String> allRoleNames = allRoles.stream()
+                .map(code -> roleNameMap.getOrDefault(code, code))
+                .toList();
+
+        String requestedActiveRole = rbacPermissionResolver.currentActiveRole();
+        String activeRole = rbacPermissionResolver.isActiveRoleApplied(userId, requestedActiveRole)
+                ? requestedActiveRole.trim() : null;
+        List<String> roles = activeRole == null ? allRoles : List.of(activeRole);
+        List<String> roleNames = roles.stream()
+                .map(code -> roleNameMap.getOrDefault(code, code))
+                .toList();
         List<String> permissions = rbacPermissionResolver.resolvePermissions(userId, roles);
 
         boolean orphan = userEntity == null
@@ -212,8 +225,23 @@ public class AuthServiceImpl implements AuthService {
                 .roleNames(roleNames)
                 .permissions(permissions)
                 .isSuperAdmin(rbacPermissionResolver.isSuperAdmin(roles))
+                .allRoles(allRoles)
+                .allRoleNames(allRoleNames)
+                .activeRole(activeRole)
                 .orgId(userEntity == null ? null : userEntity.getOrgId())
-                .needOrgBind(orphan);
+                .needOrgBind(orphan)
+                .jobNumber(userEntity == null ? null : userEntity.getJobNumber());
+
+        if (userEntity != null && userEntity.getOrgId() != null) {
+            try {
+                SysOrgVO orgVO = sysOrgService.getDetail(userEntity.getOrgId());
+                if (orgVO != null) {
+                    builder.orgName(orgVO.getName());
+                }
+            } catch (Exception ignored) {
+                // 组织详情读取失败不影响用户信息返回
+            }
+        }
 
         if (org != null) {
             builder.regionId(org.getRegionId())
@@ -221,6 +249,63 @@ public class AuthServiceImpl implements AuthService {
         }
 
         return builder.build();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public UserInfoResponse updateProfile(UpdateProfileRequest request) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) {
+            throw new BusinessException("未获取到用户信息");
+        }
+
+        SysUser user = sysUserMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException("用户不存在");
+        }
+
+        String email = request.getEmail() == null ? null : request.getEmail().trim();
+        String phone = request.getPhone() == null ? null : request.getPhone().trim();
+
+        // 邮箱/手机号不允许与其他用户冲突（排除本人）
+        if (email != null && sysUserMapper.selectCount(
+                new LambdaQueryWrapper<SysUser>().eq(SysUser::getEmail, email).ne(SysUser::getId, userId)) > 0) {
+            throw new BusinessException("该邮箱已被其他账号使用");
+        }
+        if (phone != null && !phone.isBlank() && sysUserMapper.selectCount(
+                new LambdaQueryWrapper<SysUser>().eq(SysUser::getPhone, phone).ne(SysUser::getId, userId)) > 0) {
+            throw new BusinessException("该手机号已被其他账号使用");
+        }
+
+        user.setEmail(email);
+        user.setPhone(phone);
+        sysUserMapper.updateById(user);
+
+        return getCurrentUser();
+    }
+
+    @Override
+    public void changePassword(ChangePasswordRequest request) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) {
+            throw new BusinessException("未获取到用户信息");
+        }
+
+        SysUser user = sysUserMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException("用户不存在");
+        }
+
+        if (!passwordEncoder.matches(request.getOldPassword(), user.getPassword())) {
+            throw new BusinessException("旧密码不正确");
+        }
+        if (passwordEncoder.matches(request.getNewPassword(), user.getPassword())) {
+            throw new BusinessException("新密码不能与旧密码相同");
+        }
+
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        user.setUpdatedAt(LocalDateTime.now());
+        sysUserMapper.updateById(user);
     }
 
     @Override

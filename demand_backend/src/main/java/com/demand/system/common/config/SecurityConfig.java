@@ -159,7 +159,9 @@ public class SecurityConfig {
                     if (JwtUtils.isTokenValid(token, jwtSecret)) {
                         Long userId = JwtUtils.getUserId(token, jwtSecret);
                         String username = JwtUtils.getUsername(token, jwtSecret);
-                        List<String> roles = rbacPermissionResolver.resolveRoles(userId);
+                        // 角色切换：按 X-Active-Role 收窄生效角色（resolver 内部校验成员资格）
+                        String activeRole = request.getHeader(RbacPermissionResolver.ACTIVE_ROLE_HEADER);
+                        List<String> roles = rbacPermissionResolver.resolveRoles(userId, activeRole);
                         List<String> permissions = rbacPermissionResolver.resolvePermissions(userId, roles);
 
                         LinkedHashSet<String> authorities = new LinkedHashSet<>();

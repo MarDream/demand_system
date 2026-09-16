@@ -4,15 +4,22 @@ import type {
   BitableAutomation,
   BitableBase,
   BitableBaseCreateDTO,
+  BitableBaseGroup,
+  BitableBaseGroupCreateDTO,
+  BitableBaseGroupMoveDTO,
   BitableBaseMember,
   BitableComment,
   BitableField,
   BitableFieldCreateDTO,
   BitableOperation,
+  BitableOperationQuery,
   BitableRecord,
   BitableRecordCreateDTO,
   BitableTable,
   BitableTableCreateDTO,
+  BitableTableGroup,
+  BitableTableGroupCreateDTO,
+  BitableTableGroupMoveDTO,
   BitableView,
   BitableViewCreateDTO,
   CellUpdateDTO,
@@ -49,6 +56,32 @@ export function listBaseMembers(baseId: number) {
   return request.get<ApiResponse<BitableBaseMember[]>>(`/v1/bitable/bases/${baseId}/members`) as unknown as Promise<BitableBaseMember[]>
 }
 
+// BaseGroup（多维表格分组，列表页左侧目录树）
+export function listBaseGroups() {
+  return request.get<ApiResponse<BitableBaseGroup[]>>(`/v1/bitable/base-groups`) as unknown as Promise<BitableBaseGroup[]>
+}
+
+export function createBaseGroup(data: BitableBaseGroupCreateDTO) {
+  return request.post<ApiResponse<number>>(`/v1/bitable/base-groups`, data) as unknown as Promise<number>
+}
+
+export function renameBaseGroup(id: number, name: string) {
+  return request.put<ApiResponse<void>>(`/v1/bitable/base-groups/${id}`, { name }) as unknown as Promise<void>
+}
+
+export function moveBaseGroup(id: number, data: BitableBaseGroupMoveDTO) {
+  return request.put<ApiResponse<void>>(`/v1/bitable/base-groups/${id}/move`, data) as unknown as Promise<void>
+}
+
+export function deleteBaseGroup(id: number) {
+  return request.delete<ApiResponse<void>>(`/v1/bitable/base-groups/${id}`) as unknown as Promise<void>
+}
+
+/** Base 归组，groupId 传 null 表示移出分组 */
+export function moveBaseToGroup(baseId: number, groupId: number | null) {
+  return request.put<ApiResponse<void>>(`/v1/bitable/bases/${baseId}/group`, { groupId }) as unknown as Promise<void>
+}
+
 export function addBaseMember(baseId: number, data: { userId: number; role: MemberRole }) {
   return request.post<ApiResponse<BitableBaseMember>>(`/v1/bitable/bases/${baseId}/members`, data) as unknown as Promise<BitableBaseMember>
 }
@@ -76,6 +109,32 @@ export function updateTable(id: number, data: Partial<BitableTableCreateDTO>) {
 
 export function deleteTable(id: number) {
   return request.delete<ApiResponse<void>>(`/v1/bitable/tables/${id}`) as unknown as Promise<void>
+}
+
+// TableGroup（数据表分组，目录树）
+export function listTableGroups(baseId: number) {
+  return request.get<ApiResponse<BitableTableGroup[]>>(`/v1/bitable/bases/${baseId}/table-groups`) as unknown as Promise<BitableTableGroup[]>
+}
+
+export function createTableGroup(baseId: number, data: BitableTableGroupCreateDTO) {
+  return request.post<ApiResponse<number>>(`/v1/bitable/bases/${baseId}/table-groups`, data) as unknown as Promise<number>
+}
+
+export function renameTableGroup(id: number, name: string) {
+  return request.put<ApiResponse<void>>(`/v1/bitable/table-groups/${id}`, { name }) as unknown as Promise<void>
+}
+
+export function moveTableGroup(id: number, data: BitableTableGroupMoveDTO) {
+  return request.put<ApiResponse<void>>(`/v1/bitable/table-groups/${id}/move`, data) as unknown as Promise<void>
+}
+
+export function deleteTableGroup(id: number) {
+  return request.delete<ApiResponse<void>>(`/v1/bitable/table-groups/${id}`) as unknown as Promise<void>
+}
+
+/** 数据表归组，groupId 传 null 表示移出分组 */
+export function moveTableToGroup(tableId: number, groupId: number | null) {
+  return request.put<ApiResponse<void>>(`/v1/bitable/tables/${tableId}/group`, { groupId }) as unknown as Promise<void>
 }
 
 // Field
@@ -189,11 +248,13 @@ export function deleteComment(id: number) {
 }
 
 // Operation history
-export function listOperations(
-  baseId: number,
-  params?: { tableId?: number; pageNum?: number; pageSize?: number }
-) {
+export function listOperations(baseId: number, params?: BitableOperationQuery) {
   return request.get<ApiResponse<PageResult<BitableOperation>>>(`/v1/bitable/bases/${baseId}/operations`, { params }) as unknown as Promise<PageResult<BitableOperation>>
+}
+
+// 按数据表查询操作历史
+export function listTableOperations(tableId: number, params?: BitableOperationQuery) {
+  return request.get<ApiResponse<PageResult<BitableOperation>>>(`/v1/bitable/tables/${tableId}/operations`, { params }) as unknown as Promise<PageResult<BitableOperation>>
 }
 
 // Automation
@@ -402,4 +463,87 @@ export function updateWebhookStatus(id: number, enabled: boolean) {
 
 export function deleteWebhook(id: number) {
   return request.delete<ApiResponse<void>>(`/v1/bitable/webhooks/${id}`) as unknown as Promise<void>
+}
+
+// ==================== 权限管理（数据表级） ====================
+
+import type {
+  BitableBaseRoleVO,
+  BitableBaseCustomRoleCreateDTO,
+  BitableBaseCustomRoleUpdateDTO,
+  BitableBaseCustomRoleMemberDTO,
+  BitableBaseRolePermissionDTO,
+  FieldPermissionChange,
+  PermissionType,
+  PermissionLevel,
+  RoleType,
+} from '@/types/bitable'
+
+/** 查询 Base 下所有角色及其权限配置 */
+export function listBaseRoles(baseId: number, permissionType: PermissionType = 'data') {
+  return request.get<ApiResponse<BitableBaseRoleVO[]>>(`/v1/bitable/bases/${baseId}/roles`, { params: { permissionType } }) as unknown as Promise<BitableBaseRoleVO[]>
+}
+
+/** 创建自定义角色 */
+export function createCustomRole(baseId: number, data: BitableBaseCustomRoleCreateDTO) {
+  return request.post<ApiResponse<BitableBaseCustomRoleCreateDTO>>(`/v1/bitable/bases/${baseId}/custom-roles`, data) as unknown as Promise<BitableBaseCustomRoleCreateDTO>
+}
+
+/** 更新自定义角色 */
+export function updateCustomRole(id: number, data: BitableBaseCustomRoleUpdateDTO) {
+  return request.put<ApiResponse<void>>(`/v1/bitable/custom-roles/${id}`, data) as unknown as Promise<void>
+}
+
+/** 删除自定义角色 */
+export function deleteCustomRole(id: number) {
+  return request.delete<ApiResponse<void>>(`/v1/bitable/custom-roles/${id}`) as unknown as Promise<void>
+}
+
+/** 添加角色成员 */
+export function addRoleMember(id: number, data: BitableBaseCustomRoleMemberDTO) {
+  return request.post<ApiResponse<void>>(`/v1/bitable/custom-roles/${id}/members`, data) as unknown as Promise<void>
+}
+
+/** 移除角色成员 */
+export function removeRoleMember(id: number, memberType: string, memberId: number) {
+  return request.delete<ApiResponse<void>>(`/v1/bitable/custom-roles/${id}/members`, { params: { memberType, memberId } }) as unknown as Promise<void>
+}
+
+/** 设置角色对数据表的权限 */
+export function setRolePermission(baseId: number, data: BitableBaseRolePermissionDTO) {
+  return request.put<ApiResponse<void>>(`/v1/bitable/bases/${baseId}/role-permissions`, data) as unknown as Promise<void>
+}
+
+/** 批量设置角色权限（全部表统一设置） */
+export function batchSetRolePermissions(
+  baseId: number,
+  roleType: RoleType,
+  params: {
+    systemRoleCode?: string
+    customRoleId?: number
+    permissionType: PermissionType
+    permissionLevel: PermissionLevel
+  }
+) {
+  return request.put<ApiResponse<void>>(`/v1/bitable/bases/${baseId}/role-permissions/batch`, null, { params: { roleType, ...params } }) as unknown as Promise<void>
+}
+
+/** 批量保存多条权限变更（事务内一次性提交） */
+export function batchSaveRolePermissions(baseId: number, changes: BitableBaseRolePermissionDTO[]) {
+  return request.post<ApiResponse<void>>(`/v1/bitable/bases/${baseId}/role-permissions/batch-save`, changes) as unknown as Promise<void>
+}
+
+/** 查询字段级权限配置（tableId 省略则返回整个 Base） */
+export function listFieldPermissions(baseId: number, tableId?: number) {
+  return request.get<ApiResponse<FieldPermissionChange[]>>(`/v1/bitable/bases/${baseId}/field-permissions`, {
+    params: tableId != null ? { tableId } : undefined,
+  }) as unknown as Promise<FieldPermissionChange[]>
+}
+
+/** 批量保存字段级权限变更（permissionLevel = editable 表示恢复默认） */
+export function batchSaveFieldPermissions(baseId: number, changes: FieldPermissionChange[]) {
+  return request.post<ApiResponse<void>>(`/v1/bitable/bases/${baseId}/field-permissions/batch-save`, {
+    baseId,
+    changes,
+  }) as unknown as Promise<void>
 }

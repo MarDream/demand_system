@@ -22,6 +22,16 @@ public class UserInfoResponse {
     private Long orgId;
     /** 无组织用户首次登录需强制选择组织 */
     private Boolean needOrgBind;
+    /** 用户拥有的全部角色编码（不受激活角色影响，供角色切换下拉使用） */
+    private List<String> allRoles;
+    /** 与 allRoles 一一对应的显示名 */
+    private List<String> allRoleNames;
+    /** 当前生效的激活角色（X-Active-Role，未切换时为 null） */
+    private String activeRole;
+    /** 工号（只读展示） */
+    private String jobNumber;
+    /** 所属组织名称（只读展示） */
+    private String orgName;
 
     public UserInfoResponse() {
     }
@@ -155,6 +165,46 @@ public class UserInfoResponse {
         this.needOrgBind = needOrgBind;
     }
 
+    public List<String> getAllRoles() {
+        return allRoles;
+    }
+
+    public void setAllRoles(List<String> allRoles) {
+        this.allRoles = allRoles;
+    }
+
+    public List<String> getAllRoleNames() {
+        return allRoleNames;
+    }
+
+    public void setAllRoleNames(List<String> allRoleNames) {
+        this.allRoleNames = allRoleNames;
+    }
+
+    public String getActiveRole() {
+        return activeRole;
+    }
+
+    public void setActiveRole(String activeRole) {
+        this.activeRole = activeRole;
+    }
+
+    public String getJobNumber() {
+        return jobNumber;
+    }
+
+    public void setJobNumber(String jobNumber) {
+        this.jobNumber = jobNumber;
+    }
+
+    public String getOrgName() {
+        return orgName;
+    }
+
+    public void setOrgName(String orgName) {
+        this.orgName = orgName;
+    }
+
     public static UserInfoResponseBuilder builder() {
         return new UserInfoResponseBuilder();
     }
@@ -174,6 +224,11 @@ public class UserInfoResponse {
         private Long departmentId;
         private Long orgId;
         private Boolean needOrgBind;
+        private List<String> allRoles;
+        private List<String> allRoleNames;
+        private String activeRole;
+        private String jobNumber;
+        private String orgName;
 
         public UserInfoResponseBuilder id(Long id) {
             this.id = id;
@@ -245,11 +300,41 @@ public class UserInfoResponse {
             return this;
         }
 
+        public UserInfoResponseBuilder allRoles(List<String> allRoles) {
+            this.allRoles = allRoles;
+            return this;
+        }
+
+        public UserInfoResponseBuilder allRoleNames(List<String> allRoleNames) {
+            this.allRoleNames = allRoleNames;
+            return this;
+        }
+
+        public UserInfoResponseBuilder activeRole(String activeRole) {
+            this.activeRole = activeRole;
+            return this;
+        }
+
+        public UserInfoResponseBuilder jobNumber(String jobNumber) {
+            this.jobNumber = jobNumber;
+            return this;
+        }
+
+        public UserInfoResponseBuilder orgName(String orgName) {
+            this.orgName = orgName;
+            return this;
+        }
+
         public UserInfoResponse build() {
             UserInfoResponse response = new UserInfoResponse(id, username, realName, email, phone, avatar, roles, roleNames,
                     permissions, isSuperAdmin, regionId, departmentId);
             response.setOrgId(orgId);
             response.setNeedOrgBind(needOrgBind);
+            response.setAllRoles(allRoles);
+            response.setAllRoleNames(allRoleNames);
+            response.setActiveRole(activeRole);
+            response.setJobNumber(jobNumber);
+            response.setOrgName(orgName);
             return response;
         }
     }

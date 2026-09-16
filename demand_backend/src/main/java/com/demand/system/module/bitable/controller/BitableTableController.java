@@ -54,7 +54,7 @@ public class BitableTableController {
         Long userId = SecurityUtils.getCurrentUserId();
         Long baseId = authorizationService.getBaseIdByTableId(id);
         authorizationService.checkManagePermission(baseId, userId);
-        bitableTableService.updateTable(id, dto);
+        bitableTableService.updateTable(id, dto, userId);
         return Result.success();
     }
 
@@ -64,7 +64,7 @@ public class BitableTableController {
         Long userId = SecurityUtils.getCurrentUserId();
         Long baseId = authorizationService.getBaseIdByTableId(id);
         authorizationService.checkManagePermission(baseId, userId);
-        bitableTableService.deleteTable(id);
+        bitableTableService.deleteTable(id, userId);
         return Result.success();
     }
 }

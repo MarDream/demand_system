@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>多维表格权限管理原型</title>
+<style>
+  :root {
+    --primary: #2563EB;
+    --primary-light: #EFF6FF;
+    --primary-dark: #1D4ED8;
+    --border: #E2E8F0;
+    --border-light: #F1F5F9;
+    --text-primary: #0F172A;
+    --text-secondary: #64748B;
+    --text-muted: #94A3B8;
+    --surface: #FFFFFF;
+    --background: #F8FAFC;
+    --danger: #EF4444;
+    --success: #10B981;
+    --warning: #F59E0B;
+    --radius: 8px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.08), 0 4px 6px -2px rgba(0,0,0,0.04);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--background);
+    color: var(--text-primary);
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ===== Header ===== */
+  .app-header {
+    height: 56px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    gap: 16px;
+    flex-shrink: 0;
+  }
+  .app-header__title {
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .toggle-switch {
+    position: relative;
+    width: 40px;
+    height: 22px;
+    background: var(--primary);
+    border-radius: 11px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .toggle-switch::after {
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    background: white;
+    border-radius: 50%;
+    top: 2px;
+    right: 2px;
+    transition: transform 0.2s;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+  }
+  .toggle-switch.off { background: #CBD5E1; }
+  .toggle-switch.off::after { transform: translateX(-18px); }
+  .app-header__label {
+    font-size: 14px;
+    color: var(--text-secondary);
+  }
+  .app-header__divider { color: var(--border); }
+  .app-header__fallback {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+  .app-header__fallback svg { width: 14px; height: 14px; }
+  .app-header__spacer { flex: 1; }
+  .app-header__action {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 6px 12px;
+    border-radius: var(--radius);
+    transition: background 0.15s;
+  }
+  .app-header__action:hover { background: var(--border-light); }
+
+  /* ===== Layout ===== */
+  .app-body {
+    display: flex;
+    height: calc(100vh - 56px);
+  }
+
+  /* ===== Left: Role Sidebar ===== */
+  .role-sidebar {
+    width: 200px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .role-section__label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--primary);
+    padding: 16px 16px 8px;
+    letter-spacing: 0.5px;
+  }
+  .role-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    cursor: pointer;
+    transition: background 0.15s;
+    border-left: 3px solid transparent;
+    font-size: 14px;
+  }
+  .role-item:hover { background: var(--border-light); }
+  .role-item.active {
+    background: var(--primary-light);
+    border-left-color: var(--primary);
+    color: var(--primary-dark);
+    font-weight: 500;
+  }
+  .role-item__icon {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+  .role-item.active .role-item__icon { color: var(--primary); }
+  .role-item__name { flex: 1; }
+  .role-item__badge {
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--border-light);
+    padding: 2px 6px;
+    border-radius: 10px;
+  }
+  .role-add {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    font-size: 14px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: color 0.15s;
+    margin-top: 4px;
+  }
+  .role-add:hover { color: var(--primary); }
+  .role-add svg { width: 16px; height: 16px; }
+
+  /* ===== Center: Permission Tree ===== */
+  .perm-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .perm-toolbar {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .perm-toolbar__tabs {
+    display: flex;
+    gap: 4px;
+  }
+  .perm-tab {
+    padding: 6px 16px;
+    font-size: 14px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: all 0.15s;
+  }
+  .perm-tab:hover { background: var(--border-light); }
+  .perm-tab.active {
+    color: var(--primary);
+    background: var(--primary-light);
+    font-weight: 500;
+  }
+  .perm-toolbar__bulk {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: var(--text-secondary);
+  }
+  .perm-toolbar__bulk select {
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 14px;
+    color: var(--text-primary);
+    background: var(--surface);
+    cursor: pointer;
+    outline: none;
+  }
+  .perm-toolbar__bulk select:focus { border-color: var(--primary); }
+
+  .perm-search {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border-light);
+  }
+  .perm-search__input {
+    width: 100%;
+    max-width: 360px;
+    padding: 8px 12px 8px 36px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 14px;
+    outline: none;
+    background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.3-4.3'/%3E%3C/svg%3E") no-repeat 10px center;
+  }
+  .perm-search__input:focus { border-color: var(--primary); }
+  .perm-search__input::placeholder { color: var(--text-muted); }
+
+  .perm-tree {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 20px 20px;
+  }
+  .tree-group {
+    margin-bottom: 4px;
+  }
+  .tree-group__header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-weight: 500;
+    transition: background 0.15s;
+    user-select: none;
+  }
+  .tree-group__header:hover { background: var(--border-light); }
+  .tree-group__header .chevron {
+    width: 16px;
+    height: 16px;
+    transition: transform 0.2s;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+  .tree-group__header.collapsed .chevron { transform: rotate(-90deg); }
+  .tree-group__header .folder-icon {
+    width: 18px;
+    height: 18px;
+    color: var(--warning);
+    flex-shrink: 0;
+  }
+  .tree-group__children {
+    padding-left: 28px;
+  }
+  .tree-group__children.collapsed { display: none; }
+
+  .tree-table {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px 8px 36px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background 0.15s;
+    font-size: 14px;
+    user-select: none;
+  }
+  .tree-table:hover { background: var(--border-light); }
+  .tree-table.selected {
+    background: var(--primary-light);
+    color: var(--primary-dark);
+  }
+  .tree-table__icon {
+    width: 16px;
+    height: 16px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+  .tree-table.selected .tree-table__icon { color: var(--primary); }
+  .tree-table__name { flex: 1; }
+  .perm-badge {
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .perm-badge--full {
+    color: #92400E;
+    background: #FEF3C7;
+  }
+  .perm-badge--edit {
+    color: #065F46;
+    background: #D1FAE5;
+  }
+  .perm-badge--view {
+    color: #1E40AF;
+    background: #DBEAFE;
+  }
+  .perm-badge--none {
+    color: var(--text-muted);
+    background: var(--border-light);
+  }
+
+  /* ===== Right: Permission Settings ===== */
+  .perm-settings {
+    width: 340px;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .perm-settings__empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-size: 14px;
+    gap: 12px;
+  }
+  .perm-settings__empty svg {
+    width: 48px;
+    height: 48px;
+    color: var(--border);
+  }
+  .perm-settings__title {
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .perm-settings__subtitle {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-top: -16px;
+  }
+  .perm-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .perm-option:hover { border-color: var(--primary); background: var(--primary-light); }
+  .perm-option.selected {
+    border-color: var(--primary);
+    background: var(--primary-light);
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.08);
+  }
+  .perm-option__radio {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--border);
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+  }
+  .perm-option.selected .perm-option__radio {
+    border-color: var(--primary);
+    background: var(--primary);
+  }
+  .perm-option__radio::after {
+    content: '';
+    width: 7px;
+    height: 7px;
+    background: white;
+    border-radius: 50%;
+    transform: scale(0);
+    transition: transform 0.15s;
+  }
+  .perm-option.selected .perm-option__radio::after { transform: scale(1); }
+  .perm-option__content { flex: 1; }
+  .perm-option__name {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .perm-option__desc {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  /* ===== Member chips ===== */
+  .member-chips {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .member-chip {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: white;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 500;
+    border: 2px solid white;
+    margin-left: -8px;
+  }
+  .member-chip:first-child { margin-left: 0; }
+  .member-chip--add {
+    background: var(--surface);
+    color: var(--text-muted);
+    border: 1px dashed var(--border);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+  }
+  .member-chip--add:hover { border-color: var(--primary); color: var(--primary); }
+
+  /* ===== Dialog ===== */
+  .dialog-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+  .dialog-overlay.show { display: flex; }
+  .dialog {
+    background: var(--surface);
+    border-radius: 12px;
+    width: 420px;
+    padding: 24px;
+    box-shadow: var(--shadow-lg);
+  }
+  .dialog__title {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 16px;
+  }
+  .dialog__input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 14px;
+    outline: none;
+    margin-bottom: 20px;
+  }
+  .dialog__input:focus { border-color: var(--primary); }
+  .dialog__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+  }
+  .btn {
+    padding: 8px 20px;
+    border-radius: var(--radius);
+    font-size: 14px;
+    cursor: pointer;
+    border: none;
+    transition: all 0.15s;
+  }
+  .btn--secondary {
+    background: var(--border-light);
+    color: var(--text-primary);
+  }
+  .btn--secondary:hover { background: var(--border); }
+  .btn--primary {
+    background: var(--primary);
+    color: white;
+  }
+  .btn--primary:hover { background: var(--primary-dark); }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="app-header">
+  <div class="app-header__title">高级权限</div>
+  <div class="toggle-switch" id="advancedToggle" onclick="toggleAdvanced()"></div>
+  <span class="app-header__label">所有角色成员可访问</span>
+  <span class="app-header__divider">|</span>
+  <div class="app-header__fallback">
+    <span>兜底角色：科室</span>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+  </div>
+  <div class="app-header__spacer"></div>
+  <div class="app-header__action">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+    <span>操作日志</span>
+  </div>
+</div>
+
+<!-- Body -->
+<div class="app-body">
+
+  <!-- Left: Role Sidebar -->
+  <aside class="role-sidebar" id="roleSidebar">
+    <div class="role-section__label">系统角色</div>
+    <div id="systemRoles"></div>
+
+    <div class="role-section__label">自定义角色</div>
+    <div id="customRoles"></div>
+    <div class="role-add" onclick="showAddRoleDialog()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+      <span>添加角色</span>
+    </div>
+  </aside>
+
+  <!-- Center: Permission Tree -->
+  <main class="perm-panel">
+    <div class="perm-toolbar">
+      <div class="perm-toolbar__tabs">
+        <div class="perm-tab active">数据权限</div>
+        <div class="perm-tab">自动化权限</div>
+      </div>
+      <div class="perm-toolbar__bulk">
+        <span>全部设置为：</span>
+        <select id="bulkSet" onchange="bulkSetPermission(this.value)">
+          <option value="">请选择</option>
+          <option value="full">完全权限</option>
+          <option value="edit">可编辑</option>
+          <option value="view">可查看</option>
+          <option value="none">无权限</option>
+        </select>
+      </div>
+    </div>
+    <div class="perm-search">
+      <input type="text" class="perm-search__input" id="searchInput" placeholder="搜索数据表或仪表盘" oninput="filterTables(this.value)">
+    </div>
+    <div class="perm-tree" id="permTree"></div>
+  </main>
+
+  <!-- Right: Permission Settings -->
+  <aside class="perm-settings" id="permSettings">
+    <div class="perm-settings__empty">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+      <span>请选择左侧数据表进行权限设置</span>
+    </div>
+  </aside>
+
+</div>
+
+<!-- Add Role Dialog -->
+<div class="dialog-overlay" id="dialogOverlay" onclick="if(event.target===this)hideAddRoleDialog()">
+  <div class="dialog">
+    <div class="dialog__title">添加自定义角色</div>
+    <input type="text" class="dialog__input" id="roleNameInput" placeholder="请输入角色名称" maxlength="20">
+    <div class="dialog__actions">
+      <button class="btn btn--secondary" onclick="hideAddRoleDialog()">取消</button>
+      <button class="btn btn--primary" onclick="confirmAddRole()">确定</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== Icons (inline SVG strings) =====
+const icons = {
+  user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+  shield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+  eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>',
+  pencil: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>',
+  table: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>',
+  folder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
+  chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 15 6-6 6 6"/></svg>',
+};
+
+// ===== Data =====
+const systemRoles = [
+  { id: 'owner', name: '所有者', icon: 'shield', members: ['张'] },
+  { id: 'admin', name: '管理员', icon: 'shield', members: ['李', '王'] },
+  { id: 'editor', name: '编辑者', icon: 'pencil', members: ['陈', '刘', '赵'] },
+  { id: 'viewer', name: '查看者', icon: 'eye', members: ['孙', '周', '吴', '郑'] },
+];
+
+let customRoles = [
+  { id: 'dept', name: '科室', icon: 'user', members: ['林', '黄'] },
+  { id: 'ops', name: '运营', icon: 'user', members: ['何'] },
+  { id: 'devops', name: '运维', icon: 'user', members: ['高'] },
+];
+
+const tableGroups = [
+  {
+    name: '需求管理',
+    tables: [
+      { id: 't1', name: '需求沙盘', perm: 'view' },
+      { id: 't2', name: '人效管理', perm: 'edit' },
+      { id: 't3', name: '项目管理', perm: 'edit' },
+      { id: 't4', name: '需求子项', perm: 'edit' },
+      { id: 't5', name: '人月绩效', perm: 'none' },
+      { id: 't6', name: '人周绩效', perm: 'none' },
+      { id: 't7', name: '部门表', perm: 'none' },
+    ]
+  },
+  {
+    name: '任务管理',
+    tables: [
+      { id: 't8', name: '重点任务', perm: 'edit' },
+      { id: 't9', name: '任务跟踪', perm: 'none' },
+      { id: 't10', name: '资源缩容', perm: 'full' },
+      { id: 't11', name: '热线工单', perm: 'full' },
+      { id: 't12', name: '生产资源', perm: 'edit' },
+      { id: 't13', name: '漏洞管理', perm: 'full' },
+      { id: 't14', name: '资料信息', perm: 'view' },
+    ]
+  },
+];
+
+const permLabels = {
+  full: { text: '完全权限', class: 'perm-badge--full', desc: '可修改表结构、配置字段，可编辑记录' },
+  edit: { text: '可编辑', class: 'perm-badge--edit', desc: '可添加、编辑记录，可查看' },
+  view: { text: '可查看', class: 'perm-badge--view', desc: '仅可查看' },
+  none: { text: '无权限', class: 'perm-badge--none', desc: '无任何权限' },
+};
+
+let activeRoleId = 'editor';
+let selectedTableId = null;
+let collapsedGroups = new Set();
+
+// ===== Render =====
+function renderRoles() {
+  const sysEl = document.getElementById('systemRoles');
+  sysEl.innerHTML = systemRoles.map(r => roleItemHTML(r)).join('');
+
+  const customEl = document.getElementById('customRoles');
+  customEl.innerHTML = customRoles.map(r => roleItemHTML(r)).join('');
+}
+
+function roleItemHTML(r) {
+  const isActive = r.id === activeRoleId;
+  const initials = r.members.map(m => `<div class="member-chip" title="成员">${m}</div>`).join('');
+  return `
+    <div class="role-item ${isActive ? 'active' : ''}" onclick="selectRole('${r.id}')">
+      <div class="role-item__icon">${icons[r.icon]}</div>
+      <span class="role-item__name">${r.name}</span>
+      <span class="role-item__badge">${r.members.length}</span>
+    </div>
+  `;
+}
+
+function renderTree() {
+  const treeEl = document.getElementById('permTree');
+  const kw = document.getElementById('searchInput').value.trim().toLowerCase();
+
+  treeEl.innerHTML = tableGroups.map((g, gi) => {
+    const hasMatch = !kw || g.name.includes(kw) || g.tables.some(t => t.name.includes(kw));
+    if (!hasMatch) return '';
+
+    const isCollapsed = collapsedGroups.has(gi);
+    const tablesHtml = g.tables.map(t => {
+      if (kw && !t.name.includes(kw) && !g.name.includes(kw)) return '';
+      const p = permLabels[t.perm];
+      const isSelected = t.id === selectedTableId;
+      return `
+        <div class="tree-table ${isSelected ? 'selected' : ''}" onclick="selectTable('${t.id}', '${t.name}', '${t.perm}')">
+          <div class="tree-table__icon">${icons.table}</div>
+          <span class="tree-table__name">${highlight(t.name, kw)}</span>
+          <span class="perm-badge ${p.class}">${p.text}</span>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="tree-group">
+        <div class="tree-group__header ${isCollapsed ? 'collapsed' : ''}" onclick="toggleGroup(${gi})">
+          <span class="chevron">${icons.chevron}</span>
+          <span class="folder-icon">${icons.folder}</span>
+          <span>${highlight(g.name, kw)}</span>
+        </div>
+        <div class="tree-group__children ${isCollapsed ? 'collapsed' : ''}">${tablesHtml}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function highlight(text, kw) {
+  if (!kw) return text;
+  const i = text.toLowerCase().indexOf(kw);
+  if (i < 0) return text;
+  return text.slice(0, i) + '<mark style="background:#FEF3C7;color:#92400E;border-radius:2px;padding:0 1px;">' + text.slice(i, i+kw.length) + '</mark>' + text.slice(i+kw.length);
+}
+
+function renderSettings() {
+  const el = document.getElementById('permSettings');
+  if (!selectedTableId) {
+    el.innerHTML = `
+      <div class="perm-settings__empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+        <span>请选择左侧数据表进行权限设置</span>
+      </div>`;
+    return;
+  }
+
+  const table = tableGroups.flatMap(g => g.tables).find(t => t.id === selectedTableId);
+  const role = [...systemRoles, ...customRoles].find(r => r.id === activeRoleId);
+  const currentPerm = table ? table.perm : 'none';
+
+  el.innerHTML = `
+    <div class="perm-settings__title">数据表权限</div>
+    <div class="perm-settings__subtitle">${role.name} · ${table.name}</div>
+    <div style="height:1px;background:var(--border);margin:4px 0;"></div>
+
+    ${Object.entries(permLabels).map(([key, info]) => `
+      <div class="perm-option ${currentPerm === key ? 'selected' : ''}" onclick="setPerm('${key}')">
+        <div class="perm-option__radio"></div>
+        <div class="perm-option__content">
+          <div class="perm-option__name">${info.text}</div>
+          <div class="perm-option__desc">${info.desc}</div>
+        </div>
+      </div>
+    `).join('')}
+
+    <div style="margin-top:auto;padding-top:16px;border-top:1px solid var(--border-light);">
+      <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;">该角色成员</div>
+      <div class="member-chips">
+        ${role.members.map(m => `<div class="member-chip">${m}</div>`).join('')}
+        <div class="member-chip member-chip--add">+</div>
+      </div>
+    </div>
+  `;
+}
+
+// ===== Actions =====
+function selectRole(id) {
+  activeRoleId = id;
+  selectedTableId = null;
+  renderRoles();
+  renderTree();
+  renderSettings();
+}
+
+function toggleGroup(gi) {
+  if (collapsedGroups.has(gi)) collapsedGroups.delete(gi);
+  else collapsedGroups.add(gi);
+  renderTree();
+}
+
+function selectTable(id, name, perm) {
+  selectedTableId = id;
+  renderTree();
+  renderSettings();
+}
+
+function setPerm(perm) {
+  if (!selectedTableId) return;
+  for (const g of tableGroups) {
+    const t = g.tables.find(x => x.id === selectedTableId);
+    if (t) { t.perm = perm; break; }
+  }
+  renderTree();
+  renderSettings();
+}
+
+function bulkSetPermission(perm) {
+  if (!perm) return;
+  for (const g of tableGroups) {
+    for (const t of g.tables) {
+      t.perm = perm;
+    }
+  }
+  renderTree();
+  if (selectedTableId) renderSettings();
+  document.getElementById('bulkSet').value = '';
+}
+
+function filterTables(val) {
+  renderTree();
+}
+
+function toggleAdvanced() {
+  document.getElementById('advancedToggle').classList.toggle('off');
+}
+
+// ===== Dialog =====
+function showAddRoleDialog() {
+  document.getElementById('dialogOverlay').classList.add('show');
+  document.getElementById('roleNameInput').value = '';
+  setTimeout(() => document.getElementById('roleNameInput').focus(), 100);
+}
+function hideAddRoleDialog() {
+  document.getElementById('dialogOverlay').classList.remove('show');
+}
+function confirmAddRole() {
+  const name = document.getElementById('roleNameInput').value.trim();
+  if (!name) return;
+  const id = 'custom_' + Date.now();
+  customRoles.push({ id, name, icon: 'user', members: [] });
+  hideAddRoleDialog();
+  renderRoles();
+}
+document.getElementById('roleNameInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') confirmAddRole();
+  if (e.key === 'Escape') hideAddRoleDialog();
+});
+
+// ===== Init =====
+renderRoles();
+renderTree();
+renderSettings();
+</script>
+</body>
+</html>

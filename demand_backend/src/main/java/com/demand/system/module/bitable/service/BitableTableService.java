@@ -43,12 +43,12 @@ public interface BitableTableService {
      * @param id  数据表ID
      * @param dto 更新参数
      */
-    void updateTable(Long id, BitableTableUpdateDTO dto);
+    void updateTable(Long id, BitableTableUpdateDTO dto, Long userId);
 
     /**
      * 删除数据表（级联删除字段/记录/单元格/视图/评论）
      *
      * @param id 数据表ID
      */
-    void deleteTable(Long id);
+    void deleteTable(Long id, Long userId);
 }

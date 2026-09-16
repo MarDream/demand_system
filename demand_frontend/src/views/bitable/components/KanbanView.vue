@@ -57,7 +57,7 @@
               class="kanban-card__field"
             >
               <span class="kanban-card__label">{{ field.name }}</span>
-              <span class="kanban-card__value">{{ formatCellValue(record.cells?.[field.id], field) }}</span>
+              <span class="kanban-card__value">{{ formatCellDisplay(field, record.cells?.[field.id]) }}</span>
             </div>
             <div class="kanban-card__actions">
               <el-button link size="small" @click="emit('recordUpdate', record)">
@@ -82,7 +82,8 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { Plus, Edit } from '@element-plus/icons-vue'
-import type { BitableField, BitableRecord, BitableTable, CellValue, ViewConfig } from '@/types/bitable'
+import { formatCellDisplay } from '@/utils/bitableFieldConfig'
+import type { BitableField, BitableRecord, BitableTable, ViewConfig } from '@/types/bitable'
 
 const props = defineProps<{
   table: BitableTable | null
@@ -221,34 +222,6 @@ function handleColumnDrop(toGroup: string) {
 function handleAddRecord(groupValue: string) {
   if (!groupFieldId.value) return
   emit('rowInsert', { groupValue, fieldId: groupFieldId.value })
-}
-
-// 格式化单元格值
-function formatCellValue(cell: CellValue | undefined, field: BitableField): string {
-  if (!cell) return '-'
-  if (cell.displayText) return cell.displayText
-
-  switch (field.fieldType) {
-    case 'multi_select':
-      if (Array.isArray(cell.valueJson)) {
-        return (cell.valueJson as unknown[]).filter((v): v is string => typeof v === 'string').join(', ')
-      }
-      return cell.valueText || '-'
-    case 'single_select':
-      return cell.valueText || '-'
-    case 'number':
-      return cell.valueNumber != null ? String(cell.valueNumber) : '-'
-    case 'date':
-      return cell.valueDate || '-'
-    case 'check':
-      return cell.valueText === 'true' ? '✓' : '✗'
-    case 'progress':
-      return cell.valueNumber != null ? `${Math.round(cell.valueNumber * 100)}%` : '-'
-    case 'rating':
-      return cell.valueNumber != null ? '★'.repeat(cell.valueNumber) : '-'
-    default:
-      return cell.valueText || String(cell.valueJson || '-')
-  }
 }
 </script>
 

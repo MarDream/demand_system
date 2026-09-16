@@ -72,6 +72,21 @@
               />
             </el-form-item>
 
+            <!-- 动态字段（按需求类型 + 流程节点权限渲染） -->
+            <div v-if="dynamicFields.length" class="dynamic-section">
+              <el-divider content-position="left">
+                <span class="dynamic-section__title">
+                  {{ selectedTypeLabel || '当前类型' }} · 扩展信息
+                </span>
+              </el-divider>
+              <DynamicFieldsForm
+                ref="dynamicFieldsRef"
+                v-model="dynamicValues"
+                :fields="dynamicFields"
+                :users="users"
+              />
+            </div>
+
             <!-- 需求描述 -->
             <el-form-item label="需求描述" prop="description" class="description-item">
               <div class="editor-wrapper">
@@ -154,7 +169,7 @@
               <span>基础信息</span>
             </div>
           </template>
-          <el-form ref="infoFormRef" :model="formData" :rules="formRules" label-position="top">
+          <el-form ref="infoFormRef" :model="formData" :rules="formRules" label-position="top" class="info-form-grid">
             <el-form-item label="所属项目" prop="projectId">
               <el-select
                 v-model="formData.projectId"
@@ -687,6 +702,13 @@ const formData = reactive({
   attachments: [] as RequirementAttachment[],
 })
 
+function formatDateOnly(date = new Date()) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 const formRules = computed<FormRules>(() => ({
   projectId: [{ required: true, message: '请选择所属项目', trigger: 'change' }],
   title: [{ required: true, message: '请输入需求标题', trigger: 'blur' }],
@@ -977,10 +999,32 @@ async function loadUsers() {
     if (!isEditMode.value && !formData.assigneeId && currentUserId.value) {
       formData.assigneeId = currentUserId.value
     }
+    await ensureSelectedUsersLoaded([formData.assigneeId, ...formData.ccUserIds])
   } catch {
     users.value = []
     // ignore
   }
+}
+
+/** 编辑态负责人可能不在当前组织范围或已停用，按 ID 补拉详情保证回显姓名。 */
+async function ensureSelectedUsersLoaded(ids: Array<number | undefined>) {
+  const missingIds = [...new Set(ids.filter((id): id is number => !!id))]
+    .filter((id) => !users.value.some((user) => user.id === id))
+  if (!missingIds.length) return
+
+  const details = await Promise.all(missingIds.map(async (id) => {
+    try {
+      const res = await userApi.getUserById(id) as any
+      return res?.data ?? res
+    } catch {
+      return null
+    }
+  }))
+  details.forEach((user) => {
+    if (user?.id && !users.value.some((item) => item.id === user.id)) {
+      users.value.push(user)
+    }
+  })
 }
 
 async function loadIterations(projectId = formData.projectId) {
@@ -1052,6 +1096,7 @@ function applyRequirementToForm(data: Requirement) {
   formData.dueDate = data.dueDate || undefined
   formData.estimatedHours = data.estimatedHours || undefined
   formData.ccUserIds = Array.isArray(data.ccUserIds) ? data.ccUserIds : []
+  void ensureSelectedUsersLoaded([formData.assigneeId, ...formData.ccUserIds])
   formData.attachments = Array.isArray(data.attachments) ? data.attachments : []
   // 编辑态：需求详情已返回带当前流程节点权限的动态字段 schema，直接复用
   if (Array.isArray(data.dynamicFields)) {
@@ -1224,7 +1269,7 @@ function applyDynamicSchema(schema: DynamicFieldSchema[]) {
 }
 
 async function loadDynamicFieldSchema() {
-  if (!formData.projectId || !formData.type) {
+  if (!formData.type) {
     dynamicFields.value = []
     for (const code of Object.keys(dynamicValues)) delete dynamicValues[code]
     return
@@ -1235,7 +1280,6 @@ async function loadDynamicFieldSchema() {
   }
   try {
     const schema = await requirementConfigApi.getCustomFieldSchema(
-      formData.projectId,
       formData.type,
     ) as unknown as DynamicFieldSchema[]
     applyDynamicSchema(schema)
@@ -1524,6 +1568,7 @@ async function loadConfig() {
     allConfigTypes.value = allTypeList.map((t: any) => ({ ...t, name: normalizeText(t.name) }))
     configPriorities.value = priorityList.map((p: any) => ({ ...p, name: stripPriorityPrefix(normalizeText(p.name)) }))
     if (!isEditMode.value) {
+      formData.startDate = formatDateOnly()
       // 设置默认需求类型
       if (configTypes.value.length > 0) {
         formData.type = configTypes.value[0].code
@@ -1677,6 +1722,21 @@ watch([() => formData.projectId, () => formData.type], () => {
   gap: 16px;
   margin-bottom: 18px;
 }
+
+.info-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 16px;
+
+  :deep(.el-form-item) {
+    min-width: 0;
+  }
+
+  @media (max-width: 900px) {
+    grid-template-columns: 1fr;
+  }
+}
+
 
 .inline-item {
   flex: 1;

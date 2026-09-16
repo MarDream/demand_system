@@ -3,6 +3,8 @@ package com.demand.system.module.requirement.service.impl;
 import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.util.UserNameResolver;
 import com.demand.system.module.auth.security.SecurityUtils;
+import com.demand.system.module.rbac.entity.Role;
+import com.demand.system.module.rbac.mapper.RoleMapper;
 import com.demand.system.module.requirement.dto.RequirementApprovalEvaluationVO;
 import com.demand.system.module.requirement.dto.RequirementAttachmentDTO;
 import com.demand.system.module.requirement.entity.RequirementApprovalEvaluation;
@@ -14,7 +16,9 @@ import com.demand.system.module.requirement.service.RatingFeedbackService;
 import com.demand.system.module.workflow.entity.WorkflowInstance;
 import com.demand.system.module.workflow.entity.WorkflowInstanceTransition;
 import com.demand.system.module.workflow.entity.WorkflowNode;
+import com.demand.system.module.workflow.mapper.WorkflowInstanceMapper;
 import com.demand.system.module.workflow.mapper.WorkflowInstanceTransitionMapper;
+import com.demand.system.module.workflow.mapper.WorkflowNodeMapper;
 import com.demand.system.module.workflow.support.WorkflowNodeUtils;
 import org.springframework.beans.BeanUtils;
 import org.slf4j.Logger;
@@ -38,17 +42,26 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
     private final RequirementMapper requirementMapper;
     private final RatingFeedbackService feedbackService;
     private final UserNameResolver userNameResolver;
+    private final WorkflowInstanceMapper instanceMapper;
+    private final WorkflowNodeMapper nodeMapper;
+    private final RoleMapper roleMapper;
 
     public RequirementApprovalEvaluationServiceImpl(RequirementApprovalEvaluationMapper evaluationMapper,
                                                    WorkflowInstanceTransitionMapper transitionMapper,
                                                    RequirementMapper requirementMapper,
                                                    RatingFeedbackService feedbackService,
-                                                   UserNameResolver userNameResolver) {
+                                                   UserNameResolver userNameResolver,
+                                                   WorkflowInstanceMapper instanceMapper,
+                                                   WorkflowNodeMapper nodeMapper,
+                                                   RoleMapper roleMapper) {
         this.evaluationMapper = evaluationMapper;
         this.transitionMapper = transitionMapper;
         this.requirementMapper = requirementMapper;
         this.feedbackService = feedbackService;
         this.userNameResolver = userNameResolver;
+        this.instanceMapper = instanceMapper;
+        this.nodeMapper = nodeMapper;
+        this.roleMapper = roleMapper;
     }
 
     @Override
@@ -78,6 +91,7 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
 
         Long currentUserId = SecurityUtils.getCurrentUserId();
         Requirement requirement = resolveRequirement(requirementId);
+        Map<Long, String> transitionRoleNames = resolveTransitionAssigneeRoleNames(transitions);
         Map<Long, RequirementApprovalEvaluationVO> topLevelByRecordId = new LinkedHashMap<>();
         List<RequirementApprovalEvaluationVO> records = new ArrayList<>();
         for (WorkflowInstanceTransition transition : transitions) {
@@ -89,6 +103,7 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
             }
 
             RequirementApprovalEvaluationVO vo = buildTopLevelRecord(transition, evaluation, action, comment, currentUserId, requirement);
+            vo.setAssigneeRoleName(transitionRoleNames.get(transition.getId()));
             records.add(vo);
             if (evaluation != null) {
                 topLevelByRecordId.put(evaluation.getId(), vo);
@@ -272,6 +287,85 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
         }
     }
 
+    /**
+     * 批量解析流转记录的操作节点处理角色名（记录ID → 角色名）。
+     * 链路：transition.instanceId → 实例.workflowVersionId + fromNodeId → 节点.assigneeRoleId → 角色名。
+     * 节点未按角色指派（指定人/创建者等）或任一环节缺失时返回 null，前端仅展示处理人姓名。
+     */
+    private Map<Long, String> resolveTransitionAssigneeRoleNames(List<WorkflowInstanceTransition> transitions) {
+        Map<Long, String> result = new LinkedHashMap<>();
+        if (transitions == null || transitions.isEmpty()) {
+            return result;
+        }
+
+        // 1) 实例：拿到每个流转所属的工作流版本
+        java.util.Set<Long> instanceIds = new java.util.HashSet<>();
+        for (WorkflowInstanceTransition t : transitions) {
+            if (t.getInstanceId() != null) {
+                instanceIds.add(t.getInstanceId());
+            }
+        }
+        if (instanceIds.isEmpty()) {
+            return result;
+        }
+        Map<Long, Long> instanceVersionMap = new LinkedHashMap<>();
+        for (WorkflowInstance instance : instanceMapper.selectBatchIds(instanceIds)) {
+            if (instance != null && instance.getWorkflowVersionId() != null) {
+                instanceVersionMap.put(instance.getId(), instance.getWorkflowVersionId());
+            }
+        }
+
+        // 2) 节点：版本 + fromNodeId 定位配置的处理角色
+        java.util.Set<Long> versionIds = new java.util.HashSet<>(instanceVersionMap.values());
+        java.util.Set<String> nodeIds = new java.util.HashSet<>();
+        for (WorkflowInstanceTransition t : transitions) {
+            if (StringUtils.hasText(t.getFromNodeId())) {
+                nodeIds.add(t.getFromNodeId());
+            }
+        }
+        Map<String, WorkflowNode> nodeByKey = new LinkedHashMap<>();
+        if (!versionIds.isEmpty() && !nodeIds.isEmpty()) {
+            for (WorkflowNode node : nodeMapper.selectList(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<WorkflowNode>()
+                            .in(WorkflowNode::getWorkflowVersionId, versionIds)
+                            .in(WorkflowNode::getNodeId, nodeIds))) {
+                if (node != null) {
+                    nodeByKey.put(node.getWorkflowVersionId() + ":" + node.getNodeId(), node);
+                }
+            }
+        }
+
+        // 3) 角色：assigneeRoleId → 角色名
+        java.util.Set<Long> roleIds = new java.util.HashSet<>();
+        for (WorkflowNode node : nodeByKey.values()) {
+            if (node.getAssigneeRoleId() != null) {
+                roleIds.add(node.getAssigneeRoleId().longValue());
+            }
+        }
+        Map<Long, String> roleNameMap = new LinkedHashMap<>();
+        if (!roleIds.isEmpty()) {
+            for (Role role : roleMapper.selectBatchIds(roleIds)) {
+                if (role != null) {
+                    roleNameMap.put(role.getId(), role.getName());
+                }
+            }
+        }
+
+        for (WorkflowInstanceTransition t : transitions) {
+            Long versionId = instanceVersionMap.get(t.getInstanceId());
+            WorkflowNode node = (versionId != null && StringUtils.hasText(t.getFromNodeId()))
+                    ? nodeByKey.get(versionId + ":" + t.getFromNodeId()) : null;
+            if (node == null || node.getAssigneeRoleId() == null) {
+                continue;
+            }
+            String roleName = roleNameMap.get(node.getAssigneeRoleId().longValue());
+            if (StringUtils.hasText(roleName)) {
+                result.put(t.getId(), roleName);
+            }
+        }
+        return result;
+    }
+
     private RequirementApprovalEvaluationVO buildTopLevelRecord(WorkflowInstanceTransition transition,
                                                                 RequirementApprovalEvaluation evaluation,
                                                                 String action,
@@ -291,6 +385,7 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
         vo.setCanSupplement(evaluation != null && canSupplement(requirement, currentUserId));
         vo.setEvaluatorId(transition.getOperatorId());
         vo.setEvaluatorName(userNameResolver.resolveUserName(transition.getOperatorId()));
+        vo.setEvaluatorUsername(userNameResolver.resolveUserAccount(transition.getOperatorId()));
         vo.setAction(action);
         vo.setActionLabel(resolveActionLabel(transition, action));
         vo.setResult(resolveResult(transition, action));
@@ -309,6 +404,7 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
         BeanUtils.copyProperties(supplement, vo);
         vo.setCanSupplement(false);
         vo.setEvaluatorName(userNameResolver.resolveUserName(supplement.getEvaluatorId()));
+        vo.setEvaluatorUsername(userNameResolver.resolveUserAccount(supplement.getEvaluatorId()));
         vo.setAction("supplement");
         vo.setActionLabel("补充意见");
         vo.setResult("SUPPLEMENT");

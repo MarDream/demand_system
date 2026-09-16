@@ -49,6 +49,19 @@ public class AuthController {
         return Result.success(authService.getCurrentUser());
     }
 
+    @Operation(summary = "修改本人联系方式", description = "个人设置：仅允许修改邮箱/手机号，其余信息只读")
+    @PutMapping("/profile")
+    public Result<UserInfoResponse> updateProfile(@Valid @RequestBody UpdateProfileRequest request) {
+        return Result.success(authService.updateProfile(request));
+    }
+
+    @Operation(summary = "修改本人密码", description = "个人设置：验证旧密码后设置新密码")
+    @PutMapping("/password")
+    public Result<Void> changePassword(@Valid @RequestBody ChangePasswordRequest request) {
+        authService.changePassword(request);
+        return Result.success();
+    }
+
     @Operation(summary = "用户注册", description = "新用户注册，需要邮箱验证码")
     @PostMapping("/register")
     public Result<TokenResponse> register(@Valid @RequestBody RegisterRequest request) {

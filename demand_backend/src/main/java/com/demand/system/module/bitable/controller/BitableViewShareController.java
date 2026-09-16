@@ -64,7 +64,7 @@ public class BitableViewShareController {
         Long baseId = authorizationService.getBaseIdByViewId(viewId);
         authorizationService.checkManagePermission(baseId, userId);
         boolean enabled = Boolean.parseBoolean(String.valueOf(body.get("enabled")));
-        viewShareService.updateStatus(viewId, enabled);
+        viewShareService.updateStatus(viewId, enabled, userId);
         return Result.success();
     }
 }

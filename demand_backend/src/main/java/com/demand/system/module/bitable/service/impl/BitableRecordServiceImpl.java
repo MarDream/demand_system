@@ -6,6 +6,7 @@ import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.ErrorCode;
 import com.demand.system.common.result.PageResult;
 import com.demand.system.common.util.UserNameResolver;
+import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.bitable.constant.OperationType;
 import com.demand.system.module.bitable.converter.BitableConverter;
 import com.demand.system.module.bitable.dto.BitableCellValueVO;
@@ -32,11 +33,13 @@ import com.demand.system.module.bitable.query.FilterTreeParser;
 import com.demand.system.module.bitable.service.BitableAutomationService;
 import com.demand.system.module.bitable.service.BitableCollaborationService;
 import com.demand.system.module.bitable.service.BitableFormulaService;
+import com.demand.system.module.bitable.service.BitableFieldPermissionService;
 import com.demand.system.module.bitable.service.BitableLinkService;
 import com.demand.system.module.bitable.service.BitableRecordService;
 import com.demand.system.module.bitable.service.BitableViewService;
 import com.demand.system.module.bitable.util.BitableAuditHelper;
 import com.demand.system.module.bitable.util.BitableJsonUtils;
+import com.demand.system.module.bitable.util.BitableUniqueConstraintChecker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
@@ -46,8 +49,11 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -73,6 +79,8 @@ public class BitableRecordServiceImpl implements BitableRecordService {
     private final BitableAutomationService automationService;
     private final BitableCollaborationService collaborationService;
     private final BitableAuditHelper auditHelper;
+    private final BitableUniqueConstraintChecker uniqueChecker;
+    private final BitableFieldPermissionService fieldPermissionService;
 
     public BitableRecordServiceImpl(BitableRecordMapper recordMapper,
                                     BitableCellMapper cellMapper,
@@ -86,7 +94,9 @@ public class BitableRecordServiceImpl implements BitableRecordService {
                                     UserNameResolver userNameResolver,
                                     @Lazy BitableAutomationService automationService,
                                     BitableCollaborationService collaborationService,
-                                    BitableAuditHelper auditHelper) {
+                                    BitableAuditHelper auditHelper,
+                                    BitableUniqueConstraintChecker uniqueChecker,
+                                    BitableFieldPermissionService fieldPermissionService) {
         this.recordMapper = recordMapper;
         this.cellMapper = cellMapper;
         this.commentMapper = commentMapper;
@@ -100,6 +110,8 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         this.automationService = automationService;
         this.collaborationService = collaborationService;
         this.auditHelper = auditHelper;
+        this.uniqueChecker = uniqueChecker;
+        this.fieldPermissionService = fieldPermissionService;
     }
 
     @Override
@@ -132,6 +144,7 @@ public class BitableRecordServiceImpl implements BitableRecordService {
                 vo.setUpdatedByName(userNameResolver.resolveUserName(vo.getUpdatedBy(), "未知用户"));
             }
             appendComputedCellsBatch(voList, fields);
+            stripHiddenFieldCells(voList, tableId);
         }
 
         return new PageResult<>(voList, total, pageNum, pageSize);
@@ -157,8 +170,36 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         vo.setCreatedByName(userNameResolver.resolveUserName(record.getCreatedBy(), "未知用户"));
         vo.setUpdatedByName(userNameResolver.resolveUserName(record.getUpdatedBy(), "未知用户"));
         appendComputedCells(vo, fieldMapper.selectByTableId(record.getTableId()));
+        stripHiddenFieldCells(List.of(vo), record.getTableId());
 
         return vo;
+    }
+
+    /**
+     * 按当前用户的字段级权限剔除「隐藏」字段的单元格值。
+     * <p>
+     * 前端本来就不会渲染隐藏列，但接口层必须同样剔除，否则数据仍可从响应里被读到。
+     * 无登录上下文（异步任务/自动化，userId 为空）时不做裁剪。
+     */
+    private void stripHiddenFieldCells(List<BitableRecordVO> records, Long tableId) {
+        if (records == null || records.isEmpty() || tableId == null) {
+            return;
+        }
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) {
+            return;
+        }
+        Map<Long, String> levels = fieldPermissionService.resolveFieldPermissions(tableId, userId);
+        if (levels.isEmpty()) {
+            return;
+        }
+        for (BitableRecordVO record : records) {
+            Map<Long, BitableCellValueVO> cells = record.getCells();
+            if (cells == null || cells.isEmpty()) {
+                continue;
+            }
+            cells.entrySet().removeIf(entry -> "hidden".equals(levels.get(entry.getKey())));
+        }
     }
 
     @Override
@@ -174,12 +215,17 @@ public class BitableRecordServiceImpl implements BitableRecordService {
 
         // 为每个可编辑 fieldId 创建 BitableCellValue；只读/计算字段由系统在查询时合成。
         if (dto.getCells() != null && !dto.getCells().isEmpty()) {
+            // 字段级权限：只读/隐藏字段不允许被写入（内部调用方 userId=0 时不受限）
+            fieldPermissionService.checkFieldsEditable(tableId, dto.getCells().keySet(), userId);
+
+            List<BitableCellValue> pendingCells = new ArrayList<>();
+            Map<Long, CellValueDTO> linkCells = new LinkedHashMap<>();
             for (Map.Entry<Long, CellValueDTO> entry : dto.getCells().entrySet()) {
                 Long fieldId = entry.getKey();
                 CellValueDTO cellDTO = entry.getValue();
                 BitableField field = requireEditableField(tableId, fieldId);
                 if (isLinkFieldType(field.getFieldType())) {
-                    linkService.linkRecords(fieldId, record.getId(), extractLongList(cellDTO.getValueJson()), userId);
+                    linkCells.put(fieldId, cellDTO);
                     continue;
                 }
 
@@ -187,7 +233,18 @@ public class BitableRecordServiceImpl implements BitableRecordService {
                 cell.setRecordId(record.getId());
                 cell.setFieldId(fieldId);
                 copyCellValue(cellDTO, cell);
+                pendingCells.add(cell);
+            }
+
+            // 「唯一」字段校验放在落库前，避免写了一半才发现冲突
+            validateUniqueCells(tableId, pendingCells, null);
+
+            for (BitableCellValue cell : pendingCells) {
                 cellMapper.saveOrUpdateCell(cell);
+            }
+            for (Map.Entry<Long, CellValueDTO> entry : linkCells.entrySet()) {
+                linkService.linkRecords(entry.getKey(), record.getId(),
+                        extractLongList(entry.getValue().getValueJson()), userId);
             }
         }
 
@@ -230,12 +287,17 @@ public class BitableRecordServiceImpl implements BitableRecordService {
 
         // 更新所有可编辑 cells；关联字段通过 LinkService 写入，确保双向关联同步。
         if (dto.getCells() != null && !dto.getCells().isEmpty()) {
+            // 字段级权限：只读/隐藏字段不允许被写入
+            fieldPermissionService.checkFieldsEditable(existing.getTableId(), dto.getCells().keySet(), userId);
+
+            List<BitableCellValue> pendingCells = new ArrayList<>();
+            Map<Long, CellValueDTO> linkCells = new LinkedHashMap<>();
             for (Map.Entry<Long, CellValueDTO> entry : dto.getCells().entrySet()) {
                 Long fieldId = entry.getKey();
                 CellValueDTO cellDTO = entry.getValue();
                 BitableField field = requireEditableField(existing.getTableId(), fieldId);
                 if (isLinkFieldType(field.getFieldType())) {
-                    linkService.linkRecords(fieldId, id, extractLongList(cellDTO.getValueJson()), userId);
+                    linkCells.put(fieldId, cellDTO);
                     continue;
                 }
 
@@ -243,37 +305,58 @@ public class BitableRecordServiceImpl implements BitableRecordService {
                 cell.setRecordId(id);
                 cell.setFieldId(fieldId);
                 copyCellValue(cellDTO, cell);
+                pendingCells.add(cell);
+            }
+
+            // 「唯一」字段校验（排除自身记录）
+            validateUniqueCells(existing.getTableId(), pendingCells, id);
+
+            for (BitableCellValue cell : pendingCells) {
                 cellMapper.saveOrUpdateCell(cell);
+            }
+            for (Map.Entry<Long, CellValueDTO> entry : linkCells.entrySet()) {
+                linkService.linkRecords(entry.getKey(), id,
+                        extractLongList(entry.getValue().getValueJson()), userId);
+            }
+        }
+
+        // 变更字段明细（oldValue / newValue），供自动化事件与操作日志共用
+        Map<String, Object> changedFields = new LinkedHashMap<>();
+        if (dto.getCells() != null) {
+            for (Map.Entry<Long, CellValueDTO> entry : dto.getCells().entrySet()) {
+                Object newValue = entry.getValue().getValueText() != null
+                        ? entry.getValue().getValueText()
+                        : entry.getValue().getValueJson();
+                Object oldValue = null;
+                BitableCellValue oldCell = cellMapper.selectByRecordAndField(id, entry.getKey());
+                if (oldCell != null) {
+                    oldValue = oldCell.getValueText() != null ? oldCell.getValueText() : oldCell.getValueJson();
+                }
+                Map<String, Object> change = new LinkedHashMap<>();
+                change.put("oldValue", oldValue);
+                change.put("newValue", newValue);
+                changedFields.put(String.valueOf(entry.getKey()), change);
             }
         }
 
         // 触发自动化事件
         try {
-            Map<String, Object> changedFields = new HashMap<>();
-            if (dto.getCells() != null) {
-                for (Map.Entry<Long, CellValueDTO> entry : dto.getCells().entrySet()) {
-                    Object newValue = entry.getValue().getValueText() != null
-                            ? entry.getValue().getValueText()
-                            : entry.getValue().getValueJson();
-                    // Map.of 不允许 null 值（清空单元格是合法操作），先归一
-                    Map<String, Object> change = new HashMap<>();
-                    change.put("newValue", newValue);
-                    changedFields.put(String.valueOf(entry.getKey()), change);
-                }
-            }
             automationService.onRecordChanged(existing.getTableId(), id, "record_updated", changedFields);
         } catch (Exception e) {
             log.warn("自动化事件发布失败: tableId={}, recordId={}", existing.getTableId(), id, e);
         }
 
-        // 审计
+        // 审计：记录变更字段及前后值
+        Map<String, Object> auditDetail = new LinkedHashMap<>();
+        auditDetail.put("recordId", id);
+        auditDetail.put("changedFields", changedFields);
         auditHelper.recordByTable(existing.getTableId(), userId, OperationType.UPDATE_RECORD,
-                "{\"recordId\":" + id + ",\"changedFields\":" + (dto.getCells() != null ? dto.getCells().size() : 0) + "}");
+                BitableJsonUtils.toJsonString(auditDetail));
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void deleteRecord(Long id) {
+    public void deleteRecord(Long id, Long userId) {
         BitableRecord existing = recordMapper.selectById(id);
         if (existing == null) {
             throw new BusinessException("记录不存在");
@@ -301,7 +384,7 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         broadcastRecordChanged(existing.getTableId(), id, "record_deleted", null);
 
         // 审计
-        auditHelper.recordByTable(existing.getTableId(), null, OperationType.DELETE_RECORD, "{\"recordId\":" + id + "}");
+        auditHelper.recordByTable(existing.getTableId(), userId, OperationType.DELETE_RECORD, "{\"recordId\":" + id + "}");
     }
 
     @Override
@@ -328,39 +411,62 @@ public class BitableRecordServiceImpl implements BitableRecordService {
     }
 
     /**
-     * 将前端提交的日期值（字符串/ LocalDate / LocalDateTime）安全解析为 LocalDate。
-     * 兼容 "yyyy-MM-dd" 与 "yyyy-MM-dd HH:mm:ss" 两种格式；空值/非法值返回 null，不抛异常。
-     * 说明：当前 bitable_cell_values.value_date 为 DATE 类型，仅保留日期部分。
+     * 将前端提交的日期值（字符串 / LocalDate / LocalDateTime / epoch 毫秒）安全解析为 LocalDateTime。
+     * <p>
+     * 字段属性「包含时间」开启时，字符串会带时间部分（{@code yyyy-MM-dd HH:mm:ss}），
+     * 关闭时前端只提交 {@code yyyy-MM-dd}，此处统一补 00:00:00 存储。
+     * 空值/非法值返回 null，不抛异常。
      */
-    private static LocalDate parseFlexibleDate(Object date) {
+    private static LocalDateTime parseFlexibleDate(Object date) {
         if (date == null) {
             return null;
         }
-        if (date instanceof LocalDate ld) {
-            return ld;
-        }
         if (date instanceof LocalDateTime ldt) {
-            return ldt.toLocalDate();
+            return ldt;
+        }
+        if (date instanceof LocalDate ld) {
+            return ld.atStartOfDay();
+        }
+        if (date instanceof Number num) {
+            // 前端时间选择器在部分场景直接提交时间戳（毫秒）
+            return LocalDateTime.ofInstant(Instant.ofEpochMilli(num.longValue()), ZoneId.systemDefault());
         }
         if (date instanceof String s) {
             String text = s.trim();
             if (text.isEmpty()) {
                 return null;
             }
-            // 先尝试纯日期
+            // 先尝试纯日期（未开启「包含时间」）
             try {
-                return LocalDate.parse(text, DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+                return LocalDate.parse(text, DateTimeFormatter.ofPattern("yyyy-MM-dd")).atStartOfDay();
             } catch (Exception ignored) {
-                // 再尝试带时间的格式，仅保留日期部分
+                // 再尝试带时间的格式，兼容空格与 ISO 'T' 分隔符
+            }
+            for (String pattern : DATE_TIME_PATTERNS) {
                 try {
-                    return LocalDateTime.parse(text, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")).toLocalDate();
-                } catch (Exception e) {
-                    log.warn("无法解析的日期值: {}", text);
-                    return null;
+                    return LocalDateTime.parse(text, DateTimeFormatter.ofPattern(pattern));
+                } catch (Exception ignored) {
+                    // 继续尝试下一个
                 }
             }
+            log.warn("无法解析的日期值: {}", text);
+            return null;
         }
         return null;
+    }
+
+    /** 「包含时间」字段允许的时间格式，按优先级尝试。 */
+    private static final List<String> DATE_TIME_PATTERNS = List.of(
+            "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-dd HH:mm",
+            "yyyy-MM-dd'T'HH:mm:ss",
+            "yyyy-MM-dd'T'HH:mm");
+
+    // ==================== 私有辅助方法：唯一性约束 ====================
+
+    /** 委托 {@link BitableUniqueConstraintChecker}，本类只做参数转发便于阅读。 */
+    private void validateUniqueCells(Long tableId, List<BitableCellValue> incoming, Long excludeRecordId) {
+        uniqueChecker.check(tableId, incoming, excludeRecordId);
     }
 
     private BitableCellValueVO toCellValueVO(BitableCellValue cell) {
@@ -704,17 +810,43 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         return parsed instanceof Map ? (Map<String, Object>) parsed : Collections.emptyMap();
     }
 
+    /**
+     * 按字段配置格式化日期时间。
+     * <p>
+     * 优先读规范键 {@code dateFormat}，兼容历史键 {@code format}；
+     * 未配置时按「包含时间」属性回落：开启用 {@code yyyy-MM-dd HH:mm:ss}，关闭用 {@code yyyy-MM-dd}。
+     */
     private String formatDateTime(LocalDateTime dateTime, BitableField field) {
         if (dateTime == null) return "";
-        String pattern = asString(parseConfig(field).get("format"));
+        Map<String, Object> config = parseConfig(field);
+        String pattern = asString(config.get("dateFormat"));
         if (pattern == null || pattern.isBlank()) {
-            pattern = "yyyy-MM-dd HH:mm:ss";
+            pattern = asString(config.get("format"));
+        }
+        if (pattern == null || pattern.isBlank()) {
+            // 系统时间字段天然带时间；普通日期字段按「包含时间」属性决定
+            pattern = isSystemTimeType(field.getFieldType()) || isWithTime(config)
+                    ? "yyyy-MM-dd HH:mm:ss" : "yyyy-MM-dd";
         }
         try {
             return dateTime.format(DateTimeFormatter.ofPattern(pattern));
         } catch (IllegalArgumentException e) {
             return dateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
         }
+    }
+
+    /** 字段是否开启「包含时间」。 */
+    private static boolean isWithTime(Map<String, Object> config) {
+        Object raw = config.get("withTime");
+        if (raw instanceof Boolean b) return b;
+        if (raw instanceof Number n) return n.intValue() != 0;
+        return raw != null && Boolean.parseBoolean(String.valueOf(raw));
+    }
+
+    /** 系统时间类字段（创建时间/最后修改时间）。 */
+    private static boolean isSystemTimeType(String fieldType) {
+        return "created_time".equals(fieldType) || "last_modified_time".equals(fieldType)
+                || "modified_time".equals(fieldType);
     }
 
     private Object firstNonNull(Object... values) {
@@ -807,6 +939,8 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         if (isReadonlyComputedFieldType(field.getFieldType())) {
             throw new BusinessException("该字段为只读/计算字段，不能手动编辑");
         }
+        // 字段级权限：只读/隐藏字段不允许被写入
+        fieldPermissionService.checkFieldEditable(fieldId, userId);
 
         // 2. 乐观锁更新 Record 的 updated_by 和 version
         UpdateWrapper<BitableRecord> wrapper = new UpdateWrapper<>();
@@ -855,6 +989,10 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         } else if (value instanceof Number) {
             cell.setValueNumber(new java.math.BigDecimal(value.toString()));
         }
+
+        // 「唯一」字段校验（排除自身记录）
+        validateUniqueCells(existing.getTableId(), List.of(cell), recordId);
+
         cellMapper.saveOrUpdateCell(cell);
 
         // 触发自动化事件
@@ -1225,13 +1363,11 @@ public class BitableRecordServiceImpl implements BitableRecordService {
             }
         }
 
-        // 日期比较
+        // 日期比较：过滤器只给到日期时按"天"比较，给到时间时按精确时刻比较
         if (cell.getValueDate() != null && filterValue instanceof String dateStr) {
-            try {
-                java.time.LocalDate filterDate = java.time.LocalDate.parse(dateStr);
-                return cell.getValueDate().compareTo(filterDate);
-            } catch (Exception ignored) {
-                // 日期解析失败，降级为文本比较
+            Integer cmp = compareDateCell(cell.getValueDate(), dateStr);
+            if (cmp != null) {
+                return cmp;
             }
         }
 
@@ -1255,6 +1391,27 @@ public class BitableRecordServiceImpl implements BitableRecordService {
 
         // 双方类型不可比：视为不相等（返回非 0），确保 eq/ne 语义正确
         return -1;
+    }
+
+    /**
+     * 日期单元格与过滤条件比较。
+     * 过滤器只给到日期（{@code yyyy-MM-dd}）时按"天"比较，
+     * 给到具体时刻时按精确 {@link LocalDateTime} 比较；无法解析返回 {@code null} 交由上层降级。
+     */
+    private static Integer compareDateCell(LocalDateTime cellValue, String filterText) {
+        if (filterText == null || filterText.isBlank()) {
+            return null;
+        }
+        String text = filterText.trim();
+        LocalDateTime filter = parseFlexibleDate(text);
+        if (filter == null) {
+            return null;
+        }
+        boolean filterHasTime = text.indexOf(':') >= 0;
+        if (filterHasTime) {
+            return cellValue.compareTo(filter);
+        }
+        return cellValue.toLocalDate().compareTo(filter.toLocalDate());
     }
 
     /**
@@ -1407,9 +1564,11 @@ public class BitableRecordServiceImpl implements BitableRecordService {
             return cell.getValueNumber().toPlainString();
         }
 
-        // 日期值
+        // 日期值：按字段配置的格式展示，避免分组标题出现 ISO 的 'T'
         if (cell.getValueDate() != null) {
-            return cell.getValueDate().toString();
+            BitableField field = fieldMap != null ? fieldMap.get(groupByFieldId) : null;
+            return field != null ? formatDateTime(cell.getValueDate(), field)
+                    : cell.getValueDate().toLocalDate().toString();
         }
 
         // JSON值（多选等）：集合元素用逗号拼接展示，避免分组键显示原始 JSON

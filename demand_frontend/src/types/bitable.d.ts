@@ -18,38 +18,195 @@ export type ViewType = 'grid' | 'kanban' | 'gantt' | 'calendar' | 'gallery' | 'f
 // 成员角色
 export type MemberRole = 'owner' | 'admin' | 'editor' | 'commenter' | 'viewer'
 
-// 字段配置(JSON 对象)
+/** 选项（单选/多选/流程/AI 选择） */
+export interface FieldOption {
+  label: string
+  color?: string
+  /** 选项说明，表单中展示 */
+  desc?: string
+}
+
+/** 进度条阈值变色规则：百分比低于 below 时使用该颜色（最后一条兜住以上区间） */
+export interface ProgressColorRule {
+  below: number
+  color: string
+}
+
+/** 按钮字段的触发动作配置 */
+export interface ButtonActionConfig {
+  label?: string
+  color?: string
+  icon?: string
+  actionType?: 'openUrl' | 'updateRecord' | 'automation'
+  actionUrl?: string
+  /** 可用条件：仅当 conditionFieldId 的值等于 conditionValue 时按钮可点 */
+  conditionFieldId?: number
+  conditionValue?: string
+  confirmText?: string
+  successText?: string
+  failText?: string
+}
+
+/**
+ * 字段配置(JSON 对象)。
+ *
+ * 键位约定：同一语义只允许一个键，旧的兼容键（format/digits/symbol/length/progressFormat 等）
+ * 只在读取时由 `normalizeFieldConfig()` 迁移，写入一律使用本接口声明的规范键。
+ */
 export interface FieldConfig {
-  options?: { label: string; color?: string }[]  // single_select/multi_select 选项
-  format?: string  // date 格式/number 格式
+  // ===== 通用 =====
   defaultValue?: unknown
-  linkTargetTableId?: number  // link 字段目标表
-  formulaExpr?: string  // formula 表达式
-  precision?: number  // number/currency 小数位
-  symbol?: string  // rating/currency 符号
+  /** 表单中隐藏 */
+  formHidden?: boolean
+  /** 表单输入框占位提示 */
+  formPlaceholder?: string
+  /** 同表内取值唯一 */
+  unique?: boolean
+
+  // ===== 文本 =====
+  inputMode?: 'single' | 'multiline'
+  maxLength?: number
+  /** 自定义正则校验（正则源码，不含斜杠） */
+  pattern?: string
+  patternMessage?: string
+
+  // ===== 电话 =====
+  countryCode?: string
+  allowCountrySwitch?: boolean
+  masked?: boolean
+
+  // ===== 超链接 =====
+  displayText?: string
+  openInNewTab?: boolean
+
+  // ===== 地理位置 =====
+  locationInputMethod?: 'map' | 'text' | 'latlng'
+  locationDisplayMode?: 'name' | 'address' | 'latlng'
+
+  // ===== 数字 =====
+  numberFormat?: 'plain' | 'percent'
+  precision?: number
+  thousandSeparator?: boolean
   prefix?: string
   suffix?: string
+  min?: number
+  max?: number
+
+  // ===== 货币 =====
+  currency?: string
+  currencySymbolPosition?: 'prefix' | 'suffix'
+
+  // ===== 进度 =====
+  progressStyle?: 'bar' | 'percent' | 'number'
+  step?: number
+  progressColorMode?: 'single' | 'threshold'
+  progressColor?: string
+  progressRules?: ProgressColorRule[]
+
+  // ===== 评分 =====
   maxRating?: number
-  progressFormat?: 'percent' | 'value'
+  ratingIcon?: 'star' | 'heart' | 'thumb' | 'number'
+  ratingColor?: string
+  allowHalf?: boolean
+
+  // ===== 选择类 =====
+  options?: FieldOption[]
+  defaultOption?: string
+  allowAddOption?: boolean
+  maxSelect?: number
+  processNodes?: FieldOption[]
+
+  // ===== 复选框 =====
+  defaultChecked?: boolean
+  checkboxStyle?: 'checkbox' | 'switch'
+
+  // ===== 日期 / 系统时间 =====
+  dateFormat?: string
+  withTime?: boolean
+  timeFormat?: '24h' | '12h'
+  dateDefaultMode?: 'none' | 'now' | 'today' | 'fixed'
+
+  // ===== 人员 / 群组 =====
+  userMode?: 'single' | 'multiple'
+  userScope?: 'all' | 'dept' | 'self'
+  /** 人员范围=指定部门时选中的部门 ID */
+  userDeptIds?: number[]
+  userDisplay?: 'avatar' | 'name' | 'both'
+  defaultCurrentUser?: boolean
+  groupMode?: 'single' | 'multiple'
+  groupScope?: 'joined' | 'all'
+
+  // ===== 附件 =====
+  fileTypeLimit?: 'any' | 'image' | 'doc' | 'custom'
+  allowedExtensions?: string[]
+  maxFileSizeMb?: number
+  maxFiles?: number
+  attachmentDisplay?: 'list' | 'thumbnail' | 'cover'
+
+  // ===== 条码 =====
+  barcodeType?: 'qrcode' | 'code128' | 'ean13'
+  barcodeSource?: 'self' | 'field'
+  barcodeSourceFieldId?: number
+  showBarcodeText?: boolean
+  barcodeSize?: number
+  barcodeColor?: string
+
+  // ===== 自动编号 =====
+  digits?: number
+  resetCycle?: 'never' | 'year' | 'month' | 'day'
+
+  // ===== 按钮 =====
+  button?: ButtonActionConfig
+
+  // ===== 关联 =====
+  linkTargetTableId?: number
   linkDisplayFieldId?: number
   reverseFieldId?: number
+  allowMultipleLink?: boolean
+  linkDeleteStrategy?: 'clear' | 'keep'
+
+  // ===== 查找引用 / 汇总 =====
   linkFieldId?: number
   targetFieldId?: number
   lookupFieldId?: number
   rollupFieldId?: number
-  aggregation?: 'count' | 'sum' | 'average' | 'min' | 'max'
-  digits?: number
-  length?: number
-  dateFormat?: string
-  formHidden?: boolean
-  formPlaceholder?: string
-  allowMultiple?: boolean
-  allowedFileTypes?: string[]
-  maxFiles?: number
-  countryCode?: string
-  barcodeMode?: string
-  processNodes?: { label: string; color?: string }[]
-  button?: { label?: string; color?: string; actionType?: string; actionId?: number }
+  aggregation?: 'count' | 'sum' | 'average' | 'min' | 'max' | 'concat' | 'distinctCount'
+  rollupFormat?: 'number' | 'date' | 'text'
+
+  // ===== 公式 =====
+  formulaExpr?: string
+  formulaResultFormat?: 'auto' | 'text' | 'number' | 'date'
+  formulaErrorDisplay?: 'empty' | 'zero' | 'custom'
+  formulaErrorText?: string
+
+  // ===== AI 字段 =====
+  sourceFieldIds?: number[]
+  autoCompute?: boolean
+  aiTriggerMode?: 'manual' | 'onCreate' | 'onDependencyChange'
+  aiTemperature?: number
+  aiMaxTokens?: number
+  aiFallbackMode?: 'empty' | 'text'
+  aiFallbackText?: string
+}
+
+/** 字段级权限级别：隐藏 / 只读 / 可编辑 */
+export type FieldPermissionLevel = 'hidden' | 'readonly' | 'editable'
+
+/** 某个角色对某个字段的权限配置 */
+export interface FieldPermission {
+  fieldId: number
+  permissionLevel: FieldPermissionLevel
+}
+
+/** 权限配置接口的请求体（字段权限批量保存） */
+export interface FieldPermissionChange {
+  baseId?: number
+  tableId: number
+  fieldId: number
+  roleType: 'system' | 'custom'
+  systemRoleCode?: string | null
+  customRoleId?: number | null
+  permissionLevel: FieldPermissionLevel
 }
 
 // 多维表格 Base
@@ -60,6 +217,8 @@ export interface BitableBase {
   icon?: string
   coverColor?: string
   projectId?: number
+  /** 所属 Base 分组ID，null/undefined=未分组 */
+  groupId?: number | null
   creatorId: number
   creatorName?: string
   isTemplate: boolean
@@ -69,10 +228,42 @@ export interface BitableBase {
   updatedAt: string
 }
 
+// Base 分组（多维表格列表页左侧目录树，全局维度）
+export interface BitableBaseGroup {
+  id: number
+  /** 父分组ID，null=根层级 */
+  parentId?: number | null
+  name: string
+  sortOrder: number
+  creatorId?: number
+  /** 直接挂载的 Base 数量 */
+  baseCount: number
+  /** 含所有子孙分组的 Base 总数 */
+  totalBaseCount: number
+  children?: BitableBaseGroup[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface BitableBaseGroupCreateDTO {
+  name: string
+  /** 父分组ID，null/undefined=创建在根层级 */
+  parentId?: number | null
+}
+
+export interface BitableBaseGroupMoveDTO {
+  /** 目标父分组ID，null=根层级 */
+  parentId?: number | null
+  /** 目标排序号，不传则追加到末尾 */
+  sortOrder?: number
+}
+
 // 数据表
 export interface BitableTable {
   id: number
   baseId: number
+  /** 所属分组ID，null/undefined=未分组 */
+  groupId?: number | null
   name: string
   description?: string
   icon?: string
@@ -82,6 +273,37 @@ export interface BitableTable {
   fieldCount?: number
   createdAt: string
   updatedAt: string
+}
+
+// 数据表分组（目录树节点，parentId 自关联，任意层级）
+export interface BitableTableGroup {
+  id: number
+  baseId: number
+  /** 父分组ID，null=根层级 */
+  parentId?: number | null
+  name: string
+  sortOrder: number
+  creatorId?: number
+  /** 直接挂载的数据表数量 */
+  tableCount: number
+  /** 含所有子孙分组的数据表总数 */
+  totalTableCount: number
+  children?: BitableTableGroup[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface BitableTableGroupCreateDTO {
+  name: string
+  /** 父分组ID，null/undefined=创建在根层级 */
+  parentId?: number | null
+}
+
+export interface BitableTableGroupMoveDTO {
+  /** 目标父分组ID，null=根层级 */
+  parentId?: number | null
+  /** 目标排序号，不传则追加到末尾 */
+  sortOrder?: number
 }
 
 // 字段
@@ -101,6 +323,11 @@ export interface BitableField {
   width: number
   createdAt: string
   updatedAt: string
+  /**
+   * 当前用户对该字段的权限级别（后端按角色解析后下发）。
+   * 仅在按当前用户查询字段列表时返回；内部调用（如取关联目标表字段）不返回，视为 editable。
+   */
+  permission?: FieldPermissionLevel
 }
 
 // 记录行
@@ -238,8 +465,23 @@ export interface BitableOperation {
   userId: number
   userName?: string
   operationType: string
+  operationTypeLabel?: string
   detail?: unknown
   createdAt: string
+}
+
+// 操作历史查询参数
+export interface BitableOperationQuery {
+  pageNum?: number
+  pageSize?: number
+  /** 操作类型编码，逗号分隔 */
+  operationType?: string
+  /** 操作人ID */
+  userId?: number
+  /** 起始时间 ISO */
+  startTime?: string
+  /** 截止时间 ISO */
+  endTime?: string
 }
 
 // DTO 请求类型
@@ -255,6 +497,8 @@ export interface BitableTableCreateDTO {
   name: string
   description?: string
   icon?: string
+  /** 创建时直接归入的分组ID */
+  groupId?: number | null
 }
 
 export interface BitableFieldCreateDTO {
@@ -342,4 +586,69 @@ export interface RecordGroupVO {
   records: BitableRecord[]
   /** 分组内记录数 */
   count: number
+}
+
+// ========== 权限管理 ==========
+
+export type PermissionLevel = 'full' | 'edit' | 'view' | 'none'
+export type PermissionType = 'data' | 'automation'
+export type RoleType = 'system' | 'custom'
+export type MemberType = 'user' | 'dept'
+
+/** 角色权限配置 */
+export interface BitableBaseRolePermission {
+  tableId: number
+  tableName?: string
+  permissionType: PermissionType
+  permissionLevel: PermissionLevel
+}
+
+/** 角色成员 */
+export interface BitableBaseRoleMember {
+  memberType: MemberType
+  memberId: number
+  memberName?: string
+  /** 成员头像URL（用户类成员才有）；为空时前端用姓名首字做占位缩略图 */
+  memberAvatar?: string | null
+}
+
+/** 角色VO（系统角色 + 自定义角色统一视图） */
+export interface BitableBaseRoleVO {
+  roleType: RoleType
+  systemRoleCode?: string
+  customRoleId?: number
+  name: string
+  sortOrder: number
+  members: BitableBaseRoleMember[]
+  permissions: BitableBaseRolePermission[]
+  createdAt?: string
+}
+
+/** 自定义角色创建DTO */
+export interface BitableBaseCustomRoleCreateDTO {
+  baseId: number
+  name: string
+}
+
+/** 自定义角色更新DTO */
+export interface BitableBaseCustomRoleUpdateDTO {
+  name: string
+}
+
+/** 自定义角色成员DTO */
+export interface BitableBaseCustomRoleMemberDTO {
+  roleId: number
+  memberType: MemberType
+  memberId: number
+}
+
+/** 角色权限设置DTO */
+export interface BitableBaseRolePermissionDTO {
+  baseId: number
+  roleType: RoleType
+  systemRoleCode?: string
+  customRoleId?: number
+  tableId: number
+  permissionType: PermissionType
+  permissionLevel: PermissionLevel
 }

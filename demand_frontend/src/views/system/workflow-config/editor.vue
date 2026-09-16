@@ -418,10 +418,15 @@
 
               <!-- 需求动态字段权限 -->
               <template v-if="showFieldPermissions">
-                <el-divider content-position="left">动态字段权限</el-divider>
-                <div class="field-perm-tip">
-                  控制该环节下需求扩展字段的可见 / 可编辑 / 必填范围。全部留空表示不限制（字段默认全部可见可编辑）。
-                </div>
+                <el-divider content-position="left">
+                  <span class="field-perm-divider-title">动态字段权限</span>
+                  <el-tooltip
+                    content="控制该环节下需求扩展字段的可见 / 可编辑 / 必填范围。全部留空表示不限制（字段默认全部可见可编辑）。"
+                    placement="top"
+                  >
+                    <el-icon class="field-perm-help"><QuestionFilled /></el-icon>
+                  </el-tooltip>
+                </el-divider>
                 <el-table :data="customFieldOptions" size="small" border max-height="320">
                   <el-table-column prop="name" label="字段" min-width="120">
                     <template #default="{ row }">
@@ -771,10 +776,9 @@ async function loadCustomFieldOptions() {
       customFieldOptions.value = []
       return
     }
-    const projectId = resolveWorkflowProjectId(route.query.projectId || route.params.projectId)
     const chunks = await Promise.all(
       bound.map((t: any) =>
-        requirementConfigApi.listCustomFields(projectId, t.code).catch(() => []),
+        requirementConfigApi.listCustomFields(t.code).catch(() => []),
       ),
     )
     const merged = new Map<string, CustomFieldDef>()
@@ -3259,11 +3263,15 @@ onBeforeUnmount(() => {
     }
   }
 
-  .field-perm-tip {
-    margin-bottom: 8px;
-    font-size: 12px;
-    line-height: 1.6;
-    color: var(--el-text-color-secondary);
+  .field-perm-divider-title {
+    font-size: 14px;
+    color: var(--el-text-color-primary);
+  }
+
+  .field-perm-help {
+    margin-left: 4px;
+    color: var(--color-muted-text);
+    cursor: help;
   }
 
   .field-perm-name {

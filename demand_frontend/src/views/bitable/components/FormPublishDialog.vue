@@ -6,7 +6,7 @@
           v-model="form.password"
           type="password"
           show-password
-          placeholder="留空表示无需密码（已设置时不填写则保持不变）"
+          placeholder="留空表示无需密码"
         />
       </el-form-item>
       <el-form-item label="有效期至">

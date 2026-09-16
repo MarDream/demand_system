@@ -57,7 +57,7 @@
               class="gallery-card-field"
             >
               <span class="field-label">{{ field.name }}</span>
-              <span class="field-value">{{ formatFieldValue(record, field) }}</span>
+              <span class="field-value">{{ formatCellDisplay(field, record.cells?.[field.id]) }}</span>
             </div>
           </div>
         </div>
@@ -69,6 +69,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { Picture, Loading } from '@element-plus/icons-vue'
+import { formatCellDisplay, resolveRecordTitle } from '@/utils/bitableFieldConfig'
 import type { BitableField, BitableRecord, BitableTable } from '@/types/bitable'
 
 const props = defineProps<{
@@ -97,10 +98,7 @@ function handleFieldChange() {
 }
 
 function getRecordTitle(record: BitableRecord): string {
-  const textFields = props.fields.filter((f) => f.fieldType === 'text')
-  if (textFields.length === 0) return `记录 ${record.id}`
-  const cell = record.cells?.[textFields[0].id]
-  return cell?.valueText || `记录 ${record.id}`
+  return resolveRecordTitle(props.fields, record)
 }
 
 function getCardImage(record: BitableRecord): string | undefined {
@@ -121,17 +119,6 @@ function getRecordInitial(record: BitableRecord): string {
   if (!title) return '·'
   const first = String(title).trim().charAt(0)
   return first || '·'
-}
-
-function formatFieldValue(record: BitableRecord, field: BitableField): string {
-  const cell = record.cells?.[field.id]
-  if (!cell) return '-'
-  if (cell.valueText) return cell.valueText
-  if (cell.valueNumber !== null && cell.valueNumber !== undefined) {
-    return String(cell.valueNumber)
-  }
-  if (cell.valueDate) return cell.valueDate
-  return '-'
 }
 
 function handleCardClick(record: BitableRecord) {

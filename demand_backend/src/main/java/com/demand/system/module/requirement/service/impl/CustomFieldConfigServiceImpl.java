@@ -17,7 +17,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -61,16 +60,18 @@ public class CustomFieldConfigServiceImpl implements CustomFieldConfigService {
     }
 
     @Override
-    public Result<List<CustomFieldConfigDTO>> listFields(Long projectId, String typeCode) {
+    public Result<List<CustomFieldConfigDTO>> listFields(String typeCode) {
         // 配置视图返回全部启用+停用字段（停用字段需要能被重新启用）；
         // 软删除字段由 @TableLogic 自动排除。
-        List<CustomField> fields = customFieldMapper.selectList(
-                new LambdaQueryWrapper<CustomField>()
-                        .eq(CustomField::getProjectId, projectId)
-                        .and(w -> w.isNull(CustomField::getRequirementTypeCode)
-                                .or().eq(CustomField::getRequirementTypeCode, typeCode))
-                        .orderByAsc(CustomField::getSortOrder)
-                        .orderByAsc(CustomField::getId));
+        LambdaQueryWrapper<CustomField> wrapper = new LambdaQueryWrapper<CustomField>()
+                .orderByAsc(CustomField::getSortOrder)
+                .orderByAsc(CustomField::getId);
+        if (typeCode != null && !typeCode.isBlank()) {
+            // 类型编码为 NULL 表示全类型通用字段
+            wrapper.and(w -> w.isNull(CustomField::getRequirementTypeCode)
+                    .or().eq(CustomField::getRequirementTypeCode, typeCode));
+        }
+        List<CustomField> fields = customFieldMapper.selectList(wrapper);
         List<CustomFieldConfigDTO> dtos = new ArrayList<>();
         for (CustomField f : fields) {
             dtos.add(toConfigDTO(f));
@@ -79,12 +80,12 @@ public class CustomFieldConfigServiceImpl implements CustomFieldConfigService {
     }
 
     @Override
-    public Result<List<CustomFieldConfigDTO>> buildCreateSchema(Long projectId, String typeCode) {
-        List<CustomField> fields = requirementFieldService.listEnabledFields(projectId, typeCode);
+    public Result<List<CustomFieldConfigDTO>> buildCreateSchema(String typeCode) {
+        List<CustomField> fields = requirementFieldService.listEnabledFields(typeCode);
         if (fields.isEmpty()) {
             return Result.success(java.util.Collections.emptyList());
         }
-        var permission = requirementFieldService.resolveCreatePermission(projectId, typeCode);
+        var permission = requirementFieldService.resolveCreatePermission(typeCode);
         List<CustomFieldConfigDTO> schema = requirementFieldService.buildSchema(fields, permission, null);
         // 创建态回填字段默认值，避免必填项从空开始
         for (CustomFieldConfigDTO dto : schema) {
@@ -117,9 +118,6 @@ public class CustomFieldConfigServiceImpl implements CustomFieldConfigService {
     @Override
     @Transactional
     public Result<Void> createField(CustomField field) {
-        if (field.getProjectId() == null) {
-            return Result.fail("项目ID不能为空");
-        }
         if (!StringUtils.hasText(field.getFieldCode())) {
             return Result.fail("字段编码不能为空");
         }
@@ -140,9 +138,8 @@ public class CustomFieldConfigServiceImpl implements CustomFieldConfigService {
             return Result.fail("不支持的字段类型: " + field.getFieldType() + "，允许：" + String.join(", ", ALLOWED_TYPES));
         }
         field.setFieldType(field.getFieldType().trim().toUpperCase());
-        // 编码唯一性（同项目 + 同类型 + 同编码）
+        // 编码唯一性（同类型 + 同编码；类型为 NULL 表示全类型通用字段）
         LambdaQueryWrapper<CustomField> dupWrapper = new LambdaQueryWrapper<CustomField>()
-                .eq(CustomField::getProjectId, field.getProjectId())
                 .eq(CustomField::getFieldCode, code);
         if (field.getRequirementTypeCode() != null) {
             dupWrapper.and(w -> w
@@ -284,9 +281,8 @@ public class CustomFieldConfigServiceImpl implements CustomFieldConfigService {
         if (existing == null) {
             return Result.fail("字段不存在");
         }
-        // 软删除
-        existing.setDeletedAt(LocalDateTime.now());
-        customFieldMapper.updateById(existing);
+        // 软删除：逻辑删除字段由 @TableLogic(delval = "NOW()") 通过 deleteById 生成
+        customFieldMapper.deleteById(id);
         return Result.success();
     }
 
@@ -296,26 +292,18 @@ public class CustomFieldConfigServiceImpl implements CustomFieldConfigService {
         if (items == null || items.isEmpty()) {
             return Result.fail("排序列表不能为空");
         }
-        Long projectId = null;
         for (SortItemDTO item : items) {
             if (item == null || item.getId() == null) {
                 continue;
-            }
-            if (projectId == null) {
-                CustomField first = customFieldMapper.selectById(item.getId());
-                projectId = first == null ? null : first.getProjectId();
             }
             customFieldMapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<CustomField>()
                     .eq(CustomField::getId, item.getId())
                     .set(CustomField::getSortOrder, item.getSortOrder() == null ? 0 : item.getSortOrder()));
         }
-        if (projectId == null) {
-            return Result.success(java.util.Collections.emptyList());
-        }
         List<CustomField> all = customFieldMapper.selectList(
                 new LambdaQueryWrapper<CustomField>()
-                        .eq(CustomField::getProjectId, projectId)
-                        .orderByAsc(CustomField::getSortOrder));
+                        .orderByAsc(CustomField::getSortOrder)
+                        .orderByAsc(CustomField::getId));
         return Result.success(all);
     }
 

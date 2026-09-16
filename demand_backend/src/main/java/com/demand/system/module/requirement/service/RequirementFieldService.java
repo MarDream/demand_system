@@ -16,14 +16,14 @@ import java.util.Map;
 public interface RequirementFieldService {
 
     /**
-     * 查询某项目下某需求类型启用的动态字段定义（含项目级全局字段）。
+     * 查询某需求类型启用的动态字段定义（含全类型通用字段）。
      */
-    List<CustomField> listEnabledFields(Long projectId, String typeCode);
+    List<CustomField> listEnabledFields(String typeCode);
 
     /**
      * 解析创建场景（尚未绑定实例）的初始节点权限。
      */
-    WorkflowNodePermission resolveCreatePermission(Long projectId, String typeCode);
+    WorkflowNodePermission resolveCreatePermission(String typeCode);
 
     /**
      * 解析已有需求当前节点权限（版本锁定：以需求实例绑定的 workflow version 为准）。

@@ -104,9 +104,8 @@ public class RequirementFieldServiceImpl implements RequirementFieldService {
     }
 
     @Override
-    public List<CustomField> listEnabledFields(Long projectId, String typeCode) {
+    public List<CustomField> listEnabledFields(String typeCode) {
         return customFieldMapper.selectList(new LambdaQueryWrapper<CustomField>()
-                .eq(CustomField::getProjectId, projectId)
                 .and(w -> w.isNull(CustomField::getRequirementTypeCode)
                         .or().eq(CustomField::getRequirementTypeCode, typeCode))
                 .eq(CustomField::getEnabled, 1)
@@ -115,7 +114,7 @@ public class RequirementFieldServiceImpl implements RequirementFieldService {
     }
 
     @Override
-    public WorkflowNodePermission resolveCreatePermission(Long projectId, String typeCode) {
+    public WorkflowNodePermission resolveCreatePermission(String typeCode) {
         Optional<WorkflowVersion> versionOpt = workflowVersionResolver.findActiveVersionForType(typeCode);
         if (versionOpt.isEmpty()) {
             return null;
@@ -223,9 +222,9 @@ public class RequirementFieldServiceImpl implements RequirementFieldService {
                 ? Collections.emptyList() : parseStringList(permission.getEditableFields(), null));
         List<String> required = deDup(permission == null
                 ? Collections.emptyList() : parseStringList(permission.getRequiredFields(), null));
-        // 节点未配置任何字段权限时走宽松模式：新增字段默认全部可见可编辑，
-        // 避免「配置了字段但表单上看不到」的困惑；一旦配置了任意一类即进入严格模式。
-        boolean strict = !(visible.isEmpty() && editable.isEmpty() && required.isEmpty());
+        // 可见性唯一来源是节点权限：只要解析到节点权限（含三类均为空的节点）即严格生效，
+        // 未声明的字段不展示。仅当无任何节点权限（legacy 无工作流需求）时宽松放行全部字段。
+        boolean strict = permission != null;
 
         List<CustomFieldConfigDTO> result = new ArrayList<>();
         for (CustomField field : fields) {
@@ -260,7 +259,7 @@ public class RequirementFieldServiceImpl implements RequirementFieldService {
     @Transactional
     public void validateAndPersist(Requirement requirement, WorkflowNodePermission permission,
                                    List<CustomFieldValueDTO> submitted) {
-        List<CustomField> fields = listEnabledFields(requirement.getProjectId(), requirement.getType());
+        List<CustomField> fields = listEnabledFields(requirement.getType());
         if (fields.isEmpty() || submitted == null || submitted.isEmpty()) {
             return;
         }

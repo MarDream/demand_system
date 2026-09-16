@@ -39,10 +39,11 @@ public interface BitableBaseService {
     /**
      * 更新 Base
      *
-     * @param id  Base ID
-     * @param dto 更新参数
+     * @param id     Base ID
+     * @param dto    更新参数
+     * @param userId 操作人ID
      */
-    void updateBase(Long id, BitableBaseUpdateDTO dto);
+    void updateBase(Long id, BitableBaseUpdateDTO dto, Long userId);
 
     /**
      * 删除 Base（级联删除表/字段/记录/单元格/视图/成员）

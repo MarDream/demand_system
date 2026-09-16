@@ -42,6 +42,41 @@ export interface AssistantPageContext {
   entityId?: string
 }
 
+/** NL2SQL 结果集列定义 */
+export interface AssistantDataColumn {
+  field: string
+  label: string
+  /** number | date | string */
+  type: string
+}
+
+/** NL2SQL 图表建议 */
+export interface AssistantDataChart {
+  /** bar | line | pie | table */
+  type: string
+  title?: string | null
+  categoryField?: string | null
+  valueField?: string | null
+  seriesField?: string | null
+}
+
+/** NL2SQL 数据问答结果 */
+export interface AssistantDataResult {
+  question?: string | null
+  /** 实际执行的只读 SQL（已注入数据权限与软删除过滤） */
+  sql: string
+  columns: AssistantDataColumn[]
+  rows: Array<Record<string, any>>
+  rowCount: number
+  truncated: boolean
+  chart?: AssistantDataChart | null
+  /** 涉及的业务表 */
+  sourceTables?: string[]
+  durationMs?: number
+  /** 是否注入了行级数据权限过滤 */
+  scopeApplied?: boolean
+}
+
 export type AssistantMessageId = number | string
 
 export interface ThinkingStep {
@@ -109,6 +144,8 @@ export interface AssistantMessage {
   suggestedFollowUps?: string[]
   /** 深度思考内容（LLM reasoning，可为 null） */
   reasoning?: string | null
+  /** NL2SQL 数据问答结果（含 SQL、结果集与图表建议） */
+  dataResult?: AssistantDataResult | null
   /** 输入（提示词）token 数 */
   inputTokens?: number | null
   /** 输出（生成）token 数 */
@@ -158,6 +195,12 @@ export interface AssistantChatRequest {
   webSearch?: boolean
   /** 显式检索范围；未传时由后端按场景使用默认范围。 */
   searchScopes?: AssistantSearchScope[]
+  /**
+   * 是否启用"数据问答"（NL2SQL）：
+   * - true：直接走 NL2SQL 链路（自然语言 → 只读 SQL → 数据库 → 整合回答）
+   * - false / 不传：由后端按问题特征自动路由
+   */
+  dataQuery?: boolean
   /** 上传的文件附件（文件ID + 客户端提取的文本内容） */
   files?: AssistantFileAttachment[]
   /** 多轮对话历史（旧→新），用于查询改写与回答上下文；建议传最近 3~6 条 */
@@ -198,4 +241,6 @@ export interface AssistantActionPayload {
   tasks?: AssistantTask[]
   /** 检索降级与能力提示 */
   warnings?: string[]
+  /** 数据问答结果（dataQuery 链路时携带） */
+  dataResult?: AssistantDataResult | null
 }
