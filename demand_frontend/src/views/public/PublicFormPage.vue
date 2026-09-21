@@ -194,13 +194,13 @@ function goRedirect() {
   align-items: flex-start;
   justify-content: center;
   padding: 48px 16px;
-  background: var(--color-background, #f8fafc);
+  background: var(--color-background, var(--color-background));
 }
 
 .public-form-page__card {
   width: 100%;
   max-width: 560px;
-  background: var(--color-surface, #fff);
+  background: var(--color-surface, var(--color-surface));
   border-radius: 12px;
   padding: 28px 32px;
   box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08);
@@ -213,7 +213,7 @@ function goRedirect() {
 
 .public-form-page__desc {
   font-size: 13px;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary, var(--color-muted-text));
   margin: 0 0 20px;
 }
 

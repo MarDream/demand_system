@@ -15,11 +15,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 
 @Service
 public class RagAnswerServiceImpl implements RagAnswerService {
@@ -28,28 +28,30 @@ public class RagAnswerServiceImpl implements RagAnswerService {
             你是一个专业的知识库问答助手。根据提供的参考资料回答用户问题。
 
             【引用格式】
-            - 在回答中，每当引用某段参考资料时，在该位置插入角标 [N]，N 从 1 开始依次编号，与下方引用列表一一对应。
-            - 角标格式：在方括号内直接写数字，如 [1]、[2]、[3]。
-            - 如果同一段参考资料被多次引用，重复使用同一个角标。
+            - 每段参考资料都带有唯一编号（如 资料[1]、资料[2]，同一文档的多段资料共用同一编号）。
+            - 回答中每当引用某段资料时，在对应位置原样插入其编号角标，如 [1]、[2]、[1][3]。
+            - 角标必须使用资料自带的编号，禁止自行重新编号或使用不存在的编号。
+            - 同一资料被多次引用时，重复使用同一角标。
+            - 角标直接写在被支撑的结论之后，不要写成「（资料[1]）」「见资料1」这类带前缀或说明的写法。
+            - 标注「无编号，不可引用」的参考资料只能作为背景理解，不要为其插入任何角标。
+            - 只引用真正支撑该结论的资料；没有资料支撑的句子不要挂角标。
 
             【回答要求】
             1. 只根据提供的参考资料回答，不要编造信息
             2. 直接总结和整合信息，不要逐条罗列片段原文
             3. 回答结构清晰：先给总结性结论，再按逻辑分层展开
-            4. 回答末尾列出引用来源清单（按角标顺序），格式： [N] 文档名称
+            4. 不要在回答末尾手写"引用来源"清单，来源列表由系统自动展示
             5. 如果参考资料中没有相关信息，明确告知用户
             6. 回答简洁、准确、有条理
 
             【示例格式】
+            （假设资料[1]是需求管理规范，资料[2]是审批流程指南）
+
             根据知识库中的文档，审批流程分为三个主要阶段[1][2]。
 
             1. 提交阶段：需求提出后，由项目负责人进行初审[1]。
             2. 评审阶段：初审通过后，组织相关方进行技术评审[2]。
             3. 审批阶段：评审通过后，由部门主管最终审批[1][2]。
-
-            引用来源：
-            [1] 需求管理规范V2.0
-            [2] 项目审批流程指南
             """;
 
     /** 多轮场景注入提示词的最大历史轮数（单轮按 user+assistant 各一条计） */
@@ -267,17 +269,29 @@ public class RagAnswerServiceImpl implements RagAnswerService {
         return compact.length() <= MAX_HISTORY_TURN_CHARS ? compact : compact.substring(0, MAX_HISTORY_TURN_CHARS) + "…";
     }
 
+    /**
+     * 组装参考资料上下文。
+     *
+     * <p>同一文档的多段片段共用一个编号（按片段在检索结果中的首次出现顺序编号），
+     * 编号与 {@code KnowledgeSearchResponse.citations} 的顺序严格一致，
+     * 前端据此把回答中的 [N] 角标映射到可预览的来源文档。</p>
+     */
     private String buildContext(List<KnowledgeSearchResponse.SearchResultItem> results) {
-        return results.stream()
-                .map(item -> {
-                    StringBuilder sb = new StringBuilder();
-                    sb.append("【来源：").append(item.getFileName() != null ? item.getFileName() : "未知文档").append("】\n");
-                    if (item.getSectionTitle() != null) {
-                        sb.append("章节：").append(item.getSectionTitle()).append("\n");
-                    }
-                    sb.append("内容：").append(item.getContent());
-                    return sb.toString();
-                })
-                .collect(Collectors.joining("\n\n---\n\n"));
+        Map<Long, Integer> docNumber = new LinkedHashMap<>();
+        StringBuilder sb = new StringBuilder();
+        for (KnowledgeSearchResponse.SearchResultItem item : results) {
+            // 编号只分配给有 documentId 的片段，口径与 citations 完全一致；
+            // documentId 为空的片段（如工单正文）不参与编号，否则会把后续文档的编号整体挤位
+            Integer number = item.getDocumentId() == null
+                    ? null
+                    : docNumber.computeIfAbsent(item.getDocumentId(), k -> docNumber.size() + 1);
+            sb.append(number != null ? "【资料[" + number + "]｜来源：" : "【参考资料（无编号，不可引用）｜来源：")
+              .append(item.getFileName() != null ? item.getFileName() : "未知文档").append("】\n");
+            if (item.getSectionTitle() != null) {
+                sb.append("章节：").append(item.getSectionTitle()).append("\n");
+            }
+            sb.append("内容：").append(item.getContent()).append("\n\n---\n\n");
+        }
+        return sb.toString().trim();
     }
 }

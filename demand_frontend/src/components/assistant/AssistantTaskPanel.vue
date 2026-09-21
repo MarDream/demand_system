@@ -116,30 +116,25 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { ArrowDown, ArrowRight, Check, Close, List } from '@element-plus/icons-vue'
 import type { AssistantTask } from '@/types/assistant'
 
 interface Props {
   /** 任务列表 */
   tasks: AssistantTask[]
-  /** 是否处于流式状态（流式中默认展开，便于用户看到实时进度） */
+  /** 是否处于流式状态（用于头部单行动态展示，不改变折叠状态） */
   isStreaming?: boolean
-  /** 初始折叠状态 */
+  /** 初始折叠状态（默认折叠，头部单行显示进行中任务） */
   defaultCollapsed?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   isStreaming: false,
-  defaultCollapsed: false,
+  defaultCollapsed: true,
 })
 
 const collapsed = ref(props.defaultCollapsed)
-
-// 流式开始时自动展开；流式结束后保留当前折叠状态
-watch(() => props.isStreaming, (val) => {
-  if (val) collapsed.value = false
-})
 
 function toggleCollapsed() {
   collapsed.value = !collapsed.value
@@ -188,7 +183,7 @@ function formatLogTime(timestamp: number) {
   width: 100%;
   border: 1px solid #e4e7eb;
   border-radius: 12px;
-  background: #ffffff;
+  background: var(--color-surface);
   overflow: hidden;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
@@ -208,7 +203,7 @@ function formatLogTime(timestamp: number) {
   gap: 10px;
   padding: 10px 14px;
   border: none;
-  background: linear-gradient(180deg, #fafbfc 0%, #f6f7f9 100%);
+  background: linear-gradient(180deg, var(--color-surface-alt) 0%, #f6f7f9 100%);
   cursor: pointer;
   text-align: left;
   transition: background 0.15s ease;
@@ -229,23 +224,23 @@ function formatLogTime(timestamp: number) {
 .assistant-task-panel__header-icon {
   flex-shrink: 0;
   font-size: 14px;
-  color: #475569;
+  color: var(--color-text-secondary);
 }
 
 .assistant-task-panel__header-label {
   font-size: 12px;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--color-text-primary);
   letter-spacing: 0.2px;
 }
 
 .assistant-task-panel__header-count {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  color: #94a3b8;
+  color: var(--color-text-tertiary);
   font-weight: 500;
   padding: 1px 6px;
-  background: #f1f5f9;
+  background: var(--color-surface-alt);
   border-radius: 999px;
 }
 
@@ -257,7 +252,7 @@ function formatLogTime(timestamp: number) {
   padding: 2px 8px;
   font-size: 11px;
   font-weight: 500;
-  color: #047857;
+  color: var(--color-success-text);
   background: #ecfdf5;
   border-radius: 999px;
   white-space: nowrap;
@@ -289,7 +284,7 @@ function formatLogTime(timestamp: number) {
 .assistant-task-panel__header-arrow {
   flex-shrink: 0;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--color-text-tertiary);
   transition: transform 0.2s ease;
 }
 
@@ -318,7 +313,7 @@ function formatLogTime(timestamp: number) {
   transition: background 0.18s ease;
 
   &:hover {
-    background: #fafbfc;
+    background: var(--color-surface-alt);
   }
 
   &::after {
@@ -328,7 +323,7 @@ function formatLogTime(timestamp: number) {
     right: 14px;
     bottom: 0;
     height: 1px;
-    background: #f1f5f9;
+    background: var(--color-surface-alt);
   }
 
   &:last-child::after {
@@ -416,7 +411,7 @@ function formatLogTime(timestamp: number) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #94a3b8;
+  color: var(--color-text-tertiary);
   font-size: 13px;
 
   :deep(svg) {
@@ -433,7 +428,7 @@ function formatLogTime(timestamp: number) {
   color: #f43f5e;
   font-size: 12px;
   font-weight: 700;
-  background: #fef2f2;
+  background: var(--color-danger-bg);
   border-radius: 50%;
   width: 16px;
   height: 16px;
@@ -460,26 +455,26 @@ function formatLogTime(timestamp: number) {
 .assistant-task-item__title {
   font-size: 13px;
   font-weight: 500;
-  color: #1e293b;
+  color: var(--color-text-primary);
   line-height: 1.5;
   word-break: break-word;
 }
 
 .assistant-task-item.is-pending .assistant-task-item__title {
-  color: #94a3b8;
+  color: var(--color-text-tertiary);
 }
 
 .assistant-task-item.is-running .assistant-task-item__title {
-  color: #047857;
+  color: var(--color-success-text);
   font-weight: 600;
 }
 
 .assistant-task-item.is-completed .assistant-task-item__title {
-  color: #475569;
+  color: var(--color-text-secondary);
 }
 
 .assistant-task-item.is-failed .assistant-task-item__title {
-  color: #be123c;
+  color: var(--color-danger-text);
 }
 
 /* 状态徽章（克制语义色） */
@@ -495,28 +490,28 @@ function formatLogTime(timestamp: number) {
 
 .assistant-task-item__status.is-running {
   background: #d1fae5;
-  color: #047857;
+  color: var(--color-success-text);
 }
 
 .assistant-task-item__status.is-done {
-  background: #f1f5f9;
-  color: #64748b;
+  background: var(--color-surface-alt);
+  color: var(--color-muted-text);
 }
 
 .assistant-task-item__status.is-failed {
-  background: #fee2e2;
-  color: #b91c1c;
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
 }
 
 .assistant-task-item__status.is-pending {
-  background: #f1f5f9;
-  color: #94a3b8;
+  background: var(--color-surface-alt);
+  color: var(--color-text-tertiary);
 }
 
 .assistant-task-item__elapsed {
   margin-left: auto;
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--color-text-tertiary);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -534,17 +529,17 @@ function formatLogTime(timestamp: number) {
   border: none;
   background: none;
   font-size: 11px;
-  color: #64748b;
+  color: var(--color-muted-text);
   cursor: pointer;
   transition: color 0.15s ease;
 
   &:hover {
-    color: #2563eb;
+    color: var(--color-primary);
   }
 }
 
 .assistant-task-item__logs-toggle.is-open {
-  color: #2563eb;
+  color: var(--color-primary);
 }
 
 .assistant-task-item__logs-toggle-icon {
@@ -560,8 +555,8 @@ function formatLogTime(timestamp: number) {
   margin-top: 6px;
   padding: 8px 10px;
   border-radius: 8px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
   max-height: 180px;
   overflow-y: auto;
   font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', 'Monaco', 'Courier New', monospace;
@@ -577,19 +572,19 @@ function formatLogTime(timestamp: number) {
 
 .assistant-task-item__log-time {
   flex-shrink: 0;
-  color: #94a3b8;
+  color: var(--color-text-tertiary);
 }
 
 .assistant-task-item__log-msg {
-  color: #475569;
+  color: var(--color-text-secondary);
 }
 
 .assistant-task-item__log.is-warn .assistant-task-item__log-msg {
-  color: #c2410c;
+  color: var(--color-warning-text);
 }
 
 .assistant-task-item__log.is-error .assistant-task-item__log-msg {
-  color: #be123c;
+  color: var(--color-danger-text);
 }
 
 /* 日志展开/收起动画 */

@@ -33,13 +33,13 @@ defineProps<{
 }
 
 .field-tip-badge {
-  color: var(--el-color-info, #909399);
+  color: var(--el-color-info, var(--color-text-tertiary));
   font-size: 14px;
   cursor: help;
   transition: color 0.15s ease;
 }
 
 .field-tip-badge:hover {
-  color: var(--el-color-primary, #409eff);
+  color: var(--el-color-primary, var(--color-primary));
 }
 </style>

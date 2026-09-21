@@ -35,15 +35,19 @@
         LEFT JOIN roles direct_role ON pt.role_id IS NOT NULL
             AND direct_role.id = pt.role_id
             AND direct_role.deleted_at = 0
+        <if test="roleIds == null">
         LEFT JOIN user_roles ur ON direct_role.id IS NOT NULL
             AND ur.user_id = #{userId}
             AND ur.role_id = direct_role.id
+        </if>
         LEFT JOIN roles rg_role ON pt.role_group_id IS NOT NULL
             AND rg_role.role_group_id = pt.role_group_id
             AND rg_role.deleted_at = 0
+        <if test="roleIds == null">
         LEFT JOIN user_roles rg_ur ON rg_role.id IS NOT NULL
             AND rg_ur.user_id = #{userId}
             AND rg_ur.role_id = rg_role.id
+        </if>
         LEFT JOIN sys_org pt_org ON pt.org_id IS NOT NULL
             AND pt_org.id = pt.org_id
             AND pt_org.deleted_at = 0
@@ -65,8 +69,28 @@
                       AND direct_pt.user_id IS NOT NULL
                 )
                 AND (
+                    <!-- roleIds 传入时按「当前生效角色」匹配（角色切换收窄）；为 null 时按 user_roles 全集（旧口径） -->
+                    <if test="roleIds != null">
+                        <choose>
+                            <when test="roleIds.size() > 0">
+                            direct_role.id IN
+                            <foreach collection="roleIds" item="rid" open="(" separator="," close=")">
+                                #{rid}
+                            </foreach>
+                            OR rg_role.id IN
+                            <foreach collection="roleIds" item="rid2" open="(" separator="," close=")">
+                                #{rid2}
+                            </foreach>
+                            </when>
+                            <otherwise>
+                            1 = 0
+                            </otherwise>
+                        </choose>
+                    </if>
+                    <if test="roleIds == null">
                     ur.role_id IS NOT NULL
                     OR rg_ur.role_id IS NOT NULL
+                    </if>
                     OR (
                         pt.org_id IS NOT NULL
                         AND pt_org.id IS NOT NULL
@@ -118,6 +142,25 @@
 
     <!-- 统计用户的待办任务数量（带数据权限过滤） -->
     <select id="countByUserIdWithOrgFilter" resultType="java.lang.Long">
+        SELECT COUNT(DISTINCT pt.requirement_id)
+        FROM requirement_pending_tasks pt
+        <include refid="pendingUserAccessJoins" />
+        JOIN requirements r ON r.id = pt.requirement_id AND r.deleted_at = 0 AND r.is_draft = 0
+        WHERE pt.task_type = 'APPROVAL'
+          AND <include refid="pendingUserAccessCondition" />
+        <if test="isSuperAdmin != true and visibleOrgIds != null and visibleOrgIds.size() > 0">
+            AND r.org_id IN
+            <foreach collection="visibleOrgIds" item="orgId" open="(" separator="," close=")">
+                #{orgId}
+            </foreach>
+        </if>
+        <if test="isSuperAdmin != true and (visibleOrgIds == null or visibleOrgIds.size() == 0)">
+            AND 1 = 0
+        </if>
+    </select>
+
+    <!-- 统计用户的待办任务数量（带数据权限过滤 + 按当前生效角色收窄：「我的待办」角标） -->
+    <select id="countByUserIdWithOrgFilterAndActiveRole" resultType="java.lang.Long">
         SELECT COUNT(DISTINCT pt.requirement_id)
         FROM requirement_pending_tasks pt
         <include refid="pendingUserAccessJoins" />

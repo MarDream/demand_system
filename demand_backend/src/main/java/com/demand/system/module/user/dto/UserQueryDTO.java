@@ -8,6 +8,14 @@ public class UserQueryDTO {
 
     private String status;
 
+    private String employeeType;
+
+    private String workStatus;
+
+    private String hireDateFrom;
+
+    private String hireDateTo;
+
     private Long regionId;
 
     private Long departmentId;
@@ -40,6 +48,38 @@ public class UserQueryDTO {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getEmployeeType() {
+        return employeeType;
+    }
+
+    public void setEmployeeType(String employeeType) {
+        this.employeeType = employeeType;
+    }
+
+    public String getWorkStatus() {
+        return workStatus;
+    }
+
+    public void setWorkStatus(String workStatus) {
+        this.workStatus = workStatus;
+    }
+
+    public String getHireDateFrom() {
+        return hireDateFrom;
+    }
+
+    public void setHireDateFrom(String hireDateFrom) {
+        this.hireDateFrom = hireDateFrom;
+    }
+
+    public String getHireDateTo() {
+        return hireDateTo;
+    }
+
+    public void setHireDateTo(String hireDateTo) {
+        this.hireDateTo = hireDateTo;
     }
 
     public Long getRegionId() {

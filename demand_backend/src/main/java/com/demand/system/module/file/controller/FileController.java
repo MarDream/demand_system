@@ -18,6 +18,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -48,6 +49,15 @@ public class FileController {
             throw new BusinessException(ErrorCode.UNAUTHORIZED, "未登录");
         }
         return Result.success(fileService.upload(file, uploaderId));
+    }
+
+    /**
+     * 批量查询文件内容哈希（SHA-256 hex）。历史文件惰性回填，供前端同工单附件上传前去重。
+     */
+    @PostMapping("/hashes")
+    @PreAuthorize("isAuthenticated()")
+    public Result<Map<Long, String>> hashes(@RequestBody List<Long> fileIds) {
+        return Result.success(fileService.getHashesByIds(fileIds));
     }
 
     @GetMapping("/{id}")

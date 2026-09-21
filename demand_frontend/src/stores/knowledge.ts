@@ -100,7 +100,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
 
   async function search(
     query: string,
-    mode: SearchMode = 'hybrid',
+    mode: SearchMode = 'auto',
     knowledgeBaseId?: number,
     topK?: number,
     llmModelId?: number,

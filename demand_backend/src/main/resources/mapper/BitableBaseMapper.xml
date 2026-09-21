@@ -38,4 +38,31 @@
         GROUP BY b.id
     </select>
 
+    <!-- 按传入顺序批量回写排序号（列表下标即 sort_order） -->
+    <update id="updateSortOrders">
+        UPDATE `bitable_bases`
+        SET sort_order = CASE id
+            <foreach collection="ids" item="id" index="idx" open="" close="" separator="">
+                WHEN #{id} THEN #{idx}
+            </foreach>
+        END
+        WHERE deleted_at = 0
+          AND id IN
+        <foreach collection="ids" item="id" open="(" close=")" separator=",">
+            #{id}
+        </foreach>
+    </update>
+
+    <!-- 同名检测：同一分组下（含未分组）同名多维表格计数 -->
+    <select id="countSameNameInGroup" resultType="int">
+        SELECT COUNT(*)
+        FROM `bitable_bases`
+        WHERE deleted_at = 0
+          AND name = #{name}
+          AND group_id &lt;=&gt; #{groupId}
+        <if test="excludeId != null">
+          AND id != #{excludeId}
+        </if>
+    </select>
+
 </mapper>

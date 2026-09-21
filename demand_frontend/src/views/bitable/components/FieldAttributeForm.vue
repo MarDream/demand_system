@@ -77,6 +77,14 @@
       </el-form-item>
     </template>
 
+    <!-- ==================== 富文本 ==================== -->
+    <template v-else-if="fieldType === 'rich_text'">
+      <el-divider content-position="left">富文本属性</el-divider>
+      <div class="attr-hint" style="line-height: 1.6">
+        支持标题、加粗、颜色、列表、待办等排版；网格中点击单元格弹出编辑器，导出 Excel 时自动转为纯文本。
+      </div>
+    </template>
+
     <!-- ==================== 电话 ==================== -->
     <template v-else-if="fieldType === 'phone'">
       <el-divider content-position="left">电话属性</el-divider>
@@ -88,6 +96,30 @@
       </el-form-item>
       <el-form-item label="脱敏显示">
         <el-switch v-model="config.masked" />
+      </el-form-item>
+    </template>
+
+    <!-- ==================== 邮箱 ==================== -->
+    <template v-else-if="fieldType === 'email'">
+      <el-divider content-position="left">邮箱属性</el-divider>
+      <el-form-item label="允许的域名">
+        <div class="attr-list">
+          <div v-for="(_, idx) in emailDomains" :key="idx" class="attr-row">
+            <el-input v-model="emailDomains[idx]" placeholder="example.com" size="small" />
+            <el-button link size="small" @click="removeEmailDomain(idx)">
+              <el-icon><Delete /></el-icon>
+            </el-button>
+          </div>
+          <el-button link type="primary" size="small" @click="addEmailDomain">
+            <el-icon><Plus /></el-icon> 添加域名
+          </el-button>
+        </div>
+      </el-form-item>
+      <el-form-item label="点击发信">
+        <el-switch v-model="config.emailClickable" />
+      </el-form-item>
+      <el-form-item label="默认值">
+        <el-input v-model="defaultText" placeholder="name@example.com" />
       </el-form-item>
     </template>
 
@@ -426,6 +458,36 @@
       </el-form-item>
     </template>
 
+    <!-- ==================== 部门 ==================== -->
+    <template v-else-if="fieldType === 'department'">
+      <el-divider content-position="left">部门属性</el-divider>
+      <el-form-item label="选择模式">
+        <el-radio-group v-model="config.departmentMode">
+          <el-radio-button value="single">单部门</el-radio-button>
+          <el-radio-button value="multiple">多部门</el-radio-button>
+        </el-radio-group>
+      </el-form-item>
+      <el-form-item label="可选范围">
+        <el-radio-group v-model="config.departmentScope">
+          <el-radio-button value="all">全组织</el-radio-button>
+          <el-radio-button value="dept">指定部门</el-radio-button>
+        </el-radio-group>
+      </el-form-item>
+      <el-form-item v-if="config.departmentScope === 'dept'" label="指定部门">
+        <el-tree-select
+          v-model="config.departmentIds"
+          :data="orgTree"
+          multiple
+          show-checkbox
+          check-strictly
+          node-key="id"
+          :props="{ label: 'name', children: 'children' }"
+          placeholder="选择部门"
+          style="width: 100%"
+        />
+      </el-form-item>
+    </template>
+
     <!-- ==================== 附件 ==================== -->
     <template v-else-if="fieldType === 'attachment'">
       <el-divider content-position="left">附件属性</el-divider>
@@ -680,12 +742,37 @@
     <template v-else-if="fieldType === 'ai_text' || fieldType === 'ai_select'">
       <el-divider content-position="left">AI 字段属性</el-divider>
       <el-form-item label="AI 提示词">
-        <el-input
-          v-model="base.aiPrompt"
-          type="textarea"
-          :rows="3"
-          placeholder="根据{需求描述}生成一段概要"
-        />
+        <div class="ai-prompt-editor">
+          <el-input
+            ref="aiPromptInputRef"
+            v-model="base.aiPrompt"
+            type="textarea"
+            :rows="3"
+            placeholder="根据{{任务标题}}生成一段概要；输入 {{ 可唤起字段提示"
+            @input="handleAiPromptInput"
+            @keydown="handleAiPromptKeydown"
+            @blur="closeAiSuggest"
+          />
+          <!-- {{ 触发的字段自动补全浮层 -->
+          <div
+            v-if="aiSuggest.visible"
+            class="ai-prompt-suggest"
+            :style="{ left: aiSuggest.left + 'px', top: aiSuggest.top + 'px' }"
+          >
+            <div
+              v-for="(item, idx) in aiSuggest.items"
+              :key="item.id ?? item.name"
+              class="ai-prompt-suggest__item"
+              :class="{ 'is-active': idx === aiSuggest.active }"
+              @mousedown.prevent="applyAiSuggest(item)"
+            >
+              <span class="ai-prompt-suggest__name" :title="item.name">{{ item.name }}</span>
+              <span class="ai-prompt-suggest__type">{{ fieldTypeLabel(item.fieldType) }}</span>
+            </div>
+            <div v-if="!aiSuggest.items.length" class="ai-prompt-suggest__empty">无匹配字段</div>
+          </div>
+        </div>
+        <div class="ai-prompt-hint">输入 <code>&#123;&#123;</code> 可引用其它字段取值（如 <code>&#123;&#123;任务标题&#125;&#125;</code>），选中后自动加入源字段</div>
       </el-form-item>
       <el-form-item label="源字段">
         <el-select v-model="config.sourceFieldIds" multiple placeholder="参与生成的字段" style="width: 100%">
@@ -750,7 +837,7 @@
  * - `config` 的键位由 `utils/bitableFieldConfig` 约束；切换字段类型时本组件把 config 重置为
  *   该类型的默认配置，避免残留上一个类型的键。
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { Delete, Plus, Top, Bottom } from '@element-plus/icons-vue'
 import { listFields } from '@/api/modules/bitable'
 import { getOrgTree } from '@/api/modules/user'
@@ -836,6 +923,137 @@ const aiSourceFields = computed(() =>
   otherFields.value.filter((f) => f.fieldType !== 'ai_text' && f.fieldType !== 'ai_select'),
 )
 
+// ==================== AI 提示词 {{字段}} 自动补全 ====================
+
+const aiPromptInputRef = ref()
+const aiSuggest = reactive({
+  visible: false,
+  items: [] as BitableField[],
+  active: 0,
+  /** "{{" 在文本中的触发位置 */
+  triggerStart: -1,
+  query: '',
+  left: 0,
+  top: 0,
+})
+const AI_SUGGEST_LIMIT = 8
+
+function closeAiSuggest() {
+  aiSuggest.visible = false
+}
+
+function fieldTypeLabel(type: string): string {
+  const map: Record<string, string> = {
+    text: '文本', number: '数字', date: '日期', single_select: '单选', multi_select: '多选',
+    user: '人员', currency: '货币', progress: '进度', rating: '评分', auto_number: '编号',
+    formula: '公式', rollup: '汇总', lookup: '引用', department: '部门', created_time: '创建时间',
+    created_by: '创建人', checkbox: '复选框', url: '链接', email: '邮箱', phone: '电话',
+  }
+  return map[type] || type
+}
+
+/** 光标是否处于未闭合的 {{ 引用态；是则返回触发起点与前缀 */
+function detectAiSuggestContext(value: string, caret: number): { start: number; query: string } | null {
+  const text = value.slice(0, caret)
+  const open = text.lastIndexOf('{{')
+  if (open < 0) return null
+  const close = text.indexOf('}}', open)
+  if (close >= 0 && close < caret) return null
+  return { start: open, query: text.slice(open + 2) }
+}
+
+/** 镜像元素测量光标在 textarea 内的像素坐标 */
+function measureAiPromptCaret(el: HTMLTextAreaElement, caret: number): { left: number; top: number } {
+  const mirror = document.createElement('div')
+  const style = getComputedStyle(el)
+  for (const prop of ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'padding', 'border', 'boxSizing', 'whiteSpace', 'wordBreak'] as const) {
+    mirror.style[prop] = style[prop]
+  }
+  mirror.style.position = 'absolute'
+  mirror.style.visibility = 'hidden'
+  mirror.style.height = 'auto'
+  mirror.style.width = `${el.clientWidth}px`
+  document.body.appendChild(mirror)
+  mirror.textContent = el.value.slice(0, caret)
+  const marker = document.createElement('span')
+  marker.textContent = '\u200b'
+  mirror.appendChild(marker)
+  const mirrorRect = mirror.getBoundingClientRect()
+  const markerRect = marker.getBoundingClientRect()
+  const result = { left: markerRect.left - mirrorRect.left, top: markerRect.top - mirrorRect.top }
+  document.body.removeChild(mirror)
+  return result
+}
+
+function updateAiSuggest(value: string, caret: number) {
+  const ctx = detectAiSuggestContext(value, caret)
+  const el = aiPromptInputRef.value?.textarea as HTMLTextAreaElement | undefined
+  if (!ctx || !el) {
+    closeAiSuggest()
+    return
+  }
+  const query = ctx.query.trim().toLowerCase()
+  const items = aiSourceFields.value
+    .filter((f) => !query || f.name.toLowerCase().includes(query))
+    .slice(0, AI_SUGGEST_LIMIT)
+  if (!items.length) {
+    closeAiSuggest()
+    return
+  }
+  const pos = measureAiPromptCaret(el, ctx.start)
+  aiSuggest.visible = true
+  aiSuggest.items = items
+  aiSuggest.active = 0
+  aiSuggest.triggerStart = ctx.start
+  aiSuggest.query = ctx.query
+  aiSuggest.left = Math.max(0, Math.min(pos.left, (el.clientWidth || 300) - 190))
+  aiSuggest.top = pos.top + 22
+}
+
+function handleAiPromptInput() {
+  const el = aiPromptInputRef.value?.textarea as HTMLTextAreaElement | undefined
+  if (!el) return
+  updateAiSuggest(el.value, el.selectionStart ?? 0)
+}
+
+function handleAiPromptKeydown(e: KeyboardEvent) {
+  if (!aiSuggest.visible) return
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    if (aiSuggest.items.length) aiSuggest.active = (aiSuggest.active + 1) % aiSuggest.items.length
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    if (aiSuggest.items.length) aiSuggest.active = (aiSuggest.active - 1 + aiSuggest.items.length) % aiSuggest.items.length
+  } else if (e.key === 'Enter' || e.key === 'Tab') {
+    e.preventDefault()
+    const item = aiSuggest.items[aiSuggest.active]
+    if (item) applyAiSuggest(item)
+  } else if (e.key === 'Escape') {
+    e.preventDefault()
+    closeAiSuggest()
+  }
+}
+
+/** 选中字段：替换 {{前缀 为 {{字段名}}，光标落在 }} 后，并自动加入源字段 */
+function applyAiSuggest(item: BitableField) {
+  const el = aiPromptInputRef.value?.textarea as HTMLTextAreaElement | undefined
+  closeAiSuggest()
+  if (!el) return
+  const caret = el.selectionStart ?? el.value.length
+  const before = el.value.slice(0, aiSuggest.triggerStart)
+  const after = el.value.slice(caret)
+  const inserted = `{{${item.name}}}`
+  props.base.aiPrompt = before + inserted + after
+  if (item.id != null && !(props.config.sourceFieldIds || []).includes(item.id)) {
+    props.config.sourceFieldIds = [...(props.config.sourceFieldIds || []), item.id]
+  }
+  nextTick(() => {
+    const pos = before.length + inserted.length
+    el.focus()
+    el.setSelectionRange(pos, pos)
+  })
+}
+
 /** 文本「格式校验」：无正则即视为不限 */
 const textPatternMode = computed({
   get: () => (props.config.pattern ? 'regex' : 'none'),
@@ -855,6 +1073,17 @@ const buttonConfig = computed(() => props.config.button as NonNullable<FieldConf
 
 /** 人员可选部门（规范键，见 FieldConfig.userDeptIds） */
 if (props.config.userDeptIds === undefined) props.config.userDeptIds = []
+
+/**
+ * 邮箱域名白名单 / 部门 ID：模板按索引直接写，必须保证是数组。
+ * 与 userDeptIds 一样不做类型判断 —— 新增字段弹框里类型是后选的，
+ * 这里若按当前类型判断，切到该类型时这两个键仍是 undefined。
+ */
+if (!Array.isArray(props.config.allowedEmailDomains)) props.config.allowedEmailDomains = []
+if (!Array.isArray(props.config.departmentIds)) props.config.departmentIds = []
+/** 同上，给模板一个非空类型（v-model 按索引写回的是 config 里那个真实数组） */
+const emailDomains = computed(() => props.config.allowedEmailDomains || [])
+
 
 /** 默认值的类型安全代理（FieldConfig.defaultValue 是 unknown，不能直接 v-model） */
 const defaultText = computed({
@@ -911,6 +1140,15 @@ function moveOption(index: number, delta: number) {
   list.splice(target, 0, item)
 }
 
+function addEmailDomain() {
+  if (!props.config.allowedEmailDomains) props.config.allowedEmailDomains = []
+  props.config.allowedEmailDomains.push('')
+}
+
+function removeEmailDomain(index: number) {
+  props.config.allowedEmailDomains?.splice(index, 1)
+}
+
 function addProgressRule() {
   if (!props.config.progressRules) props.config.progressRules = []
   props.config.progressRules.push({ below: 30, color: '#F59E0B' })
@@ -945,6 +1183,29 @@ function onLookupLinkFieldChange(fieldId?: number) {
   loadTargetFields(linkField?.config?.linkTargetTableId)
 }
 
+async function loadOrgTree() {
+  if (orgTree.value.length) return
+  try {
+    const tree = await getOrgTree()
+    orgTree.value = Array.isArray(tree) ? (tree as any) : (tree as any)?.data || []
+  } catch {
+    orgTree.value = []
+  }
+}
+
+/**
+ * 人员 / 部门都要用组织树。按「类型」加载，而不是按「当前可选范围」：
+ * 范围是可切换的，等切到「指定部门」再拉会先渲染出空下拉。
+ * 又因为新增字段弹框里类型是后选的，所以必须 watch 类型，不能只在 mounted 拉一次。
+ */
+watch(
+  () => props.fieldType,
+  (type) => {
+    if (type === 'user' || type === 'department') loadOrgTree()
+  },
+  { immediate: true },
+)
+
 onMounted(async () => {
   if (isLinkType.value && props.config.linkTargetTableId) {
     await loadTargetFields(props.config.linkTargetTableId)
@@ -952,14 +1213,6 @@ onMounted(async () => {
   if (['lookup', 'rollup'].includes(props.fieldType) && props.config.linkFieldId) {
     const linkField = props.fields.find((f) => f.id === props.config.linkFieldId)
     await loadTargetFields(linkField?.config?.linkTargetTableId)
-  }
-  if (props.fieldType === 'user' && props.config.userScope === 'dept') {
-    try {
-      const tree = await getOrgTree()
-      orgTree.value = Array.isArray(tree) ? (tree as any) : (tree as any)?.data || []
-    } catch {
-      orgTree.value = []
-    }
   }
 })
 </script>
@@ -971,14 +1224,84 @@ onMounted(async () => {
   }
   :deep(.el-divider__text) {
     font-size: 12px;
-    color: var(--color-text-secondary, #64748b);
+    color: var(--color-text-secondary, var(--color-muted-text));
+  }
+}
+
+/* AI 提示词编辑器：textarea + {{字段}} 自动补全浮层 */
+.ai-prompt-editor {
+  position: relative;
+  width: 100%;
+}
+
+.ai-prompt-hint {
+  width: 100%;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+  line-height: 1.5;
+}
+
+.ai-prompt-suggest {
+  position: absolute;
+  z-index: 30;
+  min-width: 180px;
+  max-width: 260px;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.12));
+  padding: 4px;
+
+  &__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--color-text-primary);
+
+    &.is-active {
+      background: var(--color-primary-subtle, var(--el-color-primary-light-9));
+      color: var(--color-primary, var(--el-color-primary));
+    }
+
+    &:hover {
+      background: var(--color-surface-alt);
+    }
+  }
+
+  &__name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__type {
+    flex-shrink: 0;
+    font-size: 11px;
+    color: var(--color-text-tertiary, var(--color-text-secondary));
+  }
+
+  &__empty {
+    padding: 8px;
+    font-size: 12px;
+    color: var(--color-text-tertiary, var(--color-text-secondary));
+    text-align: center;
   }
 }
 
 .attr-hint {
   margin-left: 8px;
   font-size: 12px;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary, var(--color-muted-text));
 }
 
 .attr-list {
@@ -995,7 +1318,7 @@ onMounted(async () => {
 .attr-row__label {
   flex-shrink: 0;
   font-size: 12px;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary, var(--color-muted-text));
 }
 
 .option-block {

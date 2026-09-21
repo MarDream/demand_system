@@ -95,19 +95,26 @@
       <main class="role-main">
         <section v-if="selectedRole" class="role-detail">
           <div class="detail-header">
-            <div>
-              <div class="detail-title">
-                <span>{{ selectedRole.name }}</span>
-                <el-tag v-if="isSystemRole(selectedRole)" size="small" type="info">系统角色</el-tag>
-                <el-tag v-else size="small" type="success">自定义角色</el-tag>
-                <el-tag size="small" effect="plain">{{ roleGroupNameById(selectedRole.roleGroupId) }}</el-tag>
-              </div>
-              <div class="detail-code">{{ selectedRole.code }}</div>
+            <div class="detail-title">
+              <span>{{ selectedRole.name }}</span>
+              <el-tag v-if="isSystemRole(selectedRole)" size="small" type="info">系统角色</el-tag>
+              <el-tag v-else size="small" type="success">自定义角色</el-tag>
+              <el-tag size="small" effect="plain">{{ roleGroupNameById(selectedRole.roleGroupId) }}</el-tag>
+              <!-- 角色说明改为名称后的角标：悬停即读，不再单独占一行 -->
+              <el-popover
+                v-if="selectedRole.description"
+                placement="bottom-start"
+                :width="320"
+                trigger="hover"
+                :show-after="120"
+              >
+                <template #reference>
+                  <el-icon class="detail-desc-badge"><InfoFilled /></el-icon>
+                </template>
+                <div class="detail-desc-text">{{ selectedRole.description }}</div>
+              </el-popover>
             </div>
-            <el-button link type="primary" @click="selectedRole = null">查看角色说明</el-button>
           </div>
-
-          <p class="detail-description">{{ selectedRole.description || '暂无角色说明' }}</p>
 
           <div class="role-actions-bar">
             <AppButton type="primary" permission="button:role:create" @click="openCreate">
@@ -139,27 +146,49 @@
             >
               保存权限
             </AppButton>
+
+            <!-- 搜索 + 全选/清空 与操作按钮同排：整行合一，权限菜单多显示几行 -->
+            <el-input
+              v-model="permissionKeyword"
+              class="role-actions-bar__search"
+              placeholder="搜索菜单或按钮"
+              clearable
+            >
+              <template #prefix>
+                <el-icon><Search /></el-icon>
+              </template>
+            </el-input>
+
+            <div class="role-actions-bar__bulk">
+              <template v-if="canGrantSelectedRole">
+                <el-tooltip content="全选当前" placement="top">
+                  <AppButton permission="button:role:grant" @click="selectAllVisiblePermissions">
+                    <el-icon><Select /></el-icon>
+                  </AppButton>
+                </el-tooltip>
+                <el-tooltip content="清空当前" placement="top">
+                  <AppButton permission="button:role:grant" @click="clearVisiblePermissions">
+                    <el-icon><Delete /></el-icon>
+                  </AppButton>
+                </el-tooltip>
+              </template>
+              <!-- 不可授权时不再放一条长文案按钮（实测把操作行撑成两行），原因收进 tooltip -->
+              <el-tooltip v-else :content="grantDisabledReason" placement="top">
+                <span class="role-actions-bar__bulk-trigger">
+                  <AppButton :disabled="true" @click="selectAllVisiblePermissions">
+                    <el-icon><Select /></el-icon>
+                  </AppButton>
+                  <AppButton :disabled="true" @click="clearVisiblePermissions">
+                    <el-icon><Delete /></el-icon>
+                  </AppButton>
+                </span>
+              </el-tooltip>
+            </div>
           </div>
 
           <div class="permission-panel">
-            <div class="panel-head">
-              <div>
-                <h3>权限范围</h3>
-                <p>{{ canGrantSelectedRole ? '按菜单及菜单下按钮授权，保存后即时影响菜单可见性、需求操作和工作流处理范围。' : grantDisabledReason }}</p>
-              </div>
-            </div>
-
             <el-skeleton v-if="permissionLoading" :rows="6" animated />
             <div v-else class="permission-content">
-              <div class="permission-toolbar">
-                <el-input v-model="permissionKeyword" placeholder="搜索菜单、按钮或权限编码" clearable>
-                  <template #prefix>
-                    <el-icon><Search /></el-icon>
-                  </template>
-                </el-input>
-                <AppButton :disabled="!canGrantSelectedRole" permission="button:role:grant" @click="selectAllVisiblePermissions">全选当前</AppButton>
-                <AppButton :disabled="!canGrantSelectedRole" permission="button:role:grant" @click="clearVisiblePermissions">清空当前</AppButton>
-              </div>
 
               <el-alert
                 v-if="isSuperAdminRole(selectedRole)"
@@ -192,7 +221,6 @@
                       <el-tag size="small" effect="plain">{{ menuTypeLabel(node.menuType) }}</el-tag>
                     </el-checkbox>
 
-                    <span v-if="node.menuPermission" class="permission-code">{{ node.menuPermission.code }}</span>
                     <span class="menu-count">{{ selectedCount(node.allPermissions) }}/{{ node.allPermissions.length }}</span>
                   </div>
 
@@ -238,7 +266,6 @@
                             <el-tag size="small" effect="plain">{{ menuTypeLabel(child.menuType) }}</el-tag>
                           </el-checkbox>
 
-                          <span v-if="child.menuPermission" class="permission-code">{{ child.menuPermission.code }}</span>
                           <span class="menu-count">{{ selectedCount(child.allPermissions) }}/{{ child.allPermissions.length }}</span>
                         </div>
                         <div v-if="expandedMenuKeys.includes(child.key) && child.buttons.length" class="button-permission-grid" :style="{ marginLeft: `${34 + child.level * 18}px` }">
@@ -323,39 +350,6 @@
             </div>
           </div>
         </section>
-
-        <section v-else class="empty-guide">
-          <div class="guide-copy">
-            <h2>什么是角色？</h2>
-            <p>角色指团队成员的专业分工类别，如产品、研发、测试、项目负责人等。成员拥有角色后，会继承该角色对应的菜单、需求操作和工作流权限。</p>
-            <h3>怎么使用角色？</h3>
-            <ul>
-              <li>审批：在工作流配置中选择指定角色作为审批人，避免因成员离职或变动造成流程失效。</li>
-              <li>项目：把角色加入项目成员范围，让需求创建、评审、流转能按职责协作。</li>
-              <li>权限：给角色授予菜单和按钮权限，控制成员可见功能与高风险操作。</li>
-            </ul>
-            <div class="guide-actions">
-              <el-button type="primary" @click="openCreate">新增角色</el-button>
-              <el-button @click="$router.push('/system/workflow-config')">去审批设置流程</el-button>
-              <el-button @click="showTodo('使用手册')">使用手册</el-button>
-            </div>
-          </div>
-
-          <div class="flow-preview" aria-hidden="true">
-            <div class="flow-track">
-              <span>提交审批</span>
-              <span>流程不中断</span>
-            </div>
-            <div v-for="(node, index) in previewNodes" :key="node.label" class="flow-node">
-              <div class="flow-avatar" :style="{ background: node.color }">
-                <el-icon><component :is="node.icon" /></el-icon>
-              </div>
-              <div class="flow-label">角色：{{ node.label }}</div>
-              <div v-if="node.note" class="flow-note">{{ node.note }}</div>
-              <div v-if="index < previewNodes.length - 1" class="flow-line" />
-            </div>
-          </div>
-        </section>
       </main>
       </div>
     </div>
@@ -387,30 +381,6 @@
               :value="group.id"
             />
           </el-select>
-        </el-form-item>
-        <el-form-item label="角色编码" prop="code">
-          <div style="display: flex; gap: 8px; width: 100%;">
-            <el-input
-              v-model="form.code"
-              placeholder="例如 PRODUCT_OWNER"
-              :disabled="!!editingRole"
-              style="flex: 1"
-              @input="codeManuallyEdited = true"
-            />
-            <el-tooltip
-              v-if="!editingRole"
-              :content="aiCodeGenerating ? 'AI 正在生成编码...' : 'AI 自动生成编码'"
-              placement="top"
-            >
-              <el-button
-                :loading="aiCodeGenerating"
-                :disabled="!form.name.trim() || !!editingRole"
-                @click="handleAiGenerateCode"
-              >
-                <el-icon v-if="!aiCodeGenerating"><MagicStick /></el-icon>
-              </el-button>
-            </el-tooltip>
-          </div>
         </el-form-item>
         <el-form-item label="角色说明" prop="description">
           <el-input v-model="form.description" type="textarea" :rows="4" placeholder="说明角色职责与使用范围" />
@@ -474,7 +444,7 @@
 <script setup lang="ts">
 import { computed, markRaw, onMounted, onUnmounted, reactive, ref, type Component } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { ArrowDown, ArrowLeft, ArrowRight, Search, Suitcase, Tickets, UserFilled, User, Tools, Plus, FolderOpened, Rank, MagicStick } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowLeft, ArrowRight, Search, UserFilled, User, Plus, FolderOpened, Rank, Select, Delete, InfoFilled } from '@element-plus/icons-vue'
 import Sortable from 'sortablejs'
 import * as XLSX from 'xlsx'
 import PageContainer from '@/components/common/PageContainer.vue'
@@ -502,7 +472,6 @@ import {
   type RolePayload,
 } from '@/api/modules/role'
 import { getAllMenus, type MenuItem, type RoleItem } from '@/api/modules/menu'
-import { llmProviderApi } from '@/api/modules/llmProvider'
 import type { AuthUserInfo } from '@/api/modules/auth'
 
 interface PermissionOption {
@@ -538,9 +507,6 @@ interface RoleGroupSection {
 }
 
 const RAW_USER_ICON = markRaw(User)
-const RAW_SUITCASE_ICON = markRaw(Suitcase)
-const RAW_TICKETS_ICON = markRaw(Tickets)
-const RAW_TOOLS_ICON = markRaw(Tools)
 const RAW_FOLDER_OPENED_ICON = markRaw(FolderOpened)
 const RAW_USER_FILLED_ICON = markRaw(UserFilled)
 
@@ -603,8 +569,6 @@ const editingRoleGroup = ref<RoleGroupItem | null>(null)
 const roleGroupFormRef = ref<FormInstance>()
 const roleGroupSubmitting = ref(false)
 const userStore = useUserStore()
-const codeManuallyEdited = ref(false)
-const aiCodeGenerating = ref(false)
 const roleGroupsRef = ref<HTMLElement | null>(null)
 let sortableGroupInstance: Sortable | null = null
 let sortableRoleInstances: Map<string, Sortable> = new Map()
@@ -629,10 +593,6 @@ const rules: FormRules = {
     { max: 100, message: '角色名称不能超过100个字符', trigger: 'blur' },
     { validator: validateRoleNameUnique, trigger: 'blur' },
   ],
-  code: [
-    { required: true, message: '请输入角色编码', trigger: 'blur' },
-    { pattern: /^[A-Z][A-Z0-9_]*$/, message: '仅支持大写字母、数字和下划线，且以字母开头', trigger: 'blur' },
-  ],
   description: [
     { max: 500, message: '角色说明不能超过500个字符', trigger: 'blur' },
   ],
@@ -648,14 +608,6 @@ const roleGroupRules: FormRules = {
     { max: 500, message: '角色组说明不能超过500个字符', trigger: 'blur' },
   ],
 }
-
-const previewNodes: Array<{ label: string; color: string; icon: Component; note?: string }> = [
-  { label: '发起人', color: '#0084ff', icon: RAW_USER_ICON },
-  { label: '项目经理', color: '#1f6feb', icon: RAW_SUITCASE_ICON },
-  { label: '技术负责人', color: '#20b26b', icon: RAW_TICKETS_ICON },
-  { label: '测试负责人', color: '#8b5cf6', icon: RAW_TOOLS_ICON, note: '已离职' },
-  { label: '运维负责人', color: '#0ea5e9', icon: RAW_TOOLS_ICON },
-]
 
 const filteredRoles = computed(() => {
   const value = keyword.value.trim().toLowerCase()
@@ -1178,7 +1130,6 @@ function isGrantablePermission(code: string): boolean {
 
 function openCreate() {
   editingRole.value = null
-  codeManuallyEdited.value = false
   resetForm()
   // 默认填充当前选中的角色分组
   form.roleGroupId = selectedGroupId.value
@@ -1187,9 +1138,8 @@ function openCreate() {
 
 function openEdit(role: RoleItem) {
   editingRole.value = role
-  codeManuallyEdited.value = true
   form.name = role.name
-  form.code = role.code
+  form.code = role.code  // 编辑时保留原编码，不展示
   form.description = role.description || ''
   form.roleGroupId = role.roleGroupId ?? null
   form.groupIds = role.groupIds || []
@@ -1198,7 +1148,8 @@ function openEdit(role: RoleItem) {
 
 async function handleSubmit() {
   if (!formRef.value) return
-  if (!form.code && form.name) {
+  // 编码字段已不展示：新建时由名称自动生成；编辑时保留原编码（系统角色编码被权限判断引用，不可变）
+  if (!editingRole.value) {
     form.code = generateRoleCode(form.name)
   }
   await formRef.value.validate()
@@ -1705,7 +1656,6 @@ function resetForm() {
   form.description = ''
   form.roleGroupId = null
   form.groupIds = []
-  codeManuallyEdited.value = false
   formRef.value?.resetFields()
 }
 
@@ -1809,35 +1759,9 @@ function validateRoleGroupNameUnique(_rule: unknown, value: string, callback: (e
 }
 
 function handleRoleNameInput() {
-  if (editingRole.value || codeManuallyEdited.value) return
-  // 仅使用本地映射生成编码，AI 翻译需手动点击按钮触发
+  // 编码不再展示：仅新建时随名称自动生成，编辑时保留原编码
+  if (editingRole.value) return
   form.code = generateRoleCode(form.name)
-}
-
-/** 手动点击 AI 按钮生成编码 */
-async function handleAiGenerateCode() {
-  const name = form.name.trim()
-  if (!name) return
-
-  try {
-    aiCodeGenerating.value = true
-    const result = await llmProviderApi.translate(name) as any
-    const translated = result?.data ?? result
-    if (translated && typeof translated === 'string' && /^[A-Z][A-Z0-9_]*$/.test(translated)) {
-      form.code = translated.slice(0, 50)
-      codeManuallyEdited.value = false
-    } else {
-      // LLM 返回空或格式不对，走本地 fallback
-      form.code = generateRoleCode(name)
-      ElMessage.info('未配置可用模型，已使用本地映射生成编码')
-    }
-  } catch {
-    // LLM 调用失败，走本地 fallback
-    form.code = generateRoleCode(name)
-    ElMessage.info('AI 服务暂不可用，已使用本地映射生成编码')
-  } finally {
-    aiCodeGenerating.value = false
-  }
 }
 
 function validateRoleNameUnique(_rule: unknown, value: string, callback: (error?: Error) => void) {
@@ -1920,10 +1844,6 @@ function shortHash(value: string) {
     hash = ((hash << 5) - hash + value.charCodeAt(index)) >>> 0
   }
   return hash.toString(36).toUpperCase().padStart(6, '0')
-}
-
-function showTodo(action: string) {
-  ElMessage.info(`${action}能力将在后续接口完善后接入`)
 }
 
 function permissionName(code: string) {
@@ -2056,7 +1976,7 @@ function permissionName(code: string) {
 }
 
 .mode-switch :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
-  background: #fff;
+  background: var(--color-surface);
   color: var(--color-text-primary);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
 }
@@ -2066,7 +1986,7 @@ function permissionName(code: string) {
   min-height: calc(100vh - 148px);
   display: grid;
   grid-template-columns: var(--role-sidebar-width, 360px) var(--role-sidebar-resizer-width, 4px) minmax(0, 1fr);
-  background: #fff;
+  background: var(--color-surface);
   position: relative;
 }
 
@@ -2076,7 +1996,7 @@ function permissionName(code: string) {
   gap: var(--spacing-md);
   padding: var(--spacing-md);
   border-right: 1px solid var(--color-border);
-  background: #fff;
+  background: var(--color-surface);
   overflow: auto;
 }
 
@@ -2135,13 +2055,13 @@ function permissionName(code: string) {
   border: 1px solid var(--color-border);
   border-left: 0;
   border-radius: 0 6px 6px 0;
-  background: #fff;
+  background: var(--color-surface);
   cursor: pointer;
   z-index: 2;
   box-shadow: 2px 0 6px rgba(0, 0, 0, 0.06);
 
   &:hover {
-    background: #f5f7fa;
+    background: var(--color-fill-secondary);
   }
 }
 
@@ -2203,7 +2123,7 @@ function permissionName(code: string) {
   min-width: 22px;
   padding: 1px 7px;
   border-radius: 999px;
-  background: #edf2f7;
+  background: var(--color-surface-alt);
   color: var(--color-text-placeholder);
   text-align: center;
   font-size: var(--font-size-xs);
@@ -2212,7 +2132,7 @@ function permissionName(code: string) {
 .role-group__empty {
   padding: 12px;
   border-radius: var(--radius-md);
-  background: #f8fafc;
+  background: var(--color-background);
   color: var(--color-text-placeholder);
   font-size: var(--font-size-sm);
   text-align: center;
@@ -2246,7 +2166,7 @@ function permissionName(code: string) {
 }
 
 .role-item:hover {
-  background: #f5f7fa;
+  background: var(--color-fill-secondary);
 }
 
 .role-item:active {
@@ -2256,7 +2176,7 @@ function permissionName(code: string) {
 
 .role-item.is-active {
   background: var(--color-info-light);
-  border-color: #b3d8ff;
+  border-color: var(--color-primary-light);
 }
 
 .role-item.is-dragging {
@@ -2299,9 +2219,7 @@ function permissionName(code: string) {
   min-height: 0;
 }
 
-.detail-header,
-.panel-head,
-.permission-toolbar {
+.detail-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -2311,29 +2229,37 @@ function permissionName(code: string) {
 .detail-title {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--spacing-sm);
+  min-width: 0;
   font-size: 18px;
   font-weight: 700;
   color: var(--color-text-primary);
 }
 
-.detail-code {
-  margin-top: 6px;
+/* 角色说明角标：内容走 popover，标题行只留一个图标 */
+.detail-desc-badge {
+  font-size: 15px;
   color: var(--color-text-placeholder);
+  cursor: help;
+
+  &:hover {
+    color: var(--color-primary);
+  }
+}
+
+.detail-desc-text {
+  color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .detail-actions {
   display: flex;
   gap: var(--spacing-sm);
   flex-wrap: wrap;
-}
-
-.detail-description {
-  margin: 0;
-  color: var(--color-text-secondary);
-  line-height: 1.5;
-  font-size: var(--font-size-sm);
 }
 
 .role-actions-bar {
@@ -2344,6 +2270,25 @@ function permissionName(code: string) {
   padding: 2px 0 var(--spacing-sm);
 }
 
+/* 全选/清空贴右，与操作按钮同排 */
+.role-actions-bar__bulk {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-left: auto;
+}
+
+.role-actions-bar__bulk-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+
+  /* 禁用按钮不派发鼠标事件，交给外层 span 承接 hover，tooltip 才会出现 */
+  .el-button.is-disabled {
+    pointer-events: none;
+  }
+}
+
 .permission-panel {
   display: flex;
   flex-direction: column;
@@ -2351,23 +2296,6 @@ function permissionName(code: string) {
   min-height: 0;
   padding-top: var(--spacing-sm);
   border-top: 1px solid var(--color-border);
-}
-
-.panel-head {
-  flex-shrink: 0;
-  margin-bottom: var(--spacing-sm);
-}
-
-.panel-head h3 {
-  margin: 0 0 6px;
-  font-size: var(--font-size-lg);
-  color: var(--color-text-primary);
-}
-
-.panel-head p {
-  margin: 0;
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
 }
 
 .permission-content {
@@ -2380,8 +2308,11 @@ function permissionName(code: string) {
   padding-right: var(--spacing-xs);
 }
 
-.permission-toolbar .el-input {
-  max-width: 360px;
+/* 搜索框并入操作行：自己吃掉剩余宽度，把全选/清空顶到最右 */
+.role-actions-bar__search {
+  flex: 1 1 180px;
+  min-width: 150px;
+  max-width: 320px;
 }
 
 .permission-table {
@@ -2405,15 +2336,15 @@ function permissionName(code: string) {
 .menu-permission-row {
   min-height: 52px;
   display: grid;
-  grid-template-columns: 28px minmax(220px, 1fr) minmax(180px, 320px) 88px;
+  grid-template-columns: 28px minmax(220px, 1fr) 88px;
   align-items: center;
   gap: var(--spacing-sm);
   padding: 8px var(--spacing-md);
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .menu-permission-row:hover {
-  background: #f8fafc;
+  background: var(--color-background);
 }
 
 .expand-button {
@@ -2457,7 +2388,7 @@ function permissionName(code: string) {
 
 .menu-permission-children {
   padding: 0 0 var(--spacing-sm);
-  background: #fbfdff;
+  background: var(--color-surface-alt);
 }
 
 .nested-permission-list {
@@ -2467,26 +2398,25 @@ function permissionName(code: string) {
 
 .button-permission-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: var(--spacing-sm);
-  padding: var(--spacing-sm) var(--spacing-md) var(--spacing-md);
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 6px;
+  padding: 4px var(--spacing-md) var(--spacing-sm);
 }
 
 .button-permission-grid :deep(.el-checkbox.is-bordered) {
   height: auto;
-  min-height: 56px;
+  min-height: 0;
   margin-right: 0;
-  padding: 9px 12px;
-  align-items: flex-start;
-  border-radius: var(--radius-md);
-  background: #fff;
+  padding: 4px 10px;
+  align-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
 }
 
 .button-permission-grid :deep(.el-checkbox__label) {
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  display: inline-flex;
+  align-items: center;
   line-height: 1.4;
 }
 
@@ -2516,7 +2446,7 @@ function permissionName(code: string) {
   min-height: 44px;
   align-items: center;
   padding: 0;
-  background: #f5f7fa;
+  background: var(--color-fill-secondary);
   color: var(--color-text-secondary);
   font-weight: 600;
 }
@@ -2566,87 +2496,6 @@ function permissionName(code: string) {
   color: var(--color-text-primary);
 }
 
-.permission-code {
-  color: var(--color-text-placeholder);
-  font-size: var(--font-size-xs);
-  word-break: break-all;
-}
-
-.empty-guide {
-  min-height: 560px;
-  display: grid;
-  grid-template-columns: minmax(280px, 520px) minmax(320px, 1fr);
-  align-items: center;
-  gap: var(--spacing-xl);
-}
-
-.guide-copy h2 {
-  margin: 0 0 var(--spacing-md);
-  font-size: 28px;
-  color: var(--color-text-primary);
-}
-
-.guide-copy h3 {
-  margin: var(--spacing-xl) 0 var(--spacing-sm);
-  font-size: var(--font-size-lg);
-  color: var(--color-text-primary);
-}
-
-.guide-copy p,
-.guide-copy li {
-  color: var(--color-text-secondary);
-  line-height: 1.8;
-}
-
-.guide-copy ul {
-  padding-left: 18px;
-  margin-bottom: var(--spacing-lg);
-}
-
-.flow-preview {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xl);
-  align-items: center;
-}
-
-.flow-node {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-md);
-}
-
-.flow-avatar {
-  width: 72px;
-  height: 72px;
-  border-radius: 8px;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 30px;
-}
-
-.flow-label {
-  min-width: 132px;
-  padding: 10px 14px;
-  background: var(--color-info-light);
-  border-radius: var(--radius-md);
-  color: var(--color-text-primary);
-  font-weight: 600;
-}
-
-.flow-line {
-  position: absolute;
-  left: 36px;
-  top: 80px;
-  width: 1px;
-  height: var(--spacing-xl);
-  border-left: 1px dashed #a8abb2;
-}
-
 @media (max-width: 1100px) {
   .role-heading {
     align-items: flex-start;
@@ -2667,8 +2516,7 @@ function permissionName(code: string) {
     min-width: 0;
   }
 
-  .role-page,
-  .empty-guide {
+  .role-page {
     grid-template-columns: 1fr;
   }
 
@@ -2679,10 +2527,6 @@ function permissionName(code: string) {
   .role-sidebar {
     border-right: 0;
     border-bottom: 1px solid var(--color-border);
-  }
-
-  .flow-preview {
-    align-items: flex-start;
   }
 
   .permission-table__row {
@@ -2702,7 +2546,7 @@ function permissionName(code: string) {
   }
 
   .menu-permission-row {
-    grid-template-columns: 28px minmax(180px, 1fr) 1fr 64px;
+    grid-template-columns: 28px minmax(180px, 1fr) 64px;
   }
 }
 
@@ -2711,7 +2555,6 @@ function permissionName(code: string) {
     grid-template-columns: 28px minmax(0, 1fr);
   }
 
-  .menu-permission-row > .permission-code,
   .menu-count {
     grid-column: 2;
     text-align: left;
@@ -2743,7 +2586,7 @@ function permissionName(code: string) {
   min-width: 20px;
   padding: 1px 6px;
   border-radius: 10px;
-  background: #edf2f7;
+  background: var(--color-surface-alt);
   color: var(--color-muted-text);
   font-size: 11px;
   text-align: center;
@@ -2821,7 +2664,7 @@ function permissionName(code: string) {
   gap: var(--spacing-sm);
   padding-top: 4px;
   padding-bottom: 4px;
-  background: #fff;
+  background: var(--color-surface);
   border-radius: var(--radius-sm);
 }
 
@@ -2841,7 +2684,7 @@ function permissionName(code: string) {
   overflow-y: auto;
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius-md);
-  background: #fbfdff;
+  background: var(--color-surface-alt);
 }
 
 .data-scope-org-tree .el-tree {

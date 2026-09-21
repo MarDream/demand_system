@@ -168,6 +168,11 @@ export interface ChatModelOption {
   modelId: string
   modelType: string
   isDefault: boolean
+  /** 是否为模型应用(assistant.chat)绑定的默认模型 */
+  appDefault?: boolean
+  /** 最近一次连通性测试结果，null 表示从未测试 */
+  testSuccess?: boolean | null
+  testDuration?: number | null
 }
 
 // ---- Column Config (re-export from common) ----

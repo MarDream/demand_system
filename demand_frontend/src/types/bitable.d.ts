@@ -1,6 +1,6 @@
 // 字段类型
 export type FieldType =
-  | 'text' | 'number' | 'date' | 'date_range'
+  | 'text' | 'rich_text' | 'number' | 'date' | 'date_range'
   | 'single_select' | 'multi_select'
   | 'user' | 'group' | 'department'
   | 'checkbox' | 'check' | 'auto_number'
@@ -75,6 +75,12 @@ export interface FieldConfig {
   allowCountrySwitch?: boolean
   masked?: boolean
 
+  // ===== 邮箱 =====
+  /** 允许的邮箱域名（留空不限），如 example.com；校验时不区分大小写 */
+  allowedEmailDomains?: string[]
+  /** 展示为可点击的邮件链接（点击唤起本机邮件客户端） */
+  emailClickable?: boolean
+
   // ===== 超链接 =====
   displayText?: string
   openInNewTab?: boolean
@@ -136,6 +142,12 @@ export interface FieldConfig {
   groupMode?: 'single' | 'multiple'
   groupScope?: 'joined' | 'all'
 
+  // ===== 部门 =====
+  departmentMode?: 'single' | 'multiple'
+  departmentScope?: 'all' | 'dept'
+  /** 可选范围=指定部门时选中的部门 ID */
+  departmentIds?: number[]
+
   // ===== 附件 =====
   fileTypeLimit?: 'any' | 'image' | 'doc' | 'custom'
   allowedExtensions?: string[]
@@ -189,8 +201,17 @@ export interface FieldConfig {
   aiFallbackText?: string
 }
 
-/** 字段级权限级别：隐藏 / 只读 / 可编辑 */
-export type FieldPermissionLevel = 'hidden' | 'readonly' | 'editable'
+/** 字段级权限级别：隐藏 / 只读 / 仅新增时可填 / 可编辑 */
+export type FieldPermissionLevel = 'hidden' | 'readonly' | 'add_only' | 'editable'
+
+/** 选项级权限配置（单选/多选字段）：partial 时仅 editableKeys 内的选项可被该角色选择 */
+export interface FieldOptionPermissionConfig {
+  mode: 'all' | 'partial'
+  /** partial 模式下可编辑的选项 label；不在集合内的选项=也可查看（原值可保留、不可新选） */
+  editableKeys?: string[]
+  /** 选项定义管理权限：full=可增删改，add-only=仅可新增 */
+  manage?: 'full' | 'add-only'
+}
 
 /** 某个角色对某个字段的权限配置 */
 export interface FieldPermission {
@@ -198,7 +219,7 @@ export interface FieldPermission {
   permissionLevel: FieldPermissionLevel
 }
 
-/** 权限配置接口的请求体（字段权限批量保存） */
+/** 权限配置接口的请求体（字段权限批量保存）；optionConfig 为选项级权限 JSON 字符串 */
 export interface FieldPermissionChange {
   baseId?: number
   tableId: number
@@ -207,6 +228,7 @@ export interface FieldPermissionChange {
   systemRoleCode?: string | null
   customRoleId?: number | null
   permissionLevel: FieldPermissionLevel
+  optionConfig?: string | null
 }
 
 // 多维表格 Base
@@ -268,6 +290,8 @@ export interface BitableTable {
   description?: string
   icon?: string
   sortOrder: number
+  /** 网格行高(px)，null/undefined=使用默认 80 */
+  rowHeight?: number | null
   defaultViewId?: number
   recordCount?: number
   fieldCount?: number
@@ -363,6 +387,8 @@ export interface ViewConfig {
   columnOrder?: number[]
   hiddenFieldIds?: number[]
   frozenFieldIds?: number[]
+  /** 整列填色：fieldId → 预设色 key（fill_none=清除） */
+  columnColors?: Record<number, string>
   fieldWidths?: Record<number, number>
   rowHeight?: 'compact' | 'medium' | 'tall'
   card?: { coverFieldId?: number; visibleFieldIds?: number[] }
@@ -499,6 +525,8 @@ export interface BitableTableCreateDTO {
   icon?: string
   /** 创建时直接归入的分组ID */
   groupId?: number | null
+  /** 网格行高(px)，28-200 */
+  rowHeight?: number
 }
 
 export interface BitableFieldCreateDTO {
@@ -591,7 +619,8 @@ export interface RecordGroupVO {
 // ========== 权限管理 ==========
 
 export type PermissionLevel = 'full' | 'edit' | 'view' | 'none'
-export type PermissionType = 'data' | 'automation'
+/** 权限类型：data=数据表权限；view=视图权限；dashboard=仪表盘整体；dashboard_data=仪表盘数据；automation=自动化（已下线） */
+export type PermissionType = 'data' | 'automation' | 'view' | 'dashboard' | 'dashboard_data'
 export type RoleType = 'system' | 'custom'
 export type MemberType = 'user' | 'dept'
 
@@ -622,12 +651,15 @@ export interface BitableBaseRoleVO {
   members: BitableBaseRoleMember[]
   permissions: BitableBaseRolePermission[]
   createdAt?: string
+  /** 自定义角色挂载的 Base（跨 Base 全局视图下用于定位角色来源） */
+  baseId?: number
 }
 
-/** 自定义角色创建DTO */
+/** 自定义角色创建DTO（后端回显时带 customRoleId=新建角色ID） */
 export interface BitableBaseCustomRoleCreateDTO {
   baseId: number
   name: string
+  customRoleId?: number
 }
 
 /** 自定义角色更新DTO */

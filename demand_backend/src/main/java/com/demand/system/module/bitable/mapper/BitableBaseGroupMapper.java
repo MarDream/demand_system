@@ -27,4 +27,24 @@ public interface BitableBaseGroupMapper extends BaseMapper<BitableBaseGroup> {
      * @return 最大排序号
      */
     int selectMaxSortOrder(@Param("parentId") Long parentId);
+
+    /**
+     * 按传入顺序批量回写排序号（列表下标即 sort_order）
+     *
+     * @param ids 按目标顺序排列的分组ID列表
+     * @return 受影响行数
+     */
+    int updateSortOrders(@Param("ids") List<Long> ids);
+
+    /**
+     * 同名检测：统计同一父级（含根层级）下同名的分组数量。
+     *
+     * @param parentId  父分组ID，NULL 表示根层级（SQL 用 NULL-safe 比较）
+     * @param name      目标分组名
+     * @param excludeId 重命名/移动时排除自身的分组ID，新建传 null
+     * @return 同名分组数量
+     */
+    int countSameNameInParent(@Param("parentId") Long parentId,
+                              @Param("name") String name,
+                              @Param("excludeId") Long excludeId);
 }

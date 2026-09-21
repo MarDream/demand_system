@@ -161,7 +161,7 @@ async function handleSubmit() {
   justify-content: center;
   min-height: 100vh;
   padding: var(--spacing-xl);
-  background: linear-gradient(160deg, #eef2ff 0%, #f8fafc 45%, #eef7ff 100%);
+  background: linear-gradient(160deg, #eef2ff 0%, var(--color-background) 45%, #eef7ff 100%);
 }
 
 .invite-card {
@@ -169,7 +169,7 @@ async function handleSubmit() {
   max-width: 460px;
   padding: var(--spacing-2xl) var(--spacing-xl);
   border-radius: var(--radius-xl);
-  background: #fff;
+  background: var(--color-surface);
   box-shadow: 0 12px 40px rgba(15, 23, 42, 0.1);
   text-align: center;
 }

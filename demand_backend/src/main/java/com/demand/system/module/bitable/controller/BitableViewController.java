@@ -6,6 +6,7 @@ import com.demand.system.module.bitable.dto.BitableViewCreateDTO;
 import com.demand.system.module.bitable.dto.BitableViewUpdateDTO;
 import com.demand.system.module.bitable.dto.BitableViewVO;
 import com.demand.system.module.bitable.service.BitableAuthorizationService;
+import com.demand.system.module.bitable.service.BitableBaseRoleService;
 import com.demand.system.module.bitable.service.BitableViewService;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -22,11 +23,14 @@ public class BitableViewController {
 
     private final BitableViewService bitableViewService;
     private final BitableAuthorizationService authorizationService;
+    private final BitableBaseRoleService roleService;
 
     public BitableViewController(BitableViewService bitableViewService,
-                                 BitableAuthorizationService authorizationService) {
+                                 BitableAuthorizationService authorizationService,
+                                 BitableBaseRoleService roleService) {
         this.bitableViewService = bitableViewService;
         this.authorizationService = authorizationService;
+        this.roleService = roleService;
     }
 
     @GetMapping("/tables/{tableId}/views")
@@ -46,6 +50,7 @@ public class BitableViewController {
         Long userId = SecurityUtils.getCurrentUserId();
         Long baseId = authorizationService.getBaseIdByTableId(tableId);
         authorizationService.checkWritePermission(baseId, userId);
+        roleService.checkViewManagePermission(baseId, tableId, userId);
         Long id = bitableViewService.createView(tableId, dto, userId);
         return Result.success(id);
     }
@@ -56,6 +61,7 @@ public class BitableViewController {
         Long userId = SecurityUtils.getCurrentUserId();
         Long baseId = authorizationService.getBaseIdByViewId(id);
         authorizationService.checkWritePermission(baseId, userId);
+        roleService.checkViewManagePermission(baseId, bitableViewService.getViewById(id).getTableId(), userId);
         bitableViewService.updateView(id, dto, userId);
         return Result.success();
     }
@@ -66,6 +72,7 @@ public class BitableViewController {
         Long userId = SecurityUtils.getCurrentUserId();
         Long baseId = authorizationService.getBaseIdByViewId(viewId);
         authorizationService.checkWritePermission(baseId, userId);
+        roleService.checkViewManagePermission(baseId, bitableViewService.getViewById(viewId).getTableId(), userId);
         Long newId = bitableViewService.duplicateView(viewId, userId);
         return Result.success(newId);
     }
@@ -76,6 +83,7 @@ public class BitableViewController {
         Long userId = SecurityUtils.getCurrentUserId();
         Long baseId = authorizationService.getBaseIdByTableId(tableId);
         authorizationService.checkWritePermission(baseId, userId);
+        roleService.checkViewManagePermission(baseId, tableId, userId);
         bitableViewService.setDefaultView(tableId, viewId);
         return Result.success();
     }
@@ -86,6 +94,7 @@ public class BitableViewController {
         Long userId = SecurityUtils.getCurrentUserId();
         Long baseId = authorizationService.getBaseIdByViewId(id);
         authorizationService.checkWritePermission(baseId, userId);
+        roleService.checkViewManagePermission(baseId, bitableViewService.getViewById(id).getTableId(), userId);
         bitableViewService.deleteView(id, userId);
         return Result.success();
     }

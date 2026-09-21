@@ -66,6 +66,8 @@ export interface RequirementAttachment {
   uploadedAt?: string | null
   uploaderId?: number | null
   uploaderName?: string | null
+  /** 内容哈希(SHA-256 hex,小写);新上传由服务端返回,历史附件经批量接口回查 */
+  contentHash?: string | null
 }
 
 /**

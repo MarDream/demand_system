@@ -213,7 +213,7 @@ function parallelBranchStatusLabel(status: string): string {
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border: 1px solid #d9ecff;
+  border: 1px solid var(--color-primary-light);
   border-radius: 6px;
   background: #f4faff;
 }
@@ -230,6 +230,6 @@ function parallelBranchStatusLabel(status: string): string {
 }
 
 .current-node-status__divider {
-  color: #c0c4cc;
+  color: var(--color-text-tertiary);
 }
 </style>

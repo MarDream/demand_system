@@ -163,7 +163,7 @@
               >
                 <template v-if="col.key === 'realName'" #default="{ row }">
                   <div class="member-cell">
-                    <el-avatar :size="34" :src="row.avatar || undefined">{{ avatarText(row) }}</el-avatar>
+                    <el-avatar :size="34" :src="userAvatarUrl(row) || undefined">{{ avatarText(row) }}</el-avatar>
                     <div class="member-info">
                       <div class="member-name">
                         {{ row.realName || row.username }}
@@ -233,7 +233,7 @@
               <el-icon><Plus /></el-icon>
               添加{{ allowedNewTypes.length === 1 ? ORG_TYPE_LABELS[allowedNewTypes[0]] : '子组织' }}
             </AppButton>
-            <AppButton permission="button:org:batch-create" @click="showTodo('批量创建部门')">批量创建部门</AppButton>
+            <AppButton permission="button:org:batch-create" @click="openBatchCreateDept">批量创建部门</AppButton>
             <AppButton permission="button:org:update" :disabled="selectedDepartments.length !== 1" @click="openEditDepartment">
               编辑选中部门
             </AppButton>
@@ -311,19 +311,29 @@
               <el-icon><User /></el-icon>
               员工管理
             </div>
-            <button class="nav-item is-active" type="button">花名册</button>
-            <button class="nav-item" type="button" @click="showTodo('用工安全')">用工安全</button>
+            <button class="nav-item" :class="{ 'is-active': rosterView === 'roster' }" type="button" @click="switchRosterView('roster')">花名册</button>
+            <button class="nav-item" :class="{ 'is-active': rosterView === 'resigned' }" type="button" @click="switchRosterView('resigned')">已离职员工</button>
+            <button class="nav-item" :class="{ 'is-active': rosterView === 'safety' }" type="button" @click="switchRosterView('safety')">用工安全</button>
           </div>
           <div class="nav-section">
             <div class="nav-title">
               <el-icon><Connection /></el-icon>
               员工关系
             </div>
-            <button v-for="item in hrNavItems" :key="item" class="nav-item" type="button" @click="showTodo(item)">
-              {{ item }}
+            <button
+              v-for="item in hrNavItems"
+              :key="item.key"
+              class="nav-item"
+              :class="{ 'is-active': rosterView === item.key }"
+              type="button"
+              @click="switchRosterView(item.key)"
+            >
+              {{ item.label }}
             </button>
           </div>
         </aside>
+
+        <div class="sidebar-resizer" @mousedown="rosterSidebar.startResize" @dblclick="rosterSidebar.toggle" />
 
         <button
           v-if="rosterSidebar.collapsed"
@@ -336,89 +346,262 @@
         </button>
 
         <main class="roster-main">
-          <div class="roster-header">
-            <h3>花名册</h3>
-            <div class="roster-links">
-              <el-button link @click="showTodo('已离职员工')">
-                <el-icon><UserFilled /></el-icon>
-                已离职员工
-              </el-button>
-              <el-button link @click="showTodo('自定义字段设置')">
-                <el-icon><Setting /></el-icon>
-                自定义字段设置
-              </el-button>
-              <el-button link @click="showTodo('导出历史花名册')">
-                <el-icon><Clock /></el-icon>
-                导出历史花名册
-              </el-button>
+          <!-- ═══ 花名册 / 已离职员工 ═══ -->
+          <template v-if="isRosterListView">
+            <div class="roster-header">
+              <h3>{{ rosterView === 'resigned' ? '已离职员工' : '花名册' }}</h3>
+              <div class="roster-links">
+                <el-button v-if="rosterView === 'roster'" link @click="switchRosterView('resigned')">
+                  <el-icon><UserFilled /></el-icon>
+                  已离职员工
+                </el-button>
+                <el-button v-else link @click="switchRosterView('roster')">
+                  <el-icon><User /></el-icon>
+                  返回花名册
+                </el-button>
+                <el-button link @click="openRosterColumnConfig">
+                  <el-icon><Setting /></el-icon>
+                  自定义字段设置
+                </el-button>
+                <el-button link @click="openExportHistory">
+                  <el-icon><Clock /></el-icon>
+                  导出历史花名册
+                </el-button>
+              </div>
             </div>
-          </div>
 
-          <div class="stats-board">
-            <div class="stat-card is-primary">
-              <span>在职员工</span>
-              <strong>{{ activeUsers.length }}</strong>
+            <div v-if="rosterView === 'roster'" class="stats-board">
+              <div class="stat-card is-primary">
+                <span>在职员工</span>
+                <strong>{{ rosterStatsData.active }}</strong>
+              </div>
+              <div class="stat-card"><span>全职</span><strong>{{ rosterStatsData.fullTime }}</strong></div>
+              <div class="stat-card"><span>兼职</span><strong>{{ rosterStatsData.partTime }}</strong></div>
+              <div class="stat-card"><span>实习</span><strong>{{ rosterStatsData.intern }}</strong></div>
+              <div class="stat-card"><span>劳务派遣</span><strong>{{ rosterStatsData.dispatch }}</strong></div>
+              <div class="stat-card"><span>其他类型</span><strong>{{ rosterStatsData.other }}</strong></div>
+              <div class="stat-card"><span>试用期</span><strong>{{ rosterStatsData.probation }}</strong></div>
+              <div class="stat-card"><span>已转正</span><strong>{{ rosterStatsData.confirmed }}</strong></div>
+              <div class="stat-card"><span>待离职</span><strong>{{ rosterStatsData.pendingResign }}</strong></div>
             </div>
-            <div v-for="item in rosterStats" :key="item.label" class="stat-card">
-              <span>{{ item.label }}</span>
-              <strong>{{ item.value }}</strong>
+            <div v-else class="stats-board">
+              <div class="stat-card is-primary">
+                <span>已离职员工</span>
+                <strong>{{ rosterStatsData.resigned }}</strong>
+              </div>
             </div>
-          </div>
 
-          <div class="roster-filter">
-            <el-input v-model="queryParams.realName" placeholder="搜索员工" clearable @keyup.enter="handleSearch">
-              <template #prefix>
-                <el-icon><Search /></el-icon>
+            <div class="roster-filter">
+              <el-input v-model="queryParams.realName" placeholder="搜索员工" clearable @keyup.enter="handleSearch">
+                <template #prefix>
+                  <el-icon><Search /></el-icon>
+                </template>
+              </el-input>
+              <el-select
+                v-if="rosterView === 'roster'"
+                v-model="queryParams.workStatus"
+                placeholder="用工状态"
+                clearable
+                style="width: 132px"
+                @change="handleRosterFilterChange"
+              >
+                <el-option label="试用期" value="probation" />
+                <el-option label="已转正" value="confirmed" />
+                <el-option label="待离职" value="pending_resign" />
+              </el-select>
+              <el-button @click="openAdvancedFilter">
+                高级筛选
+                <el-icon class="el-icon--right"><Filter /></el-icon>
+                <el-badge v-if="advancedFilterCount > 0" :value="advancedFilterCount" class="advanced-filter-badge" />
+              </el-button>
+              <el-button v-if="advancedFilterCount > 0" link type="primary" @click="clearAdvancedFilter">清除筛选</el-button>
+              <div class="filter-spacer" />
+              <template v-if="rosterView === 'roster'">
+                <AppButton permission="button:user:create" @click="handleCreate">添加员工</AppButton>
+                <AppButton permission="button:user:invite" :disabled="!selectedUsers.length" @click="handleInviteVerify">邀请认证</AppButton>
+                <AppButton permission="button:user:export" :loading="exporting" @click="handleExport">导出</AppButton>
+                <AppButton permission="button:user:import" type="primary" @click="openImportDialog">导入花名册</AppButton>
               </template>
-            </el-input>
-            <el-select v-model="queryParams.status" placeholder="实名认证" clearable>
-              <el-option label="启用" value="active" />
-              <el-option label="停用" value="inactive" />
-            </el-select>
-            <el-button @click="showTodo('高级筛选')">
-              高级筛选
-              <el-icon class="el-icon--right"><Filter /></el-icon>
-            </el-button>
-            <div class="filter-spacer" />
-            <AppButton permission="button:user:create" @click="handleCreate">添加员工</AppButton>
-            <el-button @click="showTodo('邀请认证')">邀请认证</el-button>
-            <el-button @click="showTodo('导出')">导出</el-button>
-            <el-button type="primary" @click="showTodo('导入花名册')">导入花名册</el-button>
-          </div>
+              <template v-else>
+                <AppButton permission="button:user:update" :disabled="!selectedUsers.length" @click="handleRestoreUsers">复职</AppButton>
+              </template>
+            </div>
 
-          <el-table :data="userList" border class="member-table" @selection-change="selectedUsers = $event">
-            <el-table-column type="selection" width="48" />
-            <el-table-column label="姓名" min-width="220">
-              <template #default="{ row }">
-                <div class="member-cell">
-                  <el-avatar :size="34" :src="row.avatar || undefined">{{ avatarText(row) }}</el-avatar>
-                  <span class="member-name">{{ row.realName || row.username }}</span>
+            <el-table :data="userList" border class="member-table" @selection-change="selectedUsers = $event">
+              <el-table-column type="selection" width="48" />
+              <template v-for="col in rosterVisibleColumns" :key="col.key">
+                <el-table-column
+                  :label="col.label"
+                  :width="col.width"
+                  :min-width="col.minWidth"
+                  :align="col.align || 'center'"
+                  :fixed="col.fixed"
+                >
+                  <template v-if="col.key === 'realName'" #default="{ row }">
+                    <div class="member-cell">
+                      <el-avatar :size="34" :src="userAvatarUrl(row) || undefined">{{ avatarText(row) }}</el-avatar>
+                      <div class="member-info">
+                        <div class="member-name">{{ row.realName || row.username }}</div>
+                        <div class="member-sub">{{ row.jobNumber || row.username }}</div>
+                      </div>
+                    </div>
+                  </template>
+                  <template v-else-if="col.key === 'orgName'" #default="{ row }">{{ orgName(row.orgId) || '-' }}</template>
+                  <template v-else-if="col.key === 'systemRole'" #default="{ row }">{{ row.systemRole || '-' }}</template>
+                  <template v-else-if="col.key === 'employeeType'" #default="{ row }">
+                    <el-tag size="small" :type="EMPLOYEE_TYPE_TAG[row.employeeType] || 'info'" effect="plain">
+                      {{ EMPLOYEE_TYPE_LABELS[row.employeeType] || '未设置' }}
+                    </el-tag>
+                  </template>
+                  <template v-else-if="col.key === 'workStatus'" #default="{ row }">
+                    <el-tag size="small" :type="WORK_STATUS_TAG[row.workStatus] || 'info'" effect="plain">
+                      {{ WORK_STATUS_LABELS[row.workStatus] || '未设置' }}
+                    </el-tag>
+                  </template>
+                  <template v-else-if="col.key === 'hireDate'" #default="{ row }">{{ row.hireDate || '-' }}</template>
+                  <template v-else-if="col.key === 'birthday'" #default="{ row }">{{ row.birthday || '-' }}</template>
+                  <template v-else-if="col.key === 'phone'" #default="{ row }">{{ maskPhone(row.phone) }}</template>
+                  <template v-else-if="col.key === 'email'" #default="{ row }">{{ row.email || '-' }}</template>
+                  <template v-else-if="col.key === 'jobNumber'" #default="{ row }">{{ row.jobNumber || '-' }}</template>
+                  <template v-else-if="col.key === 'createdAt'" #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
+                  <template v-else-if="col.key === 'operations'" #default="{ row }">
+                    <div class="table-action-icons">
+                      <AppButton link type="primary" size="small" permission="button:user:update" @click="handleEdit(row)">
+                        <el-icon><Edit /></el-icon>
+                      </AppButton>
+                      <el-button
+                        v-if="rosterView === 'resigned'"
+                        link
+                        type="primary"
+                        size="small"
+                        title="复职"
+                        @click="handleRestoreUsers([row])"
+                      >
+                        <el-icon><RefreshLeft /></el-icon>
+                      </el-button>
+                    </div>
+                  </template>
+                </el-table-column>
+              </template>
+            </el-table>
+          </template>
+
+          <!-- ═══ 人事子模块（入职/新人成长/转正/异动/离职/合同/退休/员工关怀/用工安全） ═══ -->
+          <template v-else>
+            <div class="hr-module">
+              <div class="roster-header">
+                <h3>{{ activeHrModule.label }}</h3>
+                <div class="roster-links">
+                  <el-button type="primary" permission="button:user:create" @click="openHrRecordDialog()">
+                    <el-icon><Plus /></el-icon>
+                    {{ activeHrModule.createLabel }}
+                  </el-button>
                 </div>
-              </template>
-            </el-table-column>
-            <el-table-column label="部门" min-width="150">
-              <template #default="{ row }">{{ orgName(row.departmentId) }}</template>
-            </el-table-column>
-            <el-table-column label="角色" min-width="130">
-              <template #default="{ row }">{{ row.systemRole || '-' }}</template>
-            </el-table-column>
-            <el-table-column label="入职时间" width="160">
-              <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
-            </el-table-column>
-            <el-table-column label="员工类型" width="130">
-              <template #default="{ row }">{{ row.status === 'active' ? '全职' : '待确认' }}</template>
-            </el-table-column>
-            <el-table-column label="手机号" width="170">
-              <template #default="{ row }">{{ maskPhone(row.phone) }}</template>
-            </el-table-column>
-            <el-table-column label="操作" width="86" fixed="right">
-              <template #default="{ row }">
-                <AppButton link type="primary" size="small" permission="button:user:update" @click="handleEdit(row)">
-                  <el-icon><Edit /></el-icon>
-                </AppButton>
-              </template>
-            </el-table-column>
-          </el-table>
+              </div>
+
+              <div class="stats-board">
+                <div class="stat-card is-primary"><span>办理中</span><strong>{{ hrSummary.processing ?? 0 }}</strong></div>
+                <div class="stat-card"><span>已完成</span><strong>{{ hrSummary.done ?? 0 }}</strong></div>
+                <div class="stat-card"><span>已取消</span><strong>{{ hrSummary.cancelled ?? 0 }}</strong></div>
+                <template v-if="activeHrModule.type === 'contract'">
+                  <div class="stat-card is-warning"><span>30天内到期</span><strong>{{ hrSummary.expiringSoon ?? 0 }}</strong></div>
+                  <div class="stat-card"><span>已到期未续签</span><strong>{{ hrSummary.expired ?? 0 }}</strong></div>
+                </template>
+                <template v-else-if="activeHrModule.type === 'onboarding'">
+                  <div class="stat-card is-warning"><span>待入职</span><strong>{{ hrOverview.inactive ?? 0 }}</strong></div>
+                </template>
+                <template v-else-if="activeHrModule.type === 'regularization'">
+                  <div class="stat-card is-warning"><span>试用期员工</span><strong>{{ hrOverview.probation ?? 0 }}</strong></div>
+                </template>
+                <template v-else-if="activeHrModule.type === 'resignation'">
+                  <div class="stat-card is-warning"><span>待离职员工</span><strong>{{ hrOverview.pendingResign ?? 0 }}</strong></div>
+                </template>
+                <template v-else-if="activeHrModule.type === 'care'">
+                  <div class="stat-card is-warning"><span>本月生日</span><strong>{{ hrOverview.birthdayThisMonth ?? 0 }}</strong></div>
+                </template>
+                <template v-else-if="activeHrModule.type === 'safety'">
+                  <div class="stat-card is-warning"><span>未完善手机号</span><strong>{{ hrOverview.missingPhone ?? 0 }}</strong></div>
+                  <div class="stat-card is-warning"><span>未签合同</span><strong>{{ hrOverview.noContract ?? 0 }}</strong></div>
+                </template>
+              </div>
+
+              <!-- 员工关怀：本月寿星速览（钉钉关怀场景） -->
+              <div
+                v-if="activeHrModule.type === 'care' && (hrOverview.birthdayUsers?.length ?? 0) > 0"
+                class="care-birthday"
+              >
+                <div class="care-birthday__title">
+                  <el-icon><UserFilled /></el-icon>
+                  本月寿星
+                </div>
+                <div class="care-birthday__list">
+                  <div v-for="user in hrOverview.birthdayUsers" :key="user.id" class="care-birthday__item">
+                    <el-avatar :size="30" class="care-birthday__avatar">{{ user.realName?.slice(0, 1) }}</el-avatar>
+                    <span class="care-birthday__name">{{ user.realName }}</span>
+                    <el-tag size="small" type="warning" effect="plain">{{ Number(user.birthday.slice(5, 7)) }}月{{ user.day }}日</el-tag>
+                  </div>
+                </div>
+              </div>
+
+              <div class="roster-filter">
+                <el-select v-model="hrQueryStatus" placeholder="全部状态" clearable style="width: 132px" @change="fetchHrRecords(true)">
+                  <el-option label="办理中" value="processing" />
+                  <el-option label="已完成" value="done" />
+                  <el-option label="已取消" value="cancelled" />
+                </el-select>
+              </div>
+
+              <el-table :data="hrRecords" border class="member-table" v-loading="hrLoading">
+                <el-table-column label="员工" min-width="140">
+                  <template #default="{ row }">{{ row.userName || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="事项" min-width="180" show-overflow-tooltip>
+                  <template #default="{ row }">{{ row.title }}</template>
+                </el-table-column>
+                <el-table-column label="明细" min-width="260">
+                  <template #default="{ row }">{{ hrDetailSummary(row) || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="业务日期" width="120">
+                  <template #default="{ row }">{{ row.recordDate || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="状态" width="100">
+                  <template #default="{ row }">
+                    <el-tag size="small" :type="HR_STATUS_TAG[row.status] || 'info'" effect="plain">
+                      {{ HR_STATUS_LABELS[row.status] || row.status }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="经办人" width="110">
+                  <template #default="{ row }">{{ row.operatorName || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="操作" width="170" fixed="right">
+                  <template #default="{ row }">
+                    <div class="table-action-icons">
+                      <el-button
+                        v-if="row.status === 'processing'"
+                        link
+                        type="primary"
+                        size="small"
+                        @click="completeHrRecord(row)"
+                      >办理完成</el-button>
+                      <el-button link type="primary" size="small" @click="openHrRecordDialog(row)">编辑</el-button>
+                      <el-button link type="danger" size="small" @click="removeHrRecord(row)">删除</el-button>
+                    </div>
+                  </template>
+                </el-table-column>
+              </el-table>
+
+              <div class="pagination-row">
+                <AppPagination
+                  v-model:page-num="hrPageNum"
+                  v-model:page-size="hrPageSize"
+                  :total="hrTotal"
+                  :page-sizes="[10, 20, 50]"
+                  @change="fetchHrRecords()"
+                />
+              </div>
+            </div>
+          </template>
         </main>
       </div>
 
@@ -441,6 +624,20 @@
       @close="resetForm"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="110px">
+        <!-- 头像：编辑态可设置（预设选择 / 上传裁剪） -->
+        <el-form-item v-if="isEdit" label="头像">
+          <div class="avatar-edit-block">
+            <el-avatar :size="56" :src="editAvatarUrl || undefined" class="avatar-edit-block__preview">
+              {{ (form.realName || '?').slice(0, 1) }}
+            </el-avatar>
+            <div class="avatar-edit-block__actions">
+              <el-button size="small" @click="avatarEditVisible = true">设置头像</el-button>
+              <el-button v-if="form.avatar" size="small" text type="danger" @click="form.avatar = ''">
+                清除
+              </el-button>
+            </div>
+          </div>
+        </el-form-item>
         <el-form-item label="姓名" prop="realName">
           <el-input v-model="form.realName" placeholder="请输入姓名" @input="handleRealNameInput" />
         </el-form-item>
@@ -503,6 +700,39 @@
           />
         </el-form-item>
 
+        <el-divider content-position="left">花名册信息</el-divider>
+        <el-form-item label="员工类型">
+          <el-select v-model="form.employeeType" style="width: 100%">
+            <el-option v-for="(label, key) in EMPLOYEE_TYPE_LABELS" :key="key" :label="label" :value="key" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="用工状态">
+          <el-select v-model="form.workStatus" style="width: 100%">
+            <el-option label="试用期" value="probation" />
+            <el-option label="已转正" value="confirmed" />
+            <el-option label="待离职" value="pending_resign" />
+            <el-option label="已离职" value="resigned" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="入职日期">
+          <el-date-picker
+            v-model="form.hireDate"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="默认为创建日期"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="生日">
+          <el-date-picker
+            v-model="form.birthday"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="选择生日（员工关怀用）"
+            style="width: 100%"
+          />
+        </el-form-item>
+
         <el-form-item v-if="isEdit" label="工号">
           <el-input :model-value="editJobNumber" disabled placeholder="系统自动生成" />
         </el-form-item>
@@ -522,6 +752,14 @@
         <el-button v-permission="isEdit ? 'button:user:update' : 'button:user:create'" type="primary" :loading="submitting" @click="handleSubmit">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 头像编辑弹窗：预设选择 / 上传裁剪（管理员为成员设置） -->
+    <AvatarEditorDialog
+      :visible="avatarEditVisible"
+      :current-avatar="form.avatar || null"
+      @close="avatarEditVisible = false"
+      @confirm="handleEditAvatarConfirm"
+    />
 
     <el-drawer
       v-model="departmentDrawerVisible"
@@ -612,11 +850,260 @@
       @remove="removeDraftColumn"
       @save="saveColumns"
     />
+
+    <!-- 花名册列配置弹窗（自定义字段设置） -->
+    <ColumnConfigDialog
+      v-model="showRosterColumnConfig"
+      :column-groups="rosterColumnGroups"
+      :draft-selected-columns="rosterDraftSelectedColumns"
+      :draft-column-keys="rosterDraftColumnKeys"
+      @update:draft-column-keys="rosterDraftColumnKeys = $event"
+      @remove="rosterRemoveDraftColumn"
+      @save="rosterSaveColumns"
+    />
+
+    <!-- 高级筛选抽屉 -->
+    <el-drawer v-model="advancedFilterVisible" title="高级筛选" size="420px">
+      <el-form label-width="90px" class="advanced-filter-form">
+        <el-form-item label="员工类型">
+          <el-select v-model="advancedFilter.employeeType" placeholder="全部" clearable style="width: 100%">
+            <el-option v-for="(label, key) in EMPLOYEE_TYPE_LABELS" :key="key" :label="label" :value="key" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="员工状态">
+          <el-select v-model="advancedFilter.workStatus" placeholder="全部" clearable style="width: 100%">
+            <el-option label="试用期" value="probation" />
+            <el-option label="已转正" value="confirmed" />
+            <el-option label="待离职" value="pending_resign" />
+            <el-option label="已离职" value="resigned" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="所属部门">
+          <el-tree-select
+            v-model="advancedFilter.orgId"
+            :data="orgTree"
+            :props="{ label: 'name', value: 'id', children: 'children' }"
+            placeholder="全部部门"
+            check-strictly
+            clearable
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="入职时间">
+          <el-date-picker
+            v-model="advancedFilter.hireRange"
+            type="daterange"
+            value-format="YYYY-MM-DD"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            style="width: 100%"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div class="drawer-footer">
+          <el-button @click="clearAdvancedFilter">清除</el-button>
+          <el-button type="primary" @click="applyAdvancedFilter">查询</el-button>
+        </div>
+      </template>
+    </el-drawer>
+
+    <!-- 导入花名册 -->
+    <el-dialog v-model="importDialogVisible" title="导入花名册" width="560px" class="settings-form-dialog">
+      <div class="import-steps">
+        <div class="import-step">
+          <div class="import-step__title">1. 下载模板，按模板列填写员工信息</div>
+          <el-button size="small" @click="handleDownloadTemplate">
+            <el-icon><Download /></el-icon>
+            下载导入模板
+          </el-button>
+        </div>
+        <div class="import-step">
+          <div class="import-step__title">2. 选择导入后员工归属的部门（可选）</div>
+          <el-tree-select
+            v-model="importOrgId"
+            :data="orgTree"
+            :props="{ label: 'name', value: 'id', children: 'children' }"
+            placeholder="默认不指定（仅超级管理员可导入全员）"
+            check-strictly
+            clearable
+            style="width: 100%"
+          />
+        </div>
+        <div class="import-step">
+          <div class="import-step__title">3. 上传填写好的 Excel 文件</div>
+          <el-upload
+            :auto-upload="false"
+            :limit="1"
+            accept=".xlsx,.xls"
+            :on-change="(file: any) => (importFile = file.raw)"
+            :on-remove="() => (importFile = null)"
+            drag
+          >
+            <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+            <div class="el-upload__text">将文件拖到此处，或<em>点击上传</em></div>
+            <template #tip>
+              <div class="el-upload__tip">仅支持 .xlsx 文件；手机号将作为登录账号，初始密码通过邮件发送</div>
+            </template>
+          </el-upload>
+        </div>
+        <div v-if="importResult" class="import-result">
+          <el-alert
+            :type="importResult.failCount > 0 ? 'warning' : 'success'"
+            :closable="false"
+            :title="`导入完成：成功 ${importResult.successCount} 条，失败 ${importResult.failCount} 条`"
+          />
+          <ul v-if="importResult.failures.length" class="import-result__failures">
+            <li v-for="(msg, idx) in importResult.failures" :key="idx">{{ msg }}</li>
+          </ul>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="importDialogVisible = false">关闭</el-button>
+        <el-button type="primary" :loading="importing" :disabled="!importFile" @click="handleImportSubmit">开始导入</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 导出历史花名册 -->
+    <el-dialog v-model="exportHistoryVisible" title="导出历史花名册" width="640px">
+      <el-table :data="exportHistoryList" v-loading="exportHistoryLoading" max-height="360">
+        <el-table-column label="文件名" min-width="200" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.fileName }}</template>
+        </el-table-column>
+        <el-table-column label="行数" width="80" prop="total" />
+        <el-table-column label="操作人" width="110">
+          <template #default="{ row }">{{ row.operatorName || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="导出时间" width="170">
+          <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="120">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="handleDownloadExportLog(row)">下载</el-button>
+            <el-button link type="danger" size="small" @click="handleDeleteExportLog(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div class="pagination-row">
+        <AppPagination
+          v-model:page-num="exportHistoryPageNum"
+          v-model:page-size="exportHistoryPageSize"
+          :total="exportHistoryTotal"
+          :page-sizes="[10, 20]"
+          @change="fetchExportHistory"
+        />
+      </div>
+    </el-dialog>
+
+    <!-- 人事事项（办理入职/转正/异动/离职/合同登记等） -->
+    <el-dialog v-model="hrRecordDialogVisible" :title="hrRecordEditingId ? `编辑${activeHrModule.label}事项` : activeHrModule.createLabel" width="560px" class="settings-form-dialog">
+      <el-form ref="hrRecordFormRef" :model="hrRecordForm" label-width="100px">
+        <el-form-item label="员工" required>
+          <el-select v-model="hrRecordForm.userId" filterable placeholder="选择员工" style="width: 100%">
+            <el-option
+              v-for="user in hrUserOptions"
+              :key="user.id"
+              :label="`${user.realName || user.username}（${user.jobNumber || user.username}）`"
+              :value="user.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="事项标题" required>
+          <el-input v-model="hrRecordForm.title" :placeholder="`如：${activeHrModule.titleExample}`" />
+        </el-form-item>
+        <el-form-item
+          v-for="field in activeHrModule.fields"
+          :key="field.key"
+          :label="field.label"
+          :required="field.required"
+        >
+          <el-date-picker
+            v-if="field.type === 'date'"
+            v-model="hrRecordForm.model[field.key]"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="选择日期"
+            style="width: 100%"
+          />
+          <el-select
+            v-else-if="field.type === 'select'"
+            v-model="hrRecordForm.model[field.key]"
+            :placeholder="`请选择${field.label}`"
+            clearable
+            style="width: 100%"
+          >
+            <el-option v-for="opt in field.options" :key="opt.value" :label="opt.label" :value="opt.value" />
+          </el-select>
+          <el-tree-select
+            v-else-if="field.type === 'org'"
+            v-model="hrRecordForm.model[field.key]"
+            :data="orgTree"
+            :props="{ label: 'name', value: 'id', children: 'children' }"
+            :placeholder="`请选择${field.label}`"
+            check-strictly
+            clearable
+            style="width: 100%"
+          />
+          <el-input-number
+            v-else-if="field.type === 'number'"
+            v-model="hrRecordForm.model[field.key]"
+            :min="0"
+            style="width: 100%"
+          />
+          <el-input
+            v-else-if="field.type === 'textarea'"
+            v-model="hrRecordForm.model[field.key]"
+            type="textarea"
+            :rows="2"
+            :placeholder="`请输入${field.label}`"
+          />
+          <el-input v-else v-model="hrRecordForm.model[field.key]" :placeholder="`请输入${field.label}`" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="hrRecordDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="hrRecordSubmitting" @click="submitHrRecord(hrRecordDialogDone)">保存</el-button>
+        <el-button
+          v-if="!hrRecordEditingId"
+          type="success"
+          :loading="hrRecordSubmitting"
+          @click="submitHrRecord(true)"
+        >保存并办理完成</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 批量创建部门 -->
+    <el-dialog v-model="batchDeptVisible" title="批量创建部门" width="520px" class="settings-form-dialog">
+      <el-form label-width="90px">
+        <el-form-item label="上级部门">
+          <el-tree-select
+            v-model="batchDeptParentId"
+            :data="orgTree"
+            :props="{ label: 'name', value: 'id', children: 'children' }"
+            placeholder="选择上级部门"
+            check-strictly
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="部门名称">
+          <el-input
+            v-model="batchDeptNames"
+            type="textarea"
+            :rows="6"
+            placeholder="每行一个部门名称，例如：&#10;综合部&#10;财务部&#10;人力资源部"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="batchDeptVisible = false">取消</el-button>
+        <el-button type="primary" :loading="batchDeptSubmitting" @click="submitBatchDepartments">创建</el-button>
+      </template>
+    </el-dialog>
   </PageContainer>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, type Component } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, type Component } from 'vue'
 import {
   ArrowLeft,
   ArrowDown,
@@ -624,6 +1111,7 @@ import {
   Clock,
   Connection,
   Delete,
+  Download,
   Edit,
   Filter,
   FolderOpened,
@@ -634,24 +1122,31 @@ import {
   OfficeBuilding,
   Operation,
   Plus,
+  RefreshLeft,
   Search,
   Setting,
   Stamp,
   Suitcase,
   SwitchButton,
+  UploadFilled,
   User,
   UserFilled,
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import * as userApi from '@/api/modules/user'
-import type { OrgNode, User as UserInfo } from '@/types/user'
+import * as hrApi from '@/api/modules/hr'
+import { uploadFile } from '@/api/modules/file'
+import type { OrgNode, User as UserInfo, RosterStats, RosterImportResult, RosterExportLog, HrRecord, EmployeeType, WorkStatus, HrOverview } from '@/types/user'
+import { saveBlob } from '@/utils/download'
 import PageContainer from '@/components/common/PageContainer.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import ColumnConfigDialog from '@/components/common/ColumnConfigDialog.vue'
 import RoleSelect from '@/components/common/RoleSelect.vue'
 import InviteMemberDialog from './components/InviteMemberDialog.vue'
 import ApplicationRecordsDialog from './components/ApplicationRecordsDialog.vue'
+import AvatarEditorDialog from './components/AvatarEditorDialog.vue'
+import { resolveAvatarUrl } from '@/utils/presetAvatars'
 import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import { formatDate as formatDateTime } from '@/utils/format'
 import { getRoleList } from '@/api/modules/role'
@@ -696,6 +1191,16 @@ interface UserForm {
   departmentId: number | null
   roleIds: number[]
   status: string
+  /** 员工类型(全职/兼职/实习/劳务派遣/其他) */
+  employeeType: EmployeeType | ''
+  /** 用工状态(试用期/已转正/待离职/已离职) */
+  workStatus: WorkStatus | ''
+  /** 入职日期 YYYY-MM-DD */
+  hireDate: string
+  /** 生日 YYYY-MM-DD（员工关怀用） */
+  birthday: string
+  /** 头像：preset:xxx / URL；空串 = 清除；undefined = 未修改 */
+  avatar?: string
 }
 
 // ── 列表字段设置 ──
@@ -730,6 +1235,40 @@ const {
 })
 // ── 列表字段设置 END ──
 
+// ── 花名册字段设置（人事模式 · 自定义字段设置）──
+const rosterAllColumns: ColumnDef[] = [
+  { key: 'realName', label: '姓名', group: '基础字段', minWidth: 200, align: 'left' },
+  { key: 'orgName', label: '部门', group: '基础字段', minWidth: 150 },
+  { key: 'systemRole', label: '角色', group: '基础字段', minWidth: 130 },
+  { key: 'employeeType', label: '员工类型', group: '花名册字段', width: 110 },
+  { key: 'workStatus', label: '员工状态', group: '花名册字段', width: 110 },
+  { key: 'hireDate', label: '入职时间', group: '花名册字段', width: 120 },
+  { key: 'birthday', label: '生日', group: '花名册字段', width: 120 },
+  { key: 'jobNumber', label: '工号', group: '花名册字段', width: 110 },
+  { key: 'phone', label: '手机号', group: '联系信息', width: 150 },
+  { key: 'email', label: '邮箱', group: '联系信息', minWidth: 180 },
+  { key: 'createdAt', label: '创建时间', group: '系统字段', width: 160 },
+  { key: 'operations', label: '操作', group: '系统字段', width: 100, fixed: 'right' },
+]
+const rosterDefaultKeys = ['realName', 'orgName', 'employeeType', 'workStatus', 'hireDate', 'phone', 'operations']
+
+const {
+  showColumnConfig: showRosterColumnConfig,
+  openColumnConfig: openRosterColumnConfig,
+  saveColumns: rosterSaveColumns,
+  loadColumnConfig: rosterLoadColumnConfig,
+  columnGroups: rosterColumnGroups,
+  draftSelectedColumns: rosterDraftSelectedColumns,
+  draftColumnKeys: rosterDraftColumnKeys,
+  visibleColumns: rosterVisibleColumns,
+  removeDraftColumn: rosterRemoveDraftColumn,
+} = useColumnConfig({
+  pageKey: 'hr_roster',
+  columns: rosterAllColumns,
+  defaultKeys: rosterDefaultKeys,
+})
+// ── 花名册字段设置 END ──
+
 const loading = ref(false)
 const submitting = ref(false)
 const userStore = useUserStore()
@@ -763,6 +1302,8 @@ const rosterSidebar = useCollapsibleSidebar({
   minWidth: 220,
   maxWidth: 320,
   widthVar: '--roster-sidebar-width',
+  resizerWidth: 4,
+  resizerWidthVar: '--roster-sidebar-resizer-width',
 })
 
 const dialogVisible = ref(false)
@@ -789,6 +1330,8 @@ const queryParams = reactive({
   username: '',
   realName: '',
   status: '',
+  /** 人事模式快速筛选：用工状态 */
+  workStatus: '',
   orgId: undefined as number | undefined,
   regionId: undefined as number | undefined,
   departmentId: undefined as number | undefined,
@@ -804,7 +1347,38 @@ const form = reactive<UserForm>({
   departmentId: null,
   roleIds: [] as number[],
   status: 'active',
+  employeeType: 'full_time',
+  workStatus: 'confirmed',
+  hireDate: '',
+  birthday: '',
 })
+
+// ── 编辑成员-头像设置 ──
+const avatarEditVisible = ref(false)
+/** 编辑弹窗头像预览地址（preset: 前缀转 data URL） */
+const editAvatarUrl = computed(() => resolveAvatarUrl(form.avatar))
+
+/** 头像弹窗确认：preset 直接写值；上传裁剪结果由弹窗内先裁剪、这里接收 Blob 再上传 */
+async function handleEditAvatarConfirm(payload: { kind: 'preset'; value: string } | { kind: 'crop'; blob: Blob }) {
+  if (payload.kind === 'preset') {
+    form.avatar = payload.value
+    avatarEditVisible.value = false
+    return
+  }
+  try {
+    const file = new File([payload.blob], 'avatar.png', { type: 'image/png' })
+    const res = await uploadFile(file) as any
+    const url: string = res?.url || (typeof res === 'string' ? res : '')
+    if (!url) {
+      ElMessage.error('头像上传失败')
+      return
+    }
+    form.avatar = url.startsWith('http') || url.startsWith('/') ? url : `/${url}`
+    avatarEditVisible.value = false
+  } catch {
+    ElMessage.error('头像上传失败')
+  }
+}
 
 const departmentForm = reactive({
   name: '',
@@ -815,7 +1389,665 @@ const departmentForm = reactive({
 const departmentEditingId = ref<number | null>(null)
 const canChangeOrgType = ref(true)
 
-const hrNavItems = ['入职管理', '新人成长', '转正管理', '异动管理', '离职管理', '合同管理', '退休管理', '员工关怀']
+// ── 人事管理模式：花名册 + 人事子模块（参考钉钉人事管理）──
+interface HrFieldDef {
+  key: string
+  label: string
+  type: 'text' | 'textarea' | 'date' | 'select' | 'org' | 'user' | 'number'
+  options?: { label: string; value: string }[]
+  required?: boolean
+}
+
+interface HrModuleDef {
+  key: string
+  label: string
+  type: import('@/types/user').HrRecordType
+  createLabel: string
+  titleExample: string
+  fields: HrFieldDef[]
+}
+
+/** key 与导航对应：roster/resigned 为花名册视图，其余为人事事件台账模块 */
+const HR_MODULES: HrModuleDef[] = [
+  {
+    key: 'onboarding', label: '入职管理', type: 'onboarding', createLabel: '办理入职', titleExample: '张三入职办理',
+    fields: [
+      { key: 'recordDate', label: '入职日期', type: 'date', required: true },
+      { key: 'departmentId', label: '入职部门', type: 'org' },
+      { key: 'position', label: '岗位', type: 'text' },
+      { key: 'notes', label: '备注', type: 'textarea' },
+    ],
+  },
+  {
+    key: 'newcomer', label: '新人成长', type: 'newcomer', createLabel: '添加成长任务', titleExample: '张三入职 30 天跟进',
+    fields: [
+      { key: 'milestone', label: '成长节点', type: 'select', options: ['入职第一天', '入职第一周', '入职满30天', '入职满60天', '入职满90天'].map(v => ({ label: v, value: v })), required: true },
+      { key: 'recordDate', label: '计划日期', type: 'date', required: true },
+      { key: 'content', label: '跟进内容', type: 'textarea' },
+      { key: 'result', label: '完成情况', type: 'select', options: ['已掌握', '进行中', '待跟进'].map(v => ({ label: v, value: v })) },
+    ],
+  },
+  {
+    key: 'regularization', label: '转正管理', type: 'regularization', createLabel: '办理转正', titleExample: '张三转正办理',
+    fields: [
+      { key: 'recordDate', label: '计划转正日期', type: 'date', required: true },
+      { key: 'comment', label: '转正评语', type: 'textarea' },
+    ],
+  },
+  {
+    key: 'transfer', label: '异动管理', type: 'transfer', createLabel: '发起异动', titleExample: '张三部门异动',
+    fields: [
+      { key: 'recordDate', label: '生效日期', type: 'date', required: true },
+      { key: 'newDepartmentId', label: '新部门', type: 'org', required: true },
+      { key: 'newPosition', label: '新岗位', type: 'text' },
+      { key: 'reason', label: '异动原因', type: 'textarea' },
+    ],
+  },
+  {
+    key: 'resignation', label: '离职管理', type: 'resignation', createLabel: '办理离职', titleExample: '张三离职办理',
+    fields: [
+      { key: 'recordDate', label: '最后工作日', type: 'date', required: true },
+      { key: 'reasonType', label: '离职原因', type: 'select', options: ['个人发展', '家庭原因', '薪酬原因', '合同到期', '其他'].map(v => ({ label: v, value: v })) },
+      { key: 'handoverUserId', label: '交接人', type: 'user' },
+      { key: 'notes', label: '备注', type: 'textarea' },
+    ],
+  },
+  {
+    key: 'contract', label: '合同管理', type: 'contract', createLabel: '登记合同', titleExample: '张三劳动合同登记',
+    fields: [
+      { key: 'contractNo', label: '合同编号', type: 'text', required: true },
+      { key: 'contractType', label: '合同类型', type: 'select', options: ['固定期限合同', '无固定期限合同', '实习协议', '劳务协议'].map(v => ({ label: v, value: v })), required: true },
+      { key: 'signDate', label: '签订日期', type: 'date' },
+      { key: 'recordDate', label: '到期日期', type: 'date', required: true },
+      { key: 'notes', label: '备注', type: 'textarea' },
+    ],
+  },
+  {
+    key: 'retirement', label: '退休管理', type: 'retirement', createLabel: '办理退休', titleExample: '张三退休办理',
+    fields: [
+      { key: 'recordDate', label: '退休日期', type: 'date', required: true },
+      { key: 'notes', label: '备注', type: 'textarea' },
+    ],
+  },
+  {
+    key: 'care', label: '员工关怀', type: 'care', createLabel: '添加关怀', titleExample: '张三生日关怀',
+    fields: [
+      { key: 'careType', label: '关怀类型', type: 'select', options: ['生日祝福', '节日慰问', '住院探望', '困难帮扶'].map(v => ({ label: v, value: v })), required: true },
+      { key: 'recordDate', label: '关怀日期', type: 'date', required: true },
+      { key: 'content', label: '关怀内容', type: 'textarea' },
+    ],
+  },
+  {
+    key: 'safety', label: '用工安全', type: 'safety', createLabel: '添加用工检查', titleExample: '张三实名认证核查',
+    fields: [
+      { key: 'checkType', label: '检查项', type: 'select', options: ['实名认证', '合同签署', '证件核验', '背景调查'].map(v => ({ label: v, value: v })), required: true },
+      { key: 'recordDate', label: '检查日期', type: 'date', required: true },
+      { key: 'result', label: '检查结果', type: 'select', options: ['通过', '待整改'].map(v => ({ label: v, value: v })) },
+      { key: 'notes', label: '备注', type: 'textarea' },
+    ],
+  },
+]
+
+/** 员工关系分组导航（用工安全固定在员工管理分组，不在此列） */
+const hrNavItems = HR_MODULES.filter(m => m.key !== 'safety').map(m => ({ key: m.key, label: m.label }))
+
+const EMPLOYEE_TYPE_LABELS: Record<string, string> = {
+  full_time: '全职',
+  part_time: '兼职',
+  intern: '实习',
+  dispatch: '劳务派遣',
+  other: '其他类型',
+}
+const EMPLOYEE_TYPE_TAG: Record<string, string> = {
+  full_time: 'primary',
+  part_time: 'warning',
+  intern: 'success',
+  dispatch: 'danger',
+  other: 'info',
+}
+const WORK_STATUS_LABELS: Record<string, string> = {
+  probation: '试用期',
+  confirmed: '已转正',
+  pending_resign: '待离职',
+  resigned: '已离职',
+}
+const WORK_STATUS_TAG: Record<string, string> = {
+  probation: 'warning',
+  confirmed: 'success',
+  pending_resign: 'danger',
+  resigned: 'info',
+}
+const HR_STATUS_LABELS: Record<string, string> = {
+  processing: '办理中',
+  done: '已完成',
+  cancelled: '已取消',
+}
+const HR_STATUS_TAG: Record<string, string> = {
+  processing: 'warning',
+  done: 'success',
+  cancelled: 'info',
+}
+
+const rosterView = ref<string>('roster')
+const isRosterListView = computed(() => rosterView.value === 'roster' || rosterView.value === 'resigned')
+const activeHrModule = computed(() => HR_MODULES.find(m => m.key === rosterView.value) || HR_MODULES[0])
+
+const emptyRosterStats = (): RosterStats => ({
+  active: 0, inactive: 0, probation: 0, confirmed: 0, pendingResign: 0, resigned: 0,
+  fullTime: 0, partTime: 0, intern: 0, dispatch: 0, other: 0,
+})
+const rosterStatsData = ref<RosterStats>(emptyRosterStats())
+
+// ── 人事模块场景统计（待入职/试用期/待离职/用工安全/本月生日）──
+const emptyHrOverview = (): HrOverview => ({
+  probation: 0, pendingResign: 0, inactive: 0, missingPhone: 0, noContract: 0,
+  birthdayThisMonth: 0, birthdayUsers: [],
+})
+const hrOverview = ref<HrOverview>(emptyHrOverview())
+
+async function fetchHrOverview() {
+  try {
+    hrOverview.value = await hrApi.getHrOverview() || emptyHrOverview()
+  } catch {
+    hrOverview.value = emptyHrOverview()
+  }
+}
+
+// ── 高级筛选 ──
+const advancedFilterVisible = ref(false)
+const advancedFilter = reactive({
+  employeeType: '',
+  workStatus: '',
+  orgId: undefined as number | undefined,
+  hireRange: null as string[] | null,
+})
+const advancedFilterCount = computed(() =>
+  (advancedFilter.employeeType ? 1 : 0) +
+  (advancedFilter.workStatus ? 1 : 0) +
+  (advancedFilter.orgId != null ? 1 : 0) +
+  (advancedFilter.hireRange && advancedFilter.hireRange.length === 2 ? 1 : 0))
+
+function openAdvancedFilter() {
+  advancedFilterVisible.value = true
+}
+
+function applyAdvancedFilter() {
+  advancedFilterVisible.value = false
+  handleRosterFilterChange()
+}
+
+function clearAdvancedFilter() {
+  advancedFilter.employeeType = ''
+  advancedFilter.workStatus = ''
+  advancedFilter.orgId = undefined
+  advancedFilter.hireRange = null
+  advancedFilterVisible.value = false
+  handleRosterFilterChange()
+}
+
+function handleRosterFilterChange() {
+  pageNum.value = 1
+  fetchList()
+  fetchRosterStats()
+}
+
+/** 花名册/导出/统计共用的查询参数（含高级筛选；已离职视图强制 workStatus=resigned） */
+function effectiveRosterParams() {
+  const resigned = rosterView.value === 'resigned'
+  return {
+    realName: queryParams.realName || undefined,
+    status: queryParams.status || undefined,
+    orgId: (rosterView.value.startsWith('roster') || resigned ? advancedFilter.orgId : queryParams.orgId) ?? undefined,
+    employeeType: advancedFilter.employeeType || undefined,
+    workStatus: resigned ? 'resigned' : (queryParams.workStatus || advancedFilter.workStatus || undefined),
+    hireDateFrom: advancedFilter.hireRange?.[0] || undefined,
+    hireDateTo: advancedFilter.hireRange?.[1] || undefined,
+  }
+}
+
+async function fetchRosterStats() {
+  try {
+    rosterStatsData.value = await userApi.getRosterStats(effectiveRosterParams() as any) || emptyRosterStats()
+  } catch {
+    rosterStatsData.value = emptyRosterStats()
+  }
+}
+
+function switchRosterView(view: string) {
+  if (rosterView.value === view) return
+  rosterView.value = view
+  if (isRosterListView.value) {
+    fetchList()
+    fetchRosterStats()
+  } else {
+    hrQueryStatus.value = ''
+    hrPageNum.value = 1
+    fetchHrSummary()
+    fetchHrOverview()
+    fetchHrRecords()
+  }
+}
+
+// ── 花名册导入 / 导出 / 导出历史 ──
+const importing = ref(false)
+const importDialogVisible = ref(false)
+const importFile = ref<File | null>(null)
+const importOrgId = ref<number | null>(null)
+const importResult = ref<RosterImportResult | null>(null)
+const exporting = ref(false)
+const exportHistoryVisible = ref(false)
+const exportHistoryLoading = ref(false)
+const exportHistoryList = ref<RosterExportLog[]>([])
+const exportHistoryPageNum = ref(1)
+const exportHistoryPageSize = ref(10)
+const exportHistoryTotal = ref(0)
+
+function openImportDialog() {
+  importFile.value = null
+  importOrgId.value = null
+  importResult.value = null
+  importDialogVisible.value = true
+}
+
+async function handleDownloadTemplate() {
+  try {
+    const res: any = await userApi.downloadRosterImportTemplate()
+    await saveBlob(res.data, '花名册导入模板.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  } catch {
+    ElMessage.error('模板下载失败')
+  }
+}
+
+async function handleImportSubmit() {
+  if (!importFile.value) return
+  importing.value = true
+  try {
+    importResult.value = await userApi.importRoster(importFile.value, importOrgId.value ?? undefined)
+    ElMessage.success(`导入完成：成功 ${importResult.value.successCount} 条`)
+    fetchList()
+    fetchRosterStats()
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '导入失败，请检查文件格式'))
+  } finally {
+    importing.value = false
+  }
+}
+
+async function handleExport() {
+  exporting.value = true
+  try {
+    const log = await userApi.exportRoster(effectiveRosterParams() as any)
+    ElMessage.success(`已生成「${log.fileName}」（${log.total} 条），可在导出历史中下载`)
+    // 生成后立即触发一次下载
+    const res: any = await userApi.downloadRosterExportLog(log.id)
+    await saveBlob(res.data, log.fileName, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '导出失败'))
+  } finally {
+    exporting.value = false
+  }
+}
+
+function openExportHistory() {
+  exportHistoryPageNum.value = 1
+  exportHistoryVisible.value = true
+  fetchExportHistory()
+}
+
+async function fetchExportHistory() {
+  exportHistoryLoading.value = true
+  try {
+    const res = await userApi.getRosterExportHistory(exportHistoryPageNum.value, exportHistoryPageSize.value)
+    exportHistoryList.value = res?.list ?? []
+    exportHistoryTotal.value = res?.total ?? 0
+  } catch {
+    exportHistoryList.value = []
+    exportHistoryTotal.value = 0
+  } finally {
+    exportHistoryLoading.value = false
+  }
+}
+
+async function handleDownloadExportLog(row: RosterExportLog) {
+  try {
+    const res: any = await userApi.downloadRosterExportLog(row.id)
+    await saveBlob(res.data, row.fileName, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  } catch {
+    ElMessage.error('下载失败')
+  }
+}
+
+async function handleDeleteExportLog(row: RosterExportLog) {
+  try {
+    await ElMessageBox.confirm(`确定删除导出记录「${row.fileName}」吗？删除后文件不可再下载。`, '删除确认', {
+      confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning',
+    })
+  } catch {
+    return
+  }
+  try {
+    await userApi.deleteRosterExportLog(row.id)
+    ElMessage.success('已删除')
+    fetchExportHistory()
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '删除失败'))
+  }
+}
+
+// ── 邀请认证 / 复职 ──
+async function handleInviteVerify() {
+  const targets = selectedUsers.value
+  if (!targets.length) return
+  try {
+    await ElMessageBox.confirm(
+      `将向选中的 ${targets.length} 名员工重新发送初始密码（认证邀请）邮件，确定继续吗？`,
+      '邀请认证',
+      { confirmButtonText: '发送', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  let sent = 0
+  const failed: string[] = []
+  for (const user of targets) {
+    try {
+      await userApi.sendInitialPassword(user.id)
+      sent += 1
+    } catch {
+      failed.push(user.realName || user.username)
+    }
+  }
+  if (failed.length) {
+    ElMessage.warning(`已发送 ${sent} 条，失败：${failed.join('、')}`)
+  } else {
+    ElMessage.success(`已向 ${sent} 名员工发送认证邮件`)
+  }
+}
+
+async function handleRestoreUsers(rows?: UserInfo[]) {
+  const targets = rows ?? selectedUsers.value
+  if (!targets.length) return
+  try {
+    await ElMessageBox.confirm(
+      `确定将选中的 ${targets.length} 名员工恢复为「已转正」在职状态吗？`,
+      '复职确认',
+      { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  let restored = 0
+  for (const user of targets) {
+    try {
+      await userApi.updateUser(user.id, { workStatus: 'confirmed' } as any)
+      restored += 1
+    } catch {
+      // 单个失败继续
+    }
+  }
+  ElMessage.success(`已复职 ${restored} 名员工`)
+  fetchList()
+  fetchRosterStats()
+}
+
+// ── 人事事件台账 ──
+const hrRecords = ref<HrRecord[]>([])
+const hrLoading = ref(false)
+const hrPageNum = ref(1)
+const hrPageSize = ref(10)
+const hrTotal = ref(0)
+const hrQueryStatus = ref('')
+const hrSummary = ref<Record<string, number>>({})
+const hrUserOptions = ref<UserInfo[]>([])
+const hrRecordDialogVisible = ref(false)
+const hrRecordEditingId = ref<number | null>(null)
+const hrRecordSubmitting = ref(false)
+const hrRecordFormRef = ref<FormInstance>()
+const hrRecordForm = reactive({
+  userId: null as number | null,
+  title: '',
+  model: {} as Record<string, any>,
+})
+/** 「保存」时 false（办理中）；「保存并办理完成」时 true */
+const hrRecordDialogDone = ref(false)
+
+async function fetchHrSummary() {
+  try {
+    hrSummary.value = await hrApi.getHrRecordSummary(activeHrModule.value.type) || {}
+  } catch {
+    hrSummary.value = {}
+  }
+}
+
+async function fetchHrRecords(resetPage = false) {
+  if (resetPage) hrPageNum.value = 1
+  hrLoading.value = true
+  try {
+    const res = await hrApi.getHrRecords({
+      recordType: activeHrModule.value.type,
+      status: (hrQueryStatus.value || '') as any,
+      pageNum: hrPageNum.value,
+      pageSize: hrPageSize.value,
+    })
+    hrRecords.value = res?.list ?? []
+    hrTotal.value = res?.total ?? 0
+  } catch {
+    hrRecords.value = []
+    hrTotal.value = 0
+  } finally {
+    hrLoading.value = false
+  }
+}
+
+/** 事项弹窗的员工候选：入职办理选未激活账号（待入职），其余模块选在职员工 */
+async function loadHrUserOptions() {
+  try {
+    const params: any = { pageNum: 1, pageSize: 200 }
+    if (activeHrModule.value.type === 'onboarding') params.status = 'inactive'
+    else params.status = 'active'
+    const res: any = await userApi.getUserList(params)
+    hrUserOptions.value = res?.list ?? []
+  } catch {
+    hrUserOptions.value = []
+  }
+}
+
+function openHrRecordDialog(record?: HrRecord) {
+  hrRecordEditingId.value = record?.id ?? null
+  hrRecordForm.userId = record?.userId ?? null
+  hrRecordForm.title = record?.title ?? ''
+  hrRecordForm.model = {}
+  const detail = record?.detail ?? {}
+  for (const field of activeHrModule.value.fields) {
+    if (field.key === 'recordDate') {
+      hrRecordForm.model[field.key] = record?.recordDate ?? ''
+    } else if (field.type === 'org') {
+      hrRecordForm.model[field.key] = detail[field.key] != null ? Number(detail[field.key]) : ''
+    } else {
+      hrRecordForm.model[field.key] = detail[field.key] ?? ''
+    }
+  }
+  hrRecordDialogDone.value = false
+  loadHrUserOptions()
+  hrRecordDialogVisible.value = true
+}
+
+async function submitHrRecord(andDone: boolean) {
+  if (!hrRecordForm.userId) {
+    ElMessage.warning('请选择员工')
+    return
+  }
+  if (!hrRecordForm.title.trim()) {
+    ElMessage.warning('请填写事项标题')
+    return
+  }
+  for (const field of activeHrModule.value.fields) {
+    if (field.required && !hrRecordForm.model[field.key]) {
+      ElMessage.warning(`请填写「${field.label}」`)
+      return
+    }
+  }
+  const detail: Record<string, any> = {}
+  let recordDate: string | undefined
+  for (const field of activeHrModule.value.fields) {
+    const value = hrRecordForm.model[field.key]
+    if (value === '' || value == null) continue
+    if (field.key === 'recordDate') {
+      recordDate = value
+    } else {
+      detail[field.key] = value
+    }
+  }
+  const payload = {
+    recordType: activeHrModule.value.type,
+    userId: hrRecordForm.userId,
+    title: hrRecordForm.title.trim(),
+    detail,
+    recordDate,
+    status: (andDone ? 'done' : 'processing') as any,
+  }
+  hrRecordSubmitting.value = true
+  try {
+    if (hrRecordEditingId.value) {
+      await hrApi.updateHrRecord(hrRecordEditingId.value, {
+        title: payload.title,
+        detail: payload.detail,
+        recordDate: payload.recordDate,
+        ...(andDone ? { status: 'done' as any } : {}),
+      })
+    } else {
+      await hrApi.createHrRecord(payload)
+    }
+    ElMessage.success(andDone ? '已办理完成' : '已保存')
+    hrRecordDialogVisible.value = false
+    fetchHrRecords()
+    fetchHrSummary()
+    fetchHrOverview()
+    // 入职/离职/转正/异动等办理完成后员工档案有变化
+    if (isRosterListView.value) {
+      fetchList()
+      fetchRosterStats()
+    }
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '保存失败'))
+  } finally {
+    hrRecordSubmitting.value = false
+  }
+}
+
+async function completeHrRecord(row: HrRecord) {
+  try {
+    await ElMessageBox.confirm(`确定完成事项「${row.title}」吗？完成后将同步更新员工档案。`, '办理完成', {
+      confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning',
+    })
+  } catch {
+    return
+  }
+  try {
+    await hrApi.updateHrRecord(row.id, { status: 'done' })
+    ElMessage.success('已办理完成')
+    fetchHrRecords()
+    fetchHrSummary()
+    fetchHrOverview()
+    if (isRosterListView.value) {
+      fetchList()
+      fetchRosterStats()
+    }
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '操作失败'))
+  }
+}
+
+async function removeHrRecord(row: HrRecord) {
+  try {
+    await ElMessageBox.confirm(`确定删除事项「${row.title}」吗？`, '删除确认', {
+      confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning',
+    })
+  } catch {
+    return
+  }
+  try {
+    await hrApi.deleteHrRecord(row.id)
+    ElMessage.success('已删除')
+    fetchHrRecords()
+    fetchHrSummary()
+  } catch (error) {
+    ElMessage.error(resolveErrorMessage(error, '删除失败'))
+  }
+}
+
+/** 明细列摘要：按模块字段定义把 detail 拼成「标签 值」文本 */
+function hrDetailSummary(row: HrRecord): string {
+  const module = HR_MODULES.find(m => m.type === row.recordType)
+  if (!module) return ''
+  const parts: string[] = []
+  const detail = row.detail ?? {}
+  for (const field of module.fields) {
+    if (field.key === 'recordDate') continue
+    const raw = detail[field.key]
+    if (raw === undefined || raw === null || raw === '') continue
+    let display: string = String(raw)
+    if (field.type === 'org') {
+      display = orgName(Number(raw)) || display
+    } else if (field.type === 'user') {
+      const user = hrUserOptions.value.find(u => u.id === Number(raw))
+      display = user?.realName || display
+    } else if (field.type === 'select' && field.options) {
+      display = field.options.find(o => o.value === raw)?.label || display
+    }
+    parts.push(`${field.label} ${display}`)
+  }
+  return parts.join('；')
+}
+
+// ── 批量创建部门 ──
+const batchDeptVisible = ref(false)
+const batchDeptParentId = ref<number | null>(null)
+const batchDeptNames = ref('')
+const batchDeptSubmitting = ref(false)
+
+function openBatchCreateDept() {
+  batchDeptParentId.value = activeOrgId.value
+  batchDeptNames.value = ''
+  batchDeptVisible.value = true
+}
+
+async function submitBatchDepartments() {
+  const names = batchDeptNames.value
+    .split('\n')
+    .map(name => name.trim())
+    .filter(Boolean)
+  if (!names.length) {
+    ElMessage.warning('请输入部门名称，每行一个')
+    return
+  }
+  if (!batchDeptParentId.value) {
+    ElMessage.warning('请选择上级部门')
+    return
+  }
+  batchDeptSubmitting.value = true
+  let created = 0
+  const failed: string[] = []
+  try {
+    for (const name of names) {
+      try {
+        await userApi.createOrg({ name, parentId: batchDeptParentId.value, orgType: 'department' })
+        created += 1
+      } catch {
+        failed.push(name)
+      }
+    }
+    if (failed.length) {
+      ElMessage.warning(`已创建 ${created} 个部门，失败：${failed.join('、')}`)
+    } else {
+      ElMessage.success(`已创建 ${created} 个部门`)
+    }
+    batchDeptVisible.value = false
+    await loadOrgData()
+  } finally {
+    batchDeptSubmitting.value = false
+  }
+}
 
 const activeUsers = computed(() => userList.value.filter(user => user.status === 'active'))
 const activeOrgNode = computed(() => flatOrgNodes.value.find(node => node.key === activeOrgKey.value))
@@ -934,16 +2166,6 @@ const orgTreeForParentSelect = computed(() => {
   return excludeNode(orgTree.value)
 })
 const editDrawerOrgTypeLabel = computed(() => ORG_TYPE_LABELS[departmentForm.orgType] || '')
-const rosterStats = computed(() => [
-  { label: '全职', value: activeUsers.value.length },
-  { label: '兼职', value: 0 },
-  { label: '实习', value: 0 },
-  { label: '劳务派遣', value: 0 },
-  { label: '其他类型', value: userList.value.filter(user => user.status !== 'active').length },
-  { label: '试用期', value: 0 },
-  { label: '已转正', value: activeUsers.value.length },
-  { label: '待离职', value: 0 },
-])
 
 const ORG_TYPE_LABELS: Record<string, string> = {
   region: '区域',
@@ -1068,7 +2290,8 @@ function hasOrgTypeMulti(node: OrgNode, types: string[]): boolean {
 async function loadOrgData() {
   try {
     const [org, rolesRes] = await Promise.all([
-      loadOrgTree(),
+      // force=true：绕过 useOrgTree 的进程内缓存，否则删除成员后人数角标不刷新
+      loadOrgTree(true),
       getRoleList(),
     ])
     orgTree.value = org
@@ -1087,13 +2310,15 @@ async function loadOrgData() {
 async function fetchList() {
   loading.value = true
   try {
-    const res: any = await userApi.getUserList({
-      username: queryParams.username || undefined,
+    const base = managementMode.value === 'hr' ? effectiveRosterParams() : {
       realName: queryParams.realName || undefined,
       status: queryParams.status || undefined,
       orgId: queryParams.orgId,
       regionId: queryParams.regionId,
       departmentId: queryParams.departmentId,
+    }
+    const res: any = await userApi.getUserList({
+      ...base,
       pageNum: pageNum.value,
       pageSize: pageSize.value,
     })
@@ -1217,6 +2442,11 @@ async function handleEdit(row: UserInfo) {
     form.orgId = userDetail.orgId || null
     form.regionId = userDetail.regionId || null
     form.departmentId = userDetail.departmentId || null
+    form.avatar = userDetail.avatar ?? ''
+    form.employeeType = userDetail.employeeType || 'full_time'
+    form.workStatus = userDetail.workStatus || 'confirmed'
+    form.hireDate = userDetail.hireDate || ''
+    form.birthday = userDetail.birthday || ''
     editJobNumber.value = userDetail.jobNumber || null
     // 加载用户角色：超级管理员角色不在本表单管理范围，单独保留避免保存时丢失
     const roleIds: any = await userApi.getUserRoles(row.id)
@@ -1308,7 +2538,12 @@ async function handleSubmit() {
         orgId: form.orgId,
         regionId: form.regionId,
         departmentId: form.departmentId,
-
+        employeeType: (form.employeeType || null) as any,
+        workStatus: (form.workStatus || null) as any,
+        hireDate: form.hireDate || null,
+        birthday: form.birthday || null,
+        // 头像：undefined=未修改不传；空串=清除；preset:/URL=设置
+        ...(form.avatar !== undefined ? { avatar: form.avatar || '' } : {}),
       })
       ElMessage.success('更新成功')
       // 分配角色（合并保留已有的超级管理员角色）
@@ -1322,7 +2557,10 @@ async function handleSubmit() {
         orgId: form.orgId,
         regionId: form.regionId,
         departmentId: form.departmentId,
-
+        employeeType: (form.employeeType || null) as any,
+        workStatus: (form.workStatus || null) as any,
+        hireDate: form.hireDate || null,
+        birthday: form.birthday || null,
       })
       // 获取新创建用户的ID（响应拦截器已解包 data 字段，createResult 直接就是 userId）
       const newUserId = createResult
@@ -1363,6 +2601,11 @@ function resetForm() {
   form.regionId = null
   form.departmentId = null
   form.roleIds = []
+  form.avatar = undefined
+  form.employeeType = 'full_time'
+  form.workStatus = 'confirmed'
+  form.hireDate = ''
+  form.birthday = ''
   preservedSuperRoleIds.value = []
   form.status = 'active'
   editJobNumber.value = null
@@ -1605,6 +2848,11 @@ function avatarText(row: UserInfo) {
   return (row.realName || row.username || '?').slice(0, 1)
 }
 
+/** 列表头像地址解析：preset:xxx → SVG data URL；URL/路径原样；空回退首字 */
+function userAvatarUrl(row: UserInfo) {
+  return resolveAvatarUrl(row.avatar)
+}
+
 function maskPhone(phone?: string | null) {
   if (!phone) return '-'
   return phone.replace(/^(\+?\d{0,4})?(\d{3})\d{4}(\d{4})$/, (_match, prefix = '', start, end) => `${prefix}${start}****${end}`)
@@ -1671,7 +2919,12 @@ async function handleBatchCommand(command: string) {
       : await userApi.batchUpdateUserStatus(ids, command === 'enable' ? 'active' : 'inactive')
     ElMessage.success(`${meta.label}完成，共 ${affected} 位成员`)
     selectedUsers.value = []
-    await fetchList()
+    // 删除会改变各组织的人数统计角标，组织树需要一并刷新
+    if (command === 'delete') {
+      await refreshUserManagement()
+    } else {
+      await fetchList()
+    }
   } catch (error) {
     ElMessage.error(resolveErrorMessage(error, `${meta.label}失败，请稍后重试`))
   } finally {
@@ -1814,12 +3067,23 @@ function findOrgChildren(parentId: number) {
 
 onMounted(async () => {
   loadColumnConfig()
+  rosterLoadColumnConfig()
   await loadOrgData()
   const node = activeOrgNode.value
   if (node) {
     await selectOrg(node)
   } else {
     await fetchList()
+  }
+})
+
+// 切换到人事管理模式时，刷新花名册数据与统计板
+watch(managementMode, (mode) => {
+  if (mode === 'hr') {
+    if (rosterView.value !== 'roster') rosterView.value = 'roster'
+    pageNum.value = 1
+    fetchList()
+    fetchRosterStats()
   }
 })
 
@@ -1862,11 +3126,14 @@ function resolveInitialOrgKey() {
 }
 
 .member-console {
-  min-height: calc(100vh - 130px);
+  /* 定高面板：内部区域自行滚动，分页条钉在底部始终可见（不再依赖外层页面滚动） */
+  height: calc(100vh - 130px);
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .page-crumb {
@@ -1878,7 +3145,7 @@ function resolveInitialOrgKey() {
   flex-shrink: 0;
   padding: 4px;
   border-radius: 6px;
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .mode-switch :deep(.el-radio-button__inner) {
@@ -1900,7 +3167,9 @@ function resolveInitialOrgKey() {
 .member-layout,
 .roster-layout {
   display: grid;
-  min-height: calc(100vh - 130px);
+  /* 占满 console 剩余高度（console 为 flex 列，底部留给分页条） */
+  flex: 1;
+  min-height: 0;
   position: relative;
 }
 
@@ -1909,7 +3178,7 @@ function resolveInitialOrgKey() {
 }
 
 .roster-layout {
-  grid-template-columns: var(--roster-sidebar-width, 244px) minmax(0, 1fr);
+  grid-template-columns: var(--roster-sidebar-width, 244px) var(--roster-sidebar-resizer-width, 4px) minmax(0, 1fr);
 }
 
 .sidebar-resizer {
@@ -1939,13 +3208,13 @@ function resolveInitialOrgKey() {
   border: 1px solid var(--color-border);
   border-left: 0;
   border-radius: 0 6px 6px 0;
-  background: #fff;
+  background: var(--color-surface);
   cursor: pointer;
   z-index: 2;
   box-shadow: 2px 0 6px rgba(0, 0, 0, 0.06);
 
   &:hover {
-    background: #f5f7fa;
+    background: var(--color-fill-secondary);
   }
 }
 
@@ -1956,7 +3225,7 @@ function resolveInitialOrgKey() {
   gap: var(--spacing-sm);
   padding: var(--spacing-md);
   border-right: 1px solid var(--color-border);
-  background: #fff;
+  background: var(--color-surface);
   overflow: auto;
 }
 
@@ -2025,13 +3294,13 @@ function resolveInitialOrgKey() {
   margin: 0 8px 8px;
   padding: 6px 10px;
   font-size: 12px;
-  color: #6b7280;
-  background: #f0f5ff;
-  border: 1px solid #d6e4ff;
+  color: var(--color-muted-text);
+  background: var(--color-primary-subtle);
+  border: 1px solid var(--color-primary-light);
   border-radius: 6px;
 
   .el-icon {
-    color: #409eff;
+    color: var(--color-primary);
   }
 
   span {
@@ -2049,7 +3318,7 @@ function resolveInitialOrgKey() {
 
 .org-sort-ghost {
   opacity: 0.4;
-  background: #e6f7ff !important;
+  background: var(--color-primary-subtle) !important;
 }
 
 .org-sort-chosen {
@@ -2060,7 +3329,7 @@ function resolveInitialOrgKey() {
 .nav-item:hover,
 .org-item.is-active,
 .nav-item.is-active {
-  background: #e8edf3;
+  background: var(--color-surface-alt);
 }
 
 .org-toggle {
@@ -2123,7 +3392,9 @@ function resolveInitialOrgKey() {
 .roster-main {
   min-width: 0;
   padding: var(--spacing-lg);
-  background: #fff;
+  background: var(--color-surface);
+  /* 主区内部滚动：表格再长也只在 main 内滚，分页条保持可见 */
+  overflow: auto;
   /* 显式指定 grid-column：当 sidebar 折叠（display: none）时，
      防止 main 被错位放到第二个 track 而被压缩到 0 宽 */
   grid-column: 3;
@@ -2222,6 +3493,26 @@ function resolveInitialOrgKey() {
   min-width: 0;
 }
 
+// ── 编辑成员弹窗-头像设置块 ──
+.avatar-edit-block {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.avatar-edit-block__preview {
+  flex-shrink: 0;
+  background: var(--color-primary, var(--color-primary));
+  color: #fff;
+  font-size: 20px;
+  font-weight: 600;
+}
+.avatar-edit-block__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
 .member-cell > .el-avatar {
   flex-shrink: 0;
   border: 1.5px solid var(--color-border-light);
@@ -2299,6 +3590,20 @@ function resolveInitialOrgKey() {
   margin: var(--spacing-lg) 0 var(--spacing-md);
 }
 
+/* 人事子模块统计卡数量较少（3~5 张），固定列数会拉伸过宽 */
+.hr-module .stats-board {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.stat-card.is-warning {
+  border-color: var(--color-warning, #f59e0b);
+
+  span,
+  strong {
+    color: var(--color-warning, #f59e0b);
+  }
+}
+
 .stat-card {
   min-height: 72px;
   display: flex;
@@ -2308,11 +3613,11 @@ function resolveInitialOrgKey() {
   padding: var(--spacing-md);
   border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .stat-card.is-primary {
-  background: #f5f7fa;
+  background: var(--color-fill-secondary);
 
   span,
   strong {
@@ -2326,7 +3631,7 @@ function resolveInitialOrgKey() {
 }
 
 .stat-card strong {
-  color: #000;
+  color: var(--color-text-primary);
   font-size: 24px;
   line-height: 1;
 }
@@ -2348,18 +3653,105 @@ function resolveInitialOrgKey() {
   flex: 1;
 }
 
+.advanced-filter-badge {
+  margin-left: 6px;
+  vertical-align: top;
+}
+
+/* ── 人事子模块面板 ── */
+.hr-module {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+/* ── 员工关怀：本月寿星 ── */
+.care-birthday {
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-md);
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+}
+
+.care-birthday__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: var(--spacing-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.care-birthday__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+}
+
+.care-birthday__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.care-birthday__avatar {
+  background: var(--color-primary-light, #dbeafe);
+  color: var(--color-accent);
+  font-size: 13px;
+}
+
+.care-birthday__name {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+/* ── 导入花名册向导 ── */
+.import-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.import-step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.import-step__title {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.import-result {
+  margin-top: var(--spacing-sm);
+}
+
+.import-result__failures {
+  max-height: 160px;
+  margin: var(--spacing-sm) 0 0;
+  padding-left: 18px;
+  overflow-y: auto;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.8;
+}
+
 .pagination-row {
   display: flex;
   justify-content: flex-end;
   padding: var(--spacing-md) var(--spacing-lg);
   border-top: 1px solid var(--color-border);
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .department-management {
   min-height: calc(100vh - 220px);
   padding: var(--spacing-lg);
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .department-head,
@@ -2401,7 +3793,7 @@ function resolveInitialOrgKey() {
 .drawer-section-title {
   margin: -20px -20px 18px;
   padding: 10px 20px;
-  background: #f2f3f5;
+  background: var(--color-fill-secondary);
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
 }

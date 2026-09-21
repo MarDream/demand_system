@@ -55,6 +55,13 @@ public class AuthController {
         return Result.success(authService.updateProfile(request));
     }
 
+    @Operation(summary = "保存本人外观配置", description = "个人设置：主题模式/主题色/圆角档位，跟随账号持久化")
+    @PutMapping("/appearance")
+    public Result<Void> saveAppearance(@Valid @RequestBody UpdateAppearanceRequest request) {
+        authService.saveAppearanceConfig(request);
+        return Result.success();
+    }
+
     @Operation(summary = "修改本人密码", description = "个人设置：验证旧密码后设置新密码")
     @PutMapping("/password")
     public Result<Void> changePassword(@Valid @RequestBody ChangePasswordRequest request) {

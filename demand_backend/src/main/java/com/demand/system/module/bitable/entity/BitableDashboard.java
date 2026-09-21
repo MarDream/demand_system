@@ -16,7 +16,13 @@ public class BitableDashboard {
 
     private Long baseId;
 
+    /** 独立分组归属（Base 分组树上的位置），null=跟随所属 Base 的分组 */
+    private Long baseGroupId;
+
     private String name;
+
+    /** 同层级排序：与数据表共用同一序列（目录树里两者是兄弟节点） */
+    private Integer sortOrder;
 
     private String layoutConfig;
 
@@ -49,12 +55,28 @@ public class BitableDashboard {
         this.baseId = baseId;
     }
 
+    public Long getBaseGroupId() {
+        return baseGroupId;
+    }
+
+    public void setBaseGroupId(Long baseGroupId) {
+        this.baseGroupId = baseGroupId;
+    }
+
     public String getName() {
         return name;
     }
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public Integer getSortOrder() {
+        return sortOrder;
+    }
+
+    public void setSortOrder(Integer sortOrder) {
+        this.sortOrder = sortOrder;
     }
 
     public String getLayoutConfig() {

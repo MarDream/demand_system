@@ -28,21 +28,64 @@ CREATE TABLE `users` (
   `email` VARCHAR(100) DEFAULT NULL COMMENT '邮箱',
   `phone` VARCHAR(20) DEFAULT NULL COMMENT '手机号',
   `avatar` VARCHAR(255) DEFAULT NULL COMMENT '头像URL',
+  `appearance_config` VARCHAR(191) DEFAULT NULL COMMENT '外观设置JSON({mode,primary,radius})',
   `region_id` INT UNSIGNED DEFAULT NULL COMMENT '所属区域ID',
   `department_id` INT UNSIGNED DEFAULT NULL COMMENT '所属部门ID',
   `job_number` VARCHAR(20) DEFAULT NULL COMMENT '工号(A001~Z999, AA001...)',
   `org_id` INT UNSIGNED DEFAULT NULL COMMENT '所属组织ID',
   `status` ENUM('active', 'inactive') DEFAULT 'active' COMMENT '状态',
+  `employee_type` ENUM('full_time','part_time','intern','dispatch','other') NOT NULL DEFAULT 'full_time' COMMENT '员工类型(全职/兼职/实习/劳务派遣/其他)',
+  `work_status` ENUM('probation','confirmed','pending_resign','resigned') NOT NULL DEFAULT 'confirmed' COMMENT '用工状态(试用期/已转正/待离职/已离职)',
+  `hire_date` DATE DEFAULT NULL COMMENT '入职日期',
+  `birthday` DATE DEFAULT NULL COMMENT '生日',
   `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE INDEX `uk_username` (`username`),
   INDEX `idx_status` (`status`),
+  INDEX `idx_employee_type` (`employee_type`),
+  INDEX `idx_work_status` (`work_status`),
   INDEX `idx_region_id` (`region_id`),
   INDEX `idx_department_id` (`department_id`),
   INDEX `idx_org_id` (`org_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户表';
+
+-- 1.1 人事事件台账 hr_employee_records
+DROP TABLE IF EXISTS `hr_employee_records`;
+CREATE TABLE `hr_employee_records` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `record_type` ENUM('onboarding','newcomer','regularization','transfer','resignation','contract','retirement','care','safety') NOT NULL COMMENT '人事事件类型(入职/新人成长/转正/异动/离职/合同/退休/员工关怀/用工安全)',
+  `user_id` INT UNSIGNED NOT NULL COMMENT '关联员工ID',
+  `title` VARCHAR(200) NOT NULL COMMENT '事项标题',
+  `detail` JSON DEFAULT NULL COMMENT '类型化明细JSON',
+  `record_date` DATE DEFAULT NULL COMMENT '业务日期(生效日/到期日/关怀日等)',
+  `status` ENUM('processing','done','cancelled') NOT NULL DEFAULT 'processing' COMMENT '状态(办理中/已完成/已取消)',
+  `operator_id` INT UNSIGNED DEFAULT NULL COMMENT '经办人ID',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
+  PRIMARY KEY (`id`),
+  INDEX `idx_type_status` (`record_type`, `status`),
+  INDEX `idx_user_id` (`user_id`),
+  INDEX `idx_record_date` (`record_date`),
+  INDEX `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='人事事件台账';
+
+-- 1.2 花名册导出历史 roster_export_logs
+DROP TABLE IF EXISTS `roster_export_logs`;
+CREATE TABLE `roster_export_logs` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `operator_id` INT UNSIGNED DEFAULT NULL COMMENT '操作人ID',
+  `file_name` VARCHAR(200) DEFAULT NULL COMMENT '文件名',
+  `total` INT NOT NULL DEFAULT 0 COMMENT '导出行数',
+  `filter_json` JSON DEFAULT NULL COMMENT '导出时的筛选条件JSON',
+  `file_content` MEDIUMTEXT COMMENT 'CSV内容(UTF-8 BOM)',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `idx_operator_id` (`operator_id`),
+  INDEX `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='花名册导出历史';
 
 -- 2. 职位表 positions
 DROP TABLE IF EXISTS `positions`;
@@ -372,7 +415,7 @@ CREATE TABLE `workflow_versions` (
   `approval_comment` TEXT DEFAULT NULL COMMENT '审批意见',
   `creator_id` INT UNSIGNED NOT NULL COMMENT '创建人ID',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` DATETIME DEFAULT NULL COMMENT '编辑时间(最近一次保存/启停/复制等变更时间)',
+  `updated_at` DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '编辑时间(最近一次保存/启停/复制等变更时间，DB 自动刷新)',
   PRIMARY KEY (`id`),
   INDEX `idx_project_id` (`project_id`),
   INDEX `idx_workflow_definition_id` (`workflow_definition_id`),
@@ -735,6 +778,7 @@ CREATE TABLE `bitable_tables` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `base_id` BIGINT UNSIGNED NOT NULL COMMENT '所属多维表格ID',
   `group_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '所属分组ID，NULL=未分组',
+  `base_group_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '独立分组归属（NULL=跟随所属Base分组）',
   `name` VARCHAR(200) NOT NULL COMMENT '表名',
   `description` TEXT DEFAULT NULL COMMENT '表描述',
   `icon` VARCHAR(50) DEFAULT NULL COMMENT '图标',
@@ -829,6 +873,7 @@ CREATE TABLE `bitable_field_permissions` (
   `table_id`          BIGINT UNSIGNED NOT NULL COMMENT '数据表ID',
   `field_id`          BIGINT UNSIGNED NOT NULL COMMENT '字段ID',
   `permission_level`  VARCHAR(20) NOT NULL DEFAULT 'editable' COMMENT '字段权限级别: editable=可编辑, readonly=只读, hidden=隐藏',
+  `option_config`     TEXT DEFAULT NULL COMMENT '选项级权限配置JSON: {mode:all|partial, editableKeys:[选项label], manage:full|add-only}',
   `creator_id`        BIGINT UNSIGNED NOT NULL COMMENT '创建人ID',
   `created_at`        DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at`        DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
@@ -1102,9 +1147,11 @@ CREATE TABLE `file_records` (
   `content_type` VARCHAR(100) DEFAULT NULL COMMENT 'MIME类型',
   `bucket_name` VARCHAR(100) NOT NULL COMMENT '存储桶名称',
   `uploader_id` INT UNSIGNED NOT NULL COMMENT '上传人ID',
+  `content_hash` CHAR(64) DEFAULT NULL COMMENT '内容哈希(SHA-256 hex),NULL=未计算',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   INDEX `idx_uploader_id` (`uploader_id`),
+  INDEX `idx_content_hash` (`content_hash`),
   INDEX `idx_bucket_name` (`bucket_name`),
   UNIQUE INDEX `uk_storage_name` (`storage_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='文件记录表';
@@ -1764,12 +1811,13 @@ INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description
 (126, 'button:bitable:create',      '新建多维表格按钮',   'BUTTON', '多维表格-新建', 1),
 (127, 'button:bitable:update',      '编辑多维表格按钮',   'BUTTON', '多维表格-编辑', 1),
 (128, 'button:bitable:delete',      '删除多维表格按钮',   'BUTTON', '多维表格-删除', 1),
-(130, 'menu:iteration',             '迭代管理菜单',       'MENU',   '迭代管理一级菜单入口', 1);
+(130, 'menu:iteration',             '迭代管理菜单',       'MENU',   '迭代管理一级菜单入口', 1),
+(141, 'menu:dashboard',             '仪表盘菜单',         'MENU',   '仪表盘一级菜单入口', 1);
 
 -- 菜单数据（基于数据库实际数据生成）
 INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
 -- 一级菜单
-(1,  0, '仪表盘',       'MENU',      '/dashboard',              'Dashboard',          'views/home/index.vue',                         'Odometer',     1, NULL,                          1, 1, 0),
+(1,  0, '仪表盘',       'MENU',      '/dashboard',              'Dashboard',          'views/home/index.vue',                         'Odometer',     1, 'menu:dashboard',              1, 1, 0),
 (2,  0, '需求管理',     'MENU',      '/requirements',           'Requirements',       'views/requirements/index.vue',                'Document',     2, NULL,                          1, 1, 0),
 (3,  0, '迭代管理',     'MENU',      '/iterations',             'Iterations',         'views/iterations/index.vue',                  'Calendar',     3, 'menu:iteration',              1, 1, 0),
 (4,  0, '多维表格',     'MENU',      '/bitable',                'BitableList',        'views/bitable/index.vue',                     'Grid',         4, 'menu:bitable',               1, 1, 0),
@@ -1932,7 +1980,7 @@ INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_
 (1, 121, 1), (1, 122, 1),
 (1, 123, 1), (1, 124, 1),
 (1, 125, 1), (1, 126, 1), (1, 127, 1), (1, 128, 1),
-(1, 129, 1), (1, 130, 1);
+(1, 129, 1), (1, 130, 1), (1, 141, 1);
 
 -- 业务角色授权需求管理视图权限
 INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_by`) VALUES
@@ -1950,6 +1998,11 @@ INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_
 (7, 125, 1),
 -- 评审人(8): 全部需求 + 我的待办 + 我的已办 + 我的关注 + 导出
 (8, 79, 1), (8, 80, 1), (8, 81, 1), (8, 93, 1), (8, 43, 1);
+
+-- 仪表盘菜单（141=menu:dashboard）：所有持有任意菜单权限的业务角色补授，保持存量可见范围
+INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_by`) VALUES
+(2, 141, 1), (3, 141, 1), (4, 141, 1), (5, 141, 1), (6, 141, 1),
+(7, 141, 1), (8, 141, 1), (9, 141, 1), (10, 141, 1), (11, 141, 1);
 
 
 -- 官方工作流模板（复制工作流 -> 模板库）
@@ -2572,6 +2625,8 @@ CREATE TABLE IF NOT EXISTS `bitable_dashboards` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `base_id` BIGINT UNSIGNED NOT NULL COMMENT '多维表格ID',
   `name` VARCHAR(200) NOT NULL COMMENT '仪表盘名称',
+  `sort_order` INT NOT NULL DEFAULT 0 COMMENT '同层级排序（与数据表共用同一序列）',
+  `base_group_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '独立分组归属（NULL=跟随所属Base分组）',
   `layout_config` JSON DEFAULT NULL COMMENT '布局配置（预留）',
   `status` VARCHAR(20) NOT NULL DEFAULT 'enabled' COMMENT '状态: enabled/disabled',
   `created_by` BIGINT UNSIGNED NOT NULL COMMENT '创建人ID',
@@ -2579,7 +2634,8 @@ CREATE TABLE IF NOT EXISTS `bitable_dashboards` (
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
   PRIMARY KEY (`id`),
-  INDEX `idx_base_id` (`base_id`)
+  INDEX `idx_base_id` (`base_id`),
+  INDEX `idx_bitable_dashboard_base_sort` (`base_id`, `sort_order`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='多维表格-仪表盘';
 
 -- 5. 仪表盘组件
@@ -2590,6 +2646,7 @@ CREATE TABLE IF NOT EXISTS `bitable_dashboard_widgets` (
   `title` VARCHAR(200) NOT NULL DEFAULT '' COMMENT '组件标题',
   `data_source_config` JSON NOT NULL COMMENT '数据源配置: {tableId, fieldId, aggregation, groupByFieldId, filterConfig}',
   `display_config` JSON DEFAULT NULL COMMENT '展示配置（颜色等，预留）',
+  `layout_config` JSON DEFAULT NULL COMMENT '布局配置: {rowId, span, height}',
   `sort_no` INT NOT NULL DEFAULT 0 COMMENT '排序号',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

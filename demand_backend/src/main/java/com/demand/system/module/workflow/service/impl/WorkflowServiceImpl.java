@@ -339,6 +339,9 @@ public class WorkflowServiceImpl implements WorkflowService {
             existing.setName(version.getName());
         }
 
+        // 编辑时间 = 最近一次变更时间（列表「编辑时间」列）
+        existing.setUpdatedAt(LocalDateTime.now());
+
         versionMapper.updateById(existing);
         if (version.getDefinition() != null) {
             syncNodePermissionsFromDefinition(existing.getId(), existing.getDefinition());
@@ -391,7 +394,8 @@ public class WorkflowServiceImpl implements WorkflowService {
                 .eq("id", id)
                 .set("is_active", 1)
                 .set("activation_status", "active")
-                .set("activated_at", LocalDateTime.now()));
+                .set("activated_at", LocalDateTime.now())
+                .set("updated_at", LocalDateTime.now()));
         recordHistory(version.getId(), projectId, "publish",
                 "发布启用 V" + version.getVersion() + "「" + (version.getName() != null ? version.getName() : "") + "」",
                 null, buildVersionSnapshot(version));

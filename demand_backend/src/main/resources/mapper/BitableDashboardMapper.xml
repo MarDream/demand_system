@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demand.system.module.bitable.mapper.BitableDashboardMapper">
+
+    <!-- 同名检测：同一目录树层级（= 叶子独立归属 base_group_id 回退到 Base 分组，含未分组）同名仪表盘计数 -->
+    <select id="countSameNameInGroupScope" resultType="int">
+        SELECT COUNT(*)
+        FROM `bitable_dashboards` d
+        INNER JOIN `bitable_bases` b ON b.id = d.base_id AND b.deleted_at = 0
+        WHERE d.deleted_at = 0
+          AND d.name = #{name}
+          AND COALESCE(d.base_group_id, b.group_id) &lt;=&gt; #{groupId}
+        <if test="excludeId != null">
+          AND d.id != #{excludeId}
+        </if>
+    </select>
+
+    <!-- 同一目录树层级（= 同一 Base 分组，含未分组）下仪表盘的最大 sort_order。
+         仪表盘的 sort_order 与数据表共用同一序列，见 BitableLeafSortService。
+         叶子有独立归属（base_group_id）时按它算层级，否则回退 Base 的 group_id。 -->
+    <select id="selectMaxSortOrderInGroup" resultType="java.lang.Integer">
+        SELECT MAX(d.sort_order)
+        FROM `bitable_dashboards` d
+        INNER JOIN `bitable_bases` b ON b.id = d.base_id AND b.deleted_at = 0
+        WHERE d.deleted_at = 0
+          AND COALESCE(d.base_group_id, b.group_id) &lt;=&gt; #{groupId}
+    </select>
+
+</mapper>

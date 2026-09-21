@@ -11,6 +11,8 @@ import App from './App.vue'
 import router from './router'
 import '@/styles/global.scss'
 import '@/styles/column-config.scss'
+import '@/styles/appearance.scss'
+import { initAppearanceWatcher } from '@/composables/useAppearance'
 import 'remixicon/fonts/remixicon.css'
 import { permission } from '@/directives/permission'
 import { setupDialogEnhancer } from '@/utils/dialogEnhancer'
@@ -21,12 +23,15 @@ import '@/utils/bitableCellRenderers'
 // ECharts 按需引入 graphic 组件（修复 [ECharts] Component graphic is used but not imported 报错）
 import * as echarts from 'echarts/core'
 import { GraphicComponent } from 'echarts/components'
-import { PieChart, BarChart, LineChart } from 'echarts/charts'
+import { PieChart, BarChart, LineChart, RadarChart, FunnelChart, TreemapChart } from 'echarts/charts'
 import { TitleComponent, TooltipComponent, LegendComponent, GridComponent } from 'echarts/components'
 import { LabelLayout, UniversalTransition } from 'echarts/features'
 import { CanvasRenderer } from 'echarts/renderers'
 
 echarts.use([
+  RadarChart,
+  FunnelChart,
+  TreemapChart,
   GraphicComponent,
   PieChart,
   BarChart,
@@ -63,6 +68,9 @@ app.use(ElementPlus, { locale: zhCn })
 app.use(VxeUIAll)
 app.use(VxeUITable)
 app.directive('permission', permission)
+
+// 外观设置：恢复持久化的主题模式/主题色/圆角档位，并监听系统主题变化
+initAppearanceWatcher()
 
 // C3: 全局错误边界 - 兜底渲染期未捕获异常，避免整页白屏
 // 注意：生产构建已通过 vite esbuild.drop 剥离 console，此处 console.error 仅在 dev 可见；

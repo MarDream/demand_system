@@ -38,7 +38,10 @@ public class AssistantChatRequest {
     private Long llmModelId;
 
     /**
-     * 知识库检索模式，仅在知识库问答时生效。
+     * 知识库检索模式，仅在知识库问答时生效。不传或传 auto 表示智能检索：
+     * 由服务端按问题特征（引号确定词/编号代码/短名词 → 关键词，其余 → 混合）自动路由，
+     * 用户无需理解检索类型差异。
+     * auto：智能检索（默认，自动适配）
      * hybrid：混合检索（语义+关键词）
      * semantic：纯语义检索
      * keyword：纯关键词检索

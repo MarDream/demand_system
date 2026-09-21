@@ -4,6 +4,7 @@ import 'nprogress/nprogress.css'
 import { ElMessage } from 'element-plus'
 import { getToken, buildLoginPath } from '@/utils/auth'
 import { useUserStore } from '@/stores/modules/user'
+import { useAppStore } from '@/stores/modules/app'
 import { usePermission } from '@/composables/usePermission'
 
 // 禁用 trickle（自动递增定时器），避免其内部 setTimeout 循环
@@ -23,7 +24,6 @@ export function setupGuards(router: Router) {
 
     // Override with dynamic menu name if available
     try {
-      const { useAppStore } = await import('@/stores/modules/app')
       const appStore = useAppStore()
       const menuName = appStore.getMenuNameByPath(to.path)
       if (menuName) {
@@ -58,10 +58,26 @@ export function setupGuards(router: Router) {
       }
     }
 
-    // 无组织用户首次登录：必须先绑定组织，拦截去往非 dashboard 页的导航
-    // dashboard 页面挂载了 OrgBindDialog，放行让弹窗展示即可，避免 next('/dashboard') 死循环
-    if (userStore.needOrgBind && to.path !== '/dashboard') {
-      next('/dashboard')
+    // 无组织用户首次登录：必须先绑定组织。OrgBindDialog 挂在 DefaultLayout（任何页面都会弹），
+    // 所以落点可以是任意页面 —— 若 /dashboard 无权限，落点按菜单顺序解析，避免重定向死循环。
+    if (userStore.needOrgBind) {
+      const orgBindAppStore = useAppStore()
+      let orgBindHome: string | null = '/dashboard'
+      try {
+        if (!orgBindAppStore.menuList.length) {
+          const { getCurrentMenus } = await import('@/api/modules/menu')
+          const res = await getCurrentMenus() as any
+          const data = res.data ?? res
+          orgBindAppStore.setMenuList(Array.isArray(data) ? data : [])
+        }
+        orgBindHome = orgBindAppStore.resolveHomePath() ?? '/dashboard'
+      } catch { /* 拉不到菜单就回 /dashboard 兜底 */ }
+      // 目标已经是落点（或其子路由）则放行，让 OrgBindDialog 弹窗完成绑定
+      if (to.path === orgBindHome || (orgBindHome !== '/' && to.path.startsWith(orgBindHome + '/'))) {
+        next()
+        return
+      }
+      next(orgBindHome)
       return
     }
 
@@ -73,13 +89,28 @@ export function setupGuards(router: Router) {
       ? (to.meta.requiredPermissions as string[])
       : []
 
-    if (requiredRoles.length > 0 && !hasAnyRole(requiredRoles)) {
-      ElMessage.warning('您没有访问该页面的权限，请联系管理员')
-      next('/dashboard')
-      return
-    }
-
-    if (requiredPermissions.length > 0 && !hasAnyPermission(requiredPermissions)) {
+    const deniedByRoles = requiredRoles.length > 0 && !hasAnyRole(requiredRoles)
+    const deniedByPermissions = requiredPermissions.length > 0 && !hasAnyPermission(requiredPermissions)
+    const wantsHome = to.path === '/' || to.path === '/dashboard'
+    if (deniedByRoles || deniedByPermissions) {
+      // 访问首页（/ 或 /dashboard）无权限时，按菜单顺序取首个有权限的菜单；
+      // 菜单树未加载则先拉一次。找不到任何有权限菜单时提示并留在 /dashboard。
+      if (wantsHome) {
+        const appStore = useAppStore()
+        try {
+          if (!appStore.menuList.length) {
+            const { getCurrentMenus } = await import('@/api/modules/menu')
+            const res = await getCurrentMenus() as any
+            const data = res.data ?? res
+            appStore.setMenuList(Array.isArray(data) ? data : [])
+          }
+        } catch { /* ignore */ }
+        const home = appStore.resolveHomePath()
+        if (home && home !== '/dashboard') {
+          next(home)
+          return
+        }
+      }
       ElMessage.warning('您没有访问该页面的权限，请联系管理员')
       next('/dashboard')
       return

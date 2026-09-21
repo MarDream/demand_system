@@ -521,7 +521,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onBeforeUnmount, reactive, watch } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, reactive, watch, nextTick } from 'vue'
 import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppButton from '@/components/common/AppButton.vue'
@@ -544,7 +544,6 @@ import {
   FolderOpened
 } from '@element-plus/icons-vue'
 import LogicFlow from '@logicflow/core'
-import dagre from '@dagrejs/dagre'
 import '@logicflow/core/dist/index.css'
 import { registerCustomNodes } from './logicflow-config'
 import {
@@ -677,6 +676,30 @@ const nextNodeNames = computed(() => {
   return outgoingEdges
     .map((edge) => nodeNameMap.get(edge.targetNodeId || ''))
     .filter((name): name is string => !!name)
+})
+
+/**
+ * 唯一可流转节点所绑定的节点状态。
+ * 「可流转节点」只有一个时，用它作为本节点「绑定节点状态」的默认值。
+ * 节点名称不做自动填充（由人工填写）。
+ */
+const soleNextNodeStatusCode = computed(() => {
+  if (nextNodeNames.value.length !== 1 || !lf || !selectedNode.value?.id) return ''
+
+  const graphData = lf.getGraphData() as {
+    nodes?: Array<{ id?: string; properties?: Record<string, any> }>
+    edges?: Array<{ sourceNodeId?: string; targetNodeId?: string }>
+  }
+
+  const edge = (graphData?.edges || []).find(
+    (item) => item.sourceNodeId === selectedNode.value!.id
+  )
+  if (!edge) return ''
+
+  const target = (graphData?.nodes || []).find((node) => node.id === edge.targetNodeId)
+  const code =
+    target?.properties?.nodeStatusCode ?? target?.properties?.properties?.nodeStatusCode
+  return typeof code === 'string' ? code : ''
 })
 
 // 节点表单
@@ -909,21 +932,45 @@ const NODE_LAYOUT_SIZE: Record<string, { width: number; height: number }> = {
 
 const LAYOUT_START_X = 180
 const LAYOUT_START_Y = 180
-const LAYOUT_LEVEL_GAP = 170
+const LAYOUT_COLUMN_GAP = 110
 const LAYOUT_ROW_GAP = 130
-const LAYOUT_LEVEL_BRANCH_GAP = 36
-const LAYOUT_LEVEL_MERGE_COMPACT_GAP = -18
-const LAYOUT_LEVEL_CHAIN_COMPACT_GAP = -28
-const LAYOUT_BRANCH_PADDING = 58
-const LAYOUT_BRANCH_CLUSTER_GAP = 24
-const LAYOUT_BRANCH_BALANCE_FACTOR = 0.35
-const LAYOUT_MIN_NODE_VERTICAL_GAP = 28
+const LAYOUT_MIN_NODE_VERTICAL_GAP = 34
+const LAYOUT_GRID_SIZE = 10
+
+const GATEWAY_TYPES = new Set(['condition', 'parallel'])
+
+/**
+ * 网关（条件/并行）菱形尺寸：与 logicflow-config.ts 的 GatewayDiamondModel 同一公式，
+ * 长文本回填菱形内部（内接可用宽度 ≈ width × 0.66），布局据此分配列宽，文字不再被连线穿过。
+ */
+const gatewaySizeOf = (label?: string) => {
+  const text = (label ?? '').trim()
+  if (!text) return { width: 80, height: 80 }
+  return { width: Math.max(80, Math.ceil(text.length * 14 / 0.66) + 40), height: 90 }
+}
+
+/** 网关尺寸归一：拖入/改名后调用（渲染数据已直接携带尺寸的场景无需调用） */
+const normalizeGatewaySizes = () => {
+  if (!lf) return
+  ;(lf.graphModel.nodes || []).forEach((model: any) => {
+    if (!GATEWAY_TYPES.has(model.type)) return
+    const size = gatewaySizeOf(model.text?.value)
+    if (model.width !== size.width || model.height !== size.height) {
+      try {
+        model.resize({ ...size, deltaX: 0, deltaY: 0 })
+      } catch {
+        // 个别状态下 resize 不可用时跳过，不影响其余节点
+      }
+    }
+  })
+}
 
 type LayoutNode = {
   id: string
   type: string
   x: number
   y: number
+  text?: string
 }
 
 type LayoutEdge = {
@@ -1112,12 +1159,6 @@ const applySuggestedVersionMeta = () => {
   versionForm.name = `草稿版本 v${nextVersion}`
 }
 
-const compareByCanvasPosition = (a: LayoutNode, b: LayoutNode) => {
-  if (a.y !== b.y) return a.y - b.y
-  if (a.x !== b.x) return a.x - b.x
-  return a.id.localeCompare(b.id)
-}
-
 const getLayoutGraphData = () => {
   if (!lf) return null
 
@@ -1127,6 +1168,7 @@ const getLayoutGraphData = () => {
       type?: string
       x?: number
       y?: number
+      text?: { value?: string }
     }>
     edges?: Array<{
       sourceNodeId?: string
@@ -1136,12 +1178,13 @@ const getLayoutGraphData = () => {
 
   return {
     nodes: (graphData.nodes || [])
-      .filter((node): node is Required<LayoutNode> => !!node.id && !!node.type && typeof node.x === 'number' && typeof node.y === 'number')
+      .filter((node) => !!node.id && !!node.type && typeof node.x === 'number' && typeof node.y === 'number')
       .map((node) => ({
-        id: node.id,
-        type: node.type,
-        x: node.x,
-        y: node.y
+        id: node.id as string,
+        type: node.type as string,
+        x: node.x as number,
+        y: node.y as number,
+        text: node.text?.value ?? ''
       })),
     edges: (graphData.edges || [])
       .filter((edge): edge is Required<LayoutEdge> => !!edge.sourceNodeId && !!edge.targetNodeId)
@@ -1212,711 +1255,417 @@ const normalizeCurrentNodeProjectRequired = () => {
   }
 }
 
+// 格式化排版：分层 → 虚拟节点占道 → 重心排序/定位 → 链段拉直 → 碰撞消解
+// 目标：主干链水平成直线、分支围绕主干对称、跨层连线走廊不被节点占据
 const buildFormattedLayout = (nodes: LayoutNode[], edges: LayoutEdge[]) => {
-  const nodeMap = new Map(nodes.map(node => [node.id, node]))
-  const childrenMap = new Map<string, string[]>()
-  const parentsMap = new Map<string, string[]>()
-  const incomingCount = new Map<string, number>()
-  const outgoingCount = new Map<string, number>()
-  const levelMap = new Map<string, number>()
   const positions = new Map<string, LayoutPosition>()
-  const treeChildrenMap = new Map<string, string[]>()
-  const primaryParentMap = new Map<string, string>()
-  const subtreeSpanCache = new Map<string, number>()
-  const sameLaneChildMap = new Map<string, string>()
-  const levelXMap = new Map<number, number>()
+  if (nodes.length === 0) return positions
 
-  nodes.forEach((node) => {
-    childrenMap.set(node.id, [])
-    parentsMap.set(node.id, [])
-    incomingCount.set(node.id, 0)
-    outgoingCount.set(node.id, 0)
-    levelMap.set(node.id, 0)
-    treeChildrenMap.set(node.id, [])
+  const realNodeMap = new Map(nodes.map(node => [node.id, node]))
+  const sizeOf = (id: string) => {
+    const node = realNodeMap.get(id)
+    if (!node) return { width: 0, height: 0 }
+    if (GATEWAY_TYPES.has(node.type)) return gatewaySizeOf(node.text)
+    return getNodeSize(node.type)
+  }
+
+  // 清理边：去掉未知端点 / 自环 / 重复边
+  const edgeKeySet = new Set<string>()
+  const cleanEdges: LayoutEdge[] = []
+  edges.forEach((edge) => {
+    if (!realNodeMap.has(edge.sourceNodeId) || !realNodeMap.has(edge.targetNodeId)) return
+    if (edge.sourceNodeId === edge.targetNodeId) return
+    const edgeKey = `${edge.sourceNodeId}->${edge.targetNodeId}`
+    if (edgeKeySet.has(edgeKey)) return
+    edgeKeySet.add(edgeKey)
+    cleanEdges.push(edge)
   })
 
-  edges.forEach((edge) => {
-    if (!nodeMap.has(edge.sourceNodeId) || !nodeMap.has(edge.targetNodeId)) return
+  // 分层：最长路径层赋值（Kahn 拓扑；死锁时强制断环；回边不参与布局）
+  const levelMap = new Map<string, number>(nodes.map(node => [node.id, 0]))
+  const layoutEdges: LayoutEdge[] = []
+  {
+    const topoChildrenMap = new Map<string, string[]>(nodes.map(node => [node.id, []]))
+    const remainingParents = new Map<string, number>(nodes.map(node => [node.id, 0]))
+    cleanEdges.forEach((edge) => {
+      topoChildrenMap.get(edge.sourceNodeId)!.push(edge.targetNodeId)
+      remainingParents.set(edge.targetNodeId, (remainingParents.get(edge.targetNodeId) || 0) + 1)
+    })
+    const compareByCanvasId = (leftId: string, rightId: string) => {
+      const left = realNodeMap.get(leftId)
+      const right = realNodeMap.get(rightId)
+      if (!left || !right) return leftId.localeCompare(rightId)
+      return left.y - right.y || left.x - right.x || left.id.localeCompare(right.id)
+    }
+    const queue: string[] = nodes
+      .filter(node => (remainingParents.get(node.id) || 0) === 0)
+      .map(node => node.id)
+    const processed = new Set<string>()
+    const processNode = (id: string) => {
+      processed.add(id)
+      ;(topoChildrenMap.get(id) || []).forEach((childId) => {
+        levelMap.set(childId, Math.max(levelMap.get(childId) || 0, (levelMap.get(id) || 0) + 1))
+        remainingParents.set(childId, (remainingParents.get(childId) || 0) - 1)
+        if ((remainingParents.get(childId) || 0) === 0 && !processed.has(childId)) queue.push(childId)
+      })
+    }
+    while (processed.size < nodes.length) {
+      if (queue.length === 0) {
+        // 环：挑“未处理父节点最少”的节点强制断环
+        const candidates = nodes
+          .filter(node => !processed.has(node.id))
+          .sort((a, b) => (remainingParents.get(a.id) || 0) - (remainingParents.get(b.id) || 0) || compareByCanvasId(a.id, b.id))
+        const candidate = candidates[0]
+        if (!candidate) break
+        queue.push(candidate.id)
+        remainingParents.set(candidate.id, 0)
+      }
+      queue.sort((leftId, rightId) =>
+        Number(realNodeMap.get(rightId)?.type === 'start') - Number(realNodeMap.get(leftId)?.type === 'start')
+        || compareByCanvasId(leftId, rightId))
+      const id = queue.shift()
+      if (!id || processed.has(id)) continue
+      processNode(id)
+    }
+    cleanEdges.forEach((edge) => {
+      if ((levelMap.get(edge.targetNodeId) || 0) > (levelMap.get(edge.sourceNodeId) || 0)) {
+        layoutEdges.push(edge)
+      }
+    })
+  }
+
+  // 虚拟节点占道：跨层长边在中间层插入虚拟链，预留连线走廊
+  const allIds = new Set(nodes.map(node => node.id))
+  const expandedEdges: LayoutEdge[] = []
+  {
+    let virtualSeq = 0
+    layoutEdges.forEach((edge) => {
+      const span = (levelMap.get(edge.targetNodeId) || 0) - (levelMap.get(edge.sourceNodeId) || 0)
+      let prevId = edge.sourceNodeId
+      for (let step = 1; step < span; step += 1) {
+        const virtualId = `__layout_v${virtualSeq += 1}`
+        allIds.add(virtualId)
+        levelMap.set(virtualId, (levelMap.get(edge.sourceNodeId) || 0) + step)
+        expandedEdges.push({ sourceNodeId: prevId, targetNodeId: virtualId })
+        prevId = virtualId
+      }
+      expandedEdges.push({ sourceNodeId: prevId, targetNodeId: edge.targetNodeId })
+    })
+  }
+
+  const childrenMap = new Map<string, string[]>([...allIds].map(id => [id, []]))
+  const parentsMap = new Map<string, string[]>([...allIds].map(id => [id, []]))
+  expandedEdges.forEach((edge) => {
     childrenMap.get(edge.sourceNodeId)!.push(edge.targetNodeId)
     parentsMap.get(edge.targetNodeId)!.push(edge.sourceNodeId)
-    incomingCount.set(edge.targetNodeId, (incomingCount.get(edge.targetNodeId) || 0) + 1)
-    outgoingCount.set(edge.sourceNodeId, (outgoingCount.get(edge.sourceNodeId) || 0) + 1)
   })
+  const byCanvas = (leftId: string, rightId: string) => {
+    const left = realNodeMap.get(leftId)
+    const right = realNodeMap.get(rightId)
+    if (!left || !right) return leftId.localeCompare(rightId)
+    return left.y - right.y || left.x - right.x || left.id.localeCompare(right.id)
+  }
+  childrenMap.forEach(ids => ids.sort(byCanvas))
+  parentsMap.forEach(ids => ids.sort(byCanvas))
 
-  childrenMap.forEach((childIds, nodeId) => {
-    childIds.sort((leftId, rightId) => compareByCanvasPosition(nodeMap.get(leftId)!, nodeMap.get(rightId)!))
-    childrenMap.set(nodeId, childIds)
+  const maxLevel = Math.max(...[...levelMap.values()], 0)
+  const levels: string[][] = Array.from({ length: maxLevel + 1 }, () => [])
+  allIds.forEach(id => levels[levelMap.get(id) || 0].push(id))
+
+  // 列内排序：重心法消交叉（初始顺序尊重画布现状）
+  const posInLevel = new Map<string, number>()
+  levels.forEach((col) => {
+    col.sort(byCanvas)
+    col.forEach((id, index) => posInLevel.set(id, index))
   })
+  const neighborBarycenter = (id: string, useParents: boolean) => {
+    const neighbors = useParents ? parentsMap.get(id) || [] : childrenMap.get(id) || []
+    if (neighbors.length === 0) return posInLevel.get(id) || 0
+    return neighbors.reduce((sum, nid) => sum + (posInLevel.get(nid) || 0), 0) / neighbors.length
+  }
+  for (let sweep = 0; sweep < 4; sweep += 1) {
+    const useParents = sweep % 2 === 0
+    const levelIndexes = levels.map((_, index) => index)
+    if (!useParents) levelIndexes.reverse()
+    levelIndexes.forEach((levelIndex) => {
+      const col = levels[levelIndex]
+      const keyed = col.map((id, index) => ({ id, bary: neighborBarycenter(id, useParents), index }))
+      keyed.sort((a, b) => a.bary - b.bary || a.index - b.index)
+      keyed.forEach((item, index) => {
+        col[index] = item.id
+        posInLevel.set(item.id, index)
+      })
+    })
+  }
 
-  parentsMap.forEach((parentIds, nodeId) => {
-    parentIds.sort((leftId, rightId) => compareByCanvasPosition(nodeMap.get(leftId)!, nodeMap.get(rightId)!))
-    parentsMap.set(nodeId, parentIds)
-  })
-
-  const sortedNodes = [...nodes].sort((left, right) => {
-    const typeDelta = Number(right.type === 'start') - Number(left.type === 'start')
-    if (typeDelta !== 0) return typeDelta
-    return compareByCanvasPosition(left, right)
-  })
-
-  const roots = sortedNodes.filter(node => node.type === 'start' || (incomingCount.get(node.id) || 0) === 0)
-  const queue = roots.length > 0 ? roots.map(node => node.id) : [sortedNodes[0]?.id].filter(Boolean) as string[]
-  const remainingIncoming = new Map(incomingCount)
-  const topoOrder: string[] = []
-
-  while (queue.length > 0) {
-    queue.sort((leftId, rightId) => compareByCanvasPosition(nodeMap.get(leftId)!, nodeMap.get(rightId)!))
-    const currentId = queue.shift()!
-    const currentLevel = levelMap.get(currentId) || 0
-    topoOrder.push(currentId)
-
-    for (const childId of childrenMap.get(currentId) || []) {
-      const nextLevel = currentLevel + 1
-      if (nextLevel > (levelMap.get(childId) || 0)) {
-        levelMap.set(childId, nextLevel)
+  // 纵坐标：父均值初始化 + 重心松弛
+  const yMap = new Map<string, number>([...allIds].map(id => [id, 0]))
+  levels.forEach((col, levelIndex) => {
+    if (levelIndex === 0) return
+    col.forEach((id) => {
+      const parents = parentsMap.get(id) || []
+      if (parents.length > 0) {
+        yMap.set(id, parents.reduce((sum, pid) => sum + (yMap.get(pid) || 0), 0) / parents.length)
       }
+    })
+  })
 
-      const nextIncoming = (remainingIncoming.get(childId) || 0) - 1
-      remainingIncoming.set(childId, nextIncoming)
-      if (nextIncoming === 0) {
-        queue.push(childId)
+  // 纯链节点（一进一出）按连通段拉直：段内 y 统一为段均值
+  const isPureChain = (id: string) => (parentsMap.get(id) || []).length === 1 && (childrenMap.get(id) || []).length === 1
+  const segmentIdMap = new Map<string, string>()
+  const segmentMembersMap = new Map<string, string[]>()
+  {
+    const segmentKeyOf = new Map<string, string>()
+    allIds.forEach((id) => {
+      if (!isPureChain(id) || segmentKeyOf.has(id)) return
+      const members = [id]
+      segmentKeyOf.set(id, id)
+      let cursor = (childrenMap.get(id) || [])[0]
+      while (cursor && isPureChain(cursor) && !segmentKeyOf.has(cursor)) {
+        segmentKeyOf.set(cursor, id)
+        members.push(cursor)
+        cursor = (childrenMap.get(cursor) || [])[0]
       }
-    }
+      cursor = (parentsMap.get(id) || [])[0]
+      while (cursor && isPureChain(cursor) && !segmentKeyOf.has(cursor)) {
+        segmentKeyOf.set(cursor, id)
+        members.unshift(cursor)
+        cursor = (parentsMap.get(cursor) || [])[0]
+      }
+      members.forEach(memberId => segmentIdMap.set(memberId, id))
+      segmentMembersMap.set(id, members)
+    })
+  }
+  const flattenChainSegments = () => {
+    const sums = new Map<string, number>()
+    const counts = new Map<string, number>()
+    segmentIdMap.forEach((segmentId, memberId) => {
+      sums.set(segmentId, (sums.get(segmentId) || 0) + (yMap.get(memberId) || 0))
+      counts.set(segmentId, (counts.get(segmentId) || 0) + 1)
+    })
+    segmentIdMap.forEach((segmentId, memberId) => {
+      yMap.set(memberId, (sums.get(segmentId) || 0) / (counts.get(segmentId) || 1))
+    })
+  }
+
+  const shareNeighbor = (leftId: string, rightId: string) => {
+    const leftParents = new Set(parentsMap.get(leftId) || [])
+    if ((parentsMap.get(rightId) || []).some(pid => leftParents.has(pid))) return true
+    const leftChildren = new Set(childrenMap.get(leftId) || [])
+    if ((childrenMap.get(rightId) || []).some(cid => leftChildren.has(cid))) return true
+    return false
+  }
+  const pairPitch = (leftId: string, rightId: string) => {
+    if (!realNodeMap.has(leftId) || !realNodeMap.has(rightId)) return LAYOUT_ROW_GAP
+    return shareNeighbor(leftId, rightId)
+      ? LAYOUT_ROW_GAP
+      : (sizeOf(leftId).height + sizeOf(rightId).height) / 2 + LAYOUT_MIN_NODE_VERTICAL_GAP
+  }
+
+  // 列内避让：以“链段/单点”为刚性块上下推挤，保持已拉直的链不弯
+  const applyColumnMinGap = () => {
+    levels.forEach((col) => {
+      if (col.length < 2) return
+      const sorted = [...col].sort((a, b) => (yMap.get(a) || 0) - (yMap.get(b) || 0) || byCanvas(a, b))
+      const blocks: Array<{ id: string; ids: string[]; y: number }> = []
+      sorted.forEach((id) => {
+        const blockId = segmentIdMap.get(id) || id
+        const last = blocks[blocks.length - 1]
+        if (last && last.id === blockId) {
+          last.ids.push(id)
+        } else {
+          blocks.push({ id: blockId, ids: [id], y: yMap.get(id) || 0 })
+        }
+      })
+      if (blocks.length < 2) return
+      const blockPitch = (left: { ids: string[] }, right: { ids: string[] }) => {
+        let pitch = 0
+        left.ids.forEach((leftId) => {
+          right.ids.forEach((rightId) => {
+            pitch = Math.max(pitch, pairPitch(leftId, rightId))
+          })
+        })
+        return pitch
+      }
+      const desired = blocks.map(block => block.y)
+      const pushDown = () => {
+        for (let i = 1; i < blocks.length; i += 1) {
+          desired[i] = Math.max(desired[i], desired[i - 1] + blockPitch(blocks[i - 1], blocks[i]))
+        }
+      }
+      const meanBefore = desired.reduce((sum, value) => sum + value, 0) / desired.length
+      pushDown()
+      const meanAfter = desired.reduce((sum, value) => sum + value, 0) / desired.length
+      const drift = meanBefore - meanAfter
+      for (let i = 0; i < desired.length; i += 1) desired[i] += drift
+      pushDown()
+      blocks.forEach((block, index) => {
+        block.ids.forEach(id => yMap.set(id, desired[index]))
+      })
+    })
+  }
+
+  const relaxOnce = (reverseLevels: boolean, onlyNonChain = false) => {
+    const levelIndexes = levels.map((_, index) => index)
+    if (reverseLevels) levelIndexes.reverse()
+    levelIndexes.forEach((levelIndex) => {
+      ;(levels[levelIndex] || []).forEach((id) => {
+        if (onlyNonChain && segmentIdMap.has(id)) return
+        const neighbors = [...(parentsMap.get(id) || []), ...(childrenMap.get(id) || [])]
+        if (neighbors.length === 0) return
+        yMap.set(id, neighbors.reduce((sum, nid) => sum + (yMap.get(nid) || 0), 0) / neighbors.length)
+      })
+    })
+  }
+
+  for (let round = 0; round < 3; round += 1) {
+    relaxOnce(false)
+    flattenChainSegments()
+    applyColumnMinGap()
+    relaxOnce(true)
+    flattenChainSegments()
+    applyColumnMinGap()
+  }
+  // 收尾：非链节点再对齐邻域重心（链段保持刚性）
+  for (let round = 0; round < 2; round += 1) {
+    relaxOnce(false, true)
+    relaxOnce(true, true)
+    flattenChainSegments()
+    applyColumnMinGap()
+  }
+  // 最终拉直后，若仍有同列碰撞，按“整段刚性平移”消解（跨列链段保持直线）
+  flattenChainSegments()
+  for (let iter = 0; iter < nodes.length; iter += 1) {
+    let moved = false
+    levels.forEach((col) => {
+      const sorted = [...col].sort((a, b) => (yMap.get(a) || 0) - (yMap.get(b) || 0) || byCanvas(a, b))
+      for (let i = 1; i < sorted.length; i += 1) {
+        const upperId = sorted[i - 1]
+        const lowerId = sorted[i]
+        const need = pairPitch(upperId, lowerId)
+        const gap = (yMap.get(lowerId) || 0) - (yMap.get(upperId) || 0)
+        if (gap < need - 0.5) {
+          const segmentId = segmentIdMap.get(lowerId)
+          const members = (segmentId && segmentMembersMap.get(segmentId)) || [lowerId]
+          members.forEach(memberId => yMap.set(memberId, (yMap.get(memberId) || 0) + need - gap))
+          moved = true
+        }
+      }
+    })
+    if (!moved) break
+  }
+
+  // 分叉对称化：出度≥2 的节点，其真实子节点围绕分叉点上下对称分布（纯链整段平移），
+  // 分支连线因此获得一致的分流角度，不再一侧远一侧近地歪斜
+  {
+    const realChildren = new Map<string, string[]>()
+    cleanEdges.forEach((edge) => {
+      if (!realNodeMap.has(edge.targetNodeId)) return
+      const list = realChildren.get(edge.sourceNodeId)
+      if (list) list.push(edge.targetNodeId)
+      else realChildren.set(edge.sourceNodeId, [edge.targetNodeId])
+    })
+    realChildren.forEach((children, parentId) => {
+      if (children.length < 2) return
+      const yv = yMap.get(parentId) || 0
+      const ordered = [...children].sort((a, b) => (yMap.get(a) || 0) - (yMap.get(b) || 0) || byCanvas(a, b))
+      const spread = Math.max(
+        LAYOUT_ROW_GAP,
+        ...ordered.map(id => sizeOf(id).height + LAYOUT_MIN_NODE_VERTICAL_GAP),
+      )
+      ordered.forEach((childId, index) => {
+        const targetY = yv + spread * (index - (ordered.length - 1) / 2)
+        const segId = segmentIdMap.get(childId)
+        const members = (segId && segmentMembersMap.get(segId)) || [childId]
+        const delta = targetY - (yMap.get(childId) || 0)
+        members.forEach(memberId => yMap.set(memberId, (yMap.get(memberId) || 0) + delta))
+      })
+    })
+    applyColumnMinGap()
+  }
+
+  // 横坐标：按层分列（列宽取该层真实节点的最大宽度）
+  const columnWidth = levels.map((col) => {
+    const realIds = col.filter(id => realNodeMap.has(id))
+    if (realIds.length === 0) return 0
+    return Math.max(...realIds.map(id => sizeOf(id).width))
+  })
+  const xOfLevel = levels.map(() => LAYOUT_START_X)
+  for (let levelIndex = 1; levelIndex < levels.length; levelIndex += 1) {
+    xOfLevel[levelIndex] = xOfLevel[levelIndex - 1]
+      + (columnWidth[levelIndex - 1] || 0) / 2 + LAYOUT_COLUMN_GAP + (columnWidth[levelIndex] || 0) / 2
   }
 
   nodes.forEach((node) => {
-    if (!topoOrder.includes(node.id)) {
-      topoOrder.push(node.id)
+    positions.set(node.id, { x: xOfLevel[levelMap.get(node.id) || 0] || LAYOUT_START_X, y: yMap.get(node.id) || 0 })
+  })
+
+  // 连通分量：主分量（含 start）保持原位，其余分量依次堆叠到下方
+  const parent = new Map<string, string>([...allIds].map(id => [id, id]))
+  const find = (id: string): string => {
+    let current = id
+    while (current !== parent.get(current)) {
+      current = parent.get(current) || current
     }
+    return current
+  }
+  expandedEdges.forEach((edge) => {
+    const leftRoot = find(edge.sourceNodeId)
+    const rightRoot = find(edge.targetNodeId)
+    if (leftRoot !== rightRoot) parent.set(leftRoot, rightRoot)
+  })
+  const startNode = [...nodes].sort((a, b) =>
+    Number(b.type === 'start') - Number(a.type === 'start') || a.y - b.y || a.id.localeCompare(b.id))[0]
+  const mainRoot = startNode ? find(startNode.id) : null
+  const componentGroups = new Map<string, string[]>()
+  nodes.forEach((node) => {
+    const root = find(node.id)
+    const group = componentGroups.get(root) || []
+    group.push(node.id)
+    componentGroups.set(root, group)
+  })
+  const groups = [...componentGroups.values()].sort((left, right) => {
+    const leftMain = left.some(id => find(id) === mainRoot)
+    const rightMain = right.some(id => find(id) === mainRoot)
+    if (leftMain !== rightMain) return leftMain ? -1 : 1
+    return byCanvas(left[0] || '', right[0] || '')
   })
 
-  const dagreGraph = new dagre.graphlib.Graph({ multigraph: true, compound: false })
-  dagreGraph.setGraph({
-    rankdir: 'LR',
-    align: 'UL',
-    ranksep: LAYOUT_LEVEL_GAP,
-    nodesep: Math.max(80, LAYOUT_ROW_GAP - 12),
-    edgesep: 26,
-    marginx: 40,
-    marginy: 40
+  let stackBottomY = -Infinity
+  groups.forEach((group, groupIndex) => {
+    const groupTop = Math.min(...group.map(id => (positions.get(id)?.y || 0) - sizeOf(id).height / 2))
+    const groupBottom = Math.max(...group.map(id => (positions.get(id)?.y || 0) + sizeOf(id).height / 2))
+    if (groupIndex === 0) {
+      stackBottomY = groupBottom
+      return
+    }
+    const shiftY = Math.max(0, stackBottomY + 130 - groupTop)
+    if (shiftY > 0) {
+      group.forEach((id) => {
+        const position = positions.get(id)
+        if (!position) return
+        positions.set(id, { ...position, y: position.y + shiftY })
+      })
+    }
+    stackBottomY = Math.max(stackBottomY, groupBottom + shiftY)
   })
-  dagreGraph.setDefaultEdgeLabel(() => ({}))
 
+  // 平移到起始位置并对齐网格
+  let minX = Infinity
+  let minY = Infinity
   nodes.forEach((node) => {
     const size = getNodeSize(node.type)
-    dagreGraph.setNode(node.id, {
-      width: size.width,
-      height: size.height
-    })
+    const position = positions.get(node.id)
+    if (!position) return
+    minX = Math.min(minX, position.x - size.width / 2)
+    minY = Math.min(minY, position.y - size.height / 2)
   })
-
-  edges.forEach((edge, index) => {
-    dagreGraph.setEdge(edge.sourceNodeId, edge.targetNodeId, {
-      weight:
-        1 +
-        ((outgoingCount.get(edge.sourceNodeId) || 0) === 1 ? 2 : 0) +
-        ((incomingCount.get(edge.targetNodeId) || 0) === 1 ? 2 : 0),
-      minlen: 1
-    }, `${edge.sourceNodeId}_${edge.targetNodeId}_${index}`)
+  const offsetX = LAYOUT_START_X - minX
+  const offsetY = LAYOUT_START_Y - minY
+  const snap = (value: number) => Math.round(value / LAYOUT_GRID_SIZE) * LAYOUT_GRID_SIZE
+  positions.forEach((position, id) => {
+    positions.set(id, { x: snap(position.x + offsetX), y: snap(position.y + offsetY) })
   })
-
-  dagre.layout(dagreGraph)
-
-  const dagrePositionMap = new Map<string, LayoutPosition>()
-  nodes.forEach((node) => {
-    const dagreNode = dagreGraph.node(node.id)
-    if (!dagreNode) return
-    dagrePositionMap.set(node.id, {
-      x: dagreNode.x,
-      y: dagreNode.y
-    })
-  })
-
-  const compareByDagrePosition = (leftId: string, rightId: string) => {
-    const leftPosition = dagrePositionMap.get(leftId)
-    const rightPosition = dagrePositionMap.get(rightId)
-    if (leftPosition && rightPosition) {
-      if (Math.abs(leftPosition.y - rightPosition.y) >= 1) {
-        return leftPosition.y - rightPosition.y
-      }
-      if (Math.abs(leftPosition.x - rightPosition.x) >= 1) {
-        return leftPosition.x - rightPosition.x
-      }
-    }
-    return compareByCanvasPosition(nodeMap.get(leftId)!, nodeMap.get(rightId)!)
-  }
-
-  childrenMap.forEach((childIds, nodeId) => {
-    childIds.sort(compareByDagrePosition)
-    childrenMap.set(nodeId, childIds)
-  })
-
-  parentsMap.forEach((parentIds, nodeId) => {
-    parentIds.sort(compareByDagrePosition)
-    parentsMap.set(nodeId, parentIds)
-  })
-
-  const pathScoreMap = new Map<string, number>()
-  topoOrder.forEach((nodeId) => {
-    const node = nodeMap.get(nodeId)!
-    const parentIds = parentsMap.get(nodeId) || []
-
-    if (parentIds.length === 0) {
-      pathScoreMap.set(nodeId, node.type === 'start' ? 2000 : 0)
-      return
-    }
-
-    let bestScore = Number.NEGATIVE_INFINITY
-    let bestParentId = parentIds[0]
-
-    parentIds.forEach((parentId) => {
-      const parentNode = nodeMap.get(parentId)!
-      const parentScore = pathScoreMap.get(parentId) || 0
-      const chainBonus =
-        ((outgoingCount.get(parentId) || 0) === 1 ? 240 : 0) +
-        ((incomingCount.get(nodeId) || 0) === 1 ? 220 : 0)
-      const nodeTypeBonus =
-        (node.type === 'end' ? 140 : 0) +
-        (parentNode.type === 'start' ? 80 : 0) +
-        (parentNode.type === 'condition' ? 40 : 0)
-      const dagreBonus = -Math.abs((dagrePositionMap.get(parentId)?.y || 0) - (dagrePositionMap.get(nodeId)?.y || 0)) * 0.25
-      const candidateScore = parentScore + 1000 + chainBonus + nodeTypeBonus + dagreBonus
-
-      if (
-        candidateScore > bestScore ||
-        (candidateScore === bestScore && compareByDagrePosition(parentId, bestParentId) < 0)
-      ) {
-        bestScore = candidateScore
-        bestParentId = parentId
-      }
-    })
-
-    primaryParentMap.set(nodeId, bestParentId)
-    pathScoreMap.set(nodeId, bestScore)
-  })
-
-  const leafIds = topoOrder.filter((nodeId) => (childrenMap.get(nodeId) || []).length === 0)
-  const candidateEndIds = leafIds.length > 0
-    ? leafIds
-    : topoOrder.filter((nodeId) => nodeMap.get(nodeId)?.type === 'end')
-
-  const bestEndId = [...candidateEndIds].sort((leftId, rightId) => {
-    const scoreDelta = (pathScoreMap.get(rightId) || 0) - (pathScoreMap.get(leftId) || 0)
-    if (scoreDelta !== 0) return scoreDelta
-    const levelDelta = (levelMap.get(rightId) || 0) - (levelMap.get(leftId) || 0)
-    if (levelDelta !== 0) return levelDelta
-    return compareByDagrePosition(leftId, rightId)
-  })[0]
-
-  const mainPathIds: string[] = []
-  const mainPathSet = new Set<string>()
-  let cursorId = bestEndId
-  while (cursorId) {
-    mainPathIds.push(cursorId)
-    mainPathSet.add(cursorId)
-    const nextCursor = primaryParentMap.get(cursorId)
-    if (!nextCursor || mainPathSet.has(nextCursor)) break
-    cursorId = nextCursor
-  }
-  mainPathIds.reverse()
-
-  const mainPathIndexMap = new Map(mainPathIds.map((nodeId, index) => [nodeId, index]))
-  mainPathIds.forEach((nodeId, index) => {
-    const nextNodeId = mainPathIds[index + 1]
-    if (nextNodeId) {
-      sameLaneChildMap.set(nodeId, nextNodeId)
-    }
-  })
-
-  nodes.forEach((node) => {
-    const parentId = primaryParentMap.get(node.id)
-    if (!parentId) return
-    treeChildrenMap.get(parentId)!.push(node.id)
-  })
-
-  treeChildrenMap.forEach((childIds, nodeId) => {
-    childIds.sort((leftId, rightId) => {
-      const leftIsMain = mainPathIndexMap.has(leftId)
-      const rightIsMain = mainPathIndexMap.has(rightId)
-      if (leftIsMain !== rightIsMain) {
-        return leftIsMain ? -1 : 1
-      }
-      return compareByDagrePosition(leftId, rightId)
-    })
-    treeChildrenMap.set(nodeId, childIds)
-  })
-
-  const pickPrimaryChild = (parentId: string, childIds: string[]) => {
-    const parentNode = nodeMap.get(parentId)
-    if (!parentNode) return childIds[0]
-
-    return [...childIds].sort((leftId, rightId) => {
-      const leftNode = nodeMap.get(leftId)!
-      const rightNode = nodeMap.get(rightId)!
-      const leftDistance = Math.abs((dagrePositionMap.get(leftId)?.y || leftNode.y) - (dagrePositionMap.get(parentId)?.y || parentNode.y))
-      const rightDistance = Math.abs((dagrePositionMap.get(rightId)?.y || rightNode.y) - (dagrePositionMap.get(parentId)?.y || parentNode.y))
-      if (leftDistance !== rightDistance) return leftDistance - rightDistance
-
-      const leftOutCount = outgoingCount.get(leftId) || 0
-      const rightOutCount = outgoingCount.get(rightId) || 0
-      if (leftOutCount !== rightOutCount) return rightOutCount - leftOutCount
-
-      const leftMainDistance = mainPathIndexMap.has(leftId) ? 0 : 1
-      const rightMainDistance = mainPathIndexMap.has(rightId) ? 0 : 1
-      if (leftMainDistance !== rightMainDistance) return leftMainDistance - rightMainDistance
-
-      return compareByDagrePosition(leftId, rightId)
-    })[0]
-  }
-
-  const calcSubtreeSpan = (nodeId: string, visited = new Set<string>()): number => {
-    if (subtreeSpanCache.has(nodeId)) {
-      return subtreeSpanCache.get(nodeId)!
-    }
-    if (visited.has(nodeId)) {
-      return 1
-    }
-
-    visited.add(nodeId)
-    const childIds = treeChildrenMap.get(nodeId) || []
-    if (childIds.length === 0) {
-      subtreeSpanCache.set(nodeId, 1)
-      return 1
-    }
-
-    const sameLaneChildId = sameLaneChildMap.get(nodeId) || (
-      childIds.length === 1
-        ? childIds[0]
-        : (mainPathSet.has(nodeId) ? undefined : pickPrimaryChild(nodeId, childIds))
-    )
-
-    const branchChildIds = childIds.filter((childId) => childId !== sameLaneChildId)
-
-    let mainLaneSpan = 1
-    if (sameLaneChildId) {
-      mainLaneSpan = calcSubtreeSpan(sameLaneChildId, new Set(visited))
-    }
-
-    if (branchChildIds.length === 0) {
-      const span = Math.max(1, mainLaneSpan)
-      subtreeSpanCache.set(nodeId, span)
-      return span
-    }
-
-    const branchSpan = branchChildIds.reduce((total, childId, index) => {
-      const childSpan = calcSubtreeSpan(childId, new Set(visited))
-      return total + childSpan + (index === branchChildIds.length - 1 ? 0 : 1)
-    }, 0)
-    const span = Math.max(mainLaneSpan, branchSpan)
-    subtreeSpanCache.set(nodeId, span)
-    return span
-  }
-
-  const computeLevelXPositions = () => {
-    const maxLevel = Math.max(...[...levelMap.values()], 0)
-    const levelWidths = Array.from({ length: maxLevel + 1 }, (_, level) => {
-      const levelNodeWidths = nodes
-        .filter((node) => (levelMap.get(node.id) || 0) === level)
-        .map((node) => getNodeSize(node.type).width)
-      return levelNodeWidths.length > 0 ? Math.max(...levelNodeWidths) : getNodeSize().width
-    })
-
-    let currentX = LAYOUT_START_X
-    levelXMap.set(0, currentX)
-
-    for (let level = 1; level <= maxLevel; level += 1) {
-      const previousLevelNodeIds = nodes
-        .filter((node) => (levelMap.get(node.id) || 0) === level - 1)
-        .map((node) => node.id)
-      const currentLevelNodeIds = nodes
-        .filter((node) => (levelMap.get(node.id) || 0) === level)
-        .map((node) => node.id)
-      const previousSingleNodeId = previousLevelNodeIds[0]
-      const currentSingleNodeId = currentLevelNodeIds[0]
-
-      const hasBranching = previousLevelNodeIds.some((nodeId) => (outgoingCount.get(nodeId) || 0) > 1)
-      const hasMerge = currentLevelNodeIds.some((nodeId) => (incomingCount.get(nodeId) || 0) > 1)
-      const levelNodeCount = currentLevelNodeIds.length
-      const isStraightChainLevel =
-        previousLevelNodeIds.length === 1 &&
-        currentLevelNodeIds.length === 1 &&
-        !!previousSingleNodeId &&
-        !!currentSingleNodeId &&
-        (
-          sameLaneChildMap.get(previousSingleNodeId) === currentSingleNodeId ||
-          (
-            (childrenMap.get(previousSingleNodeId) || []).length === 1 &&
-            (parentsMap.get(currentSingleNodeId) || []).length === 1 &&
-            (childrenMap.get(previousSingleNodeId) || [])[0] === currentSingleNodeId &&
-            (parentsMap.get(currentSingleNodeId) || [])[0] === previousSingleNodeId
-          )
-        )
-
-      const gap =
-        LAYOUT_LEVEL_GAP +
-        (hasBranching || levelNodeCount > 1 ? LAYOUT_LEVEL_BRANCH_GAP : 0) +
-        (hasMerge ? LAYOUT_LEVEL_MERGE_COMPACT_GAP : 0) +
-        (isStraightChainLevel ? LAYOUT_LEVEL_CHAIN_COMPACT_GAP : 0)
-
-      currentX += levelWidths[level - 1] / 2 + gap + levelWidths[level] / 2
-      levelXMap.set(level, currentX)
-    }
-  }
-
-  computeLevelXPositions()
-
-  const resolveBranchBuckets = (nodeId: string, branchChildIds: string[]) => {
-    const parentDagreY = dagrePositionMap.get(nodeId)?.y || nodeMap.get(nodeId)?.y || 0
-    const branchChildren = [...branchChildIds].sort(compareByDagrePosition)
-    const upperChildIds: string[] = []
-    const lowerChildIds: string[] = []
-
-    const currentUpperSpan = () => upperChildIds.reduce((total, childId, index) => {
-      const childSpan = calcSubtreeSpan(childId)
-      return total + childSpan + (index === upperChildIds.length - 1 ? 0 : 1)
-    }, 0)
-
-    const currentLowerSpan = () => lowerChildIds.reduce((total, childId, index) => {
-      const childSpan = calcSubtreeSpan(childId)
-      return total + childSpan + (index === lowerChildIds.length - 1 ? 0 : 1)
-    }, 0)
-
-    branchChildren.forEach((childId) => {
-      const childDagreY = dagrePositionMap.get(childId)?.y || nodeMap.get(childId)?.y || 0
-      if (childDagreY < parentDagreY - 1) {
-        upperChildIds.push(childId)
-        return
-      }
-      if (childDagreY > parentDagreY + 1) {
-        lowerChildIds.push(childId)
-        return
-      }
-
-      if (currentUpperSpan() <= currentLowerSpan()) {
-        upperChildIds.push(childId)
-      } else {
-        lowerChildIds.push(childId)
-      }
-    })
-
-    if (upperChildIds.length === 0 && lowerChildIds.length > 1) {
-      const normalizedChildren = [...lowerChildIds]
-      upperChildIds.push(...normalizedChildren.filter((_, index) => index % 2 === 0))
-      lowerChildIds.splice(0, lowerChildIds.length, ...normalizedChildren.filter((_, index) => index % 2 === 1))
-    } else if (lowerChildIds.length === 0 && upperChildIds.length > 1) {
-      const normalizedChildren = [...upperChildIds]
-      upperChildIds.splice(0, upperChildIds.length, ...normalizedChildren.filter((_, index) => index % 2 === 0))
-      lowerChildIds.push(...normalizedChildren.filter((_, index) => index % 2 === 1))
-    }
-
-    upperChildIds.sort(compareByDagrePosition)
-    lowerChildIds.sort(compareByDagrePosition)
-
-    return { upperChildIds, lowerChildIds }
-  }
-
-  const placeSubtree = (nodeId: string, centerY: number) => {
-    const level = levelMap.get(nodeId) || 0
-    const x = levelXMap.get(level) || (LAYOUT_START_X + level * LAYOUT_LEVEL_GAP)
-    const y = Math.max(getNodeSize(nodeMap.get(nodeId)?.type).height / 2, centerY)
-
-    positions.set(nodeId, { x, y })
-
-    const childIds = treeChildrenMap.get(nodeId) || []
-    if (childIds.length === 0) return
-
-    const sameLaneChildId = sameLaneChildMap.get(nodeId) || (
-      childIds.length === 1
-        ? childIds[0]
-        : (mainPathSet.has(nodeId) ? undefined : pickPrimaryChild(nodeId, childIds))
-    )
-    const branchChildIds = childIds.filter((childId) => childId !== sameLaneChildId)
-
-    if (sameLaneChildId) {
-      placeSubtree(sameLaneChildId, y)
-    }
-
-    if (branchChildIds.length === 0) {
-      return
-    }
-
-    const { upperChildIds, lowerChildIds } = resolveBranchBuckets(nodeId, branchChildIds)
-    const getClusterSpan = (childIds: string[]) => childIds.reduce((total, childId, index) => {
-      return total + calcSubtreeSpan(childId) * LAYOUT_ROW_GAP + (index === 0 ? 0 : LAYOUT_BRANCH_CLUSTER_GAP)
-    }, 0)
-    const placeDirectionalChildren = (childIds: string[], direction: -1 | 1, padding: number) => {
-      if (childIds.length === 0) return
-
-      const orderedChildIds = direction < 0 ? [...childIds].reverse() : childIds
-      let cursor = y + direction * padding
-
-      orderedChildIds.forEach((childId, index) => {
-        const childSpan = calcSubtreeSpan(childId) * LAYOUT_ROW_GAP
-        cursor += direction * (childSpan / 2)
-        placeSubtree(childId, cursor)
-        cursor += direction * (childSpan / 2)
-        if (index < orderedChildIds.length - 1) {
-          cursor += direction * LAYOUT_BRANCH_CLUSTER_GAP
-        }
-      })
-    }
-
-    const upperClusterSpan = getClusterSpan(upperChildIds)
-    const lowerClusterSpan = getClusterSpan(lowerChildIds)
-    const upperPadding = LAYOUT_BRANCH_PADDING + Math.max(0, (lowerClusterSpan - upperClusterSpan) * LAYOUT_BRANCH_BALANCE_FACTOR)
-    const lowerPadding = LAYOUT_BRANCH_PADDING + Math.max(0, (upperClusterSpan - lowerClusterSpan) * LAYOUT_BRANCH_BALANCE_FACTOR)
-
-    placeDirectionalChildren(upperChildIds, -1, upperPadding)
-    placeDirectionalChildren(lowerChildIds, 1, lowerPadding)
-  }
-
-  const rootIds = sortedNodes
-    .filter(node => !primaryParentMap.has(node.id))
-    .map(node => node.id)
-    .sort((leftId, rightId) => {
-      const leftNode = nodeMap.get(leftId)!
-      const rightNode = nodeMap.get(rightId)!
-      const typeDelta = Number(rightNode.type === 'start') - Number(leftNode.type === 'start')
-      if (typeDelta !== 0) return typeDelta
-      return compareByDagrePosition(leftId, rightId)
-    })
-
-  const mainPathCenterY = (() => {
-    const mainPathYs = mainPathIds
-      .map((nodeId) => dagrePositionMap.get(nodeId)?.y)
-      .filter((value): value is number => typeof value === 'number')
-    if (mainPathYs.length === 0) {
-      return LAYOUT_START_Y
-    }
-
-    const sortedY = [...mainPathYs].sort((left, right) => left - right)
-    const middleIndex = Math.floor(sortedY.length / 2)
-    if (sortedY.length % 2 === 1) {
-      return sortedY[middleIndex]
-    }
-    return (sortedY[middleIndex - 1] + sortedY[middleIndex]) / 2
-  })()
-
-  if (rootIds.length > 0) {
-    const mainRootId = mainPathIds[0] && rootIds.includes(mainPathIds[0]) ? mainPathIds[0] : rootIds[0]
-    if (mainRootId) {
-      placeSubtree(mainRootId, mainPathCenterY)
-    }
-  }
-
-  let rootCursorY = mainPathCenterY + LAYOUT_ROW_GAP * 2
-  rootIds
-    .filter((rootId) => !positions.has(rootId))
-    .forEach((rootId) => {
-      const rootSpan = calcSubtreeSpan(rootId)
-      placeSubtree(rootId, rootCursorY + ((rootSpan - 1) * LAYOUT_ROW_GAP) / 2)
-      rootCursorY += rootSpan * LAYOUT_ROW_GAP + LAYOUT_ROW_GAP
-    })
-
-  nodes
-    .filter(node => !positions.has(node.id))
-    .sort(compareByCanvasPosition)
-    .forEach((node) => {
-      placeSubtree(node.id, rootCursorY)
-      rootCursorY += LAYOUT_ROW_GAP
-    })
-
-  const levelGroups = new Map<number, string[]>()
-  nodes.forEach((node) => {
-    const level = levelMap.get(node.id) || 0
-    const levelNodeIds = levelGroups.get(level) || []
-    levelNodeIds.push(node.id)
-    levelGroups.set(level, levelNodeIds)
-  })
-
-  const getMinGap = (upperId: string, lowerId: string) => {
-    return (getNodeSize(nodeMap.get(upperId)?.type).height + getNodeSize(nodeMap.get(lowerId)?.type).height) / 2 + LAYOUT_MIN_NODE_VERTICAL_GAP
-  }
-
-  const getTargetY = (nodeId: string) => {
-    if (mainPathSet.has(nodeId)) {
-      return mainPathCenterY
-    }
-
-    const structuralY = dagrePositionMap.get(nodeId)?.y || positions.get(nodeId)?.y || LAYOUT_START_Y
-    const parentYs = (parentsMap.get(nodeId) || [])
-      .map((parentId) => positions.get(parentId)?.y)
-      .filter((value): value is number => typeof value === 'number')
-    const childYs = (childrenMap.get(nodeId) || [])
-      .map((childId) => positions.get(childId)?.y)
-      .filter((value): value is number => typeof value === 'number')
-    const connectedYs = [...parentYs, ...childYs]
-
-    if ((incomingCount.get(nodeId) || 0) > 1 && parentYs.length > 0) {
-      return parentYs.reduce((total, value) => total + value, 0) / parentYs.length
-    }
-    if (connectedYs.length === 0) {
-      return structuralY
-    }
-
-    const linkedCenter = connectedYs.reduce((total, value) => total + value, 0) / connectedYs.length
-    const straightLaneBoost = (incomingCount.get(nodeId) || 0) <= 1 && (outgoingCount.get(nodeId) || 0) <= 1 ? 0.84 : 0.72
-    return linkedCenter * straightLaneBoost + structuralY * (1 - straightLaneBoost)
-  }
-
-  const applyLevelCollisionResolution = (lockedNodeIds = new Set<string>()) => {
-    levelGroups.forEach((levelNodeIds) => {
-      const fixedNodeIds = levelNodeIds
-        .filter((nodeId) => mainPathSet.has(nodeId) || lockedNodeIds.has(nodeId))
-        .sort((leftId, rightId) => {
-          const leftIndex = mainPathIndexMap.get(leftId)
-          const rightIndex = mainPathIndexMap.get(rightId)
-          if (typeof leftIndex === 'number' && typeof rightIndex === 'number' && leftIndex !== rightIndex) {
-            return leftIndex - rightIndex
-          }
-          return getTargetY(leftId) - getTargetY(rightId)
-        })
-
-      fixedNodeIds.forEach((nodeId) => {
-        if (!mainPathSet.has(nodeId)) return
-        const currentPosition = positions.get(nodeId)
-        if (!currentPosition) return
-        positions.set(nodeId, {
-          ...currentPosition,
-          y: mainPathCenterY
-        })
-      })
-
-      const sortedLevelIds = [...levelNodeIds].sort((leftId, rightId) => {
-        const targetDelta = getTargetY(leftId) - getTargetY(rightId)
-        if (Math.abs(targetDelta) >= 1) return targetDelta
-        const leftY = positions.get(leftId)?.y || 0
-        const rightY = positions.get(rightId)?.y || 0
-        if (leftY !== rightY) return leftY - rightY
-        return compareByDagrePosition(leftId, rightId)
-      })
-
-      const applyMinGap = (upperId: string, lowerId: string) => {
-        const upperPosition = positions.get(upperId)
-        const lowerPosition = positions.get(lowerId)
-        if (!upperPosition || !lowerPosition) return
-        const minGap = getMinGap(upperId, lowerId)
-        if (lowerPosition.y - upperPosition.y < minGap) {
-          positions.set(lowerId, {
-            ...lowerPosition,
-            y: upperPosition.y + minGap
-          })
-        }
-      }
-
-      if (fixedNodeIds.length === 1) {
-        const fixedNodeId = fixedNodeIds[0]
-        const fixedIndex = sortedLevelIds.indexOf(fixedNodeId)
-
-        for (let index = fixedIndex + 1; index < sortedLevelIds.length; index += 1) {
-          applyMinGap(sortedLevelIds[index - 1], sortedLevelIds[index])
-        }
-
-        for (let index = fixedIndex - 1; index >= 0; index -= 1) {
-          const currentId = sortedLevelIds[index]
-          const nextId = sortedLevelIds[index + 1]
-          const currentPosition = positions.get(currentId)
-          const nextPosition = positions.get(nextId)
-          if (!currentPosition || !nextPosition) continue
-          const minGap = getMinGap(currentId, nextId)
-          if (nextPosition.y - currentPosition.y < minGap) {
-            positions.set(currentId, {
-              ...currentPosition,
-              y: nextPosition.y - minGap
-            })
-          }
-        }
-        return
-      }
-
-      for (let index = 1; index < sortedLevelIds.length; index += 1) {
-        applyMinGap(sortedLevelIds[index - 1], sortedLevelIds[index])
-      }
-
-      const desiredCenter = sortedLevelIds.reduce((total, nodeId) => total + getTargetY(nodeId), 0) / Math.max(sortedLevelIds.length, 1)
-      const actualCenter = sortedLevelIds.reduce((total, nodeId) => total + (positions.get(nodeId)?.y || 0), 0) / Math.max(sortedLevelIds.length, 1)
-      const shiftDelta = desiredCenter - actualCenter
-
-      sortedLevelIds.forEach((nodeId) => {
-        if (fixedNodeIds.includes(nodeId)) return
-        const currentPosition = positions.get(nodeId)
-        if (!currentPosition) return
-        positions.set(nodeId, {
-          ...currentPosition,
-          y: currentPosition.y + shiftDelta
-        })
-      })
-    })
-  }
-
-  const smoothMergeNodes = () => {
-    nodes.forEach((node) => {
-      const currentPosition = positions.get(node.id)
-      if (!currentPosition) return
-
-      if ((incomingCount.get(node.id) || 0) > 1) {
-        if (mainPathSet.has(node.id)) {
-          positions.set(node.id, {
-            ...currentPosition,
-            y: mainPathCenterY
-          })
-          return
-        }
-
-        const parentYs = (parentsMap.get(node.id) || [])
-          .map((parentId) => positions.get(parentId)?.y)
-          .filter((value): value is number => typeof value === 'number')
-        if (parentYs.length > 0) {
-          positions.set(node.id, {
-            ...currentPosition,
-            y: parentYs.reduce((total, value) => total + value, 0) / parentYs.length
-          })
-        }
-      }
-    })
-  }
-
-  const straightenSimpleChains = () => {
-    edges
-      .filter((edge) => (outgoingCount.get(edge.sourceNodeId) || 0) === 1 && (incomingCount.get(edge.targetNodeId) || 0) === 1)
-      .forEach((edge) => {
-        const parentPosition = positions.get(edge.sourceNodeId)
-        const childPosition = positions.get(edge.targetNodeId)
-        if (!parentPosition || !childPosition) return
-
-        positions.set(edge.targetNodeId, {
-          ...childPosition,
-          y: parentPosition.y
-        })
-      })
-  }
-
-  const alignMainPath = () => {
-    mainPathIds.forEach((nodeId) => {
-      const currentPosition = positions.get(nodeId)
-      if (!currentPosition) return
-      positions.set(nodeId, {
-        ...currentPosition,
-        y: mainPathCenterY
-      })
-    })
-  }
-
-  const simpleChainNodeIds = new Set<string>()
-  edges
-    .filter((edge) => (outgoingCount.get(edge.sourceNodeId) || 0) === 1 && (incomingCount.get(edge.targetNodeId) || 0) === 1)
-    .forEach((edge) => {
-      simpleChainNodeIds.add(edge.sourceNodeId)
-      simpleChainNodeIds.add(edge.targetNodeId)
-    })
-
-  applyLevelCollisionResolution()
-  smoothMergeNodes()
-  alignMainPath()
-  applyLevelCollisionResolution(simpleChainNodeIds)
-  smoothMergeNodes()
-  straightenSimpleChains()
-  alignMainPath()
 
   return positions
 }
@@ -2138,6 +1887,12 @@ const handleNodeClick = (data: any) => {
   } else {
     nodeForm.conditionBranches = []
   }
+
+  // 可流转节点只有一个时，「绑定节点状态」默认选中下个节点的状态（节点名称保持人工填写）
+  if (!nodeForm.nodeStatusCode && soleNextNodeStatusCode.value) {
+    nodeForm.nodeStatusCode = soleNextNodeStatusCode.value
+  }
+
   normalizeCurrentNodeProjectRequired()
 }
 
@@ -2528,7 +2283,7 @@ const buildValidationHtml = (issues: Array<{ message: string; severity: string; 
     const suggestion = issue.suggestion ? `<div style="color:#67c23a;font-size:12px;margin-top:2px;">建议：${escapeHtml(issue.suggestion)}</div>` : ''
     return `<li style="margin:8px 0;line-height:1.5;"><strong style="color:${color};">[${escapeHtml(label)}]</strong> ${escapeHtml(issue.message)}${path}${suggestion}</li>`
   }).join('')
-  const more = issues.length > visibleIssues.length ? `<p style="margin-top:8px;color:#909399;">还有 ${issues.length - visibleIssues.length} 项问题未展示，请按提示逐项检查。</p>` : ''
+  const more = issues.length > visibleIssues.length ? `<p style="margin-top:8px;color:var(--color-text-tertiary);">还有 ${issues.length - visibleIssues.length} 项问题未展示，请按提示逐项检查。</p>` : ''
   return `<div style="text-align:left;"><ol style="padding-left:18px;margin:0;">${items}</ol>${more}</div>`
 }
 
@@ -2761,27 +2516,32 @@ const loadWorkflowConfig = async () => {
         applyCurrentVersion(version)
         syncVersionForm(version)
 
-        // 渲染配置
+        // 渲染配置（网关尺寸随文字自适应，直接随渲染数据传入）
         if (lf && version.config) {
           const graphData = {
-            nodes: version.config.nodes.map(node => ({
-              id: node.nodeId,
-              type: node.nodeType,
-              x: node.positionX,
-              y: node.positionY,
-              text: node.nodeName,
-              properties: {
-                ...(node.properties || {}),
-                assigneeType: node.assigneeType,
-                assigneeRoleId: node.assigneeRoleId,
-                assigneeUserIds: node.assigneeUserIds,
-                timeoutHours: node.timeoutHours,
-                timeoutAction: node.timeoutAction,
-                ccMode: node.properties?.ccMode ?? (node.properties as any)?.properties?.ccMode ?? 'MESSAGE',
-                nodeStatusCode: node.properties?.nodeStatusCode ?? (node.properties as any)?.properties?.nodeStatusCode,
-                requireAttachment: node.properties?.requireAttachment ?? (node.properties as any)?.properties?.requireAttachment ?? false
+            nodes: version.config.nodes.map(node => {
+              const gateway = GATEWAY_TYPES.has(node.nodeType)
+              const size = gateway ? gatewaySizeOf(node.nodeName) : null
+              return {
+                id: node.nodeId,
+                type: node.nodeType,
+                x: node.positionX,
+                y: node.positionY,
+                text: node.nodeName,
+                ...(size ? { width: size.width, height: size.height } : {}),
+                properties: {
+                  ...(node.properties || {}),
+                  assigneeType: node.assigneeType,
+                  assigneeRoleId: node.assigneeRoleId,
+                  assigneeUserIds: node.assigneeUserIds,
+                  timeoutHours: node.timeoutHours,
+                  timeoutAction: node.timeoutAction,
+                  ccMode: node.properties?.ccMode ?? (node.properties as any)?.properties?.ccMode ?? 'MESSAGE',
+                  nodeStatusCode: node.properties?.nodeStatusCode ?? (node.properties as any)?.properties?.nodeStatusCode,
+                  requireAttachment: node.properties?.requireAttachment ?? (node.properties as any)?.properties?.requireAttachment ?? false
+                }
               }
-            })),
+            }),
             edges: version.config.edges.map(edge => ({
               id: edge.edgeId,
               type: 'polyline',
@@ -2796,6 +2556,7 @@ const loadWorkflowConfig = async () => {
         }
       }
     } catch (error) {
+      console.error('加载工作流配置失败', error)
       ElMessage.error('加载配置失败')
     }
   } else {
@@ -2869,7 +2630,7 @@ onBeforeUnmount(() => {
 .workflow-editor-page {
   height: 100vh;
   padding: 0;
-  background: #f5f7fa;
+  background: var(--color-fill-secondary);
 
   .editor-card {
     height: 100%;
@@ -3048,8 +2809,8 @@ onBeforeUnmount(() => {
     margin: 0;
     font-size: 13px;
     line-height: 1.5;
-    color: #b88230;
-    background: #fff7e6;
+    color: var(--color-warning-text);
+    background: var(--color-warning-bg);
     border-top: 1px solid #f3d19e;
 
     .el-icon {
@@ -3061,11 +2822,11 @@ onBeforeUnmount(() => {
   .editor-container {
     display: flex;
     height: 100%;
-    background: #fff;
+    background: var(--color-surface);
 
     .toolbar-left {
       width: 200px;
-      border-right: 1px solid #e4e7ed;
+      border-right: 1px solid var(--color-border);
       padding: 16px;
       overflow-y: auto;
 
@@ -3087,7 +2848,7 @@ onBeforeUnmount(() => {
           align-items: center;
           gap: 8px;
           padding: 10px;
-          border: 1px solid #dcdfe6;
+          border: 1px solid var(--color-border);
           border-radius: 4px;
           cursor: move;
           transition: all 0.3s;
@@ -3103,7 +2864,7 @@ onBeforeUnmount(() => {
           }
 
           &.is-readonly:hover {
-            border-color: #dcdfe6;
+            border-color: var(--color-border);
             background: transparent;
           }
 
@@ -3169,7 +2930,7 @@ onBeforeUnmount(() => {
       .help-section {
         padding: 12px;
         border-radius: 6px;
-        background: #f5f7fa;
+        background: var(--color-fill-secondary);
 
         ol {
           margin: 0;
@@ -3184,7 +2945,7 @@ onBeforeUnmount(() => {
     .canvas-container {
       flex: 1;
       position: relative;
-      background: #fafafa;
+      background: var(--color-surface-alt);
 
       .logicflow-container {
         width: 100%;
@@ -3345,7 +3106,7 @@ onBeforeUnmount(() => {
 
   &:hover .resize-bar,
   &.active .resize-bar {
-    background: var(--el-color-primary, #409eff);
+    background: var(--el-color-primary, var(--color-primary));
     height: 48px;
   }
 }

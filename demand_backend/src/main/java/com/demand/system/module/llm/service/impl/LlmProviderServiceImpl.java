@@ -9,8 +9,10 @@ import com.demand.system.module.knowledge.llm.LlmGatewayConfig;
 import com.demand.system.module.llm.constant.LlmModelRole;
 import com.demand.system.module.llm.constant.LlmApplicationCode;
 import com.demand.system.module.llm.dto.*;
+import com.demand.system.module.llm.entity.LlmApplication;
 import com.demand.system.module.llm.entity.LlmModel;
 import com.demand.system.module.llm.entity.LlmProvider;
+import com.demand.system.module.llm.mapper.LlmApplicationMapper;
 import com.demand.system.module.llm.mapper.LlmModelMapper;
 import com.demand.system.module.llm.mapper.LlmProviderMapper;
 import com.demand.system.module.llm.service.LlmProviderService;
@@ -27,15 +29,18 @@ import java.util.stream.Collectors;
 public class LlmProviderServiceImpl implements LlmProviderService {
     private final LlmProviderMapper providerMapper;
     private final LlmModelMapper modelMapper;
+    private final LlmApplicationMapper applicationMapper;
     private final LlmGateway llmGateway;
     private final LlmModelResolver llmModelResolver;
 
     public LlmProviderServiceImpl(LlmProviderMapper providerMapper,
                                   LlmModelMapper modelMapper,
+                                  LlmApplicationMapper applicationMapper,
                                   LlmGateway llmGateway,
                                   LlmModelResolver llmModelResolver) {
         this.providerMapper = providerMapper;
         this.modelMapper = modelMapper;
+        this.applicationMapper = applicationMapper;
         this.llmGateway = llmGateway;
         this.llmModelResolver = llmModelResolver;
     }
@@ -68,6 +73,9 @@ public class LlmProviderServiceImpl implements LlmProviderService {
         LlmProvider entity = providerMapper.selectById(id);
         if (entity == null) throw new BusinessException(ErrorCode.NOT_FOUND, "配置不存在");
 
+        boolean baseUrlChanged = !Objects.equals(
+                normalizeBaseUrl(entity.getBaseUrl()), normalizeBaseUrl(dto.getBaseUrl()));
+
         entity.setName(dto.getName());
         entity.setProtocol(dto.getProtocol());
         entity.setBaseUrl(dto.getBaseUrl());
@@ -79,6 +87,11 @@ public class LlmProviderServiceImpl implements LlmProviderService {
             entity.setApiKey(dto.getApiKey());
         }
 
+        // 调用地址变更意味着原模型列表指向旧地址下的服务，清空已导入的模型并解除应用绑定
+        if (baseUrlChanged) {
+            clearProviderModels(id);
+        }
+
         providerMapper.updateById(entity);
         return toProviderVO(entity);
     }
@@ -86,8 +99,35 @@ public class LlmProviderServiceImpl implements LlmProviderService {
     @Override
     @Transactional
     public void delete(Long id) {
-        modelMapper.delete(new LambdaQueryWrapper<LlmModel>().eq(LlmModel::getProviderId, id));
+        clearProviderModels(id);
         providerMapper.deleteById(id);
+    }
+
+    /**
+     * 清空接入组下的全部模型，并解除模型应用（llm_applications.model_id）对这些模型的绑定。
+     */
+    private void clearProviderModels(Long providerId) {
+        List<Long> modelIds = modelMapper.selectList(
+                new LambdaQueryWrapper<LlmModel>().eq(LlmModel::getProviderId, providerId)
+        ).stream().map(LlmModel::getId).collect(Collectors.toList());
+
+        if (!modelIds.isEmpty()) {
+            LambdaUpdateWrapper<LlmApplication> appWrapper = new LambdaUpdateWrapper<LlmApplication>()
+                    .in(LlmApplication::getModelId, modelIds)
+                    .set(LlmApplication::getModelId, null);
+            applicationMapper.update(null, appWrapper);
+        }
+
+        modelMapper.delete(new LambdaQueryWrapper<LlmModel>().eq(LlmModel::getProviderId, providerId));
+    }
+
+    private String normalizeBaseUrl(String url) {
+        if (url == null) return "";
+        String trimmed = url.trim();
+        while (trimmed.endsWith("/")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1);
+        }
+        return trimmed;
     }
 
     @Override
@@ -277,6 +317,12 @@ public class LlmProviderServiceImpl implements LlmProviderService {
 
     @Override
     public List<Map<String, Object>> listChatModels() {
+        // 模型应用中 assistant.chat 绑定的模型：前端操作助手以此为默认选中模型
+        LlmApplication assistantApp = applicationMapper.selectOne(
+                new LambdaQueryWrapper<LlmApplication>().eq(LlmApplication::getCode, LlmApplicationCode.ASSISTANT_CHAT)
+        );
+        Long applicationModelId = assistantApp == null ? null : assistantApp.getModelId();
+
         // 查出所有已启用的 provider
         List<LlmProvider> enabledProviders = providerMapper.selectList(
                 new LambdaQueryWrapper<LlmProvider>().eq(LlmProvider::getEnabled, true)
@@ -302,6 +348,9 @@ public class LlmProviderServiceImpl implements LlmProviderService {
                 item.put("modelId", model.getModelId());
                 item.put("modelType", model.getModelType());
                 item.put("isDefault", model.getIsDefault());
+                item.put("appDefault", model.getId() != null && model.getId().equals(applicationModelId));
+                item.put("testSuccess", model.getTestSuccess());
+                item.put("testDuration", model.getTestDuration());
                 result.add(item);
             }
         }

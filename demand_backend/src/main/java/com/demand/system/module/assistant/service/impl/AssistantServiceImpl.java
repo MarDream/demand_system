@@ -39,6 +39,7 @@ import com.demand.system.module.nl2sql.dto.DataQueryResult;
 import com.demand.system.module.nl2sql.dto.Nl2SqlContext;
 import com.demand.system.module.nl2sql.dto.Nl2SqlOutcome;
 import com.demand.system.module.nl2sql.service.Nl2SqlAnswerStream;
+import com.demand.system.module.nl2sql.service.Nl2SqlProgressListener;
 import com.demand.system.module.nl2sql.service.Nl2SqlService;
 import com.demand.system.module.requirement.service.impl.RequirementServiceImpl;
 import org.slf4j.Logger;
@@ -306,9 +307,20 @@ public class AssistantServiceImpl implements AssistantService {
             if (!regenerate) {
                 updateSessionAfterInteraction(session, advice.getSessionTitle());
             }
-            CompletableFuture.runAsync(() -> doStreamReply(
-                    emitter, advice, userContent, request.getPageContext(), userMessageId, assistantMessage,
-                    request.getLlmModelId(), request.getFiles(), questionLogId), sseExecutor);
+            CompletableFuture.runAsync(() -> {
+                // 跨源摘要：数据问答 / 知识库检索结果并入通用回答，让通用助手对
+                // "查数 / 找资料"类问题也能给出结果而非只讲入口（失败静默降级为纯导航）
+                CrossSourceDigest digest = buildCrossSourceDigest(request, userContent, assistantMessage, superAdmin);
+                if (!digest.sources().isEmpty()) {
+                    List<AssistantSource> merged = new ArrayList<>(
+                            advice.getSources() == null ? List.<AssistantSource>of() : advice.getSources());
+                    merged.addAll(digest.sources());
+                    advice.setSources(merged);
+                }
+                doStreamReply(emitter, advice, userContent, request.getPageContext(), userMessageId,
+                        assistantMessage, request.getLlmModelId(), request.getFiles(), questionLogId,
+                        digest.promptBlock());
+            }, sseExecutor);
         }
     }
 
@@ -329,6 +341,116 @@ public class AssistantServiceImpl implements AssistantService {
         return chatRequest;
     }
 
+    /** 跨源摘要：promptBlock 注入通用回答上下文，sources 并入消息"依据"展示 */
+    private record CrossSourceDigest(String promptBlock, List<AssistantSource> sources) {
+        static final CrossSourceDigest EMPTY = new CrossSourceDigest("", List.of());
+    }
+
+    /**
+     * 通用助手跨源摘要：数据问答（NL2SQL）+ 知识库检索双通道取材。
+     *
+     * <p>命中数据类问句时直接查库取数，同时检索知识库/工单正文相关片段，
+     * 把结果作为参考块注入通用回答，由模型综合成最终答案（数字准确引用，不再只讲入口）。
+     * 任一来源失败只影响自身，静默跳过，不影响导航回答主链路。</p>
+     */
+    private CrossSourceDigest buildCrossSourceDigest(AssistantChatRequest request,
+                                                     String userContent,
+                                                     AssistantMessage assistantMessage,
+                                                     boolean superAdmin) {
+        StringBuilder sb = new StringBuilder();
+        List<AssistantSource> sources = new ArrayList<>();
+        Long userId = assistantMessage.getUserId();
+
+        // ===== 数据问答摘要：命中数据类问句时直接查库 =====
+        if (nl2SqlService.isEnabled() && nl2SqlService.looksLikeDataQuery(userContent)) {
+            try {
+                List<Long> visibleOrgIds = requirementService.resolveVisibleOrgIds(userId, superAdmin);
+                Nl2SqlContext ctx = new Nl2SqlContext(
+                        userContent,
+                        request.getHistory(),
+                        request.getLlmModelId(),
+                        userId,
+                        superAdmin,
+                        visibleOrgIds,
+                        request.getPageContext());
+                Nl2SqlOutcome outcome = nl2SqlService.query(ctx, Nl2SqlProgressListener.NOOP, new Nl2SqlAnswerStream() {
+                    @Override
+                    public void onDataResult(DataQueryResult result) {
+                    }
+
+                    @Override
+                    public void onToken(String token) {
+                    }
+
+                    @Override
+                    public void onReasoning(String token) {
+                    }
+
+                    @Override
+                    public void onUsage(LlmGateway.ChatUsage usage) {
+                    }
+                });
+                DataQueryResult result = outcome.isDataQuery() && outcome.success() ? outcome.dataResult() : null;
+                if (result != null && result.rows() != null && !result.rows().isEmpty()) {
+                    sb.append("### 数据库查询结果\n");
+                    if (result.sql() != null && !result.sql().isBlank()) {
+                        sb.append("执行 SQL：").append(result.sql().replaceAll("\\s+", " ")).append('\n');
+                    }
+                    List<String> headers = new ArrayList<>(result.rows().get(0).keySet());
+                    sb.append("| ").append(String.join(" | ", headers)).append(" |\n");
+                    sb.append(headers.stream().map(h -> "---").collect(java.util.stream.Collectors.joining(" | ", "| ", " |"))).append('\n');
+                    int cap = Math.min(result.rows().size(), 10);
+                    for (int i = 0; i < cap; i++) {
+                        Map<String, Object> row = result.rows().get(i);
+                        sb.append(headers.stream()
+                                .map(h -> row.get(h) == null ? "" : String.valueOf(row.get(h)))
+                                .collect(java.util.stream.Collectors.joining(" | ", "| ", " |"))).append('\n');
+                    }
+                    if (result.rowCount() > cap) {
+                        sb.append("（共 ").append(result.rowCount()).append(" 行，仅展示前 ").append(cap).append(" 行）\n");
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("cross-source data digest failed, sessionId={}", assistantMessage.getSessionId(), e);
+            }
+        }
+
+        // ===== 知识库摘要：检索相关片段供引用 =====
+        try {
+            KnowledgeSearchRequest searchRequest = new KnowledgeSearchRequest();
+            searchRequest.setQuery(userContent);
+            searchRequest.setRequesterId(userId);
+            searchRequest.setTopK(5);
+            searchRequest.setMode("hybrid");
+            searchRequest.setSearchScopes(resolveAssistantSearchScopes(request, true));
+            KnowledgeSearchResponse searchResponse = knowledgeSearchService.retrieve(searchRequest);
+            if (searchResponse.getResults() != null && !searchResponse.getResults().isEmpty()) {
+                sources.addAll(mapCitationsToSources(searchResponse.getCitations(), null));
+                sb.append("### 知识库相关片段\n");
+                int n = Math.min(searchResponse.getResults().size(), 3);
+                for (int i = 0; i < n; i++) {
+                    KnowledgeSearchResponse.SearchResultItem item = searchResponse.getResults().get(i);
+                    String name = item.getFileName() != null ? item.getFileName() : "未知文档";
+                    String content = item.getContent() == null ? "" : item.getContent();
+                    if (content.length() > 300) {
+                        content = content.substring(0, 300) + "…";
+                    }
+                    sb.append(i + 1).append(". 【").append(name).append("】").append(content).append('\n');
+                }
+            }
+        } catch (Exception e) {
+            log.warn("cross-source knowledge digest failed, sessionId={}", assistantMessage.getSessionId(), e);
+        }
+
+        if (sb.length() == 0) {
+            return CrossSourceDigest.EMPTY;
+        }
+        String block = "【系统已按用户问题自动检索的参考结果】\n" + sb + "\n"
+                + "回答要求：上述结果能回答用户问题时，直接给出结论——数据库数字必须原样引用，不得复述 SQL 或编造；"
+                + "引用知识库片段时注明来源文档名；结果与问题无关时忽略，按常规操作导航回答。";
+        return new CrossSourceDigest(block, sources);
+    }
+
     private void doStreamReply(SseEmitter emitter,
                                AssistantOperationAdvice advice,
                                String userMessage,
@@ -337,13 +459,18 @@ public class AssistantServiceImpl implements AssistantService {
                                AssistantMessage assistantMessage,
                                Long llmModelId,
                                List<AssistantFileAttachment> files,
-                               Long questionLogId) {
+                               Long questionLogId,
+                               String crossSourceDigest) {
         StringBuilder answer = new StringBuilder();
         StringBuilder reasoning = new StringBuilder();
 
         // 文件上下文注入用户消息
         String fileContext = buildFileContext(files);
         String enhancedMessage = fileContext.isEmpty() ? userMessage : fileContext + "\n\n用户问题：" + userMessage;
+        // 跨源摘要（数据问答 / 知识库检索）作为参考块并入提问，由模型综合回答
+        if (crossSourceDigest != null && !crossSourceDigest.isEmpty()) {
+            enhancedMessage = enhancedMessage + "\n\n" + crossSourceDigest;
+        }
 
         // ===== 任务节点 =====
         List<AssistantTask> tasks = new ArrayList<>();
@@ -560,7 +687,7 @@ public class AssistantServiceImpl implements AssistantService {
                         actionValidator.sanitize(advice.getActions(), permissions, superAdmin);
                 advice.setActions(validatedActions);
                 doStreamReply(emitter, advice, userMessage, request.getPageContext(), userMessageId,
-                        assistantMessage, request.getLlmModelId(), request.getFiles(), questionLogId);
+                        assistantMessage, request.getLlmModelId(), request.getFiles(), questionLogId, null);
                 return;
             }
 
@@ -676,7 +803,8 @@ public class AssistantServiceImpl implements AssistantService {
 
             Long rawKbId = request.getKnowledgeBaseId();
             Long searchKbId = (rawKbId != null && rawKbId == -1L) ? null : rawKbId;
-            String mode = request.getMode() != null ? request.getMode() : "hybrid";
+            // 默认智能检索：mode=auto 由知识库检索服务按问题特征自动路由 hybrid/semantic/keyword
+            String mode = request.getMode() != null && !request.getMode().isBlank() ? request.getMode() : "auto";
             int topK = request.getTopK() != null ? request.getTopK() : 10;
 
             // ===== Task 1: 问题解析（LLM 查询改写，失败自动降级）=====
@@ -715,11 +843,19 @@ public class AssistantServiceImpl implements AssistantService {
                 searchRequest.setLlmModelId(request.getLlmModelId());
                 searchRequest.setRequesterId(assistantMessage.getUserId());
                 searchRequest.setSearchScopes(resolveAssistantSearchScopes(request, false));
+                // 改写产出的核心关键词并入关键词召回词表
+                searchRequest.setRewriteKeywords(rewrite.keywords());
 
                 String kbDesc = searchKbId != null ? "指定知识库 ID=" + searchKbId : "全部知识库";
-                searchTask.log("info", "检索范围：" + kbDesc + "，模式：" + mode + "，TopK：" + topK);
+                searchTask.log("info", "检索范围：" + kbDesc + "，TopK：" + topK);
 
                 searchResponse = knowledgeSearchService.retrieve(searchRequest);
+                // 实际生效的检索模式（auto 时为路由结论）
+                String effectiveRetrievalMode = searchResponse.getRetrievalMode() != null
+                        ? searchResponse.getRetrievalMode() : mode;
+                searchTask.log("info", Boolean.TRUE.equals(searchResponse.getModeAuto())
+                        ? "智能检索自动选择：" + effectiveRetrievalMode
+                        : "检索模式：" + effectiveRetrievalMode);
 
                 int resultCount = searchResponse.getResults().size();
                 int uniqueDocs = (int) searchResponse.getResults().stream()
@@ -759,6 +895,10 @@ public class AssistantServiceImpl implements AssistantService {
                     "intent", "knowledge_qa",
                     "actions", List.of(),
                     "sources", sources,
+                    // 角标编号在回答开始流式推送前就下发，前端可在生成过程中即时渲染 [N] 角标
+                    "citations", searchResponse.getCitations() == null
+                            ? List.<KnowledgeSearchResponse.CitationReference>of()
+                            : searchResponse.getCitations(),
                     "tasks", tasks,
                     "warnings", searchResponse.getWarnings() == null ? List.of() : searchResponse.getWarnings()
             )));
@@ -782,9 +922,13 @@ public class AssistantServiceImpl implements AssistantService {
                 generateTask.start("调用 LLM 基于命中片段流式生成回答…");
                 pushTaskUpdate(emitter, generateTask);
                 try {
+                    // 回答生成的资料必须与 citations 同源（同一份裁剪结果），
+                    // 否则提示词资料 [N] 会超出引用来源范围，前端角标无条目可点
+                    List<KnowledgeSearchResponse.SearchResultItem> contextItems =
+                            knowledgeSearchService.selectContextResults(searchResponse.getResults());
                     ragAnswerService.streamAnswerWithReasoning(
                             answerQuery,
-                            searchResponse.getResults(),
+                            contextItems,
                             searchKbId,
                             request.getLlmModelId(),
                             request.getHistory(),

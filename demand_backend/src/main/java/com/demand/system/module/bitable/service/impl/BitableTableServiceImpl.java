@@ -10,10 +10,12 @@ import com.demand.system.module.bitable.dto.BitableTableVO;
 import com.demand.system.module.bitable.entity.BitableView;
 import com.demand.system.module.bitable.entity.BitableTable;
 import com.demand.system.module.bitable.entity.BitableTableGroup;
+import com.demand.system.module.bitable.entity.BitableBase;
 import com.demand.system.module.bitable.entity.BitableField;
 import com.demand.system.module.bitable.entity.BitableComment;
 import com.demand.system.module.bitable.mapper.BitableTableMapper;
 import com.demand.system.module.bitable.mapper.BitableTableGroupMapper;
+import com.demand.system.module.bitable.mapper.BitableBaseMapper;
 import com.demand.system.module.bitable.mapper.BitableFieldMapper;
 import com.demand.system.module.bitable.mapper.BitableRecordMapper;
 import com.demand.system.module.bitable.mapper.BitableCellMapper;
@@ -21,6 +23,7 @@ import com.demand.system.module.bitable.mapper.BitableViewMapper;
 import com.demand.system.module.bitable.mapper.BitableCommentMapper;
 import com.demand.system.module.bitable.service.BitableTableService;
 import com.demand.system.module.bitable.service.BitableFieldPermissionService;
+import com.demand.system.module.bitable.service.BitableLeafSortService;
 import com.demand.system.module.bitable.util.BitableAuditHelper;
 import com.demand.system.module.bitable.constant.OperationType;
 import org.springframework.beans.BeanUtils;
@@ -38,6 +41,7 @@ public class BitableTableServiceImpl implements BitableTableService {
 
     private final BitableTableMapper tableMapper;
     private final BitableTableGroupMapper tableGroupMapper;
+    private final BitableBaseMapper baseMapper;
     private final BitableFieldMapper fieldMapper;
     private final BitableRecordMapper recordMapper;
     private final BitableCellMapper cellMapper;
@@ -46,9 +50,11 @@ public class BitableTableServiceImpl implements BitableTableService {
     private final BitableConverter converter;
     private final BitableAuditHelper auditHelper;
     private final BitableFieldPermissionService fieldPermissionService;
+    private final BitableLeafSortService leafSortService;
 
     public BitableTableServiceImpl(BitableTableMapper tableMapper,
                                    BitableTableGroupMapper tableGroupMapper,
+                                   BitableBaseMapper baseMapper,
                                    BitableFieldMapper fieldMapper,
                                    BitableRecordMapper recordMapper,
                                    BitableCellMapper cellMapper,
@@ -56,9 +62,11 @@ public class BitableTableServiceImpl implements BitableTableService {
                                    BitableCommentMapper commentMapper,
                                    BitableConverter converter,
                                    BitableAuditHelper auditHelper,
-                                   BitableFieldPermissionService fieldPermissionService) {
+                                   BitableFieldPermissionService fieldPermissionService,
+                                   BitableLeafSortService leafSortService) {
         this.tableMapper = tableMapper;
         this.tableGroupMapper = tableGroupMapper;
+        this.baseMapper = baseMapper;
         this.fieldMapper = fieldMapper;
         this.recordMapper = recordMapper;
         this.cellMapper = cellMapper;
@@ -67,6 +75,7 @@ public class BitableTableServiceImpl implements BitableTableService {
         this.converter = converter;
         this.auditHelper = auditHelper;
         this.fieldPermissionService = fieldPermissionService;
+        this.leafSortService = leafSortService;
     }
 
     @Override
@@ -92,6 +101,20 @@ public class BitableTableServiceImpl implements BitableTableService {
         return vo;
     }
 
+    /**
+     * 同名检测：数据表在目录树上按其 Base 的分组挂载，
+     * 同一 Base 分组展示范围（含未分组）内同类型表名必须唯一
+     */
+    private void checkTableNameAvailable(Long baseId, String name, Long excludeTableId) {
+        BitableBase base = baseMapper.selectById(baseId);
+        if (base == null) {
+            throw new BusinessException("多维表格不存在");
+        }
+        if (tableMapper.countSameNameInGroupScope(base.getGroupId(), name, excludeTableId) > 0) {
+            throw new BusinessException("同级已存在同名数据表「" + name + "」");
+        }
+    }
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long createTable(Long baseId, BitableTableCreateDTO dto, Long userId) {
@@ -102,12 +125,14 @@ public class BitableTableServiceImpl implements BitableTableService {
                 throw new BusinessException("目标分组不存在或不属于当前多维表格");
             }
         }
+        checkTableNameAvailable(baseId, dto.getName(), null);
 
         BitableTable table = new BitableTable();
         BeanUtils.copyProperties(dto, table);
         table.setBaseId(baseId);
         table.setGroupId(groupId);
-        table.setSortOrder(0);
+        // 排在当前层级末尾：默认 0 会插到列表最前面（目录树按 sort_order 升序渲染）
+        table.setSortOrder(leafSortService.nextSortOrder(baseId));
         tableMapper.insert(table);
 
         // 自动创建一个默认 grid 视图
@@ -141,6 +166,9 @@ public class BitableTableServiceImpl implements BitableTableService {
         if (existing == null) {
             throw new BusinessException("数据表不存在");
         }
+        if (dto.getName() != null && !dto.getName().equals(existing.getName())) {
+            checkTableNameAvailable(existing.getBaseId(), dto.getName(), id);
+        }
 
         UpdateWrapper<BitableTable> wrapper = new UpdateWrapper<>();
         wrapper.eq("id", id);
@@ -155,6 +183,13 @@ public class BitableTableServiceImpl implements BitableTableService {
         }
         if (dto.getSortOrder() != null) {
             wrapper.set("sort_order", dto.getSortOrder());
+        }
+        if (dto.getRowHeight() != null) {
+            Integer rowHeight = dto.getRowHeight();
+            if (rowHeight < 20 || rowHeight > 200) {
+                throw new BusinessException("行高需在 20-200 之间");
+            }
+            wrapper.set("row_height", rowHeight);
         }
         if (dto.getGroupId() != null) {
             BitableTableGroup group = tableGroupMapper.selectById(dto.getGroupId());
@@ -197,5 +232,39 @@ public class BitableTableServiceImpl implements BitableTableService {
         // 审计
         auditHelper.record(existing.getBaseId(), id, userId, OperationType.DELETE_TABLE,
                 "{\"tableId\":" + id + ",\"name\":\"" + existing.getName() + "\"}");
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void sortTables(List<Long> orderedIds, Long userId) {
+        if (orderedIds == null || orderedIds.size() < 2) {
+            return;
+        }
+        // 依次校验：数据表存在、同一 Base、同一分组（同组才能比较顺序）
+        Long baseId = null;
+        Long groupId = null;
+        for (Long id : orderedIds) {
+            BitableTable table = tableMapper.selectById(id);
+            if (table == null) {
+                throw new BusinessException("数据表不存在");
+            }
+            if (baseId == null) {
+                baseId = table.getBaseId();
+                groupId = table.getGroupId();
+            } else if (!Objects.equals(baseId, table.getBaseId())) {
+                throw new BusinessException("只能对同一个多维表格下的数据表排序");
+            } else if (!Objects.equals(groupId, table.getGroupId())) {
+                throw new BusinessException("只能对同一分组下的数据表排序");
+            }
+        }
+
+        // 按传入顺序回写排序号
+        tableMapper.updateSortOrders(baseId, orderedIds);
+
+        // 审计
+        String detail = "{\"baseId\":" + baseId
+                + ",\"groupId\":" + (groupId == null ? "null" : groupId)
+                + ",\"orderedIds\":" + orderedIds + "}";
+        auditHelper.record(baseId, null, userId, OperationType.SORT_TABLE, detail);
     }
 }

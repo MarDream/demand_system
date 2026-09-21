@@ -81,7 +81,7 @@ defineEmits<{
     padding: 20px 24px;
     margin-right: 0;
     border-bottom: 1px solid var(--color-border);
-    background: linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%);
+    background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-background) 100%);
   }
 
   .el-dialog__body {

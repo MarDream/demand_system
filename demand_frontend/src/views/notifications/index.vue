@@ -119,7 +119,7 @@ onMounted(() => {
 }
 
 .notification-item:hover {
-  background: #f5f7fa;
+  background: var(--color-fill-secondary);
 }
 
 .notification-item.unread {

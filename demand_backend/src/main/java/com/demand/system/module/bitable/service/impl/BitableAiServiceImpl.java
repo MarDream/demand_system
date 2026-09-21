@@ -21,6 +21,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 多维表格 AI 能力 Service 实现
@@ -86,6 +88,30 @@ public class BitableAiServiceImpl implements BitableAiService {
             }
         }
         return s;
+    }
+
+    /**
+     * 将 AI 提示词中的 {{字段名}} 占位符替换为当前记录对应字段的值；
+     * 字段名未命中时占位符保持原样（LLM 仍可结合上下文推断）。
+     */
+    private String resolvePromptPlaceholders(String prompt, List<BitableFieldVO> fields, BitableRecordVO record) {
+        if (prompt == null || !prompt.contains("{{")) {
+            return prompt;
+        }
+        Map<String, String> valueByName = new HashMap<>();
+        for (BitableFieldVO f : fields) {
+            BitableCellValueVO cell = record.getCells() != null ? record.getCells().get(f.getId()) : null;
+            valueByName.put(f.getName(), cell != null && cell.getValueText() != null ? cell.getValueText() : "");
+        }
+        Matcher matcher = Pattern.compile("\\{\\{([^{}]+)}}").matcher(prompt);
+        StringBuilder sb = new StringBuilder();
+        while (matcher.find()) {
+            String name = matcher.group(1).trim();
+            String replacement = valueByName.getOrDefault(name, matcher.group(0));
+            matcher.appendReplacement(sb, Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(sb);
+        return sb.toString();
     }
 
     // ==================== AI 建表 ====================
@@ -224,7 +250,9 @@ public class BitableAiServiceImpl implements BitableAiService {
                 3. 如果目标字段是 number，输出纯数字
                 4. 如果无法推断合理值，输出空字符串
                 """.formatted(fieldListBuilder, targetField.getName(), targetField.getFieldType(),
-                targetField.getAiPrompt() != null ? "AI 提示词: " + targetField.getAiPrompt() : "");
+                targetField.getAiPrompt() != null
+                        ? "AI 提示词: " + resolvePromptPlaceholders(targetField.getAiPrompt(), fields, record)
+                        : "");
 
         String userMessage = contextBuilder.toString();
 
@@ -558,5 +586,260 @@ public class BitableAiServiceImpl implements BitableAiService {
         if (failed > 0) {
             log.info("AI摘要完成，{} 条记录处理失败被跳过, tableId={}", failed, tableId);
         }
+    }
+
+    // ==================== AI 自然语言筛选 ====================
+
+    /** 筛选 UI 不支持的复杂类型不参与 AI 生成 */
+    private static final Set<String> FILTER_EXCLUDED_TYPES = Set.of(
+            "formula", "lookup", "rollup", "attachment", "button", "date_range", "ai_text", "ai_select");
+    private static final Set<String> NUMERIC_FILTER_FIELD_TYPES = Set.of("number", "currency", "progress", "rating");
+    private static final Set<String> DATE_FILTER_FIELD_TYPES = Set.of("date", "created_time", "modified_time", "last_modified_time");
+    private static final Set<String> SELECT_EQ_FILTER_TYPES = Set.of("single_select", "checkbox");
+
+    @Override
+    public Map<String, Object> aiGenerateFilter(Long tableId, String text, Long userId) {
+        List<BitableFieldVO> fields = fieldService.listFields(tableId).stream()
+                .filter(f -> !FILTER_EXCLUDED_TYPES.contains(f.getFieldType()))
+                .toList();
+        if (fields.isEmpty()) {
+            throw new BusinessException("当前数据表没有可用于筛选的字段");
+        }
+        String tableName = "";
+        try {
+            BitableTableVO table = tableService.getTableById(tableId);
+            if (table != null && table.getName() != null) {
+                tableName = table.getName();
+            }
+        } catch (Exception ignored) {
+        }
+        String recordNoun = "记录（本表名：" + tableName + "）";
+
+        StringBuilder fieldListBuilder = new StringBuilder();
+        for (BitableFieldVO f : fields) {
+            fieldListBuilder.append("- 字段ID: ").append(f.getId())
+                    .append(", 名称: ").append(f.getName())
+                    .append(", 类型: ").append(f.getFieldType());
+            String options = extractSelectOptionLabels(f);
+            if (!options.isEmpty()) {
+                fieldListBuilder.append(", 可选值: ").append(options);
+            }
+            fieldListBuilder.append("\n");
+        }
+
+        String systemPrompt = """
+                你是多维表格筛选条件生成助手。把用户的自然语言需求转换为结构化筛选条件 JSON。
+                表中的每一行记录是一条「%s」，用户描述里的「XX中的需求」「XX状态的需求」等说法中，XX 指的就是某个字段的可选值。
+
+                可用字段（fieldId 只能从这里取）：
+                %s
+
+                操作符规则（operator 必须与字段类型匹配，否则该条作废）：
+                - 数值类 number/currency/progress/rating: eq, ne, gt, gte, lt, lte, between, is_empty, is_not_empty
+                - 日期类 date/created_time/modified_time/last_modified_time: eq, ne, gt, gte, lt, lte, between, is_empty, is_not_empty
+                - 单选 single_select 与复选框 checkbox: eq, ne, is_empty, is_not_empty
+                - 多选 multi_select: contains, not_contains, is_empty, is_not_empty
+                - 文本与其他 text/url/email/phone/department/user/created_by: eq, ne, contains, not_contains, is_empty, is_not_empty
+
+                输出要求（严格 JSON，不要解释和代码块标记）：
+                {"logic":"and","rules":[{"fieldId":123,"operator":"eq","value":"进行中","valueMin":null,"valueMax":null}]}
+                - logic：用户说「且/同时/并且」用 and，「或/任一」用 or，未说明默认 and
+                - value 必须是具体值（字符串或数字），绝不能是字段名；日期格式 yyyy-MM-dd
+                - 单选/复选字段的 value 必须**逐字等于**该字段「可选值」列表中的某一项：
+                  · 用户提到的说法（如「阻塞中」「进行中」「已完成」）只要出现在可选值列表里，就必须原样使用
+                  · 可选值列表里没有的值严禁输出——宁可省略该条件，也绝不替换成相近的其他可选值
+                - between 表示区间：value 填 null，valueMin/valueMax 分别填起止值
+                - is_empty / is_not_empty 时 value 填 null
+                - 相对日期（今天/最近7天）换算为具体日期区间（between）
+                - 无法映射到可用字段的条件直接省略，禁止编造字段、值或 fieldId
+                """.formatted(recordNoun, fieldListBuilder);
+
+        String raw = callChat(systemPrompt, "用户筛选需求：" + text);
+        com.fasterxml.jackson.databind.JsonNode root = parseJsonNode(raw);
+        if (root == null || !root.has("rules") || !root.get("rules").isArray() || root.get("rules").isEmpty()) {
+            throw new BusinessException("未能从描述中解析出筛选条件，请换个说法或手动配置");
+        }
+
+        String logic = "or".equalsIgnoreCase(root.path("logic").asText("and")) ? "or" : "and";
+        Map<Long, BitableFieldVO> fieldById = new HashMap<>();
+        for (BitableFieldVO f : fields) {
+            fieldById.put(f.getId(), f);
+        }
+
+        List<Map<String, Object>> rules = new ArrayList<>();
+        for (com.fasterxml.jackson.databind.JsonNode ruleNode : root.get("rules")) {
+            long fieldId = ruleNode.path("fieldId").asLong(0);
+            BitableFieldVO field = fieldById.get(fieldId);
+            if (field == null) {
+                continue;
+            }
+            String operator = ruleNode.path("operator").asText("");
+            if (!operatorAllowedForType(field.getFieldType(), operator)) {
+                continue;
+            }
+            Map<String, Object> rule = new LinkedHashMap<>();
+            rule.put("fieldId", fieldId);
+            rule.put("operator", operator);
+            if ("between".equals(operator)) {
+                String min = ruleNode.path("valueMin").asText("");
+                String max = ruleNode.path("valueMax").asText("");
+                if (min.isEmpty() || max.isEmpty()) {
+                    continue;
+                }
+                rule.put("value", List.of(min, max));
+                rule.put("valueMin", min);
+                rule.put("valueMax", max);
+            } else if (!"is_empty".equals(operator) && !"is_not_empty".equals(operator)) {
+                String value = ruleNode.path("value").asText("");
+                if (value.isEmpty()) {
+                    continue;
+                }
+                // 防幻觉：单选字段 eq/ne 的值必须逐字等于某个可选值，否则丢弃该条（交给选项命中兜底）
+                if ("single_select".equals(field.getFieldType())
+                        && ("eq".equals(operator) || "ne".equals(operator))) {
+                    Set<String> labels = extractOptionLabelSet(field);
+                    if (!labels.isEmpty() && !labels.contains(value)) {
+                        continue;
+                    }
+                }
+                rule.put("value", value);
+            }
+            rules.add(rule);
+        }
+        if (rules.isEmpty()) {
+            // 兜底：单选/多选字段的某个可选值逐字出现在用户原文中时，直接生成等值条件。
+            // 解决「阻塞中的需求」这类只提到值、没提字段名的描述被 LLM 猜错值的问题。
+            List<Map<String, Object>> fallback = matchSelectOptionsInText(text, fields);
+            if (fallback.isEmpty()) {
+                throw new BusinessException("未能从描述中解析出有效筛选条件，请换个说法或手动配置");
+            }
+            rules = fallback;
+            logic = "and";
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("logic", logic);
+        result.put("rules", rules);
+        return result;
+    }
+
+    /** 操作符是否与字段类型匹配（与前端 FilterPanel 的 operatorsFor 对齐） */
+    private boolean operatorAllowedForType(String fieldType, String operator) {
+        boolean numeric = NUMERIC_FILTER_FIELD_TYPES.contains(fieldType);
+        boolean dateLike = DATE_FILTER_FIELD_TYPES.contains(fieldType);
+        return switch (operator) {
+            case "eq", "ne", "is_empty", "is_not_empty" -> true;
+            case "gt", "gte", "lt", "lte", "between" -> numeric || dateLike;
+            case "contains", "not_contains" -> !numeric && !dateLike && !SELECT_EQ_FILTER_TYPES.contains(fieldType);
+            default -> false;
+        };
+    }
+
+    /** 单选/多选字段的可选值清单（供 LLM 把模糊说法映射到具体选项） */
+    private String extractSelectOptionLabels(BitableFieldVO field) {
+        Object config = field.getConfig();
+        if (!(config instanceof Map<?, ?> map) || !(map.get("options") instanceof List<?> options)) {
+            return "";
+        }
+        List<String> labels = new ArrayList<>();
+        for (Object option : options) {
+            if (option instanceof Map<?, ?> opt && opt.get("label") != null) {
+                labels.add(String.valueOf(opt.get("label")));
+            }
+            if (labels.size() >= 20) {
+                break;
+            }
+        }
+        return String.join("/", labels);
+    }
+
+    /** 单选/复选字段的选项 label 集合（防幻觉校验用） */
+    private Set<String> extractOptionLabelSet(BitableFieldVO field) {
+        Set<String> labels = new HashSet<>();
+        Object config = field.getConfig();
+        if (config instanceof Map<?, ?> map && map.get("options") instanceof List<?> options) {
+            for (Object option : options) {
+                if (option instanceof Map<?, ?> opt && opt.get("label") != null) {
+                    labels.add(String.valueOf(opt.get("label")));
+                }
+            }
+        }
+        return labels;
+    }
+
+    /**
+     * 选项命中兜底：在用户原文中逐字查找单选/多选字段的选项值（label 完整出现，
+     * 且紧邻前缀不是「未/非」避免反义误匹配）。一个字段命中多个选项时取原文中最早出现的。
+     */
+    private List<Map<String, Object>> matchSelectOptionsInText(String text, List<BitableFieldVO> fields) {
+        List<Map<String, Object>> rules = new ArrayList<>();
+        if (text == null || text.isBlank()) {
+            return rules;
+        }
+        for (BitableFieldVO field : fields) {
+            String type = field.getFieldType();
+            if (!"single_select".equals(type) && !"multi_select".equals(type) && !"checkbox".equals(type)) {
+                continue;
+            }
+            String best = null;
+            int bestIndex = Integer.MAX_VALUE;
+            for (String label : extractOptionLabelSet(field)) {
+                if (label.isBlank()) {
+                    continue;
+                }
+                int idx = text.indexOf(label);
+                while (idx >= 0) {
+                    char prev = idx > 0 ? text.charAt(idx - 1) : '\0';
+                    if (prev == '未' || prev == '非') {
+                        idx = text.indexOf(label, idx + 1);
+                        continue;
+                    }
+                    if (idx < bestIndex) {
+                        bestIndex = idx;
+                        best = label;
+                    }
+                    break;
+                }
+            }
+            if (best != null) {
+                Map<String, Object> rule = new LinkedHashMap<>();
+                rule.put("fieldId", field.getId());
+                rule.put("operator", "multi_select".equals(type) ? "contains" : "eq");
+                rule.put("value", best);
+                rules.add(rule);
+            }
+        }
+        return rules;
+    }
+
+    /** 容错解析 LLM 输出的 JSON（剥代码块、截取花括号片段） */
+    private com.fasterxml.jackson.databind.JsonNode parseJsonNode(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String s = raw.trim();
+        if (s.startsWith("```")) {
+            int firstNewline = s.indexOf('\n');
+            if (firstNewline >= 0) {
+                s = s.substring(firstNewline + 1);
+            }
+            if (s.endsWith("```")) {
+                s = s.substring(0, s.length() - 3).trim();
+            }
+        }
+        try {
+            return objectMapper.readTree(s);
+        } catch (Exception ignored) {
+            // 尝试片段提取
+        }
+        int start = s.indexOf('{');
+        int end = s.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+            try {
+                return objectMapper.readTree(s.substring(start, end + 1));
+            } catch (Exception ignored) {
+            }
+        }
+        return null;
     }
 }

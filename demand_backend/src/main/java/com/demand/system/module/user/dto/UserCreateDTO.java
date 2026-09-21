@@ -5,6 +5,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 
+import java.time.LocalDate;
+
 public class UserCreateDTO {
 
     @NotBlank(message = "用户名不能为空")
@@ -29,6 +31,50 @@ public class UserCreateDTO {
 
     @NotNull(message = "请选择所属组织")
     private Long orgId;
+
+    /** 员工类型(全职/兼职/实习/劳务派遣/其他) */
+    private String employeeType;
+
+    /** 用工状态(试用期/已转正/待离职/已离职) */
+    private String workStatus;
+
+    /** 入职日期 */
+    private LocalDate hireDate;
+
+    /** 生日 */
+    private LocalDate birthday;
+
+    public String getEmployeeType() {
+        return employeeType;
+    }
+
+    public void setEmployeeType(String employeeType) {
+        this.employeeType = employeeType;
+    }
+
+    public String getWorkStatus() {
+        return workStatus;
+    }
+
+    public void setWorkStatus(String workStatus) {
+        this.workStatus = workStatus;
+    }
+
+    public LocalDate getHireDate() {
+        return hireDate;
+    }
+
+    public void setHireDate(LocalDate hireDate) {
+        this.hireDate = hireDate;
+    }
+
+    public LocalDate getBirthday() {
+        return birthday;
+    }
+
+    public void setBirthday(LocalDate birthday) {
+        this.birthday = birthday;
+    }
 
     public String getUsername() {
         return username;

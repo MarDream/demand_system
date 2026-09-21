@@ -58,6 +58,16 @@ public class BitableRecordController {
         return Result.success(vo);
     }
 
+    @GetMapping("/tables/{tableId}/fields/{fieldId}/distinct-values")
+    @PreAuthorize("isAuthenticated()")
+    public Result<List<String>> listFieldDistinctValues(@PathVariable Long tableId,
+                                                        @PathVariable Long fieldId) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        Long baseId = authorizationService.getBaseIdByTableId(tableId);
+        authorizationService.checkReadPermission(baseId, userId);
+        return Result.success(bitableRecordService.listFieldDistinctValues(tableId, fieldId));
+    }
+
     @PostMapping("/tables/{tableId}/records")
     @PreAuthorize("isAuthenticated()")
     public Result<Long> createRecord(@PathVariable Long tableId,

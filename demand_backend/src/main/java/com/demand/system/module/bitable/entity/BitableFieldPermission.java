@@ -35,6 +35,9 @@ public class BitableFieldPermission {
 
     private String permissionLevel;
 
+    /** 选项级权限配置 JSON: {mode:all|partial, editableKeys:[选项label], manage:full|add-only}；null=未配置 */
+    private String optionConfig;
+
     private Long creatorId;
 
     @TableField(fill = FieldFill.INSERT)
@@ -66,6 +69,9 @@ public class BitableFieldPermission {
 
     public String getPermissionLevel() { return permissionLevel; }
     public void setPermissionLevel(String permissionLevel) { this.permissionLevel = permissionLevel; }
+
+    public String getOptionConfig() { return optionConfig; }
+    public void setOptionConfig(String optionConfig) { this.optionConfig = optionConfig; }
 
     public Long getCreatorId() { return creatorId; }
     public void setCreatorId(Long creatorId) { this.creatorId = creatorId; }

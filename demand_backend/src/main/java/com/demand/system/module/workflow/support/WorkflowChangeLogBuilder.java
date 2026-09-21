@@ -506,8 +506,9 @@ public class WorkflowChangeLogBuilder {
     }
 
     private String stripPrefix(String id, String prefix) {
-        if (id == null) {
-            return null;
+        if (id == null || prefix == null) {
+            // prefix 为 null 表示新配置的节点/连线 ID 本来就没有 v{versionId}_ 前缀，无需剥离
+            return id;
         }
         return id.startsWith(prefix) ? id.substring(prefix.length()) : id;
     }

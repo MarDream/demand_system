@@ -91,13 +91,13 @@ function formatCell(cell: any, field: any): string {
 .public-view-page {
   min-height: 100vh;
   padding: 40px 24px;
-  background: var(--color-background, #f8fafc);
+  background: var(--color-background, var(--color-background));
 }
 
 .public-view-page__card {
   max-width: 1080px;
   margin: 0 auto;
-  background: var(--color-surface, #fff);
+  background: var(--color-surface, var(--color-surface));
   border-radius: 12px;
   padding: 24px 28px;
   box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08);

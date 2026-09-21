@@ -351,8 +351,8 @@ onBeforeUnmount(() => {
   min-height: 100vh;
   padding: 24px;
   background:
-    radial-gradient(circle at top left, rgba(64, 158, 255, 0.12), transparent 30%),
-    linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+    radial-gradient(circle at top left, var(--color-accent-tint), transparent 30%),
+    linear-gradient(180deg, var(--color-background) 0%, var(--color-surface-alt) 100%);
 }
 
 .share-header {
@@ -372,13 +372,13 @@ onBeforeUnmount(() => {
   margin: 0;
   font-size: 22px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--color-text-primary);
 }
 
 .share-header__desc {
   margin: 6px 0 0;
   font-size: 13px;
-  color: #64748b;
+  color: var(--color-muted-text);
 }
 
 .share-preview {
@@ -412,7 +412,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   min-height: calc(100vh - 160px);
   gap: 12px;
-  color: #64748b;
+  color: var(--color-muted-text);
 }
 
 .share-loading-mask {
@@ -459,7 +459,7 @@ onBeforeUnmount(() => {
   width: 72px;
   height: 86px;
   border-radius: 18px 18px 16px 16px;
-  background: linear-gradient(180deg, #ffffff 0%, #f6f9ff 100%);
+  background: linear-gradient(180deg, var(--color-surface) 0%, #f6f9ff 100%);
   border: 1px solid rgba(96, 165, 250, 0.28);
   box-shadow: 0 12px 20px rgba(59, 130, 246, 0.12);
 }
@@ -490,7 +490,7 @@ onBeforeUnmount(() => {
 
 .share-loader__sheet--front {
   z-index: 2;
-  background: linear-gradient(180deg, #ffffff 0%, #eef6ff 100%);
+  background: linear-gradient(180deg, var(--color-surface) 0%, #eef6ff 100%);
 }
 
 .share-loader__eyes {
@@ -525,20 +525,20 @@ onBeforeUnmount(() => {
 .share-loading__title {
   font-size: 16px;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--color-text-primary);
 }
 
 .share-loading__desc {
   font-size: 13px;
   line-height: 1.7;
-  color: #64748b;
+  color: var(--color-muted-text);
 }
 
 .share-loading__timer {
   padding: 4px 12px;
   border-radius: 999px;
   background: rgba(59, 130, 246, 0.08);
-  color: #2563eb;
+  color: var(--color-primary);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -549,7 +549,7 @@ onBeforeUnmount(() => {
   border-radius: 14px;
   background: rgba(251, 146, 60, 0.12);
   border: 1px solid rgba(251, 146, 60, 0.2);
-  color: #c2410c;
+  color: var(--color-warning-text);
   font-size: 12px;
   line-height: 1.7;
 }

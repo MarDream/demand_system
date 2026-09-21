@@ -230,7 +230,7 @@ function handleClose() {
   margin-bottom: 10px;
   flex-wrap: wrap;
   padding: 10px;
-  border: 1px dashed var(--color-border, #e2e8f0);
+  border: 1px dashed var(--color-border, var(--color-border));
   border-radius: 8px;
 }
 .integration-secret {

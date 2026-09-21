@@ -122,6 +122,7 @@ public class BitableTableGroupServiceImpl implements BitableTableGroupService {
         group.setBaseId(baseId);
         group.setParentId(parentId);
         group.setName(dto.getName().trim());
+        checkGroupNameAvailable(baseId, parentId, group.getName(), null);
         group.setSortOrder(groupMapper.selectMaxSortOrder(baseId, parentId) + 1);
         group.setCreatorId(userId);
         groupMapper.insert(group);
@@ -140,6 +141,9 @@ public class BitableTableGroupServiceImpl implements BitableTableGroupService {
     public void renameGroup(Long id, BitableTableGroupUpdateDTO dto, Long userId) {
         BitableTableGroup group = requireGroup(id);
         String newName = dto.getName().trim();
+        if (!newName.equals(group.getName())) {
+            checkGroupNameAvailable(group.getBaseId(), group.getParentId(), newName, id);
+        }
 
         UpdateWrapper<BitableTableGroup> wrapper = new UpdateWrapper<>();
         wrapper.eq("id", id).set("name", newName);
@@ -151,6 +155,15 @@ public class BitableTableGroupServiceImpl implements BitableTableGroupService {
         detail.put("after", newName);
         auditHelper.record(group.getBaseId(), null, userId, OperationType.UPDATE_TABLE_GROUP,
                 BitableJsonUtils.toJsonString(detail));
+    }
+
+    /**
+     * 同名检测：同一 Base 内同一父级（含根层级）下同类型的分组名必须唯一
+     */
+    private void checkGroupNameAvailable(Long baseId, Long parentId, String name, Long excludeGroupId) {
+        if (groupMapper.countSameNameInParent(baseId, parentId, name, excludeGroupId) > 0) {
+            throw new BusinessException("同级已存在同名分组「" + name + "」");
+        }
     }
 
     @Override
@@ -176,6 +189,11 @@ public class BitableTableGroupServiceImpl implements BitableTableGroupService {
         int sortOrder = dto.getSortOrder() != null
                 ? dto.getSortOrder()
                 : groupMapper.selectMaxSortOrder(group.getBaseId(), targetParentId) + 1;
+
+        // 目标父级下可能有同名分组，移动前按目标层级做同名检测
+        if (!Objects.equals(group.getParentId(), targetParentId)) {
+            checkGroupNameAvailable(group.getBaseId(), targetParentId, group.getName(), id);
+        }
 
         UpdateWrapper<BitableTableGroup> wrapper = new UpdateWrapper<>();
         wrapper.eq("id", id);
@@ -251,6 +269,37 @@ public class BitableTableGroupServiceImpl implements BitableTableGroupService {
     public Long getBaseIdByGroupId(Long groupId) {
         BitableTableGroup group = groupMapper.selectById(groupId);
         return group == null ? null : group.getBaseId();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void sortGroups(List<Long> orderedIds, Long userId) {
+        if (orderedIds == null || orderedIds.size() < 2) {
+            return;
+        }
+        // 依次校验：分组存在、属于同一 Base、同一父级（同级才能比较顺序）
+        Long baseId = null;
+        Long parentId = null;
+        for (Long id : orderedIds) {
+            BitableTableGroup group = requireGroup(id);
+            if (baseId == null) {
+                baseId = group.getBaseId();
+                parentId = group.getParentId();
+            } else if (!Objects.equals(baseId, group.getBaseId())) {
+                throw new BusinessException("只能对同一个多维表格下的分组排序");
+            } else if (!Objects.equals(parentId, group.getParentId())) {
+                throw new BusinessException("只能对同一父级下的分组排序");
+            }
+        }
+
+        // 按传入顺序回写排序号
+        groupMapper.updateSortOrders(baseId, orderedIds);
+
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("parentGroupId", parentId);
+        detail.put("orderedIds", orderedIds);
+        auditHelper.record(baseId, null, userId, OperationType.SORT_TABLE_GROUP,
+                BitableJsonUtils.toJsonString(detail));
     }
 
     /**

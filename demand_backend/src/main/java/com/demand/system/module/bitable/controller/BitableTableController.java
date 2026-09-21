@@ -67,4 +67,22 @@ public class BitableTableController {
         bitableTableService.deleteTable(id, userId);
         return Result.success();
     }
+
+    /**
+     * 数据表同级排序（拖拽排序：按传入顺序回写 sort_order）。
+     * 逐表校验管理权限，服务端再做同组一致性校验。
+     */
+    @PutMapping("/tables/sort")
+    @PreAuthorize("isAuthenticated()")
+    public Result<Void> sortTables(@RequestBody List<Long> orderedIds) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (orderedIds != null) {
+            for (Long tableId : orderedIds) {
+                Long baseId = authorizationService.getBaseIdByTableId(tableId);
+                authorizationService.checkManagePermission(baseId, userId);
+            }
+            bitableTableService.sortTables(orderedIds, userId);
+        }
+        return Result.success();
+    }
 }

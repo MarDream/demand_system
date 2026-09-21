@@ -110,7 +110,7 @@ const handleSendReset = async () => {
 .forgot-password-card {
   width: 420px;
   padding: 40px;
-  background: white;
+  background: var(--color-surface);
   border-radius: 10px;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
 }
@@ -123,12 +123,12 @@ const handleSendReset = async () => {
 .forgot-password-header h2 {
   margin: 0 0 10px 0;
   font-size: 28px;
-  color: #333;
+  color: var(--color-text-primary);
 }
 
 .forgot-password-header p {
   margin: 0;
-  color: #666;
+  color: var(--color-muted-text);
   font-size: 14px;
 }
 
@@ -145,7 +145,7 @@ const handleSendReset = async () => {
 }
 
 .link {
-  color: #667eea;
+  color: var(--color-accent);
   text-decoration: none;
   font-size: 14px;
 }

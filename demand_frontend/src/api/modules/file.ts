@@ -26,7 +26,19 @@ export async function uploadRequirementAttachment(file: File): Promise<Requireme
     objectName: uploadResult?.objectName,
     uploadedAt: new Date().toISOString(),
     uploaderId: uploadResult?.uploaderId,
+    contentHash: uploadResult?.contentHash || null,
   }
+}
+
+/**
+ * 批量查询文件内容哈希（历史文件由服务端惰性回填）。
+ * 返回 fileId → SHA-256 hex。
+ */
+export async function fetchFileHashes(fileIds: Array<number | null | undefined>): Promise<Record<number, string>> {
+  const ids = fileIds.filter((id): id is number => typeof id === 'number' && Number.isFinite(id))
+  if (ids.length === 0) return {}
+  const res = await request.post<ApiResponse<Record<number, string>>>('/v1/files/hashes', ids)
+  return (res as any)?.data ?? {}
 }
 
 export function downloadFile(id: number) {

@@ -101,6 +101,6 @@ defineEmits<{
 }
 
 .relation-table :deep(.el-table__header-wrapper th) {
-  background: #fafafa;
+  background: var(--color-surface-alt);
 }
 </style>

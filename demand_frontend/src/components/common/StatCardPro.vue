@@ -1,10 +1,10 @@
 <template>
-  <el-card shadow="hover" class="stat-card-pro" @click="$emit('click')">
+  <el-card shadow="hover" class="stat-card-pro" :class="{ 'is-compact': compact }" :title="compact && tip ? tip : undefined" @click="$emit('click')">
     <div class="stat-card-pro__content">
       <!-- 图标区域：渐变背景 -->
-      <div class="stat-icon-wrap" :style="iconStyle">
+      <div class="stat-icon-wrap" :class="{ 'stat-icon-wrap--compact': compact }" :style="iconStyle">
         <slot name="icon">
-          <el-icon :size="24" color="var(--color-on-primary)">
+          <el-icon :size="compact ? 18 : 24" color="var(--color-on-primary)">
             <component :is="icon" />
           </el-icon>
         </slot>
@@ -28,7 +28,7 @@
           </span>
         </div>
         <div class="stat-label">{{ label }}</div>
-        <div v-if="tip" class="stat-tip">{{ tip }}</div>
+        <div v-if="tip && !compact" class="stat-tip">{{ tip }}</div>
       </div>
     </div>
 
@@ -72,6 +72,8 @@ interface Props {
   gradientStart?: string
   gradientEnd?: string
   sparkline?: number[]
+  /** 紧凑单行模式：图标 + 数值 + 标签同行，tip 转为原生 title 提示 */
+  compact?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -79,6 +81,7 @@ const props = withDefaults(defineProps<Props>(), {
   tip: '',
   gradientStart: '#0369A1',
   gradientEnd: '#0284C7',
+  compact: false,
 })
 
 defineEmits<{ click: [] }>()
@@ -177,7 +180,7 @@ watch(() => props.value, (newVal) => {
     left: 0;
     right: 0;
     height: 2px;
-    background: linear-gradient(90deg, transparent, var(--color-accent, #2563EB), transparent);
+    background: linear-gradient(90deg, transparent, var(--color-accent, var(--color-primary)), transparent);
     opacity: 0;
     transition: opacity 0.3s ease;
   }
@@ -222,6 +225,40 @@ watch(() => props.value, (newVal) => {
 
   .el-icon {
     filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.15));
+  }
+
+  &--compact {
+    width: 38px;
+    height: 38px;
+    border-radius: 8px;
+  }
+}
+
+// 紧凑单行：数值与标签同行展示
+.stat-card-pro.is-compact {
+  :deep(.el-card__body) {
+    padding: 12px 16px;
+  }
+
+  .stat-card-pro__content {
+    align-items: center;
+    gap: 12px;
+  }
+
+  .stat-info {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .stat-value-row {
+    margin-bottom: 0;
+  }
+
+  .stat-value {
+    font-size: 22px;
   }
 }
 

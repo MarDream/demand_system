@@ -12,7 +12,11 @@
  * - BitableCurrency   货币（币种符号 / 位置 / 精度）
  * - BitableUrl        超链接（显示文案 / 是否新窗口）
  * - BitablePhone      电话（脱敏）
+ * - BitableEmail      邮箱（可点击发信）
  * - BitableAttachment 附件（list 文件名列表 / thumbnail 缩略图 / cover 封面）
+ * - BitableLocation   地理位置（地名 / 详细地址 / 经纬度）
+ * - BitableDateRange  日期范围（{start,end} 结构化值）
+ * - BitableRelation   关联 / 人员 / 群组（id 数组或对象数组 → 可读文本）
  * - BitableText       长文本（截断展示）
  *
  * 注册后可在 vxe-table 的 cellRender 中通过 name 引用：
@@ -30,6 +34,7 @@ import {
   ratingIconChar,
   resolveProgressColor,
 } from '@/utils/bitableFieldConfig'
+import { richTextCellPreview } from '@/utils/bitableRichText'
 import type { FieldConfig } from '@/types/bitable'
 
 // 本地定义渲染器参数类型（vxe-pc-ui 4.13 中 VxeColumnPropTypes.RenderCellParams 未直接导出）
@@ -354,6 +359,34 @@ VxeUI.renderer.add('BitablePhone', {
 })
 
 /**
+ * BitableEmail - 邮箱单元格
+ * 配置：emailClickable 为真时渲染成 mailto 链接（点击唤起本机邮件客户端）。
+ * 与 BitableUrl 一样要 stopPropagation，否则点链接会顺带把格子推进编辑态。
+ */
+VxeUI.renderer.add('BitableEmail', {
+  renderTableDefault(renderOpts: RenderOptions, params: RenderParams) {
+    const { row, column } = params
+    const config = readConfig(renderOpts)
+    const raw = row[column.field as string]
+    if (isEmptyValue(raw)) return EMPTY()
+    const text = String(raw)
+    if (config.emailClickable === false) {
+      return h('span', { class: 'bitable-email-cell', title: text }, text)
+    }
+    return h(
+      'a',
+      {
+        class: 'bitable-link-cell',
+        href: `mailto:${text}`,
+        title: text,
+        onClick: (e: MouseEvent) => e.stopPropagation(),
+      },
+      text,
+    )
+  },
+})
+
+/**
  * BitableAttachment - 附件单元格
  * 配置：attachmentDisplay('list' 文件名列表 | 'thumbnail' 缩略图 | 'cover' 封面图)
  * 后端以 valueJson 存储附件元信息数组。
@@ -481,6 +514,66 @@ VxeUI.renderer.add('BitableRelation', {
 })
 
 /**
+ * BitableUser - 人员单元格（头像 + 姓名）。
+ * 值形态：[{id, name}] 对象数组（新口径）/ id 数组 / 纯姓名字符串（历史数据）。
+ * userDisplay 配置：name 仅姓名 | avatar 仅头像 | both 头像+姓名（默认 both）。
+ */
+VxeUI.renderer.add('BitableUser', {
+  renderTableDefault(renderOpts: RenderOptions, params: RenderParams) {
+    const { row, column } = params
+    const config = readConfig(renderOpts)
+    const users = normalizeUserCells(row[column.field as string])
+    if (!users.length) return EMPTY()
+    const display = config.userDisplay || 'both'
+    const showAvatar = display !== 'name'
+    const showName = display !== 'avatar'
+    const children = users.map((u, idx) =>
+      h('span', { class: 'bitable-user-cell__item', key: u.id ?? idx, title: u.name }, [
+        showAvatar
+          ? h('span', { class: 'bitable-user-cell__avatar' }, u.name.slice(0, 1))
+          : null,
+        showName ? h('span', { class: 'bitable-user-cell__name' }, u.name) : null,
+      ]),
+    )
+    return h('span', { class: 'bitable-user-cell' }, children)
+  },
+})
+
+/** 人员单元格值归一：兼容 [{id,name}] / id 数组 / 名称数组 / 字符串 */
+function normalizeUserCells(raw: unknown): { id: number | null; name: string }[] {
+  if (raw == null || raw === '') return []
+  let parsed: unknown = raw
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim()
+    if (!trimmed) return []
+    if (trimmed.startsWith('[')) {
+      try {
+        parsed = JSON.parse(trimmed)
+      } catch {
+        return [{ id: null, name: trimmed }]
+      }
+    } else {
+      return trimmed.split(',').map((s) => s.trim()).filter(Boolean).map((name) => ({ id: null, name }))
+    }
+  }
+  const list = Array.isArray(parsed) ? parsed : [parsed]
+  return list
+    .map((item) => {
+      if (item == null) return null
+      if (typeof item === 'string') return { id: null, name: item }
+      if (typeof item === 'number') return { id: item, name: String(item) }
+      if (typeof item === 'object') {
+        const obj = item as Record<string, unknown>
+        const id = Number(obj.id)
+        const name = obj.name ?? obj.realName ?? obj.userName ?? obj.username
+        return { id: Number.isFinite(id) ? id : null, name: String(name ?? (Number.isFinite(id) ? id : '')) }
+      }
+      return null
+    })
+    .filter((item): item is { id: number | null; name: string } => item !== null && !!item.name)
+}
+
+/**
  * BitableLocation - 地理位置单元格
  * 配置：locationDisplayMode('name' 地名 | 'address' 详细地址 | 'latlng' 经纬度)
  */
@@ -530,6 +623,21 @@ VxeUI.renderer.add('BitableText', {
   },
 })
 
+/**
+ * BitableRichText - 富文本单元格（网格内只展示剥离标签后的单行纯文本预览，
+ * 编辑点击单元格走 RichTextEditDialog；完整 HTML 只在详情/弹窗渲染，且必须过 sanitizeRichTextHtml）
+ */
+VxeUI.renderer.add('BitableRichText', {
+  renderTableDefault(renderOpts: RenderOptions, params: RenderParams) {
+    const { row, column } = params
+    const raw = row[column.field as string]
+    if (isEmptyValue(raw)) return EMPTY()
+    const preview = richTextCellPreview(String(raw))
+    if (!preview) return EMPTY()
+    return h('span', { class: 'bitable-richtext-cell', title: preview }, preview)
+  },
+})
+
 // ==================== 可编辑列的展示钩子 ====================
 
 /**
@@ -555,6 +663,7 @@ const EDITOR_BINDINGS: Record<string, string> = {
   BitableSelectTag: 'VxeSelect',
   BitableUrl: 'VxeInput',
   BitablePhone: 'VxeInput',
+  BitableEmail: 'VxeInput',
 }
 
 Object.keys(EDITOR_BINDINGS).forEach((name) => {
@@ -589,8 +698,11 @@ export const BitableNumberRenderer = 'BitableNumber'
 export const BitableCurrencyRenderer = 'BitableCurrency'
 export const BitableUrlRenderer = 'BitableUrl'
 export const BitablePhoneRenderer = 'BitablePhone'
+export const BitableEmailRenderer = 'BitableEmail'
 export const BitableAttachmentRenderer = 'BitableAttachment'
 export const BitableRelationRenderer = 'BitableRelation'
+export const BitableUserRenderer = 'BitableUser'
 export const BitableLocationRenderer = 'BitableLocation'
 export const BitableDateRangeRenderer = 'BitableDateRange'
 export const BitableTextRenderer = 'BitableText'
+export const BitableRichTextRenderer = 'BitableRichText'

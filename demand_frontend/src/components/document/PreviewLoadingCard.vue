@@ -103,7 +103,7 @@ const formattedElapsed = computed(() => {
   font-size: clamp(30px, 4vw, 44px);
   font-weight: 700;
   line-height: 1.2;
-  color: #4f2a12;
+  color: var(--color-warning-text);
   letter-spacing: 0.02em;
 }
 
@@ -145,7 +145,7 @@ const formattedElapsed = computed(() => {
   border-radius: 14px;
   background: rgba(251, 146, 60, 0.12);
   border: 1px solid rgba(251, 146, 60, 0.2);
-  color: #c2410c;
+  color: var(--color-warning-text);
   font-size: 12px;
   line-height: 1.7;
 }
@@ -209,7 +209,7 @@ const formattedElapsed = computed(() => {
 .preview-loading-card__caption {
   font-size: clamp(24px, 3.6vw, 34px);
   font-weight: 700;
-  color: #4f2a12;
+  color: var(--color-warning-text);
   letter-spacing: 0.03em;
 }
 

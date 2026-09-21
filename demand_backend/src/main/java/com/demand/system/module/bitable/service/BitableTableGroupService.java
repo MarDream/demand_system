@@ -69,6 +69,15 @@ public interface BitableTableGroupService {
     void moveTableToGroup(Long tableId, Long groupId, Long userId);
 
     /**
+     * 批量排序数据表分组：orderedIds 中「同级」分组的排列顺序即目标顺序。
+     * 服务端会按各分组当前的 parentId 分桶校验同级一致性，避免把不同层级的分组混排。
+     *
+     * @param orderedIds 按目标顺序排列的分组ID列表（须为同一父级下的同级分组，可乱序传入但须覆盖完整同级集合）
+     * @param userId     操作人ID
+     */
+    void sortGroups(List<Long> orderedIds, Long userId);
+
+    /**
      * 从 groupId 反查 baseId
      *
      * @param groupId 分组ID

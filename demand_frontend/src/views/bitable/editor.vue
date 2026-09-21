@@ -2,7 +2,7 @@
   <div class="bitable-editor">
     <!-- 顶部面包屑 + 协作者 -->
     <div class="editor-header">
-      <el-button link class="editor-header__back" @click="router.push('/bitable')">
+      <el-button v-if="!embedded" link class="editor-header__back" @click="router.push('/bitable')">
         <el-icon><ArrowLeft /></el-icon> 返回
       </el-button>
       <div class="editor-header__divider" />
@@ -32,6 +32,14 @@
         </el-tag>
       </div>
       <div class="editor-header__spacer" />
+      <!-- 高级权限入口（原工具栏迁移至此） -->
+      <el-button
+        size="small"
+        class="editor-header__permission"
+        @click="showPermissionDialog = true"
+      >
+        <el-icon><Lock /></el-icon> 高级权限
+      </el-button>
       <div
         v-if="collaboratorCount > 0"
         class="editor-header__collaborators"
@@ -93,32 +101,7 @@
       </div>
     </div>
 
-    <div class="editor-body" :style="sidebar.styleVars">
-      <!-- 左侧数据表侧边栏 -->
-      <aside class="editor-sidebar" :class="{ 'is-collapsed': sidebar.collapsed }">
-        <div class="editor-sidebar__inner">
-          <TableGroupTree
-            :baseId="baseId"
-            :groups="tableGroups"
-            :tables="tables"
-            :activeTableId="activeTableId"
-            @select="handleSelectTable"
-            @create-group="handleCreateGroup"
-            @rename-group="handleRenameGroup"
-            @delete-group="handleDeleteGroup"
-            @move-group="handleMoveGroup"
-            @move-table="handleMoveTableToGroup"
-            @create-table="handleCreateTable"
-            @rename-table="handleRenameTable"
-            @delete-table="handleDeleteTable"
-          />
-        </div>
-      </aside>
-      <div class="editor-sidebar__resizer" @mousedown="sidebar.startResize" @dblclick="sidebar.toggle" />
-      <button v-if="sidebar.collapsed" class="editor-sidebar__expand-btn" type="button" title="展开侧边栏" @click="sidebar.toggle">
-        <el-icon><ArrowRight /></el-icon>
-      </button>
-
+    <div class="editor-body">
       <!-- 主编辑区域 -->
       <div class="editor-main">
         <Toolbar
@@ -127,12 +110,19 @@
           :activeViewId="activeViewId"
           :filterCount="filterCount"
           :groupFieldId="groupFieldId"
-          @add-field="handleAddField"
+          :fields="visibleFields"
+          :rowHeight="activeTable?.rowHeight ?? null"
+          :sortState="activeSortState"
+          @add-row="handleRowInsert()"
+          @sort-field="handleSortField"
+          @sort-clear="handleSortClear"
+          @row-height-change="handleRowHeightChange"
+          @row-height-custom="openRowHeightCustom"
+          @open-field-config="fieldConfigDrawerVisible = true"
           @open-filter="showFilterPanel = true"
           @open-group="showGroupPanel = true"
           @view-switch="handleViewSwitch"
           @create-view="handleCreateView"
-          @rename-table="handleRenameTable"
           @rename-view="handleRenameView"
           @duplicate-view="handleDuplicateView"
           @set-default-view="handleSetDefaultView"
@@ -145,27 +135,42 @@
           @open-share-view="showShareViewDialog = true"
           @open-form-publish="showFormPublishDialog = true"
           @open-integration="showIntegrationDialog = true"
-          @open-field-config="fieldConfigDrawerVisible = true"
           @open-ai-fill="showAiFillDialog = true"
           @open-ai-classify="showAiClassifyDialog = true"
           @open-ai-summarize="showAiSummarizeDialog = true"
           @open-ai-build-table="showAiBuildTableDialog = true"
-          @open-permission="showPermissionDialog = true"
         />
         <GridView
           v-if="currentViewType === 'grid'"
+          ref="gridViewRef"
           :table="activeTable"
           :fields="visibleFields"
           :records="records"
           :loading="loadingRecords"
           :viewConfig="activeView?.config ?? null"
+          :seqStartIndex="(recordsPage - 1) * recordsPageSize"
           @cell-change="handleCellChange"
           @row-insert="handleRowInsert"
           @row-delete="handleRowDelete"
+          @row-copy="handleRowCopy"
+          @rows-delete="handleRowsDelete"
+          @selection-change="(rowIds: number[]) => (selectedRecordIds = rowIds)"
           @rename-field="(fieldId: number) => handleRenameField(fieldId)"
+          @edit-field="handleQuickEditField"
           @clone-field="handleCloneField"
           @hide-field="handleHideField"
           @delete-field="handleGridDeleteField"
+          @insert-field="handleInsertField"
+          @sort-field="handleSortField"
+          @fill-column-color="handleFillColumnColor"
+          @freeze-to-left="handleFreezeToLeft"
+          @group-by-field="handleMenuGroupByField"
+          @filter-by-field="handleMenuFilterByField"
+          @set-remind="handleSetRemind"
+          @col-resize="handleColResize"
+          @add-field="handleAddField"
+          @add-quick-field="handleAddQuickField"
+          @row-height-change="handleRowHeightChange"
           @header-dragend="handleHeaderDragend"
           @ai-fill-column="handleAiFillColumn"
           @ai-classify-column="handleAiClassifyColumn"
@@ -460,6 +465,8 @@
       v-model="showFilterPanel"
       :fields="fields"
       :filter-config="filterConfig"
+      :preset-field-id="presetFilterFieldId"
+      :table-id="activeTableId"
       @apply="handleFilterApply"
     />
 
@@ -494,6 +501,18 @@
         <el-button type="primary" @click="handleRenameConfirm" :loading="savingField">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 编辑字段弹层（钉钉风格：可改字段名 / 字段类型 / 类型属性 / 描述） -->
+    <FieldQuickEditDialog
+      :visible="quickEditVisible"
+      :field="quickEditField"
+      :fields="fields"
+      :tables="tables"
+      :active-table-id="activeTableId"
+      :saving="quickEditSaving"
+      @close="quickEditVisible = false"
+      @confirm="handleQuickEditConfirm"
+    />
   </div>
 </template>
 
@@ -502,12 +521,11 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { resolveErrorMessage } from '@/utils/error'
+import { resolveAvatarUrl } from '@/utils/presetAvatars'
 import { updateTable } from '@/api/modules/bitable'
-import { ArrowLeft, Plus, Delete, Edit, CopyDocument, ArrowRight, MagicStick, Grid, Menu, Calendar, Picture, Tickets, View } from '@element-plus/icons-vue'
-import { useCollapsibleSidebar } from '@/composables/useCollapsibleSidebar'
+import { ArrowLeft, Delete, Edit, CopyDocument, ArrowRight, MagicStick, Grid, Menu, Calendar, Picture, Tickets, View, Lock } from '@element-plus/icons-vue'
 import { useToast } from '@/composables/useToast'
 import { useUserStore } from '@/stores'
-import TableGroupTree from './components/TableGroupTree.vue'
 import Toolbar from './components/Toolbar.vue'
 import GridView from './components/GridView.vue'
 import KanbanView from './components/KanbanView.vue'
@@ -535,13 +553,12 @@ import PermissionManageDialog from './components/PermissionManageDialog.vue'
 import LinkFieldSelector from './components/LinkFieldSelector.vue'
 import FormulaEditor from './components/FormulaEditor.vue'
 import FieldAttributeForm from './components/FieldAttributeForm.vue'
+import FieldQuickEditDialog from './components/FieldQuickEditDialog.vue'
 import { useBitableWebSocket, type CellUpdateEvent, type ConflictEvent, type RecordCreatedEvent, type RecordDeletedEvent } from '@/composables/useBitableWebSocket'
 import { createDefaultFieldConfig, LINK_FIELD_TYPES, normalizeFieldConfig, sanitizeFieldConfig } from '@/utils/bitableFieldConfig'
 import {
   getBase,
   listTables,
-  createTable,
-  deleteTable,
   listFields,
   createField,
   updateField,
@@ -549,7 +566,6 @@ import {
   sortFields,
   listRecords,
   queryRecords,
-  queryGroupedRecords,
   createRecord,
   deleteRecord,
   updateCell,
@@ -562,11 +578,6 @@ import {
   duplicateView,
   setDefaultView,
   listTableGroups,
-  createTableGroup,
-  renameTableGroup,
-  moveTableGroup,
-  deleteTableGroup,
-  moveTableToGroup,
 } from '@/api/modules/bitable'
 import type {
   BitableBase,
@@ -582,8 +593,8 @@ import type {
   ViewConfig,
   FilterGroup,
   FilterItem,
-  RecordGroupVO,
   FieldConfig,
+  SortItem,
 } from '@/types/bitable'
 
 /** 字段类型下拉分组（新增字段与字段配置共用） */
@@ -592,12 +603,14 @@ const FIELD_TYPE_GROUPS: { label: string; options: { label: string; value: strin
     label: '常规',
     options: [
       { label: '文本', value: 'text' },
+      { label: '富文本', value: 'rich_text' },
       { label: '数字', value: 'number' },
       { label: '日期', value: 'date' },
       { label: '单选', value: 'single_select' },
       { label: '多选', value: 'multi_select' },
       { label: '人员', value: 'user' },
       { label: '群组', value: 'group' },
+      { label: '部门', value: 'department' },
       { label: '复选框', value: 'checkbox' },
       { label: '附件', value: 'attachment' },
       { label: '超链接', value: 'url' },
@@ -645,7 +658,9 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 
-const baseId = Number(route.params.baseId)
+// 允许被外层工作台以 props 内嵌（baseId/tableId 传入时优先于路由）
+const props = defineProps<{ baseId?: number; tableId?: number; embedded?: boolean }>()
+const baseId = props.baseId ?? Number(route.params.baseId)
 const base = ref<BitableBase | null>(null)
 const tables = ref<BitableTable[]>([])
 const tableGroups = ref<BitableTableGroup[]>([])
@@ -666,6 +681,8 @@ const currentViewType = computed<ViewType>(() => activeView.value?.viewType ?? '
 const showFilterPanel = ref(false)
 const filterConfig = ref<FilterGroup | FilterItem[] | null>(null)
 const filterCount = computed(() => filterRuleCount(filterConfig.value))
+/** 右键「按字段筛选」预置的字段：FilterPanel 打开时预置一条该字段的条件 */
+const presetFilterFieldId = ref<number | null>(null)
 
 // 分组状态
 const showGroupPanel = ref(false)
@@ -703,14 +720,6 @@ const showPermissionDialog = ref(false)
 const recordsPage = ref(1)
 const recordsPageSize = ref(50)
 const recordsTotal = ref(0)
-const sidebar = useCollapsibleSidebar({
-  defaultWidth: 240,
-  minWidth: 200,
-  maxWidth: 400,
-  widthVar: '--editor-sidebar-width',
-  resizerWidth: 4,
-  resizerWidthVar: '--editor-sidebar-resizer-width',
-})
 
 const linkSelectorVisible = ref(false)
 const currentLinkField = ref<BitableField | null>(null)
@@ -721,9 +730,16 @@ const renameFieldDialogVisible = ref(false)
 const renameFieldId = ref<number | null>(null)
 const renameFieldName = ref('')
 
+// 编辑字段快速弹层（表头右键 → 编辑字段）
+const quickEditVisible = ref(false)
+const quickEditField = ref<BitableField | null>(null)
+const quickEditSaving = ref(false)
+
 const formulaEditorVisible = ref(false)
 const formulaExpr = ref('')
 const formViewRef = ref<InstanceType<typeof FormView> | null>(null)
+/** 网格视图实例引用：新增记录后滚动定位到新行用 */
+const gridViewRef = ref<InstanceType<typeof GridView> | null>(null)
 
 // 字段配置弹窗
 const fieldConfigDrawerVisible = ref(false)
@@ -764,6 +780,7 @@ const addFieldConfig = ref<FieldConfig>(createDefaultFieldConfig('text'))
 // 字段类型中文标签
 const fieldTypeLabelMap: Record<string, string> = {
   text: '文本',
+  rich_text: '富文本',
   number: '数字',
   date: '日期',
   single_select: '单选',
@@ -902,7 +919,10 @@ onMounted(async () => {
   await loadBase()
   await loadTableGroups()
   await loadTables()
-  if (tables.value.length > 0) {
+  const requestedTableId = props.tableId ?? Number(route.query.tableId)
+  if (requestedTableId && tables.value.some((t) => t.id === requestedTableId)) {
+    handleSelectTable(requestedTableId)
+  } else if (tables.value.length > 0) {
     handleSelectTable(tables.value[0].id)
   }
   wsConnect()
@@ -932,11 +952,6 @@ async function loadTableGroups() {
   } catch (e: any) {
     toast.error(resolveErrorMessage(e, '加载分组失败'))
   }
-}
-
-/** 分组树发生变更后，重新拉取分组与数据表，保证归属与计数一致 */
-async function reloadTableTree() {
-  await Promise.all([loadTableGroups(), loadTables()])
 }
 
 async function handleSelectTable(tableId: number) {
@@ -1097,104 +1112,37 @@ async function handlePageChange(page: number) {
   await loadRecords(activeTableId.value, page)
 }
 
-async function handleCreateTable(groupId: number | null) {
-  let name: string
-  try {
-    const { value } = await ElMessageBox.prompt('', '新建数据表', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      inputValue: '新建数据表',
-      inputValidator: (v: string) => (v && v.trim() ? true : '数据表名称不能为空'),
-    })
-    name = (value || '').trim()
-  } catch {
-    return
-  }
-  try {
-    const newId = await createTable(baseId, { name, groupId })
-    toast.success('创建成功')
-    const newTableId = typeof newId === 'number' ? newId : Number(newId)
-    await reloadTableTree()
-    handleSelectTable(newTableId)
-  } catch (e: any) {
-    toast.error(resolveErrorMessage(e, '创建失败'))
-  }
-}
-
-async function handleDeleteTable(tableId: number) {
-  try {
-    await deleteTable(tableId)
-    toast.success('删除成功')
-    await reloadTableTree()
-    if (activeTableId.value === tableId) {
-      if (tables.value.length > 0) {
-        handleSelectTable(tables.value[0].id)
-      } else {
-        activeTableId.value = null
-        fields.value = []
-        records.value = []
-      }
-    }
-  } catch (e: any) {
-    toast.error(resolveErrorMessage(e, '删除失败'))
-  }
-}
-
-async function handleCreateGroup(payload: { name: string; parentId: number | null }) {
-  try {
-    await createTableGroup(baseId, { name: payload.name, parentId: payload.parentId })
-    toast.success('分组已创建')
-    await loadTableGroups()
-  } catch (e: any) {
-    toast.error(resolveErrorMessage(e, '创建分组失败'))
-  }
-}
-
-async function handleRenameGroup(payload: { id: number; name: string }) {
-  try {
-    await renameTableGroup(payload.id, payload.name)
-    toast.success('分组已重命名')
-    await loadTableGroups()
-  } catch (e: any) {
-    toast.error(resolveErrorMessage(e, '重命名失败'))
-  }
-}
-
-async function handleDeleteGroup(id: number) {
-  try {
-    await deleteTableGroup(id)
-    toast.success('分组已删除')
-    await reloadTableTree()
-  } catch (e: any) {
-    toast.error(resolveErrorMessage(e, '删除分组失败'))
-  }
-}
-
-async function handleMoveGroup(payload: { id: number; parentId: number | null }) {
-  try {
-    await moveTableGroup(payload.id, { parentId: payload.parentId })
-    toast.success('分组已移动')
-    await loadTableGroups()
-  } catch (e: any) {
-    toast.error(resolveErrorMessage(e, '移动分组失败'))
-  }
-}
-
-async function handleMoveTableToGroup(payload: { tableId: number; groupId: number | null }) {
-  try {
-    await moveTableToGroup(payload.tableId, payload.groupId)
-    toast.success('数据表已移动')
-    await reloadTableTree()
-  } catch (e: any) {
-    toast.error(resolveErrorMessage(e, '移动数据表失败'))
-  }
-}
-
 function handleAddField() {
   addFieldType.value = 'text'
   addFieldBase.value = createBaseForm()
   addFieldConfig.value = createDefaultFieldConfig('text')
   addFieldDialogVisible.value = true
+}
+
+/**
+ * 空表快捷创建字段（走查 P1-4）：以默认配置直接建列，免开弹窗。
+ * 若同名字段已存在则打开「添加字段」弹窗让用户改名。
+ */
+async function handleAddQuickField(data: { fieldType: string; name: string }) {
+  if (!activeTableId.value) return
+  if (fields.value.some((f) => f.name === data.name)) {
+    toast.warning(`字段「${data.name}」已存在，请在弹窗中换一个名称`)
+    handleAddField()
+    return
+  }
+  try {
+    await createField(activeTableId.value, {
+      name: data.name,
+      fieldType: data.fieldType as BitableFieldCreateDTO['fieldType'],
+      width: 200,
+      required: 0,
+      config: createDefaultFieldConfig(data.fieldType),
+    })
+    toast.success(`已添加「${data.name}」字段`)
+    await loadFields(activeTableId.value)
+  } catch (e: any) {
+    toast.error(resolveErrorMessage(e, '添加失败'))
+  }
 }
 
 async function submitAddField() {
@@ -1229,7 +1177,7 @@ async function submitAddField() {
       data.aiPrompt = addFieldBase.value.aiPrompt
     }
     await createField(activeTableId.value, data)
-    toast.success('添加成功')
+    // 走查 P2-3：新列在表格中即时可见，不再弹顶部 toast（遮挡工具栏）
     await loadFields(activeTableId.value)
     addFieldDialogVisible.value = false
   } catch (e: any) {
@@ -1272,10 +1220,13 @@ function getViewIcon(type: string) {
   return viewTypeIconMap[type] || Grid
 }
 
-// 顶部真实在线协作者，由 WebSocket presence_updated 消息维护
+// 顶部真实在线协作者，由 WebSocket presence_updated 消息维护。
+// 后端 presence 里的 avatar 是原始字符串（如 preset:cartoon-9），必须先经
+// resolveAvatarUrl 转成可加载的 URL，否则浏览器按字面请求该字符串报 ERR_UNKNOWN_URL_SCHEME。
 const collaboratorColors = ['#6366F1', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6', '#06B6D4']
 const collaborators = computed(() => onlineUsers.value.map((user) => ({
   ...user,
+  avatar: resolveAvatarUrl(user.avatar),
   initial: Array.from(user.name?.trim() || '?')[0]?.toUpperCase() || '?',
   color: collaboratorColors[Math.abs(user.id - 1) % collaboratorColors.length],
 })))
@@ -1307,19 +1258,6 @@ async function handleRenameView(viewId: number, name: string) {
     await loadViews(activeTableId.value!)
   } catch (e: any) {
     toast.error(resolveErrorMessage(e, '重命名失败'))
-  }
-}
-
-async function handleRenameTable(tableId: number, name: string) {
-  try {
-    await updateTable(tableId, { name } as any)
-    toast.success('表名已保存')
-    const idx = tables.value.findIndex(t => t.id === tableId)
-    if (idx !== -1) {
-      tables.value[idx] = { ...tables.value[idx], name }
-    }
-  } catch (e: any) {
-    toast.error(resolveErrorMessage(e, '表名保存失败'))
   }
 }
 
@@ -1383,7 +1321,12 @@ async function handleCellChange(data: { rowId: number; fieldId: number; newValue
 
   try {
     const updateData: any = { version: record.version }
-    if (['number', 'currency', 'progress', 'rating'].includes(field.fieldType)) {
+    if (data.newValue && typeof data.newValue === 'object' && !Array.isArray(data.newValue) && 'valueJson' in (data.newValue as Record<string, unknown>)) {
+      // 人员字段：GridView 已规整为 {valueJson: [{id,name}], valueText} 整包下发
+      const structured = data.newValue as { valueJson?: unknown; valueText?: string }
+      updateData.valueJson = structured.valueJson
+      updateData.valueText = structured.valueText ?? ''
+    } else if (['number', 'currency', 'progress', 'rating'].includes(field.fieldType)) {
       updateData.valueNumber = Number(data.newValue) || 0
     } else if (field.fieldType === 'date') {
       updateData.valueDate = String(data.newValue)
@@ -1391,6 +1334,9 @@ async function handleCellChange(data: { rowId: number; fieldId: number; newValue
       updateData.valueText = String(Boolean(data.newValue))
     } else if (field.fieldType === 'single_select' || field.fieldType === 'multi_select' || field.fieldType === 'process') {
       updateData.valueText = String(data.newValue ?? '')
+    } else if (field.fieldType === 'user') {
+      // 人员字段兜底（非网格入口）：valueJson 直接透传
+      updateData.valueJson = data.newValue
     } else if (field.fieldType === 'date_range' || field.fieldType === 'attachment' || field.fieldType === 'location' || isLinkField(field.fieldType)) {
       updateData.valueJson = data.newValue
     } else {
@@ -1410,7 +1356,8 @@ async function handleCellChange(data: { rowId: number; fieldId: number; newValue
       ...(updateData.valueDate !== undefined ? { valueDate: updateData.valueDate } : {}),
       ...(updateData.valueJson !== undefined ? { valueJson: updateData.valueJson } : {}),
     }
-    toast.success('已保存')
+    // 静默保存：单元格编辑是高频操作，成功时不弹 toast（失败仍会提示），
+    // 单元格即时回显本身就是保存成功的反馈。
     // 不再通过 WS 上行 sendCellUpdate：后端 REST updateCell 写库成功后已统一广播（afterCommit），
     // 否则会触发 WS handler 二次广播/重复操作日志，且原 WS 路径会重复写库导致 version 乐观锁竞态（单用户编辑也 409）。
   } catch (e: any) {
@@ -1486,6 +1433,257 @@ function handleRenameConfirm() {
     .finally(() => {
       savingField.value = false
     })
+}
+
+/**
+ * 表头右键 →「编辑字段」：打开钉钉风格的快速编辑弹层。
+ * 弹层内可改字段名 / 字段类型 / 类型属性 / 描述，确认走 handleQuickEditConfirm。
+ */
+function handleQuickEditField(fieldId: number) {
+  const field = fields.value.find((f) => f.id === fieldId)
+  if (!field) return
+  quickEditField.value = field
+  quickEditVisible.value = true
+}
+
+/** 编辑字段弹层确认：统一走 updateField（含 field_type 变更）落库 */
+async function handleQuickEditConfirm(data: {
+  fieldId: number
+  name: string
+  fieldType: string
+  description: string
+  config: FieldConfig
+}) {
+  quickEditSaving.value = true
+  try {
+    const payload: Partial<BitableFieldCreateDTO> = {
+      name: data.name,
+      // 字段类型联合类型断言（弹层里是宽松 string）
+      fieldType: data.fieldType as BitableFieldCreateDTO['fieldType'],
+      description: data.description,
+      config: data.config,
+    }
+    await updateField(data.fieldId, payload)
+    toast.success('字段已更新')
+    quickEditVisible.value = false
+    if (activeTableId.value) {
+      await loadFields(activeTableId.value)
+    }
+  } catch (e: any) {
+    toast.error(resolveErrorMessage(e, '保存字段失败'))
+  } finally {
+    quickEditSaving.value = false
+  }
+}
+
+/**
+ * 右键菜单 → 向左 / 向右插入列。
+ * 复制锚点字段的类型与默认配置新开一列（钉钉行为：新列继承锚点列类型），
+ * 并按锚点字段在新序插入 sortOrder：左插取锚点序号，右插取锚点序号 +1，
+ * 其余字段（含锚点右侧的）整体后移，由后端 sortFields 重排。
+ */
+async function handleInsertField(data: { position: 'left' | 'right'; fieldId: number }) {
+  if (!activeTableId.value) return
+  const anchor = fields.value.find((f) => f.id === data.fieldId)
+  if (!anchor) return
+  savingField.value = true
+  try {
+    // 深拷贝锚点配置，避免新列与锚点列共享引用
+    const config = anchor.config ? JSON.parse(JSON.stringify(anchor.config)) : undefined
+    const created = await createField(activeTableId.value, {
+      name: `${anchor.name}_新列`,
+      fieldType: anchor.fieldType,
+      config,
+      width: anchor.width,
+    })
+    // 后端 createField 返回新字段 ID（Result<Long>）；兼容直接返回对象的情况
+    const newFieldId = typeof created === 'number' ? created : Number((created as any)?.id ?? created)
+    if (!Number.isFinite(newFieldId)) {
+      throw new Error('创建字段失败')
+    }
+    // 计算 sortOrder：createField 默认追加到末尾，这里按插入位置重排
+    const orderedIds = [...fields.value]
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+      .map((f) => f.id)
+    const anchorIdx = orderedIds.indexOf(anchor.id)
+    const insertIdx = data.position === 'left' ? anchorIdx : anchorIdx + 1
+    orderedIds.splice(insertIdx, 0, newFieldId)
+    await sortFields(activeTableId.value, orderedIds)
+    toast.success('已插入列')
+    await loadFields(activeTableId.value)
+  } catch (e: any) {
+    toast.error(resolveErrorMessage(e, '插入列失败'))
+  } finally {
+    savingField.value = false
+  }
+}
+
+/**
+ * 右键菜单 → 升序 / 降序：持久化到视图 sortConfig 并重查记录。
+ * 再次对同一字段点同一方向 = 取消排序（钉钉行为），sortConfig 清空。
+ */
+async function handleSortField(data: { fieldId: number; direction: 'asc' | 'desc' }) {
+  const view = activeView.value
+  if (!view || !activeTableId.value) return
+  const current = Array.isArray(view.sortConfig) ? view.sortConfig : []
+  const existing = current.find((item) => item.fieldId === data.fieldId)
+  const isToggleOff = existing && existing.direction === data.direction && current.length === 1
+  const nextSort: SortItem[] = isToggleOff ? [] : [{ fieldId: data.fieldId, direction: data.direction }]
+  try {
+    await updateView(view.id, { sortConfig: nextSort, version: view.version })
+    toast.success(isToggleOff ? '已取消排序' : data.direction === 'asc' ? '已按升序排序' : '已按降序排序')
+    await loadViews(activeTableId.value)
+    await loadRecords(activeTableId.value)
+  } catch (e: any) {
+    toast.error(resolveErrorMessage(e, '排序失败'))
+  }
+}
+
+/** 工具栏 → 当前视图排序状态（排序弹层预填 + 按钮高亮） */
+const activeSortState = computed<{ fieldId: number; direction: 'asc' | 'desc' } | null>(() => {
+  const sc = activeView.value?.sortConfig
+  if (Array.isArray(sc) && sc.length > 0) {
+    return { fieldId: sc[0].fieldId, direction: sc[0].direction }
+  }
+  return null
+})
+
+/** 工具栏 → 清除排序 */
+async function handleSortClear() {
+  const view = activeView.value
+  if (!view || !activeTableId.value) return
+  try {
+    await updateView(view.id, { sortConfig: [], version: view.version })
+    toast.success('已清除排序')
+    await loadViews(activeTableId.value)
+    await loadRecords(activeTableId.value)
+  } catch (e: any) {
+    toast.error(resolveErrorMessage(e, '清除排序失败'))
+  }
+}
+
+/** 工具栏 → 行高「自定义…」：打开 GridView 的自定义行高弹层 */
+function openRowHeightCustom() {
+  gridViewRef.value?.openRowHeightMenu()
+}
+
+/** 整列填色预设色（与 GridView 菜单色点一致） */
+const COLUMN_COLOR_HEX: Record<string, string> = {
+  gray: '#94a3b8',
+  blue: '#3b82f6',
+  green: '#22c55e',
+  orange: '#f97316',
+  purple: '#8b5cf6',
+}
+
+/**
+ * 右键菜单 → 整列填色：持久化到视图 config.columnColors（fieldId → 色值），
+ * 表头背景按此着色；color='none' 表示清除该列填色。
+ */
+async function handleFillColumnColor(data: { fieldId: number; color: string }) {
+  const view = activeView.value
+  if (!view || !activeTableId.value) return
+  const config: ViewConfig = { ...(view.config || { schemaVersion: 1 }) }
+  const colors: Record<number, string> = { ...(config.columnColors || {}) }
+  if (data.color === 'none') {
+    delete colors[data.fieldId]
+  } else {
+    const hex = COLUMN_COLOR_HEX[data.color]
+    if (!hex) return
+    colors[data.fieldId] = hex
+  }
+  config.columnColors = colors
+  try {
+    await updateView(view.id, { config, version: view.version })
+    await loadViews(activeTableId.value)
+  } catch (e: any) {
+    toast.error(resolveErrorMessage(e, '设置列颜色失败'))
+  }
+}
+
+/**
+ * 右键菜单 → 冻结至此列：该列及之前的所有列固定在左侧（钉钉行为）。
+ * 持久化到视图 config.frozenFieldIds；传空数组表示解冻（后续可加「取消冻结」菜单）。
+ */
+async function handleFreezeToLeft(fieldId: number) {
+  const view = activeView.value
+  if (!view || !activeTableId.value) return
+  const config: ViewConfig = { ...(view.config || { schemaVersion: 1 }) }
+  // 计算冻结集合：按当前展示顺序，取目标列及其之前的所有字段
+  const ordered = visibleFields.value.map((f) => f.id)
+  const idx = ordered.indexOf(fieldId)
+  if (idx < 0) return
+  const frozen = ordered.slice(0, idx + 1)
+  // 全部列都冻结 = 实际没意义，视为解冻
+  config.frozenFieldIds = frozen.length >= ordered.length ? [] : frozen
+  try {
+    await updateView(view.id, { config, version: view.version })
+    toast.success(config.frozenFieldIds.length ? `已冻结前 ${config.frozenFieldIds.length} 列` : '已解冻列')
+    await loadViews(activeTableId.value)
+  } catch (e: any) {
+    toast.error(resolveErrorMessage(e, '冻结列失败'))
+  }
+}
+
+/** 右键菜单 → 按「字段」分组：复用分组链路，已按该字段分组时再次点击 = 清除分组 */
+async function handleMenuGroupByField(fieldId: number) {
+  await handleGroupApply(groupFieldId.value === fieldId ? null : fieldId)
+}
+
+/**
+ * 右键菜单 → 按「字段」筛选：打开筛选面板并预置一条「该字段」条件。
+ * FilterPanel 打开时会从 filterConfig 初始化，所以先写入一条预置规则再打开。
+ */
+function handleMenuFilterByField(fieldId: number) {
+  presetFilterFieldId.value = fieldId
+  showFilterPanel.value = true
+}
+
+/** 设置提醒（占位）：提醒能力依赖后端推送，先接入菜单避免死入口 */
+function handleSetRemind(data: { fieldId: number; mode: 'daily' | 'weekly' | 'off' }) {
+  if (data.mode === 'off') {
+    toast.success('已关闭该列提醒')
+  } else {
+    toast.info(data.mode === 'daily' ? '已设置每天提醒（推送能力接入后生效）' : '已设置每周提醒（推送能力接入后生效）')
+  }
+}
+
+/**
+ * 拖拽列边框调整列宽：持久化到视图 config.fieldWidths（fieldId → px）。
+ * 静默保存（拖拽是高频微操作，不弹 toast）；仅宽度变化时才落库。
+ */
+async function handleColResize(data: { fieldId: number; width: number }) {
+  const view = activeView.value
+  if (!view || !activeTableId.value) return
+  const config: ViewConfig = { ...(view.config || { schemaVersion: 1 }) }
+  const widths: Record<number, number> = { ...(config.fieldWidths || {}) }
+  // 宽度未变化（如点击边框）不重复落库
+  if (widths[data.fieldId] === data.width) return
+  widths[data.fieldId] = data.width
+  config.fieldWidths = widths
+  try {
+    await updateView(view.id, { config, version: view.version })
+    await loadViews(activeTableId.value)
+  } catch (e: any) {
+    toast.error(resolveErrorMessage(e, '保存列宽失败'))
+  }
+}
+
+/**
+ * 行距设置（表头右键 → 行距设置）：持久化到当前数据表 row_height。
+ * 就地更新 activeTable.rowHeight，网格立即生效，无需整表刷新。
+ */
+async function handleRowHeightChange(height: number) {
+  if (!activeTableId.value) return
+  try {
+    await updateTable(activeTableId.value, { rowHeight: height })
+    if (activeTable.value) {
+      activeTable.value.rowHeight = height
+    }
+    toast.success('行距已更新')
+  } catch (e: any) {
+    toast.error(resolveErrorMessage(e, '设置行距失败'))
+  }
 }
 
 // 字段配置弹窗方法
@@ -1736,11 +1934,48 @@ async function handleRowInsert(data?: { position?: 'above' | 'below'; rowId?: nu
         cells[data.fieldId] = { valueText: data.groupValue }
       }
     }
-    await createRecord(activeTableId.value, { cells })
-    toast.success('记录已添加')
-    await loadRecords(activeTableId.value)
+    const newRecordId = await createRecord(activeTableId.value, { cells })
+    // 不弹「记录已添加」：新行已可见即为反馈（钉钉多维表格同款行为）
+    // 新行恒追加到末尾，若当前不在末尾页则跳到末尾页，保证点 + 后能看到新空行
+    const lastPage = Math.max(1, Math.ceil((recordsTotal.value + 1) / recordsPageSize.value))
+    if (recordsPage.value !== lastPage) {
+      await loadRecords(activeTableId.value, lastPage)
+    } else {
+      await loadRecords(activeTableId.value, recordsPage.value)
+    }
+    gridViewRef.value?.scrollToRecord(newRecordId)
   } catch (e: any) {
     toast.error(resolveErrorMessage(e, '添加失败'))
+  }
+}
+
+/** 复制行：按源记录 cells 映射创建 DTO（剥离 fieldId/displayText）→ 创建 → 刷新并定位新行 */
+async function handleRowCopy(rowId: number) {
+  if (!activeTableId.value) return
+  const source = records.value.find((r) => r.id === rowId)
+  if (!source) return
+  try {
+    const cells: BitableRecordCreateDTO['cells'] = {}
+    for (const [key, cell] of Object.entries(source.cells ?? {})) {
+      const dto: NonNullable<BitableRecordCreateDTO['cells']>[number] = {}
+      if (cell.valueText !== undefined && cell.valueText !== null) dto.valueText = cell.valueText
+      if (cell.valueNumber !== undefined && cell.valueNumber !== null) dto.valueNumber = cell.valueNumber
+      if (cell.valueDate !== undefined && cell.valueDate !== null) dto.valueDate = cell.valueDate
+      if (cell.valueJson !== undefined && cell.valueJson !== null) dto.valueJson = cell.valueJson
+      cells[Number(key)] = dto
+    }
+    const newRecordId = await createRecord(activeTableId.value, { cells })
+    toast.success('已复制')
+    // 新行恒追加到末尾：若当前不在末尾页则跳到末尾页，保证复制结果可见
+    const lastPage = Math.max(1, Math.ceil((recordsTotal.value + 1) / recordsPageSize.value))
+    if (recordsPage.value !== lastPage) {
+      await loadRecords(activeTableId.value, lastPage)
+    } else {
+      await loadRecords(activeTableId.value, recordsPage.value)
+    }
+    gridViewRef.value?.scrollToRecord(newRecordId)
+  } catch (e: any) {
+    toast.error(resolveErrorMessage(e, '复制失败'))
   }
 }
 
@@ -1766,6 +2001,31 @@ async function handleRowDelete(rowId: number) {
     records.value = records.value.filter((r) => r.id !== rowId)
   } catch (e: any) {
     toast.error(resolveErrorMessage(e, '删除失败'))
+  }
+}
+
+// 网格复选选区（记录 ID 列表，供批量操作与后续扩展使用）
+const selectedRecordIds = ref<number[]>([])
+
+/** 批量删除勾选行：并行逐条删除，聚合成功/失败结果后刷新 */
+async function handleRowsDelete(rowIds: number[]) {
+  if (!rowIds?.length) return
+  const results = await Promise.allSettled(rowIds.map((id) => deleteRecord(id)))
+  const failed = results.filter((r) => r.status === 'rejected').length
+  const deleted = results.length - failed
+  if (deleted > 0) {
+    const deletedSet = new Set(
+      results
+        .map((r, i) => (r.status === 'fulfilled' ? rowIds[i] : null))
+        .filter((id): id is number => id !== null),
+    )
+    records.value = records.value.filter((r) => !deletedSet.has(r.id))
+    toast.success(`已删除 ${deleted} 行`)
+  }
+  if (failed > 0) {
+    toast.error(`${failed} 行删除失败${deleted > 0 ? '，其余已删除' : ''}`)
+    // 有失败时整体刷新一次，保证与服务端一致
+    if (activeTableId.value) await loadRecords(activeTableId.value)
   }
 }
 
@@ -1939,20 +2199,20 @@ watch(showImportExport, (val) => {
   align-items: center;
   gap: 12px;
   padding: 10px 20px;
-  border-bottom: 1px solid var(--color-border, #e2e8f0);
-  background: var(--color-surface, #fff);
+  border-bottom: 1px solid var(--color-border, var(--color-border));
+  background: var(--color-surface, var(--color-surface));
   flex-shrink: 0;
   min-height: 52px;
 
   .editor-header__back {
-    color: var(--color-text-secondary, #475569);
+    color: var(--color-text-secondary, var(--color-text-secondary));
     font-weight: 500;
   }
 
   .editor-header__divider {
     width: 1px;
     height: 18px;
-    background: var(--color-border, #e2e8f0);
+    background: var(--color-border, var(--color-muted));
   }
 
   .editor-header__breadcrumbs {
@@ -1965,14 +2225,14 @@ watch(showImportExport, (val) => {
   .editor-header__crumb {
     font-size: 14px;
     font-weight: 500;
-    color: var(--color-text-secondary, #475569);
+    color: var(--color-text-secondary, var(--color-text-secondary));
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 240px;
 
     &--active {
-      color: var(--color-text-primary, #0f172a);
+      color: var(--color-text-primary, var(--color-text-primary));
       font-weight: 700;
     }
 
@@ -1989,8 +2249,8 @@ watch(showImportExport, (val) => {
       transition: background 0.12s ease, color 0.12s ease;
 
       &:hover {
-        background: var(--color-surface-alt, #f1f5f9);
-        color: var(--color-primary, #2563eb);
+        background: var(--color-surface-alt, var(--color-surface-alt));
+        color: var(--color-primary, var(--color-primary));
       }
 
       &:focus-visible {
@@ -2008,8 +2268,8 @@ watch(showImportExport, (val) => {
   .editor-header__view-tag {
     margin-left: 4px;
     font-weight: 500;
-    background: var(--color-primary-subtle, #eff6ff) !important;
-    color: var(--color-primary, #2563eb) !important;
+    background: var(--color-primary-subtle, var(--color-primary-subtle)) !important;
+    color: var(--color-primary, var(--color-primary)) !important;
     border: 0.5px solid var(--color-primary-light, #dbeafe) !important;
   }
 
@@ -2021,12 +2281,30 @@ watch(showImportExport, (val) => {
     flex: 1;
   }
 
+  /* 高级权限入口：与头部协作者区同排，视觉上轻量不抢焦点 */
+  .editor-header__permission {
+    flex-shrink: 0;
+    color: var(--color-text-secondary, var(--color-text-secondary));
+    background: var(--color-background, var(--color-background));
+    border-color: var(--color-border, var(--color-border));
+
+    .el-icon {
+      margin-right: 4px;
+    }
+
+    &:hover {
+      color: var(--color-primary, var(--color-primary));
+      border-color: var(--color-primary, var(--color-primary));
+      background: var(--color-primary-subtle, var(--color-primary-subtle));
+    }
+  }
+
   .editor-header__collaborators {
     display: flex;
     align-items: center;
     padding: 4px 4px 4px 8px;
     border-radius: 14px;
-    background: var(--color-background, #f8fafc);
+    background: var(--color-background, var(--color-background));
   }
 
   .editor-header__avatar-button {
@@ -2062,7 +2340,7 @@ watch(showImportExport, (val) => {
     border: 0;
     border-radius: 8px;
     background: transparent;
-    color: var(--color-text-secondary, #475569);
+    color: var(--color-text-secondary, var(--color-text-secondary));
     cursor: pointer;
     font-size: 12px;
     font-weight: 600;
@@ -2070,8 +2348,8 @@ watch(showImportExport, (val) => {
 
   .editor-header__avatar-more:hover,
   .editor-header__avatar-more:focus-visible {
-    background: var(--color-primary-subtle, #eff6ff);
-    color: var(--color-primary, #2563eb);
+    background: var(--color-primary-subtle, var(--color-primary-subtle));
+    color: var(--color-primary, var(--color-primary));
     outline: none;
   }
 }
@@ -2090,7 +2368,7 @@ watch(showImportExport, (val) => {
 
   strong {
     overflow: hidden;
-    color: var(--color-text-primary, #0f172a);
+    color: var(--color-text-primary, var(--color-text-primary));
     font-size: 14px;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -2112,8 +2390,8 @@ watch(showImportExport, (val) => {
 }
 
 .editor-body {
-  display: grid;
-  grid-template-columns: var(--editor-sidebar-width, 240px) var(--editor-sidebar-resizer-width, 4px) minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   flex: 1;
   min-height: 0;
@@ -2165,13 +2443,13 @@ watch(showImportExport, (val) => {
   border: 1px solid var(--color-border);
   border-left: 0;
   border-radius: 0 6px 6px 0;
-  background: #fff;
+  background: var(--color-surface);
   cursor: pointer;
   z-index: 2;
   box-shadow: 2px 0 6px rgba(0, 0, 0, 0.06);
 
   &:hover {
-    background: #f5f7fa;
+    background: var(--color-fill-secondary);
   }
 }
 
@@ -2205,7 +2483,7 @@ watch(showImportExport, (val) => {
   flex-shrink: 0;
   max-height: 320px;
   overflow-y: auto;
-  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  border-bottom: 1px solid var(--color-border, var(--color-border));
   padding: 8px 4px;
   margin-bottom: 8px;
 }
@@ -2225,14 +2503,14 @@ watch(showImportExport, (val) => {
   }
 
   &--active {
-    background: var(--color-primary-subtle, #eff6ff) !important;
-    color: var(--color-primary, #2563eb);
+    background: var(--color-primary-subtle, var(--color-primary-subtle)) !important;
+    color: var(--color-primary, var(--color-primary));
     box-shadow: inset 3px 0 0 var(--color-primary, #2563eb);
   }
 
   &--hidden {
     .field-item__name {
-      color: var(--color-text-placeholder, #94a3b8);
+      color: var(--color-text-placeholder, var(--color-text-tertiary));
       text-decoration: line-through;
     }
   }
@@ -2273,7 +2551,7 @@ watch(showImportExport, (val) => {
     font-size: 15px;
     font-weight: 700;
     margin-bottom: 16px;
-    color: var(--color-text-primary, #0f172a);
+    color: var(--color-text-primary, var(--color-text-primary));
     letter-spacing: -0.01em;
   }
 
@@ -2283,7 +2561,7 @@ watch(showImportExport, (val) => {
     gap: 10px;
     margin-top: 24px;
     padding-top: 16px;
-    border-top: 1px solid var(--color-border, #e2e8f0);
+    border-top: 1px solid var(--color-border, var(--color-border));
   }
 }
 

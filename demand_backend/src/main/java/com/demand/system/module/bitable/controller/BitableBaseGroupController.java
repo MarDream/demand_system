@@ -79,6 +79,17 @@ public class BitableBaseGroupController {
     }
 
     /**
+     * 分组同级排序（拖拽排序：按传入顺序回写 sort_order）
+     */
+    @PutMapping("/base-groups/sort")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN')")
+    public Result<Void> sortGroups(@RequestBody List<Long> orderedIds) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        groupService.sortGroups(orderedIds, userId);
+        return Result.success();
+    }
+
+    /**
      * 删除分组（子分组与 Base 上移到父级）
      */
     @DeleteMapping("/base-groups/{id}")
@@ -99,6 +110,23 @@ public class BitableBaseGroupController {
         Long userId = SecurityUtils.getCurrentUserId();
         authorizationService.checkManagePermission(id, userId);
         groupService.moveBaseToGroup(id, dto.getGroupId(), userId);
+        return Result.success();
+    }
+
+    /**
+     * Base 同级排序（拖拽排序：按传入顺序回写 sort_order）。
+     * 权限与 moveBaseToGroup 一致，逐个校验管理权限。
+     */
+    @PutMapping("/bases/sort")
+    @PreAuthorize("isAuthenticated()")
+    public Result<Void> sortBases(@RequestBody List<Long> orderedIds) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (orderedIds != null) {
+            for (Long baseId : orderedIds) {
+                authorizationService.checkManagePermission(baseId, userId);
+            }
+            groupService.sortBases(orderedIds);
+        }
         return Result.success();
     }
 }

@@ -37,6 +37,8 @@ public final class Nl2SqlSemantics {
                 "workflow_states", "workflow_transition_records", "workflow_instances",
                 // 知识库
                 "knowledge_bases", "knowledge_documents",
+                // 多维表格（EAV 模型，见 joinHints / businessRules 中的口径说明）
+                "bitable_bases", "bitable_tables", "bitable_fields", "bitable_records", "bitable_cell_values",
                 // 其他
                 "file_records", "custom_fields", "requirement_custom_field_values"
         );
@@ -64,6 +66,9 @@ public final class Nl2SqlSemantics {
         map.put("requirement_follows", List.of("关注", "关注人"));
         map.put("requirement_relations", List.of("需求关联", "关联关系"));
         map.put("project_members", List.of("项目成员"));
+        map.put("bitable_bases", List.of("多维表格", "多维表", "base"));
+        map.put("bitable_tables", List.of("多维表格数据表", "数据表", "维表"));
+        map.put("bitable_records", List.of("记录", "记录数", "表格行", "行数"));
         return map;
     }
 
@@ -106,7 +111,12 @@ public final class Nl2SqlSemantics {
                 "workflow_transition_records.requirement_id = requirements.id（需求流转记录）",
                 "iterations.project_id = projects.id（迭代所属项目）",
                 "project_members.project_id = projects.id（项目成员）",
-                "project_members.user_id = users.id（成员用户）"
+                "project_members.user_id = users.id（成员用户）",
+                "bitable_tables.base_id = bitable_bases.id（多维表格数据表所属 Base）",
+                "bitable_fields.table_id = bitable_tables.id（数据表的字段定义）",
+                "bitable_records.table_id = bitable_tables.id（数据表的记录行）",
+                "bitable_cell_values.record_id = bitable_records.id（记录某字段的值）",
+                "bitable_cell_values.field_id = bitable_fields.id（字段值对应的字段定义）"
         );
     }
 
@@ -136,7 +146,20 @@ public final class Nl2SqlSemantics {
                 "判断 JSON 数组列“没有内容”用 `(列 IS NULL OR JSON_LENGTH(列) = 0)`；"
                         + "要展示数量用 `JSON_LENGTH(列) AS 附件数`。",
                 "查询结果列必须使用中文别名（AS），便于直接展示。",
-                "禁止查询 users.password 等敏感列；涉及用户只取 real_name、username、id。"
+                "禁止查询 users.password 等敏感列；涉及用户只取 real_name、username、id。",
+                "多维表格（bitable_*）采用 EAV 存储：字段定义在 bitable_fields（table_id + name），"
+                        + "记录行在 bitable_records（table_id），每格值在 bitable_cell_values（record_id + field_id）。",
+                "查多维表格某数据表的记录数：COUNT(*) FROM bitable_records r JOIN bitable_tables t ON r.table_id = t.id "
+                        + "WHERE t.name = '表名' AND r.deleted_at = 0 AND t.deleted_at = 0；"
+                        + "表名以 bitable_tables.name 的中文名精确/模糊匹配，不要臆造。",
+                "按字段筛选/分组多维表格数据：JOIN bitable_fields（f.name = '字段名' 定位 field_id）再 JOIN bitable_cell_values；"
+                        + "取值列按字段类型选：文本/单选类用 value_text，数字用 value_number，日期用 value_date，"
+                        + "多选/成员/关联等复杂类型用 value_json（JSON 数组，需 JSON 函数处理）。",
+                "bitable_cell_values 没有 deleted_at 列，软删过滤通过 JOIN bitable_records 并过滤 r.deleted_at = 0 实现；"
+                        + "bitable_fields 也有 deleted_at，同样要过滤。",
+                "多维表格表名查不到数据时（用户可能打了错别字），先执行 "
+                        + "`SELECT id, name FROM bitable_tables WHERE deleted_at = 0` 把现有表名列出来"
+                        + "供用户确认最接近的名称，不要直接返回 0 或编造数字。"
         );
     }
 
@@ -188,6 +211,14 @@ public final class Nl2SqlSemantics {
                 new FewShot(
                         "本月新增需求数和上月相比如何？",
                         "SELECT DATE_FORMAT(r.created_at, '%Y-%m') AS 月份, COUNT(*) AS 新增需求数 FROM requirements r WHERE r.deleted_at = 0 AND r.is_draft = 0 AND r.created_at >= DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 1 MONTH) GROUP BY DATE_FORMAT(r.created_at, '%Y-%m') ORDER BY 月份"
+                ),
+                new FewShot(
+                        "多维表格数据表【XX表】里有多少条记录？",
+                        "SELECT COUNT(*) AS 记录数 FROM bitable_records r JOIN bitable_tables t ON r.table_id = t.id WHERE t.name = 'XX表' AND r.deleted_at = 0 AND t.deleted_at = 0"
+                ),
+                new FewShot(
+                        "多维表格数据表【XX表】按状态字段统计各值的记录数",
+                        "SELECT cv.value_text AS 状态, COUNT(DISTINCT cv.record_id) AS 记录数 FROM bitable_cell_values cv JOIN bitable_fields f ON cv.field_id = f.id JOIN bitable_records r ON cv.record_id = r.id JOIN bitable_tables t ON r.table_id = t.id WHERE t.name = 'XX表' AND f.name = '状态' AND r.deleted_at = 0 AND t.deleted_at = 0 GROUP BY cv.value_text ORDER BY 记录数 DESC"
                 )
         );
     }

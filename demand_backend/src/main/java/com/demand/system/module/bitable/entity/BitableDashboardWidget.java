@@ -21,10 +21,13 @@ public class BitableDashboardWidget {
 
     private String title;
 
-    /** 数据源配置 JSON: {tableId, fieldId, aggregation, groupByFieldId, filterConfig} */
+    /** 数据源配置 JSON: {tableId, filterConfig, dimension:{fieldId,fieldName,granularity}, metrics:[{fieldId,fieldName,aggregation}], sort, limit, multiSource, sources:[{tableId,filterConfig}](多数据源模式), fieldId/aggregation/groupByFieldId(旧版兼容)} */
     private String dataSourceConfig;
 
     private String displayConfig;
+
+    /** 布局配置 JSON: {rowId, span, height} */
+    private String layoutConfig;
 
     private Integer sortNo;
 
@@ -80,6 +83,14 @@ public class BitableDashboardWidget {
 
     public void setDisplayConfig(String displayConfig) {
         this.displayConfig = displayConfig;
+    }
+
+    public String getLayoutConfig() {
+        return layoutConfig;
+    }
+
+    public void setLayoutConfig(String layoutConfig) {
+        this.layoutConfig = layoutConfig;
     }
 
     public Integer getSortNo() {

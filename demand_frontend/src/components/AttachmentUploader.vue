@@ -82,8 +82,9 @@
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Upload, Document, DocumentCopy, Picture, VideoCamera, Folder, Delete, View } from '@element-plus/icons-vue'
-import { uploadRequirementAttachment, downloadRequirementAttachment } from '@/api/modules/file'
+import { uploadRequirementAttachment, downloadRequirementAttachment, fetchFileHashes } from '@/api/modules/file'
 import type { RequirementAttachment } from '@/types/requirement'
+import { computeFileSha256 } from '@/utils/fileHash'
 import { formatDate } from '@/utils/format'
 
 interface Props {
@@ -91,6 +92,8 @@ interface Props {
   maxSize?: number // MB
   showPreview?: boolean
   required?: boolean
+  /** 额外参与去重的附件(如同工单主附件/流转附件);自身列表 modelValue 始终参与 */
+  dedupeAgainst?: RequirementAttachment[]
 }
 
 interface Emits {
@@ -213,13 +216,25 @@ async function uploadFiles(files: File[]) {
   const validFiles = files.filter(beforeUpload)
   if (validFiles.length === 0) return
 
+  // 内容级去重索引：已有附件(自身列表 + dedupeAgainst)的 SHA-256 → 已存在附件名
+  const hashIndex = await buildDedupeIndex()
+
   uploadProgress.value = { done: 0, total: validFiles.length }
   uploading.value = true
 
+  let uploadedCount = 0
   for (const file of validFiles) {
     try {
+      const hash = await computeFileSha256(file)
+      if (hash && hashIndex.has(hash)) {
+        ElMessage.warning(`「${file.name}」与已上传的「${hashIndex.get(hash)}」内容相同，已跳过重复上传`)
+        uploadProgress.value.done++
+        continue
+      }
       const attachment = await uploadRequirementAttachment(file)
+      if (attachment.contentHash) hashIndex.set(attachment.contentHash, attachment.name)
       attachments.value = [...attachments.value, attachment]
+      uploadedCount++
     } catch {
       ElMessage.error(`附件上传失败: ${file.name}`)
     } finally {
@@ -228,9 +243,39 @@ async function uploadFiles(files: File[]) {
   }
 
   uploading.value = false
-  if (uploadProgress.value.done > 0) {
-    ElMessage.success(`已上传 ${uploadProgress.value.done} 个附件`)
+  if (uploadedCount > 0) {
+    ElMessage.success(`已上传 ${uploadedCount} 个附件`)
   }
+}
+
+/**
+ * 构建去重索引：自身列表 + dedupeAgainst 中带 contentHash 的直接入索引；
+ * 只有 fileId 的历史附件通过批量接口回查哈希（服务端惰性回填，一次缓存）。
+ */
+async function buildDedupeIndex(): Promise<Map<string, string>> {
+  const index = new Map<string, string>()
+  const needFetch: Array<number | null | undefined> = []
+
+  for (const att of [...(props.dedupeAgainst || []), ...props.modelValue]) {
+    if (att.contentHash) {
+      index.set(att.contentHash.toLowerCase(), att.name)
+    } else if (att.fileId) {
+      needFetch.push(att.fileId)
+    }
+  }
+
+  if (needFetch.length > 0) {
+    try {
+      const hashes = await fetchFileHashes(needFetch)
+      for (const att of [...(props.dedupeAgainst || []), ...props.modelValue]) {
+        const hash = att.fileId ? hashes[att.fileId] : undefined
+        if (hash) index.set(hash.toLowerCase(), att.name)
+      }
+    } catch {
+      // 哈希回查失败时跳过预检，不阻塞上传
+    }
+  }
+  return index
 }
 
 async function handlePaste(event: ClipboardEvent) {
@@ -271,21 +316,6 @@ async function handlePaste(event: ClipboardEvent) {
 
   if (filesToUpload.length > 0) {
     await uploadFiles(filesToUpload)
-  }
-}
-
-async function uploadFile(file: File) {
-  try {
-    uploading.value = true
-    uploadProgress.value = { done: 0, total: 1 }
-    const attachment = await uploadRequirementAttachment(file)
-    attachments.value = [...attachments.value, attachment]
-    uploadProgress.value.done++
-    ElMessage.success('附件上传成功')
-  } catch {
-    ElMessage.error('附件上传失败')
-  } finally {
-    uploading.value = false
   }
 }
 

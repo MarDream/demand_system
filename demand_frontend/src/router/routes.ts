@@ -52,7 +52,7 @@ export const routes: RouteRecordRaw[] = [
         path: 'dashboard',
         name: 'Dashboard',
         component: () => import('@/views/home/index.vue'),
-        meta: { title: '仪表盘', icon: 'Odometer' },
+        meta: { title: '仪表盘', icon: 'Odometer', requiredPermissions: ['menu:dashboard'] },
       },
       {
         path: 'requirements',
@@ -93,7 +93,7 @@ export const routes: RouteRecordRaw[] = [
       {
         path: 'bitable/:baseId/dashboard',
         name: 'BitableDashboard',
-        component: () => import('@/views/bitable/dashboard.vue'),
+        component: () => import('@/views/bitable/dashboard/index.vue'),
         meta: { title: '多维表格仪表盘', hidden: true, activeMenu: '/bitable' },
       },
       {

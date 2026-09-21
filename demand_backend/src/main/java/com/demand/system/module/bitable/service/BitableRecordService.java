@@ -32,6 +32,16 @@ public interface BitableRecordService {
     BitableRecordVO getRecordById(Long id);
 
     /**
+     * 某字段在整张表内的去重取值列表（仅未软删记录），供筛选值下拉与模糊搜索使用。
+     * 多选类字段会把 valueJson 数组逐元素拆开；按出现频次降序，最多返回 500 个。
+     *
+     * @param tableId 数据表ID
+     * @param fieldId 字段ID
+     * @return 去重后的取值列表
+     */
+    List<String> listFieldDistinctValues(Long tableId, Long fieldId);
+
+    /**
      * 创建记录行
      *
      * @param tableId 数据表ID

@@ -48,7 +48,7 @@ const questions = computed(() => (props.questions || []).filter((item) => !!item
 .follow-up-chips__label {
   display: block;
   font-size: 12px;
-  color: var(--color-text-secondary, #909399);
+  color: var(--color-text-secondary, var(--color-text-tertiary));
   margin-bottom: 6px;
 }
 
@@ -67,17 +67,17 @@ const questions = computed(() => (props.questions || []).filter((item) => !!item
   font-size: 12px;
   line-height: 1.4;
   color: var(--color-text-regular, #606266);
-  background: var(--color-fill-light, #f5f7fa);
-  border: 1px solid var(--color-border-light, #e4e7ed);
+  background: var(--color-fill-light, var(--color-fill-secondary));
+  border: 1px solid var(--color-border-light, var(--color-border));
   border-radius: 12px;
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s, background-color 0.15s;
 }
 
 .follow-up-chips__item:hover:not(:disabled) {
-  color: var(--color-primary, #409eff);
+  color: var(--color-primary, var(--color-primary));
   border-color: var(--color-primary-light-5, #a0cfff);
-  background: var(--color-primary-light-9, #ecf5ff);
+  background: var(--color-primary-light-9, var(--color-primary-subtle));
 }
 
 .follow-up-chips__item:disabled {

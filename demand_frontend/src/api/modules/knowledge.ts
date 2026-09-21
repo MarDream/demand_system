@@ -114,7 +114,8 @@ export interface CitationReference {
   focus?: string | null
 }
 
-export type SearchMode = 'hybrid' | 'semantic' | 'keyword'
+/** auto=智能检索：服务端按问题特征自动路由 hybrid/semantic/keyword */
+export type SearchMode = 'auto' | 'hybrid' | 'semantic' | 'keyword'
 
 export interface DocumentRequirementRef {
   id: number

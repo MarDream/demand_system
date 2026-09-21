@@ -1,17 +1,28 @@
 package com.demand.system.module.user.controller;
 
+import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.PageResult;
 import com.demand.system.common.result.Result;
 import com.demand.system.module.user.dto.BatchUserActionDTO;
+import com.demand.system.module.user.dto.RosterExportLogVO;
+import com.demand.system.module.user.dto.RosterImportResultVO;
+import com.demand.system.module.user.dto.RosterStatsVO;
 import com.demand.system.module.user.dto.UserCreateDTO;
 import com.demand.system.module.user.dto.UserQueryDTO;
 import com.demand.system.module.user.dto.UserUpdateDTO;
 import com.demand.system.module.user.dto.UserVO;
+import com.demand.system.module.user.entity.RosterExportLog;
 import com.demand.system.module.user.service.UserService;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
@@ -103,5 +114,79 @@ public class UserController {
     @PreAuthorize("isAuthenticated()")
     public Result<List<Long>> getUserRoles(@PathVariable Long id) {
         return Result.success(userService.getUserRoleIds(id));
+    }
+
+    /** 花名册统计板（在职/员工类型/用工状态分布），随列表筛选范围联动 */
+    @GetMapping("/roster-stats")
+    @PreAuthorize("isAuthenticated()")
+    public Result<RosterStatsVO> rosterStats(UserQueryDTO query) {
+        return Result.success(userService.rosterStats(query));
+    }
+
+    /** 花名册导入模板下载 */
+    @GetMapping("/import-template")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:import')")
+    public void importTemplate(HttpServletResponse response) {
+        byte[] bytes = userService.buildImportTemplate();
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        response.setHeader("Content-Disposition", "attachment; filename*=UTF-8''" + URLEncoder.encode("花名册导入模板.xlsx", StandardCharsets.UTF_8));
+        try (var out = response.getOutputStream()) {
+            out.write(bytes);
+            out.flush();
+        } catch (IOException e) {
+            throw new BusinessException("模板下载失败");
+        }
+    }
+
+    /** 导入花名册（XLSX，模板列：姓名/手机号/邮箱/员工类型/用工状态/入职日期） */
+    @PostMapping("/import")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:import')")
+    public Result<RosterImportResultVO> importRoster(@RequestParam("file") MultipartFile file,
+                                                     @RequestParam(value = "orgId", required = false) Long orgId) {
+        return Result.success(userService.importRoster(file, orgId));
+    }
+
+    /** 导出花名册（按当前筛选），生成 XLSX 并写入导出历史 */
+    @PostMapping("/export")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:export')")
+    public Result<RosterExportLogVO> exportRoster(@RequestBody UserQueryDTO query) {
+        return Result.success(userService.exportRoster(query));
+    }
+
+    /** 导出历史（分页倒序） */
+    @GetMapping("/export-history")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:export')")
+    public Result<PageResult<RosterExportLogVO>> exportHistory(@RequestParam(defaultValue = "1") int pageNum,
+                                                               @RequestParam(defaultValue = "10") int pageSize) {
+        return Result.success(userService.listExportHistory(pageNum, pageSize));
+    }
+
+    /** 删除导出历史 */
+    @DeleteMapping("/export-history/{id}")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:export')")
+    public Result<Void> deleteExportHistory(@PathVariable Long id) {
+        userService.deleteExportLog(id);
+        return Result.success();
+    }
+
+    /** 下载历史导出文件 */
+    @GetMapping("/export-history/{id}/download")
+    @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:export')")
+    public void downloadExportHistory(@PathVariable Long id, HttpServletResponse response) {
+        RosterExportLog log = userService.getExportLog(id);
+        byte[] bytes;
+        try {
+            bytes = Base64.getDecoder().decode(log.getFileContent());
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException("导出文件已损坏，请重新导出");
+        }
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        response.setHeader("Content-Disposition", "attachment; filename*=UTF-8''" + URLEncoder.encode(log.getFileName(), StandardCharsets.UTF_8));
+        try (var out = response.getOutputStream()) {
+            out.write(bytes);
+            out.flush();
+        } catch (IOException e) {
+            throw new BusinessException("文件下载失败");
+        }
     }
 }

@@ -3,7 +3,9 @@ package com.demand.system.module.bitable.service.impl;
 import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.ErrorCode;
 import com.demand.system.module.bitable.constant.MemberRole;
+import com.demand.system.module.bitable.entity.BitableBaseCustomRoleMember;
 import com.demand.system.module.bitable.entity.BitableBaseMember;
+import com.demand.system.module.bitable.entity.BitableBaseRolePermission;
 import com.demand.system.module.bitable.entity.BitableComment;
 import com.demand.system.module.bitable.entity.BitableDashboard;
 import com.demand.system.module.bitable.entity.BitableField;
@@ -11,7 +13,9 @@ import com.demand.system.module.bitable.entity.BitableRecord;
 import com.demand.system.module.bitable.entity.BitableTable;
 import com.demand.system.module.bitable.entity.BitableView;
 import com.demand.system.module.bitable.entity.BitableWebhookSubscription;
+import com.demand.system.module.bitable.mapper.BitableBaseCustomRoleMemberMapper;
 import com.demand.system.module.bitable.mapper.BitableBaseMemberMapper;
+import com.demand.system.module.bitable.mapper.BitableBaseRolePermissionMapper;
 import com.demand.system.module.bitable.mapper.BitableCommentMapper;
 import com.demand.system.module.bitable.mapper.BitableDashboardMapper;
 import com.demand.system.module.bitable.mapper.BitableFieldMapper;
@@ -19,10 +23,12 @@ import com.demand.system.module.bitable.mapper.BitableRecordMapper;
 import com.demand.system.module.bitable.mapper.BitableTableMapper;
 import com.demand.system.module.bitable.mapper.BitableViewMapper;
 import com.demand.system.module.bitable.mapper.BitableWebhookSubscriptionMapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.demand.system.module.bitable.service.BitableAuthorizationService;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -48,6 +54,8 @@ public class BitableAuthorizationServiceImpl implements BitableAuthorizationServ
     private final BitableCommentMapper commentMapper;
     private final BitableDashboardMapper dashboardMapper;
     private final BitableWebhookSubscriptionMapper webhookMapper;
+    private final BitableBaseCustomRoleMemberMapper customRoleMemberMapper;
+    private final BitableBaseRolePermissionMapper rolePermissionMapper;
     private final RedisTemplate<String, Object> redisTemplate;
 
     public BitableAuthorizationServiceImpl(BitableBaseMemberMapper memberMapper,
@@ -58,6 +66,8 @@ public class BitableAuthorizationServiceImpl implements BitableAuthorizationServ
                                            BitableCommentMapper commentMapper,
                                            BitableDashboardMapper dashboardMapper,
                                            BitableWebhookSubscriptionMapper webhookMapper,
+                                           BitableBaseCustomRoleMemberMapper customRoleMemberMapper,
+                                           BitableBaseRolePermissionMapper rolePermissionMapper,
                                            RedisTemplate<String, Object> redisTemplate) {
         this.memberMapper = memberMapper;
         this.tableMapper = tableMapper;
@@ -67,6 +77,8 @@ public class BitableAuthorizationServiceImpl implements BitableAuthorizationServ
         this.commentMapper = commentMapper;
         this.dashboardMapper = dashboardMapper;
         this.webhookMapper = webhookMapper;
+        this.customRoleMemberMapper = customRoleMemberMapper;
+        this.rolePermissionMapper = rolePermissionMapper;
         this.redisTemplate = redisTemplate;
     }
 
@@ -96,6 +108,14 @@ public class BitableAuthorizationServiceImpl implements BitableAuthorizationServ
             role = MemberRole.fromCode(member.getRole());
         }
 
+        // 自定义角色提升：用户是某自定义角色成员、且该角色在本 Base 至少一个表/仪表盘
+        // 上有非 none 授权时，按最高授权级别提升（edit→EDITOR，view→VIEWER）。
+        // 自定义角色的成员关系不在 bitable_base_members 里，不查这条通道会形同虚设。
+        MemberRole boost = resolveCustomRoleBoost(baseId, userId);
+        if (boost != null && (role == null || boost.isAtLeast(role))) {
+            role = boost;
+        }
+
         // 写入缓存（非成员也缓存，避免反复查库）
         if (role != null) {
             redisTemplate.opsForValue().set(cacheKey, role, ROLE_CACHE_TTL_MINUTES, TimeUnit.MINUTES);
@@ -105,6 +125,29 @@ public class BitableAuthorizationServiceImpl implements BitableAuthorizationServ
         }
 
         return role;
+    }
+
+    /** 自定义角色对该 Base 的最高授权级别（无成员关系或全为 none 时返回 null） */
+    private MemberRole resolveCustomRoleBoost(Long baseId, Long userId) {
+        List<BitableBaseCustomRoleMember> memberships = customRoleMemberMapper.selectList(
+                new LambdaQueryWrapper<BitableBaseCustomRoleMember>()
+                        .eq(BitableBaseCustomRoleMember::getMemberType, "user")
+                        .eq(BitableBaseCustomRoleMember::getMemberId, userId));
+        if (memberships.isEmpty()) {
+            return null;
+        }
+        List<Long> roleIds = memberships.stream().map(BitableBaseCustomRoleMember::getRoleId).distinct().toList();
+        List<BitableBaseRolePermission> perms = rolePermissionMapper.selectList(
+                new LambdaQueryWrapper<BitableBaseRolePermission>()
+                        .eq(BitableBaseRolePermission::getBaseId, baseId)
+                        .eq(BitableBaseRolePermission::getRoleType, "custom")
+                        .in(BitableBaseRolePermission::getCustomRoleId, roleIds)
+                        .ne(BitableBaseRolePermission::getPermissionLevel, "none"));
+        if (perms.isEmpty()) {
+            return null;
+        }
+        boolean editable = perms.stream().anyMatch(p -> "edit".equals(p.getPermissionLevel()));
+        return editable ? MemberRole.EDITOR : MemberRole.VIEWER;
     }
 
     @Override

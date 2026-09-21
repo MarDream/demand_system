@@ -66,6 +66,8 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/modules/user'
+import { useAppStore } from '@/stores/modules/app'
+import { getCurrentMenus } from '@/api/modules/menu'
 
 const router = useRouter()
 const route = useRoute()
@@ -98,8 +100,19 @@ async function handleLogin() {
     const password = loginForm.password.replace(/\s/g, '')
     await userStore.login(username, password)
     ElMessage.success('登录成功')
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/dashboard'
-    router.push(redirect)
+    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+    if (redirect) {
+      router.push(redirect)
+      return
+    }
+    // 无显式跳转目标时，按用户有权限的首个菜单决定首页（仪表盘本身已有 menu:dashboard 权限控制）
+    const appStore = useAppStore()
+    try {
+      const res = await getCurrentMenus() as any
+      const data = res.data ?? res
+      appStore.setMenuList(Array.isArray(data) ? data : [])
+    } catch { /* 菜单拉取失败时走默认首页 */ }
+    router.push(appStore.resolveHomePath() ?? '/dashboard')
   } catch (err: any) {
     ElMessage.error(err?.message || '登录失败，请检查用户名和密码')
   } finally {
@@ -120,7 +133,7 @@ async function handleLogin() {
 
 .login-card {
   width: 420px;
-  background: #fff;
+  background: var(--color-surface);
   border-radius: 8px;
   padding: 40px 36px 30px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);

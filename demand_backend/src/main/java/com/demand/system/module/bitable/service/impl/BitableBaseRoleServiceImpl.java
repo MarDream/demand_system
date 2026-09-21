@@ -95,8 +95,8 @@ public class BitableBaseRoleServiceImpl implements BitableBaseRoleService {
             result.add(vo);
         }
 
-        // 2. 自定义角色
-        List<BitableBaseCustomRole> customRoles = customRoleMapper.selectByBaseId(baseId);
+        // 2. 自定义角色（全局有效：跨 Base 聚合展示，任何 Base 的对象都可配置它们）
+        List<BitableBaseCustomRole> customRoles = customRoleMapper.selectGlobalAll();
         for (BitableBaseCustomRole role : customRoles) {
             BitableBaseRoleVO vo = new BitableBaseRoleVO();
             vo.setRoleType("custom");
@@ -219,6 +219,8 @@ public class BitableBaseRoleServiceImpl implements BitableBaseRoleService {
         role.setCreatorId(userId);
 
         customRoleMapper.insert(role);
+        // 回填新生成的角色ID，前端乐观插入用
+        dto.setCustomRoleId(role.getId());
         return dto;
     }
 
@@ -294,6 +296,11 @@ public class BitableBaseRoleServiceImpl implements BitableBaseRoleService {
         roleMemberMapper.delete(wrapper);
     }
 
+    /** dashboard/dashboard_data 的默认级别是 full，「无权限/不可见」必须显式落行才生效 */
+    private static boolean needsExplicitRow(String permissionType, String level) {
+        return !("none".equals(level)) || "dashboard".equals(permissionType) || "dashboard_data".equals(permissionType);
+    }
+
     @Override
     @Transactional
     public void setRolePermission(BitableBaseRolePermissionDTO dto, Long userId) {
@@ -315,7 +322,7 @@ public class BitableBaseRoleServiceImpl implements BitableBaseRoleService {
         rolePermissionMapper.delete(wrapper);
 
         // 插入新权限（如果不是 none）
-        if (!"none".equals(dto.getPermissionLevel())) {
+        if (needsExplicitRow(dto.getPermissionType(), dto.getPermissionLevel())) {
             BitableBaseRolePermission perm = new BitableBaseRolePermission();
             perm.setBaseId(dto.getBaseId());
             perm.setRoleType(dto.getRoleType());
@@ -354,7 +361,7 @@ public class BitableBaseRoleServiceImpl implements BitableBaseRoleService {
         rolePermissionMapper.delete(delWrapper);
 
         // 批量插入（如果不是 none）
-        if (!"none".equals(permissionLevel)) {
+        if (needsExplicitRow(permissionType, permissionLevel)) {
             for (BitableTable table : tables) {
                 BitableBaseRolePermission perm = new BitableBaseRolePermission();
                 perm.setBaseId(baseId);
@@ -392,7 +399,7 @@ public class BitableBaseRoleServiceImpl implements BitableBaseRoleService {
             rolePermissionMapper.delete(wrapper);
 
             // 插入新权限（如果不是 none）
-            if (!"none".equals(dto.getPermissionLevel())) {
+            if (needsExplicitRow(dto.getPermissionType(), dto.getPermissionLevel())) {
                 BitableBaseRolePermission perm = new BitableBaseRolePermission();
                 perm.setBaseId(dto.getBaseId());
                 perm.setRoleType(dto.getRoleType());
@@ -405,5 +412,77 @@ public class BitableBaseRoleServiceImpl implements BitableBaseRoleService {
                 rolePermissionMapper.insert(perm);
             }
         }
+    }
+
+    // ==================== 视图 / 仪表盘权限解析与校验 ====================
+
+    /** 权限宽松度权重（越大越宽松） */
+    private static int permissionWeight(String level) {
+        return switch (level) {
+            case "full" -> 4;
+            case "edit" -> 3;
+            case "view" -> 2;
+            default -> 1; // none 及未知值
+        };
+    }
+
+    /** 解析用户在 Base 内的角色标识（system:<code> + custom:<id>），owner 恒包含以放行 */
+    private Set<String> resolveRoleIdentifiers(Long baseId, Long userId) {
+        Set<String> keys = new HashSet<>();
+        BitableBaseMember member = baseMemberMapper.selectByBaseAndUser(baseId, userId);
+        if (member != null) {
+            MemberRole role = MemberRole.fromCode(member.getRole());
+            if (role != null) {
+                keys.add("system:" + role.getCode());
+            }
+        }
+        for (Long roleId : customRoleMapper.selectGlobalCustomRoleIdsByMember(userId)) {
+            keys.add("custom:" + roleId);
+        }
+        return keys;
+    }
+
+    @Override
+    public String resolveObjectPermission(Long baseId, Long tableId, String permissionType, Long userId) {
+        if (baseId == null || tableId == null || userId == null) {
+            return null;
+        }
+        Set<String> roleKeys = resolveRoleIdentifiers(baseId, userId);
+        if (roleKeys.isEmpty()) {
+            return null;
+        }
+        String best = null;
+        for (BitableBaseRolePermission perm : rolePermissionMapper.selectByBaseAndType(baseId, permissionType)) {
+            if (!Objects.equals(perm.getTableId(), tableId) || !roleKeys.contains(perm.getRoleType() + ":" + (perm.getRoleType().equals("system") ? perm.getSystemRoleCode() : perm.getCustomRoleId()))) {
+                continue;
+            }
+            String level = perm.getPermissionLevel();
+            if (best == null || permissionWeight(level) > permissionWeight(best)) {
+                best = level;
+            }
+        }
+        return best;
+    }
+
+    @Override
+    public void checkViewManagePermission(Long baseId, Long tableId, Long userId) {
+        String level = resolveObjectPermission(baseId, tableId, "view", userId);
+        if ("view".equals(level)) {
+            throw new BusinessException("当前角色的视图权限为「可查看」，不能新增、修改或删除视图");
+        }
+    }
+
+    private static final Set<String> DASHBOARD_LEVELS = Set.of("full", "view", "none");
+
+    @Override
+    public String resolveDashboardPermission(Long baseId, Long dashboardId, Long userId) {
+        String level = resolveObjectPermission(baseId, dashboardId, "dashboard", userId);
+        return level != null && DASHBOARD_LEVELS.contains(level) ? level : "full";
+    }
+
+    @Override
+    public String resolveDashboardDataPermission(Long baseId, Long dashboardId, Long userId) {
+        String level = resolveObjectPermission(baseId, dashboardId, "dashboard_data", userId);
+        return level != null && DASHBOARD_LEVELS.contains(level) ? level : "full";
     }
 }

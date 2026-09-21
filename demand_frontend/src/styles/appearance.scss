@@ -1,0 +1,265 @@
+// ===== 外观设置全局样式 =====
+// 三套机制：
+// 1) html.dark            → 深色模式 token 覆盖（系统 token + Element Plus 变量）
+// 2) html[data-appearance-radius] → 圆角档位变量
+// 3) 弹框/浮层统一圆角 → 全部引用可调变量，个人设置中切换即时生效
+
+// ============ 圆角档位变量 ============
+:root {
+  --app-radius-factor: 1;
+  // 组件基准圆角（默认"柔和"档）
+  --app-radius-dialog: 14px;
+  --app-radius-popper: 10px;
+  --app-radius-input: 8px;
+  --app-radius-button: 8px;
+  --app-radius-card: 12px;
+  --app-radius-tag: 6px;
+}
+
+html[data-appearance-radius='round'] {
+  --app-radius-factor: 1.5;
+  --app-radius-dialog: 18px;
+  --app-radius-popper: 14px;
+  --app-radius-input: 12px;
+  --app-radius-button: 12px;
+  --app-radius-card: 16px;
+  --app-radius-tag: 8px;
+}
+
+html[data-appearance-radius='soft'] {
+  --app-radius-dialog: 14px;
+  --app-radius-popper: 10px;
+  --app-radius-input: 8px;
+  --app-radius-button: 8px;
+  --app-radius-card: 12px;
+  --app-radius-tag: 6px;
+}
+
+html[data-appearance-radius='none'] {
+  --app-radius-factor: 0;
+  --app-radius-dialog: 2px;
+  --app-radius-popper: 2px;
+  --app-radius-input: 2px;
+  --app-radius-button: 2px;
+  --app-radius-card: 2px;
+  --app-radius-tag: 2px;
+}
+
+// ============ 深色模式 token 覆盖 ============
+html.dark {
+  color-scheme: dark;
+
+  // ----- 基础背景/前景（slate 深色系） -----
+  --color-background: #0B1220;
+  --color-foreground: #E2E8F0;
+  --color-surface: #111A2C;
+  --color-surface-alt: #1A2439;
+  --color-muted: #243050;
+  --color-muted-text: #8A94A8;
+  --color-border: #243050;
+  --color-border-hover: #324268;
+
+  --color-text-primary: #F1F5F9;
+  --color-text-secondary: #B7C0D0;
+  --color-text-tertiary: #8A94A8;
+  --color-text-placeholder: #5B6572;
+  --color-text-disabled: #3E4A63;
+
+  // ----- 浅色 tint / 填充类（浅色下是淡色块，暗色下必须同步转为暗色 tint，
+  //       否则出现"白底白字 / 浅块浅字"的对比度断裂） -----
+  --color-fill-secondary: #1A2439;
+  --color-accent-light: rgba(99, 102, 241, 0.18);
+  --color-ring-offset: #0B1220;
+  --color-header-text: #B7C0D0;
+
+  // ----- Element Plus 核心变量 -----
+  --el-bg-color: #111A2C;
+  --el-bg-color-page: #0B1220;
+  --el-bg-color-overlay: #182238;
+  --el-text-color-primary: #F1F5F9;
+  --el-text-color-regular: #B7C0D0;
+  --el-text-color-secondary: #8A94A8;
+  --el-text-color-placeholder: #5B6572;
+  --el-text-color-disabled: #3E4A63;
+  --el-border-color: #2A3856;
+  --el-border-color-light: #223050;
+  --el-border-color-lighter: #1C2942;
+  --el-border-color-extra-light: #16223A;
+  --el-border-color-dark: #324268;
+  --el-border-color-darker: #3E4A63;
+  --el-fill-color: #1A2439;
+  --el-fill-color-light: #16223A;
+  --el-fill-color-lighter: #131E33;
+  --el-fill-color-extra-light: #0F1830;
+  --el-fill-color-blank: #111A2C;
+  --el-fill-color-dark: #243050;
+  --el-fill-color-darker: #2A3856;
+
+  // ----- 阴影加深 -----
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.35), 0 2px 4px -2px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.3);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.45), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+  --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.55);
+  --el-box-shadow: var(--shadow-md);
+  --el-box-shadow-light: var(--shadow-sm);
+  --el-box-shadow-lighter: var(--shadow-xs);
+  --el-box-shadow-dark: var(--shadow-lg);
+
+  // ----- 侧边栏（深色下与主区同底色，弱化分层） -----
+  --color-sidebar-bg: #0E1626;
+  --color-sidebar-bg-gradient: linear-gradient(180deg, #0E1626 0%, #0B1220 100%);
+  --color-sidebar-border: rgba(255, 255, 255, 0.06);
+
+  // ----- 头部 -----
+  --color-header-bg: #10192B;
+  --color-header-border: #223050;
+
+  // ----- 遮罩 -----
+  --color-overlay: rgba(0, 0, 0, 0.6);
+  --el-overlay-color: rgba(0, 0, 0, 0.6);
+
+  // ----- 状态色（暗底提亮） -----
+  --color-success: #34D399;
+  --color-warning: #FBBF24;
+  --color-danger: #F87171;
+  --color-info: #94A3B8;
+  --color-success-text: #6EE7B7;
+  --color-warning-text: #FCD34D;
+  --color-danger-text: #FCA5A5;
+  --el-color-success: #34D399;
+  --el-color-warning: #FBBF24;
+  --el-color-danger: #F87171;
+  --el-color-info: #94A3B8;
+  // 多维表格类型图标（暗底提亮）
+  --color-type-dashboard: #F0B25A;
+
+  // ----- 渐变 header -----
+  --gradient-header: linear-gradient(180deg, #16223A 0%, #131E33 100%);
+
+  // ----- 多维表格专用 token 同步暗色 -----
+  --color-kanban-column-bg: #131E33;
+  --color-kanban-column-bg-hover: #1A2439;
+  --color-kanban-column-drop-target: rgba(37, 99, 235, 0.12);
+  --color-kanban-card-bg: #111A2C;
+  --color-today-bg: rgba(37, 99, 235, 0.14);
+  --color-rating-inactive: #324268;
+  --color-checkbox-inactive: #47597E;
+
+  // 暗底上标签文字必须提亮（浅色下是深色前景，暗色下原样保留会糊在暗底里）
+  --color-tag-red-fg: #FCA5A5;
+  --color-tag-orange-fg: #FDBA74;
+  --color-tag-yellow-fg: #FDE047;
+  --color-tag-green-fg: #86EFAC;
+  --color-tag-teal-fg: #5EEAD4;
+  --color-tag-blue-fg: #93C5FD;
+  --color-tag-purple-fg: #A5B4FC;
+  --color-tag-pink-fg: #F9A8D4;
+  --color-tag-gray-fg: #CBD5E1;
+  --color-tag-default-fg: #93C5FD;
+
+  // 画廊缺图占位（暗色下用暗色渐变）
+  --color-gallery-placeholder-from: #1E3A5F;
+  --color-gallery-placeholder-to: #312E81;
+}
+
+// ============ 深色模式下组件微调 ============
+html.dark {
+  .el-dialog,
+  .el-message-box {
+    background: var(--el-bg-color-overlay);
+  }
+
+  .el-card {
+    background: var(--color-surface);
+    border-color: var(--color-border);
+  }
+
+  .el-table {
+    --el-table-header-bg-color: #16223A;
+    --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.04);
+    background: var(--color-surface);
+  }
+
+  // 滚动条
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.18);
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.28);
+    }
+  }
+}
+
+// ============ 全局弹框/浮层统一圆角 ============
+// 全部引用 --app-radius-*，随个人设置切换即时生效
+.el-dialog {
+  border-radius: var(--app-radius-dialog) !important;
+  overflow: hidden;
+}
+
+.el-message-box {
+  border-radius: var(--app-radius-dialog) !important;
+  overflow: hidden;
+}
+
+.el-popper {
+  border-radius: var(--app-radius-popper);
+
+  &.is-light,
+  &.is-dark {
+    border-radius: var(--app-radius-popper);
+  }
+}
+
+// 下拉面板 / 选择器面板 / 级联 / 日期等浮层
+.el-select-dropdown,
+.el-picker-panel,
+.el-cascader-panel,
+.el-dropdown-menu,
+.el-autocomplete-suggestion {
+  border-radius: var(--app-radius-popper);
+  overflow: hidden;
+}
+
+// 消息 / 通知
+.el-message {
+  border-radius: var(--app-radius-popper);
+}
+
+.el-notification {
+  border-radius: var(--app-radius-popper);
+}
+
+// 输入控件 / 按钮（弹框内部同步）
+.el-input {
+  --el-input-border-radius: var(--app-radius-input);
+}
+
+.el-textarea {
+  --el-input-border-radius: var(--app-radius-input);
+}
+
+.el-button {
+  --el-button-border-radius: var(--app-radius-button);
+}
+
+.el-select__wrapper {
+  border-radius: var(--app-radius-input);
+}
+
+.el-card {
+  --el-card-border-radius: var(--app-radius-card);
+}
+
+.el-tag {
+  --el-tag-border-radius: var(--app-radius-tag);
+}
+
+// 消息框内容按钮组
+.el-message-box .el-message-box__btns {
+  .el-button {
+    border-radius: var(--app-radius-button);
+  }
+}

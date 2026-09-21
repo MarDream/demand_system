@@ -335,7 +335,10 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
      */
     private String cellDisplayText(BitableCellValueVO cell, BitableField field) {
         if (cell.getValueText() != null && !cell.getValueText().isBlank()) {
-            return cell.getValueText();
+            // 富文本存的是 HTML，导出 Excel 时剥离标签只留可读文本
+            return "rich_text".equals(field.getFieldType())
+                    ? stripHtmlToPlainText(cell.getValueText())
+                    : cell.getValueText();
         }
         if (cell.getValueNumber() != null) {
             return cell.getValueNumber().toPlainString();
@@ -354,6 +357,24 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
             return String.valueOf(json);
         }
         return "";
+    }
+
+    /**
+     * 富文本 HTML 转纯文本：块级标签换行、剥离其余标签、还原常见实体。
+     * 供 Excel 导出使用，导出的是可读文本而非 HTML 源码。
+     */
+    private static String stripHtmlToPlainText(String html) {
+        String text = html
+                .replaceAll("(?i)<\\s*(br|hr)\\s*/?\\s*>", "\n")
+                .replaceAll("(?i)</\\s*(p|div|li|h[1-6]|tr|blockquote|pre)\\s*>", "\n")
+                .replaceAll("<[^>]+>", "")
+                .replace("&nbsp;", " ")
+                .replace("&amp;", "&")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&quot;", "\"")
+                .replace("&#39;", "'");
+        return text.replaceAll("\\n{3,}", "\n\n").trim();
     }
 
     @Override

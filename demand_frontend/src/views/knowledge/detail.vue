@@ -806,7 +806,7 @@ function statusLabel(status: string) {
 }
 
 .filter-field__label {
-  color: #6b7280;
+  color: var(--color-muted-text);
   font-size: 12px;
   font-weight: 600;
   line-height: 1;
@@ -842,7 +842,7 @@ function statusLabel(status: string) {
 .filter-input :deep(.el-input__inner),
 .filter-input :deep(.el-select__selected-item),
 .filter-input :deep(.el-range-input) {
-  color: #334155;
+  color: var(--color-text-primary);
   font-size: 14px;
 }
 
@@ -920,7 +920,7 @@ function statusLabel(status: string) {
   border-radius: 999px;
   padding: 0 10px;
   border-color: #d7e8fb;
-  background: #f4f9ff;
+  background: var(--color-primary-subtle);
   color: #2b6cb0;
 }
 
@@ -953,8 +953,8 @@ function statusLabel(status: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #f4f9ff;
-  border: 1px solid #d9ecff;
+  background: var(--color-primary-subtle);
+  border: 1px solid var(--color-primary-light);
   border-radius: 6px;
   padding: 10px 16px;
   margin-bottom: 12px;
@@ -989,7 +989,7 @@ function statusLabel(status: string) {
 
 /* ===== 表格 ===== */
 .table-wrapper {
-  background: #fff;
+  background: var(--color-surface);
   border-radius: 8px;
   border: 1px solid var(--color-border);
   overflow: hidden;
@@ -1025,7 +1025,7 @@ function statusLabel(status: string) {
   font-family: 'SF Mono', 'Consolas', monospace;
   font-size: 12px;
   color: var(--color-text-secondary);
-  background: #f4f4f5;
+  background: var(--color-surface-alt);
   padding: 2px 6px;
   border-radius: 4px;
 }
@@ -1070,7 +1070,7 @@ function statusLabel(status: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #fff;
+  background: var(--color-surface);
   border-radius: 8px;
   border: 1px solid var(--color-border);
   padding: 12px 20px;
@@ -1104,7 +1104,7 @@ function statusLabel(status: string) {
 .share-link {
   padding: 10px 12px;
   border-radius: 6px;
-  background: #f5f7fa;
+  background: var(--color-fill-secondary);
   color: var(--color-text-secondary);
   word-break: break-all;
   text-align: left;
@@ -1148,7 +1148,7 @@ function statusLabel(status: string) {
   margin-bottom: 8px;
 }
 .log-error-content {
-  background: #fef0f0;
+  background: var(--color-danger-bg);
   color: var(--color-danger);
   padding: 10px 12px;
   border-radius: 4px;

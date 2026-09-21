@@ -145,14 +145,14 @@ function handleCardClick(record: BitableRecord) {
   align-items: center;
   gap: 12px;
   padding: 14px 20px;
-  border-bottom: 1px solid var(--color-border, #e2e8f0);
-  background: var(--color-surface, #fff);
+  border-bottom: 1px solid var(--color-border, var(--color-border));
+  background: var(--color-surface, var(--color-surface));
   flex-shrink: 0;
 
   .gallery-header__label {
     font-size: 13px;
     font-weight: 500;
-    color: var(--color-text-secondary, #475569);
+    color: var(--color-text-secondary, var(--color-text-secondary));
   }
 }
 
@@ -179,9 +179,9 @@ function handleCardClick(record: BitableRecord) {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--color-primary-subtle, #eff6ff) 0%, var(--color-accent-light, #e0e7ff) 100%);
+  background: linear-gradient(135deg, var(--color-primary-subtle, var(--color-primary-subtle)) 0%, var(--color-accent-light, #e0e7ff) 100%);
   border-radius: 50%;
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary, var(--color-primary));
   font-size: 36px;
   margin-bottom: 8px;
 }
@@ -189,13 +189,13 @@ function handleCardClick(record: BitableRecord) {
 .gallery-empty__text {
   font-size: 15px;
   font-weight: 600;
-  color: var(--color-text-primary, #0f172a);
+  color: var(--color-text-primary, var(--color-text-primary));
   margin: 0;
 }
 
 .gallery-empty__hint {
   font-size: 12px;
-  color: var(--color-text-secondary, #475569);
+  color: var(--color-text-secondary, var(--color-text-secondary));
   margin: 0;
 }
 
@@ -211,8 +211,8 @@ function handleCardClick(record: BitableRecord) {
 
 // 卡片：14px 圆角 + 3:2 封面 + hover 抬起
 .gallery-card {
-  background: var(--color-surface, #fff);
-  border: 0.5px solid var(--color-border, #e2e8f0);
+  background: var(--color-surface, var(--color-surface));
+  border: 0.5px solid var(--color-border, var(--color-border));
   border-radius: var(--radius-card-lg, 14px);
   overflow: hidden;
   cursor: pointer;
@@ -227,7 +227,7 @@ function handleCardClick(record: BitableRecord) {
 
 .gallery-card-image {
   aspect-ratio: 3 / 2;
-  background: var(--color-background, #f8fafc);
+  background: var(--color-background, var(--color-background));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -254,7 +254,7 @@ function handleCardClick(record: BitableRecord) {
 .gallery-card-placeholder {
   font-size: 56px;
   font-weight: 700;
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary, var(--color-primary));
   text-shadow: 0 2px 8px rgba(37, 99, 235, 0.15);
   font-family: var(--font-family-base, 'Inter', sans-serif);
 }
@@ -266,7 +266,7 @@ function handleCardClick(record: BitableRecord) {
 .gallery-card-title {
   font-size: 14px;
   font-weight: 600;
-  color: var(--color-text-primary, #0f172a);
+  color: var(--color-text-primary, var(--color-text-primary));
   margin-bottom: 10px;
   white-space: nowrap;
   overflow: hidden;
@@ -287,14 +287,14 @@ function handleCardClick(record: BitableRecord) {
   gap: 6px;
 
   .field-label {
-    color: var(--color-text-placeholder, #94a3b8);
+    color: var(--color-text-placeholder, var(--color-text-tertiary));
     font-weight: 500;
     flex-shrink: 0;
     min-width: 50px;
   }
 
   .field-value {
-    color: var(--color-text-primary, #0f172a);
+    color: var(--color-text-primary, var(--color-text-primary));
     font-weight: 500;
     flex: 1;
     overflow: hidden;

@@ -225,7 +225,7 @@ defineExpose({
 
 <style scoped>
 .upload-zone {
-  border: 1px dashed #d9d9d9;
+  border: 1px dashed var(--color-border);
   border-radius: 6px;
   padding: 20px;
   text-align: center;

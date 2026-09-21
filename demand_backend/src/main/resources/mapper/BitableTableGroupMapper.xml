@@ -43,4 +43,33 @@
         </choose>
     </select>
 
+    <!-- 按传入顺序批量回写排序号（列表序号即 sort_order），仅限制在当前 Base 内，防止越权改其它 Base 的分组 -->
+    <update id="updateSortOrders">
+        UPDATE `bitable_table_groups`
+        SET sort_order = CASE id
+            <foreach collection="ids" item="id" index="idx" open="" close="" separator="">
+                WHEN #{id} THEN #{idx}
+            </foreach>
+        END
+        WHERE base_id = #{baseId}
+          AND deleted_at = 0
+          AND id IN
+        <foreach collection="ids" item="id" open="(" close=")" separator=",">
+            #{id}
+        </foreach>
+    </update>
+
+    <!-- 同名检测：同一 Base 内同一父级下（含根层级）同名分组计数 -->
+    <select id="countSameNameInParent" resultType="int">
+        SELECT COUNT(*)
+        FROM `bitable_table_groups`
+        WHERE base_id = #{baseId}
+          AND deleted_at = 0
+          AND name = #{name}
+          AND parent_id &lt;=&gt; #{parentId}
+        <if test="excludeId != null">
+          AND id != #{excludeId}
+        </if>
+    </select>
+
 </mapper>

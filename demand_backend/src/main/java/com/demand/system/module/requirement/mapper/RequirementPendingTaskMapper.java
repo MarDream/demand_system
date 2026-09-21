@@ -74,6 +74,14 @@ public interface RequirementPendingTaskMapper extends BaseMapper<RequirementPend
                                     @Param("isSuperAdmin") boolean isSuperAdmin,
                                     @Param("visibleOrgIds") List<Long> visibleOrgIds);
 
+    /**
+     * 统计用户的待办任务数量（带数据权限 org 过滤 + 按当前生效角色收窄，用于「我的待办」角标）
+     */
+    Long countByUserIdWithOrgFilterAndActiveRole(@Param("userId") Long userId,
+                                                 @Param("roleIds") List<Long> roleIds,
+                                                 @Param("isSuperAdmin") boolean isSuperAdmin,
+                                                 @Param("visibleOrgIds") List<Long> visibleOrgIds);
+
     /** 统计用户的只读抄送查阅数量（带数据权限过滤） */
     Long countCcReadOnlyByUserIdWithOrgFilter(@Param("userId") Long userId,
                                               @Param("isSuperAdmin") boolean isSuperAdmin,
@@ -87,12 +95,14 @@ public interface RequirementPendingTaskMapper extends BaseMapper<RequirementPend
                                         @Param("currentNodeId") String currentNodeId);
 
     /**
-     * 统计用户对指定需求当前流程位置的运行期待办权限
+     * 统计用户对指定需求当前流程位置的运行期待办权限（按当前生效角色收窄：
+     * 产品经理角色下不能办理绑定给运营工单员的节点）
      */
     Long countAccessibleByCurrentWorkflowPositionAndUser(@Param("requirementId") Long requirementId,
                                                          @Param("workflowInstanceId") Long workflowInstanceId,
                                                          @Param("currentNodeId") String currentNodeId,
-                                                         @Param("userId") Long userId);
+                                                         @Param("userId") Long userId,
+                                                         @Param("roleIds") List<Long> roleIds);
 
     /**
      * 查询需求当前流程位置的所有直接待办人ID

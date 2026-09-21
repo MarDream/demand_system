@@ -45,4 +45,21 @@ public interface BitableBaseGroupService {
      * Base 归组（groupId 为 null 表示移出分组）
      */
     void moveBaseToGroup(Long baseId, Long groupId, Long userId);
+
+    /**
+     * 批量排序 Base 分组：orderedIds 须为同一父级下的同级分组，顺序即目标顺序。
+     * 服务端按各分组当前的 parentId 分桶校验同级一致性。
+     *
+     * @param orderedIds 按目标顺序排列的分组ID列表
+     * @param userId     操作人ID
+     */
+    void sortGroups(List<Long> orderedIds, Long userId);
+
+    /**
+     * 批量排序 Base（同级顺序，按传入顺序回写 sort_order）。
+     * 权限校验在 Controller 层逐个完成，这里只做存在性校验。
+     *
+     * @param orderedIds 按目标顺序排列的 Base ID 列表
+     */
+    void sortBases(List<Long> orderedIds);
 }

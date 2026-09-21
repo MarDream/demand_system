@@ -1,5 +1,6 @@
 package com.demand.system.module.user.dto;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 public class UserVO {
@@ -34,9 +35,49 @@ public class UserVO {
 
     private String systemRole;
 
+    private String employeeType;
+
+    private String workStatus;
+
+    private LocalDate hireDate;
+
+    private LocalDate birthday;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
+
+    public String getEmployeeType() {
+        return employeeType;
+    }
+
+    public void setEmployeeType(String employeeType) {
+        this.employeeType = employeeType;
+    }
+
+    public String getWorkStatus() {
+        return workStatus;
+    }
+
+    public void setWorkStatus(String workStatus) {
+        this.workStatus = workStatus;
+    }
+
+    public LocalDate getHireDate() {
+        return hireDate;
+    }
+
+    public void setHireDate(LocalDate hireDate) {
+        this.hireDate = hireDate;
+    }
+
+    public LocalDate getBirthday() {
+        return birthday;
+    }
+
+    public void setBirthday(LocalDate birthday) {
+        this.birthday = birthday;
+    }
 
     public Long getId() {
         return id;

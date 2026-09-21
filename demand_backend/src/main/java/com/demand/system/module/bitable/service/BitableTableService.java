@@ -51,4 +51,13 @@ public interface BitableTableService {
      * @param id 数据表ID
      */
     void deleteTable(Long id, Long userId);
+
+    /**
+     * 批量排序数据表：orderedIds 须为同一 Base 内的表，顺序即目标顺序。
+     * 服务端按各表当前的 baseId / groupId 校验同组一致性（同组才能比较顺序）。
+     *
+     * @param orderedIds 按目标顺序排列的数据表ID列表
+     * @param userId     操作人ID
+     */
+    void sortTables(List<Long> orderedIds, Long userId);
 }

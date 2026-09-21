@@ -268,7 +268,7 @@ const overviewCards = computed(() => {
   const docs = store.knowledgeBases.reduce((sum, item) => sum + (item.docCount || 0), 0)
   const chunks = store.knowledgeBases.reduce((sum, item) => sum + (item.chunkCount || 0), 0)
   return [
-    { label: '知识库总数', value: total, tip: '已接入的知识空间', icon: 'Collection', color: 'linear-gradient(135deg, #2563eb, #6366f1)' },
+    { label: '知识库总数', value: total, tip: '已接入的知识空间', icon: 'Collection', color: 'linear-gradient(135deg, var(--color-primary), var(--color-accent))' },
     { label: '活跃知识库', value: active, tip: '可被检索和更新的知识库', icon: 'DocumentChecked', color: 'linear-gradient(135deg, #22c55e, #16a34a)' },
     { label: '文档总量', value: docs, tip: '所有知识库累计文档数', icon: 'Files', color: 'linear-gradient(135deg, #f59e0b, #d97706)' },
     { label: '分块总量', value: chunks, tip: '向量检索使用的文本分块', icon: 'DataBoard', color: 'linear-gradient(135deg, #8b5cf6, #7c3aed)' },
@@ -675,19 +675,19 @@ async function handleSubmit() {
   white-space: nowrap;
 
   &.is-star {
-    background: #fef3c7;
-    color: #92400e;
+    background: var(--color-warning-bg);
+    color: var(--color-warning-text);
     display: inline-flex;
     align-items: center;
     gap: 2px;
     .el-icon { font-size: 11px; }
   }
   &.is-active {
-    background: #dcfce7;
-    color: #166534;
+    background: var(--color-success-bg);
+    color: var(--color-success-text);
   }
   &.is-archived {
-    background: #f4f4f5;
+    background: var(--color-surface-alt);
     color: #71717a;
   }
 }
@@ -798,7 +798,7 @@ async function handleSubmit() {
   &__title {
     font-size: 13px;
     font-weight: 600;
-    color: #92400e;
+    color: var(--color-warning-text);
     margin-bottom: 8px;
   }
 }
@@ -819,9 +819,9 @@ async function handleSubmit() {
   code {
     padding: 1px 5px;
     border-radius: 4px;
-    background: #fef3c7;
+    background: var(--color-warning-bg);
     font-size: 11px;
-    color: #92400e;
+    color: var(--color-warning-text);
   }
 }
 

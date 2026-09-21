@@ -209,7 +209,10 @@ public class MilvusVectorStore {
         }
 
         Map<String, Object> searchParams = new HashMap<>();
-        searchParams.put("ef", String.valueOf(milvusConfig.getHnswEfSearchDefault()));
+        // HNSW 要求 ef >= limit(k)：上层检索会按倍数扩量候选（如 topK*5=180），
+        // 固定 ef=128 会在 k>128 时被 Milvus 拒绝（out of range in json: ef should be larger than k）
+        int ef = Math.max(milvusConfig.getHnswEfSearchDefault(), topK);
+        searchParams.put("ef", String.valueOf(ef));
 
         SearchReq.SearchReqBuilder builder = SearchReq.builder()
                 .collectionName(collectionName)

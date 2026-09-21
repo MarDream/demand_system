@@ -2065,13 +2065,13 @@ watch(activeTab, (tab) => {
 }
 
 .field-tip-badge {
-  color: var(--el-color-info, #909399);
+  color: var(--el-color-info, var(--color-text-tertiary));
   font-size: 14px;
   cursor: help;
   transition: color 0.15s ease;
 
   &:hover {
-    color: var(--el-color-primary, #409eff);
+    color: var(--el-color-primary, var(--color-primary));
   }
 }
 
@@ -2132,7 +2132,7 @@ watch(activeTab, (tab) => {
 
 .drag-handle {
   cursor: grab;
-  color: #c0c4cc;
+  color: var(--color-text-tertiary);
   padding: 6px;
   border-radius: 4px;
   transition: color 0.2s, background-color 0.2s, transform 0.15s;
@@ -2159,7 +2159,7 @@ watch(activeTab, (tab) => {
 }
 
 :deep(.sortable-chosen) {
-  background: #f5f7fa;
+  background: var(--color-fill-secondary);
 }
 
 :deep(.el-table__body-wrapper tbody) {

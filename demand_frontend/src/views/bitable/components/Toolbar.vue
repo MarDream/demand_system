@@ -1,23 +1,7 @@
 <template>
   <div class="bitable-toolbar">
-    <!-- 左侧：表名 + 视图选择器 -->
+    <!-- 左侧：视图选择器（当前数据表名在顶部面包屑展示，此处不重复） -->
     <div class="bitable-toolbar__left">
-      <!-- 表名（可编辑） -->
-      <el-input
-        v-if="editingName"
-        ref="nameInputRef"
-        v-model="tempName"
-        size="small"
-        style="width: 200px;"
-        @blur="handleNameBlur"
-        @keyup.enter="handleNameBlur"
-        @keyup.escape="cancelEdit"
-      />
-      <span v-else class="bitable-toolbar__name" @click="startEditName">
-        <el-icon class="bitable-toolbar__name-icon"><Document /></el-icon>
-        {{ table?.name || '未选择表' }}
-      </span>
-
       <!-- 视图选择器下拉 -->
       <el-dropdown trigger="click" class="view-selector" @command="handleViewSelectorCommand">
         <span class="view-selector__trigger">
@@ -35,6 +19,12 @@
             >
               <el-icon><component :is="getViewIcon(view.viewType)" /></el-icon>
               <span>{{ view.name }}</span>
+              <!-- 走查 P2-5：视图项上标识已应用的筛选/分组配置 -->
+              <el-icon
+                v-if="viewHasFilter(view) || viewHasGroup(view)"
+                class="view-selector__state"
+                :title="[viewHasFilter(view) ? '已应用筛选' : '', viewHasGroup(view) ? '已应用分组' : ''].filter(Boolean).join(' · ')"
+              ><Filter /></el-icon>
               <el-tag v-if="view.isDefault" size="small" type="warning" class="view-selector__default-tag">默认</el-tag>
             </el-dropdown-item>
             <el-dropdown-item divided :command="{ type: 'manage' }">
@@ -43,6 +33,11 @@
           </el-dropdown-menu>
         </template>
       </el-dropdown>
+
+      <!-- 字段配置 -->
+      <el-button size="small" class="field-config-btn" @click="emit('openFieldConfig')">
+        <el-icon><Setting /></el-icon> 字段配置
+      </el-button>
 
       <!-- 新建视图按钮 -->
       <el-dropdown trigger="click" @command="(type: string) => emit('createView', type as ViewType)">
@@ -62,19 +57,86 @@
       </el-dropdown>
     </div>
 
-    <!-- 中间：高频操作 -->
+    <!-- 中间：高频操作（钉钉风格动作组：添加一行 / 字段管理 / 筛选 / 分组 / 排序 / 行高） -->
     <div class="bitable-toolbar__center">
-      <el-button size="small" type="primary" @click="emit('addField')">
-        <el-icon><Plus /></el-icon> 添加字段
+      <el-button size="small" text class="toolbar-action" @click="emit('addRow')">
+        <el-icon><CirclePlus /></el-icon> <span class="toolbar-action__label">添加一行</span>
       </el-button>
-      <el-button size="small" @click="emit('openFilter')">
-        <el-icon><Filter /></el-icon> 筛选
+      <el-button size="small" text class="toolbar-action" @click="emit('openFieldConfig')">
+        <el-icon><Setting /></el-icon> <span class="toolbar-action__label">字段管理</span>
+      </el-button>
+      <el-button size="small" text class="toolbar-action" @click="emit('openFilter')">
+        <el-icon><Filter /></el-icon> <span class="toolbar-action__label">筛选</span>
         <el-badge v-if="(filterCount ?? 0) > 0" :value="filterCount ?? 0" :max="99" class="filter-badge" />
       </el-button>
-      <el-button size="small" @click="emit('openGroup')">
-        <el-icon><Grid /></el-icon> 分组
+      <el-button size="small" text class="toolbar-action" @click="emit('openGroup')">
+        <el-icon><Grid /></el-icon> <span class="toolbar-action__label">分组</span>
         <el-badge v-if="groupFieldId" :value="1" :max="1" class="filter-badge" />
       </el-button>
+      <!-- 排序：轻量弹层（选字段 + 方向），应用走视图 sortConfig 链路 -->
+      <el-popover
+        v-model:visible="sortPopVisible"
+        placement="bottom-start"
+        :width="280"
+        trigger="click"
+        popper-class="bitable-toolbar-popover"
+      >
+        <template #reference>
+          <el-button size="small" text class="toolbar-action" :class="{ 'is-active': !!sortState }">
+            <el-icon><Sort /></el-icon> <span class="toolbar-action__label">排序</span>
+          </el-button>
+        </template>
+        <div class="sort-popover">
+          <div class="sort-popover__title">排序</div>
+          <el-select
+            v-model="sortFieldId"
+            placeholder="选择字段"
+            size="small"
+            filterable
+            style="width: 100%"
+          >
+            <el-option
+              v-for="f in sortCandidateFields"
+              :key="f.id"
+              :label="f.name"
+              :value="f.id"
+            />
+          </el-select>
+          <el-radio-group v-model="sortDirection" size="small" class="sort-popover__dirs">
+            <el-radio-button value="asc">升序</el-radio-button>
+            <el-radio-button value="desc">降序</el-radio-button>
+          </el-radio-group>
+          <div class="sort-popover__footer">
+            <el-button size="small" text :disabled="!sortState" @click="handleSortClear">清除排序</el-button>
+            <el-button size="small" type="primary" :disabled="!sortFieldId" @click="handleSortApply">确定</el-button>
+          </div>
+        </div>
+      </el-popover>
+      <!-- 行高：快捷档位 + 自定义（复用 GridView 的自定义弹层） -->
+      <el-popover placement="bottom-start" :width="180" trigger="click" popper-class="bitable-toolbar-popover">
+        <template #reference>
+          <el-button size="small" text class="toolbar-action" :class="{ 'is-active': isCustomRowHeight }">
+            <el-icon><Operation /></el-icon> <span class="toolbar-action__label">行高</span>
+          </el-button>
+        </template>
+        <div class="row-height-pop">
+          <button
+            v-for="opt in ROW_HEIGHT_PRESETS"
+            :key="opt.value"
+            type="button"
+            class="row-height-pop__item"
+            :class="{ 'is-active': currentRowHeight === opt.value }"
+            @click="handleRowHeightPreset(opt.value)"
+          >
+            <span class="row-height-pop__demo" :style="{ height: Math.max(6, Math.round(opt.value / 4)) + 'px' }" />
+            <span>{{ opt.label }}（{{ opt.value }}px）</span>
+          </button>
+          <button type="button" class="row-height-pop__item" @click="emit('rowHeightCustom')">
+            <span class="row-height-pop__demo row-height-pop__demo--custom"><i class="ri-settings-3-line" /></span>
+            <span>自定义…</span>
+          </button>
+        </div>
+      </el-popover>
     </div>
 
     <!-- 右侧：中低频操作 -->
@@ -108,11 +170,6 @@
         </template>
       </el-dropdown>
 
-      <!-- 高级权限 -->
-      <el-button size="small" @click="emit('openPermission')">
-        <el-icon><Lock /></el-icon> 高级权限
-      </el-button>
-
       <!-- 更多 -->
       <el-dropdown trigger="click" @command="handleMoreCommand">
         <el-button size="small">
@@ -122,7 +179,6 @@
           <el-dropdown-menu>
             <el-dropdown-item command="comments"><el-icon><ChatDotRound /></el-icon> 评论</el-dropdown-item>
             <el-dropdown-item command="operations"><el-icon><Clock /></el-icon> 操作记录</el-dropdown-item>
-            <el-dropdown-item command="fieldConfig"><el-icon><Setting /></el-icon> 字段配置</el-dropdown-item>
             <el-dropdown-item command="shareView"><el-icon><Share /></el-icon> 分享视图</el-dropdown-item>
             <el-dropdown-item v-if="activeView?.viewType === 'form'" command="publishForm">
               <el-icon><Position /></el-icon> 发布表单
@@ -221,9 +277,16 @@ import {
   Share,
   Position,
   Connection,
-  Lock,
+  CirclePlus,
+  Sort,
+  Operation,
 } from '@element-plus/icons-vue'
-import type { BitableTable, BitableView, ViewType } from '@/types/bitable'
+import type { BitableField, BitableTable, BitableView, ViewType } from '@/types/bitable'
+
+export interface ToolbarSortState {
+  fieldId: number
+  direction: 'asc' | 'desc'
+}
 
 const props = defineProps<{
   table: BitableTable | null
@@ -231,15 +294,21 @@ const props = defineProps<{
   activeViewId: number | null
   filterCount?: number
   groupFieldId?: number | null
+  /** 字段列表（排序弹层候选） */
+  fields?: BitableField[]
+  /** 当前数据表行高（null = 默认 26） */
+  rowHeight?: number | null
+  /** 当前视图排序状态（排序弹层预填 + 按钮高亮） */
+  sortState?: ToolbarSortState | null
 }>()
 
 const emit = defineEmits<{
-  addField: []
+  addRow: []
+  openFieldConfig: []
   openFilter: []
   openGroup: []
   viewSwitch: [viewId: number]
   createView: [viewType: ViewType]
-  renameTable: [tableId: number, name: string]
   renameView: [viewId: number, name: string]
   duplicateView: [viewId: number]
   setDefaultView: [tableId: number, viewId: number]
@@ -249,7 +318,6 @@ const emit = defineEmits<{
   openAiPanel: []
   openImportExport: []
   openExport: []
-  openFieldConfig: []
   openShareView: []
   openFormPublish: []
   openIntegration: []
@@ -257,18 +325,78 @@ const emit = defineEmits<{
   openAiClassify: []
   openAiSummarize: []
   openAiBuildTable: []
-  openPermission: []
+  sortField: [data: { fieldId: number; direction: 'asc' | 'desc' }]
+  sortClear: []
+  rowHeightChange: [height: number]
+  rowHeightCustom: []
 }>()
 
-const editingName = ref(false)
-const tempName = ref('')
-const nameInputRef = ref<HTMLElement | null>(null)
 const viewDialogVisible = ref(false)
+
+// ==================== 排序 / 行高弹层（钉钉工具栏风格） ====================
+
+/** 行高快捷档位（与 GridView 右键菜单一致） */
+const ROW_HEIGHT_PRESETS = [
+  { label: '紧凑', value: 24 },
+  { label: '标准', value: 32 },
+  { label: '宽松', value: 48 },
+]
+
+const sortPopVisible = ref(false)
+const sortFieldId = ref<number | null>(null)
+const sortDirection = ref<'asc' | 'desc'>('asc')
+const sortCandidateFields = computed(() => props.fields || [])
+
+/** 生效行高（默认 32），用于弹层高亮当前档位 */
+const currentRowHeight = computed(() => {
+  const h = Number(props.rowHeight)
+  return Number.isFinite(h) && h > 0 ? h : 32
+})
+const isCustomRowHeight = computed(() => !ROW_HEIGHT_PRESETS.some((p) => p.value === currentRowHeight.value))
+
+// 打开排序弹层时预填当前排序状态
+watch(sortPopVisible, (visible) => {
+  if (visible) {
+    sortFieldId.value = props.sortState?.fieldId ?? null
+    sortDirection.value = props.sortState?.direction ?? 'asc'
+  }
+})
+
+function handleSortApply() {
+  if (!sortFieldId.value) return
+  emit('sortField', { fieldId: sortFieldId.value, direction: sortDirection.value })
+  sortPopVisible.value = false
+}
+
+function handleSortClear() {
+  emit('sortClear')
+  sortPopVisible.value = false
+}
+
+function handleRowHeightPreset(value: number) {
+  emit('rowHeightChange', value)
+}
 
 // 当前活动视图
 const activeView = computed(() => {
   return props.views.find(v => v.id === props.activeViewId) || props.views[0] || null
 })
+
+/** 视图是否配置了筛选（走查 P2-5：下拉项上标识，帮助识别视图差异） */
+function viewHasFilter(view: BitableView): boolean {
+  const cfg = (view as any).filterConfig
+  if (!cfg) return false
+  if (Array.isArray(cfg)) return cfg.length > 0
+  // FilterGroup: { logic, children }
+  const children = (cfg as any).children
+  return Array.isArray(children) && children.length > 0
+}
+
+/** 视图是否配置了分组（groupConfig: [{fieldId}]） */
+function viewHasGroup(view: BitableView): boolean {
+  const gc = (view as any).groupConfig
+  return Array.isArray(gc) && gc.length > 0
+}
 
 // 视图类型图标映射
 const viewTypeIconMap: Record<string, any> = {
@@ -288,39 +416,6 @@ const viewTypeLabelMap: Record<string, string> = {
   calendar: '日历',
   gallery: '画廊',
   form: '表单',
-}
-
-watch(() => props.table, (val) => {
-  if (val) {
-    tempName.value = val.name
-  }
-  editingName.value = false
-}, { immediate: true })
-
-function startEditName() {
-  if (!props.table) return
-  tempName.value = props.table.name
-  editingName.value = true
-  nextTick(() => {
-    nameInputRef.value?.focus()
-  })
-}
-
-function handleNameBlur() {
-  if (!props.table) return
-  const newName = tempName.value.trim()
-  if (!newName || newName === props.table.name) {
-    editingName.value = false
-    tempName.value = props.table.name
-    return
-  }
-  editingName.value = false
-  emit('renameTable', props.table.id, newName)
-}
-
-function cancelEdit() {
-  editingName.value = false
-  tempName.value = props.table?.name || ''
 }
 
 function getViewIcon(type: string) {
@@ -374,9 +469,6 @@ function handleMoreCommand(command: string) {
       break
     case 'operations':
       emit('openOperations')
-      break
-    case 'fieldConfig':
-      emit('openFieldConfig')
       break
     case 'shareView':
       emit('openShareView')
@@ -447,44 +539,45 @@ function cancelRename() {
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
   flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
 
+  // 以工具栏自身宽度响应（容器查询）：窄容器时中间动作组只留图标，省出的空间给左组
+  container-type: inline-size;
+  container-name: bitable-toolbar;
+
+  // 左侧弹性占位：basis 0 会把本组压到内容宽度以下，按钮溢出侵入中间组；
+  // 改成 auto + overflow hidden，空间不足时组内自己收缩（视图选择器省略号），不外溢
   .bitable-toolbar__left {
     display: flex;
     align-items: center;
     gap: 8px;
-    flex: 1;
+    flex: 1 1 auto;
     min-width: 0;
-  }
-
-  .bitable-toolbar__name {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-size: var(--font-size-md);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text-primary);
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: var(--radius-sm);
-    transition: background-color 0.2s ease;
-    white-space: nowrap;
-    flex-shrink: 0;
-
-    &:hover {
-      background: var(--color-surface-alt);
-    }
-
-    .bitable-toolbar__name-icon {
-      font-size: 16px;
-      color: var(--color-text-secondary);
-    }
+    overflow: hidden;
   }
 
   .bitable-toolbar__center {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
     flex-shrink: 0;
+  }
+
+  // 钉钉风格动作按钮：文字按钮无框，hover 淡底；应用了排序/自定义行高时亮主色
+  .toolbar-action {
+    padding: 5px 10px;
+    font-weight: var(--font-weight-regular, 400);
+    color: var(--color-text-primary, var(--color-text-primary));
+
+    &.is-active {
+      color: var(--el-color-primary);
+    }
+
+    + .toolbar-action {
+      margin-left: 0;
+    }
   }
 
   .bitable-toolbar__right {
@@ -493,10 +586,25 @@ function cancelRename() {
     gap: 8px;
     flex-shrink: 0;
   }
+
+  // 窄容器：中间动作组收成纯图标（图标本身表意：+ / 漏斗 / 分组 / 排序 / 行高），
+  // 省出的 ~180px 让左组在 1120 视口也能完整放下
+  @container bitable-toolbar (max-width: 880px) {
+    .toolbar-action__label {
+      display: none;
+    }
+    .toolbar-action {
+      padding: 5px 8px;
+    }
+  }
 }
 
 // 视图选择器
 .view-selector {
+  // 空间不足时选择器先于其它按钮收缩，名称出省略号；min-width 保底防止收成 0
+  min-width: 56px;
+  flex-shrink: 1;
+
   .view-selector__trigger {
     display: flex;
     align-items: center;
@@ -510,6 +618,7 @@ function cancelRename() {
     color: var(--color-text-primary);
     transition: all 0.15s ease;
     white-space: nowrap;
+    max-width: 100%;
 
     &:hover {
       border-color: var(--el-color-primary);
@@ -536,7 +645,8 @@ function cancelRename() {
   }
 }
 
-// 新建视图按钮
+// 左侧一级按钮（字段配置 / 新建视图）不参与收缩
+.field-config-btn,
 .view-create-btn {
   flex-shrink: 0;
 }
@@ -601,5 +711,100 @@ function cancelRename() {
 .view-selector__default-tag {
   margin-left: 4px;
   flex-shrink: 0;
+}
+
+// 视图已应用筛选/分组的状态图标（走查 P2-5）
+.view-selector__state {
+  margin-left: 4px;
+  flex-shrink: 0;
+  color: var(--el-color-primary);
+  font-size: 13px;
+}
+</style>
+
+<!-- 排序 / 行高弹层：内容 teleport 到 body，必须用非 scoped 全局样式 -->
+<style lang="scss">
+.bitable-toolbar-popover {
+  padding: 12px !important;
+}
+
+.sort-popover {
+  &__title {
+    margin-bottom: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-primary, var(--color-text-primary));
+  }
+
+  &__dirs {
+    margin-top: 10px;
+    width: 100%;
+    display: flex;
+
+    .el-radio-button {
+      flex: 1;
+    }
+
+    .el-radio-button__inner {
+      width: 100%;
+    }
+  }
+
+  &__footer {
+    margin-top: 12px;
+    display: flex;
+    justify-content: space-between;
+  }
+}
+
+.row-height-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  &__item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 8px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    font-size: 13px;
+    color: var(--color-text-primary, var(--color-text-primary));
+    cursor: pointer;
+    text-align: left;
+    transition: background-color 120ms ease, color 120ms ease;
+
+    &:hover {
+      background: var(--color-surface-alt, var(--color-surface-alt));
+    }
+
+    &.is-active {
+      color: var(--el-color-primary);
+      background: var(--el-color-primary-light-9, var(--color-primary-subtle));
+    }
+  }
+
+  &__demo {
+    display: inline-block;
+    width: 22px;
+    border-radius: 2px;
+    background: var(--color-border, #cbd5e1);
+    flex-shrink: 0;
+
+    &--custom {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 22px;
+      background: transparent;
+      color: var(--color-text-secondary, var(--color-muted-text));
+
+      i {
+        font-size: 14px;
+      }
+    }
+  }
 }
 </style>

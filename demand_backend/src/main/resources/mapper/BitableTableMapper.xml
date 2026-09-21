@@ -4,7 +4,7 @@
 
     <!-- 按 BaseId 查询所有未删除的数据表 -->
     <select id="selectByBaseId" resultType="com.demand.system.module.bitable.entity.BitableTable">
-        SELECT id, base_id, group_id, name, description, icon, sort_order, created_at, updated_at
+        SELECT id, base_id, group_id, base_group_id, name, description, icon, sort_order, created_at, updated_at
         FROM `bitable_tables`
         WHERE base_id = #{baseId}
           AND deleted_at = 0
@@ -17,6 +17,46 @@
         FROM `bitable_tables`
         WHERE base_id = #{baseId}
           AND deleted_at = 0
+    </select>
+
+    <!-- 按传入顺序批量回写排序号（列表下标即 sort_order），仅限制在当前 Base 内 -->
+    <update id="updateSortOrders">
+        UPDATE `bitable_tables`
+        SET sort_order = CASE id
+            <foreach collection="ids" item="id" index="idx" open="" close="" separator="">
+                WHEN #{id} THEN #{idx}
+            </foreach>
+        END
+        WHERE base_id = #{baseId}
+          AND deleted_at = 0
+          AND id IN
+        <foreach collection="ids" item="id" open="(" close=")" separator=",">
+            #{id}
+        </foreach>
+    </update>
+    <!-- 同名检测：同一目录树层级（= 叶子独立归属 base_group_id 回退到 Base 分组，含未分组）同名数据表计数 -->
+    <select id="countSameNameInGroupScope" resultType="int">
+        SELECT COUNT(*)
+        FROM `bitable_tables` t
+        INNER JOIN `bitable_bases` b ON b.id = t.base_id AND b.deleted_at = 0
+        WHERE t.deleted_at = 0
+          AND t.name = #{name}
+          AND COALESCE(t.base_group_id, b.group_id) &lt;=&gt; #{groupId}
+        <if test="excludeId != null">
+          AND t.id != #{excludeId}
+        </if>
+    </select>
+
+    <!-- 同一目录树层级（= 同一 Base 分组，含未分组）下数据表的最大 sort_order。
+         新建数据表时用它 +1 兜底，否则新表 sort_order 默认 0 会插到列表最前面。
+         注意：仪表盘的 sort_order 与数据表共用同一序列，取「下一个」时要两边一起看。
+         叶子有独立归属（base_group_id）时按它算层级，否则回退 Base 的 group_id。 -->
+    <select id="selectMaxSortOrderInGroup" resultType="java.lang.Integer">
+        SELECT MAX(t.sort_order)
+        FROM `bitable_tables` t
+        INNER JOIN `bitable_bases` b ON b.id = t.base_id AND b.deleted_at = 0
+        WHERE t.deleted_at = 0
+          AND COALESCE(t.base_group_id, b.group_id) &lt;=&gt; #{groupId}
     </select>
 
 </mapper>

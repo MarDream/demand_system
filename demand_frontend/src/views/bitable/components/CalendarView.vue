@@ -265,14 +265,14 @@ const calendarDays = computed(() => {
   align-items: center;
   gap: 12px;
   padding: 14px 20px;
-  border-bottom: 1px solid var(--color-border, #e2e8f0);
-  background: var(--color-surface, #fff);
+  border-bottom: 1px solid var(--color-border, var(--color-border));
+  background: var(--color-surface, var(--color-surface));
   flex-shrink: 0;
 
   .calendar-header__label {
     font-size: 13px;
     font-weight: 500;
-    color: var(--color-text-secondary, #475569);
+    color: var(--color-text-secondary, var(--color-text-secondary));
   }
 }
 
@@ -297,13 +297,13 @@ const calendarDays = computed(() => {
   justify-content: center;
   gap: 20px;
   padding: 16px;
-  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  border-bottom: 1px solid var(--color-border, var(--color-border));
   flex-shrink: 0;
 
   .calendar-month-label {
     font-size: 18px;
     font-weight: 700;
-    color: var(--color-text-primary, #0f172a);
+    color: var(--color-text-primary, var(--color-text-primary));
     letter-spacing: -0.01em;
     min-width: 120px;
     text-align: center;
@@ -322,8 +322,8 @@ const calendarDays = computed(() => {
   grid-template-columns: repeat(7, 1fr);
   height: 40px;
   flex-shrink: 0;
-  background: var(--color-background, #f8fafc);
-  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-background, var(--color-background));
+  border-bottom: 1px solid var(--color-border, var(--color-border));
 
   .calendar-weekday {
     display: flex;
@@ -331,9 +331,9 @@ const calendarDays = computed(() => {
     justify-content: center;
     font-size: 12px;
     font-weight: 600;
-    color: var(--color-text-secondary, #475569);
+    color: var(--color-text-secondary, var(--color-text-secondary));
     letter-spacing: 0.04em;
-    border-right: 1px solid var(--color-border, #e2e8f0);
+    border-right: 1px solid var(--color-border, var(--color-border));
 
     &:last-child {
       border-right: none;
@@ -349,8 +349,8 @@ const calendarDays = computed(() => {
   overflow: hidden;
 
   .calendar-day {
-    border-right: 1px solid var(--color-border, #e2e8f0);
-    border-bottom: 1px solid var(--color-border, #e2e8f0);
+    border-right: 1px solid var(--color-border, var(--color-border));
+    border-bottom: 1px solid var(--color-border, var(--color-border));
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -361,7 +361,7 @@ const calendarDays = computed(() => {
     }
 
     &.calendar-day--other-month {
-      background: var(--color-background, #f8fafc);
+      background: var(--color-background, var(--color-background));
 
       .calendar-day-number {
         color: var(--color-text-placeholder, #cbd5e1);
@@ -370,11 +370,11 @@ const calendarDays = computed(() => {
 
     // 今日：主色边框 + 浅蓝底 + 日期圆形徽章
     &.calendar-day--today {
-      background: var(--color-today-bg, #eff6ff);
+      background: var(--color-today-bg, var(--color-primary-subtle));
       box-shadow: inset 0 0 0 1.5px var(--color-today-ring, #3b82f6);
 
       .calendar-day-number {
-        background: var(--color-primary, #2563eb);
+        background: var(--color-primary, var(--color-primary));
         color: #fff;
         font-weight: 700;
         box-shadow: 0 2px 6px rgba(37, 99, 235, 0.35);
@@ -388,7 +388,7 @@ const calendarDays = computed(() => {
 
   .calendar-day-header {
     padding: 6px 8px;
-    border-bottom: 1px solid var(--color-border, #e2e8f0);
+    border-bottom: 1px solid var(--color-border, var(--color-border));
     display: flex;
     align-items: center;
   }
@@ -402,7 +402,7 @@ const calendarDays = computed(() => {
     padding: 0 6px;
     font-size: 12px;
     font-weight: 500;
-    color: var(--color-text-primary, #0f172a);
+    color: var(--color-text-primary, var(--color-text-primary));
     font-variant-numeric: tabular-nums;
     border-radius: 50%;
     transition: all 150ms var(--ease-standard, ease);
@@ -424,8 +424,8 @@ const calendarDays = computed(() => {
     gap: 4px;
     font-size: 12px;
     font-weight: 500;
-    color: var(--color-primary, #2563eb);
-    background: var(--color-primary-subtle, #eff6ff);
+    color: var(--color-primary, var(--color-primary));
+    background: var(--color-primary-subtle, var(--color-primary-subtle));
     padding: 3px 6px 3px 8px;
     border-radius: var(--radius-tag, 6px);
     border-left: 2px solid var(--color-primary, #2563eb);
@@ -444,14 +444,14 @@ const calendarDays = computed(() => {
   .calendar-more {
     font-size: 11px;
     font-weight: 600;
-    color: var(--color-text-secondary, #475569);
+    color: var(--color-text-secondary, var(--color-text-secondary));
     padding: 2px 6px;
     border-radius: var(--radius-tag, 6px);
     cursor: pointer;
     transition: background-color 150ms;
 
     &:hover {
-      background: var(--color-surface-alt, #f1f5f9);
+      background: var(--color-surface-alt, var(--color-surface-alt));
     }
   }
 }
@@ -472,13 +472,13 @@ const calendarDays = computed(() => {
   padding: 5px 8px;
   border-radius: var(--radius-tag, 6px);
   cursor: pointer;
-  color: var(--color-text-primary, #0f172a);
+  color: var(--color-text-primary, var(--color-text-primary));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 
   &:hover {
-    background: var(--color-surface-alt, #f1f5f9);
+    background: var(--color-surface-alt, var(--color-surface-alt));
   }
 }
 </style>

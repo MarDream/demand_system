@@ -53,7 +53,7 @@
           class="value-select"
           :placeholder="'选择' + fieldLabel(rule.field)"
           :disabled="disabled"
-          @change="(val: string[] | number[]) => onMultiSelectChange(rule, val as string[])"
+          @change="(val: string[] | number[]) => onValueChange(rule, val as string[])"
         >
           <el-option
             v-for="opt in fieldValueOptions(rule.field)"
@@ -103,7 +103,7 @@
           class="value-input regex-input"
           :disabled="disabled"
           :class="{ 'is-error': regexError(index) }"
-          @input="sync"
+          @input="(val: string) => onValueChange(rule, val)"
         />
         <span v-if="regexError(index)" class="inline-error">{{ regexError(index) }}</span>
         <span v-else-if="rule.value" class="inline-hint">正则</span>
@@ -119,7 +119,7 @@
           :placeholder="'选择' + fieldLabel(rule.field)"
           :disabled="disabled"
           :loading="loadingDict"
-          @change="sync"
+          @change="(val: string) => onValueChange(rule, val)"
         >
           <el-option
             v-for="opt in fieldValueOptions(rule.field)"
@@ -137,7 +137,7 @@
           placeholder="值"
           class="value-input"
           :disabled="disabled"
-          @input="sync"
+          @input="(val: string) => onValueChange(rule, val)"
         />
       </template>
 
@@ -336,8 +336,12 @@ function onFieldChange(rule: ConditionRule) {
   }
 }
 
-function onMultiSelectChange(rule: ConditionRule, val: string[]) {
-  rule.value = val
+/**
+ * 值输入统一入口：el-input 的 input / el-select 的 change 事件会把「事件值本身」
+ * 作为第一个参数传出，直接 @change="sync" 会把它当成 payload（rules 变 undefined）。
+ */
+function onValueChange(rule: ConditionRule, val: string | string[]) {
+  rule.value = (val ?? '') as string | string[]
   sync({ logic: logic.value, rules: rules.value })
 }
 
@@ -424,13 +428,13 @@ const exprPreview = computed(() => buildExpr({ logic: logic.value, rules: rules.
   gap: 8px;
   margin-bottom: 8px;
   padding: 10px 12px;
-  background: var(--el-fill-color-lighter, #f7f8fa);
-  border: 1px solid var(--el-border-color-extra-light, #ebeef5);
+  background: var(--el-fill-color-lighter, var(--color-surface-alt));
+  border: 1px solid var(--el-border-color-extra-light, var(--color-border));
   border-radius: var(--el-border-radius-base, 8px);
   transition: border-color 0.2s;
 }
 .rule-card:hover {
-  border-color: var(--el-border-color, #dcdfe6);
+  border-color: var(--el-border-color, var(--color-border));
 }
 
 /* 序号圆点 */
@@ -439,7 +443,7 @@ const exprPreview = computed(() => buildExpr({ logic: logic.value, rules: rules.
   height: 20px;
   border-radius: 50%;
   background: #eaf2ff;
-  color: #409eff;
+  color: var(--color-primary);
   font-size: 11px;
   font-weight: 600;
   display: inline-flex;
@@ -492,7 +496,7 @@ const exprPreview = computed(() => buildExpr({ logic: logic.value, rules: rules.
 .no-value-hint {
   flex: 1;
   font-size: 12px;
-  color: var(--el-text-color-placeholder, #a8abb2);
+  color: var(--el-text-color-placeholder, var(--color-text-tertiary));
 }
 
 /* 内联错误/提示 */
@@ -503,7 +507,7 @@ const exprPreview = computed(() => buildExpr({ logic: logic.value, rules: rules.
 }
 .inline-hint {
   font-size: 11.5px;
-  color: var(--el-text-color-placeholder, #a8abb2);
+  color: var(--el-text-color-placeholder, var(--color-text-tertiary));
   white-space: nowrap;
 }
 
@@ -518,13 +522,13 @@ const exprPreview = computed(() => buildExpr({ logic: logic.value, rules: rules.
   border-radius: 6px;
   background: none;
   cursor: pointer;
-  color: var(--el-text-color-placeholder, #c0c4cc);
+  color: var(--el-text-color-placeholder, var(--color-text-tertiary));
   transition: all 0.15s;
   flex-shrink: 0;
 }
 .btn-remove:not(:disabled):hover {
   color: var(--el-color-danger, #f56c6c);
-  background: var(--el-fill-color-light, #f5f7fa);
+  background: var(--el-fill-color-light, var(--color-fill-secondary));
 }
 .btn-remove:disabled {
   cursor: not-allowed;
@@ -536,10 +540,10 @@ const exprPreview = computed(() => buildExpr({ logic: logic.value, rules: rules.
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border: 1px dashed var(--el-border-color, #dcdfe6);
+  border: 1px dashed var(--el-border-color, var(--color-border));
   border-radius: 6px;
   background: none;
-  color: var(--el-color-primary, #409eff);
+  color: var(--el-color-primary, var(--color-primary));
   font-size: 12.5px;
   padding: 5px 14px;
   cursor: pointer;
@@ -548,7 +552,7 @@ const exprPreview = computed(() => buildExpr({ logic: logic.value, rules: rules.
 }
 .btn-add-rule:not(:disabled):hover {
   border-color: var(--el-color-primary-light-3, #79bbff);
-  background: var(--el-fill-color-light, #f5f7fa);
+  background: var(--el-fill-color-light, var(--color-fill-secondary));
 }
 .btn-add-rule:disabled {
   cursor: not-allowed;
@@ -559,13 +563,13 @@ const exprPreview = computed(() => buildExpr({ logic: logic.value, rules: rules.
 .expr-preview {
   margin-top: 14px;
   padding: 8px 14px;
-  background: var(--el-fill-color, #fafafa);
+  background: var(--el-fill-color, var(--color-surface-alt));
   border-left: 3px solid var(--el-color-primary, #409eff);
   border-radius: 0 6px 6px 0;
 }
 .expr-preview code {
   font-size: 12px;
-  color: var(--el-color-primary, #409eff);
+  color: var(--el-color-primary, var(--color-primary));
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   word-break: break-all;
   line-height: 1.5;

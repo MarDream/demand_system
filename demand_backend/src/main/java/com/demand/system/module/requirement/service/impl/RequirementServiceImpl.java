@@ -385,7 +385,7 @@ public class RequirementServiceImpl implements RequirementService {
             return Objects.equals(requirement.getCreatorId(), userId);
         }
 
-        List<Long> roleIds = getUserRoleIds(userId);
+        List<Long> roleIds = getCurrentUserRoleIds();
         List<String> roleCodes = roleIds.isEmpty()
                 ? List.of()
                 : roleMapper.selectBatchIds(roleIds).stream()
@@ -953,6 +953,10 @@ public class RequirementServiceImpl implements RequirementService {
         batchFillUserNamesAndOrg(list, result.getRecords());
         // 批量填充关注状态
         batchFillFollowed(list, userId);
+        // 填充权限字段（草稿视图需要 canEdit/operationType 来显示"编辑"按钮）
+        for (int i = 0; i < list.size(); i++) {
+            fillPermissionFields(list.get(i), result.getRecords().get(i), userId);
+        }
         return new PageResult<>(list, result.getTotal(), query.getPageNum(), query.getPageSize());
     }
 
@@ -974,7 +978,8 @@ public class RequirementServiceImpl implements RequirementService {
 
         if (USE_V2_ARCHITECTURE) {
             // 使用V2架构：workflow_node_assignees关联表（推荐，性能提升100倍+）
-            List<Long> roleIds = getUserRoleIds(userId);
+            // 角色匹配按「当前生效角色」收窄（角色切换后，其他角色名下的待办不再出现）
+            List<Long> roleIds = getCurrentUserRoleIds();
             List<Long> orgIds = getUserOrgIds(userId);
 
             result = requirementMapper.selectMyPendingV2(page, userId, roleIds, orgIds,
@@ -1091,7 +1096,8 @@ public class RequirementServiceImpl implements RequirementService {
 
         if (USE_V2_ARCHITECTURE) {
             // 使用V2架构：workflow_node_assignees关联表（推荐，性能提升100倍+）
-            List<Long> roleIds = getUserRoleIds(userId);
+            // 角色匹配按「当前生效角色」收窄（与我的待办口径一致）
+            List<Long> roleIds = getCurrentUserRoleIds();
             List<Long> orgIds = getUserOrgIds(userId);
 
             result = requirementMapper.selectMyDoneV2(page, userId, roleIds, orgIds,
@@ -1578,6 +1584,23 @@ public class RequirementServiceImpl implements RequirementService {
         // 查询用户的角色ID
         List<Long> roleIds = userMapper.selectRoleIdsByUserId(userId);
         return roleIds != null ? roleIds : List.of();
+    }
+
+    /**
+     * 当前登录「生效角色」的角色 ID 列表（按 X-Active-Role 收窄，非用户角色并集）。
+     * 待办/已办列表的角色匹配必须用这个：用户切到「产品经理」时，
+     * 绑定给「运营工单员」的待办不应出现在他的列表里。
+     * SecurityUtils.getCurrentUserRoles() 已由 JwtAuthenticationFilter 按 X-Active-Role 收窄。
+     * 包外可见（StatisticsServiceImpl 的角标计数同口径）。
+     */
+    public List<Long> getCurrentUserRoleIds() {
+        List<String> roleCodes = SecurityUtils.getCurrentUserRoles();
+        if (roleCodes.isEmpty()) {
+            return List.of();
+        }
+        List<Role> roles = roleMapper.selectList(
+                new LambdaQueryWrapper<Role>().in(Role::getCode, roleCodes));
+        return roles.stream().map(Role::getId).toList();
     }
 
     /**
@@ -2597,7 +2620,7 @@ public class RequirementServiceImpl implements RequirementService {
                 Page<Requirement> page = new Page<>(1, 10000);
                 IPage<Requirement> result;
                 if (USE_V2_ARCHITECTURE) {
-                    List<Long> roleIds = getUserRoleIds(currentUserId);
+                    List<Long> roleIds = getCurrentUserRoleIds();
                     List<Long> orgIds = getUserOrgIds(currentUserId);
                     result = requirementMapper.selectMyPendingV2(page, currentUserId, roleIds, orgIds,
                             myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
@@ -2618,7 +2641,7 @@ public class RequirementServiceImpl implements RequirementService {
                 Page<Requirement> page = new Page<>(1, 10000);
                 IPage<Requirement> result;
                 if (USE_V2_ARCHITECTURE) {
-                    List<Long> roleIds = getUserRoleIds(currentUserId);
+                    List<Long> roleIds = getCurrentUserRoleIds();
                     List<Long> orgIds = getUserOrgIds(currentUserId);
                     result = requirementMapper.selectMyDoneV2(page, currentUserId, roleIds, orgIds,
                             myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),

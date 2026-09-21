@@ -562,7 +562,7 @@ async function handleSavePermission() {
 }
 
 .menu-table :deep(.menu-row--directory) {
-  background: #f8fafc;
+  background: var(--color-background);
 }
 
 .menu-table :deep(.menu-row--directory .el-table__cell) {
@@ -570,7 +570,7 @@ async function handleSavePermission() {
 }
 
 .menu-table :deep(.menu-row--button) {
-  background: #fcfcfd;
+  background: var(--color-surface-alt);
 }
 
 .menu-icon {

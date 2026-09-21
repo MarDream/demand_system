@@ -29,6 +29,9 @@ public class BitableFieldPermissionDTO {
     @NotBlank(message = "权限级别不能为空")
     private String permissionLevel;
 
+    /** 选项级权限配置 JSON 字符串；null=未配置（前端序列化/解析） */
+    private String optionConfig;
+
     public Long getBaseId() { return baseId; }
     public void setBaseId(Long baseId) { this.baseId = baseId; }
 
@@ -49,4 +52,7 @@ public class BitableFieldPermissionDTO {
 
     public String getPermissionLevel() { return permissionLevel; }
     public void setPermissionLevel(String permissionLevel) { this.permissionLevel = permissionLevel; }
+
+    public String getOptionConfig() { return optionConfig; }
+    public void setOptionConfig(String optionConfig) { this.optionConfig = optionConfig; }
 }

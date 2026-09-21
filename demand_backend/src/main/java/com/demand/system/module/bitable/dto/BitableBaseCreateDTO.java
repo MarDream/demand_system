@@ -18,6 +18,9 @@ public class BitableBaseCreateDTO {
 
     private Long projectId;
 
+    /** 所属 Base 分组ID，NULL=未分组（目录树上「分组节点新建」时由前端传入） */
+    private Long groupId;
+
     public String getName() {
         return name;
     }
@@ -56,5 +59,13 @@ public class BitableBaseCreateDTO {
 
     public void setProjectId(Long projectId) {
         this.projectId = projectId;
+    }
+
+    public Long getGroupId() {
+        return groupId;
+    }
+
+    public void setGroupId(Long groupId) {
+        this.groupId = groupId;
     }
 }

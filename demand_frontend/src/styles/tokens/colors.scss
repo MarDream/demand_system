@@ -85,12 +85,15 @@ $palette-gray-50: #F9FAFB;
   --color-success: #{$palette-emerald-500};
   --color-success-light: rgba(16, 185, 129, 0.1);
   --color-success-bg: rgba(16, 185, 129, 0.12);
+  --color-success-text: #047857;
   --color-warning: #{$palette-amber-500};
   --color-warning-light: rgba(245, 158, 11, 0.1);
   --color-warning-bg: rgba(245, 158, 11, 0.14);
+  --color-warning-text: #92400E;
   --color-danger: #{$palette-red-500};
   --color-danger-light: rgba(239, 68, 68, 0.08);
   --color-danger-bg: rgba(239, 68, 68, 0.12);
+  --color-danger-text: #B91C1C;
   --color-primary-bg: rgba(37, 99, 235, 0.1);
   --color-fill-secondary: #{$palette-slate-100};
   --color-info: #{$palette-blue-500};
@@ -127,6 +130,7 @@ $palette-gray-50: #F9FAFB;
   // 文字层级 — 统一使用 Navy 色系
   --color-text-primary: #{$palette-navy-900};
   --color-text-secondary: #{$palette-navy-600};
+  --color-text-tertiary: #{$palette-slate-400};
   --color-text-placeholder: #{$palette-slate-400};
   --color-text-disabled: #{$palette-slate-300};
 
@@ -176,6 +180,9 @@ $palette-gray-50: #F9FAFB;
   // 复选框
   --color-checkbox-active: #{$palette-blue-600};
   --color-checkbox-inactive: #{$palette-slate-300};
+
+  // 多维表格类型图标（目录树/分组菜单/权限弹窗共用；数据表走 --color-primary 随主题色联动）
+  --color-type-dashboard: #E8A33D;
 
   // 画廊缺图占位（首字母）
   --color-gallery-placeholder-from: #{$palette-blue-100};

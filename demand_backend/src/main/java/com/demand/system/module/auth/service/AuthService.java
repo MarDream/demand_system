@@ -21,6 +21,13 @@ public interface AuthService {
     UserInfoResponse updateProfile(UpdateProfileRequest request);
 
     /**
+     * 个人设置：保存本人外观配置（主题模式/主题色/圆角档位），跟随账号持久化。
+     *
+     * @param request 外观配置
+     */
+    void saveAppearanceConfig(UpdateAppearanceRequest request);
+
+    /**
      * 个人设置：修改本人密码（需验证旧密码）。
      */
     void changePassword(ChangePasswordRequest request);

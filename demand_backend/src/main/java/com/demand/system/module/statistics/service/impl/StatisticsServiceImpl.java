@@ -236,8 +236,9 @@ public class StatisticsServiceImpl implements StatisticsService {
 
         // 非超级管理员且未配置数据权限：仅待办数（基于用户）有内容，已办/发起/抄送均为 0
         boolean noDataScope = !isSuperAdmin && visibleOrgIds.isEmpty();
-        // 待办数：从 requirement_pending_tasks 表统计（按当前用户，带 org 过滤）
-        Long pending = noDataScope ? 0L : pendingTaskMapper.countByUserIdWithOrgFilter(userId, isSuperAdmin, visibleOrgIds);
+        // 待办数：从 requirement_pending_tasks 表统计（按当前用户 + 当前生效角色，带 org 过滤）
+        Long pending = noDataScope ? 0L
+                : pendingTaskMapper.countByUserIdWithOrgFilterAndActiveRole(userId, requirementService.getCurrentUserRoleIds(), isSuperAdmin, visibleOrgIds);
 
         // 已办数：我参与过的非草稿需求（带数据权限过滤）
         Long processed = noDataScope ? 0L : statisticsMapper.countProcessedByUserIdWithOrgFilter(userId, isSuperAdmin, visibleOrgIds);
@@ -263,7 +264,8 @@ public class StatisticsServiceImpl implements StatisticsService {
         boolean noDataScope = !isSuperAdmin && visibleOrgIds.isEmpty();
 
         Map<String, Long> counts = new LinkedHashMap<>();
-        counts.put("pending", noDataScope ? 0L : pendingTaskMapper.countByUserIdWithOrgFilter(userId, isSuperAdmin, visibleOrgIds));
+        counts.put("pending", noDataScope ? 0L
+                : pendingTaskMapper.countByUserIdWithOrgFilterAndActiveRole(userId, requirementService.getCurrentUserRoleIds(), isSuperAdmin, visibleOrgIds));
         counts.put("follows", noDataScope ? 0L : statisticsMapper.countMyFollowsByUserIdWithOrgFilter(userId, isSuperAdmin, visibleOrgIds));
         counts.put("cc", noDataScope ? 0L : pendingTaskMapper.countCcReadOnlyByUserIdWithOrgFilter(userId, isSuperAdmin, visibleOrgIds));
         counts.put("drafts", statisticsMapper.countMyDraftsByUserId(userId));

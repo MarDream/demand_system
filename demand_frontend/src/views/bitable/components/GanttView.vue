@@ -251,7 +251,7 @@ function getBarStyle(record: BitableRecord): Record<string, string> {
   return {
     left: `${leftPercent}%`,
     width: `${widthPercent}%`,
-    background: 'var(--gradient-gantt-bar, linear-gradient(180deg, #3B82F6 0%, #2563EB 100%))',
+    background: 'var(--gradient-gantt-bar, linear-gradient(180deg, #3B82F6 0%, var(--color-primary) 100%))',
   }
 }
 </script>
@@ -276,14 +276,14 @@ function getBarStyle(record: BitableRecord): Record<string, string> {
   align-items: center;
   gap: 12px;
   padding: 14px 20px;
-  border-bottom: 1px solid var(--color-border, #e2e8f0);
-  background: var(--color-surface, #fff);
+  border-bottom: 1px solid var(--color-border, var(--color-border));
+  background: var(--color-surface, var(--color-surface));
   flex-shrink: 0;
 
   .gantt-header__label {
     font-size: 13px;
     font-weight: 500;
-    color: var(--color-text-secondary, #475569);
+    color: var(--color-text-secondary, var(--color-text-secondary));
     white-space: nowrap;
   }
 
@@ -309,19 +309,19 @@ function getBarStyle(record: BitableRecord): Record<string, string> {
 // 任务侧栏
 .gantt-sidebar {
   width: 220px;
-  border-right: 1px solid var(--color-border, #e2e8f0);
+  border-right: 1px solid var(--color-border, var(--color-border));
   flex-shrink: 0;
   overflow-y: auto;
-  background: var(--color-surface, #fff);
+  background: var(--color-surface, var(--color-surface));
 
   .gantt-sidebar-header {
     height: 44px;
     padding: 12px 16px;
     font-size: 12px;
     font-weight: 600;
-    color: var(--color-text-secondary, #475569);
-    background: var(--color-background, #f8fafc);
-    border-bottom: 1px solid var(--color-border, #e2e8f0);
+    color: var(--color-text-secondary, var(--color-text-secondary));
+    background: var(--color-background, var(--color-background));
+    border-bottom: 1px solid var(--color-border, var(--color-border));
     letter-spacing: 0.04em;
     text-transform: uppercase;
   }
@@ -331,8 +331,8 @@ function getBarStyle(record: BitableRecord): Record<string, string> {
     padding: 10px 16px;
     font-size: 13px;
     font-weight: 500;
-    color: var(--color-text-primary, #0f172a);
-    border-bottom: 0.5px solid var(--color-border, #e2e8f0);
+    color: var(--color-text-primary, var(--color-text-primary));
+    border-bottom: 0.5px solid var(--color-border, var(--color-border));
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -354,8 +354,8 @@ function getBarStyle(record: BitableRecord): Record<string, string> {
   .gantt-chart-header {
     display: flex;
     height: 44px;
-    background: var(--color-background, #f8fafc);
-    border-bottom: 1px solid var(--color-border, #e2e8f0);
+    background: var(--color-background, var(--color-background));
+    border-bottom: 1px solid var(--color-border, var(--color-border));
   }
 
   .gantt-day-header {
@@ -364,9 +364,9 @@ function getBarStyle(record: BitableRecord): Record<string, string> {
     padding: 10px 4px;
     font-size: 11px;
     font-weight: 500;
-    color: var(--color-text-secondary, #475569);
+    color: var(--color-text-secondary, var(--color-text-secondary));
     text-align: center;
-    border-right: 0.5px solid var(--color-border, #e2e8f0);
+    border-right: 0.5px solid var(--color-border, var(--color-border));
     font-variant-numeric: tabular-nums;
     flex-shrink: 0;
   }
@@ -377,7 +377,7 @@ function getBarStyle(record: BitableRecord): Record<string, string> {
 
   .gantt-row {
     height: 38px;
-    border-bottom: 0.5px solid var(--color-border, #e2e8f0);
+    border-bottom: 0.5px solid var(--color-border, var(--color-border));
     position: relative;
     transition: background-color 150ms;
 

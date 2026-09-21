@@ -73,6 +73,16 @@ export function moveBaseGroup(id: number, data: BitableBaseGroupMoveDTO) {
   return request.put<ApiResponse<void>>(`/v1/bitable/base-groups/${id}/move`, data) as unknown as Promise<void>
 }
 
+/** Base 分组同级排序：orderedIds 为某父级下按目标顺序排列的全部分组ID */
+export function sortBaseGroups(orderedIds: number[]) {
+  return request.put<ApiResponse<void>>(`/v1/bitable/base-groups/sort`, orderedIds) as unknown as Promise<void>
+}
+
+/** Base 同级排序：orderedIds 为同一分组下按目标顺序排列的全部 Base ID */
+export function sortBases(orderedIds: number[]) {
+  return request.put<ApiResponse<void>>(`/v1/bitable/bases/sort`, orderedIds) as unknown as Promise<void>
+}
+
 export function deleteBaseGroup(id: number) {
   return request.delete<ApiResponse<void>>(`/v1/bitable/base-groups/${id}`) as unknown as Promise<void>
 }
@@ -107,6 +117,11 @@ export function updateTable(id: number, data: Partial<BitableTableCreateDTO>) {
   return request.put<ApiResponse<BitableTable>>(`/v1/bitable/tables/${id}`, data) as unknown as Promise<BitableTable>
 }
 
+/** 某字段在整张表内的去重取值（仅未软删记录，按频次降序，最多 500 个），供筛选值下拉 */
+export function listFieldDistinctValues(tableId: number, fieldId: number) {
+  return request.get<ApiResponse<string[]>>(`/v1/bitable/tables/${tableId}/fields/${fieldId}/distinct-values`) as unknown as Promise<string[]>
+}
+
 export function deleteTable(id: number) {
   return request.delete<ApiResponse<void>>(`/v1/bitable/tables/${id}`) as unknown as Promise<void>
 }
@@ -126,6 +141,46 @@ export function renameTableGroup(id: number, name: string) {
 
 export function moveTableGroup(id: number, data: BitableTableGroupMoveDTO) {
   return request.put<ApiResponse<void>>(`/v1/bitable/table-groups/${id}/move`, data) as unknown as Promise<void>
+}
+
+/** 数据表分组同级排序：orderedIds 为某父级下按目标顺序排列的全部分组ID */
+export function sortTableGroups(orderedIds: number[]) {
+  return request.put<ApiResponse<void>>(`/v1/bitable/table-groups/sort`, orderedIds) as unknown as Promise<void>
+}
+
+/** 数据表同级排序：orderedIds 为同一分组下按目标顺序排列的全部数据表ID */
+export function sortTables(orderedIds: number[]) {
+  return request.put<ApiResponse<void>>(`/v1/bitable/tables/sort`, orderedIds) as unknown as Promise<void>
+}
+
+/**
+ * 目录树叶子同级排序：数据表与仪表盘在树里是同层级兄弟节点，共用同一 sort_order 序列。
+ * leaves 按目标顺序排列，下标即最终排序号；baseId 用来说明「同一层级」是哪个分组。
+ */
+export function sortLeaves(
+  baseId: number,
+  leaves: Array<{ kind: 'table' | 'dashboard'; id: number }>,
+) {
+  return request.put<ApiResponse<void>>(`/v1/bitable/leaves/sort`, {
+    baseId,
+    leaves,
+  }) as unknown as Promise<void>
+}
+
+/**
+ * 目录树叶子跨层级移动：把单个叶子（数据表 / 仪表盘）移到目标 Base 分组，
+ * 只动该叶子自身，不影响同 Base 下的其它叶子。targetGroupId 传 null 表示移到根层级。
+ */
+export function moveLeaf(
+  kind: 'table' | 'dashboard',
+  id: number,
+  targetGroupId: number | null,
+) {
+  return request.put<ApiResponse<void>>(`/v1/bitable/leaves/move`, {
+    kind,
+    id,
+    targetGroupId,
+  }) as unknown as Promise<void>
 }
 
 export function deleteTableGroup(id: number) {
@@ -176,8 +231,9 @@ export function queryGroupedRecords(tableId: number, data: RecordQueryDTO) {
   return request.post<ApiResponse<RecordGroupVO[]>>(`/v1/bitable/tables/${tableId}/records/grouped`, data) as unknown as Promise<RecordGroupVO[]>
 }
 
+/** 新增记录，返回新记录 ID（后端 Result<Long>） */
 export function createRecord(tableId: number, data: BitableRecordCreateDTO) {
-  return request.post<ApiResponse<BitableRecord>>(`/v1/bitable/tables/${tableId}/records`, data) as unknown as Promise<BitableRecord>
+  return request.post<ApiResponse<number>>(`/v1/bitable/tables/${tableId}/records`, data) as unknown as Promise<number>
 }
 
 export function updateRecord(id: number, data: { cells: Record<number, unknown> }) {
@@ -340,16 +396,53 @@ export interface BitableDashboardInfo {
   id: number
   baseId: number
   name: string
+  layoutConfig?: string | null
   status: string
   createdAt: string
 }
 
+export interface DashboardWidgetMetricInput {
+  fieldId?: number | null
+  aggregation: string
+}
+
 export interface DashboardWidgetInput {
-  type: 'kpi' | 'bar' | 'line' | 'pie'
+  id?: number
+  type: string
   title: string
-  dataSourceConfig: { tableId: number; fieldId?: number; aggregation: string; groupByFieldId?: number; filterConfig?: unknown }
+  dataSourceConfig: {
+    tableId?: number
+    filterConfig?: unknown
+    dimension?: { fieldId?: number | null; granularity?: string }
+    metrics?: DashboardWidgetMetricInput[]
+    sort?: string
+    limit?: number
+    // 旧版单指标结构（兼容保留）
+    fieldId?: number
+    aggregation?: string
+    groupByFieldId?: number
+  }
   displayConfig?: Record<string, unknown>
+  layoutConfig?: { rowId?: string; span?: number; height?: number }
   sortNo?: number
+}
+
+export interface DashboardLayoutRow {
+  id: string
+  title: string | null
+  widgets: Array<number | string>
+}
+
+export interface DashboardSavePayload {
+  widgets: DashboardWidgetInput[]
+  layoutConfig: { rows: DashboardLayoutRow[] }
+}
+
+/** 批量列出多个 Base 的仪表盘（外层目录树用） */
+export function listDashboardsBatch(baseIds: number[]) {
+  return request.get<ApiResponse<Array<{ id: number; baseId: number; name: string }>>>(
+    `/v1/bitable/bases/dashboards/batch?baseIds=${baseIds.join(",")}`,
+  ) as unknown as Promise<Array<{ id: number; baseId: number; name: string }>>
 }
 
 export function listDashboards(baseId: number) {
@@ -358,6 +451,34 @@ export function listDashboards(baseId: number) {
 
 export function createDashboard(baseId: number, name: string) {
   return request.post<ApiResponse<number>>(`/v1/bitable/bases/${baseId}/dashboards`, { name }) as unknown as Promise<number>
+}
+
+/** AI 一键生成仪表盘（基于 Base 下数据表结构由 LLM 设计组件与布局） */
+export function aiGenerateDashboard(baseId: number, description: string) {
+  return request.post<ApiResponse<number>>(`/v1/bitable/bases/${baseId}/dashboards/ai-generate`, {
+    description,
+  }) as unknown as Promise<number>
+}
+
+/** AI 自然语言生成筛选条件（返回 {logic, rules:[{fieldId, operator, value?, valueMin?, valueMax?}]}） */
+export interface AiFilterRule {
+  fieldId: number
+  operator: string
+  value?: string | null
+  valueMin?: string | null
+  valueMax?: string | null
+}
+
+export interface AiFilterResult {
+  logic: 'and' | 'or'
+  rules: AiFilterRule[]
+}
+
+export function aiGenerateFilter(tableId: number, text: string) {
+  return request.post<ApiResponse<AiFilterResult>>(`/v1/bitable/ai/filter-generate`, {
+    tableId,
+    text,
+  }) as unknown as Promise<AiFilterResult>
 }
 
 export function renameDashboard(id: number, name: string) {
@@ -372,8 +493,8 @@ export function listDashboardWidgets(id: number) {
   return request.get<ApiResponse<any[]>>(`/v1/bitable/dashboards/${id}/widgets`) as unknown as Promise<any[]>
 }
 
-export function saveDashboardWidgets(id: number, widgets: DashboardWidgetInput[]) {
-  return request.post<ApiResponse<void>>(`/v1/bitable/dashboards/${id}/widgets`, { widgets }) as unknown as Promise<void>
+export function saveDashboardWidgets(id: number, payload: DashboardSavePayload) {
+  return request.post<ApiResponse<void>>(`/v1/bitable/dashboards/${id}/widgets`, payload) as unknown as Promise<void>
 }
 
 export function getDashboardData(id: number) {

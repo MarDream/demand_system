@@ -84,6 +84,23 @@ public class BitableTableGroupController {
     }
 
     /**
+     * 分组同级排序（拖拽排序：按传入顺序回写 sort_order）。
+     * 逐个校验管理权限，服务端再做同父级一致性校验。
+     */
+    @PutMapping("/table-groups/sort")
+    @PreAuthorize("isAuthenticated()")
+    public Result<Void> sortGroups(@RequestBody List<Long> orderedIds) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (orderedIds != null) {
+            for (Long groupId : orderedIds) {
+                authorizationService.checkManagePermission(requireBaseId(groupId), userId);
+            }
+            groupService.sortGroups(orderedIds, userId);
+        }
+        return Result.success();
+    }
+
+    /**
      * 删除分组（子分组与数据表上移到父级）
      */
     @DeleteMapping("/table-groups/{id}")

@@ -6,11 +6,16 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.PageResult;
 import com.demand.system.module.auth.service.EmailService;
+import com.demand.system.module.user.dto.RosterExportLogVO;
+import com.demand.system.module.user.dto.RosterImportResultVO;
+import com.demand.system.module.user.dto.RosterStatsVO;
 import com.demand.system.module.user.dto.UserCreateDTO;
 import com.demand.system.module.user.dto.UserQueryDTO;
 import com.demand.system.module.user.dto.UserUpdateDTO;
 import com.demand.system.module.user.dto.UserVO;
+import com.demand.system.module.user.entity.RosterExportLog;
 import com.demand.system.module.user.entity.User;
+import com.demand.system.module.user.mapper.RosterExportLogMapper;
 import com.demand.system.module.user.mapper.UserMapper;
 import com.demand.system.module.user.service.UserService;
 import com.demand.system.module.organization.dto.SysOrgVO;
@@ -19,13 +24,25 @@ import com.demand.system.module.rbac.entity.Role;
 import com.demand.system.module.rbac.entity.UserRole;
 import com.demand.system.module.rbac.mapper.RoleMapper;
 import com.demand.system.module.rbac.mapper.UserRoleMapper;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.xssf.streaming.SXSSFWorkbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.demand.system.module.auth.security.SecurityUtils;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -36,14 +53,16 @@ public class UserServiceImpl implements UserService {
     private static final long PRIMARY_ADMIN_ID = 1L;
 
     private final UserMapper userMapper;
+    private final RosterExportLogMapper rosterExportLogMapper;
     private final SysOrgService sysOrgService;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
     private final UserRoleMapper userRoleMapper;
     private final RoleMapper roleMapper;
 
-    public UserServiceImpl(UserMapper userMapper, SysOrgService sysOrgService, PasswordEncoder passwordEncoder, EmailService emailService, UserRoleMapper userRoleMapper, RoleMapper roleMapper) {
+    public UserServiceImpl(UserMapper userMapper, RosterExportLogMapper rosterExportLogMapper, SysOrgService sysOrgService, PasswordEncoder passwordEncoder, EmailService emailService, UserRoleMapper userRoleMapper, RoleMapper roleMapper) {
         this.userMapper = userMapper;
+        this.rosterExportLogMapper = rosterExportLogMapper;
         this.sysOrgService = sysOrgService;
         this.passwordEncoder = passwordEncoder;
         this.emailService = emailService;
@@ -54,11 +73,28 @@ public class UserServiceImpl implements UserService {
     @Override
     public PageResult<UserVO> list(UserQueryDTO query) {
         Page<User> page = new Page<>(query.getPageNum(), query.getPageSize());
+        Page<User> userPage = userMapper.selectPage(page, buildListWrapper(query));
 
+        List<UserVO> voList = userPage.getRecords().stream().map(this::toVO).collect(Collectors.toList());
+        return new PageResult<>(voList, userPage.getTotal(), query.getPageNum(), query.getPageSize());
+    }
+
+    /**
+     * 列表/导出/统计共用的查询构造：关键字、状态、员工类型、用工状态、入职时间范围 + 组织范围权限
+     */
+    private LambdaQueryWrapper<User> buildListWrapper(UserQueryDTO query) {
         LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
         wrapper.like(query.getUsername() != null, User::getUsername, query.getUsername())
                 .like(query.getRealName() != null, User::getRealName, query.getRealName())
                 .eq(query.getStatus() != null, User::getStatus, query.getStatus())
+                .eq(query.getEmployeeType() != null && !query.getEmployeeType().isBlank(),
+                        User::getEmployeeType, query.getEmployeeType())
+                .eq(query.getWorkStatus() != null && !query.getWorkStatus().isBlank(),
+                        User::getWorkStatus, query.getWorkStatus())
+                .ge(query.getHireDateFrom() != null && !query.getHireDateFrom().isBlank(),
+                        User::getHireDate, query.getHireDateFrom())
+                .le(query.getHireDateTo() != null && !query.getHireDateTo().isBlank(),
+                        User::getHireDate, query.getHireDateTo())
                 .orderByDesc(User::getCreatedAt);
 
         // 确定有效的 orgId 过滤范围
@@ -93,18 +129,348 @@ public class UserServiceImpl implements UserService {
                 wrapper.and(w -> w.in(User::getOrgId, orgIds).or().in(User::getDepartmentId, orgIds));
             }
         }
+        return wrapper;
+    }
 
-        Page<User> userPage = userMapper.selectPage(page, wrapper);
+    @Override
+    public RosterStatsVO rosterStats(UserQueryDTO query) {
+        List<User> users = userMapper.selectList(buildListWrapper(query));
+        RosterStatsVO vo = new RosterStatsVO();
+        for (User user : users) {
+            boolean isActive = User.STATUS_ACTIVE.equals(user.getStatus())
+                    && !User.WORK_STATUS_RESIGNED.equals(user.getWorkStatus());
+            if (isActive) {
+                vo.setActive(vo.getActive() + 1);
+                String ws = user.getWorkStatus();
+                if (User.WORK_STATUS_PROBATION.equals(ws)) {
+                    vo.setProbation(vo.getProbation() + 1);
+                } else if (User.WORK_STATUS_CONFIRMED.equals(ws)) {
+                    vo.setConfirmed(vo.getConfirmed() + 1);
+                } else if (User.WORK_STATUS_PENDING_RESIGN.equals(ws)) {
+                    vo.setPendingResign(vo.getPendingResign() + 1);
+                }
+                String et = user.getEmployeeType();
+                if (User.EMPLOYEE_TYPE_PART_TIME.equals(et)) {
+                    vo.setPartTime(vo.getPartTime() + 1);
+                } else if (User.EMPLOYEE_TYPE_INTERN.equals(et)) {
+                    vo.setIntern(vo.getIntern() + 1);
+                } else if (User.EMPLOYEE_TYPE_DISPATCH.equals(et)) {
+                    vo.setDispatch(vo.getDispatch() + 1);
+                } else if (User.EMPLOYEE_TYPE_OTHER.equals(et)) {
+                    vo.setOther(vo.getOther() + 1);
+                } else {
+                    vo.setFullTime(vo.getFullTime() + 1);
+                }
+            } else if (User.WORK_STATUS_RESIGNED.equals(user.getWorkStatus())) {
+                vo.setResigned(vo.getResigned() + 1);
+            } else if (User.STATUS_INACTIVE.equals(user.getStatus())) {
+                // 待入职：账号未激活且未离职（邀请后尚未办理入职）
+                vo.setInactive(vo.getInactive() + 1);
+            }
+        }
+        return vo;
+    }
 
-        List<UserVO> voList = userPage.getRecords().stream().map(this::toVO).collect(Collectors.toList());
-        return new PageResult<>(voList, userPage.getTotal(), query.getPageNum(), query.getPageSize());
+    @Override
+    public RosterImportResultVO importRoster(MultipartFile file, Long orgId) {
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException("请选择要导入的文件");
+        }
+        RosterImportResultVO result = new RosterImportResultVO();
+        try (var workbook = new XSSFWorkbook(file.getInputStream())) {
+            Sheet sheet = workbook.getSheetAt(0);
+            int lastRow = sheet.getLastRowNum();
+            for (int i = 1; i <= lastRow; i++) {
+                Row row = sheet.getRow(i);
+                if (row == null) {
+                    continue;
+                }
+                int rowNo = i + 1;
+                String realName = readCellString(row, 0);
+                String phone = readCellString(row, 1);
+                String email = readCellString(row, 2);
+                String employeeTypeText = readCellString(row, 3);
+                String workStatusText = readCellString(row, 4);
+                String hireDateText = readCellString(row, 5);
+                String birthdayText = readCellString(row, 6);
+                try {
+                    if (realName == null || realName.isBlank()) {
+                        throw new BusinessException("姓名不能为空");
+                    }
+                    if (phone == null || !phone.matches("^1[3-9]\\d{9}$")) {
+                        throw new BusinessException("手机号缺失或格式不正确");
+                    }
+                    String username = "p" + phone;
+                    if (userMapper.selectCount(new LambdaQueryWrapper<User>().eq(User::getUsername, username)) > 0) {
+                        throw new BusinessException("该手机号已存在（用户名冲突）");
+                    }
+                    User user = new User();
+                    user.setUsername(username);
+                    user.setRealName(realName.trim());
+                    user.setPhone(phone.trim());
+                    user.setEmail(email != null && !email.isBlank() ? email.trim() : null);
+                    user.setEmployeeType(mapEmployeeType(employeeTypeText));
+                    user.setWorkStatus(mapWorkStatus(workStatusText));
+                    user.setHireDate(parseHireDate(hireDateText));
+                    user.setBirthday(birthdayText == null || birthdayText.isBlank() ? null : parseDate(birthdayText));
+                    if (orgId != null) {
+                        user.setOrgId(orgId);
+                        deriveOrgFields(user, orgId);
+                    }
+                    user.setPassword(passwordEncoder.encode(buildInitialPassword(username, phone, null)));
+                    user.setStatus(User.STATUS_ACTIVE);
+                    user.setJobNumber(generateJobNumber());
+                    userMapper.insert(user);
+                    if (user.getEmail() != null) {
+                        // 邮箱缺失时不发邮件，管理员可稍后通过「邀请认证」补发
+                        emailService.sendInitialPasswordEmail(user.getEmail(), username, buildInitialPassword(username, phone, null));
+                    }
+                    result.setSuccessCount(result.getSuccessCount() + 1);
+                } catch (Exception rowEx) {
+                    result.setFailCount(result.getFailCount() + 1);
+                    result.getFailures().add("第 " + rowNo + " 行（" + (realName == null ? "未填写" : realName) + "）：" + rowEx.getMessage());
+                }
+            }
+        } catch (BusinessException e) {
+            throw e;
+        } catch (IOException | RuntimeException e) {
+            throw new BusinessException("文件解析失败，请使用下载的导入模板填写后上传");
+        }
+        if (result.getSuccessCount() == 0 && result.getFailCount() == 0) {
+            throw new BusinessException("未读取到数据行，请检查模板");
+        }
+        return result;
+    }
+
+    @Override
+    public RosterExportLogVO exportRoster(UserQueryDTO query) {
+        List<User> users = userMapper.selectList(buildListWrapper(query));
+        List<UserVO> voList = users.stream().map(this::toVO).collect(Collectors.toList());
+
+        String fileName = "花名册_" + LocalDate.now().format(DateTimeFormatter.ISO_DATE) + ".xlsx";
+        byte[] bytes = buildRosterWorkbook(voList);
+
+        RosterExportLog log = new RosterExportLog();
+        log.setOperatorId(SecurityUtils.getCurrentUserId());
+        log.setFileName(fileName);
+        log.setTotal(voList.size());
+        log.setCreatedAt(LocalDateTime.now());
+        try {
+            log.setFilterJson(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(query));
+        } catch (Exception ignored) {
+            log.setFilterJson(null);
+        }
+        log.setFileContent(Base64.getEncoder().encodeToString(bytes));
+        rosterExportLogMapper.insert(log);
+
+        RosterExportLogVO vo = new RosterExportLogVO();
+        vo.setId(log.getId());
+        vo.setFileName(fileName);
+        vo.setTotal(log.getTotal());
+        vo.setCreatedAt(log.getCreatedAt());
+        return vo;
+    }
+
+    @Override
+    public PageResult<RosterExportLogVO> listExportHistory(int pageNum, int pageSize) {
+        Page<RosterExportLog> page = new Page<>(pageNum, pageSize);
+        Page<RosterExportLog> result = rosterExportLogMapper.selectPage(page,
+                new LambdaQueryWrapper<RosterExportLog>().orderByDesc(RosterExportLog::getId));
+        List<RosterExportLogVO> voList = result.getRecords().stream().map(log -> {
+            RosterExportLogVO vo = new RosterExportLogVO();
+            vo.setId(log.getId());
+            vo.setFileName(log.getFileName());
+            vo.setTotal(log.getTotal());
+            vo.setCreatedAt(log.getCreatedAt());
+            if (log.getOperatorId() != null) {
+                User operator = userMapper.selectById(log.getOperatorId());
+                if (operator != null) {
+                    vo.setOperatorName(operator.getRealName());
+                }
+            }
+            return vo;
+        }).collect(Collectors.toList());
+        return new PageResult<>(voList, result.getTotal(), pageNum, pageSize);
+    }
+
+    @Override
+    public RosterExportLog getExportLog(Long id) {
+        RosterExportLog log = rosterExportLogMapper.selectById(id);
+        if (log == null) {
+            throw new BusinessException("导出记录不存在");
+        }
+        return log;
+    }
+
+    @Override
+    public void deleteExportLog(Long id) {
+        if (rosterExportLogMapper.selectById(id) == null) {
+            throw new BusinessException("导出记录不存在");
+        }
+        rosterExportLogMapper.deleteById(id);
+    }
+
+    @Override
+    public byte[] buildImportTemplate() {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = workbook.createSheet("花名册导入模板");
+            String[] headers = {"姓名", "手机号", "邮箱", "员工类型", "用工状态", "入职日期", "生日"};
+            String[] example = {"张三", "13800138000", "zhangsan@example.com", "全职", "已转正", "2026-01-01", "1995-06-15"};
+            Row header = sheet.createRow(0);
+            for (int i = 0; i < headers.length; i++) {
+                header.createCell(i).setCellValue(headers[i]);
+                sheet.setColumnWidth(i, 16 * 256);
+            }
+            Row sample = sheet.createRow(1);
+            for (int i = 0; i < example.length; i++) {
+                sample.createCell(i).setCellValue(example[i]);
+            }
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            workbook.write(out);
+            return out.toByteArray();
+        } catch (IOException e) {
+            throw new BusinessException("模板生成失败");
+        }
+    }
+
+    private byte[] buildRosterWorkbook(List<UserVO> users) {
+        try (SXSSFWorkbook workbook = new SXSSFWorkbook(100)) {
+            Sheet sheet = workbook.createSheet("花名册");
+            String[][] columns = {
+                    {"工号", "10"}, {"姓名", "14"}, {"部门", "20"}, {"角色", "18"},
+                    {"手机号", "16"}, {"邮箱", "24"}, {"员工类型", "12"}, {"用工状态", "12"},
+                    {"入职日期", "14"}, {"生日", "14"}, {"账号状态", "10"}, {"创建时间", "20"}
+            };
+            Row header = sheet.createRow(0);
+            for (int i = 0; i < columns.length; i++) {
+                header.createCell(i).setCellValue(columns[i][0]);
+                sheet.setColumnWidth(i, Integer.parseInt(columns[i][1]) * 256);
+            }
+            DateTimeFormatter dateTime = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+            int rowIdx = 0;
+            for (UserVO user : users) {
+                Row row = sheet.createRow(++rowIdx);
+                row.createCell(0).setCellValue(user.getJobNumber() == null ? "" : user.getJobNumber());
+                row.createCell(1).setCellValue(user.getRealName() == null ? "" : user.getRealName());
+                row.createCell(2).setCellValue(user.getRegionPath() == null ? "" : user.getRegionPath());
+                row.createCell(3).setCellValue(user.getSystemRole() == null ? "" : user.getSystemRole());
+                row.createCell(4).setCellValue(user.getPhone() == null ? "" : user.getPhone());
+                row.createCell(5).setCellValue(user.getEmail() == null ? "" : user.getEmail());
+                row.createCell(6).setCellValue(employeeTypeLabel(user.getEmployeeType()));
+                row.createCell(7).setCellValue(workStatusLabel(user.getWorkStatus()));
+                row.createCell(8).setCellValue(user.getHireDate() == null ? "" : user.getHireDate().toString());
+                row.createCell(9).setCellValue(user.getBirthday() == null ? "" : user.getBirthday().toString());
+                row.createCell(10).setCellValue(User.STATUS_ACTIVE.equals(user.getStatus()) ? "启用" : "停用");
+                row.createCell(11).setCellValue(user.getCreatedAt() == null ? "" : user.getCreatedAt().format(dateTime));
+            }
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            workbook.write(out);
+            workbook.dispose();
+            return out.toByteArray();
+        } catch (IOException e) {
+            throw new BusinessException("花名册导出失败");
+        }
+    }
+
+    private String readCellString(Row row, int col) {
+        if (row == null) {
+            return null;
+        }
+        Cell cell = row.getCell(col);
+        if (cell == null) {
+            return null;
+        }
+        return switch (cell.getCellType()) {
+            case STRING -> cell.getStringCellValue().trim();
+            case NUMERIC -> {
+                if (org.apache.poi.ss.usermodel.DateUtil.isCellDateFormatted(cell)) {
+                    yield cell.getLocalDateTimeCellValue().toLocalDate().toString();
+                }
+                double v = cell.getNumericCellValue();
+                yield (v == Math.floor(v)) ? String.valueOf((long) v) : String.valueOf(v);
+            }
+            case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
+            case FORMULA -> cell.getCellFormula();
+            default -> null;
+        };
+    }
+
+    private String mapEmployeeType(String text) {
+        if (text == null || text.isBlank() || text.contains("全职")) {
+            return User.EMPLOYEE_TYPE_FULL_TIME;
+        }
+        if (text.contains("兼职")) {
+            return User.EMPLOYEE_TYPE_PART_TIME;
+        }
+        if (text.contains("实习")) {
+            return User.EMPLOYEE_TYPE_INTERN;
+        }
+        if (text.contains("劳务") || text.contains("派遣")) {
+            return User.EMPLOYEE_TYPE_DISPATCH;
+        }
+        return User.EMPLOYEE_TYPE_OTHER;
+    }
+
+    private String mapWorkStatus(String text) {
+        if (text == null || text.isBlank() || text.contains("转正") || text.contains("正式")) {
+            return User.WORK_STATUS_CONFIRMED;
+        }
+        if (text.contains("试用")) {
+            return User.WORK_STATUS_PROBATION;
+        }
+        if (text.contains("待离职")) {
+            return User.WORK_STATUS_PENDING_RESIGN;
+        }
+        if (text.contains("离职")) {
+            return User.WORK_STATUS_RESIGNED;
+        }
+        return User.WORK_STATUS_CONFIRMED;
+    }
+
+    private LocalDate parseHireDate(String text) {
+        if (text == null || text.isBlank()) {
+            return LocalDate.now();
+        }
+        return parseDate(text);
+    }
+
+    private LocalDate parseDate(String text) {
+        String value = text.trim().replace("/", "-").replace(".", "-");
+        return LocalDate.parse(value.length() == 10 ? value : value.substring(0, Math.min(10, value.length())));
+    }
+
+    private String employeeTypeLabel(String code) {
+        if (code == null) {
+            return "";
+        }
+        return switch (code) {
+            case User.EMPLOYEE_TYPE_FULL_TIME -> "全职";
+            case User.EMPLOYEE_TYPE_PART_TIME -> "兼职";
+            case User.EMPLOYEE_TYPE_INTERN -> "实习";
+            case User.EMPLOYEE_TYPE_DISPATCH -> "劳务派遣";
+            case User.EMPLOYEE_TYPE_OTHER -> "其他";
+            default -> code;
+        };
+    }
+
+    private String workStatusLabel(String code) {
+        if (code == null) {
+            return "";
+        }
+        return switch (code) {
+            case User.WORK_STATUS_PROBATION -> "试用期";
+            case User.WORK_STATUS_CONFIRMED -> "已转正";
+            case User.WORK_STATUS_PENDING_RESIGN -> "待离职";
+            case User.WORK_STATUS_RESIGNED -> "已离职";
+            default -> code;
+        };
     }
 
     @Override
     public List<Map<String, Object>> listActiveUsers() {
         LambdaQueryWrapper<User> baseWrapper = new LambdaQueryWrapper<User>()
                 .eq(User::getStatus, User.STATUS_ACTIVE)
-                .select(User::getId, User::getUsername, User::getRealName, User::getAvatar)
+                .select(User::getId, User::getUsername, User::getRealName, User::getAvatar, User::getOrgId)
                 .orderByAsc(User::getUsername);
 
         // 非超管按组织范围过滤
@@ -151,6 +517,8 @@ public class UserServiceImpl implements UserService {
         m.put("username", user.getUsername());
         m.put("realName", user.getRealName());
         m.put("avatar", user.getAvatar());
+        // 所属组织：人员字段「指定部门」范围过滤需要（org 树节点即部门）
+        m.put("orgId", user.getOrgId());
         return m;
     }
 
@@ -322,6 +690,18 @@ public class UserServiceImpl implements UserService {
         if (dto.getStatus() != null) {
             user.setStatus(dto.getStatus());
         }
+        if (dto.getEmployeeType() != null) {
+            user.setEmployeeType(dto.getEmployeeType());
+        }
+        if (dto.getWorkStatus() != null) {
+            user.setWorkStatus(dto.getWorkStatus());
+        }
+        if (dto.getHireDate() != null) {
+            user.setHireDate(dto.getHireDate());
+        }
+        if (dto.getBirthday() != null) {
+            user.setBirthday(dto.getBirthday());
+        }
         if (dto.getRegionId() != null) {
             user.setRegionId(dto.getRegionId());
         }
@@ -481,6 +861,29 @@ public class UserServiceImpl implements UserService {
                 .distinct()
                 .toList();
 
+        // 超级管理员角色保护：仅内建主管理员（id=1）可持有。
+        // 其他用户请求携带时直接剔除；编辑 admin 时即使前端漏传也保留原有超管角色。
+        Long superAdminRoleId = roleMapper.selectList(new LambdaQueryWrapper<Role>()
+                        .eq(Role::getCode, "SUPER_ADMIN")
+                        .select(Role::getId))
+                .stream()
+                .map(Role::getId)
+                .findFirst()
+                .orElse(null);
+        if (superAdminRoleId != null) {
+            if (Long.valueOf(PRIMARY_ADMIN_ID).equals(userId)) {
+                if (!normalizedRoleIds.contains(superAdminRoleId)) {
+                    List<Long> merged = new ArrayList<>(normalizedRoleIds);
+                    merged.add(superAdminRoleId);
+                    normalizedRoleIds = merged;
+                }
+            } else {
+                normalizedRoleIds = normalizedRoleIds.stream()
+                        .filter(id -> !superAdminRoleId.equals(id))
+                        .toList();
+            }
+        }
+
         if (!normalizedRoleIds.isEmpty()) {
             List<Role> roles = roleMapper.selectBatchIds(normalizedRoleIds);
             if (roles.size() != normalizedRoleIds.size()) {
@@ -530,6 +933,10 @@ public class UserServiceImpl implements UserService {
         vo.setAvatar(user.getAvatar());
         vo.setJobNumber(user.getJobNumber());
         vo.setStatus(user.getStatus());
+        vo.setEmployeeType(user.getEmployeeType());
+        vo.setWorkStatus(user.getWorkStatus());
+        vo.setHireDate(user.getHireDate());
+        vo.setBirthday(user.getBirthday());
         vo.setRegionId(user.getRegionId());
         vo.setDepartmentId(user.getDepartmentId());
         vo.setOrgId(user.getOrgId());

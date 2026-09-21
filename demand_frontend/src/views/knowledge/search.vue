@@ -23,6 +23,7 @@
           </el-select>
 
           <el-radio-group v-model="mode" size="small">
+            <el-radio-button value="auto">智能模式</el-radio-button>
             <el-radio-button value="hybrid">混合模式</el-radio-button>
             <el-radio-button value="semantic">语义检索</el-radio-button>
             <el-radio-button value="keyword">关键词搜索</el-radio-button>
@@ -144,7 +145,7 @@ import { saveBlob } from '@/utils/download'
 
 const store = useKnowledgeStore()
 const query = ref('')
-const mode = ref<SearchMode>('hybrid')
+const mode = ref<SearchMode>('auto')
 const selectedKbId = ref<number | ''>('')
 const topK = ref(20)
 const searched = ref(false)
@@ -270,7 +271,7 @@ function scoreType(score: number) {
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  background: #f5f7fa;
+  background: var(--color-fill-secondary);
   border-radius: 8px;
   margin-bottom: 16px;
 }
@@ -350,7 +351,7 @@ function scoreType(score: number) {
   font-size: 13px;
   color: var(--color-text-secondary);
   line-height: 1.8;
-  background: #f5f7fa;
+  background: var(--color-fill-secondary);
   padding: 12px;
   border-radius: 6px;
   max-height: 160px;
@@ -360,7 +361,7 @@ function scoreType(score: number) {
   margin-top: 12px;
   padding: 10px 12px;
   border-radius: 6px;
-  background: #f0f9eb;
+  background: var(--color-success-bg);
 }
 .requirement-ref__title {
   font-size: 12px;
@@ -392,7 +393,7 @@ function scoreType(score: number) {
   gap: 16px;
   margin-top: 8px;
   font-size: 11px;
-  color: #c0c4cc;
+  color: var(--color-text-tertiary);
 }
 .search-tip {
   text-align: center;
@@ -405,6 +406,6 @@ function scoreType(score: number) {
 }
 .tip-desc {
   font-size: 13px !important;
-  color: #c0c4cc;
+  color: var(--color-text-tertiary);
 }
 </style>

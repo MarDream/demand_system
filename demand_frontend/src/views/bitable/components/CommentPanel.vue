@@ -77,6 +77,7 @@
 import { ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { resolveErrorMessage } from '@/utils/error'
+import { resolveAvatarUrl } from '@/utils/presetAvatars'
 import { formatRelativeTime } from '@/utils/format'
 import { listComments, createComment, deleteComment } from '@/api/modules/bitable'
 import type { BitableComment } from '@/types/bitable'
@@ -111,13 +112,17 @@ async function loadComments(recordId: number) {
   loading.value = true
   try {
     const res = await listComments(recordId)
+    let list: BitableComment[] = []
     if (Array.isArray(res)) {
-      comments.value = res
+      list = res
     } else if (res && typeof res === 'object' && 'data' in res) {
-      comments.value = (res as { data: BitableComment[] }).data ?? []
-    } else {
-      comments.value = []
+      list = (res as { data: BitableComment[] }).data ?? []
     }
+    // 后端回填的 avatar 是 preset:xxx 原始串，直接绑 :src 会 ERR_UNKNOWN_URL_SCHEME
+    for (const c of list) {
+      if (c.avatar) c.avatar = resolveAvatarUrl(c.avatar) ?? undefined
+    }
+    comments.value = list
   } catch (e: any) {
     ElMessage.error(resolveErrorMessage(e, '加载评论失败'))
   } finally {

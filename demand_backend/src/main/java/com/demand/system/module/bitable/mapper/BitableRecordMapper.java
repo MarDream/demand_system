@@ -24,6 +24,14 @@ public interface BitableRecordMapper extends BaseMapper<BitableRecord> {
     List<BitableRecord> selectByTableId(@Param("tableId") Long tableId, @Param("offset") Integer offset, @Param("limit") Integer limit);
 
     /**
+     * 查询指定数据表下当前最大的记录排序号（新记录追加到末尾用）
+     *
+     * @param tableId 数据表ID
+     * @return 最大 sort_order，表为空时返回 null
+     */
+    Integer selectMaxSortOrder(@Param("tableId") Long tableId);
+
+    /**
      * 统计指定数据表下的记录行数量
      *
      * @param tableId 数据表ID

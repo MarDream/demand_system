@@ -2,7 +2,7 @@
   <AppDialog
     v-model="visible"
     class="file-preview-dialog"
-    :title="fileName || '文件预览'"
+    title="文件预览"
     :show-footer="false"
     width="95%"
     top="3vh"
@@ -173,6 +173,9 @@ const previewType = computed(() => {
 
 const isPreviewLoadSlow = computed(() => previewElapsedSeconds.value >= PREVIEW_SLOW_THRESHOLD_SECONDS)
 
+// immediate 必须开启：部分调用方（如需求详情附件列表）用 v-if + v-model 组合，
+// 首次点击时组件带着 modelValue=true 完成挂载，若不 immediate 则 watch 永不触发，
+// 表现为第一次点击预览整个弹窗空白、第二次点击才正常。
 watch(() => props.modelValue, async (open) => {
   if (!open) {
     if (isFullscreen.value) {
@@ -249,7 +252,7 @@ watch(() => props.modelValue, async (open) => {
     textContent.value = '加载失败'
     endPreviewLoading()
   }
-})
+}, { immediate: true })
 
 /**
  * 通用 fileId 模式：先拿 MinIO 24h 预签名 URL，再喂给 kkFileView。
@@ -497,12 +500,12 @@ document.addEventListener('fullscreenchange', onFullscreenChange)
   padding: 4px 8px;
   border-radius: 999px;
   background: rgba(248, 250, 252, 0.96);
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--color-border);
 }
 
 .zoom-level {
   font-size: 12px;
-  color: #475569;
+  color: var(--color-text-secondary);
   min-width: 48px;
   display: inline-block;
   text-align: center;
@@ -521,6 +524,14 @@ document.addEventListener('fullscreenchange', onFullscreenChange)
 .preview-container--fullscreen {
   max-height: none;
   height: 100vh;
+}
+
+/* 全屏时容器被拉伸到 100vh，内部各预览区若仍固定 75vh 会在底部留出大片空白 */
+.preview-container--fullscreen .preview-office-wrap,
+.preview-container--fullscreen .preview-image-wrap,
+.preview-container--fullscreen .preview-text-wrap {
+  height: 100vh;
+  max-height: 100vh;
 }
 
 .preview-loading-mask {
@@ -563,7 +574,7 @@ document.addEventListener('fullscreenchange', onFullscreenChange)
   width: 72px;
   height: 86px;
   border-radius: 18px 18px 16px 16px;
-  background: linear-gradient(180deg, #ffffff 0%, #f6f9ff 100%);
+  background: linear-gradient(180deg, var(--color-surface) 0%, #f6f9ff 100%);
   border: 1px solid rgba(96, 165, 250, 0.28);
   box-shadow: 0 12px 20px rgba(59, 130, 246, 0.12);
 }
@@ -594,7 +605,7 @@ document.addEventListener('fullscreenchange', onFullscreenChange)
 
 .preview-loader__sheet--front {
   z-index: 2;
-  background: linear-gradient(180deg, #ffffff 0%, #eef6ff 100%);
+  background: linear-gradient(180deg, var(--color-surface) 0%, #eef6ff 100%);
 }
 
 .preview-loader__eyes {
@@ -629,20 +640,20 @@ document.addEventListener('fullscreenchange', onFullscreenChange)
 .preview-loading__title {
   font-size: 16px;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--color-text-primary);
 }
 
 .preview-loading__desc {
   font-size: 13px;
   line-height: 1.7;
-  color: #64748b;
+  color: var(--color-muted-text);
 }
 
 .preview-loading__timer {
   padding: 4px 12px;
   border-radius: 999px;
   background: rgba(59, 130, 246, 0.08);
-  color: #2563eb;
+  color: var(--color-primary);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -653,7 +664,7 @@ document.addEventListener('fullscreenchange', onFullscreenChange)
   border-radius: 14px;
   background: rgba(251, 146, 60, 0.12);
   border: 1px solid rgba(251, 146, 60, 0.2);
-  color: #c2410c;
+  color: var(--color-warning-text);
   font-size: 12px;
   line-height: 1.7;
 }
@@ -732,12 +743,12 @@ document.addEventListener('fullscreenchange', onFullscreenChange)
 .preview-error__title {
   font-size: 16px;
   font-weight: 600;
-  color: #b91c1c;
+  color: var(--color-danger-text);
 }
 .preview-error__desc {
   font-size: 13px;
   line-height: 1.6;
-  color: #475569;
+  color: var(--color-text-secondary);
   word-break: break-all;
 }
 .preview-error__hint {
@@ -745,7 +756,7 @@ document.addEventListener('fullscreenchange', onFullscreenChange)
   border-radius: 10px;
   background: rgba(251, 146, 60, 0.08);
   border: 1px solid rgba(251, 146, 60, 0.2);
-  color: #c2410c;
+  color: var(--color-warning-text);
   font-size: 12px;
   line-height: 1.7;
 }

@@ -1,6 +1,6 @@
 import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from 'axios'
 import { showToast } from 'vant'
-import { getToken, getRefreshToken, setToken, setRefreshToken, clearAuth } from '@/utils/auth'
+import { getToken, getRefreshToken, setToken, setRefreshToken, clearAuth, getActiveRole } from '@/utils/auth'
 
 export interface ApiResponse<T = unknown> {
   code: number
@@ -26,6 +26,11 @@ service.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = getToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
+  }
+  // 角色切换：与 PC 端同口径，待办/已办按当前生效角色过滤
+  const activeRole = getActiveRole()
+  if (activeRole) {
+    config.headers['X-Active-Role'] = activeRole
   }
   return config
 })

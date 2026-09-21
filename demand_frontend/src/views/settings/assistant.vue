@@ -594,11 +594,11 @@ onMounted(() => {
   padding: var(--spacing-md);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .stat-card--tip {
-  background: #f5f7fa;
+  background: var(--color-fill-secondary);
   border-style: dashed;
 }
 
@@ -630,7 +630,7 @@ onMounted(() => {
 
 /* ── Tabs ── */
 .settings-tabs {
-  background: #fff;
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: 0 var(--spacing-lg) var(--spacing-lg);
@@ -718,7 +718,7 @@ onMounted(() => {
   height: 22px;
   padding: 0 8px;
   border-radius: 6px;
-  background: #f5f7fa;
+  background: var(--color-fill-secondary);
   color: var(--color-text-primary);
   font-weight: 600;
   font-size: var(--font-size-sm);
@@ -785,8 +785,8 @@ onMounted(() => {
   padding: 10px 14px;
   margin-bottom: var(--spacing-md);
   border-radius: var(--radius-md);
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
   font-size: var(--font-size-sm);
 }
 

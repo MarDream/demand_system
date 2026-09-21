@@ -18,6 +18,10 @@ public class KnowledgeSearchResponse {
     private List<String> warnings;
     /** 推荐追问问题（查询改写阶段产出） */
     private List<String> suggestedFollowUps;
+    /** 实际生效的检索模式：请求 mode=auto 时为路由后的 hybrid/semantic/keyword */
+    private String retrievalMode;
+    /** 请求是否为自动适配（mode=auto），前端据此展示「智能检索」标识 */
+    private Boolean modeAuto;
 
     public List<SearchResultItem> getResults() {
         return results;
@@ -96,6 +100,12 @@ public class KnowledgeSearchResponse {
 
     public List<String> getSuggestedFollowUps() { return suggestedFollowUps; }
     public void setSuggestedFollowUps(List<String> suggestedFollowUps) { this.suggestedFollowUps = suggestedFollowUps; }
+
+    public String getRetrievalMode() { return retrievalMode; }
+    public void setRetrievalMode(String retrievalMode) { this.retrievalMode = retrievalMode; }
+
+    public Boolean getModeAuto() { return modeAuto; }
+    public void setModeAuto(Boolean modeAuto) { this.modeAuto = modeAuto; }
 
     public static KnowledgeSearchResponseBuilder builder() {
         return new KnowledgeSearchResponseBuilder();
@@ -287,6 +297,8 @@ public class KnowledgeSearchResponse {
         private List<CitationReference> citations;
         private List<String> warnings;
         private List<String> suggestedFollowUps;
+        private String retrievalMode;
+        private Boolean modeAuto;
 
         public KnowledgeSearchResponseBuilder results(List<SearchResultItem> results) {
             this.results = results;
@@ -343,6 +355,16 @@ public class KnowledgeSearchResponse {
             return this;
         }
 
+        public KnowledgeSearchResponseBuilder retrievalMode(String retrievalMode) {
+            this.retrievalMode = retrievalMode;
+            return this;
+        }
+
+        public KnowledgeSearchResponseBuilder modeAuto(Boolean modeAuto) {
+            this.modeAuto = modeAuto;
+            return this;
+        }
+
         public KnowledgeSearchResponse build() {
             KnowledgeSearchResponse response = new KnowledgeSearchResponse();
             response.setResults(results);
@@ -356,6 +378,8 @@ public class KnowledgeSearchResponse {
             response.setCitations(citations);
             response.setWarnings(warnings);
             response.setSuggestedFollowUps(suggestedFollowUps);
+            response.setRetrievalMode(retrievalMode);
+            response.setModeAuto(modeAuto);
             return response;
         }
     }

@@ -150,6 +150,7 @@ public class WorkflowVersionService {
                     .set(WorkflowVersion::getActivationStatus, "rejected")
                     .set(WorkflowVersion::getApprovedBy, operatorId)
                     .set(WorkflowVersion::getApprovedAt, LocalDateTime.now())
+                    .set(WorkflowVersion::getUpdatedAt, LocalDateTime.now())
                     .set(WorkflowVersion::getApprovalComment, comment));
             return;
         }

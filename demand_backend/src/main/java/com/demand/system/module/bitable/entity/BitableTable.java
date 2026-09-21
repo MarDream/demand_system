@@ -21,6 +21,11 @@ public class BitableTable {
      */
     private Long groupId;
 
+    /**
+     * 独立分组归属（Base 分组树上的位置），null=跟随所属 Base 的分组
+     */
+    private Long baseGroupId;
+
     private String name;
 
     private String description;
@@ -28,6 +33,11 @@ public class BitableTable {
     private String icon;
 
     private Integer sortOrder;
+
+    /**
+     * 网格行高(px)，null=使用前端默认值(80)
+     */
+    private Integer rowHeight;
 
     private Long defaultViewId;
 
@@ -64,6 +74,14 @@ public class BitableTable {
         this.groupId = groupId;
     }
 
+    public Long getBaseGroupId() {
+        return baseGroupId;
+    }
+
+    public void setBaseGroupId(Long baseGroupId) {
+        this.baseGroupId = baseGroupId;
+    }
+
     public String getName() {
         return name;
     }
@@ -94,6 +112,14 @@ public class BitableTable {
 
     public void setSortOrder(Integer sortOrder) {
         this.sortOrder = sortOrder;
+    }
+
+    public Integer getRowHeight() {
+        return rowHeight;
+    }
+
+    public void setRowHeight(Integer rowHeight) {
+        this.rowHeight = rowHeight;
     }
 
     public Long getDefaultViewId() {

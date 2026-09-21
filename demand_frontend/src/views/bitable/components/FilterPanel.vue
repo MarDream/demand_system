@@ -8,6 +8,28 @@
     @closed="handleClosed"
   >
     <div class="filter-panel">
+      <!-- AI 智能筛选：自然语言生成条件 -->
+      <div class="filter-panel__ai">
+        <el-input
+          v-model="aiText"
+          size="small"
+          :disabled="aiGenerating"
+          maxlength="200"
+          placeholder="用一句自然语言描述筛选需求，如「状态为进行中且优先级是高」"
+          @keyup.enter="applyAiFilter"
+        >
+          <template #prefix><i class="ri-sparkling-2-line" /></template>
+        </el-input>
+        <el-button
+          type="primary"
+          size="small"
+          :loading="aiGenerating"
+          @click="applyAiFilter"
+        >
+          AI 生成
+        </el-button>
+      </div>
+
       <!-- 顶层逻辑切换 -->
       <div class="filter-panel__logic">
         <span class="filter-panel__logic-label">条件关系</span>
@@ -54,7 +76,8 @@
             />
           </el-select>
 
-          <!-- 值输入：between 用两个输入框，其他用一个 -->
+          <!-- 值输入：between 用两个输入框，其他用一个；
+               文本/选择类字段的等值与包含类运算符用「已有取值」可搜索下拉（仍可手输新值） -->
           <template v-if="rule.operator === 'between'">
             <el-input
               v-model="rule.valueMin"
@@ -74,15 +97,33 @@
               style="width: 100px"
             />
           </template>
-          <el-input
-            v-else-if="rule.operator !== 'is_empty' && rule.operator !== 'is_not_empty'"
-            v-model="rule.valueText"
-            :placeholder="valuePlaceholder(rule)"
-            size="small"
-            maxlength="512"
-            show-word-limit
-            style="width: 140px"
-          />
+          <template v-else-if="rule.operator !== 'is_empty' && rule.operator !== 'is_not_empty'">
+            <el-select
+              v-if="useValueSelect(rule)"
+              v-model="rule.valueText"
+              placeholder="搜索或选择，可输入新值"
+              size="small"
+              style="width: 190px"
+              filterable
+              allow-create
+              default-first-option
+              clearable
+              :loading="isLoadingOptions(rule)"
+              @visible-change="(v: boolean) => v && ensureValueOptions(rule.fieldId)"
+              @clear="rule.valueText = ''"
+            >
+              <el-option v-for="opt in optionsFor(rule)" :key="opt" :label="opt" :value="opt" />
+            </el-select>
+            <el-input
+              v-else
+              v-model="rule.valueText"
+              :placeholder="valuePlaceholder(rule)"
+              size="small"
+              maxlength="512"
+              show-word-limit
+              style="width: 140px"
+            />
+          </template>
 
           <el-button
             link
@@ -118,6 +159,7 @@
 import { ref, watch, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Delete, Plus } from '@element-plus/icons-vue'
+import { listFieldDistinctValues, aiGenerateFilter } from '@/api/modules/bitable'
 import type {
   BitableField,
   FieldType,
@@ -130,6 +172,10 @@ const props = defineProps<{
   modelValue: boolean
   fields: BitableField[]
   filterConfig: FilterGroup | FilterItem[] | null
+  /** 右键「按字段筛选」预置的字段 ID：打开时若指定则预置一条该字段的条件 */
+  presetFieldId?: number | null
+  /** 当前数据表 ID：取字段已有值列表用 */
+  tableId?: number | null
 }>()
 
 const emit = defineEmits<{
@@ -156,12 +202,41 @@ const filterableFields = computed(() =>
   props.fields.filter((f) => !['formula', 'lookup', 'rollup', 'attachment', 'button', 'date_range'].includes(f.fieldType)),
 )
 
-// 打开时根据现有配置初始化
+// 打开时根据现有配置初始化；有预置字段且当前无该字段条件时，追加一条预置规则
 watch(
   () => props.modelValue,
   (visible) => {
     if (visible) {
+      // 每次打开重新拉取已有取值，避免使用上次打开后的陈旧数据
+      valueOptionsByField.value.clear()
+      loadingValueFields.value.clear()
       initFromConfig()
+      if (props.presetFieldId != null) {
+        const field = props.fields.find((f) => f.id === props.presetFieldId)
+        if (field) {
+          const already = rules.value.some((r) => r.fieldId === props.presetFieldId)
+          if (!already) {
+            // 空白占位规则（未选字段）直接替换；否则追加
+            const blankIdx = rules.value.findIndex((r) => r.fieldId == null)
+            const draft: DraftRule = {
+              fieldId: field.id,
+              operator: defaultOperator(field.fieldType),
+              valueText: '',
+              valueMin: '',
+              valueMax: '',
+            }
+            if (blankIdx >= 0) {
+              rules.value.splice(blankIdx, 1, draft)
+            } else {
+              rules.value.push(draft)
+            }
+          }
+        }
+      }
+      // 预取已配置规则字段的取值列表
+      for (const fieldId of new Set(rules.value.map((r) => r.fieldId))) {
+        void ensureValueOptions(fieldId)
+      }
     }
   },
 )
@@ -226,6 +301,44 @@ function onFieldChange(rule: DraftRule) {
   rule.valueText = ''
   rule.valueMin = ''
   rule.valueMax = ''
+  // 换字段后预取已有取值，下拉展开时即可用
+  void ensureValueOptions(rule.fieldId)
+}
+
+// ===== 值下拉（已有取值 + 模糊搜索）：文本/选择类字段 + 等值与包含类运算符 =====
+const VALUE_SELECT_TYPES: string[] = ['text', 'rich_text', 'url', 'email', 'phone', 'single_select', 'multi_select', 'ai_text', 'ai_select']
+const VALUE_SELECT_OPERATORS: FilterOperator[] = ['eq', 'ne', 'contains', 'not_contains']
+
+const valueOptionsByField = ref<Map<number, string[]>>(new Map())
+const loadingValueFields = ref<Set<number>>(new Set())
+
+function useValueSelect(rule: DraftRule): boolean {
+  const field = props.fields.find((f) => f.id === rule.fieldId)
+  if (!field) return false
+  return VALUE_SELECT_TYPES.includes(field.fieldType) && VALUE_SELECT_OPERATORS.includes(rule.operator)
+}
+
+function optionsFor(rule: DraftRule): string[] {
+  return rule.fieldId != null ? valueOptionsByField.value.get(rule.fieldId) ?? [] : []
+}
+
+function isLoadingOptions(rule: DraftRule): boolean {
+  return rule.fieldId != null ? loadingValueFields.value.has(rule.fieldId) : false
+}
+
+async function ensureValueOptions(fieldId: number | null) {
+  if (fieldId == null || props.tableId == null) return
+  if (valueOptionsByField.value.has(fieldId) || loadingValueFields.value.has(fieldId)) return
+  loadingValueFields.value.add(fieldId)
+  try {
+    const values = await listFieldDistinctValues(props.tableId, fieldId)
+    valueOptionsByField.value.set(fieldId, Array.isArray(values) ? values : [])
+  } catch {
+    // 拉取失败：留空列表，仍可手输新值
+    valueOptionsByField.value.set(fieldId, [])
+  } finally {
+    loadingValueFields.value.delete(fieldId)
+  }
 }
 
 function defaultOperator(type?: FieldType): FilterOperator {
@@ -323,6 +436,54 @@ function addRule() {
   rules.value.push({ fieldId: null, operator: 'contains', valueText: '', valueMin: '', valueMax: '' })
 }
 
+// ==================== AI 智能筛选：自然语言生成条件 ====================
+
+const aiText = ref('')
+const aiGenerating = ref(false)
+
+/** 调后端把自然语言解析为条件，填充面板并自动应用查询（面板保持打开可微调） */
+async function applyAiFilter() {
+  const text = aiText.value.trim()
+  if (!text) {
+    ElMessage.warning('请先描述筛选需求，如「状态为进行中且优先级是高」')
+    return
+  }
+  if (props.tableId == null) {
+    ElMessage.warning('当前无法定位数据表')
+    return
+  }
+  aiGenerating.value = true
+  try {
+    const result = await aiGenerateFilter(props.tableId, text)
+    rootLogic.value = result.logic === 'or' ? 'or' : 'and'
+    const drafts: DraftRule[] = []
+    for (const r of result.rules || []) {
+      const field = props.fields.find((f) => f.id === r.fieldId)
+      if (!field) continue
+      const isBetween = r.operator === 'between'
+      const value = Array.isArray(r.value) ? r.value : [r.value ?? '', '']
+      drafts.push({
+        fieldId: r.fieldId,
+        operator: r.operator as FilterOperator,
+        valueText: String(value[0] ?? ''),
+        valueMin: isBetween ? String(value[0] ?? '') : '',
+        valueMax: isBetween ? String(value[1] ?? '') : '',
+      })
+    }
+    if (!drafts.length) {
+      ElMessage.warning('未能生成有效筛选条件，请换个描述或手动配置')
+      return
+    }
+    rules.value = drafts.slice(0, MAX_RULES)
+    ElMessage.success(`已生成 ${drafts.length} 条筛选条件并应用`)
+    handleApply()
+  } catch (e: any) {
+    ElMessage.error(e?.message || 'AI 生成筛选失败，请重试')
+  } finally {
+    aiGenerating.value = false
+  }
+}
+
 function removeRule(index: number) {
   rules.value.splice(index, 1)
 }
@@ -387,6 +548,15 @@ function handleClosed() {
 
 <style scoped lang="scss">
 .filter-panel {
+  &__ai {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px dashed var(--color-border);
+  }
+
   &__logic {
     display: flex;
     align-items: center;

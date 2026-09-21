@@ -131,7 +131,11 @@ export async function getOfficePreviewUrl(
   }
 
   for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
-    await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS))
+    // 首次轮询立即执行：小文件转码常在 submit 返回前就已完成，
+    // 固定 sleep 会平白多等一个轮询周期
+    if (attempt > 0) {
+      await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS))
+    }
     const status = await pollOfficeStatus(submitted.taskId, submitted.previewUrl ?? '')
     options?.onProgress?.({
       ...status,

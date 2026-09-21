@@ -13,6 +13,9 @@ import type { AssistantChatRequest, AssistantMessage, AssistantMessageId, Assist
 
 const DEFAULT_SESSION_TITLE = '新会话'
 
+/** AI 助手浮标拖拽位置的 localStorage 键；登录成功时清除，使浮标回到左下角默认位 */
+export const ASSISTANT_FAB_POSITION_KEY = 'assistant-fab-position'
+
 function buildTempId(prefix: string): AssistantMessageId {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
 }
@@ -73,7 +76,7 @@ function buildHistory(messages: AssistantMessage[], beforeId?: AssistantMessageI
 
 /**
  * 弹框窗口模式：
- * - normal：右下角浮动（默认）
+ * - normal：浏览器居中浮动（默认，打开时由 SystemAssistant 居中定位，可拖动）
  * - maximized：全屏铺满 viewport
  * - minimized：缩成右下角迷你条，仅展示头像 + 标题 + 还原/关闭按钮
  */
@@ -298,6 +301,10 @@ export const useAssistantStore = defineStore('assistant', () => {
           target.sources = payload.sources || []
           target.tasks = payload.tasks || []
           target.warnings = payload.warnings || []
+          // 角标来源在回答开始流式推送前下发，先落库再收 delta，正文 [N] 才能即时渲染成角标
+          if (payload.citations) {
+            target.citations = payload.citations
+          }
           if (payload.dataResult) {
             target.dataResult = payload.dataResult
           }
@@ -436,6 +443,9 @@ export const useAssistantStore = defineStore('assistant', () => {
           oldMessage.sources = payload.sources || []
           oldMessage.tasks = payload.tasks || []
           oldMessage.warnings = payload.warnings || []
+          if (payload.citations) {
+            oldMessage.citations = payload.citations
+          }
           if (payload.dataResult) {
             oldMessage.dataResult = payload.dataResult
           }

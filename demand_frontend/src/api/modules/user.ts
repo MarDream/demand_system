@@ -1,9 +1,64 @@
 import request from '@/api/request'
 import type { PageResult } from '@/types/api'
-import type { User, UserQuery, Position, OrgNode } from '@/types/user'
+import type { User, UserQuery, Position, OrgNode, RosterStats, RosterImportResult, RosterExportLog } from '@/types/user'
+import axios from 'axios'
+import { getToken } from '@/utils/auth'
 
 export function getUserList(params: UserQuery) {
   return request.get<PageResult<User>>('/v1/users', { params })
+}
+
+/** 花名册统计板（在职/员工类型/用工状态分布），随筛选范围联动 */
+export function getRosterStats(params: UserQuery) {
+  return request.get<RosterStats>('/v1/users/roster-stats', { params }) as unknown as Promise<RosterStats>
+}
+
+/** 花名册导入模板下载（XLSX Blob） */
+export function downloadRosterImportTemplate() {
+  const baseURL = import.meta.env.VITE_API_BASE_URL
+  return axios.get(`${baseURL}/v1/users/import-template`, {
+    responseType: 'blob',
+    headers: { Authorization: `Bearer ${getToken()}` },
+    timeout: 60000,
+  })
+}
+
+/** 导入花名册（XLSX 文件 + 统一归属部门） */
+export function importRoster(file: File, orgId?: number) {
+  const form = new FormData()
+  form.append('file', file)
+  if (orgId != null) form.append('orgId', String(orgId))
+  return request.post<RosterImportResult>('/v1/users/import', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000,
+  }) as unknown as Promise<RosterImportResult>
+}
+
+/** 导出花名册（按当前筛选生成 XLSX，写入导出历史），返回历史条目 */
+export function exportRoster(params: UserQuery) {
+  return request.post<RosterExportLog>('/v1/users/export', params) as unknown as Promise<RosterExportLog>
+}
+
+/** 导出历史（分页倒序） */
+export function getRosterExportHistory(pageNum = 1, pageSize = 10) {
+  return request.get<PageResult<RosterExportLog>>('/v1/users/export-history', {
+    params: { pageNum, pageSize },
+  }) as unknown as Promise<PageResult<RosterExportLog>>
+}
+
+/** 删除导出历史 */
+export function deleteRosterExportLog(id: number) {
+  return request.delete<void>(`/v1/users/export-history/${id}`)
+}
+
+/** 下载历史导出文件（XLSX Blob） */
+export function downloadRosterExportLog(id: number) {
+  const baseURL = import.meta.env.VITE_API_BASE_URL
+  return axios.get(`${baseURL}/v1/users/export-history/${id}/download`, {
+    responseType: 'blob',
+    headers: { Authorization: `Bearer ${getToken()}` },
+    timeout: 120000,
+  })
 }
 
 /** 获取活跃用户列表（仅 id/username/realName/avatar），供前端筛选框、成员选择器使用 */

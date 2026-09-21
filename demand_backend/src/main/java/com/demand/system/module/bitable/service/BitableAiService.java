@@ -3,6 +3,8 @@ package com.demand.system.module.bitable.service;
 import com.demand.system.module.bitable.dto.AiBuildTableResult;
 import com.demand.system.module.bitable.dto.AiQueryResult;
 
+import java.util.Map;
+
 /**
  * 多维表格 AI 能力 Service
  */
@@ -49,6 +51,20 @@ public interface BitableAiService {
      * @param userId  操作人ID
      */
     void fillBatchAsync(Long tableId, Long fieldId, Long userId);
+
+    /**
+     * AI 自然语言生成筛选条件。
+     * <p>
+     * 把表字段清单与用户自然语言交给 LLM，解析为结构化筛选条件
+     * （{@code logic: and|or} + {@code rules: [{fieldId, operator, value, valueMin, valueMax}]}），
+     * 只输出可校验的合法字段与操作符，无法映射的条件省略。
+     *
+     * @param tableId 数据表ID
+     * @param text    自然语言描述（如「状态为进行中且优先级高」）
+     * @param userId  操作人ID
+     * @return {@code {logic, rules:[...]}}，结构同前端 filterConfig
+     */
+    Map<String, Object> aiGenerateFilter(Long tableId, String text, Long userId);
 
     /**
      * 处理 AI 批量填充任务（由 MQ 消费者调用）

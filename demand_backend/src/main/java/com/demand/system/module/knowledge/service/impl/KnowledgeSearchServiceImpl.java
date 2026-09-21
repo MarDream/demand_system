@@ -18,6 +18,7 @@ import com.demand.system.module.knowledge.service.ImageUnderstandingService;
 import com.demand.system.module.knowledge.service.KnowledgeSearchService;
 import com.demand.system.module.knowledge.service.QueryRewriteService;
 import com.demand.system.module.knowledge.service.RagAnswerService;
+import com.demand.system.module.knowledge.support.RetrievalModeRouter;
 import com.demand.system.module.knowledge.vectorstore.MilvusVectorStore;
 import com.demand.system.module.requirement.entity.Requirement;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
@@ -95,11 +96,11 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
     public KnowledgeSearchResponse search(KnowledgeSearchRequest request) {
         KnowledgeSearchResponse response = retrieve(request);
         String query = request.getQuery();
-        String mode = normalizeMode(request.getMode());
-        List<KnowledgeSearchResponse.ThinkingStep> thinkingSteps = buildThinkingSteps(query, mode, response);
+        String requestedMode = normalizeMode(request.getMode());
+        List<KnowledgeSearchResponse.ThinkingStep> thinkingSteps = buildThinkingSteps(query, requestedMode, response);
 
         boolean shouldGenerateAnswer = !response.getResults().isEmpty()
-                && ("rag".equals(mode) || request.getLlmModelId() != null);
+                && ("rag".equals(requestedMode) || request.getLlmModelId() != null);
         if (!shouldGenerateAnswer) {
             response.setThinkingSteps(thinkingSteps);
             return response;
@@ -134,7 +135,6 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
             StringBuilder reasoning = new StringBuilder();
             String query = request.getQuery();
             String mode = normalizeMode(request.getMode());
-
             try {
                 // Step 1: 查询改写（结合多轮历史消解指代，同时产出关键词/意图/追问推荐；失败自动降级）
                 QueryRewriteResult rewrite = queryRewriteService.rewrite(query, request.getHistory());
@@ -142,10 +142,19 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                 thinkingSteps.add(new KnowledgeSearchResponse.ThinkingStep(
                         "query_parse", "问题解析", buildQueryParseDetail(query, rewrite)));
 
-                // Step 2: 用改写后的独立问题执行检索
-                KnowledgeSearchResponse response = retrieve(copyWithQuery(request, rewrite.safeStandaloneQuery()));
+                // Step 2: 用改写后的独立问题执行检索（auto 模式在 retrieve 内按问题特征路由；
+                // 改写产出的关键词并入关键词召回词表）
+                KnowledgeSearchRequest retrieveRequest = copyWithQuery(request, rewrite.safeStandaloneQuery());
+                retrieveRequest.setRewriteKeywords(rewrite.keywords());
+                KnowledgeSearchResponse response = retrieve(retrieveRequest);
+                // 实际生效的检索模式（auto 时为路由结论）
+                String effectiveMode = response.getRetrievalMode() != null ? response.getRetrievalMode() : mode;
 
-                // 先补齐意图 / 追问推荐再下发 results，保证前端首帧数据完整（citations 已在 retrieve 组装）
+                // 引用来源已在 retrieve() 中收敛为进入 LLM 上下文的资料（与回答 [N] 编号严格对应）
+                List<KnowledgeSearchResponse.SearchResultItem> contextItems =
+                        selectContextResults(response.getResults());
+
+                // 先补齐意图 / 追问推荐再下发 results，保证前端首帧数据完整
                 response.setQuestionIntent(rewrite.intent());
                 response.setIntentConfidence(rewrite.confidence());
                 response.setSuggestedFollowUps(rewrite.followUps());
@@ -153,6 +162,12 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
 
                 int resultCount = response.getResults().size();
                 int uniqueDocs = countUniqueDocuments(response.getResults());
+                // 智能检索：展示自动路由结论
+                if ("auto".equals(mode)) {
+                    thinkingSteps.add(new KnowledgeSearchResponse.ThinkingStep(
+                            "route", "智能检索",
+                            "根据问题特征自动选择：" + RetrievalModeRouter.describe(effectiveMode)));
+                }
                 thinkingSteps.add(new KnowledgeSearchResponse.ThinkingStep(
                         "retrieve",
                         "文档检索",
@@ -161,7 +176,7 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                 ));
 
                 // Step 3: 重排序说明（降级时 warnings 已如实提示，这里不再虚构“已重排”）
-                if ("hybrid".equals(mode) && !hasRerankDegraded(response)) {
+                if ("hybrid".equals(effectiveMode) && !hasRerankDegraded(response)) {
                     thinkingSteps.add(new KnowledgeSearchResponse.ThinkingStep(
                             "rerank",
                             "智能排序",
@@ -173,7 +188,6 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                 boolean shouldGenerateAnswer = !response.getResults().isEmpty()
                         && ("rag".equals(mode) || request.getLlmModelId() != null);
                 if (shouldGenerateAnswer) {
-                    List<KnowledgeSearchResponse.SearchResultItem> contextItems = selectContextResults(response.getResults());
                     thinkingSteps.add(new KnowledgeSearchResponse.ThinkingStep(
                             "synthesize",
                             "生成回答",
@@ -250,7 +264,15 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
 
     @Override
     public KnowledgeSearchResponse retrieve(KnowledgeSearchRequest request) {
-        String mode = normalizeMode(request.getMode());
+        String requestedMode = normalizeMode(request.getMode());
+        boolean modeAuto = "auto".equals(requestedMode);
+        // 智能检索：mode=auto 时按问题特征自动路由实际模式（用户无感知，路由结论回传前端展示）
+        String mode = modeAuto
+                ? RetrievalModeRouter.route(request.getQuery(), request.getRewriteKeywords())
+                : requestedMode;
+        if ("rag".equals(mode)) {
+            mode = "hybrid";
+        }
         // 优先级：请求参数 > 模型配置 > 全局配置
         int topK = request.getTopK() != null ? request.getTopK() : resolveTopK();
         String kbId = request.getKnowledgeBaseId() != null ? String.valueOf(request.getKnowledgeBaseId()) : null;
@@ -270,12 +292,14 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         } else if ("keyword".equals(mode)) {
             outcome = new RetrievalOutcome(
                     keywordSearch(request.getQuery(), request.getKnowledgeBaseId(), candidateTopK,
-                            scopes.includeKnowledgeBase(), scopes.includeRequirementBody()),
+                            scopes.includeKnowledgeBase(), scopes.includeRequirementBody(),
+                            request.getRewriteKeywords()),
                     false);
         } else {
             float[] queryVector = embeddingService.embed(request.getQuery());
             outcome = hybridSearch(request.getQuery(), queryVector, kbId, candidateTopK,
-                    scopes.includeKnowledgeBase(), scopes.includeRequirementBody());
+                    scopes.includeKnowledgeBase(), scopes.includeRequirementBody(),
+                    request.getRewriteKeywords());
         }
 
         // 在生成回答前做后端权限过滤，禁止无权工单正文进入检索结果或 LLM 上下文。
@@ -293,9 +317,13 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         return KnowledgeSearchResponse.builder()
                 .results(results)
                 .total(results.size())
-                .processSummary(buildProcessSummary(request, outcome.items().size(), results))
-                .citations(buildCitationReferences(results))
+                .processSummary(buildProcessSummary(request, mode, modeAuto, outcome.items().size(), results))
+                // 引用来源只包含真正进入 LLM 上下文的资料（编号口径与回答里的 [N] 完全一致）：
+                // 弱相关长尾只留在结果列表里，不会作为「引用来源」冒出来误导用户
+                .citations(buildCitationReferences(selectContextResults(results)))
                 .warnings(warnings)
+                .retrievalMode(mode)
+                .modeAuto(modeAuto)
                 .build();
     }
 
@@ -307,14 +335,15 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
      * 精排失败时降级使用 RRF 归一化分数，并如实标记 rerankDegraded。
      */
     private RetrievalOutcome hybridSearch(String query, float[] queryVector, String knowledgeBaseId, int topK,
-                                          boolean includeKnowledgeBase, boolean includeRequirementBody) {
+                                          boolean includeKnowledgeBase, boolean includeRequirementBody,
+                                          List<String> rewriteKeywords) {
         int candidateSize = Math.min(Math.max(topK * 3, 30), 100);
         Long kbIdLong = knowledgeBaseId != null ? Long.valueOf(knowledgeBaseId) : null;
 
         List<KnowledgeSearchResponse.SearchResultItem> vectorItems =
                 semanticSearch(queryVector, knowledgeBaseId, candidateSize, includeKnowledgeBase, includeRequirementBody);
         List<KnowledgeSearchResponse.SearchResultItem> keywordItems =
-                keywordSearch(query, kbIdLong, candidateSize, includeKnowledgeBase, includeRequirementBody);
+                keywordSearch(query, kbIdLong, candidateSize, includeKnowledgeBase, includeRequirementBody, rewriteKeywords);
 
         Map<String, Double> rrfScores = new HashMap<>();
         Map<String, KnowledgeSearchResponse.SearchResultItem> itemByKey = new LinkedHashMap<>();
@@ -385,13 +414,22 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
     /**
      * 从最终结果中挑选进入 LLM 上下文的片段：结果已按相关度降序，
      * 低于最低分阈值或超出字符预算的尾部片段不参与回答生成（结果列表仍完整展示）。
+     *
+     * <p>阈值取「绝对下限 {@code knowledge.context-min-score}」与
+     * 「相对下限 = 首条分数 × {@code knowledge.context-relative-floor}」中的较大者。
+     * reranker 打分量纲随模型浮动，单靠绝对值容易把无关长尾放进来
+     * （实测无关需求能拿到 0.35 而命中需求是 0.7），叠加相对下限后
+     * 高分结果后面的弱相关文档会被一并剔除，避免无关文档进入回答依据与引用来源。</p>
      */
-    private List<KnowledgeSearchResponse.SearchResultItem> selectContextResults(
+    @Override
+    public List<KnowledgeSearchResponse.SearchResultItem> selectContextResults(
             List<KnowledgeSearchResponse.SearchResultItem> results) {
         if (results == null || results.isEmpty()) {
             return List.of();
         }
-        double minScore = knowledgeConfig.getContextMinScore();
+        double topScore = results.get(0).getScore() == null ? 0d : results.get(0).getScore();
+        double minScore = Math.max(knowledgeConfig.getContextMinScore(),
+                topScore * knowledgeConfig.getContextRelativeFloor());
         int maxChars = knowledgeConfig.getContextMaxChars();
         List<KnowledgeSearchResponse.SearchResultItem> selected = new ArrayList<>();
         int usedChars = 0;
@@ -406,8 +444,8 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
             usedChars += length;
         }
         if (selected.size() < results.size()) {
-            log.info("上下文裁剪：{} 条片段中 {} 条进入 LLM（预算 {} 字符，最低分 {}）",
-                    results.size(), selected.size(), maxChars, minScore);
+            log.info("上下文裁剪：{} 条片段中 {} 条进入 LLM（预算 {} 字符，最低分 {}/首条 {}）",
+                    results.size(), selected.size(), maxChars, minScore, topScore);
         }
         return selected;
     }
@@ -420,6 +458,17 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         List<MilvusVectorStore.SearchResult> milvusResults =
                 searchMilvusInScopes(queryVector, knowledgeBaseId, topK,
                         includeKnowledgeBase, includeRequirementBody);
+        // 相似度下限过滤：低于阈值（knowledge.similarity-threshold，默认 0.4）的向量命中
+        // 大概率与问题无关，直接丢弃，避免低相似度片段混入结果与 LLM 上下文（COSINE 量纲 0~1）。
+        double scoreFloor = knowledgeConfig.getSimilarityThreshold();
+        List<MilvusVectorStore.SearchResult> filtered = milvusResults.stream()
+                .filter(sr -> sr.getScore() >= scoreFloor)
+                .collect(Collectors.toList());
+        if (filtered.size() < milvusResults.size()) {
+            log.info("向量召回相似度过滤：{} 条候选中 {} 条低于阈值 {} 被丢弃",
+                    milvusResults.size(), milvusResults.size() - filtered.size(), scoreFloor);
+        }
+        milvusResults = filtered;
         Map<Long, KnowledgeSearchResponse.RequirementReference> reqMap =
                 buildDocumentRequirementMap(collectDocumentIds(milvusResults));
         Map<String, KnowledgeChunk> chunkMap = buildChunkMetadataMap(milvusResults);
@@ -500,7 +549,8 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
 
     private List<KnowledgeSearchResponse.SearchResultItem> keywordSearch(
             String query, Long knowledgeBaseId, int topK,
-            boolean includeKnowledgeBase, boolean includeRequirementBody) {
+            boolean includeKnowledgeBase, boolean includeRequirementBody,
+            List<String> rewriteKeywords) {
         String normalizedQuery = normalizeKeyword(query);
         if (normalizedQuery.isBlank()) {
             return Collections.emptyList();
@@ -508,6 +558,15 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
 
         int candidateLimit = Math.min(Math.max(topK * 5, 50), 200);
         List<String> terms = tokenizeKeyword(normalizedQuery);
+        // 查询改写产出的核心关键词并入召回词表（LLM 提炼的领域词往往比原始分词更准）
+        if (rewriteKeywords != null) {
+            for (String keyword : rewriteKeywords) {
+                String trimmed = keyword == null ? "" : keyword.trim();
+                if (trimmed.length() >= 2 && !terms.contains(trimmed) && terms.size() < 12) {
+                    terms.add(trimmed);
+                }
+            }
+        }
         Map<Long, KeywordCandidate> candidates = new LinkedHashMap<>();
 
         if (includeKnowledgeBase) {
@@ -871,10 +930,18 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
     // ==================== 思维链 / 摘要 / 引用 ====================
 
     private List<KnowledgeSearchResponse.ThinkingStep> buildThinkingSteps(
-            String query, String mode, KnowledgeSearchResponse response) {
+            String query, String requestedMode, KnowledgeSearchResponse response) {
         List<KnowledgeSearchResponse.ThinkingStep> steps = new ArrayList<>();
         steps.add(new KnowledgeSearchResponse.ThinkingStep(
                 "query_parse", "问题解析", buildQueryParseDetail(query, null)));
+
+        // 智能检索：展示自动路由结论，让用户无需理解检索类型也能看到系统做了什么
+        String effectiveMode = response.getRetrievalMode() != null ? response.getRetrievalMode() : requestedMode;
+        if ("auto".equals(requestedMode)) {
+            steps.add(new KnowledgeSearchResponse.ThinkingStep(
+                    "route", "智能检索",
+                    "根据问题特征自动选择：" + RetrievalModeRouter.describe(effectiveMode)));
+        }
 
         int resultCount = response.getResults().size();
         int uniqueDocs = countUniqueDocuments(response.getResults());
@@ -883,7 +950,7 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                 String.format("在知识库中检索到 %d 条相关片段，来自 %d 份文档", resultCount, uniqueDocs),
                 resultCount > 0 ? Math.min(1.0, resultCount / 10.0) : 0.0));
 
-        if ("hybrid".equals(mode) && !hasRerankDegraded(response)) {
+        if ("hybrid".equals(effectiveMode) && !hasRerankDegraded(response)) {
             steps.add(new KnowledgeSearchResponse.ThinkingStep(
                     "rerank", "智能排序",
                     String.format("使用重排序模型优化结果顺序，优先呈现最相关的 %d 条片段", Math.min(resultCount, 5))));
@@ -938,18 +1005,22 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         copy.setSearchScopes(request.getSearchScopes());
         copy.setHistory(request.getHistory());
         copy.setRequesterId(request.getRequesterId());
+        copy.setRewriteKeywords(request.getRewriteKeywords());
         return copy;
     }
 
-    private String buildProcessSummary(KnowledgeSearchRequest request, int candidateCount, List<KnowledgeSearchResponse.SearchResultItem> results) {
-        String mode = normalizeMode(request.getMode());
+    private String buildProcessSummary(KnowledgeSearchRequest request, String effectiveMode, boolean modeAuto,
+                                       int candidateCount, List<KnowledgeSearchResponse.SearchResultItem> results) {
+        String modeLabel = modeAuto
+                ? "智能检索（" + RetrievalModeRouter.describe(effectiveMode) + "）"
+                : RetrievalModeRouter.describe(effectiveMode);
         if (results.isEmpty()) {
-            return String.format("系统按%s模式检索了知识库内容，但未找到与\"%s\"相关的文档片段。", mode, request.getQuery());
+            return String.format("系统按%s检索了知识库内容，但未找到与\"%s\"相关的文档片段。", modeLabel, request.getQuery());
         }
         long relatedRequirementCount = results.stream().filter(item -> item.getRequirement() != null).count();
         return String.format(
-                "系统按%s模式解析问题\"%s\"，在%s个候选片段中返回前%d条结果，其中%d条结果可追溯到工单正文或附件。",
-                mode,
+                "系统按%s解析问题\"%s\"，在%s个候选片段中返回前%d条结果，其中%d条结果可追溯到工单正文或附件。",
+                modeLabel,
                 request.getQuery(),
                 candidateCount,
                 results.size(),
@@ -1031,7 +1102,8 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
             refs.add(builder.build());
         }
 
-        refs.sort((a, b) -> Double.compare(b.getMaxScore(), a.getMaxScore()));
+        // 保持首次命中顺序（即资料标签 [N] 的编号顺序），不再按相关度重排：
+        // 前端角标 [N] 与 citations[N-1]、来源列表必须一一对应，相关度信息保留在 maxScore 字段
         for (int i = 0; i < refs.size(); i++) {
             refs.get(i).setIndex(i + 1);
         }
@@ -1062,7 +1134,7 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
     // ==================== 工具方法 ====================
 
     private String normalizeMode(String mode) {
-        return mode == null ? "hybrid" : mode;
+        return mode == null || mode.isBlank() ? "auto" : mode;
     }
 
     private Long parseLong(Object val) {

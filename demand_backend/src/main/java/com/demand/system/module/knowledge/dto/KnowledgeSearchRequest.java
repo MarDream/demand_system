@@ -12,7 +12,8 @@ public class KnowledgeSearchRequest {
 
     private Long knowledgeBaseId;
 
-    private String mode = "hybrid";
+    /** 检索模式：auto（默认，按问题特征自动路由 hybrid/semantic/keyword）/hybrid/semantic/keyword */
+    private String mode = "auto";
 
     private Integer topK = 20;
 
@@ -23,6 +24,10 @@ public class KnowledgeSearchRequest {
 
     /** 多轮对话历史（旧→新），用于查询改写与回答上下文；检索页单轮场景可不传。 */
     private List<ConversationTurn> history;
+
+    /** 查询改写产出的关键词（后端内部流转，供关键词召回扩展），禁止客户端注入。 */
+    @JsonIgnore
+    private List<String> rewriteKeywords;
 
     /** 后端内部传递的检索用户，禁止客户端注入。 */
     @JsonIgnore
@@ -90,5 +95,13 @@ public class KnowledgeSearchRequest {
 
     public void setHistory(List<ConversationTurn> history) {
         this.history = history;
+    }
+
+    public List<String> getRewriteKeywords() {
+        return rewriteKeywords;
+    }
+
+    public void setRewriteKeywords(List<String> rewriteKeywords) {
+        this.rewriteKeywords = rewriteKeywords;
     }
 }

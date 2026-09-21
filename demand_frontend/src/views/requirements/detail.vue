@@ -4,8 +4,11 @@
       <template v-if="detail">
         <div class="detail-layout">
           <div class="detail-main">
-            <div v-if="showPrimaryActions" class="detail-actions">
-              <div class="detail-actions__primary">
+            <div class="detail-actions">
+              <div class="detail-actions__title">
+                <h2 class="detail-actions__title-text" :title="detail.title">{{ detail.title || '未命名需求' }}</h2>
+              </div>
+              <div v-if="showPrimaryActions" class="detail-actions__primary">
                 <el-button v-if="canEditRequirement" type="primary" @click="handleEdit">
                   <el-icon style="margin-right:4px"><Edit /></el-icon>编辑
                 </el-button>
@@ -611,6 +614,7 @@
                       v-model="approvalAttachments"
                       :show-preview="false"
                       :required="isAttachmentRequired"
+                      :dedupe-against="existingRequirementAttachments"
                     />
                     <div
                       v-if="!attachmentAreaExpanded && approvalAttachments.length > 0"
@@ -695,6 +699,7 @@
             <AttachmentUploader
               v-model="supplementAttachments"
               :show-preview="false"
+              :dedupe-against="existingRequirementAttachments"
             />
           </div>
           <template #footer>
@@ -1132,6 +1137,12 @@ const attachmentCount = computed(() => {
     .reduce((total, group) => total + (group.attachments?.length || 0), 0)
   return requirementAttachmentCount + transitionAttachmentCount
 })
+
+/** 本工单全部已有附件(主附件+流转附件),供上传组件做同工单内容去重 */
+const existingRequirementAttachments = computed<RequirementAttachment[]>(() => [
+  ...(detail.value?.attachments || []),
+  ...(detail.value?.transitionAttachments || []).flatMap((group) => group.attachments || []),
+])
 
 const sortedApprovalEvaluations = computed(() => {
   // ISO 8601 字符串可直接字符串比较，无需 new Date() 分配
@@ -2222,13 +2233,34 @@ onMounted(() => {
 /* ===== 页面操作栏 ===== */
 .detail-actions {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 16px;
   padding: 12px 16px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
+}
+
+.detail-actions__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.detail-actions__title-text {
+  margin: 0;
+  font-size: 18px;
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-text-primary);
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .detail-actions__primary {
@@ -2561,8 +2593,8 @@ onMounted(() => {
   align-items: center;
   padding: 1px 8px;
   border-radius: 999px;
-  background: var(--color-accent-tint-light, #eff6ff);
-  color: var(--color-accent, #2563eb);
+  background: var(--color-accent-tint-light, var(--color-primary-subtle));
+  color: var(--color-accent, var(--color-primary));
   font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
@@ -2671,19 +2703,19 @@ onMounted(() => {
   transition: all 0.15s ease;
 
   &:hover {
-    color: var(--color-primary, #2563eb);
+    color: var(--color-primary, var(--color-primary));
     border-color: var(--color-primary, #2563eb);
-    background: var(--color-primary-subtle, #eff6ff);
+    background: var(--color-primary-subtle, var(--color-primary-subtle));
   }
 
   &.is-active {
-    color: var(--color-primary, #2563eb);
+    color: var(--color-primary, var(--color-primary));
     border-color: var(--color-primary, #2563eb);
-    background: var(--color-primary-subtle, #eff6ff);
+    background: var(--color-primary-subtle, var(--color-primary-subtle));
   }
 
   &.has-files {
-    color: var(--color-primary, #2563eb);
+    color: var(--color-primary, var(--color-primary));
     border-color: var(--color-primary, #2563eb);
   }
 }
@@ -2696,7 +2728,7 @@ onMounted(() => {
   height: 15px;
   padding: 0 4px;
   border-radius: 999px;
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary, var(--color-primary));
   color: #fff;
   font-size: 10px;
   font-weight: 600;
@@ -2764,6 +2796,7 @@ onMounted(() => {
   .detail-main,
   .workflow-sidebar,
   .workflow-action-panel,
+  .detail-actions__title,
   .detail-actions__primary {
     width: 100%;
   }
@@ -2883,7 +2916,7 @@ onMounted(() => {
   :deep(td),
   :deep(th) {
     min-width: 1em;
-    border: 1px solid #dcdfe6 !important;
+    border: 1px solid var(--color-border) !important;
     padding: 8px 12px;
     vertical-align: top;
     box-sizing: border-box;
@@ -2894,11 +2927,11 @@ onMounted(() => {
   :deep(th) {
     font-weight: 600;
     text-align: left;
-    background-color: #f5f7fa;
+    background-color: var(--color-fill-secondary);
   }
 
   :deep(.rich-text-table) {
-    background: #fff;
+    background: var(--color-surface);
   }
 }
 
@@ -2951,7 +2984,7 @@ onMounted(() => {
   transform-origin: top center;
   transition: transform 0.16s ease;
   box-shadow: var(--shadow-md);
-  background: #fff;
+  background: var(--color-surface);
 }
 
 :global(.rich-image-preview-dialog .el-dialog__body) {
@@ -3072,7 +3105,7 @@ onMounted(() => {
 .comment-editor-dropzone :deep(.comment-editor-table td),
 .comment-editor-dropzone :deep(.comment-editor-table th) {
   min-width: 1em;
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--color-border);
   padding: 8px 12px;
   vertical-align: top;
   box-sizing: border-box;
@@ -3082,7 +3115,7 @@ onMounted(() => {
 .comment-editor-dropzone :deep(.comment-editor-table th) {
   font-weight: 600;
   text-align: left;
-  background-color: #f5f7fa;
+  background-color: var(--color-fill-secondary);
 }
 
 .comment-editor-dropzone :deep(.comment-editor-table .selectedCell) {
@@ -3095,7 +3128,7 @@ onMounted(() => {
   top: 0;
   bottom: -2px;
   width: 4px;
-  background-color: #409eff;
+  background-color: var(--color-primary);
   pointer-events: none;
 }
 
@@ -3226,7 +3259,7 @@ onMounted(() => {
 
 .attachment-transition-list {
   margin-top: 12px;
-  border-top: 1px dashed var(--el-border-color-lighter, #ebeef5);
+  border-top: 1px dashed var(--el-border-color-lighter, var(--color-border));
   padding-top: 8px;
 }
 
@@ -3239,7 +3272,7 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   font-size: 12px;
-  color: var(--color-text-secondary, #909399);
+  color: var(--color-text-secondary, var(--color-text-tertiary));
   margin-bottom: 4px;
 }
 
@@ -3381,7 +3414,7 @@ onMounted(() => {
 .approval-evaluation-avatar {
   flex-shrink: 0;
   margin-top: 1px;
-  background: var(--color-accent-tint-light, #eff6ff);
+  background: var(--color-accent-tint-light, var(--color-primary-subtle));
   color: var(--color-accent);
   font-size: 12px;
   font-weight: 600;

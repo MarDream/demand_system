@@ -548,7 +548,7 @@
                 <el-checkbox :value="model.modelId" :disabled="model.alreadyExists">
                   <div class="sniff-model-info">
                     <div class="sniff-model-row">
-                      <span class="sniff-model-id" :style="{ color: model.alreadyExists ? '#c0c4cc' : '' }">
+                      <span class="sniff-model-id" :style="{ color: model.alreadyExists ? 'var(--color-text-tertiary)' : '' }">
                         {{ model.modelId }}
                       </span>
                       <el-tag v-if="model.alreadyExists" size="small" type="info">已导入</el-tag>
@@ -976,6 +976,8 @@ const hasUpdatePermission = computed(() => hasPermission('button:llm-provider:up
 // Provider dialog
 const providerDialogVisible = ref(false)
 const editingProviderId = ref<number | null>(null)
+// 编辑时记录的原始调用地址，保存时对比判断是否触发模型清空
+const originalProviderBaseUrl = ref('')
 const providerFormRef = ref<FormInstance>()
 const apiKeyVisible = ref(false)
 const providerForm = reactive<LlmProviderForm>({
@@ -1411,6 +1413,7 @@ async function loadRoles() {
 
 function resetProviderForm() {
   editingProviderId.value = null
+  originalProviderBaseUrl.value = ''
   apiKeyVisible.value = false
   providerForm.name = ''
   providerForm.protocol = 'openai'
@@ -1429,6 +1432,7 @@ function openCreateProvider() {
 
 function openEditProvider(row: LlmProvider) {
   editingProviderId.value = row.id!
+  originalProviderBaseUrl.value = row.baseUrl
   apiKeyVisible.value = false
   providerForm.name = row.name
   providerForm.protocol = row.protocol
@@ -1438,6 +1442,12 @@ function openEditProvider(row: LlmProvider) {
   providerForm.enabled = row.enabled
   providerTestResult.value = null
   providerDialogVisible.value = true
+}
+
+/** 调用地址是否相对编辑时发生了变化（忽略首尾空白与末尾斜杠差异）。 */
+function isBaseUrlChanged(): boolean {
+  const normalize = (url: string) => url.trim().replace(/\/+$/, '')
+  return normalize(originalProviderBaseUrl.value) !== normalize(providerForm.baseUrl || '')
 }
 
 /** 官网地址未带协议时补 https://，避免渲染成相对链接。 */
@@ -1453,6 +1463,18 @@ async function handleProviderSubmit() {
   if (!editingProviderId.value && !providerForm.apiKey) {
     ElMessage.warning('请输入 API Key')
     return
+  }
+
+  if (editingProviderId.value && isBaseUrlChanged()) {
+    try {
+      await ElMessageBox.confirm(
+        '调用地址已变更，原地址下导入的模型列表已不再适用。保存后将清空该接入组下已导入的模型，模型应用中绑定这些模型的功能点会回退为默认模型。是否继续？',
+        '确认变更调用地址',
+        { type: 'warning', confirmButtonText: '继续保存', cancelButtonText: '取消' }
+      )
+    } catch {
+      return
+    }
   }
 
   submitting.value = true
@@ -1983,7 +2005,7 @@ async function handleSniffImport() {
 // ==================== 左侧接入组面板 ====================
 .provider-panel {
   display: flex;
-  background: #fff;
+  background: var(--color-surface);
   border-radius: 12px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
   overflow: hidden;
@@ -2030,13 +2052,13 @@ async function handleSniffImport() {
   border: 1px solid var(--color-border);
   border-left: 0;
   border-radius: 0 6px 6px 0;
-  background: #fff;
+  background: var(--color-surface);
   cursor: pointer;
   z-index: 2;
   box-shadow: 2px 0 6px rgba(0, 0, 0, 0.06);
 
   &:hover {
-    background: #f5f7fa;
+    background: var(--color-fill-secondary);
   }
 }
 
@@ -2064,14 +2086,14 @@ async function handleSniffImport() {
 .panel-collapse-btn {
   font-size: 15px;
   cursor: pointer;
-  color: #9ca3af;
+  color: var(--color-text-tertiary);
   padding: 4px;
   border-radius: 4px;
   transition: color 0.15s, background 0.15s;
 
   &:hover {
-    color: #6b7280;
-    background: #f3f4f6;
+    color: var(--color-muted-text);
+    background: var(--color-surface-alt);
   }
 }
 
@@ -2084,7 +2106,7 @@ async function handleSniffImport() {
 .panel-title {
   font-size: 14px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--color-text-primary);
 }
 
 .provider-list {
@@ -2100,15 +2122,15 @@ async function handleSniffImport() {
   cursor: pointer;
   border: 1.5px solid transparent;
   transition: all 0.18s ease;
-  background: #fafafa;
+  background: var(--color-surface-alt);
 
   &:hover {
-    background: #f0f7ff;
+    background: var(--color-primary-subtle);
     border-color: #d0e3ff;
   }
 
   &.is-selected {
-    background: #eff6ff;
+    background: var(--color-primary-subtle);
     border-color: #3b82f6;
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
   }
@@ -2132,13 +2154,13 @@ async function handleSniffImport() {
   gap: 6px;
   font-size: 14px;
   font-weight: 500;
-  color: #1f2937;
+  color: var(--color-text-primary);
   margin-bottom: 4px;
 }
 
 .provider-meta {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--color-text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2148,7 +2170,7 @@ async function handleSniffImport() {
   display: inline-flex;
   vertical-align: middle;
   margin-left: 6px;
-  color: #9ca3af;
+  color: var(--color-text-tertiary);
 
   &:hover { color: var(--el-color-primary); }
 
@@ -2165,7 +2187,7 @@ async function handleSniffImport() {
 
 .provider-count {
   font-size: 11px;
-  color: #9ca3af;
+  color: var(--color-text-tertiary);
 }
 
 .provider-item-actions {
@@ -2174,7 +2196,7 @@ async function handleSniffImport() {
   gap: 2px;
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--color-border);
 }
 
 // ==================== 右侧模型面板 ====================
@@ -2182,7 +2204,7 @@ async function handleSniffImport() {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #fff;
+  background: var(--color-surface);
   border-radius: 12px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
   overflow: hidden;
@@ -2208,7 +2230,7 @@ async function handleSniffImport() {
 .action-icon {
   font-size: 15px;
   cursor: pointer;
-  color: #6b7280;
+  color: var(--color-muted-text);
   padding: 2px;
   border-radius: 4px;
   transition: color 0.15s, background 0.15s;
@@ -2219,7 +2241,7 @@ async function handleSniffImport() {
   }
   &.primary { color: var(--el-color-primary); }
   &.primary:hover { color: var(--el-color-primary); }
-  &.info { color: #6366f1; }
+  &.info { color: var(--color-accent); }
   &.info:hover { color: #4f46e5; background: rgba(99, 102, 241, 0.08); }
   &.danger { color: #ef4444; }
   &.danger:hover { color: #dc2626; background: rgba(239, 68, 68, 0.08); }
@@ -2239,7 +2261,7 @@ async function handleSniffImport() {
   align-items: center;
   gap: 3px;
   font-size: 12px;
-  color: #6b7280;
+  color: var(--color-muted-text);
 }
 
 .conn-pending { color: #d1d5db; font-size: 13px; }
@@ -2269,7 +2291,7 @@ async function handleSniffImport() {
 
 .form-hint {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--color-text-tertiary);
   margin-top: 4px;
   line-height: 1.4;
 }
@@ -2311,7 +2333,7 @@ async function handleSniffImport() {
   padding: 18px 18px 6px;
   border: 1px solid #e7edf5;
   border-radius: 16px;
-  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+  background: linear-gradient(180deg, #f8fbff 0%, var(--color-surface) 100%);
 }
 
 .form-row--provider {
@@ -2331,7 +2353,7 @@ async function handleSniffImport() {
 .provider-dialog-form {
   :deep(.el-form-item__label) {
     white-space: nowrap;
-    color: #4b5563;
+    color: var(--color-text-secondary);
     font-weight: 500;
   }
 
@@ -2363,7 +2385,7 @@ async function handleSniffImport() {
   :deep(.el-dialog__title) {
     font-size: 18px;
     font-weight: 600;
-    color: #1f2937;
+    color: var(--color-text-primary);
     letter-spacing: 0.01em;
   }
 
@@ -2410,7 +2432,7 @@ async function handleSniffImport() {
 
 .test-detail-label {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--color-text-tertiary);
   font-weight: 500;
 }
 
@@ -2423,7 +2445,7 @@ async function handleSniffImport() {
 
 .test-detail-error-box {
   padding: 12px 14px;
-  background: #fef2f2;
+  background: var(--color-danger-bg);
   border: 1px solid #fecaca;
   border-radius: 8px;
   font-size: 13px;
@@ -2439,7 +2461,7 @@ async function handleSniffImport() {
   border: 1px solid #bbf7d0;
   border-radius: 8px;
   font-size: 13px;
-  color: #166534;
+  color: var(--color-success-text);
   line-height: 1.6;
   word-break: break-all;
   white-space: pre-wrap;
@@ -2457,12 +2479,12 @@ async function handleSniffImport() {
 }
 
 .conn-badge-success {
-  background: #dcfce7;
+  background: var(--color-success-bg);
   color: #16a34a;
 }
 
 .conn-badge-fail {
-  background: #fef2f2;
+  background: var(--color-danger-bg);
   color: #dc2626;
 }
 
@@ -2470,10 +2492,10 @@ async function handleSniffImport() {
 .sniff-model-list {
   max-height: 340px;
   overflow-y: auto;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 8px 12px;
-  background: #fafbfc;
+  background: var(--color-surface-alt);
 }
 
 .sniff-model-item {
@@ -2482,7 +2504,7 @@ async function handleSniffImport() {
   transition: background 0.15s;
 
   &:hover {
-    background: #f0f7ff;
+    background: var(--color-primary-subtle);
   }
 
   :deep(.el-checkbox__label) {
@@ -2521,11 +2543,11 @@ async function handleSniffImport() {
 }
 
 .sniff-meta-label {
-  color: #9ca3af;
+  color: var(--color-text-tertiary);
 }
 
 .sniff-meta-value {
-  color: #6b7280;
+  color: var(--color-muted-text);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2536,7 +2558,7 @@ async function handleSniffImport() {
   padding: 6px 0;
   margin-bottom: 4px;
   font-size: 13px;
-  color: #4b5563;
+  color: var(--color-text-secondary);
 }
 
 // ==================== 模型表格底栏 ====================
@@ -2546,7 +2568,7 @@ async function handleSniffImport() {
   justify-content: space-between;
   padding: 10px 16px;
   border-top: 1px solid var(--color-surface-alt);
-  background: #fafbfc;
+  background: var(--color-surface-alt);
   flex-shrink: 0;
 }
 
@@ -2558,7 +2580,7 @@ async function handleSniffImport() {
 
 .model-selection-info {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--color-muted-text);
 }
 
 .model-pagination {
@@ -2568,8 +2590,8 @@ async function handleSniffImport() {
 }
 
 .conn-badge-pending {
-  background: #f3f4f6;
-  color: #9ca3af;
+  background: var(--color-surface-alt);
+  color: var(--color-text-tertiary);
 }
 
 // ==================== RAG 状态条 ====================
@@ -2594,13 +2616,13 @@ async function handleSniffImport() {
 .rag-status-label {
   font-size: 12px;
   font-weight: 600;
-  color: #6b7280;
+  color: var(--color-muted-text);
 }
 
 .rag-status-value {
   font-size: 13px;
   font-weight: 500;
-  color: #1f2937;
+  color: var(--color-text-primary);
 }
 
 .rag-status-ok {
@@ -2636,40 +2658,40 @@ async function handleSniffImport() {
   padding: 4px 10px;
   border-radius: 6px;
   cursor: pointer;
-  color: #6b7280;
+  color: var(--color-muted-text);
   transition: all 0.15s;
   user-select: none;
 
   sup {
     font-size: 10px;
-    color: #9ca3af;
+    color: var(--color-text-tertiary);
     margin-left: 1px;
   }
 
   &:hover {
-    background: #f0f7ff;
+    background: var(--color-primary-subtle);
     color: #3b82f6;
   }
 
   &.is-active {
-    background: #eff6ff;
-    color: #2563eb;
+    background: var(--color-primary-subtle);
+    color: var(--color-primary);
     font-weight: 600;
 
-    sup { color: #2563eb; }
+    sup { color: var(--color-primary); }
   }
 }
 
 // 默认模型名称样式
 .model-name-default {
   font-weight: 600;
-  color: var(--el-color-primary, #2563eb);
+  color: var(--el-color-primary, var(--color-primary));
 }
 
 // 默认模型行高亮
 :deep(.el-table__row) {
   &.is-default-model {
-    background-color: #f0f7ff;
+    background-color: var(--color-primary-subtle);
   }
 }
 

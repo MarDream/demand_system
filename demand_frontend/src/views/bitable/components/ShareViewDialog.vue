@@ -128,7 +128,7 @@ function handleClose() {
 .view-share-link__label {
   display: block;
   font-size: 13px;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary, var(--color-muted-text));
   margin-bottom: 6px;
 }
 .view-share-link__meta {
@@ -137,6 +137,6 @@ function handleClose() {
   gap: 10px;
   margin-top: 8px;
   font-size: 12px;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary, var(--color-muted-text));
 }
 </style>

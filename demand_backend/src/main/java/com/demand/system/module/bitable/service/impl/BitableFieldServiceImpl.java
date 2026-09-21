@@ -139,6 +139,17 @@ public class BitableFieldServiceImpl implements BitableFieldService {
             }
         }
 
+        // 选项定义管理权限：角色被限为「仅可新增」时，不能改动/删除已有选项
+        if (dto.getConfig() != null) {
+            String effectiveType = dto.getFieldType() != null ? dto.getFieldType() : existing.getFieldType();
+            if ("single_select".equals(effectiveType) || "multi_select".equals(effectiveType)) {
+                fieldPermissionService.checkFieldOptionManage(id,
+                        extractOptionLabels(existing.getConfig()),
+                        extractOptionLabels(BitableJsonUtils.toJsonString(dto.getConfig())),
+                        userId);
+            }
+        }
+
         UpdateWrapper<BitableField> wrapper = new UpdateWrapper<>();
         wrapper.eq("id", id);
         if (dto.getName() != null) {
@@ -327,5 +338,26 @@ public class BitableFieldServiceImpl implements BitableFieldService {
             return expr != null ? expr.toString() : null;
         }
         return null;
+    }
+
+    /** 从字段 config JSON 中提取单选/多选选项 label 集合（config.options[].label） */
+    private java.util.Set<String> extractOptionLabels(String configJson) {
+        java.util.Set<String> labels = new java.util.HashSet<>();
+        if (configJson == null || configJson.isBlank()) {
+            return labels;
+        }
+        try {
+            Object parsed = BitableJsonUtils.parseJson(configJson);
+            if (parsed instanceof Map<?, ?> map && map.get("options") instanceof List<?> options) {
+                for (Object option : options) {
+                    if (option instanceof Map<?, ?> opt && opt.get("label") != null) {
+                        labels.add(String.valueOf(opt.get("label")));
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // 解析失败按空集合处理，交由权限校验与后续保存逻辑兜底
+        }
+        return labels;
     }
 }

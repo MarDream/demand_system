@@ -12,6 +12,15 @@
           v-if="isTextFieldType(field.fieldType)"
           v-model="formValues[field.id]"
           :maxlength="Number(field.config?.maxLength) || undefined"
+          :placeholder="fieldPlaceholder(field)"
+        />
+        <!-- 富文本（详情弹窗内完整编辑） -->
+        <RichTextEditor
+          v-else-if="field.fieldType === 'rich_text'"
+          v-model="richTextValues[field.id]"
+          :placeholder="fieldPlaceholder(field)"
+          min-height="140px"
+          :editor-key="`${props.record?.id}-${field.id}-${props.visible}`"
         />
         <!-- 数字类 -->
         <el-input-number
@@ -20,6 +29,7 @@
           :precision="numberPrecision(field)"
           :min="numberMin(field)"
           :max="numberMax(field)"
+          :placeholder="fieldPlaceholder(field)"
           style="width: 100%"
         />
         <!-- 日期（是否包含时间跟随字段属性） -->
@@ -28,6 +38,7 @@
           v-model="dateValues[field.id]"
           :type="field.config?.withTime ? 'datetime' : 'date'"
           :value-format="field.config?.withTime ? 'YYYY-MM-DD HH:mm:ss' : 'YYYY-MM-DD'"
+          :placeholder="fieldPlaceholder(field)"
           style="width: 100%"
         />
         <!-- 单选 -->
@@ -35,6 +46,7 @@
           v-else-if="field.fieldType === 'single_select' || field.fieldType === 'process'"
           v-model="formValues[field.id]"
           clearable
+          :placeholder="fieldPlaceholder(field)"
           style="width: 100%"
         >
           <el-option
@@ -52,6 +64,7 @@
           clearable
           collapse-tags
           collapse-tags-tooltip
+          :placeholder="fieldPlaceholder(field)"
           :multiple-limit="Number(field.config?.maxSelect) || 0"
           style="width: 100%"
         >
@@ -61,6 +74,39 @@
             :label="opt.label"
             :value="opt.label"
           />
+        </el-select>
+        <!-- 部门（单选 / 多选跟随字段属性） -->
+        <el-tree-select
+          v-else-if="field.fieldType === 'department'"
+          v-model="deptValues[field.id]"
+          :data="orgTree"
+          :multiple="field.config?.departmentMode === 'multiple'"
+          :show-checkbox="field.config?.departmentMode === 'multiple'"
+          check-strictly
+          clearable
+          node-key="id"
+          :props="{ label: 'name', children: 'children' }"
+          style="width: 100%"
+        />
+        <!-- 人员：可选项 = 系统用户列表（按字段属性 userScope 过滤） -->
+        <el-select
+          v-else-if="field.fieldType === 'user'"
+          v-model="userValues[field.id]"
+          :multiple="field.config?.userMode === 'multiple'"
+          clearable
+          filterable
+          collapse-tags
+          collapse-tags-tooltip
+          :placeholder="fieldPlaceholder(field)"
+          style="width: 100%"
+        >
+          <el-option v-for="u in scopedUserOptions(field)" :key="u.id" :label="u.realName" :value="u.id">
+            <div class="record-edit-dialog__user-option">
+              <el-avatar :size="20" :src="u.avatar || undefined">{{ u.realName.slice(0, 1) }}</el-avatar>
+              <span>{{ u.realName }}</span>
+              <span class="record-edit-dialog__user-option__username">{{ u.username }}</span>
+            </div>
+          </el-option>
         </el-select>
         <!-- 复选框 -->
         <el-checkbox
@@ -90,6 +136,10 @@
 import { ref, reactive, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
+import { getOrgTree } from '@/api/modules/user'
+import { useUserStore } from '@/stores/modules/user'
+import { allUsers, ensureUsersLoaded, filterUsersByScope, type UserOption } from '@/composables/useUserOptions'
+import RichTextEditor from '@/components/rich/RichTextEditor.vue'
 import type { BitableField, BitableRecord } from '@/types/bitable'
 import {
   buildFieldRules,
@@ -113,13 +163,43 @@ const emit = defineEmits<{
 const saving = ref(false)
 const formRef = ref<FormInstance>()
 const formValues = reactive<Record<number, string>>({})
+/** 富文本字段：字段 id → HTML */
+const richTextValues = reactive<Record<number, string>>({})
 const numberValues = reactive<Record<number, number | null>>({})
 const dateValues = reactive<Record<number, string | null>>({})
 const checkValues = reactive<Record<number, boolean>>({})
 const listValues = reactive<Record<number, string[]>>({})
+/** 部门字段：单部门存 id，多部门存 id 数组 */
+const deptValues = reactive<Record<number, number | number[] | null>>({})
+/** 人员字段：单人存用户 id，多人存 id 数组 */
+const userValues = reactive<Record<number, number | number[] | null>>({})
 
-// 本对话框支持的简单可编辑类型；link/multi_select 等复杂类型仍回网格编辑
-const supportedTypes = ['text', 'url', 'email', 'phone', 'number', 'currency', 'progress', 'rating', 'date', 'single_select', 'multi_select', 'process', 'check', 'checkbox']
+// 本对话框支持的简单可编辑类型；link/群组等复杂类型仍回网格编辑
+const supportedTypes = ['text', 'rich_text', 'url', 'email', 'phone', 'number', 'currency', 'progress', 'rating', 'date', 'single_select', 'multi_select', 'process', 'check', 'checkbox', 'department', 'user']
+
+// ==================== 人员字段可选项（系统用户列表） ====================
+const userStore = useUserStore()
+
+/** 按字段属性 userScope 过滤后的可选项 */
+function scopedUserOptions(field: BitableField): UserOption[] {
+  return filterUsersByScope(allUsers.value, field, userStore.userInfo?.id ?? null)
+}
+
+/** 部门选择器数据源（组织树） */
+const orgTree = ref<{ id: number; name: string; children?: unknown[] }[]>([])
+/** 组织树拍平成 id → 名称，保存时把选中的 id 一并落成可读文本 */
+const deptNameMap = computed(() => {
+  const map = new Map<number, string>()
+  const walk = (nodes: unknown[]) => {
+    for (const node of nodes) {
+      const rec = node as { id?: unknown; name?: unknown; children?: unknown[] }
+      if (rec?.id != null) map.set(Number(rec.id), String(rec.name ?? ''))
+      if (Array.isArray(rec?.children)) walk(rec.children)
+    }
+  }
+  walk(orgTree.value)
+  return map
+})
 
 const supported = (f: BitableField) => {
   if (isFieldReadonly(f)) return false
@@ -158,15 +238,21 @@ watch(() => props.visible, (v) => {
   if (!v || !props.record) return
   // 初始化表单值
   Object.keys(formValues).forEach((k) => delete formValues[Number(k)])
+  Object.keys(richTextValues).forEach((k) => delete richTextValues[Number(k)])
   Object.keys(numberValues).forEach((k) => delete numberValues[Number(k)])
   Object.keys(dateValues).forEach((k) => delete dateValues[Number(k)])
   Object.keys(checkValues).forEach((k) => delete checkValues[Number(k)])
   Object.keys(listValues).forEach((k) => delete listValues[Number(k)])
+  Object.keys(deptValues).forEach((k) => delete deptValues[Number(k)])
+  Object.keys(userValues).forEach((k) => delete userValues[Number(k)])
 
   for (const field of editableFields.value) {
     const cell = props.record.cells?.[field.id]
     const raw = cell?.displayText ?? cell?.valueText ?? cell?.valueNumber ?? cell?.valueDate
     switch (field.fieldType) {
+      case 'rich_text':
+        richTextValues[field.id] = cell?.valueText || ''
+        break
       case 'number':
       case 'currency':
       case 'progress':
@@ -205,14 +291,76 @@ watch(() => props.visible, (v) => {
         }
         break
       }
+      case 'department': {
+        // valueJson 里存的是部门 id（数字，或 [{id,name}] 形态）
+        const json = cell?.valueJson
+        const ids = Array.isArray(json)
+          ? json
+              .map((v) => Number(v && typeof v === 'object' ? (v as { id?: unknown }).id : v))
+              .filter((n) => Number.isFinite(n))
+          : []
+        deptValues[field.id] =
+          field.config?.departmentMode === 'multiple' ? ids : (ids[0] ?? null)
+        break
+      }
+      case 'user': {
+        // valueJson 里存的是用户 id（数字）或 [{id, name}] 形态；历史纯文本按姓名反查
+        const json = cell?.valueJson
+        const ids = Array.isArray(json)
+          ? json
+              .map((v) => Number(v && typeof v === 'object' ? (v as { id?: unknown }).id : v))
+              .filter((n) => Number.isFinite(n))
+          : []
+        if (!ids.length && typeof raw === 'string' && raw.trim()) {
+          const names = raw.split(',').map((s) => s.trim()).filter(Boolean)
+          for (const name of names) {
+            const matched = allUsers.value.find((u) => u.realName === name || u.username === name)
+            if (matched) ids.push(matched.id)
+          }
+        }
+        userValues[field.id] =
+          field.config?.userMode === 'multiple' ? ids : (ids[0] ?? null)
+        break
+      }
       default:
         formValues[field.id] = raw != null ? String(raw) : ''
     }
   }
 })
 
+// 打开弹框时按需拉取组织树（表里没有部门字段就不发请求）
+watch(
+  () => props.visible,
+  async (visible) => {
+    if (!visible || orgTree.value.length) return
+    if (!props.fields.some((f) => f.fieldType === 'department')) return
+    try {
+      const tree = await getOrgTree()
+      orgTree.value = Array.isArray(tree) ? (tree as typeof orgTree.value) : ((tree as any)?.data ?? [])
+    } catch {
+      orgTree.value = []
+    }
+  },
+)
+
+// 打开弹框时按需拉取系统用户列表（表里没有人员字段就不发请求；共享缓存）
+watch(
+  () => props.visible,
+  (visible) => {
+    if (!visible) return
+    if (props.fields.some((f) => f.fieldType === 'user')) {
+      ensureUsersLoaded()
+    }
+  },
+)
+
 function isTextFieldType(type: string) {
   return ['text', 'url', 'email', 'phone'].includes(type)
+}
+
+/** 占位文案：输入提示 > 字段描述 > 默认「请输入{字段名}」（与 FormView 同口径） */
+function fieldPlaceholder(field: BitableField) {
+  return field.config?.formPlaceholder || field.description || `请输入${field.name}`
 }
 
 /** 数字类字段精度：进度/评分取整，其余按字段配置（默认数字 0 位、货币 2 位）。 */
@@ -249,6 +397,9 @@ async function handleSave() {
     const cells: Record<number, { valueText?: string; valueNumber?: number; valueDate?: string; valueJson?: unknown }> = {}
     for (const field of editableFields.value) {
       switch (field.fieldType) {
+        case 'rich_text':
+          cells[field.id] = { valueText: richTextValues[field.id] || '' }
+          break
         case 'number':
         case 'currency':
         case 'progress':
@@ -270,6 +421,34 @@ async function handleSave() {
           // 多选以数组形式写入 valueJson，与网格/看板的取值口径一致
           cells[field.id] = { valueJson: listValues[field.id] || [] }
           break
+        case 'department': {
+          // id 数组写 valueJson；同时落一份名称到 valueText，
+          // 让网格/卡片不用再回查组织树就能显示部门名
+          const value = deptValues[field.id]
+          const ids = (Array.isArray(value) ? value : value != null ? [value] : [])
+            .map(Number)
+            .filter((n) => Number.isFinite(n))
+          cells[field.id] = {
+            valueJson: ids,
+            valueText: ids.map((id) => deptNameMap.value.get(id) || String(id)).join(', '),
+          }
+          break
+        }
+        case 'user': {
+          // [{id, name}] 写 valueJson（与展示口径一致），valueText 落可读姓名串
+          const value = userValues[field.id]
+          const ids = (Array.isArray(value) ? value : value != null ? [value] : [])
+            .map(Number)
+            .filter((n) => Number.isFinite(n))
+          const picked = ids
+            .map((id) => allUsers.value.find((u) => u.id === id))
+            .filter((u): u is UserOption => !!u)
+          cells[field.id] = {
+            valueJson: picked.map((u) => ({ id: u.id, name: u.realName })),
+            valueText: picked.map((u) => u.realName).join(', '),
+          }
+          break
+        }
         default: {
           const t = formValues[field.id]
           if (t != null) cells[field.id] = { valueText: t }
@@ -287,11 +466,11 @@ async function handleSave() {
 .record-edit-dialog__readonly {
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px solid var(--color-border, #e2e8f0);
+  border-top: 1px solid var(--color-border, var(--color-border));
 }
 .record-edit-dialog__readonly-title {
   font-size: 12px;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary, var(--color-muted-text));
   margin-bottom: 8px;
 }
 .record-edit-dialog__readonly-row {
@@ -303,11 +482,24 @@ async function handleSave() {
 .record-edit-dialog__readonly-label {
   flex-shrink: 0;
   width: 98px;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary, var(--color-muted-text));
   text-align: right;
 }
 .record-edit-dialog__readonly-value {
-  color: var(--color-text-primary, #0f172a);
+  color: var(--color-text-primary, var(--color-text-primary));
   word-break: break-all;
+}
+
+// 人员下拉选项：头像 + 姓名 + 用户名
+.record-edit-dialog__user-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  &__username {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--color-text-tertiary, var(--color-text-tertiary));
+  }
 }
 </style>

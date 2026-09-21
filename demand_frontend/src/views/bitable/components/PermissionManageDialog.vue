@@ -212,7 +212,7 @@
           <el-input
             v-model="searchKeyword"
             size="small"
-            placeholder="搜索数据表"
+            placeholder="搜索数据表或仪表盘"
             clearable
             :prefix-icon="Search"
           />
@@ -234,18 +234,38 @@
             <div v-show="!collapsedGroups.has(group.name)" class="perm-tree__children">
               <div
                 v-for="table in group.tables"
-                :key="table.id"
+                :key="`t-${table.baseId}-${table.id}`"
                 class="perm-tree__table"
                 :class="{ selected: selectedTable?.id === table.id }"
                 @click="selectTable(table)"
               >
-                <el-icon class="perm-tree__table-icon"><Document /></el-icon>
+                <!-- 图标与外层目录树同形：数据表=ri-database-2-line（导入文件表=ri-file-text-line） -->
+                <i
+                  class="perm-tree__table-icon perm-tree__table-icon--table"
+                  :class="(table as any).icon === 'file' ? 'ri-file-text-line' : 'ri-database-2-line'"
+                />
                 <span class="perm-tree__table-name">{{ table.name }}</span>
                 <span
                   class="perm-tree__badge"
                   :class="`perm-tree__badge--${getTablePermission(table.id)}`"
                 >
                   {{ permLabel(getTablePermission(table.id)) }}
+                </span>
+              </div>
+              <div
+                v-for="dash in group.dashboards"
+                :key="`d-${dash.baseId}-${dash.id}`"
+                class="perm-tree__table"
+                :class="{ selected: selectedDashboard?.id === dash.id }"
+                @click="selectDashboard(dash)"
+              >
+                <el-icon class="perm-tree__table-icon perm-tree__table-icon--dash"><DataAnalysis /></el-icon>
+                <span class="perm-tree__table-name">{{ dash.name }}</span>
+                <span
+                  class="perm-tree__badge"
+                  :class="`perm-tree__badge--${getDashboardPermission(dash.id)}`"
+                >
+                  {{ permLabel(getDashboardPermission(dash.id)) }}
                 </span>
               </div>
             </div>
@@ -255,6 +275,7 @@
 
       <!-- 右侧：权限设置 -->
       <aside class="perm-settings">
+        <!-- 数据表：表权限 + 字段权限 + 视图权限 -->
         <template v-if="selectedRole && selectedTable">
           <div class="perm-settings__title">数据表权限</div>
           <div class="perm-settings__subtitle">
@@ -284,27 +305,176 @@
             <div v-if="fieldPermLoading" class="perm-fields__loading">
               <el-icon class="is-loading"><Loading /></el-icon>
             </div>
-            <div v-else-if="!fieldList.length" class="perm-fields__empty">该数据表暂无字段</div>
-            <div v-else class="perm-fields">
-              <div v-for="field in fieldList" :key="field.id" class="perm-field-row">
-                <span class="perm-field-row__name" :title="field.name">{{ field.name }}</span>
-                <el-radio-group
-                  :model-value="getFieldPermission(field.id)"
-                  size="small"
-                  @update:model-value="(v: any) => setFieldPermission(field.id, v as FieldPermissionLevel)"
-                >
-                  <el-radio-button value="editable">可编辑</el-radio-button>
-                  <el-radio-button value="readonly">只读</el-radio-button>
-                  <el-radio-button value="hidden">隐藏</el-radio-button>
-                </el-radio-group>
+            <template v-else-if="fieldList.length">
+              <!-- 模式单选：全部可编辑 / 指定字段 -->
+              <div class="perm-option perm-option--fieldmode" :class="{ selected: fieldPermMode === 'all' }" @click="setFieldPermMode('all')">
+                <div class="perm-option__radio">
+                  <div v-if="fieldPermMode === 'all'" class="perm-option__radio-dot" />
+                </div>
+                <div class="perm-option__content">
+                  <div class="perm-option__name">所有字段内容可编辑</div>
+                  <div class="perm-option__desc">不单独限制字段，跟随上方数据表权限</div>
+                </div>
+              </div>
+              <div class="perm-option perm-option--fieldmode" :class="{ selected: fieldPermMode === 'specific' }" @click="setFieldPermMode('specific')">
+                <div class="perm-option__radio">
+                  <div v-if="fieldPermMode === 'specific'" class="perm-option__radio-dot" />
+                </div>
+                <div class="perm-option__content">
+                  <div class="perm-option__name">指定字段</div>
+                  <div class="perm-option__desc">逐个字段设置可编辑、只读或隐藏</div>
+                </div>
+              </div>
+
+              <!-- 指定字段：字段权限表格（可查看/可新增/可编辑三列，与后端 level 映射联动） -->
+              <div v-if="fieldPermMode === 'specific'" class="perm-fields-table">
+                <div class="perm-fields-table__row perm-fields-table__row--master">
+                  <span class="perm-fields-table__name">所有字段</span>
+                  <span v-for="col in FIELD_COLUMNS" :key="col.key" class="perm-fields-table__col">
+                    <el-checkbox
+                      :model-value="masterColState(col.key).checked"
+                      :indeterminate="masterColState(col.key).indeterminate"
+                      @change="(v: any) => setMasterCol(col.key, v === true)"
+                    />
+                    {{ col.label }}
+                  </span>
+                </div>
+                <!-- 表头在滚动容器之外：表头恒定可见，滚动的字段行也绝无可能从表头上方露出 -->
+                <div class="perm-fields-table__body">
+                  <div v-for="field in fieldList" :key="field.id" class="perm-field-block">
+                    <div class="perm-fields-table__row">
+                      <span class="perm-fields-table__name" :title="field.name">
+                        <i :class="fieldTypeIcon(field.fieldType)" class="perm-fields-table__icon" />
+                        {{ field.name }}
+                      </span>
+                      <span v-for="col in FIELD_COLUMNS" :key="col.key" class="perm-fields-table__col">
+                        <el-checkbox
+                          :model-value="fieldColState(field.id, col.key)"
+                          @change="(v: any) => setFieldCol(field.id, col.key, v === true)"
+                        />
+                      </span>
+                    </div>
+
+                    <!-- 选项权限（仅选择类字段且字段可见时可用） -->
+                    <template v-if="isSelectField(field) && fieldColState(field.id, 'view')">
+                      <div class="perm-field-options-toggle" @click="toggleOptionPanel(field.id)">
+                        <el-icon>
+                          <ArrowDown v-if="optionPanelOpenId !== field.id" />
+                          <ArrowUp v-else />
+                        </el-icon>
+                        选项权限
+                        <span v-if="fieldOptionMode(field.id) === 'partial'" class="perm-field-options-toggle__badge">部分可编辑</span>
+                      </div>
+                      <div v-if="optionPanelOpenId === field.id" class="perm-field-options">
+                        <el-radio-group
+                          :model-value="fieldOptionMode(field.id)"
+                          @update:model-value="(v: any) => setFieldOptionMode(field.id, v as 'all' | 'partial')"
+                        >
+                          <el-radio value="all">全部选项可编辑</el-radio>
+                          <el-radio value="partial">部分可编辑</el-radio>
+                        </el-radio-group>
+                        <template v-if="fieldOptionMode(field.id) === 'partial'">
+                          <div v-for="opt in fieldOptions(field)" :key="opt.label" class="perm-option-row">
+                            <span class="perm-option-row__dot" :style="{ background: opt.color || 'var(--color-border)' }" />
+                            <span class="perm-option-row__name" :title="opt.label">{{ opt.label }}</span>
+                            <el-radio-group
+                              size="small"
+                              :model-value="optionIsEditable(field.id, opt.label) ? 'editable' : 'readonly'"
+                              @update:model-value="(v: any) => setOptionLevel(field.id, opt.label, v as 'editable' | 'readonly')"
+                            >
+                              <el-radio-button value="editable">也可编辑</el-radio-button>
+                              <el-radio-button value="readonly">也可查看</el-radio-button>
+                            </el-radio-group>
+                          </div>
+                        </template>
+                        <div class="perm-field-options__manage">
+                          <span class="perm-field-options__label">选项管理</span>
+                          <el-radio-group
+                            size="small"
+                            :model-value="fieldOptionManage(field.id)"
+                            @update:model-value="(v: any) => setFieldOptionManage(field.id, v as 'full' | 'add-only')"
+                          >
+                            <el-radio-button value="full">可增删改</el-radio-button>
+                            <el-radio-button value="add-only">可新增</el-radio-button>
+                          </el-radio-group>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </div>
+            </template>
+            <div v-else class="perm-fields__empty">该数据表暂无字段</div>
+          </template>
+
+          <!-- 视图权限 -->
+          <template v-if="currentPermission !== 'none'">
+            <div class="perm-settings__divider" />
+            <div class="perm-settings__title perm-settings__title--sub">视图权限</div>
+            <div
+              v-for="opt in viewPermOptions"
+              :key="opt.value"
+              class="perm-option"
+              :class="{ selected: getViewPermission(selectedTable.id) === opt.value }"
+              @click="setViewPermission(selectedTable.id, opt.value)"
+            >
+              <div class="perm-option__radio">
+                <div v-if="getViewPermission(selectedTable.id) === opt.value" class="perm-option__radio-dot" />
+              </div>
+              <div class="perm-option__content">
+                <div class="perm-option__name">{{ opt.label }}</div>
+                <div class="perm-option__desc">{{ opt.desc }}</div>
               </div>
             </div>
           </template>
         </template>
 
+        <!-- 仪表盘：整体权限 + 数据权限 -->
+        <template v-else-if="selectedRole && selectedDashboard">
+          <div class="perm-settings__title">仪表盘权限</div>
+          <div class="perm-settings__subtitle">
+            {{ selectedRole.name }} · {{ selectedDashboard.name }}
+          </div>
+
+          <div class="perm-settings__title perm-settings__title--sub">仪表盘整体权限</div>
+          <div
+            v-for="opt in dashboardPermOptions"
+            :key="opt.value"
+            class="perm-option"
+            :class="{ selected: getDashboardPermission(selectedDashboard.id) === opt.value }"
+            @click="setDashboardPermission(selectedDashboard.id, opt.value)"
+          >
+            <div class="perm-option__radio">
+              <div v-if="getDashboardPermission(selectedDashboard.id) === opt.value" class="perm-option__radio-dot" />
+            </div>
+            <div class="perm-option__content">
+              <div class="perm-option__name">{{ opt.label }}</div>
+              <div class="perm-option__desc">{{ opt.desc }}</div>
+            </div>
+          </div>
+
+          <div class="perm-settings__divider" />
+          <div class="perm-settings__title perm-settings__title--sub">仪表盘数据权限</div>
+          <div
+            v-for="opt in dashboardDataPermOptions"
+            :key="opt.value"
+            class="perm-option"
+            :class="{ selected: getDashboardDataPermission(selectedDashboard.id) === opt.value }"
+            @click="setDashboardDataPermission(selectedDashboard.id, opt.value)"
+          >
+            <div class="perm-option__radio">
+              <div v-if="getDashboardDataPermission(selectedDashboard.id) === opt.value" class="perm-option__radio-dot" />
+            </div>
+            <div class="perm-option__content">
+              <div class="perm-option__name">{{ opt.label }}</div>
+              <div class="perm-option__desc">{{ opt.desc }}</div>
+            </div>
+          </div>
+        </template>
+
         <div v-else class="perm-settings__empty">
           <el-icon :size="48" color="#CBD5E1"><Document /></el-icon>
-          <span>请选择数据表</span>
+          <span>请选择数据表或仪表盘</span>
         </div>
       </aside>
       </template>
@@ -413,6 +583,7 @@ import {
   ArrowRight,
   Folder,
   Document,
+  DataAnalysis,
   Delete,
   Loading,
   Lock,
@@ -421,6 +592,7 @@ import {
   CircleClose,
   InfoFilled,
   MoreFilled,
+  ArrowUp,
 } from '@element-plus/icons-vue'
 import {
   listBaseRoles,
@@ -433,6 +605,10 @@ import {
   listFieldPermissions,
   batchSaveFieldPermissions,
   listFields,
+  listBases,
+  listBaseGroups,
+  listTables,
+  listDashboardsBatch,
   addBaseMember,
   removeBaseMember,
 } from '@/api/modules/bitable'
@@ -444,6 +620,7 @@ import type {
   BitableField,
   BitableTable,
   BitableTableGroup,
+  FieldOptionPermissionConfig,
   FieldPermissionChange,
   FieldPermissionLevel,
   MemberRole,
@@ -452,6 +629,7 @@ import type {
 } from '@/types/bitable'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { resolveErrorMessage } from '@/utils/error'
+import { resolveAvatarUrl } from '@/utils/presetAvatars'
 
 const props = defineProps<{
   modelValue: boolean
@@ -509,11 +687,20 @@ const fieldPermLoading = ref(false)
 const fieldPermBase = ref<Map<string, FieldPermissionLevel>>(new Map())
 // 本次未保存的字段权限改动：key = `${roleKey}:${fieldId}`，值可为 'editable'（表示恢复默认）
 const fieldPermPending = ref<Map<string, FieldPermissionLevel>>(new Map())
+// 服务端已有的选项级权限配置（已解析对象）：key = `${roleKey}:${fieldId}`，null=未配置
+const fieldPermBaseOptionConfig = ref<Map<string, FieldOptionPermissionConfig | null>>(new Map())
+// 本次未保存的选项级权限改动：值 = 配置对象；null = 清除配置（恢复全部选项可编辑）
+const optionPermPending = ref<Map<string, FieldOptionPermissionConfig | null>>(new Map())
+// 当前展开「选项权限」面板的字段 id
+const optionPanelOpenId = ref<number | null>(null)
 
 const systemRoles = computed(() => roles.value.filter(r => r.roleType === 'system'))
-const customRoles = computed(() => roles.value.filter(r => r.roleType === 'custom'))
+/** 自定义角色全局有效：跨 Base 聚合展示（按 customRoleId 去重），任何 Base 的对象都可配置它 */
+const customRoles = computed(() => globalCustomRoles.value)
 
-const hasChanges = computed(() => pendingChanges.value.size > 0 || fieldPermPending.value.size > 0)
+const hasChanges = computed(() =>
+  pendingChanges.value.size > 0 || fieldPermPending.value.size > 0 || optionPermPending.value.size > 0,
+)
 
 /** 系统角色（所有者/管理员/编辑者/评论者/只读）与自定义角色都能在本弹窗直接维护成员 */
 function isSystemRole(role: BitableBaseRoleVO | null) {
@@ -616,44 +803,59 @@ function toggleMemberPick(userId: number) {
 
 const filteredGroups = computed(() => {
   const kw = searchKeyword.value.trim().toLowerCase()
-  const tableList = props.tables
 
-  const groupMap = new Map<string, BitableTable[]>()
-  const tablesByGroup = new Map<number | null, BitableTable[]>()
-  for (const t of tableList) {
-    const gid = t.groupId ?? null
-    if (!tablesByGroup.has(gid)) tablesByGroup.set(gid, [])
-    tablesByGroup.get(gid)!.push(t)
+  // 全局分组树 + 跨 Base 的表/仪表盘（叶子归属 = 其 Base 的分组，与外层目录树同规则）
+  const groupMap = new Map<string, { tables: typeof globalTables.value; dashboards: typeof globalDashboards.value }>()
+  const tablesByGroup = new Map<string, typeof globalTables.value>()
+  const pushTable = (gid: number | null, t: typeof globalTables.value[number]) => {
+    const key = String(gid ?? 'null')
+    if (!tablesByGroup.has(key)) tablesByGroup.set(key, [])
+    tablesByGroup.get(key)!.push(t)
   }
+  for (const t of globalTables.value) pushTable((t as any).leafGroupId ?? (t as any).baseGroupId ?? t.groupId ?? null, t)
+  const dashboardsByGroup = new Map<string, typeof globalDashboards.value>()
+  for (const d of globalDashboards.value) {
+    const key = String(d.baseGroupId ?? 'null')
+    if (!dashboardsByGroup.has(key)) dashboardsByGroup.set(key, [])
+    dashboardsByGroup.get(key)!.push(d)
+  }
+  // 分组 id → 显示名（父链拼接），供叶子挂载对号
+  const groupNameById = new Map<number, string>()
+  const collectNames = (groups: BitableTableGroup[], parentName?: string) => {
+    for (const g of groups) {
+      const name = parentName ? `${parentName} / ${g.name}` : g.name
+      groupNameById.set(g.id, name)
+      if (g.children?.length) collectNames(g.children, name)
+    }
+  }
+  collectNames(globalGroups.value.length ? globalGroups.value : props.tableGroups.filter((g) => g.parentId == null))
 
   const build = (groups: BitableTableGroup[], parentName?: string) => {
     for (const g of groups) {
       const name = parentName ? `${parentName} / ${g.name}` : g.name
-      const tables = tablesByGroup.get(g.id) || []
-      if (g.children?.length) {
-        build(g.children, name)
-      }
-      if (tables.length || !g.children?.length) {
-        groupMap.set(name, tables)
-      }
+      if (g.children?.length) build(g.children, name)
+      const key = String(g.id)
+      const tables = tablesByGroup.get(key) || []
+      const ds = dashboardsByGroup.get(key) || []
+      // 所有分组都列出（含空分组）
+      groupMap.set(name, { tables, dashboards: ds })
     }
   }
+  build(globalGroups.value.length ? globalGroups.value : props.tableGroups.filter((g) => g.parentId == null))
 
-  const rootGroups = props.tableGroups.filter(g => g.parentId == null)
-  build(rootGroups)
-
-  const ungrouped = tablesByGroup.get(null) || []
-  if (ungrouped.length) {
-    groupMap.set('未分组', ungrouped)
+  const ungroupedTables = tablesByGroup.get('null') || []
+  const ungroupedDash = dashboardsByGroup.get('null') || []
+  if (ungroupedTables.length || ungroupedDash.length) {
+    groupMap.set('未分组', { tables: ungroupedTables, dashboards: ungroupedDash })
   }
 
-  const result: { name: string; tables: BitableTable[] }[] = []
-  for (const [name, tables] of groupMap) {
-    const filtered = kw
-      ? tables.filter(t => t.name.toLowerCase().includes(kw))
-      : tables
-    if (!kw || filtered.length > 0 || name.toLowerCase().includes(kw)) {
-      result.push({ name, tables: filtered })
+  const result: { name: string; tables: typeof globalTables.value; dashboards: typeof globalDashboards.value }[] = []
+  for (const [name, group] of groupMap) {
+    const matchName = name.toLowerCase().includes(kw)
+    const tables = kw && !matchName ? group.tables.filter((t) => t.name.toLowerCase().includes(kw)) : group.tables
+    const ds = kw && !matchName ? group.dashboards.filter((d) => d.name.toLowerCase().includes(kw)) : group.dashboards
+    if (!kw || matchName || tables.length || ds.length) {
+      result.push({ name, tables, dashboards: ds })
     }
   }
   return result
@@ -736,17 +938,20 @@ function isActiveRole(role: BitableBaseRoleVO) {
   return selectedRole.value.roleType === 'custom' && selectedRole.value.customRoleId === role.customRoleId
 }
 
-/** 获取某张表的当前权限（优先看 pendingChanges，再看原始 roles） */
+/** 获取某张表的当前权限（优先看 pendingChanges，再看全局角色权限行；未配置=none） */
 function getTablePermission(tableId: number): PermissionLevel {
   if (!selectedRole.value) return 'none'
   const key = makeChangeKey(selectedRole.value, tableId, activeTab.value)
   if (pendingChanges.value.has(key)) {
     return pendingChanges.value.get(key)!
   }
-  const perm = selectedRole.value.permissions?.find(
-    p => p.tableId === tableId && p.permissionType === activeTab.value
+  const roleId = selectedRole.value.roleType === 'system' ? selectedRole.value.systemRoleCode : String(selectedRole.value.customRoleId)
+  const row = rolePermRows.value.find(
+    (p) => p.permType === activeTab.value && p.tableId === tableId
+      && p.roleType === selectedRole.value!.roleType
+      && (p.roleType === 'system' ? p.systemRoleCode === roleId : p.customRoleId === Number(roleId)),
   )
-  return (perm?.permissionLevel || 'none') as PermissionLevel
+  return (row?.permissionLevel || 'none') as PermissionLevel
 }
 
 const currentPermission = computed(() => {
@@ -754,12 +959,34 @@ const currentPermission = computed(() => {
   return getTablePermission(selectedTable.value.id)
 })
 
+/** 角色列表请求序号守卫：并发下晚到的旧响应不得覆盖新列表（自定义角色"偶发丢失"根因） */
+let rolesFetchSeq = 0
+
+async function fetchRoles(): Promise<boolean> {
+  const seq = ++rolesFetchSeq
+  try {
+    const list = await listBaseRoles(props.baseId, activeTab.value)
+    // 后端 fillMemberProfiles 回填的 memberAvatar 是 preset:xxx 原始串，
+    // 直接绑 :src 会 ERR_UNKNOWN_URL_SCHEME，这里统一解析
+    for (const role of list) {
+      for (const m of role.members || []) {
+        if (m.memberAvatar) m.memberAvatar = resolveAvatarUrl(m.memberAvatar)
+      }
+    }
+    // 等待期间又发起了更新的请求（或已切换角色类型）时，丢弃本次旧响应
+    if (seq !== rolesFetchSeq) return true
+    roles.value = list
+    return true
+  } catch (e) {
+    ElMessage.error('加载权限配置失败')
+    return false
+  }
+}
+
 async function loadRoles() {
   loading.value = true
   try {
-    roles.value = await listBaseRoles(props.baseId, activeTab.value)
-  } catch (e) {
-    ElMessage.error('加载权限配置失败')
+    await fetchRoles()
   } finally {
     loading.value = false
   }
@@ -774,31 +1001,248 @@ function reselectRole(prev: BitableBaseRoleVO | null) {
     selectedRole.value = null
     return
   }
-  const match = roles.value.find(r =>
-    prev.roleType === 'system'
-      ? r.roleType === 'system' && r.systemRoleCode === prev.systemRoleCode
-      : r.roleType === 'custom' && r.customRoleId === prev.customRoleId,
-  )
+  // 自定义角色全局有效：从全局聚合列表里找（可能不属于弹窗 Base）；系统角色仍在弹窗 Base 列表
+  const match = prev.roleType === 'custom'
+    ? globalCustomRoles.value.find((r) => r.customRoleId === prev.customRoleId)
+    : roles.value.find((r) => r.roleType === 'system' && r.systemRoleCode === prev.systemRoleCode)
   selectedRole.value = match ?? null
 }
 
-/** 重新加载角色并保持当前选中项 */
-async function refreshRoles() {
+/** 后台刷新角色并保持当前选中项：不触发全屏 loading，避免整个弹框内容卸载重建造成闪现 */
+async function refreshRoles(): Promise<boolean> {
   const prev = selectedRole.value
-  await loadRoles()
+  const ok = await fetchRoles()
   reselectRole(prev)
+  return ok
 }
 
 function selectRole(role: BitableBaseRoleVO) {
   selectedRole.value = role
   selectedTable.value = null
+  selectedDashboard.value = null
   // 切换角色时保留已加载的字段列表（同一张表复用），但丢弃上一角色的未保存字段改动
   fieldPermPending.value = new Map()
+  optionPermPending.value = new Map()
+  optionPanelOpenId.value = null
 }
 
 function selectTable(table: BitableTable) {
   selectedTable.value = table
+  selectedDashboard.value = null
   void loadFieldPermissions(table.id)
+}
+
+// ==================== 仪表盘节点（树）与仪表盘权限 ====================
+
+const selectedDashboard = ref<{ id: number; name: string; baseId: number } | null>(null)
+/** 全局目录树数据：所有 Base 的表与仪表盘（树按全局分组展示，跨 Base） */
+const globalTables = ref<Array<BitableTable & { baseId: number; baseName?: string }>>([])
+const globalDashboards = ref<Array<{ id: number; name: string; baseId: number; baseGroupId: number | null; sortOrder?: number }>>([])
+/** 全部角色权限行（跨 Base，四种类型合并），用于徽标与右侧面板回显 */
+const rolePermRows = ref<Array<{ baseId: number; tableId: number; permType: PermissionType; roleType: string; systemRoleCode?: string | null; customRoleId?: number | null; permissionLevel: string }>>([])
+/** 全局分组树（跨 Base，含空分组），树骨架数据源 */
+const globalGroups = ref<BitableTableGroup[]>([])
+/** 全局自定义角色（跨 Base 聚合，创建后全局有效：任何 Base 的对象都可配置它） */
+const globalCustomRoles = ref<BitableBaseRoleVO[]>([])
+
+async function loadGlobalTree() {
+  try {
+    const bases = (await listBases()) as Array<{ id: number; name: string; groupId?: number | null }>
+    const baseIds = bases.map((b) => b.id)
+    // 全局分组树（外层目录树同源）
+    try {
+      // 全局树只用 id/name/children 骨架，分组接口返回的 BitableBaseGroup 结构兼容
+      globalGroups.value = ((await listBaseGroups()) || []) as unknown as BitableTableGroup[]
+    } catch {
+      globalGroups.value = []
+    }
+    // 全部 Base 的表（叶子分组口径与外层目录树一致：表独立分组优先，为空时回退 Base 的分组）
+    const baseGroupById = new Map(bases.map((b) => [b.id, b.groupId ?? null]))
+    const tableLists = await Promise.all(
+      bases.map((b) =>
+        listTables(b.id)
+          .then((list) => (list || []).map((t: any) => ({
+            ...t,
+            baseId: b.id,
+            baseName: b.name,
+            leafGroupId: t.baseGroupId ?? baseGroupById.get(b.id) ?? null,
+          })))
+          .catch(() => [] as any[]),
+      ),
+    )
+    globalTables.value = tableLists.flat()
+    const dashes = await listDashboardsBatch(baseIds)
+    globalDashboards.value = (dashes || []).map((d: any) => ({
+      id: d.id,
+      name: d.name,
+      baseId: d.baseId,
+      baseGroupId: d.baseGroupId ?? baseGroupById.get(d.baseId) ?? null,
+      sortOrder: d.sortOrder,
+    }))
+    // 跨 Base 的角色权限行（表 data/view + 仪表盘 dashboard/dashboard_data），供徽标与回显；
+    // 同时聚合全局自定义角色（自定义角色创建后全局有效，任何 Base 的对象都可配置）
+    const permTypes: PermissionType[] = ['data', 'view', 'dashboard', 'dashboard_data']
+    const rows: typeof rolePermRows.value = []
+    const customVoMap = new Map<number, BitableBaseRoleVO>()
+    await Promise.all(
+      bases.flatMap((b) =>
+        permTypes.map((t) =>
+          listBaseRoles(b.id, t)
+            .then((list) => {
+              for (const r of list || []) {
+                if (t === 'data' && r.roleType === 'custom' && r.customRoleId != null && !customVoMap.has(r.customRoleId)) {
+                  customVoMap.set(r.customRoleId, { ...r, baseId: b.id })
+                }
+                for (const p of r.permissions || []) {
+                  rows.push({
+                    baseId: b.id,
+                    tableId: p.tableId,
+                    permType: t,
+                    roleType: r.roleType,
+                    systemRoleCode: r.systemRoleCode,
+                    customRoleId: r.customRoleId,
+                    permissionLevel: p.permissionLevel as string,
+                  })
+                }
+              }
+            })
+            .catch(() => {}),
+        ),
+      ),
+    )
+    rolePermRows.value = rows
+    globalCustomRoles.value = [...customVoMap.values()]
+  } catch {
+    globalTables.value = []
+    globalDashboards.value = []
+  }
+}
+
+function selectDashboard(d: { id: number; name: string; baseId: number }) {
+  selectedDashboard.value = d
+  selectedTable.value = null
+}
+
+/** 该节点是否可用当前选中角色配置（自定义角色仅对弹窗所属 Base 生效） */
+function nodeConfigurable(nodeBaseId: number): boolean {
+  return !selectedRole.value || selectedRole.value.roleType === 'system' || nodeBaseId === props.baseId
+}
+
+/** 仪表盘整体权限（优先 pending，其次已存配置，默认 none 与表权限口径一致） */
+function getDashboardPermission(dashboardId: number): PermissionLevel {
+  if (!selectedRole.value) return 'none'
+  const key = makeChangeKey(selectedRole.value, dashboardId, 'dashboard')
+  if (pendingChanges.value.has(key)) {
+    return pendingChanges.value.get(key)!
+  }
+  const roleId = selectedRole.value.roleType === 'system' ? selectedRole.value.systemRoleCode : String(selectedRole.value.customRoleId)
+  const row = rolePermRows.value.find(
+    (p) => p.permType === 'dashboard' && p.tableId === dashboardId
+      && p.roleType === selectedRole.value!.roleType
+      && (p.roleType === 'system' ? p.systemRoleCode === roleId : p.customRoleId === Number(roleId)),
+  )
+  return (row?.permissionLevel || 'none') as PermissionLevel
+}
+
+function setDashboardPermission(dashboardId: number, level: PermissionLevel) {
+  if (!selectedRole.value) return
+  const key = makeChangeKey(selectedRole.value, dashboardId, 'dashboard')
+  const next = new Map(pendingChanges.value)
+  const original = rolePermRows.value.find(
+    (p) => p.permType === 'dashboard' && p.tableId === dashboardId
+      && p.roleType === selectedRole.value!.roleType
+      && (p.roleType === 'system' ? p.systemRoleCode === (selectedRole.value!.systemRoleCode ?? '') : p.customRoleId === selectedRole.value!.customRoleId),
+  )?.permissionLevel as PermissionLevel | undefined
+  if (level === (original ?? 'none')) next.delete(key)
+  else next.set(key, level)
+  pendingChanges.value = next
+}
+
+/** 视图权限（permissionType='view'，默认 full） */
+function getViewPermission(tableId: number): PermissionLevel {
+  if (!selectedRole.value) return 'full'
+  const key = makeChangeKey(selectedRole.value, tableId, 'view')
+  if (pendingChanges.value.has(key)) {
+    return pendingChanges.value.get(key)!
+  }
+  const row = rolePermRows.value.find(
+    (p) => p.permType === 'view' && p.tableId === tableId
+      && p.roleType === selectedRole.value!.roleType
+      && (p.roleType === 'system' ? p.systemRoleCode === (selectedRole.value!.systemRoleCode ?? '') : p.customRoleId === selectedRole.value!.customRoleId),
+  )
+  return (row?.permissionLevel || 'full') as PermissionLevel
+}
+
+function setViewPermission(tableId: number, level: PermissionLevel) {
+  if (!selectedRole.value) return
+  const key = makeChangeKey(selectedRole.value, tableId, 'view')
+  const next = new Map(pendingChanges.value)
+  const original = rolePermRows.value.find(
+    (p) => p.permType === 'view' && p.tableId === tableId
+      && p.roleType === selectedRole.value!.roleType
+      && (p.roleType === 'system' ? p.systemRoleCode === (selectedRole.value!.systemRoleCode ?? '') : p.customRoleId === selectedRole.value!.customRoleId),
+  )?.permissionLevel as PermissionLevel | undefined
+  if (level === (original ?? 'full')) next.delete(key)
+  else next.set(key, level)
+  pendingChanges.value = next
+}
+
+const viewPermOptions = [
+  { value: 'full' as PermissionLevel, label: '完全权限', desc: '全部视图可查看，可新增、修改、删除视图' },
+  { value: 'view' as PermissionLevel, label: '可查看', desc: '仅可查看视图，不可新增、修改、删除视图' },
+]
+
+const dashboardPermOptions = [
+  { value: 'full' as PermissionLevel, label: '完全权限', desc: '可修改仪表盘结构、配置组件，可编辑内容' },
+  { value: 'view' as PermissionLevel, label: '可查看', desc: '仅可查看' },
+  { value: 'none' as PermissionLevel, label: '无权限', desc: '无权限' },
+]
+
+const dashboardDataPermOptions = [
+  {
+    value: 'none' as PermissionLevel,
+    label: '有不可查看数据时，图表不可见',
+    desc: '如果图表对应的数据表存在该角色无权限查看的记录，则该图表统计不可查看',
+  },
+  {
+    value: 'view' as PermissionLevel,
+    label: '跟随访问者权限统计',
+    desc: '图表的统计范围跟随该角色的数据表权限范围，无权限的表不参与统计',
+  },
+  {
+    value: 'full' as PermissionLevel,
+    label: '基于全部数据统计',
+    desc: '不论角色的数据表权限怎么配置，图表均根据数据表全部数据进行统计展示',
+  },
+]
+
+/** 仪表盘数据权限（permissionType='dashboard_data'，默认 full=基于全部数据统计） */
+function getDashboardDataPermission(dashboardId: number): PermissionLevel {
+  if (!selectedRole.value) return 'full'
+  const key = makeChangeKey(selectedRole.value, dashboardId, 'dashboard_data')
+  if (pendingChanges.value.has(key)) {
+    return pendingChanges.value.get(key)!
+  }
+  const row = rolePermRows.value.find(
+    (p) => p.permType === 'dashboard_data' && p.tableId === dashboardId
+      && p.roleType === selectedRole.value!.roleType
+      && (p.roleType === 'system' ? p.systemRoleCode === (selectedRole.value!.systemRoleCode ?? '') : p.customRoleId === selectedRole.value!.customRoleId),
+  )
+  return (row?.permissionLevel || 'full') as PermissionLevel
+}
+
+function setDashboardDataPermission(dashboardId: number, level: PermissionLevel) {
+  if (!selectedRole.value) return
+  const key = makeChangeKey(selectedRole.value, dashboardId, 'dashboard_data')
+  const next = new Map(pendingChanges.value)
+  const original = rolePermRows.value.find(
+    (p) => p.permType === 'dashboard_data' && p.tableId === dashboardId
+      && p.roleType === selectedRole.value!.roleType
+      && (p.roleType === 'system' ? p.systemRoleCode === (selectedRole.value!.systemRoleCode ?? '') : p.customRoleId === selectedRole.value!.customRoleId),
+  )?.permissionLevel as PermissionLevel | undefined
+  if (level === (original ?? 'full')) next.delete(key)
+  else next.set(key, level)
+  pendingChanges.value = next
 }
 
 // ========== 字段级权限：读取 / 本地改动 / 提交 ==========
@@ -809,9 +1253,9 @@ function fieldPermKey(role: BitableBaseRoleVO, fieldId: number): string {
   return `${role.roleType}:${roleId}:${fieldId}`
 }
 
-/** 加载所选数据表的字段列表与整个 Base 的字段权限配置 */
-async function loadFieldPermissions(tableId: number) {
-  fieldPermLoading.value = true
+/** 加载所选数据表的字段列表与整个 Base 的字段权限配置；silent=true 时不显示面板加载态（用于保存后的后台刷新） */
+async function loadFieldPermissions(tableId: number, silent = false): Promise<boolean> {
+  if (!silent) fieldPermLoading.value = true
   try {
     const [fields, permissions] = await Promise.all([
       listFields(tableId),
@@ -819,17 +1263,30 @@ async function loadFieldPermissions(tableId: number) {
     ])
     fieldList.value = fields
     const base = new Map<string, FieldPermissionLevel>()
+    const baseOptionConfig = new Map<string, FieldOptionPermissionConfig | null>()
     for (const item of permissions || []) {
       const roleId = item.roleType === 'system' ? item.systemRoleCode : String(item.customRoleId)
       base.set(`${item.roleType}:${roleId}:${item.fieldId}`, item.permissionLevel)
+      baseOptionConfig.set(`${item.roleType}:${roleId}:${item.fieldId}`, parseOptionConfig(item.optionConfig))
     }
     fieldPermBase.value = base
+    fieldPermBaseOptionConfig.value = baseOptionConfig
     // 切表后丢弃上一张表的未保存字段改动，避免把 A 表的改动带到 B 表
-    fieldPermPending.value = new Map()
+    if (!silent) {
+      fieldPermPending.value = new Map()
+      optionPermPending.value = new Map()
+      optionPanelOpenId.value = null
+    }
+    syncFieldPermMode()
+    return true
   } catch (e) {
-    fieldList.value = []
-    fieldPermBase.value = new Map()
-    ElMessage.error('加载字段权限失败')
+    if (!silent) {
+      fieldList.value = []
+      fieldPermBase.value = new Map()
+      fieldPermBaseOptionConfig.value = new Map()
+      ElMessage.error('加载字段权限失败')
+    }
+    return false
   } finally {
     fieldPermLoading.value = false
   }
@@ -860,6 +1317,240 @@ function setFieldPermission(fieldId: number, level: FieldPermissionLevel) {
   fieldPermPending.value = next
 }
 
+// ==================== 选项级权限（单选/多选字段） ====================
+
+function parseOptionConfig(raw: string | null | undefined): FieldOptionPermissionConfig | null {
+  if (!raw) return null
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (parsed && typeof parsed === 'object') {
+      return parsed as FieldOptionPermissionConfig
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+/** 字段当前生效的选项级配置（优先未保存改动） */
+function effectiveOptionConfig(fieldId: number): FieldOptionPermissionConfig | null {
+  if (!selectedRole.value) return null
+  const key = fieldPermKey(selectedRole.value, fieldId)
+  if (optionPermPending.value.has(key)) {
+    return optionPermPending.value.get(key) ?? null
+  }
+  return fieldPermBaseOptionConfig.value.get(key) ?? null
+}
+
+/** 写入选项级配置；与原值相同（或均为空）时视为取消改动。cfg=null 表示清除配置 */
+function setOptionConfig(fieldId: number, cfg: FieldOptionPermissionConfig | null) {
+  if (!selectedRole.value) return
+  const key = fieldPermKey(selectedRole.value, fieldId)
+  const original = fieldPermBaseOptionConfig.value.get(key) ?? null
+  const unchanged = cfg === null
+    ? original === null
+    : JSON.stringify(cfg) === JSON.stringify(original)
+  const next = new Map(optionPermPending.value)
+  if (unchanged) next.delete(key)
+  else next.set(key, cfg)
+  optionPermPending.value = next
+}
+
+function isSelectField(field: BitableField): boolean {
+  return field.fieldType === 'single_select' || field.fieldType === 'multi_select'
+}
+
+function fieldOptions(field: BitableField): Array<{ label: string; color?: string }> {
+  const config = field.config as { options?: Array<{ label?: string; color?: string }> } | null | undefined
+  return (config?.options ?? [])
+    .filter((o) => !!o.label)
+    .map((o) => ({ label: String(o.label), color: o.color }))
+}
+
+function toggleOptionPanel(fieldId: number) {
+  optionPanelOpenId.value = optionPanelOpenId.value === fieldId ? null : fieldId
+}
+
+function fieldOptionMode(fieldId: number): 'all' | 'partial' {
+  return effectiveOptionConfig(fieldId)?.mode ?? 'all'
+}
+
+function setFieldOptionMode(fieldId: number, mode: 'all' | 'partial') {
+  if (mode === 'all') {
+    // 全部选项可编辑：仅剩选项管理限制时才保留配置
+    const prev = effectiveOptionConfig(fieldId)
+    const manage = prev?.manage ?? 'full'
+    setOptionConfig(fieldId, manage === 'add-only' ? { mode: 'all', manage } : null)
+    return
+  }
+  const prev = effectiveOptionConfig(fieldId)
+  const options = fieldList.value.find((f) => f.id === fieldId)
+  const allKeys = fieldOptions(options ?? ({} as BitableField)).map((o) => o.label)
+  const prevEditable = prev?.editableKeys?.length ? prev.editableKeys : allKeys
+  setOptionConfig(fieldId, { mode: 'partial', editableKeys: prevEditable, manage: prev?.manage ?? 'full' })
+}
+
+function optionIsEditable(fieldId: number, label: string): boolean {
+  const cfg = effectiveOptionConfig(fieldId)
+  if (!cfg || cfg.mode !== 'partial') return true
+  return cfg.editableKeys?.includes(label) ?? true
+}
+
+function setOptionLevel(fieldId: number, label: string, level: 'editable' | 'readonly') {
+  const cfg = effectiveOptionConfig(fieldId) ?? { mode: 'partial' as const, editableKeys: [], manage: 'full' as const }
+  const keys = new Set(cfg.mode === 'partial' ? cfg.editableKeys ?? [] : fieldOptions(fieldList.value.find((f) => f.id === fieldId) ?? ({} as BitableField)).map((o) => o.label))
+  if (level === 'editable') keys.add(label)
+  else keys.delete(label)
+  setOptionConfig(fieldId, { mode: 'partial', editableKeys: [...keys], manage: cfg.manage ?? 'full' })
+}
+
+function fieldOptionManage(fieldId: number): 'full' | 'add-only' {
+  return effectiveOptionConfig(fieldId)?.manage ?? 'full'
+}
+
+function setFieldOptionManage(fieldId: number, manage: 'full' | 'add-only') {
+  const cfg = effectiveOptionConfig(fieldId)
+  const mode = cfg?.mode ?? 'all'
+  if (mode === 'all' && manage === 'full') {
+    setOptionConfig(fieldId, null)
+    return
+  }
+  const prevEditable = cfg?.mode === 'partial' ? cfg.editableKeys ?? [] : fieldOptions(fieldList.value.find((f) => f.id === fieldId) ?? ({} as BitableField)).map((o) => o.label)
+  setOptionConfig(fieldId, { mode, editableKeys: prevEditable, manage })
+}
+
+// ---- 字段类型图标与文案 ----
+const FIELD_TYPE_ICONS: Record<string, string> = {
+  text: 'ri-text', number: 'ri-hashtag', date: 'ri-calendar-line', single_select: 'ri-radio-button-line',
+  multi_select: 'ri-checkbox-multiple-line', user: 'ri-user-line', currency: 'ri-money-cny-circle-line',
+  progress: 'ri-percent-line', rating: 'ri-star-line', auto_number: 'ri-sort-asc', formula: 'ri-function-line',
+  rollup: 'ri-sum-line', lookup: 'ri-links-line', department: 'ri-community-line', created_time: 'ri-time-line',
+  created_by: 'ri-user-follow-line', checkbox: 'ri-checkbox-line', url: 'ri-link', email: 'ri-mail-line',
+  phone: 'ri-phone-line', ai_text: 'ri-sparkling-2-line',
+}
+
+function fieldTypeIcon(type: string): string {
+  return FIELD_TYPE_ICONS[type] || 'ri-text'
+}
+
+function fieldTypeLabel(type: string): string {
+  const map: Record<string, string> = {
+    text: '文本', number: '数字', date: '日期', single_select: '单选', multi_select: '多选',
+    user: '人员', currency: '货币', progress: '进度', rating: '评分', auto_number: '编号',
+    formula: '公式', rollup: '汇总', lookup: '引用', department: '部门', created_time: '创建时间',
+    created_by: '创建人', checkbox: '复选框', url: '链接', email: '邮箱', phone: '电话', ai_text: 'AI 字段',
+  }
+  return map[type] || type
+}
+
+// ---- 字段权限模式：所有字段可编辑 / 指定字段 ----
+// 显式 UI 状态（不从数据推导）：有覆盖配置时初始化为「指定字段」，
+// 无覆盖时点「指定字段」也要能进入空列表（否则用户无法开始逐字段配置）
+const fieldPermMode = ref<'all' | 'specific'>('all')
+
+function hasFieldPermOverride(): boolean {
+  if (!selectedRole.value) return false
+  for (const f of fieldList.value) {
+    const key = fieldPermKey(selectedRole.value, f.id)
+    const level = fieldPermPending.value.get(key) ?? fieldPermBase.value.get(key) ?? 'editable'
+    if (level !== 'editable') return true
+    const cfg = optionPermPending.value.has(key)
+      ? optionPermPending.value.get(key) ?? null
+      : fieldPermBaseOptionConfig.value.get(key) ?? null
+    if (cfg) return true
+  }
+  return false
+}
+
+/** 进入弹窗/切角色/切表/保存后：按数据重新初始化模式 */
+function syncFieldPermMode() {
+  fieldPermMode.value = hasFieldPermOverride() ? 'specific' : 'all'
+}
+
+function setFieldPermMode(mode: 'all' | 'specific') {
+  if (mode === 'all' && selectedRole.value) {
+    // 切回「所有字段内容可编辑」= 该角色在该表的全部字段恢复默认
+    for (const f of fieldList.value) {
+      const key = fieldPermKey(selectedRole.value, f.id)
+      const effectiveLevel = fieldPermPending.value.get(key) ?? fieldPermBase.value.get(key) ?? 'editable'
+      if (effectiveLevel !== 'editable') fieldPermPending.value.set(key, 'editable')
+      else fieldPermPending.value.delete(key)
+      const effectiveCfg = optionPermPending.value.has(key)
+        ? optionPermPending.value.get(key) ?? null
+        : fieldPermBaseOptionConfig.value.get(key) ?? null
+      if (effectiveCfg) optionPermPending.value.set(key, null)
+      else optionPermPending.value.delete(key)
+    }
+    fieldPermPending.value = new Map(fieldPermPending.value)
+    optionPermPending.value = new Map(optionPermPending.value)
+  }
+  fieldPermMode.value = mode
+}
+
+// ==================== 字段权限表格：可查看 / 可新增 / 可编辑 三列 ====================
+
+const FIELD_COLUMNS = [
+  { key: 'view', label: '可查看' },
+  { key: 'add', label: '可新增' },
+  { key: 'edit', label: '可编辑' },
+] as const
+type FieldColKey = (typeof FIELD_COLUMNS)[number]['key']
+
+/** level → 三列勾选态 */
+function fieldColState(fieldId: number, col: FieldColKey): boolean {
+  const level = getFieldPermission(fieldId)
+  if (level === 'editable') return true
+  if (level === 'add_only') return col !== 'edit'
+  if (level === 'readonly') return col === 'view'
+  return false
+}
+
+/** 三列勾选 → level（后端档位：editable/add_only/readonly/hidden） */
+function levelFromChecks(c: { view: boolean; add: boolean; edit: boolean }): FieldPermissionLevel {
+  if (c.edit) return 'editable'
+  if (c.add) return 'add_only'
+  if (c.view) return 'readonly'
+  return 'hidden'
+}
+
+/** 单元格勾选联动：可编辑 ⇒ 可新增+可查看；可新增 ⇒ 可查看；取消可查看 ⇒ 级联取消新增/编辑 */
+function setFieldCol(fieldId: number, col: FieldColKey, val: boolean) {
+  const cur = {
+    view: fieldColState(fieldId, 'view'),
+    add: fieldColState(fieldId, 'add'),
+    edit: fieldColState(fieldId, 'edit'),
+  }
+  if (col === 'view') {
+    cur.view = val
+    if (!val) {
+      cur.add = false
+      cur.edit = false
+    }
+  } else if (col === 'add') {
+    cur.add = val
+    if (val) cur.view = true
+    else cur.edit = false
+  } else {
+    cur.edit = val
+    if (val) {
+      cur.view = true
+      cur.add = true
+    }
+  }
+  setFieldPermission(fieldId, levelFromChecks(cur))
+}
+
+function masterColState(col: FieldColKey): { checked: boolean; indeterminate: boolean } {
+  if (!fieldList.value.length) return { checked: false, indeterminate: false }
+  const states = fieldList.value.map((f) => fieldColState(f.id, col))
+  const on = states.filter(Boolean).length
+  return { checked: on === states.length, indeterminate: on > 0 && on < states.length }
+}
+
+function setMasterCol(col: FieldColKey, val: boolean) {
+  for (const f of fieldList.value) setFieldCol(f.id, col, val)
+}
+
 function toggleGroup(name: string) {
   const next = new Set(collapsedGroups.value)
   if (next.has(name)) next.delete(name)
@@ -873,8 +1564,11 @@ function setPermission(level: PermissionLevel) {
   const key = makeChangeKey(selectedRole.value, selectedTable.value.id, activeTab.value)
   const next = new Map(pendingChanges.value)
   // 如果选的和原始值一样，视为取消改动
-  const original = selectedRole.value.permissions?.find(
-    p => p.tableId === selectedTable.value!.id && p.permissionType === activeTab.value
+  const roleId = selectedRole.value.roleType === 'system' ? selectedRole.value.systemRoleCode : String(selectedRole.value.customRoleId)
+  const original = rolePermRows.value.find(
+    (p) => p.permType === activeTab.value && p.tableId === selectedTable.value!.id
+      && p.roleType === selectedRole.value!.roleType
+      && (p.roleType === 'system' ? p.systemRoleCode === roleId : p.customRoleId === Number(roleId)),
   )
   const originalLevel = (original?.permissionLevel || 'none') as PermissionLevel
   if (level === originalLevel) {
@@ -885,17 +1579,20 @@ function setPermission(level: PermissionLevel) {
   pendingChanges.value = next
 }
 
-/** 批量设置 —— 同样只写本地缓存 */
+/** 批量设置 —— 同样只写本地缓存（作用于全局树中的全部数据表） */
 function handleBulkSet(level: string) {
   if (!level || !selectedRole.value) {
     bulkLevel.value = ''
     return
   }
+  const roleId = selectedRole.value.roleType === 'system' ? selectedRole.value.systemRoleCode : String(selectedRole.value.customRoleId)
   const next = new Map(pendingChanges.value)
-  for (const table of props.tables) {
+  for (const table of globalTables.value) {
     const key = makeChangeKey(selectedRole.value, table.id, activeTab.value)
-    const original = selectedRole.value.permissions?.find(
-      p => p.tableId === table.id && p.permissionType === activeTab.value
+    const original = rolePermRows.value.find(
+      (p) => p.permType === activeTab.value && p.tableId === table.id
+        && p.roleType === selectedRole.value!.roleType
+        && (p.roleType === 'system' ? p.systemRoleCode === roleId : p.customRoleId === Number(roleId)),
     )
     const originalLevel = (original?.permissionLevel || 'none') as PermissionLevel
     if (level === originalLevel) {
@@ -911,15 +1608,20 @@ function handleBulkSet(level: string) {
 
 /** 保存 —— 一次性提交所有 pendingChanges（表权限 + 字段权限） */
 async function handleSave() {
-  if (!pendingChanges.value.size && !fieldPermPending.value.size) return
+  if (!pendingChanges.value.size && !fieldPermPending.value.size && !optionPermPending.value.size) return
   saving.value = true
   try {
     if (pendingChanges.value.size) {
+      // 全局树跨 Base：每条变更写入其所属 Base（tableId → baseId 映射）
+      const baseIdByObject = new Map<number, number>()
+      for (const t of globalTables.value) baseIdByObject.set(t.id, t.baseId)
+      for (const d of globalDashboards.value) baseIdByObject.set(d.id, d.baseId)
       const changes: BitableBaseRolePermissionDTO[] = []
       for (const [key, level] of pendingChanges.value) {
         const [roleType, roleId, tableIdStr, permType] = key.split(':')
+        const objectBaseId = baseIdByObject.get(Number(tableIdStr)) ?? props.baseId
         changes.push({
-          baseId: props.baseId,
+          baseId: objectBaseId,
           roleType: roleType as 'system' | 'custom',
           systemRoleCode: roleType === 'system' ? roleId : undefined,
           customRoleId: roleType === 'custom' ? Number(roleId) : undefined,
@@ -929,13 +1631,43 @@ async function handleSave() {
         })
       }
       await batchSaveRolePermissions(props.baseId, changes)
+
+      // 关键：把刚提交的配置合并进全局权限行缓存（视图/仪表盘权限的回显读这里）。
+      // 否则 pendingChanges 清空后回显回落默认值，看起来像"设置没有保持"。
+      for (const c of changes) {
+        const idx = rolePermRows.value.findIndex(
+          (p) => p.permType === c.permissionType && p.tableId === c.tableId
+            && p.roleType === c.roleType
+            && (p.roleType === 'system' ? p.systemRoleCode === c.systemRoleCode : p.customRoleId === c.customRoleId),
+        )
+        const row = {
+          baseId: c.baseId ?? props.baseId,
+          tableId: c.tableId,
+          permType: c.permissionType,
+          roleType: c.roleType,
+          systemRoleCode: c.systemRoleCode ?? null,
+          customRoleId: c.customRoleId ?? null,
+          permissionLevel: c.permissionLevel as string,
+        }
+        if (idx >= 0) rolePermRows.value.splice(idx, 1, row)
+        else rolePermRows.value.push(row)
+      }
     }
 
-    // 字段权限：只提交本次改动过的条目（editable 表示恢复默认）
-    if (fieldPermPending.value.size && selectedTable.value) {
+    // 字段权限：只提交本次改动过的条目（editable 表示恢复默认）；
+    // 选项级配置合并进同一条变更（key 可能只在 optionPermPending 里改动）
+    if ((fieldPermPending.value.size || optionPermPending.value.size) && selectedTable.value) {
       const fieldChanges: FieldPermissionChange[] = []
-      for (const [key, level] of fieldPermPending.value) {
+      const mergedKeys = new Set<string>([...fieldPermPending.value.keys(), ...optionPermPending.value.keys()])
+      for (const key of mergedKeys) {
         const [roleType, roleId, fieldIdStr] = key.split(':')
+        const pendingLevel = fieldPermPending.value.get(key)
+        const level: FieldPermissionLevel = pendingLevel
+          ?? fieldPermBase.value.get(key)
+          ?? 'editable'
+        const pendingCfg = optionPermPending.value.has(key)
+          ? optionPermPending.value.get(key) ?? null
+          : fieldPermBaseOptionConfig.value.get(key) ?? null
         fieldChanges.push({
           baseId: props.baseId,
           tableId: selectedTable.value.id,
@@ -944,17 +1676,24 @@ async function handleSave() {
           systemRoleCode: roleType === 'system' ? roleId : undefined,
           customRoleId: roleType === 'custom' ? Number(roleId) : undefined,
           permissionLevel: level,
+          optionConfig: pendingCfg ? JSON.stringify(pendingCfg) : null,
         })
       }
       await batchSaveFieldPermissions(props.baseId, fieldChanges)
     }
 
-    pendingChanges.value = new Map()
-    fieldPermPending.value = new Map()
     ElMessage.success('权限保存成功')
-    await refreshRoles()
-    if (selectedTable.value) {
-      await loadFieldPermissions(selectedTable.value.id)
+
+    // 丝滑保存：全程后台静默刷新，不触发全屏 loading；刷新完成前保留本地改动覆盖层，
+    // 其值与服务端刚保存的值一致，界面零跳变；刷新成功后再撤掉覆盖层
+    const rolesOk = await refreshRoles()
+    if (rolesOk) pendingChanges.value = new Map()
+    const fieldsOk = selectedTable.value
+      ? await loadFieldPermissions(selectedTable.value.id, true)
+      : true
+    if (fieldsOk) {
+      fieldPermPending.value = new Map()
+      optionPermPending.value = new Map()
     }
   } catch (e) {
     ElMessage.error('保存失败，请重试')
@@ -989,13 +1728,24 @@ async function handleAddRole() {
   const name = newRoleName.value.trim()
   if (!name) return
   try {
-    await createCustomRole(props.baseId, { baseId: props.baseId, name })
+    const created = await createCustomRole(props.baseId, { baseId: props.baseId, name })
+    const newId = created?.customRoleId
     ElMessage.success('角色创建成功')
     showAddRole.value = false
     newRoleName.value = ''
-    await loadRoles()
-  } catch (e) {
-    ElMessage.error('创建失败')
+    // 乐观插入全局自定义角色列表：创建已持久化且全局有效，立即显示，不等列表刷新往返
+    if (newId && !globalCustomRoles.value.some((r) => r.customRoleId === newId)) {
+      globalCustomRoles.value = [...globalCustomRoles.value, {
+        roleType: 'custom',
+        customRoleId: newId,
+        name,
+        members: [],
+        permissions: [],
+        baseId: props.baseId,
+      } as unknown as BitableBaseRoleVO]
+    }
+  } catch (e: any) {
+    ElMessage.error(resolveErrorMessage(e, '创建失败'))
   }
 }
 
@@ -1019,6 +1769,10 @@ async function handleRenameRole(role: BitableBaseRoleVO) {
     if (!name || name === role.name) return
     await updateCustomRole(role.customRoleId, { name })
     ElMessage.success('角色已重命名')
+    // 全局自定义角色列表同步改名
+    const item = globalCustomRoles.value.find((r) => r.customRoleId === role.customRoleId)
+    if (item) item.name = name
+    if (selectedRole.value?.customRoleId === role.customRoleId) selectedRole.value.name = name
     await refreshRoles()
   } catch (e: any) {
     if (e !== 'cancel' && e !== 'close') {
@@ -1041,13 +1795,11 @@ async function handleDeleteRole(role: BitableBaseRoleVO) {
   try {
     await deleteCustomRole(role.customRoleId)
     ElMessage.success('角色已删除')
-    const wasSelected = isActiveRole(role)
-    await loadRoles()
-    if (wasSelected) {
+    // 全局自定义角色列表同步移除
+    globalCustomRoles.value = globalCustomRoles.value.filter((r) => r.customRoleId !== role.customRoleId)
+    if (isActiveRole(role)) {
       selectedRole.value = null
       selectedTable.value = null
-    } else {
-      reselectRole(selectedRole.value)
     }
   } catch (e: any) {
     ElMessage.error(resolveErrorMessage(e, '删除失败'))
@@ -1066,7 +1818,11 @@ async function openAddMember() {
   try {
     const res: any = await getFilterUsers()
     const list = Array.isArray(res) ? res : (res?.data ?? [])
-    memberUsers.value = Array.isArray(list) ? list : []
+    // avatar 原始串（preset:cartoon-9）不能直接绑 :src，会 ERR_UNKNOWN_URL_SCHEME
+    memberUsers.value = (Array.isArray(list) ? list : []).map((u: any) => ({
+      ...u,
+      avatar: resolveAvatarUrl(u?.avatar ?? null),
+    }))
     memberUsersLoaded.value = true
   } catch (e: any) {
     ElMessage.error(resolveErrorMessage(e, '加载用户列表失败'))
@@ -1192,8 +1948,10 @@ async function handleRemoveMember(member: BitableBaseRoleMember) {
 watch(() => props.modelValue, (v) => {
   if (v) {
     loadRoles()
+    loadGlobalTree()
     selectedRole.value = null
     selectedTable.value = null
+    selectedDashboard.value = null
     pendingChanges.value = new Map()
     memberUsersLoaded.value = false
     memberUsers.value = []
@@ -1484,7 +2242,8 @@ watch(() => props.modelValue, (v) => {
 
   &__folder {
     font-size: 14px;
-    color: var(--el-color-warning);
+    /* 与外层目录树分组文件夹同色（随暗色 token 提亮） */
+    color: var(--color-warning);
   }
 
   &__table {
@@ -1508,8 +2267,16 @@ watch(() => props.modelValue, (v) => {
 
   &__table-icon {
     font-size: 14px;
-    color: var(--color-text-secondary);
     flex-shrink: 0;
+
+    /* 与外层目录树/菜单同一套类型色：数据表随主题色联动、仪表盘随暗色提亮 */
+    &--table {
+      color: var(--color-primary);
+    }
+
+    &--dash {
+      color: var(--color-type-dashboard);
+    }
   }
 
   &__table-name {
@@ -1527,12 +2294,12 @@ watch(() => props.modelValue, (v) => {
     white-space: nowrap;
 
     &--full {
-      color: #92400E;
-      background: #FEF3C7;
+      color: var(--color-warning-text);
+      background: var(--color-warning-bg);
     }
 
     &--edit {
-      color: #065F46;
+      color: var(--color-success-text);
       background: #D1FAE5;
     }
 
@@ -1549,7 +2316,9 @@ watch(() => props.modelValue, (v) => {
 }
 
 .perm-settings {
-  width: 260px;
+  /* 右侧功能区加宽且不参与压缩：字段权限三列表格无需横向滚动即可完整显示 */
+  width: 400px;
+  flex-shrink: 0;
   background: var(--color-surface);
   border-left: 1px solid var(--color-border);
   padding: 16px;
@@ -1700,6 +2469,176 @@ watch(() => props.modelValue, (v) => {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+}
+
+/* 字段权限：模式单选（紧凑版 perm-option） */
+.perm-option--fieldmode {
+  padding: 8px 10px;
+
+  .perm-option__name { font-size: 13px; }
+  .perm-option__desc { font-size: 12px; }
+}
+
+.perm-field-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0;
+
+  & + .perm-field-block {
+    border-top: 1px dashed var(--color-border);
+  }
+}
+
+/* 字段权限表格：表头固定在外层，仅字段列表体（__body）滚动 */
+.perm-fields-table {
+  display: flex;
+  flex-direction: column;
+  /* 关键：perm-settings 是 flex 列，子项带 overflow 后自动最小尺寸归零，
+     会被压缩成几像素的"灰条"——必须禁止收缩，让外层滚动 */
+  flex-shrink: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0 10px 4px;
+
+  &__body {
+    max-height: 320px;
+    overflow-y: auto;
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+
+    & + .perm-fields-table__row {
+      border-top: 1px solid var(--color-border);
+    }
+
+    &--master {
+      /* 补回容器顶部的留白（容器 padding-top 为 0） */
+      padding: 10px 0 6px;
+      font-weight: 600;
+      color: var(--color-text-primary);
+    }
+  }
+
+  &__name {
+    flex: 1;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--color-text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__icon {
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    flex-shrink: 0;
+  }
+
+  &__col {
+    width: 76px;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--color-text-secondary);
+  }
+
+  &__row--master .perm-fields-table__col {
+    font-weight: 600;
+    color: var(--color-text-primary);
+  }
+}
+
+.perm-field-row__icon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.perm-field-options-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 26px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  width: fit-content;
+
+  &:hover { color: var(--color-primary); }
+
+  &__badge {
+    padding: 0 6px;
+    border-radius: 8px;
+    background: var(--el-color-warning-light-9, #fdf6ec);
+    color: var(--el-color-warning);
+    font-size: 11px;
+    line-height: 16px;
+  }
+}
+
+.perm-field-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 2px 0 4px 26px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-alt);
+
+  &__manage {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &__label {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+  }
+}
+
+.perm-option-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  &__dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+
+  &__name {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    color: var(--color-text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.perm-option__premium {
+  margin-left: 6px;
 }
 
 .perm-fields__loading,

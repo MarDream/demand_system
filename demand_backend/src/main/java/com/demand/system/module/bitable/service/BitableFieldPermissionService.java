@@ -57,10 +57,42 @@ public interface BitableFieldPermissionService {
      *
      * @param tableId  数据表ID
      * @param fieldIds 待写入的字段ID集合
+     * @param forCreate true=新增记录场景（add_only 字段放行）；false=修改场景（add_only 拒绝）
      * @param userId   当前用户ID
      * @throws com.demand.system.common.exception.BusinessException 命中只读或隐藏字段时抛出
      */
-    void checkFieldsEditable(Long tableId, java.util.Collection<Long> fieldIds, Long userId);
+    void checkFieldsEditable(Long tableId, java.util.Collection<Long> fieldIds, boolean forCreate, Long userId);
+
+    /**
+     * 选项级权限校验：字段配置了「部分可编辑」时，新写入的选择值只能包含
+     * 可编辑选项；原值里已有的受限选项允许原样保留（不可新增/改选）。
+     *
+     * @param tableId   数据表ID
+     * @param fieldId   字段ID（单选/多选）
+     * @param newLabels 本次要写入的选项 label 集合
+     * @param oldLabels 原值里的选项 label 集合（新建记录传 null）
+     * @param userId    当前用户ID
+     * @throws com.demand.system.common.exception.BusinessException 新值包含不可编辑选项时抛出
+     */
+    void checkSelectOptionPermission(Long tableId, Long fieldId,
+                                     java.util.Collection<String> newLabels,
+                                     java.util.Collection<String> oldLabels,
+                                     Long userId);
+
+    /**
+     * 选项定义管理权限校验：字段配置了 manage=add-only 时，只允许追加新选项，
+     * 不能修改或删除已有选项（label 集合必须保持不变）。
+     *
+     * @param fieldId   字段ID（单选/多选）
+     * @param oldLabels 更新前的选项 label 集合
+     * @param newLabels 更新后的选项 label 集合
+     * @param userId    当前用户ID
+     * @throws com.demand.system.common.exception.BusinessException 改动/删除了已有选项时抛出
+     */
+    void checkFieldOptionManage(Long fieldId,
+                                java.util.Collection<String> oldLabels,
+                                java.util.Collection<String> newLabels,
+                                Long userId);
 
     /**
      * 删除某个字段的全部字段权限配置（删除字段时调用）。

@@ -50,7 +50,7 @@ const type = computed<StatusTagType>(() => props.type ?? commonStatusType(props.
   line-height: 20px;
   white-space: nowrap;
   color: var(--status-fg, var(--color-text-secondary));
-  background: var(--status-bg, var(--color-fill-secondary, #f1f5f9));
+  background: var(--status-bg, var(--color-fill-secondary, var(--color-surface-alt)));
 
   &__dot {
     width: 6px;

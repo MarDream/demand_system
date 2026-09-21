@@ -11,6 +11,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.DisabledException;
 import org.springframework.validation.FieldError;
@@ -20,6 +21,9 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -185,6 +189,54 @@ public class GlobalExceptionHandler {
         logExceptionWithContext("Database exception", e);
         String userMessage = resolveSQLErrorMessage(e);
         return Result.fail(ErrorCode.DATABASE_ERROR, userMessage);
+    }
+
+    /**
+     * 处理请求体缺失/不可读（如 POST 不带 JSON body），返回400而非500
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Result<Void> handleHttpMessageNotReadableException(HttpMessageNotReadableException e) {
+        logExceptionWithContext("Request body unreadable", e);
+        return Result.fail(ErrorCode.BAD_REQUEST, "请求体缺失或格式错误");
+    }
+
+    /**
+     * 处理上传文件超过大小限制，返回413
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    @ResponseStatus(HttpStatus.PAYLOAD_TOO_LARGE)
+    public Result<Void> handleMaxUploadSizeExceededException(MaxUploadSizeExceededException e) {
+        logExceptionWithContext("Upload size exceeded", e);
+        return Result.fail(ErrorCode.BAD_REQUEST, "上传文件大小超出限制");
+    }
+
+    /**
+     * 处理路径变量类型转换失败（如把非数字当 id），返回400
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Result<Void> handleMethodArgumentTypeMismatchException(MethodArgumentTypeMismatchException e) {
+        logExceptionWithContext("Argument type mismatch", e);
+        return Result.fail(ErrorCode.BAD_REQUEST, "请求参数类型不正确");
+    }
+
+    /**
+     * 处理请求了不存在的接口路径，返回404并降级为 warn 日志，
+     * 避免过期前端/脚本打错地址时在 error.log 里刷 500 堆栈
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public Result<Void> handleNoResourceFoundException(NoResourceFoundException e) {
+        ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        if (attributes != null) {
+            HttpServletRequest request = attributes.getRequest();
+            log.warn("No resource found - method={}, uri={}, ip={}",
+                    request.getMethod(), request.getRequestURI(), getClientIp(request));
+        } else {
+            log.warn("No resource found: {}", e.getMessage());
+        }
+        return Result.fail(ErrorCode.NOT_FOUND, "请求的资源不存在");
     }
 
     @ExceptionHandler(Exception.class)

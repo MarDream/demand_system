@@ -11,6 +11,8 @@ import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
+
 /**
  * 多维表格 AI 能力控制器
  * <p>
@@ -77,6 +79,19 @@ public class BitableAiController {
         authorizationService.checkWritePermission(baseId, userId);
         bitableAiService.fillBatchAsync(request.getTableId(), request.getFieldId(), userId);
         return Result.success();
+    }
+
+    /**
+     * AI 自然语言生成筛选条件（不落库，返回结构化条件供筛选面板填充）
+     */
+    @PostMapping("/filter-generate")
+    @PreAuthorize("isAuthenticated()")
+    public Result<Map<String, Object>> generateFilter(@Valid @RequestBody AiFilterGenerateRequest request) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        Long baseId = requireBaseIdByTableId(request.getTableId());
+        authorizationService.checkReadPermission(baseId, userId);
+        Map<String, Object> result = bitableAiService.aiGenerateFilter(request.getTableId(), request.getText(), userId);
+        return Result.success(result);
     }
 
     /**

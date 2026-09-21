@@ -42,6 +42,15 @@
             :placeholder="fieldPlaceholder(field)"
           />
 
+          <!-- 富文本：表单内完整编辑 -->
+          <RichTextEditor
+            v-else-if="field.fieldType === 'rich_text'"
+            v-model="formModel[field.id]"
+            :placeholder="fieldPlaceholder(field)"
+            min-height="140px"
+            :editor-key="String(field.id)"
+          />
+
           <el-input-number
             v-else-if="field.fieldType === 'number' || field.fieldType === 'currency' || field.fieldType === 'progress' || field.fieldType === 'rating'"
             v-model="formModel[field.id]"
@@ -108,11 +117,34 @@
             :placeholder="fieldPlaceholder(field, '地址或经纬度，例如：上海市浦东新区 / 31.2304,121.4737')"
           />
 
+          <!-- 人员：可选项 = 系统用户列表（按字段属性 userScope 过滤） -->
+          <el-select
+            v-else-if="field.fieldType === 'user'"
+            v-model="formModel[field.id]"
+            :multiple="field.config?.userMode === 'multiple'"
+            :disabled="isFieldReadonly(field)"
+            clearable
+            filterable
+            collapse-tags
+            collapse-tags-tooltip
+            :placeholder="fieldPlaceholder(field, '选择人员')"
+            style="width: 100%;"
+          >
+            <el-option v-for="u in scopedUserOptions(field)" :key="u.id" :label="u.realName" :value="u.id">
+              <div class="form-view__user-option">
+                <el-avatar :size="20" :src="u.avatar || undefined">{{ u.realName.slice(0, 1) }}</el-avatar>
+                <span>{{ u.realName }}</span>
+                <span class="form-view__user-option__username">{{ u.username }}</span>
+              </div>
+            </el-option>
+          </el-select>
+
+          <!-- 群组：暂保留文本输入（群组数据源未接入） -->
           <el-input
-            v-else-if="field.fieldType === 'user' || field.fieldType === 'group'"
+            v-else-if="field.fieldType === 'group'"
             v-model="formModel[field.id]"
             :disabled="isFieldReadonly(field)"
-            :placeholder="fieldPlaceholder(field, `请输入${fieldTypeLabel(field.fieldType)}`)"
+            :placeholder="fieldPlaceholder(field, '请输入群组')"
           />
 
           <el-input
@@ -158,6 +190,9 @@ import {
   resolveFieldDefault,
 } from '@/utils/bitableFieldConfig'
 import LinkFieldSelector from './LinkFieldSelector.vue'
+import RichTextEditor from '@/components/rich/RichTextEditor.vue'
+import { useUserStore } from '@/stores/modules/user'
+import { allUsers, ensureUsersLoaded, filterUsersByScope, type UserOption } from '@/composables/useUserOptions'
 
 const props = defineProps<{
   table: BitableTable | null
@@ -171,6 +206,25 @@ const emit = defineEmits<{
 
 const formRef = ref<FormInstance>()
 const formModel = reactive<Record<number, any>>({})
+
+// ==================== 人员字段可选项（系统用户列表） ====================
+const userStore = useUserStore()
+
+/** 按字段属性 userScope 过滤后的可选项 */
+function scopedUserOptions(field: BitableField): UserOption[] {
+  return filterUsersByScope(allUsers.value, field, userStore.userInfo?.id ?? null)
+}
+
+// 有人员字段才拉取用户列表（共享缓存，多入口只发一次请求）
+watch(
+  () => props.fields,
+  (fields) => {
+    if (fields.some((f) => f.fieldType === 'user')) {
+      ensureUsersLoaded()
+    }
+  },
+  { immediate: true },
+)
 
 // 关联字段选择器状态
 const linkSelectorVisible = ref(false)
@@ -258,6 +312,11 @@ function applyDefaults() {
     if (fallback === undefined) continue
     if (field.fieldType === 'date' || field.fieldType === 'date_range') {
       formModel[field.id] = typeof fallback === 'string' ? fallback.slice(0, field.config?.withTime ? 19 : 10).replace('T', ' ') : fallback
+    } else if (field.fieldType === 'user' && fallback === 'currentUser') {
+      // 人员字段「默认当前用户」：解析为当前登录用户 id；单人多选形态对齐 userMode
+      if (userStore.userInfo?.id == null) continue
+      formModel[field.id] =
+        field.config?.userMode === 'multiple' ? [userStore.userInfo.id] : userStore.userInfo.id
     } else {
       formModel[field.id] = fallback
     }
@@ -281,11 +340,6 @@ function fieldPlaceholder(field: BitableField, fallback?: string) {
   return field.config?.formPlaceholder || field.description || fallback || `请输入${field.name}`
 }
 
-function fieldTypeLabel(type: string) {
-  const map: Record<string, string> = { user: '人员', group: '群组' }
-  return map[type] || '内容'
-}
-
 function buildCells() {
   const cells: Record<number, { valueText?: string; valueNumber?: number; valueDate?: string; valueJson?: unknown }> = {}
   for (const field of editableFields.value) {
@@ -297,6 +351,16 @@ function buildCells() {
       cells[field.id] = { valueNumber: Number(value) || 0 }
     } else if (field.fieldType === 'date') {
       cells[field.id] = { valueDate: String(value) }
+    } else if (field.fieldType === 'user') {
+      // 人员：valueJson 存 [{id, name}]（与展示口径一致），valueText 落可读姓名串
+      const ids = Array.isArray(value) ? value : [value]
+      const picked = ids
+        .map((id) => allUsers.value.find((u) => u.id === Number(id)))
+        .filter((u): u is UserOption => !!u)
+      cells[field.id] = {
+        valueJson: picked.map((u) => ({ id: u.id, name: u.realName })),
+        valueText: picked.map((u) => u.realName).join(', '),
+      }
     } else if (field.fieldType === 'date_range' || field.fieldType === 'multi_select' || field.fieldType === 'attachment' || field.fieldType === 'location') {
       cells[field.id] = { valueJson: value }
     } else if (field.fieldType === 'link' || field.fieldType === 'bidirectional_link') {
@@ -343,7 +407,20 @@ defineExpose({ reset })
   flex: 1;
   overflow: auto;
   padding: 32px 20px 80px;
-  background: var(--color-background, #f8fafc);
+  background: var(--color-background, var(--color-background));
+}
+
+// 人员下拉选项：头像 + 姓名 + 用户名
+.form-view__user-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  &__username {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--color-text-tertiary, var(--color-text-tertiary));
+  }
 }
 
 .form-view__card {
@@ -351,7 +428,7 @@ defineExpose({ reset })
   margin: 0 auto;
   border-radius: var(--radius-card-xl, 18px) !important;
   box-shadow: var(--shadow-md, 0 4px 6px -1px rgba(15, 23, 42, 0.08)) !important;
-  border: 0.5px solid var(--color-border, #e2e8f0) !important;
+  border: 0.5px solid var(--color-border, var(--color-border)) !important;
   overflow: hidden;
 }
 
@@ -366,13 +443,13 @@ defineExpose({ reset })
     margin: 0 0 6px;
     font-size: 18px;
     font-weight: 700;
-    color: var(--color-text-primary, #0f172a);
+    color: var(--color-text-primary, var(--color-text-primary));
     letter-spacing: -0.01em;
   }
 
   p {
     margin: 0;
-    color: var(--color-text-secondary, #475569);
+    color: var(--color-text-secondary, var(--color-text-secondary));
     font-size: 13px;
     line-height: 1.6;
   }
@@ -388,7 +465,7 @@ defineExpose({ reset })
 
 .form-view__form :deep(.el-form-item__label) {
   font-weight: 600;
-  color: var(--color-text-primary, #0f172a);
+  color: var(--color-text-primary, var(--color-text-primary));
   font-size: 13px;
   padding-right: 16px;
   line-height: 1.5;
@@ -403,7 +480,7 @@ defineExpose({ reset })
 
 .form-view__hint {
   margin-left: 6px;
-  color: var(--color-text-secondary, #475569);
+  color: var(--color-text-secondary, var(--color-text-secondary));
   font-size: 12px;
   font-weight: 400;
   margin-top: 4px;
@@ -419,14 +496,14 @@ defineExpose({ reset })
 
 .form-view__link-count {
   font-size: 12px;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary, var(--color-muted-text));
 }
 
 // 提交操作区
 .form-view__actions {
   position: sticky;
   bottom: 0;
-  background: linear-gradient(180deg, transparent, var(--color-surface, #fff) 30%);
+  background: linear-gradient(180deg, transparent, var(--color-surface, var(--color-surface)) 30%);
   padding: 16px 0 0;
   margin-top: 8px;
   display: flex;

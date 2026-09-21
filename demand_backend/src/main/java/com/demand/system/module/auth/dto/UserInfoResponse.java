@@ -32,6 +32,8 @@ public class UserInfoResponse {
     private String jobNumber;
     /** 所属组织名称（只读展示） */
     private String orgName;
+    /** 外观设置 JSON（{mode,primary,radius}，null = 未自定义） */
+    private String appearanceConfig;
 
     public UserInfoResponse() {
     }
@@ -205,6 +207,14 @@ public class UserInfoResponse {
         this.orgName = orgName;
     }
 
+    public String getAppearanceConfig() {
+        return appearanceConfig;
+    }
+
+    public void setAppearanceConfig(String appearanceConfig) {
+        this.appearanceConfig = appearanceConfig;
+    }
+
     public static UserInfoResponseBuilder builder() {
         return new UserInfoResponseBuilder();
     }
@@ -229,6 +239,7 @@ public class UserInfoResponse {
         private String activeRole;
         private String jobNumber;
         private String orgName;
+        private String appearanceConfig;
 
         public UserInfoResponseBuilder id(Long id) {
             this.id = id;
@@ -325,6 +336,11 @@ public class UserInfoResponse {
             return this;
         }
 
+        public UserInfoResponseBuilder appearanceConfig(String appearanceConfig) {
+            this.appearanceConfig = appearanceConfig;
+            return this;
+        }
+
         public UserInfoResponse build() {
             UserInfoResponse response = new UserInfoResponse(id, username, realName, email, phone, avatar, roles, roleNames,
                     permissions, isSuperAdmin, regionId, departmentId);
@@ -335,6 +351,7 @@ public class UserInfoResponse {
             response.setActiveRole(activeRole);
             response.setJobNumber(jobNumber);
             response.setOrgName(orgName);
+            response.setAppearanceConfig(appearanceConfig);
             return response;
         }
     }

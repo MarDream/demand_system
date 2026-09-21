@@ -86,5 +86,26 @@ export const useAppStore = defineStore('app', () => {
     return chain
   }
 
-  return { sidebarOpened, sidebarWidth, toggleSidebar, setSidebarWidth, device, menuList, setDevice, setMenuList, getMenuNameByPath, getBreadcrumbChain }
+  /**
+   * 登录后首页：按服务端返回的菜单顺序（已按角色权限过滤、已按 sortOrder 排序），
+   * 取第一个可导航的路径；一个菜单都没有时兜底 /dashboard（路由守卫会再按权限处理）。
+   * 菜单树未加载（空）时返回 null，由调用方决定回退。
+   */
+  function resolveHomePath(): string | null {
+    function firstPath(items: MenuItem[]): string | null {
+      for (const item of items) {
+        if (item.menuType === 'BUTTON' || item.enabled === 0 || item.visible === 0) continue
+        if (item.path) return item.path
+        if (item.children?.length) {
+          const childPath = firstPath(item.children)
+          if (childPath) return childPath
+        }
+      }
+      return null
+    }
+    if (!menuList.value.length) return null
+    return firstPath(menuList.value) ?? '/dashboard'
+  }
+
+  return { sidebarOpened, sidebarWidth, toggleSidebar, setSidebarWidth, device, menuList, setDevice, setMenuList, getMenuNameByPath, getBreadcrumbChain, resolveHomePath }
 })

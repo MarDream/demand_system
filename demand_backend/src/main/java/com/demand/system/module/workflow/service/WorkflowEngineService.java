@@ -1722,11 +1722,24 @@ public class WorkflowEngineService {
     }
 
     private void validateRuntimePendingPermission(WorkflowInstance instance, Long requirementId, Long operatorId) {
+        // 角色匹配按「当前生效角色」收窄：产品经理角色下不能办理绑定给运营工单员的节点
+        List<Long> activeRoleIds = resolveActiveRoleIds(operatorId);
         Long count = pendingTaskMapper.countAccessibleByCurrentWorkflowPositionAndUser(
-                requirementId, instance.getId(), instance.getCurrentNodeId(), operatorId);
+                requirementId, instance.getId(), instance.getCurrentNodeId(), operatorId, activeRoleIds);
         if (count == null || count <= 0) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
         }
+    }
+
+    /** 当前登录用户的生效角色 ID（按 X-Active-Role 收窄；非当前请求上下文时回退用户全集） */
+    private List<Long> resolveActiveRoleIds(Long operatorId) {
+        List<String> roleCodes = SecurityUtils.getCurrentUserRoles();
+        if (roleCodes.isEmpty()) {
+            return List.of();
+        }
+        List<Role> roles = roleMapper.selectList(
+                new LambdaQueryWrapper<Role>().in(Role::getCode, roleCodes));
+        return roles.stream().map(Role::getId).toList();
     }
 
     private void validateSpecifiedUserPermission(WorkflowNode node, Long operatorId) {

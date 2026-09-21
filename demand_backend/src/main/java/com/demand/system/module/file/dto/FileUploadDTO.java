@@ -18,6 +18,9 @@ public class FileUploadDTO {
 
     private Long uploaderId;
 
+    /** 内容哈希(SHA-256 hex,小写),供前端同工单附件去重 */
+    private String contentHash;
+
     public Long getFileId() {
         return fileId;
     }
@@ -80,5 +83,13 @@ public class FileUploadDTO {
 
     public void setUploaderId(Long uploaderId) {
         this.uploaderId = uploaderId;
+    }
+
+    public String getContentHash() {
+        return contentHash;
+    }
+
+    public void setContentHash(String contentHash) {
+        this.contentHash = contentHash;
     }
 }

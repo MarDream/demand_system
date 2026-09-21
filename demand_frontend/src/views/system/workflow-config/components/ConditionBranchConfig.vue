@@ -137,7 +137,7 @@ function emitBranches() {
   display: block;
   font-size: 13px;
   font-weight: 500;
-  color: var(--el-text-color-primary, #303133);
+  color: var(--el-text-color-primary, var(--color-text-primary));
   margin-bottom: 8px;
 }
 
@@ -151,24 +151,24 @@ function emitBranches() {
 .section-title {
   font-size: 14px;
   font-weight: 600;
-  color: var(--el-text-color-primary, #303133);
+  color: var(--el-text-color-primary, var(--color-text-primary));
 }
 .section-hint {
   font-size: 12px;
-  color: var(--el-text-color-secondary, #909399);
+  color: var(--el-text-color-secondary, var(--color-text-tertiary));
 }
 
 /* ===== 分支卡片 ===== */
 .branch-card {
-  background: #fff;
-  border: 1px solid var(--el-border-color-lighter, #e4e7ed);
+  background: var(--color-surface);
+  border: 1px solid var(--el-border-color-lighter, var(--color-border));
   border-radius: var(--el-border-radius-round, 10px);
   overflow: hidden;
   margin-bottom: 14px;
   transition: border-color 0.2s;
 }
 .branch-card:hover {
-  border-color: var(--el-border-color, #dcdfe6);
+  border-color: var(--el-border-color, var(--color-border));
 }
 
 /* 卡片头部 */
@@ -177,7 +177,7 @@ function emitBranches() {
   align-items: center;
   justify-content: space-between;
   padding: 11px 16px;
-  background: var(--el-fill-color-extra-light, #fafbfc);
+  background: var(--el-fill-color-extra-light, var(--color-surface-alt));
   border-bottom: 1px solid var(--el-border-color-extra-light, #f0f1f3);
 }
 .header-left {
@@ -186,14 +186,14 @@ function emitBranches() {
   gap: 8px;
 }
 .arrow {
-  color: var(--el-color-primary, #409eff);
+  color: var(--el-color-primary, var(--color-primary));
   font-weight: 700;
   font-size: 15px;
 }
 .target-name {
   font-size: 13.5px;
   font-weight: 600;
-  color: var(--el-text-color-primary, #303133);
+  color: var(--el-text-color-primary, var(--color-text-primary));
 }
 .edge-label-input {
   width: 100px !important;
@@ -210,7 +210,7 @@ function emitBranches() {
 .empty-text {
   margin: 0 0 10px;
   font-size: 13px;
-  color: var(--el-text-color-secondary, #909399);
+  color: var(--el-text-color-secondary, var(--color-text-tertiary));
 }
 .btn-add-cond {
   display: inline-flex;
@@ -218,8 +218,8 @@ function emitBranches() {
   gap: 4px;
   border: none;
   border-radius: 6px;
-  background: var(--el-color-primary-light-9, #ecf5ff);
-  color: var(--el-color-primary, #409eff);
+  background: var(--el-color-primary-light-9, var(--color-primary-subtle));
+  color: var(--el-color-primary, var(--color-primary));
   font-size: 12.5px;
   cursor: pointer;
   padding: 5px 14px;
@@ -244,7 +244,7 @@ function emitBranches() {
 .btn-clear {
   border: none;
   background: none;
-  color: var(--el-text-color-placeholder, #c0c4cc);
+  color: var(--el-text-color-placeholder, var(--color-text-tertiary));
   font-size: 12px;
   cursor: pointer;
   padding: 4px 8px;
@@ -253,7 +253,7 @@ function emitBranches() {
 }
 .btn-clear:not(:disabled):hover {
   color: var(--el-text-color-regular, #606266);
-  background: var(--el-fill-color-light, #f5f7fa);
+  background: var(--el-fill-color-light, var(--color-fill-secondary));
 }
 .btn-clear:disabled {
   cursor: not-allowed;
@@ -265,8 +265,8 @@ function emitBranches() {
   padding: 28px 16px;
   text-align: center;
   font-size: 13px;
-  color: var(--el-text-color-secondary, #909399);
-  background: var(--el-fill-color-lighter, #f7f8fa);
+  color: var(--el-text-color-secondary, var(--color-text-tertiary));
+  background: var(--el-fill-color-lighter, var(--color-surface-alt));
   border-radius: 8px;
 }
 </style>

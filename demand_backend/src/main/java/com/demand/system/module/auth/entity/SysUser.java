@@ -22,6 +22,8 @@ public class SysUser {
     private String phone;
     private String avatar;
     private String status;
+    /** 外观设置 JSON（{mode,primary,radius}），null = 未自定义 */
+    private String appearanceConfig;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -121,6 +123,14 @@ public class SysUser {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getAppearanceConfig() {
+        return appearanceConfig;
+    }
+
+    public void setAppearanceConfig(String appearanceConfig) {
+        this.appearanceConfig = appearanceConfig;
     }
 
     @Override

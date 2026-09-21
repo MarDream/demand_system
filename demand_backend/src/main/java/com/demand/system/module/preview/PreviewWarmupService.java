@@ -41,7 +41,10 @@ public class PreviewWarmupService {
         }
         try {
             String url = buildWarmupUrl(fileUrl);
-            String response = restTemplate.getForObject(url, String.class);
+            // 必须传 java.net.URI：getForObject(String) 会把已 URL 编码的查询串当模板
+            // 二次编码（%3D -> %253D），kkFileView 侧 base64 解码后尾部比特错位，
+            // 预签名签名被破坏，MinIO 返回 403
+            String response = restTemplate.getForObject(java.net.URI.create(url), String.class);
             if (!"success".equalsIgnoreCase(response == null ? "" : response.trim())) {
                 log.warn("kkFileView 预热任务提交未返回 success: fileName={}, response={}", fileName, response);
                 return;

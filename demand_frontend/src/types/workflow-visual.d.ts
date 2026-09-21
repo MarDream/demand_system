@@ -95,17 +95,19 @@ export interface WorkflowVersionDTO {
   isActive: number
   activationStatus?: string
   runtimeHash?: string
+  /** 发布时间（最近一次启用时间，停用后仍保留） */
   activatedAt?: string
   creatorId: number
   creatorName: string
   createdAt: string
-  /** 编辑时间（最近一次保存/启停/复制等变更时间；存量数据回退为创建时间） */
+  /** 编辑时间（最近一次保存/启停/复制/重命名等变更时间；存量数据回退为创建时间） */
   updatedAt?: string
   latestApprovalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED'
   latestApprovalComment?: string
+  /** 最近一次提交审核时间（取 workflow_approvals 最新一条） */
   latestSubmittedAt?: string
   latestApprovedAt?: string
-  /** 最近一次发布时间（从workflow_history回填） */
+  /** 版本变更说明（纯文本，不是时间） */
   changeLog?: string
   config?: WorkflowConfigDTO
   knowledgeBaseId?: number

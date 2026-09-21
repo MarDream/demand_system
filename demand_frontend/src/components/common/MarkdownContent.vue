@@ -87,7 +87,7 @@ function handleContentClick(e: MouseEvent) {
 }
 
 .markdown-content :deep(code) {
-  background: var(--color-fill-secondary, #f3f4f6);
+  background: var(--color-fill-secondary, var(--color-surface-alt));
   padding: 0.15em 0.4em;
   border-radius: 3px;
   font-size: 0.9em;
@@ -95,7 +95,7 @@ function handleContentClick(e: MouseEvent) {
 }
 
 .markdown-content :deep(pre) {
-  background: var(--color-fill-secondary, #f3f4f6);
+  background: var(--color-fill-secondary, var(--color-surface-alt));
   padding: 1em;
   border-radius: 6px;
   overflow-x: auto;
@@ -112,7 +112,7 @@ function handleContentClick(e: MouseEvent) {
   border-left: 3px solid var(--color-primary, #409eff);
   margin-left: 0;
   padding-left: 1em;
-  color: var(--color-text-secondary, #666);
+  color: var(--color-text-secondary, var(--color-muted-text));
   margin-top: 0.75em;
   margin-bottom: 0.75em;
 }
@@ -126,13 +126,13 @@ function handleContentClick(e: MouseEvent) {
 
 .markdown-content :deep(th),
 .markdown-content :deep(td) {
-  border: 1px solid var(--color-border-light, #e5e7eb);
+  border: 1px solid var(--color-border-light, var(--color-border));
   padding: 0.5em 0.75em;
   text-align: left;
 }
 
 .markdown-content :deep(th) {
-  background: var(--color-fill-secondary, #f3f4f6);
+  background: var(--color-fill-secondary, var(--color-surface-alt));
   font-weight: 600;
 }
 
@@ -141,7 +141,7 @@ function handleContentClick(e: MouseEvent) {
 }
 
 .markdown-content :deep(a) {
-  color: var(--color-primary, #409eff);
+  color: var(--color-primary, var(--color-primary));
   text-decoration: none;
 }
 .markdown-content :deep(a:hover) {
@@ -156,8 +156,8 @@ function handleContentClick(e: MouseEvent) {
   height: 1.4em;
   font-size: 0.75em;
   font-weight: 600;
-  color: var(--color-primary, #409eff);
-  background: var(--color-primary-light-9, #ecf5ff);
+  color: var(--color-primary, var(--color-primary));
+  background: var(--color-primary-light-9, var(--color-primary-subtle));
   border-radius: 3px;
   cursor: pointer;
   vertical-align: super;
@@ -173,8 +173,8 @@ function handleContentClick(e: MouseEvent) {
 }
 
 .markdown-content :deep(.citation-ref--invalid) {
-  color: var(--color-text-placeholder, #c0c4cc);
-  background: var(--color-fill-light, #f5f7fa);
+  color: var(--color-text-placeholder, var(--color-text-tertiary));
+  background: var(--color-fill-light, var(--color-fill-secondary));
   cursor: default;
 }
 </style>

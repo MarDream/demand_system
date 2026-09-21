@@ -246,14 +246,14 @@ function handleAddRecord(groupValue: string) {
   align-items: center;
   gap: 12px;
   padding: 14px 20px;
-  border-bottom: 1px solid var(--color-border, #e2e8f0);
-  background: var(--color-surface, #fff);
+  border-bottom: 1px solid var(--color-border, var(--color-border));
+  background: var(--color-surface, var(--color-surface));
   flex-shrink: 0;
 
   .kanban-header__label {
     font-size: 13px;
     font-weight: 500;
-    color: var(--color-text-secondary, #475569);
+    color: var(--color-text-secondary, var(--color-text-secondary));
     white-space: nowrap;
   }
 }
@@ -283,7 +283,7 @@ function handleAddRecord(groupValue: string) {
     top: 0;
     width: 24px;
     height: 100%;
-    background: linear-gradient(90deg, transparent, var(--color-background, #f8fafc));
+    background: linear-gradient(90deg, transparent, var(--color-background, var(--color-background)));
     pointer-events: none;
     flex-shrink: 0;
     align-self: stretch;
@@ -295,9 +295,9 @@ function handleAddRecord(groupValue: string) {
   flex: 0 0 300px;
   display: flex;
   flex-direction: column;
-  background: var(--color-kanban-column-bg, #f1f5f9);
+  background: var(--color-kanban-column-bg, var(--color-surface-alt));
   border-radius: var(--radius-card-lg, 14px);
-  border: 0.5px solid var(--color-border, #e2e8f0);
+  border: 0.5px solid var(--color-border, var(--color-border));
   max-height: 100%;
   transition: background-color 200ms var(--ease-standard, ease);
 }
@@ -321,7 +321,7 @@ function handleAddRecord(groupValue: string) {
   .kanban-column__title {
     font-size: 13px;
     font-weight: 600;
-    color: var(--color-text-primary, #0f172a);
+    color: var(--color-text-primary, var(--color-text-primary));
     flex: 1;
     min-width: 0;
     overflow: hidden;
@@ -341,8 +341,8 @@ function handleAddRecord(groupValue: string) {
   padding: 0 8px;
   font-size: 11px;
   font-weight: 600;
-  color: var(--color-text-secondary, #475569);
-  background: var(--color-surface, #fff);
+  color: var(--color-text-secondary, var(--color-text-secondary));
+  background: var(--color-surface, var(--color-surface));
   border-radius: var(--radius-tag, 6px);
   font-variant-numeric: tabular-nums;
 
@@ -362,7 +362,7 @@ function handleAddRecord(groupValue: string) {
   transition: background-color 200ms var(--ease-standard, ease);
 
   &.is-drop-target {
-    background: var(--color-kanban-column-drop-target, #eff6ff);
+    background: var(--color-kanban-column-drop-target, var(--color-primary-subtle));
     box-shadow: inset 0 0 0 2px var(--color-primary, #2563eb);
   }
 }
@@ -372,19 +372,19 @@ function handleAddRecord(groupValue: string) {
   align-items: center;
   justify-content: center;
   height: 60px;
-  color: var(--color-text-placeholder, #94a3b8);
+  color: var(--color-text-placeholder, var(--color-text-tertiary));
   font-size: 12px;
   font-weight: 500;
-  border: 1.5px dashed var(--color-border, #e2e8f0);
+  border: 1.5px dashed var(--color-border, var(--color-border));
   border-radius: var(--radius-md, 8px);
   background: transparent;
 }
 
 // 卡片：14px 圆角 + hover 抬起 + 拖拽态旋转
 .kanban-card {
-  background: var(--color-surface, #fff);
+  background: var(--color-surface, var(--color-surface));
   border-radius: var(--radius-card-lg, 14px);
-  border: 0.5px solid var(--color-border, #e2e8f0);
+  border: 0.5px solid var(--color-border, var(--color-border));
   padding: 12px 14px;
   margin-bottom: 8px;
   cursor: grab;
@@ -422,7 +422,7 @@ function handleAddRecord(groupValue: string) {
 .kanban-card__label {
   font-size: 11px;
   font-weight: 500;
-  color: var(--color-text-placeholder, #94a3b8);
+  color: var(--color-text-placeholder, var(--color-text-tertiary));
   line-height: 1.4;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -431,7 +431,7 @@ function handleAddRecord(groupValue: string) {
 .kanban-card__value {
   font-size: 13px;
   font-weight: 500;
-  color: var(--color-text-primary, #0f172a);
+  color: var(--color-text-primary, var(--color-text-primary));
   line-height: 1.5;
   word-break: break-all;
   margin-top: 2px;
@@ -442,7 +442,7 @@ function handleAddRecord(groupValue: string) {
   justify-content: flex-end;
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 0.5px solid var(--color-border, #e2e8f0);
+  border-top: 0.5px solid var(--color-border, var(--color-border));
   opacity: 0;
   transition: opacity 200ms var(--ease-standard, ease);
 }

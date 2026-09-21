@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { login as loginApi, logout as logoutApi, getMe, bindOrg as bindOrgApi, type AuthUserInfo } from '@/api/modules/auth'
 import { setToken, removeToken, setRefreshToken, removeRefreshToken, getActiveRole, setActiveRole } from '@/utils/auth'
+import { applyRemoteAppearance } from '@/composables/useAppearance'
+import { ASSISTANT_FAB_POSITION_KEY } from '@/stores/assistant'
 
 export interface RoleOption {
   code: string
@@ -29,6 +31,8 @@ export const useUserStore = defineStore('user', () => {
     token.value = data.accessToken
     // 新会话不继承上一个会话的激活角色
     setActiveRole('')
+    // 浮标位置同理：登录成功后 AI 助手回到左下角默认位（拖拽偏好仅在同一登录会话内保持）
+    localStorage.removeItem(ASSISTANT_FAB_POSITION_KEY)
     needOrgBind.value = !!data.needOrgBind
     await getUserInfo()
     // getUserInfo 拿到的是最新 needOrgBind，覆盖一次以保持一致
@@ -38,6 +42,8 @@ export const useUserStore = defineStore('user', () => {
   async function getUserInfo() {
     const data = await getMe() as any
     userInfo.value = data
+    // 应用跟随账号的外观配置（本地有未落库改动时自动跳过，防回退）
+    applyRemoteAppearance((data as { appearanceConfig?: string | null })?.appearanceConfig)
     roles.value = data.roles || []
     permissions.value = data.permissions || []
     isSuperAdmin.value = !!data.isSuperAdmin

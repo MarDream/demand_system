@@ -18,6 +18,11 @@ public class BitableTableUpdateDTO {
      */
     private Long groupId;
 
+    /**
+     * 网格行高(px)，非 null 时才更新；范围 28-200
+     */
+    private Integer rowHeight;
+
     public String getName() {
         return name;
     }
@@ -56,5 +61,13 @@ public class BitableTableUpdateDTO {
 
     public void setGroupId(Long groupId) {
         this.groupId = groupId;
+    }
+
+    public Integer getRowHeight() {
+        return rowHeight;
+    }
+
+    public void setRowHeight(Integer rowHeight) {
+        this.rowHeight = rowHeight;
     }
 }

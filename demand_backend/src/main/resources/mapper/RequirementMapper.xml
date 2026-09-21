@@ -360,15 +360,9 @@
             LEFT JOIN roles direct_role ON pt.role_id IS NOT NULL
                 AND direct_role.id = pt.role_id
                 AND direct_role.deleted_at = 0
-            LEFT JOIN user_roles ur ON direct_role.id IS NOT NULL
-                AND ur.user_id = #{userId}
-                AND ur.role_id = direct_role.id
             LEFT JOIN roles rg_role ON pt.role_group_id IS NOT NULL
                 AND rg_role.role_group_id = pt.role_group_id
                 AND rg_role.deleted_at = 0
-            LEFT JOIN user_roles rg_ur ON rg_role.id IS NOT NULL
-                AND rg_ur.user_id = #{userId}
-                AND rg_ur.role_id = rg_role.id
             LEFT JOIN sys_org pt_org ON pt.org_id IS NOT NULL
                 AND pt_org.id = pt.org_id
                 AND pt_org.deleted_at = 0
@@ -391,8 +385,20 @@
                       AND direct_pt.user_id IS NOT NULL
                   )
                   AND (
-                    ur.role_id IS NOT NULL
-                    OR rg_ur.role_id IS NOT NULL
+                    <!-- 生效角色匹配：roleIds 由 Service 按当前登录选择的角色收窄（非用户角色并集） -->
+                    <if test='roleIds != null and roleIds.size() &gt; 0'>
+                    direct_role.id IN
+                    <foreach collection='roleIds' item='rid' open='(' separator=',' close=')'>
+                        #{rid}
+                    </foreach>
+                    OR rg_role.id IN
+                    <foreach collection='roleIds' item='rid2' open='(' separator=',' close=')'>
+                        #{rid2}
+                    </foreach>
+                    </if>
+                    <if test='roleIds == null or roleIds.size() == 0'>
+                    1 = 0
+                    </if>
                     OR (
                       pt.org_id IS NOT NULL
                       AND pt_org.id IS NOT NULL
@@ -479,15 +485,9 @@
                 LEFT JOIN roles direct_role ON pt.role_id IS NOT NULL
                     AND direct_role.id = pt.role_id
                     AND direct_role.deleted_at = 0
-                LEFT JOIN user_roles ur ON direct_role.id IS NOT NULL
-                    AND ur.user_id = #{userId}
-                    AND ur.role_id = direct_role.id
                 LEFT JOIN roles rg_role ON pt.role_group_id IS NOT NULL
                     AND rg_role.role_group_id = pt.role_group_id
                     AND rg_role.deleted_at = 0
-                LEFT JOIN user_roles rg_ur ON rg_role.id IS NOT NULL
-                    AND rg_ur.user_id = #{userId}
-                    AND rg_ur.role_id = rg_role.id
                 LEFT JOIN sys_org pt_org ON pt.org_id IS NOT NULL
                     AND pt_org.id = pt.org_id
                     AND pt_org.deleted_at = 0
@@ -510,8 +510,20 @@
                           AND direct_pt.user_id IS NOT NULL
                       )
                       AND (
-                        ur.role_id IS NOT NULL
-                        OR rg_ur.role_id IS NOT NULL
+                        <!-- 生效角色匹配：与 selectMyPendingV2 口径一致 -->
+                        <if test='roleIds != null and roleIds.size() &gt; 0'>
+                        direct_role.id IN
+                        <foreach collection='roleIds' item='rid' open='(' separator=',' close=')'>
+                            #{rid}
+                        </foreach>
+                        OR rg_role.id IN
+                        <foreach collection='roleIds' item='rid2' open='(' separator=',' close=')'>
+                            #{rid2}
+                        </foreach>
+                        </if>
+                        <if test='roleIds == null or roleIds.size() == 0'>
+                        1 = 0
+                        </if>
                         OR (
                           pt.org_id IS NOT NULL
                           AND pt_org.id IS NOT NULL

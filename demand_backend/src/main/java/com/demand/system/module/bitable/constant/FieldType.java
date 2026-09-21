@@ -6,6 +6,7 @@ package com.demand.system.module.bitable.constant;
 public enum FieldType {
 
     TEXT("text", "文本"),
+    RICH_TEXT("rich_text", "富文本"),
     NUMBER("number", "数字"),
     DATE("date", "日期"),
     DATE_RANGE("date_range", "日期范围"),

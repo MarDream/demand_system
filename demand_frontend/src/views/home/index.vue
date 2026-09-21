@@ -17,12 +17,11 @@
         <p class="dashboard-desc">今日{{ getCurrentDate() }}，{{ getWeekDay() }}，祝工作顺利 🚀</p>
       </div>
       <div class="dashboard-header__actions">
-        <AppButton type="primary" permission="button:requirement:create" @click="router.push('/requirements/create')">
-          <el-icon><Document /></el-icon>新建需求
-        </AppButton>
-        <el-button class="btn-tech" @click="router.push('/requirements?view=pending')">
-          <el-icon><List /></el-icon>我的待办
-        </el-button>
+        <el-badge :value="pendingTodoCount" :hidden="!pendingTodoCount" :max="99" class="todo-badge">
+          <el-button class="btn-tech" @click="router.push('/requirements?view=pending')">
+            <el-icon><List /></el-icon>我的待办
+          </el-button>
+        </el-badge>
       </div>
     </div>
 
@@ -40,8 +39,9 @@
         </el-col>
       </template>
       <template v-else>
-        <el-col :xs="24" :sm="12" :lg="6" v-for="card in statCardsPro" :key="card.label">
+        <el-col :xs="24" :sm="12" :md="6" v-for="card in statCardsPro" :key="card.label">
           <StatCardPro
+            compact
             :label="card.label"
             :value="card.value"
             :icon="card.icon"
@@ -75,7 +75,7 @@
           </template>
           <div v-show="expandedSections.statusDist" class="section-body">
             <template v-if="distLoading">
-              <div class="skeleton-chart shimmer" style="height:180px" />
+              <div class="skeleton-chart shimmer" style="height:160px" />
             </template>
             <template v-else-if="pieLoaded">
       <!-- 精美环形图 + 右侧图例 -->
@@ -142,7 +142,7 @@
           </template>
           <div v-show="expandedSections.typeDist" class="section-body">
             <template v-if="distLoading">
-              <div class="skeleton-chart shimmer" style="height:280px" />
+              <div class="skeleton-chart shimmer" style="height:220px" />
             </template>
             <template v-else-if="barLoaded">
               <v-chart :option="barOption" :init-options="chartInitOptions" class="type-bar-chart" autoresize />
@@ -329,20 +329,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, h, defineComponent, onMounted } from 'vue'
+import { ref, reactive, computed, h, defineComponent, onMounted, watch } from 'vue'
 import { useRouter, type RouteLocationRaw } from 'vue-router'
 import { Document, List, ArrowRight } from '@element-plus/icons-vue'
 import StatCardPro from '@/components/common/StatCardPro.vue'
-import AppButton from '@/components/common/AppButton.vue'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { SVGRenderer } from 'echarts/renderers'
 import { PieChart, BarChart } from 'echarts/charts'
 import { TitleComponent, TooltipComponent, LegendComponent, GridComponent, GraphicComponent } from 'echarts/components'
-import { getDashboardData, getDistributionData, getDurationData, getWorkflowProcessStats, getEndNodeStatuses } from '@/api/modules/statistics'
+import { getDashboardData, getDistributionData, getDurationData, getWorkflowProcessStats, getEndNodeStatuses, getTabBadgeCounts } from '@/api/modules/statistics'
 import type { WorkflowProcessStats } from '@/api/modules/statistics'
 import { getRequirementList } from '@/api/modules/requirement'
 import { useUserStore } from '@/stores/modules/user'
+import { useAppearance } from '@/composables/useAppearance'
 import { formatDate, stripPriorityPrefix, normalizeText } from '@/utils/format'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
 import { useRequirementTag } from '@/composables/useRequirementTag'
@@ -474,6 +474,19 @@ async function loadEndNodeStatuses() {
   }
 }
 
+// 我的待办角标计数
+const pendingTodoCount = ref(0)
+
+async function loadPendingTodoCount() {
+  try {
+    const res = await getTabBadgeCounts() as any
+    const counts = res?.data ?? res
+    pendingTodoCount.value = Number(counts?.pending ?? 0) || 0
+  } catch {
+    pendingTodoCount.value = 0
+  }
+}
+
 const statCardsPro = computed(() => [
   { icon: SvgIconTotal, label: '总需求数', value: statsData.value?.totalReqs ?? 0, tip: '全部需求', gradientStart: COLORS.accent, gradientEnd: COLORS.accentHover, trend: null, route: { name: 'Requirements' } },
   { icon: SvgIconProgress, label: '进行中需求', value: statsData.value?.inProgressReqs ?? 0, tip: '开发中', gradientStart: COLORS.amber, gradientEnd: COLORS.amberHover, trend: null, route: { name: 'Requirements', query: { nodeStatus: 'IN_DEVELOPMENT' } } },
@@ -581,6 +594,11 @@ function onLegendClick(name: string) {
 }
 
 // 类型分布柱状图（渐变蓝色，顶部标注数值）
+// 注意：ECharts 5 不会解析 CSS 变量，必须使用扎实色值 —— 用 cssVar 在构建时解析
+function cssVar(name: string, fallback: string): string {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return v || fallback
+}
 const barLoaded = ref(false)
 const barOption = ref<any>({
   tooltip: {
@@ -595,14 +613,14 @@ const barOption = ref<any>({
   xAxis: {
     type: 'category',
     data: [] as string[],
-    axisLine: { lineStyle: { color: '#334155' } },
+    axisLine: { lineStyle: { color: cssVar('--color-text-primary', '#1e293b') } },
     axisTick: { show: false },
-    axisLabel: { color: '#94a3b8', fontSize: 12 },
+    axisLabel: { color: cssVar('--color-text-tertiary', '#94a3b8'), fontSize: 12 },
   },
   yAxis: {
     type: 'value',
-    splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
-    axisLabel: { color: '#94a3b8', fontSize: 12 },
+    splitLine: { lineStyle: { color: cssVar('--color-text-primary', '#334155'), type: 'dashed' } },
+    axisLabel: { color: cssVar('--color-text-tertiary', '#94a3b8'), fontSize: 12 },
   },
   series: [{
     name: '数量',
@@ -615,7 +633,7 @@ const barOption = ref<any>({
         x: 0, y: 0, x2: 0, y2: 1,
         colorStops: [
           { offset: 0, color: '#60A5FA' },
-          { offset: 1, color: '#2563EB' },
+          { offset: 1, color: cssVar('--color-primary', '#2563EB') },
         ],
       },
       borderRadius: [6, 6, 0, 0],
@@ -623,7 +641,7 @@ const barOption = ref<any>({
     label: {
       show: true,
       position: 'top',
-      color: '#94a3b8',
+      color: cssVar('--color-text-tertiary', '#94a3b8'),
       fontSize: 12,
       fontWeight: 600,
     },
@@ -640,6 +658,27 @@ const barOption = ref<any>({
       },
     },
   }],
+})
+
+// 外观切换后重取画布用色（ECharts 不会随 CSS 变量自动重绘）
+const { mode: appearanceMode } = useAppearance()
+function refreshChartTheme() {
+  const axisColor = cssVar('--color-text-primary', '#1e293b')
+  const tickColor = cssVar('--color-text-tertiary', '#94a3b8')
+  barOption.value.xAxis.axisLine.lineStyle.color = axisColor
+  barOption.value.xAxis.axisLabel.color = tickColor
+  barOption.value.yAxis.splitLine.lineStyle.color = axisColor
+  barOption.value.yAxis.axisLabel.color = tickColor
+  barOption.value.series[0].label.color = tickColor
+  barOption.value.series[0].itemStyle.color.colorStops[1].color = cssVar('--color-primary', '#2563EB')
+  if (pieOption.value.graphic) {
+    pieOption.value.graphic[0].style.fill = axisColor
+    pieOption.value.graphic[1].style.fill = tickColor
+  }
+}
+watch(appearanceMode, refreshChartTheme)
+window.matchMedia?.('(prefers-color-scheme: dark)')?.addEventListener('change', () => {
+  if (appearanceMode.value === 'auto') refreshChartTheme()
 })
 
 // 最近需求
@@ -880,6 +919,7 @@ onMounted(async () => {
   loadProjectRates()
   loadWorkflowStats()
   loadEndNodeStatuses()
+  loadPendingTodoCount()
 })
 </script>
 
@@ -889,10 +929,8 @@ onMounted(async () => {
 // ═══════════════════════════════════════════════
 
 .dashboard-container {
-  padding: 24px;
-  min-height: 100vh;
+  padding: 20px 24px 24px;
   position: relative;
-  overflow: hidden;
 }
 
 // ── 科技感背景 ────────────────────────────────
@@ -921,7 +959,7 @@ onMounted(async () => {
     &--1 {
       width: 600px;
       height: 600px;
-      background: var(--color-accent, #2563EB);
+      background: var(--color-accent, var(--color-primary));
       top: -200px;
       right: -100px;
       animation: glow-drift 20s ease-in-out infinite alternate;
@@ -930,7 +968,7 @@ onMounted(async () => {
     &--2 {
       width: 500px;
       height: 500px;
-      background: var(--color-accent-hover, #6366F1);
+      background: var(--color-accent-hover, var(--color-accent));
       bottom: -150px;
       left: -100px;
       animation: glow-drift 25s ease-in-out infinite alternate-reverse;
@@ -950,13 +988,13 @@ onMounted(async () => {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  margin-bottom: 28px;
+  margin-bottom: 16px;
   flex-wrap: wrap;
-  gap: 20px;
+  gap: 12px;
 
   &__left {
     h2 {
-      margin: 0 0 6px;
+      margin: 0 0 4px;
       letter-spacing: -0.03em;
     }
   }
@@ -978,7 +1016,7 @@ onMounted(async () => {
   }
 
   &__name {
-    background: linear-gradient(135deg, var(--color-accent, #2563EB), var(--color-accent-hover, #6366F1));
+    background: linear-gradient(135deg, var(--color-accent, var(--color-primary)), var(--color-accent-hover, var(--color-accent)));
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -1004,7 +1042,7 @@ onMounted(async () => {
 
     &:hover {
       border-color: var(--color-accent, #2563EB);
-      color: var(--color-accent, #2563EB);
+      color: var(--color-accent, var(--color-primary));
       background: rgba(37, 99, 235, 0.04);
     }
   }
@@ -1014,10 +1052,10 @@ onMounted(async () => {
 .stat-row {
   position: relative;
   z-index: 1;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 
   .el-col {
-    margin-bottom: 16px;
+    margin-bottom: 12px;
   }
 }
 
@@ -1036,36 +1074,36 @@ onMounted(async () => {
 .skeleton-card {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 20px;
+  gap: 12px;
+  padding: 12px 16px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 12px;
 
   &__icon {
-    width: 52px;
-    height: 52px;
-    border-radius: 10px;
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
   }
 
   &__info { flex: 1; }
 
   &__value {
-    height: 28px;
+    height: 22px;
     width: 60%;
     border-radius: 6px;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
   }
 
   &__label {
-    height: 14px;
+    height: 13px;
     width: 40%;
     border-radius: 6px;
   }
 }
 
 .skeleton-chart {
-  height: 320px;
+  height: 240px;
   border-radius: 10px;
 }
 
@@ -1133,7 +1171,7 @@ onMounted(async () => {
     left: 20px;
     right: 20px;
     height: 2px;
-    background: linear-gradient(90deg, transparent, var(--color-accent, #2563EB), transparent);
+    background: linear-gradient(90deg, transparent, var(--color-accent, var(--color-primary)), transparent);
     opacity: 0;
     transition: opacity 0.3s ease;
     border-radius: 0 0 2px 2px;
@@ -1150,13 +1188,13 @@ onMounted(async () => {
   }
 
   :deep(.el-card__header) {
-    padding: 16px 20px;
+    padding: 12px 16px;
     border-bottom: 1px solid var(--color-border);
     background: transparent;
   }
 
   :deep(.el-card__body) {
-    padding: 20px;
+    padding: 16px;
   }
 }
 
@@ -1186,7 +1224,7 @@ onMounted(async () => {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--color-accent, #2563EB);
+  background: var(--color-accent, var(--color-primary));
   position: relative;
   flex-shrink: 0;
 
@@ -1195,16 +1233,16 @@ onMounted(async () => {
     position: absolute;
     inset: -3px;
     border-radius: 50%;
-    background: var(--color-accent, #2563EB);
+    background: var(--color-accent, var(--color-primary));
     opacity: 0.2;
     animation: dot-pulse 2s ease-in-out infinite;
   }
 
   &--accent {
-    background: var(--color-accent-hover, #6366F1);
+    background: var(--color-accent-hover, var(--color-accent));
 
     &::after {
-      background: var(--color-accent-hover, #6366F1);
+      background: var(--color-accent-hover, var(--color-accent));
     }
   }
 }
@@ -1234,13 +1272,13 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 36px;
-  padding: 8px 0;
-  min-height: 260px;
+  padding: 4px 0;
+  min-height: 220px;
 
   &__chart {
     flex-shrink: 0;
-    width: 260px;
-    height: 260px;
+    width: 220px;
+    height: 220px;
     position: relative;
   }
 }
@@ -1287,7 +1325,7 @@ onMounted(async () => {
     .pie-legend-pct {
       font-size: 11px;
       font-weight: 600;
-      color: var(--color-muted-text, #64748b);
+      color: var(--color-muted-text, var(--color-muted-text));
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
@@ -1301,7 +1339,7 @@ onMounted(async () => {
 
     .pie-legend-name {
       font-weight: 600;
-      color: var(--color-text-secondary, #94a3b8);
+      color: var(--color-text-secondary, var(--color-text-tertiary));
     }
 
     .pie-legend-value {
@@ -1333,7 +1371,7 @@ onMounted(async () => {
   width: 72px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text-secondary, var(--color-text-tertiary));
   flex-shrink: 0;
   transition: color 0.2s ease;
 
@@ -1369,7 +1407,7 @@ onMounted(async () => {
 // ── 柱状图 ─────────────────────────────────────
 .type-bar-chart {
   width: 100%;
-  height: 280px;
+  height: 240px;
 }
 
 // ── 最近需求列表 ────────────────────────────────
@@ -1530,7 +1568,7 @@ onMounted(async () => {
 
     .circle-icon {
       font-size: 22px;
-      color: var(--color-accent, #2563EB);
+      color: var(--color-accent, var(--color-primary));
     }
 
     .circle-rate {
@@ -1600,10 +1638,10 @@ onMounted(async () => {
   font-variant-numeric: tabular-nums;
   color: var(--color-text-primary);
 
-  &.is-pending   { color: #2563EB; }
+  &.is-pending   { color: var(--color-primary); }
   &.is-processed { color: #059669; }
   &.is-initiated { color: #D97706; }
-  &.is-cc        { color: #6366F1; }
+  &.is-cc        { color: var(--color-accent); }
 }
 
 // ── 响应式 ────────────────────────────────────

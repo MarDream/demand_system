@@ -230,7 +230,8 @@ public class AuthServiceImpl implements AuthService {
                 .activeRole(activeRole)
                 .orgId(userEntity == null ? null : userEntity.getOrgId())
                 .needOrgBind(orphan)
-                .jobNumber(userEntity == null ? null : userEntity.getJobNumber());
+                .jobNumber(userEntity == null ? null : userEntity.getJobNumber())
+                .appearanceConfig(user.getAppearanceConfig());
 
         if (userEntity != null && userEntity.getOrgId() != null) {
             try {
@@ -279,9 +280,41 @@ public class AuthServiceImpl implements AuthService {
 
         user.setEmail(email);
         user.setPhone(phone);
+        // 头像：显式传入时才更新（null = 未提供保持不变；空串 = 清除头像回退首字占位）
+        if (request.getAvatar() != null) {
+            String avatar = request.getAvatar().trim();
+            if (avatar.isEmpty()) {
+                user.setAvatar(null);
+            } else if (avatar.startsWith("preset:") || avatar.startsWith("/")
+                    || avatar.startsWith("http://") || avatar.startsWith("https://")) {
+                user.setAvatar(avatar.length() > 512 ? avatar.substring(0, 512) : avatar);
+            } else {
+                throw new BusinessException("头像地址不合法");
+            }
+        }
         sysUserMapper.updateById(user);
 
         return getCurrentUser();
+    }
+
+    @Override
+    public void saveAppearanceConfig(UpdateAppearanceRequest request) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) {
+            throw new BusinessException("未获取到用户信息");
+        }
+
+        SysUser user = sysUserMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException("用户不存在");
+        }
+
+        // 入参已通过 Bean Validation 校验，此处规范 primary 为大写十六进制后序列化
+        String config = String.format(
+                "{\"mode\":\"%s\",\"primary\":\"%s\",\"radius\":\"%s\"}",
+                request.getMode(), request.getPrimary().toUpperCase(), request.getRadius());
+        user.setAppearanceConfig(config);
+        sysUserMapper.updateById(user);
     }
 
     @Override

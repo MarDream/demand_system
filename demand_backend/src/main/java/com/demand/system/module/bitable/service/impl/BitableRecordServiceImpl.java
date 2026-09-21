@@ -175,6 +175,28 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         return vo;
     }
 
+    @Override
+    public List<String> listFieldDistinctValues(Long tableId, Long fieldId) {
+        BitableField field = fieldMapper.selectById(fieldId);
+        if (field == null || !Objects.equals(field.getTableId(), tableId)
+                || (field.getDeletedAt() != null && field.getDeletedAt() != 0)) {
+            throw new BusinessException("字段不存在或不属于该数据表");
+        }
+        List<BitableCellValue> cells = cellMapper.selectByFieldId(fieldId);
+        Map<String, Long> counts = new LinkedHashMap<>();
+        for (BitableCellValue cell : cells) {
+            for (String label : extractSelectLabels(cell.getValueText(), cell.getValueJson())) {
+                counts.merge(label, 1L, Long::sum);
+            }
+        }
+        return counts.entrySet().stream()
+                .sorted(Comparator.<Map.Entry<String, Long>>comparingLong(Map.Entry::getValue).reversed()
+                        .thenComparing(Map.Entry::getKey, Comparator.naturalOrder()))
+                .limit(500)
+                .map(Map.Entry::getKey)
+                .toList();
+    }
+
     /**
      * 按当前用户的字段级权限剔除「隐藏」字段的单元格值。
      * <p>
@@ -209,14 +231,19 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         record.setTableId(tableId);
         record.setCreatedBy(userId);
         record.setUpdatedBy(userId);
-        record.setSortOrder(0);
+        // 追加到末尾：sort_order 取当前最大值 +1（列表默认按 sort_order ASC, created_at ASC 排序，
+        // 恒置 0 会让新行按 created_at 混到最前/末尾页，用户点了 + 看不到新行）
+        Integer maxSort = recordMapper.selectMaxSortOrder(tableId);
+        record.setSortOrder(maxSort == null ? 0 : maxSort + 1);
         record.setVersion(0);
         recordMapper.insert(record);
 
         // 为每个可编辑 fieldId 创建 BitableCellValue；只读/计算字段由系统在查询时合成。
         if (dto.getCells() != null && !dto.getCells().isEmpty()) {
             // 字段级权限：只读/隐藏字段不允许被写入（内部调用方 userId=0 时不受限）
-            fieldPermissionService.checkFieldsEditable(tableId, dto.getCells().keySet(), userId);
+            fieldPermissionService.checkFieldsEditable(tableId, dto.getCells().keySet(), true, userId);
+            // 选项级权限：部分可编辑字段的新值不能包含只读选项（新建无原值可保留）
+            checkSelectOptionPermissions(tableId, dto.getCells(), null, userId);
 
             List<BitableCellValue> pendingCells = new ArrayList<>();
             Map<Long, CellValueDTO> linkCells = new LinkedHashMap<>();
@@ -288,7 +315,9 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         // 更新所有可编辑 cells；关联字段通过 LinkService 写入，确保双向关联同步。
         if (dto.getCells() != null && !dto.getCells().isEmpty()) {
             // 字段级权限：只读/隐藏字段不允许被写入
-            fieldPermissionService.checkFieldsEditable(existing.getTableId(), dto.getCells().keySet(), userId);
+            fieldPermissionService.checkFieldsEditable(existing.getTableId(), dto.getCells().keySet(), false, userId);
+            // 选项级权限：原值里已有的受限选项可保留，但不能新增/改选
+            checkSelectOptionPermissions(existing.getTableId(), dto.getCells(), id, userId);
 
             List<BitableCellValue> pendingCells = new ArrayList<>();
             Map<Long, CellValueDTO> linkCells = new LinkedHashMap<>();
@@ -408,6 +437,77 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         target.setValueNumber(source.getValueNumber());
         target.setValueDate(parseFlexibleDate(source.getValueDate()));
         target.setValueJson(BitableJsonUtils.toJsonString(source.getValueJson()));
+    }
+
+    // ==================== 选项级权限校验 ====================
+
+    /** 选项级权限批量校验：recordId 非空时查原 cell 值，原值里的受限选项允许保留 */
+    private void checkSelectOptionPermissions(Long tableId, Map<Long, CellValueDTO> cells, Long recordId, Long userId) {
+        for (Map.Entry<Long, CellValueDTO> entry : cells.entrySet()) {
+            CellValueDTO cellDTO = entry.getValue();
+            if (cellDTO == null) {
+                continue;
+            }
+            Set<String> newLabels = extractSelectLabels(cellDTO.getValueText(),
+                    cellDTO.getValueJson() != null ? BitableJsonUtils.toJsonString(cellDTO.getValueJson()) : null);
+            if (newLabels.isEmpty()) {
+                continue;
+            }
+            Set<String> oldLabels = Set.of();
+            if (recordId != null) {
+                BitableCellValue oldCell = cellMapper.selectByRecordAndField(recordId, entry.getKey());
+                if (oldCell != null) {
+                    oldLabels = extractSelectLabels(oldCell.getValueText(), oldCell.getValueJson());
+                }
+            }
+            fieldPermissionService.checkSelectOptionPermission(tableId, entry.getKey(), newLabels, oldLabels, userId);
+        }
+    }
+
+    /** 单元格编辑入口的值可能是 CellValueDTO 或 Map，分别提取选项 label */
+    private Set<String> extractSelectLabelsFromUpdateValue(Object value) {
+        if (value instanceof CellValueDTO dto) {
+            return extractSelectLabels(dto.getValueText(),
+                    dto.getValueJson() != null ? BitableJsonUtils.toJsonString(dto.getValueJson()) : null);
+        }
+        if (value instanceof Map<?, ?> map) {
+            Object text = map.get("valueText");
+            Object json = map.get("valueJson");
+            return extractSelectLabels(text instanceof String s ? s : null,
+                    json != null ? BitableJsonUtils.toJsonString(json) : null);
+        }
+        return Set.of();
+    }
+
+    /** 从 cell 的 valueText / valueJson（JSON 字符串）提取选项 label：多选 valueJson 为 [{name:...}] 或字符串数组 */
+    private Set<String> extractSelectLabels(String valueText, String valueJson) {
+        Set<String> labels = new HashSet<>();
+        if (valueText != null && !valueText.isBlank()) {
+            labels.add(valueText.trim());
+        }
+        if (valueJson != null && !valueJson.isBlank()) {
+            try {
+                Object parsed = BitableJsonUtils.parseJson(valueJson);
+                if (parsed instanceof Collection<?> col) {
+                    for (Object element : col) {
+                        if (element instanceof Map<?, ?> map && map.get("name") != null) {
+                            labels.add(String.valueOf(map.get("name")));
+                        } else if (element != null) {
+                            labels.add(String.valueOf(element));
+                        }
+                    }
+                } else if (parsed != null) {
+                    labels.add(String.valueOf(parsed));
+                }
+            } catch (Exception ignored) {
+                // 选项校验以 valueText 为兜底，JSON 解析失败不阻断
+            }
+        }
+        return labels;
+    }
+
+    private static boolean isSelectFieldType(String fieldType) {
+        return "single_select".equals(fieldType) || "multi_select".equals(fieldType);
     }
 
     /**
@@ -941,6 +1041,15 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         }
         // 字段级权限：只读/隐藏字段不允许被写入
         fieldPermissionService.checkFieldEditable(fieldId, userId);
+        // 选项级权限：受限选项不可新增/改选，原值保留的除外
+        if (isSelectFieldType(field.getFieldType())) {
+            Set<String> newLabels = extractSelectLabelsFromUpdateValue(value);
+            BitableCellValue oldCell = cellMapper.selectByRecordAndField(recordId, fieldId);
+            Set<String> oldLabels = oldCell != null
+                    ? extractSelectLabels(oldCell.getValueText(), oldCell.getValueJson())
+                    : Set.of();
+            fieldPermissionService.checkSelectOptionPermission(existing.getTableId(), fieldId, newLabels, oldLabels, userId);
+        }
 
         // 2. 乐观锁更新 Record 的 updated_by 和 version
         UpdateWrapper<BitableRecord> wrapper = new UpdateWrapper<>();

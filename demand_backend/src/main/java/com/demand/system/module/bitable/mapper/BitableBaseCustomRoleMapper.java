@@ -14,6 +14,12 @@ public interface BitableBaseCustomRoleMapper extends BaseMapper<BitableBaseCusto
     @Select("SELECT * FROM bitable_base_custom_roles WHERE base_id = #{baseId} AND deleted_at = 0 ORDER BY sort_order ASC, id ASC")
     List<BitableBaseCustomRole> selectByBaseId(@Param("baseId") Long baseId);
 
+    /**
+     * 全局自定义角色列表（跨 Base）：角色创建后全局有效，高级权限面板在任何 Base 下都要能看到全部自定义角色。
+     */
+    @Select("SELECT * FROM bitable_base_custom_roles WHERE deleted_at = 0 ORDER BY sort_order ASC, id ASC")
+    List<BitableBaseCustomRole> selectGlobalAll();
+
     @Select("SELECT COALESCE(MAX(sort_order), 0) FROM bitable_base_custom_roles WHERE base_id = #{baseId} AND deleted_at = 0")
     Integer selectMaxSortOrder(@Param("baseId") Long baseId);
 
@@ -27,4 +33,13 @@ public interface BitableBaseCustomRoleMapper extends BaseMapper<BitableBaseCusto
             + "WHERE r.base_id = #{baseId} AND r.deleted_at = 0 "
             + "AND m.member_type = 'user' AND m.member_id = #{userId}")
     List<Long> selectCustomRoleIdsByMember(@Param("baseId") Long baseId, @Param("userId") Long userId);
+
+    /**
+     * 全局自定义角色成员查询：用户在任意 Base 加入的自定义角色都返回（角色全局生效）。
+     */
+    @Select("SELECT m.role_id FROM bitable_base_custom_role_members m "
+            + "INNER JOIN bitable_base_custom_roles r ON m.role_id = r.id "
+            + "WHERE r.deleted_at = 0 "
+            + "AND m.member_type = 'user' AND m.member_id = #{userId}")
+    List<Long> selectGlobalCustomRoleIdsByMember(@Param("userId") Long userId);
 }

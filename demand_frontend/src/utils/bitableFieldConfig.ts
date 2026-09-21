@@ -17,6 +17,7 @@ import type {
   FieldPermissionLevel,
   FieldType,
 } from '@/types/bitable'
+import { stripRichTextHtml } from '@/utils/bitableRichText'
 
 // ==================== 常量 ====================
 
@@ -138,7 +139,7 @@ const COMMON_KEYS: (keyof FieldConfig)[] = [
 const TYPE_KEYS: Record<string, (keyof FieldConfig)[]> = {
   text: ['inputMode', 'maxLength', 'pattern', 'patternMessage'],
   phone: ['countryCode', 'allowCountrySwitch', 'masked'],
-  email: [],
+  email: ['allowedEmailDomains', 'emailClickable'],
   url: ['displayText', 'openInNewTab'],
   location: ['locationInputMethod', 'locationDisplayMode'],
   number: [
@@ -184,7 +185,7 @@ const TYPE_KEYS: Record<string, (keyof FieldConfig)[]> = {
   modified_by: [],
   created_user: [],
   modified_user: [],
-  department: [],
+  department: ['departmentMode', 'departmentScope', 'departmentIds'],
 }
 
 /** 取某字段类型允许的全部配置键（通用 + 专属） */
@@ -205,8 +206,14 @@ export function createDefaultFieldConfig(fieldType: string): FieldConfig {
   switch (fieldType) {
     case 'text':
       return { ...base, inputMode: 'single' }
+    case 'rich_text':
+      // 富文本无需类型专属配置；formPlaceholder 由属性面板通用区写入
+      return { ...base }
     case 'phone':
       return { ...base, countryCode: '+86', allowCountrySwitch: false, masked: false }
+    case 'email':
+      // 白名单先给空数组：面板模板要按索引直接写，undefined 会让 v-model 失焦
+      return { ...base, emailClickable: true, allowedEmailDomains: [] }
     case 'url':
       return { ...base, openInNewTab: true }
     case 'location':
@@ -250,6 +257,9 @@ export function createDefaultFieldConfig(fieldType: string): FieldConfig {
       return { ...base, userMode: 'single', userScope: 'all', userDisplay: 'name' }
     case 'group':
       return { ...base, groupMode: 'single', groupScope: 'joined' }
+    case 'department':
+      // 同 email：白名单数组先给空，面板模板要按索引直接写
+      return { ...base, departmentMode: 'single', departmentScope: 'all', departmentIds: [] }
     case 'attachment':
       return {
         ...base,
@@ -643,6 +653,7 @@ export function formatCellDisplay(field: BitableField, cell?: CellValue | null):
     case 'multi_select':
     case 'user':
     case 'group':
+    case 'department':
     case 'created_user':
     case 'modified_user':
     case 'created_by':
@@ -663,6 +674,9 @@ export function formatCellDisplay(field: BitableField, cell?: CellValue | null):
       return formatLocationCell(cell.valueJson, config) || cell.valueText || ''
     case 'url':
       return config.displayText || cell.valueText || ''
+    case 'rich_text':
+      // 只读预览走纯文本口径，HTML 交给网格渲染器/详情弹窗处理
+      return stripRichTextHtml(cell.valueText || '')
     default:
       if (cell.valueText) return cell.valueText
       return cell.valueJson != null ? String(cell.valueJson) : ''
@@ -728,6 +742,17 @@ export function isFieldHidden(field: BitableField): boolean {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const URL_RE = /^(https?:\/\/|www\.)\S+$/i
 
+/**
+ * 邮箱域名白名单归一化：去掉前导 `@`、统一小写、丢弃空项。
+ * 面板里允许用户写 `example.com` 或 `@example.com`，两种写法都要能用。
+ */
+export function normalizeEmailDomains(list?: string[] | null): string[] {
+  if (!Array.isArray(list)) return []
+  return list
+    .map((item) => String(item ?? '').trim().toLowerCase().replace(/^@/, ''))
+    .filter(Boolean)
+}
+
 /** 取校验用的字符串值 */
 function toText(value: unknown): string {
   if (value === null || value === undefined) return ''
@@ -751,10 +776,15 @@ export function validateFieldValue(field: BitableField, value: unknown): string 
     value === '' ||
     (Array.isArray(value) && value.length === 0)
   if (isEmpty) {
+    // 富文本空值是 ''（编辑器空内容输出空串），必填语义与其它类型一致
     return required ? `请填写「${field.name}」` : null
   }
 
   switch (type) {
+    case 'rich_text': {
+      // 长度校验没有意义（HTML 标签不算内容），空内容已在 isEmpty 拦截
+      return null
+    }
     case 'text': {
       const text = toText(value)
       if (config.maxLength && text.length > config.maxLength) {
@@ -792,7 +822,15 @@ export function validateFieldValue(field: BitableField, value: unknown): string 
     }
     case 'email': {
       const text = toText(value)
-      return EMAIL_RE.test(text) ? null : `「${field.name}」邮箱格式不正确`
+      if (!EMAIL_RE.test(text)) return `「${field.name}」邮箱格式不正确`
+      const domains = normalizeEmailDomains(config.allowedEmailDomains)
+      if (domains.length) {
+        const domain = text.slice(text.lastIndexOf('@') + 1).toLowerCase()
+        if (!domains.includes(domain)) {
+          return `「${field.name}」仅支持 ${domains.join('、')} 邮箱`
+        }
+      }
+      return null
     }
     case 'url': {
       const text = toText(value)

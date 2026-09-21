@@ -3,14 +3,18 @@
     <div class="create-page">
     <el-row :gutter="20" class="form-container">
       <el-col :xs="24" :lg="16" class="left-panel">
-        <el-card class="form-card">
-          <template #header>
-            <div class="card-titlebar">
-              <div class="card-title">需求内容</div>
-              <div class="card-subtitle">填写标题与描述，并按需关联需求与附件</div>
-            </div>
-          </template>
-          <el-form ref="formRef" :model="formData" :rules="formRules" label-position="top" @submit.prevent>
+        <el-form ref="formRef" :model="formData" :rules="formRules" label-position="top" class="form-card" @submit.prevent>
+          <div class="form-card__header">
+            <el-form-item prop="title" class="card-title-item">
+              <el-input
+                v-model="formData.title"
+                placeholder="请输入需求标题"
+                maxlength="200"
+                size="large"
+                clearable
+              />
+            </el-form-item>
+          </div>
             <!-- 需求类型 & 优先级 -->
             <div class="inline-fields">
               <el-form-item label="需求类型" prop="type" class="inline-item">
@@ -61,17 +65,6 @@
               </el-form-item>
             </div>
 
-            <!-- 需求标题 -->
-            <el-form-item label="需求标题" prop="title">
-              <el-input
-                v-model="formData.title"
-                placeholder="请输入需求标题"
-                maxlength="200"
-                size="large"
-                clearable
-              />
-            </el-form-item>
-
             <!-- 动态字段（按需求类型 + 流程节点权限渲染） -->
             <div v-if="dynamicFields.length" class="dynamic-section">
               <el-divider content-position="left">
@@ -81,7 +74,8 @@
               </el-divider>
               <DynamicFieldsForm
                 ref="dynamicFieldsRef"
-                v-model="dynamicValues"
+                :model-value="dynamicValues"
+                @update:model-value="handleDynamicValuesUpdate"
                 :fields="dynamicFields"
                 :users="users"
               />
@@ -141,23 +135,7 @@
                 @preview="handleAttachmentPreview"
               />
             </div>
-
-            <!-- 动态字段（按需求类型 + 流程节点权限渲染） -->
-            <div v-if="dynamicFields.length" class="dynamic-section">
-              <el-divider content-position="left">
-                <span class="dynamic-section__title">
-                  {{ selectedTypeLabel || '当前类型' }} · 扩展信息
-                </span>
-              </el-divider>
-              <DynamicFieldsForm
-                ref="dynamicFieldsRef"
-                v-model="dynamicValues"
-                :fields="dynamicFields"
-                :users="users"
-              />
-            </div>
           </el-form>
-        </el-card>
       </el-col>
 
       <!-- Right Panel: Info Cards -->
@@ -255,7 +233,7 @@
               <span>时间</span>
             </div>
           </template>
-          <el-form label-position="top">
+          <el-form label-position="top" class="info-form-grid">
             <el-form-item v-if="shouldShowField('startDate')" label="开始时间">
               <el-date-picker
                 v-model="formData.startDate"
@@ -494,6 +472,14 @@ const currentRequirement = ref<Requirement | null>(null)
 const dynamicFields = ref<DynamicFieldSchema[]>([])
 const dynamicValues = reactive<Record<string, CustomFieldValuePayload>>({})
 const dynamicFieldsRef = ref<InstanceType<typeof DynamicFieldsForm> | null>(null)
+
+// DynamicFieldsForm 会在原地修改传入对象后回抛同一引用，
+// 不能对 const 的 reactive 对象用 v-model 整体重新赋值，故手动同步
+function handleDynamicValuesUpdate(next: Record<string, CustomFieldValuePayload>) {
+  if (next === dynamicValues) return
+  for (const key of Object.keys(dynamicValues)) delete dynamicValues[key]
+  Object.assign(dynamicValues, next)
+}
 
 // Data
 const projects = ref<any[]>([])
@@ -1650,8 +1636,6 @@ watch([() => formData.projectId, () => formData.type], () => {
   min-height: 100%;
   display: flex;
   flex-direction: column;
-  max-width: 1280px;
-  margin: 0 auto;
 }
 
 .dynamic-section {
@@ -1667,21 +1651,41 @@ watch([() => formData.projectId, () => formData.type], () => {
   font-weight: 600;
 }
 
-.card-titlebar {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+/* 卡片头：需求标题大输入框直接作为卡片标题区 */
+.form-card__header {
+  margin: -20px -20px 20px;
+  padding: 16px 20px 20px;
+  border-bottom: 1px solid var(--color-border);
 }
 
-.card-title {
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-primary);
-}
+.card-title-item {
+  margin-bottom: 0;
 
-.card-subtitle {
-  font-size: var(--font-size-xs);
-  color: var(--color-text-secondary);
+  :deep(.el-input__wrapper) {
+    padding: 0 4px 0 0;
+    background: transparent;
+    box-shadow: none;
+    border-radius: var(--radius-sm);
+    transition: box-shadow var(--duration-fast) var(--ease-standard);
+
+    &:hover {
+      box-shadow: 0 0 0 1px var(--color-border) inset;
+    }
+
+    &.is-focus {
+      box-shadow: 0 0 0 1px var(--el-color-primary) inset;
+    }
+  }
+
+  :deep(.el-input__inner) {
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-primary);
+  }
+
+  &.is-error :deep(.el-input__wrapper) {
+    box-shadow: 0 0 0 1px var(--el-color-danger) inset;
+  }
 }
 
 .form-container {
@@ -1695,17 +1699,16 @@ watch([() => formData.projectId, () => formData.type], () => {
 .right-panel {
   position: sticky;
   top: var(--spacing-md);
+  min-width: 0;
 }
 
 .form-card {
-  height: 100%;
+  padding: 20px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
-  border: 1px solid var(--color-border);
-}
-
-.form-card :deep(.el-card__header) {
-  padding: 14px 16px;
+  overflow: hidden;
 }
 
 .info-card :deep(.el-card__header) {
@@ -1725,15 +1728,11 @@ watch([() => formData.projectId, () => formData.type], () => {
 
 .info-form-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   column-gap: 16px;
 
   :deep(.el-form-item) {
     min-width: 0;
-  }
-
-  @media (max-width: 900px) {
-    grid-template-columns: 1fr;
   }
 }
 
@@ -1752,7 +1751,7 @@ watch([() => formData.projectId, () => formData.type], () => {
   border: 1px solid var(--color-border);
   border-radius: 4px;
   overflow-x: hidden;
-  background: #fff;
+  background: var(--color-surface);
   display: flex;
   flex-direction: column;
   height: clamp(400px, calc(100vh - 480px), 800px);
@@ -1778,7 +1777,7 @@ watch([() => formData.projectId, () => formData.type], () => {
 .editor-wrapper :deep(.requirement-editor-table td),
 .editor-wrapper :deep(.requirement-editor-table th) {
   min-width: 1em;
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--color-border);
   padding: 8px 12px;
   vertical-align: top;
   box-sizing: border-box;
@@ -1788,7 +1787,7 @@ watch([() => formData.projectId, () => formData.type], () => {
 .editor-wrapper :deep(.requirement-editor-table th) {
   font-weight: 600;
   text-align: left;
-  background-color: #f5f7fa;
+  background-color: var(--color-fill-secondary);
 }
 
 .editor-wrapper :deep(.requirement-editor-table .selectedCell) {
@@ -1801,7 +1800,7 @@ watch([() => formData.projectId, () => formData.type], () => {
   top: 0;
   bottom: -2px;
   width: 4px;
-  background-color: #409eff;
+  background-color: var(--color-primary);
   pointer-events: none;
 }
 
@@ -2064,10 +2063,6 @@ watch([() => formData.projectId, () => formData.type], () => {
 }
 
 @media (max-width: 1100px) {
-  .create-page {
-    max-width: 100%;
-  }
-
   .right-panel {
     position: static;
   }

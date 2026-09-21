@@ -120,68 +120,76 @@
         <el-empty v-if="!loading && operations.length === 0" description="暂无操作记录" />
 
         <template v-for="bucket in groupedOperations" :key="bucket.date">
-          <div class="operation-history__date">{{ bucket.date }}</div>
+          <div class="operation-history__date" @click="toggleDate(bucket)">
+            <el-icon class="operation-history__date-chev" :class="{ 'is-open': isDateExpanded(bucket) }">
+              <ArrowRight />
+            </el-icon>
+            <span>{{ bucket.date }}</span>
+            <span class="operation-history__date-count">{{ bucket.count }} 条</span>
+          </div>
 
-          <div v-for="group in bucket.groups" :key="group.key" class="operation-item">
-            <el-avatar :size="28" class="operation-item__avatar">
-              {{ (group.items[0].userName || '?')[0] }}
-            </el-avatar>
+          <template v-if="isDateExpanded(bucket)">
+            <div v-for="group in bucket.groups" :key="group.key" class="operation-item">
+              <el-avatar :size="28" class="operation-item__avatar">
+                {{ (group.items[0].userName || '?')[0] }}
+              </el-avatar>
 
-            <div class="operation-item__content">
-              <!-- 摘要行：可展开时整行可点 -->
-              <div
-                class="operation-item__line"
-                :class="{ 'is-clickable': group.expandable }"
-                @click="group.expandable && toggleExpand(group.key)"
-              >
-                <span class="operation-item__user">{{ group.items[0].userName || '未知用户' }}</span>
-                <span class="operation-item__action">{{ describe(group.items[0]) }}</span>
-                <span v-if="group.merged" class="operation-item__badge">×{{ group.items.length }}</span>
-                <el-icon v-if="group.expandable" class="operation-item__chev" :class="{ 'is-open': isExpanded(group.key) }">
-                  <ArrowRight />
-                </el-icon>
-              </div>
+              <div class="operation-item__content">
+                <!-- 摘要行：可展开时整行可点 -->
+                <div
+                  class="operation-item__line"
+                  :class="{ 'is-clickable': group.expandable }"
+                  @click="group.expandable && toggleExpand(group.key)"
+                >
+                  <span class="operation-item__user">{{ group.items[0].userName || '未知用户' }}</span>
+                  <span class="operation-item__action">{{ describe(group.items[0]) }}</span>
+                  <span v-if="group.merged" class="operation-item__badge">×{{ group.items.length }}</span>
+                  <el-icon v-if="group.expandable" class="operation-item__chev" :class="{ 'is-open': isExpanded(group.key) }">
+                    <ArrowRight />
+                  </el-icon>
+                </div>
 
-              <!-- 时间：合并组显示区间 -->
-              <div class="operation-item__time">{{ groupTimeText(group) }}</div>
+                <!-- 时间：合并组显示区间 -->
+                <div class="operation-item__time">{{ groupTimeText(group) }}</div>
 
-              <!-- 展开区 -->
-              <div v-if="group.expandable && isExpanded(group.key)" class="operation-item__changes">
-                <!-- 合并组：逐条列出被合并的操作（各自带时间） -->
-                <template v-if="group.merged">
-                  <div v-for="op in group.items" :key="op.id" class="operation-item__child">
-                    <span class="operation-item__child-time">{{ formatTime(op.createdAt) }}</span>
-                    <div class="operation-item__child-body">
-                      <div
-                        v-for="(line, idx) in changedFieldLines(op)"
-                        :key="idx"
-                        class="operation-item__change-line"
-                      >
-                        <span class="operation-item__field">{{ line.fieldName }}</span>
-                        <span class="operation-item__old">{{ line.oldText }}</span>
-                        <span class="operation-item__arrow">→</span>
-                        <span class="operation-item__new">{{ line.newText }}</span>
+                <!-- 展开区 -->
+                <div v-if="group.expandable && isExpanded(group.key)" class="operation-item__changes">
+                  <!-- 合并组：逐条列出被合并的操作（各自带时间） -->
+                  <template v-if="group.merged">
+                    <div v-for="op in group.items" :key="op.id" class="operation-item__child">
+                      <span class="operation-item__child-time">{{ formatTime(op.createdAt) }}</span>
+                      <div class="operation-item__child-body">
+                        <div
+                          v-for="(line, idx) in changedFieldLines(op)"
+                          :key="idx"
+                          class="operation-item__change-line"
+                        >
+                          <span class="operation-item__field">{{ line.fieldName }}</span>
+                          <span class="operation-item__old">{{ line.oldText }}</span>
+                          <span class="operation-item__arrow">→</span>
+                          <span class="operation-item__new">{{ line.newText }}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </template>
+                  </template>
 
-                <!-- 单条：直接列字段级前后值 -->
-                <template v-else>
-                  <div
-                    v-for="(line, idx) in changedFieldLines(group.items[0])"
-                    :key="idx"
-                    class="operation-item__change-line"
-                  >
-                    <span class="operation-item__field">{{ line.fieldName }}</span>
-                    <span class="operation-item__old">{{ line.oldText }}</span>
-                    <span class="operation-item__arrow">→</span>
-                    <span class="operation-item__new">{{ line.newText }}</span>
-                  </div>
-                </template>
+                  <!-- 单条：直接列字段级前后值 -->
+                  <template v-else>
+                    <div
+                      v-for="(line, idx) in changedFieldLines(group.items[0])"
+                      :key="idx"
+                      class="operation-item__change-line"
+                    >
+                      <span class="operation-item__field">{{ line.fieldName }}</span>
+                      <span class="operation-item__old">{{ line.oldText }}</span>
+                      <span class="operation-item__arrow">→</span>
+                      <span class="operation-item__new">{{ line.newText }}</span>
+                    </div>
+                  </template>
+                </div>
               </div>
             </div>
-          </div>
+          </template>
         </template>
 
         <div v-if="hasMore" class="operation-history__more">
@@ -233,6 +241,8 @@ const members = ref<BitableBaseMember[]>([])
 const mergeDuplicates = ref(localStorage.getItem(MERGE_KEY) !== '0')
 const expandedKeys = ref<Set<string>>(new Set())
 const expandAllPref = ref(localStorage.getItem(EXPAND_ALL_KEY) === '1')
+/** 日期分组的显式展开/折叠记录；未记录的日期走默认规则：当天展开、其余折叠 */
+const dateExpandedOverrides = ref<Map<string, boolean>>(new Map())
 
 const hasMore = computed(() => operations.value.length < total.value)
 
@@ -312,17 +322,28 @@ const displayGroups = computed<DisplayGroup[]>(() => {
   })
 })
 
+interface DateBucket {
+  date: string
+  /** 是否为当天分组（默认展开，其余日期默认折叠） */
+  isToday: boolean
+  /** 分组内操作条数（含被合并的），折叠时作为提示展示 */
+  count: number
+  groups: DisplayGroup[]
+}
+
 /** 按日期（天）分组，最新的在前；日期取组内最新一条 */
-const groupedOperations = computed(() => {
-  const buckets: { date: string; groups: DisplayGroup[] }[] = []
+const groupedOperations = computed<DateBucket[]>(() => {
+  const buckets: DateBucket[] = []
+  const today = new Date()
   for (const group of displayGroups.value) {
     const date = formatDate(group.items[0].createdAt)
     let bucket = buckets.find((b) => b.date === date)
     if (!bucket) {
-      bucket = { date, groups: [] }
+      bucket = { date, isToday: isSameDay(new Date(group.items[0].createdAt), today), count: 0, groups: [] }
       buckets.push(bucket)
     }
     bucket.groups.push(group)
+    bucket.count += group.items.length
   }
   return buckets
 })
@@ -330,8 +351,11 @@ const groupedOperations = computed(() => {
 const mergedCount = computed(() => displayGroups.value.filter((g) => g.merged).length)
 
 const allExpanded = computed(() => {
-  const keys = displayGroups.value.filter((g) => g.expandable).map((g) => g.key)
-  return keys.length > 0 && keys.every((k) => expandedKeys.value.has(k))
+  const expandableGroups = displayGroups.value.filter((g) => g.expandable)
+  const collapsedDates = groupedOperations.value.filter((b) => !isDateExpanded(b))
+  // 没有任何可展开内容（详情或折叠日期）时保持「全部展开」文案
+  if (expandableGroups.length === 0 && collapsedDates.length === 0) return false
+  return expandableGroups.every((g) => expandedKeys.value.has(g.key)) && collapsedDates.length === 0
 })
 
 function isExpanded(key: string) {
@@ -348,6 +372,19 @@ function toggleExpand(key: string) {
   expandedKeys.value = next
 }
 
+/** 日期分组默认仅当天展开，其余折叠；用户点击过的日期以显式记录为准 */
+function isDateExpanded(bucket: DateBucket) {
+  const override = dateExpandedOverrides.value.get(bucket.date)
+  if (override != null) return override
+  return bucket.isToday
+}
+
+function toggleDate(bucket: DateBucket) {
+  const next = new Map(dateExpandedOverrides.value)
+  next.set(bucket.date, !isDateExpanded(bucket))
+  dateExpandedOverrides.value = next
+}
+
 function toggleExpandAll() {
   const next = !allExpanded.value
   expandAllPref.value = next
@@ -359,13 +396,18 @@ function toggleExpandAll() {
   applyExpandPreference()
 }
 
-/** 新加载/合并开关变化后，按偏好决定是否默认展开全部 */
+/**
+ * 新加载/合并开关变化后，按偏好决定是否默认展开全部。
+ * 「全部展开」连同日期分组一起展开；「全部收起」时日期回到默认（当天展开、其余折叠）。
+ */
 function applyExpandPreference() {
   if (!expandAllPref.value) {
     expandedKeys.value = new Set()
+    dateExpandedOverrides.value = new Map()
     return
   }
   expandedKeys.value = new Set(displayGroups.value.filter((g) => g.expandable).map((g) => g.key))
+  dateExpandedOverrides.value = new Map(groupedOperations.value.map((b) => [b.date, true]))
 }
 
 // 合并开关切换后分组 key 会变，展开态需要重算；同时记住这个展示偏好
@@ -417,6 +459,7 @@ function reload() {
   total.value = 0
   operations.value = []
   expandedKeys.value = new Set()
+  dateExpandedOverrides.value = new Map()
   fetchPage()
 }
 
@@ -648,14 +691,14 @@ function pad2(n: number) {
   return String(n).padStart(2, '0')
 }
 
+function isSameDay(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+}
+
 function formatDate(createdAt: string): string {
   const d = new Date(createdAt)
-  const today = new Date()
-  const yesterday = new Date(today.getTime() - 24 * 3600 * 1000)
-  const sameDay = (a: Date, b: Date) =>
-    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
-  if (sameDay(d, today)) return '今天'
-  if (sameDay(d, yesterday)) return '昨天'
+  if (isSameDay(d, new Date())) return '今天'
+  if (isSameDay(d, new Date(Date.now() - 24 * 3600 * 1000))) return '昨天'
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
 }
 
@@ -730,11 +773,37 @@ function groupTimeText(group: DisplayGroup): string {
   position: sticky;
   top: 0;
   z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 6px 0;
   font-size: 12px;
   font-weight: 600;
   color: var(--el-text-color-secondary);
   background: var(--el-bg-color);
+  cursor: pointer;
+  user-select: none;
+}
+
+.operation-history__date:hover {
+  color: var(--el-text-color-primary);
+}
+
+.operation-history__date-chev {
+  flex: none;
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+  transition: transform 0.15s ease;
+}
+
+.operation-history__date-chev.is-open {
+  transform: rotate(90deg);
+}
+
+.operation-history__date-count {
+  margin-left: auto;
+  font-weight: 400;
+  color: var(--el-text-color-placeholder);
 }
 
 .operation-item {

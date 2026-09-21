@@ -332,7 +332,7 @@
                     <MarkdownContent
                       v-else
                       class="assistant-message__content assistant-message__content--assistant"
-                      :content="message.content || ''"
+                      :content="displayAnswerContent(message)"
                       :citations="message.citations"
                       @citation-click="(index: number) => handleCitationClick(message, index)"
                     />
@@ -354,21 +354,21 @@
                     <button
                       type="button"
                       class="assistant-reasoning__header"
-                      :class="{ 'is-open': reasoningFoldState[String(message.id)] || message.status === 'streaming' }"
+                      :class="{ 'is-open': isReasoningOpen(message) }"
                       @click="toggleReasoningFold(message)"
                     >
                       <el-icon class="assistant-reasoning__icon"><MagicStick /></el-icon>
                       <span class="assistant-reasoning__label">{{ message.status === 'streaming' ? '深度思考中…' : '已深度思考' }}</span>
-                      <!-- 折叠态下显示推理内容预览（前 60 字） -->
+                      <!-- 默认折叠：折叠态单行展示记录（流式中实时显示最新一行，结束后显示开头预览） -->
                       <span
-                        v-if="!isReasoningOpen(message) && message.status !== 'streaming'"
+                        v-if="!isReasoningOpen(message)"
                         class="assistant-reasoning__preview"
-                      >{{ reasoningPreview(message.reasoning) }}</span>
-                      <el-icon class="assistant-reasoning__arrow" :class="{ 'is-open': isReasoningOpen(message) || message.status === 'streaming' }">
+                      >{{ message.status === 'streaming' ? reasoningLiveLine(message.reasoning) : reasoningPreview(message.reasoning) }}</span>
+                      <el-icon class="assistant-reasoning__arrow" :class="{ 'is-open': isReasoningOpen(message) }">
                         <ArrowDown />
                       </el-icon>
                     </button>
-                    <div v-show="isReasoningOpen(message) || message.status === 'streaming'" class="assistant-reasoning__body">
+                    <div v-show="isReasoningOpen(message)" class="assistant-reasoning__body">
                       <div class="assistant-reasoning__content">{{ message.reasoning }}</div>
                     </div>
                   </div>
@@ -448,8 +448,32 @@
                     />
                   </div>
 
+                  <!-- 知识库问答：系统编号的引用来源列表（与回答中的 [N] 角标一一对应，点击可预览） -->
                   <div
-                    v-if="message.role === 'assistant' && message.sources?.length"
+                    v-if="message.role === 'assistant' && isKnowledgeQaMessage(message) && citationListOf(message).length"
+                    class="assistant-message__citation-list-wrap"
+                  >
+                    <div class="assistant-citations-label">引用来源</div>
+                    <div class="assistant-citation-list">
+                      <button
+                        v-for="entry in citationListOf(message)"
+                        :key="`cite-${String(message.id)}-${entry.number}`"
+                        type="button"
+                        class="assistant-citation-item"
+                        :class="{ 'is-previewable': citationPreviewable(entry.citation) }"
+                        :title="citationPreviewable(entry.citation) ? '点击预览来源' : '该来源不支持在线预览'"
+                        @click="handleCitationClick(message, entry.number)"
+                      >
+                        <span class="assistant-citation-item__index">[{{ entry.number }}]</span>
+                        <span class="assistant-citation-item__title">{{ citationTitle(entry.citation) }}</span>
+                        <span v-if="entry.citation.hitCount" class="assistant-citation-item__meta">{{ entry.citation.hitCount }} 段</span>
+                        <span v-if="citationPreviewable(entry.citation)" class="assistant-citation-item__badge">可预览</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div
+                    v-else-if="message.role === 'assistant' && message.sources?.length"
                     class="assistant-message__sources assistant-message__sources--compact"
                   >
                     <span class="assistant-sources-label">依据</span>
@@ -670,17 +694,16 @@
                     </div>
                   </el-tooltip>
 
-                  <el-tooltip v-if="selectedKbScope != null" content="检索模式" placement="top">
-                    <el-select
-                      v-model="searchMode"
-                      size="small"
-                      style="width: 120px"
-                      :disabled="sending"
-                    >
-                      <el-option label="混合检索" value="hybrid" />
-                      <el-option label="语义检索" value="semantic" />
-                      <el-option label="关键词" value="keyword" />
-                    </el-select>
+                  <!-- 智能检索：服务端按问题特征自动路由混合/语义/关键词，用户无需选择检索类型 -->
+                  <el-tooltip
+                    v-if="selectedKbScope != null"
+                    content="智能检索：系统根据问题特征自动适配混合检索、语义检索或关键词检索"
+                    placement="top"
+                  >
+                    <span class="assistant-composer__auto-retrieval">
+                      <el-icon><MagicStick /></el-icon>
+                      智能检索
+                    </span>
                   </el-tooltip>
 
                   <el-tooltip v-if="selectedKbScope != null" content="召回片段数量" placement="top">
@@ -744,7 +767,14 @@
                               <div class="assistant-model-menu__model-name">{{ model.name }}</div>
                               <div class="assistant-model-menu__model-id">{{ model.modelId }}</div>
                             </div>
-                            <span class="assistant-model-menu__check">{{ selectedLlmModelId === model.id ? '✓' : '' }}</span>
+                            <span class="assistant-model-menu__right">
+                              <span
+                                class="assistant-model-menu__conn-dot"
+                                :class="connDotClass(model)"
+                                :title="connDotTitle(model)"
+                              ></span>
+                              <span class="assistant-model-menu__check">{{ selectedLlmModelId === model.id ? '✓' : '' }}</span>
+                            </span>
                           </button>
                           <el-empty v-if="!currentProviderModels.length" description="该接入组暂无可用模型" :image-size="56" />
                         </div>
@@ -796,13 +826,13 @@ import AssistantTaskPanel from '@/components/assistant/AssistantTaskPanel.vue'
 import AssistantDataResult from '@/components/assistant/AssistantDataResult.vue'
 import { getToken } from '@/utils/auth'
 import { formatFileSize } from '@/utils/format'
-import { useAssistantStore } from '@/stores/assistant'
+import { useAssistantStore, ASSISTANT_FAB_POSITION_KEY } from '@/stores/assistant'
 import { useAssistantContext } from '@/composables/useAssistantContext'
 import { useQuickQuestions } from '@/composables/useQuickQuestions'
 import { useFoldState } from '@/composables/useFoldState'
 import { getAllKnowledgeBases, type KnowledgeBase } from '@/api/modules/knowledge'
 import { llmProviderApi, type ChatModelOption } from '@/api/modules/llmProvider'
-import type { AssistantFileAttachment, AssistantMessage, AssistantPageContext, AssistantSearchScope, AssistantSource } from '@/types/assistant'
+import type { AssistantFileAttachment, AssistantMessage, AssistantPageContext, AssistantSearchScope, AssistantSource, CitationReference } from '@/types/assistant'
 import FilePreviewDialog from '@/components/document/FilePreviewDialog.vue'
 
 type PathMatchType = 'current-page' | 'current-menu' | 'related' | 'none'
@@ -955,7 +985,8 @@ watch(selectedKbScope, (val) => {
 })
 
 // ===== RAG 检索参数 =====
-const searchMode = ref<'hybrid' | 'semantic' | 'keyword'>('hybrid')
+// 智能检索：固定 auto，由服务端按问题特征自动路由 hybrid/semantic/keyword
+const searchMode = ref<'auto' | 'hybrid' | 'semantic' | 'keyword'>('auto')
 const topK = ref<number>(10)
 const selectedAssistantSearchScopes = ref<Array<Exclude<AssistantSearchScope, 'WEB'>>>([
   'REQUIREMENT_BODY',
@@ -1155,12 +1186,19 @@ interface AssistantModelOption {
   label: string
   modelId: string
   isDefault: boolean
+  /** 模型应用(assistant.chat)绑定的默认模型 */
+  appDefault: boolean
+  /** 最近一次连通性测试结果，null 表示从未测试 */
+  testSuccess: boolean | null
+  testDuration: number | null
 }
 
 const availableChatModels = ref<AssistantModelOption[]>([])
 const selectedLlmModelId = ref<number | null>(null)
 const modelPopoverVisible = ref(false)
 const selectedProvider = ref<string>('')
+// 用户在弹框中手动选择过模型时，后续刷新保留其选择；否则跟随模型应用的默认配置
+const userPickedModel = ref(false)
 
 const selectedChatModel = computed<AssistantModelOption | null>(() => {
   if (selectedLlmModelId.value == null) return null
@@ -1213,17 +1251,28 @@ async function loadAvailableLlmModels() {
         name: model.name,
         label: `${model.providerName} / ${model.name}`,
         modelId: model.modelId,
-        isDefault: model.isDefault
+        isDefault: model.isDefault,
+        appDefault: Boolean(model.appDefault),
+        testSuccess: model.testSuccess ?? null,
+        testDuration: model.testDuration ?? null
       }))
-      .sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.label.localeCompare(b.label, 'zh-CN'))
+      .sort((a, b) =>
+        Number(b.appDefault) - Number(a.appDefault)
+        || Number(b.isDefault) - Number(a.isDefault)
+        || a.label.localeCompare(b.label, 'zh-CN'))
 
     if (!availableChatModels.value.length) {
       selectedLlmModelId.value = null
       return
     }
     const stillExists = availableChatModels.value.some(item => item.id === selectedLlmModelId.value)
-    if (!stillExists) {
-      selectedLlmModelId.value = availableChatModels.value.find(item => item.isDefault)?.id || availableChatModels.value[0].id
+    if (!userPickedModel.value || !stillExists) {
+      // 与模型应用配置保持一致：优先 assistant.chat 绑定的模型，其次接入组默认，再次列表第一个
+      const resolved = availableChatModels.value.find(item => item.appDefault)
+        || availableChatModels.value.find(item => item.isDefault)
+        || availableChatModels.value[0]
+      selectedLlmModelId.value = resolved.id
+      selectedProvider.value = resolved.providerName
     }
   } catch {
     availableChatModels.value = []
@@ -1233,7 +1282,25 @@ async function loadAvailableLlmModels() {
 
 function handleModelSelect(modelId: number) {
   selectedLlmModelId.value = modelId
+  userPickedModel.value = true
   modelPopoverVisible.value = false
+}
+
+// ===== 模型连通性圆点（与模型管理页连通性测试结果同源） =====
+function connDotClass(model: AssistantModelOption): string {
+  if (model.testSuccess == null) return 'is-untested'
+  if (!model.testSuccess) return 'is-failed'
+  if (model.testDuration != null && model.testDuration > 5000) return 'is-slow'
+  return 'is-ok'
+}
+
+function connDotTitle(model: AssistantModelOption): string {
+  if (model.testSuccess == null) return '尚未进行连通性测试'
+  if (!model.testSuccess) return '最近一次连通性测试失败，请检查模型配置'
+  if (model.testDuration != null && model.testDuration > 5000) {
+    return `连通正常，响应较慢（${model.testDuration}ms）`
+  }
+  return `连通正常（${model.testDuration ?? 0}ms）`
 }
 
 // ===== 浮标头像切换 =====
@@ -1285,12 +1352,38 @@ const FAB_SIZE = 48
 const FAB_MARGIN = 16
 const FAB_DEFAULT_OFFSET = 28
 
+/** 用户拖拽后的自定义位置持久化（localStorage；登录成功会清除，无记录时用左下角默认值） */
+function loadStoredFabPosition(): { x: number; y: number } | null {
+  try {
+    const raw = localStorage.getItem(ASSISTANT_FAB_POSITION_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { x?: unknown; y?: unknown }
+    if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') {
+      return { x: parsed.x, y: parsed.y }
+    }
+  } catch {
+    // 存储不可用/数据损坏时回退默认
+  }
+  return null
+}
+
+function storeFabPosition() {
+  try {
+    localStorage.setItem(ASSISTANT_FAB_POSITION_KEY, JSON.stringify(fabPos.value))
+  } catch {
+    // 忽略存储失败
+  }
+}
+
 function getDefaultFabPosition() {
   if (typeof window === 'undefined') {
     return { x: FAB_MARGIN, y: FAB_MARGIN }
   }
+  // 用户拖过的自定义位置优先（钳制到当前视口内）；否则默认停在左下角（28px 边距）
+  const stored = loadStoredFabPosition()
+  if (stored) return clampPosition(stored.x, stored.y)
   return {
-    x: Math.max(FAB_MARGIN, window.innerWidth - FAB_SIZE - FAB_DEFAULT_OFFSET),
+    x: FAB_DEFAULT_OFFSET,
     y: Math.max(FAB_MARGIN, window.innerHeight - FAB_SIZE - FAB_DEFAULT_OFFSET),
   }
 }
@@ -1375,11 +1468,10 @@ function onFabDragEnd() {
   document.removeEventListener('touchmove', onFabDragMove)
   document.removeEventListener('touchend', onFabDragEnd)
 
-  // 吸附到最近的边缘
+  // 自由停靠：停在用户松手的位置（仅视口钳制），并持久化，刷新后保持
   if (hasMoved.value) {
-    const centerX = fabPos.value.x + FAB_SIZE / 2
-    const snapX = centerX < window.innerWidth / 2 ? FAB_MARGIN : window.innerWidth - FAB_SIZE - FAB_MARGIN
-    fabPos.value = { ...fabPos.value, x: snapX }
+    fabPos.value = clampPosition(fabPos.value.x, fabPos.value.y)
+    storeFabPosition()
   }
 }
 
@@ -1483,6 +1575,19 @@ function handleWindowResize() {
   if (windowPos.value) {
     windowPos.value = clampWindow(windowPos.value.x, windowPos.value.y)
   }
+}
+
+/** 从未拖动过的窗口：打开时默认居中显示（拖动/还原后保留用户位置） */
+function centerWindowIfUntouched() {
+  if (windowPos.value) return
+  if (windowMode.value !== 'normal') return
+  nextTick(() => {
+    const el = windowRef.value
+    if (!el || typeof window === 'undefined') return
+    const x = Math.max(0, Math.round((window.innerWidth - el.offsetWidth) / 2))
+    const y = Math.max(0, Math.round((window.innerHeight - el.offsetHeight) / 2))
+    windowPos.value = { x, y }
+  })
 }
 
 const windowStyle = computed<CSSProperties>(() => {
@@ -1873,9 +1978,8 @@ async function handleOpen() {
   if (knowledgeBases.value.length === 0) {
     await loadKnowledgeBases()
   }
-  if (availableChatModels.value.length === 0) {
-    await loadAvailableLlmModels()
-  }
+  // 每次打开都刷新：模型新增/停用、模型应用默认配置变更需即时反映到弹框
+  await loadAvailableLlmModels()
 }
 
 async function handleCreateSession() {
@@ -1959,9 +2063,11 @@ async function handleFollowUpAsk(question: string) {
   await submitMessage(question.trim(), true)
 }
 
-// ===== 回答角标 [N] 点击：滚动并高亮对应来源 =====
+// ===== 回答角标 [N] 点击：支持预览的直接打开预览，否则回退滚动高亮 =====
 function handleCitationClick(message: AssistantMessage, citationIndex: number) {
   if (!citationIndex || citationIndex < 1) return
+  const citation = message.citations?.[citationIndex - 1]
+  if (citation && openCitationPreview(citation)) return
   const container = messageListRef.value?.querySelector(
     `.assistant-message[data-message-id="${String(message.id)}"]`,
   )
@@ -1972,6 +2078,88 @@ function handleCitationClick(message: AssistantMessage, citationIndex: number) {
   target.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   target.classList.add('is-citation-flash')
   window.setTimeout(() => target.classList.remove('is-citation-flash'), 1600)
+}
+
+/**
+ * 引用来源点击预览：知识库文档走 FilePreviewDialog，工单正文跳需求详情。
+ * 返回 false 表示该来源不支持预览/跳转，由调用方兜底。
+ */
+function openCitationPreview(citation: CitationReference): boolean {
+  const sourceType = citation.sourceType || ''
+  if (sourceType.startsWith('requirement_body')) {
+    if (citation.requirementId) {
+      router.push(`/requirements/${citation.requirementId}`)
+      return true
+    }
+    return false
+  }
+  const knowledgeBaseId = Number(citation.knowledgeBaseId)
+  if (!citation.documentId || !knowledgeBaseId) return false
+  const fileName = citation.fileName || 'document'
+  const fileType = fileName.includes('.') ? fileName.split('.').pop()?.toLowerCase() || 'pdf' : 'pdf'
+  previewFile.value = {
+    fileName,
+    fileType,
+    knowledgeBaseId,
+    documentId: citation.documentId,
+  }
+  previewVisible.value = true
+  return true
+}
+
+/** 知识库问答消息：展示系统编号的引用来源列表（替代 LLM 手写清单） */
+function isKnowledgeQaMessage(message: AssistantMessage): boolean {
+  return message.intent === 'knowledge_qa'
+}
+
+/**
+ * 剥离 LLM 在回答末尾手写的「引用来源」清单（系统已在下方渲染可点击的编号列表，避免重复）。
+ * 仅处理位于内容末尾的清单，防止误删正文中途出现的同名词。
+ */
+function displayAnswerContent(message: AssistantMessage): string {
+  const content = message.content || ''
+  if (!isKnowledgeQaMessage(message) || !message.citations?.length) return content
+  return content.replace(/\n{0,2}[#>\s]*引用来源[:：][\s\S]*$/, '').trimEnd()
+}
+
+function citationPreviewable(citation: CitationReference): boolean {
+  const sourceType = citation.sourceType || ''
+  if (sourceType.startsWith('requirement_body')) return !!citation.requirementId
+  return !!citation.documentId && !!Number(citation.knowledgeBaseId)
+}
+
+/**
+ * 引用来源列表：只保留正文真正引用过的编号。
+ *
+ * 后端返回的 citations 是「进入回答依据的资料」全集，其中可能仍有与问题弱相关、
+ * 模型最终并未采用的文档（表现为列表里冒出无关需求）。这里按正文里的 [N] 角标过滤，
+ * 编号沿用 citations 的原始序号，保证角标与列表条目一一对应。
+ * 正文一个角标都没有时回退展示全部来源，避免列表整块消失。
+ */
+function citationListOf(message: AssistantMessage): Array<{ citation: CitationReference; number: number }> {
+  const citations = message.citations || []
+  if (!citations.length) return []
+  const entries = citations.map((citation, i) => ({ citation, number: i + 1 }))
+
+  const cited = new Set<number>()
+  const matcher = /\[(\d+)\]/g
+  const content = message.content || ''
+  let match: RegExpExecArray | null
+  while ((match = matcher.exec(content)) !== null) {
+    const num = parseInt(match[1], 10)
+    if (num > 0) cited.add(num)
+  }
+  if (!cited.size) return entries
+
+  const kept = entries.filter((entry) => cited.has(entry.number))
+  return kept.length ? kept : entries
+}
+
+function citationTitle(citation: CitationReference): string {
+  if ((citation.sourceType || '').startsWith('requirement_body')) {
+    return (citation.requirementNo ? citation.requirementNo + ' ' : '') + (citation.requirementTitle || '工单正文')
+  }
+  return citation.fileName || '未知文档'
 }
 
 // ===== 思维链折叠 =====
@@ -2000,6 +2188,14 @@ function reasoningPreview(content?: string | null) {
   const compact = String(content).replace(/\s+/g, ' ').trim()
   if (compact.length <= 60) return compact
   return `${compact.slice(0, 60)}…`
+}
+
+/** 流式中的单行动态记录：取推理内容最新一行（过长时显示行尾），随流式实时刷新 */
+function reasoningLiveLine(content?: string | null) {
+  if (!content) return ''
+  const lines = String(content).split('\n').map(line => line.trim()).filter(Boolean)
+  const last = lines[lines.length - 1] || ''
+  return last.length > 48 ? `…${last.slice(-48)}` : last
 }
 
 // ===== 任务日志折叠已迁移到 AssistantTaskPanel 子组件 =====
@@ -2145,6 +2341,9 @@ watch([visible, messageLength, lastMessageSignature], async ([opened]) => {
 
 watch(visible, async (opened) => {
   if (opened) {
+    // 默认出现在浏览器中间（仅首次打开且用户未拖动过时生效）；
+    // 放在 ensureReady 之前，避免被会话列表请求拖慢出现定位跳动
+    centerWindowIfUntouched()
     await ensureReady()
   }
 })
@@ -2282,7 +2481,7 @@ onBeforeUnmount(() => {
 <style scoped lang="scss">
 /* ===========================================================
  * 自管理弹框容器
- * - normal    右下角浮动 920×720（最大不超过视口 - 32px）
+ * - normal    视口居中浮动 920×720（打开时 JS 居中定位，right/bottom 仅作未拖动前兜底）
  * - maximized 100vw × 100vh
  * - minimized 右下角 320×56 迷你条
  * =========================================================== */
@@ -2493,7 +2692,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 2px;
   padding: 4px;
-  background: #f5f7fa;
+  background: var(--color-fill-secondary);
   border-radius: 10px;
   border: 1px solid var(--color-border);
   /* 阻止点击按钮时冒泡触发外层还原 */
@@ -2520,7 +2719,7 @@ onBeforeUnmount(() => {
 
   &:hover {
     color: var(--color-primary);
-    background: #ffffff;
+    background: var(--color-surface);
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
   }
 
@@ -2531,7 +2730,7 @@ onBeforeUnmount(() => {
 
 .assistant-mini-tool--close:hover {
   color: var(--color-danger);
-  background: #fef0f0;
+  background: var(--color-danger-bg);
   box-shadow: 0 1px 3px rgba(245, 108, 108, 0.18);
 }
 
@@ -2610,7 +2809,7 @@ onBeforeUnmount(() => {
   gap: 12px;
   padding: 12px 14px 12px 12px;
   border-bottom: 1px solid var(--color-border);
-  background: #fff;
+  background: var(--color-surface);
   cursor: move;
   min-height: 56px;
 }
@@ -2632,7 +2831,7 @@ onBeforeUnmount(() => {
   transition: all 0.18s ease;
 
   &:hover {
-    background: #f1f5f9;
+    background: var(--color-surface-alt);
     color: var(--color-primary);
   }
 
@@ -2664,7 +2863,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 2px;
   padding: 4px;
-  background: #f5f7fa;
+  background: var(--color-fill-secondary);
   border-radius: 10px;
   border: 1px solid var(--color-border);
   flex-shrink: 0;
@@ -2725,7 +2924,7 @@ onBeforeUnmount(() => {
 
   &:hover {
     color: var(--color-primary);
-    background: #ffffff;
+    background: var(--color-surface);
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
   }
 
@@ -2740,7 +2939,7 @@ onBeforeUnmount(() => {
 
   &:hover {
     color: var(--color-danger);
-    background: #fef0f0;
+    background: var(--color-danger-bg);
     box-shadow: 0 1px 3px rgba(245, 108, 108, 0.18);
   }
 
@@ -2800,7 +2999,7 @@ onBeforeUnmount(() => {
   gap: 6px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--color-border);
-  background: #fff;
+  background: var(--color-surface);
   font-size: 12px;
   font-weight: 600;
   color: var(--color-text-primary);
@@ -2828,7 +3027,7 @@ onBeforeUnmount(() => {
 }
 
 .assistant-session-list__new-btn:hover {
-  background: #e2e8f0;
+  background: var(--color-muted);
   color: var(--color-text-primary);
 }
 
@@ -2865,7 +3064,7 @@ onBeforeUnmount(() => {
   }
 
   &:active {
-    background: #e2e8f0;
+    background: var(--color-muted);
   }
 }
 
@@ -2887,7 +3086,7 @@ onBeforeUnmount(() => {
 .assistant-session-list__search {
   padding: 8px 10px;
   border-bottom: 1px solid var(--color-border);
-  background: #fff;
+  background: var(--color-surface);
 }
 
 :deep(.session-search-input .el-input__wrapper) {
@@ -2999,7 +3198,7 @@ onBeforeUnmount(() => {
   flex: 1;
   min-width: 0;
   font-size: 12px;
-  color: #334155;
+  color: var(--color-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3007,7 +3206,7 @@ onBeforeUnmount(() => {
 }
 
 .assistant-session-item.is-active .assistant-session-item__title {
-  color: #1d4ed8;
+  color: var(--color-primary);
   font-weight: 500;
 }
 
@@ -3034,7 +3233,7 @@ onBeforeUnmount(() => {
 
 .assistant-session-item__delete:hover {
   color: #ef4444;
-  background: #fee2e2;
+  background: var(--color-danger-bg);
 }
 
 .assistant-session-list__footer {
@@ -3124,7 +3323,7 @@ onBeforeUnmount(() => {
 }
 
 .assistant-chip {
-  border: 1px solid #d9ecff;
+  border: 1px solid var(--color-primary-light);
   border-radius: 999px;
   padding: 8px 12px;
   background: #f5f9ff;
@@ -3209,7 +3408,7 @@ onBeforeUnmount(() => {
 
 .assistant-message__bubble--assistant {
   max-width: 100%;
-  background: #fff;
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-bottom-left-radius: 4px;
   box-shadow: 0 1px 4px rgba(31, 35, 41, 0.04);
@@ -3369,7 +3568,7 @@ onBeforeUnmount(() => {
   padding: 8px 12px;
   border: 1px solid #d1d5db;
   border-radius: 10px;
-  background: linear-gradient(180deg, #f9fafb 0%, #f3f4f6 100%);
+  background: linear-gradient(180deg, #f9fafb 0%, var(--color-surface-alt) 100%);
   font-size: 12.5px;
   color: var(--color-text-secondary);
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
@@ -3377,7 +3576,7 @@ onBeforeUnmount(() => {
   &.is-webSearch {
     border-color: rgba(14, 165, 233, 0.35);
     background: linear-gradient(180deg, #f0f9ff 0%, #e0f2fe 100%);
-    color: #075985;
+    color: var(--color-primary);
   }
 
   &.is-knowledge {
@@ -3423,7 +3622,7 @@ onBeforeUnmount(() => {
 }
 
 .is-knowledge .assistant-stream-hud__pulse-dot {
-  background: #6366f1;
+  background: var(--color-accent);
 }
 .is-knowledge .assistant-stream-hud__pulse-ring {
   border-color: rgba(99, 102, 241, 0.5);
@@ -3464,7 +3663,7 @@ onBeforeUnmount(() => {
 }
 
 .is-webSearch .assistant-stream-hud__model {
-  color: #075985;
+  color: var(--color-primary);
   background: rgba(255, 255, 255, 0.7);
 }
 
@@ -3493,7 +3692,7 @@ onBeforeUnmount(() => {
 .assistant-message__time {
   margin-left: auto;
   font-size: 11px;
-  color: #c0c4cc;
+  color: var(--color-text-tertiary);
   white-space: nowrap;
 }
 
@@ -3573,7 +3772,7 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   padding: 10px 12px;
   border-radius: 8px;
-  background: #fff;
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   font-size: 12px;
   line-height: 1.7;
@@ -3642,6 +3841,89 @@ onBeforeUnmount(() => {
 }
 
 .assistant-message__actions,
+/* 知识库问答：编号引用来源列表（与回答 [N] 角标对应，点击预览） */
+.assistant-message__citation-list-wrap {
+  margin-top: 10px;
+  width: 100%;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+.assistant-citations-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-bottom: 6px;
+}
+
+.assistant-citation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.assistant-citation-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+  color: var(--color-text-secondary);
+  cursor: default;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.assistant-citation-item.is-previewable {
+  cursor: pointer;
+}
+
+.assistant-citation-item.is-previewable:hover {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-text-primary);
+}
+
+.assistant-citation-item__index {
+  font-weight: 700;
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.assistant-citation-item__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assistant-citation-item.is-previewable:hover .assistant-citation-item__title {
+  color: var(--color-primary);
+}
+
+.assistant-citation-item__meta {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--color-muted-text);
+}
+
+.assistant-citation-item__badge {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-primary);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
 .assistant-message__sources {
   margin-top: 14px;
 }
@@ -3849,7 +4131,7 @@ onBeforeUnmount(() => {
 .assistant-composer {
   padding: 16px 18px 18px;
   border-top: 1px solid var(--color-border);
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .assistant-composer__quick-asks {
@@ -3940,6 +4222,27 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
+/* 智能检索标识（服务端自动适配检索类型，用户不可选） */
+.assistant-composer__auto-retrieval {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  flex-shrink: 0;
+  user-select: none;
+
+  .el-icon {
+    font-size: 14px;
+    color: var(--color-accent);
+  }
+}
+
 .assistant-composer__websearch {
   display: inline-flex;
   align-items: center;
@@ -3948,7 +4251,7 @@ onBeforeUnmount(() => {
   padding: 0 8px;
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--color-surface);
   flex-shrink: 0;
   transition: border-color 0.2s, background 0.2s;
 }
@@ -3974,7 +4277,7 @@ onBeforeUnmount(() => {
   padding: 0 10px;
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--color-surface);
   color: var(--color-text-primary);
   font-size: 12px;
   line-height: 1;
@@ -4098,6 +4401,26 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.assistant-model-menu__right {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.assistant-model-menu__conn-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.12);
+}
+
+.assistant-model-menu__conn-dot.is-ok { background-color: #22c55e; }
+.assistant-model-menu__conn-dot.is-slow { background-color: #f59e0b; }
+.assistant-model-menu__conn-dot.is-failed { background-color: #ef4444; }
+.assistant-model-menu__conn-dot.is-untested { background-color: var(--color-muted-text, #9ca3af); opacity: 0.55; }
+
 .assistant-model-menu__check {
   flex-shrink: 0;
   color: var(--color-primary);
@@ -4189,7 +4512,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--color-surface);
   color: var(--color-muted-text);
   font-size: 14px;
   cursor: pointer;
@@ -4268,7 +4591,7 @@ onBeforeUnmount(() => {
 
 .assistant-thinking-step {
   padding: 8px 12px;
-  background: #fff;
+  background: var(--color-surface);
   border-radius: 8px;
   border-left: 3px solid var(--color-primary);
   box-shadow: 0 1px 3px rgba(31, 35, 41, 0.04);

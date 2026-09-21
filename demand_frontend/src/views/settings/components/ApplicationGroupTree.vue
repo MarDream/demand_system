@@ -931,8 +931,8 @@ function handleRootDrop() {
 
     em {
       font-style: normal;
-      background: #fef3c7;
-      color: #92400e;
+      background: var(--color-warning-bg);
+      color: var(--color-warning-text);
       border-radius: 2px;
       padding: 0 1px;
     }

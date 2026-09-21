@@ -11,6 +11,11 @@ export interface AuthUserInfo {
   roleNames?: string[]
   orgId?: number | null
   needOrgBind?: boolean
+  /** 当前生效角色码（角色切换；null = 全部角色并集） */
+  activeRole?: string | null
+  /** 用户全部角色（切换候选） */
+  allRoles?: string[]
+  allRoleNames?: string[]
 }
 
 export interface LoginResult {

@@ -178,11 +178,12 @@ export interface AssistantChatRequest {
   llmModelId?: number | null
   /**
    * 知识库检索模式（仅知识库问答时生效）：
-   * - hybrid：混合检索（语义+关键词，默认）
+   * - auto：智能检索（默认，服务端按问题特征自动适配检索类型）
+   * - hybrid：混合检索（语义+关键词）
    * - semantic：纯语义检索
    * - keyword：纯关键词检索
    */
-  mode?: 'hybrid' | 'semantic' | 'keyword'
+  mode?: 'auto' | 'hybrid' | 'semantic' | 'keyword'
   /**
    * 知识库检索召回片段数量（仅知识库问答时生效）
    * 默认 10
@@ -237,6 +238,8 @@ export interface AssistantActionPayload {
   intent?: string | null
   actions: AssistantAction[]
   sources: AssistantSource[]
+  /** 知识库问答的角标来源（在回答开始流式推送前下发，供正文 [N] 角标即时渲染） */
+  citations?: CitationReference[]
   /** 任务列表（知识库问答时携带） */
   tasks?: AssistantTask[]
   /** 检索降级与能力提示 */

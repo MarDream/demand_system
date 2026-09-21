@@ -274,24 +274,45 @@
                     />
                   </el-form-item>
                   <el-form-item class="filter-item filter-item--search">
-                    <el-input
-                      v-model="filterForm.keyword"
-                      placeholder="关键词搜索"
-                      clearable
-                      class="filter-input--keyword"
-                      @keyup.enter="handleSearch"
+                    <el-popover
+                      placement="bottom-start"
+                      :width="240"
+                      trigger="focus"
+                      :show-arrow="false"
+                      :offset="4"
+                      popper-class="keyword-scope-popover"
                     >
-                      <template #append>
-                        <el-button
-                          class="filter-search-append"
-                          aria-label="执行搜索"
-                          @click="handleSearch"
+                      <template #reference>
+                        <el-input
+                          v-model="filterForm.keyword"
+                          placeholder="关键词搜索"
+                          clearable
+                          class="filter-input--keyword"
+                          @keyup.enter="handleSearch"
                         >
-                          <el-icon><Search /></el-icon>
-                          <span>搜索</span>
-                        </el-button>
+                          <template #append>
+                            <el-button
+                              class="filter-search-append"
+                              aria-label="执行搜索"
+                              @click="handleSearch"
+                            >
+                              <el-icon><Search /></el-icon>
+                              <span>搜索</span>
+                            </el-button>
+                          </template>
+                        </el-input>
                       </template>
-                    </el-input>
+                      <div class="keyword-scope" role="note" aria-label="关键词搜索范围说明">
+                        <div class="keyword-scope__row keyword-scope__row--hit">
+                          <el-icon><CircleCheck /></el-icon>
+                          <span>可搜：需求标题、工单正文</span>
+                        </div>
+                        <div class="keyword-scope__row keyword-scope__row--miss">
+                          <el-icon><CircleClose /></el-icon>
+                          <span>不含：需求编号、处理人、评论</span>
+                        </div>
+                      </div>
+                    </el-popover>
                   </el-form-item>
                 </div>
               </div>
@@ -490,7 +511,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import type { TableInstance } from 'element-plus'
-import { Setting, View, Edit, Delete, ArrowDown, ArrowUp, ArrowRight, Star, StarFilled, Document, Bell, CircleCheck, EditPen, CopyDocument, Search, Refresh, Download } from '@element-plus/icons-vue'
+import { Setting, View, Edit, Delete, ArrowDown, ArrowUp, ArrowRight, Star, StarFilled, Document, Bell, CircleCheck, CircleClose, EditPen, CopyDocument, Search, Refresh, Download } from '@element-plus/icons-vue'
 import { requirementApi, userApi } from '@/api'
 import { getMyRequirementPending, getMyRequirementDone, getMyRequirementFollows, getMyRequirementCc, exportRequirementExcel } from '@/api/modules/requirement'
 import { getTabBadgeCounts } from '@/api/modules/statistics'
@@ -540,7 +561,8 @@ function setCache(key: string, value: { data: Requirement[], total: number, time
 
 function invalidateViewCache(view: RequirementViewMode) {
   Array.from(tabDataCache.keys()).forEach((key) => {
-    if (key.startsWith(`${view}:`)) {
+    // key 前缀是 `${activeRole}:${view}:`；只按 view 匹配（跨角色全部失效，操作后本就该重拉）
+    if (key.includes(`:${view}:`)) {
       tabDataCache.delete(key)
     }
   })
@@ -788,8 +810,8 @@ async function fetchData() {
   fetchAbortController = new AbortController()
   const currentController = fetchAbortController
 
-  // 生成缓存键
-  const cacheKey = `${viewMode.value}:${pagination.pageNum}:${pagination.pageSize}:${JSON.stringify(filterForm)}:${timeDimension.value}:${timeRange.value || ''}`
+  // 生成缓存键（含 activeRole：角色切换后数据口径不同，不能命中旧角色的缓存）
+  const cacheKey = `${userStore.activeRole || ''}:${viewMode.value}:${pagination.pageNum}:${pagination.pageSize}:${JSON.stringify(filterForm)}:${timeDimension.value}:${timeRange.value || ''}`
 
   // 检查缓存（5分钟有效）— 缓存命中时直接展示，不发请求
   const cached = tabDataCache.get(cacheKey)
@@ -800,7 +822,7 @@ async function fetchData() {
   }
 
   // Tab切换时：先展示该Tab的旧缓存数据（如有），再后台刷新
-  const staleCacheKey = `${viewMode.value}:1:${pagination.pageSize}:${JSON.stringify(filterForm)}:${timeDimension.value}:${timeRange.value || ''}`
+  const staleCacheKey = `${userStore.activeRole || ''}:${viewMode.value}:1:${pagination.pageSize}:${JSON.stringify(filterForm)}:${timeDimension.value}:${timeRange.value || ''}`
   const staleCached = tabDataCache.get(staleCacheKey)
   if (staleCached && tableData.value.length === 0) {
     tableData.value = staleCached.data
@@ -1251,6 +1273,16 @@ onMounted(async () => {
   refreshViewCounts()
 })
 
+// 角色切换后重拉：待办/已办按生效角色过滤，缓存 key 也含 activeRole，
+// 但同 key 下已渲染的旧数据必须主动刷新（页面不重挂，onMounted 不会再跑）
+watch(() => userStore.activeRole, (role, oldRole) => {
+  if (role === oldRole) return
+  tabDataCache.clear()
+  pagination.pageNum = 1
+  fetchData()
+  refreshViewCounts()
+})
+
 // 暴露刷新方法给 detail.vue 在操作完成后调用
 defineExpose({ refreshViewCounts, invalidatePendingCache })
 
@@ -1684,6 +1716,42 @@ watch(tableData, (rows) => {
     background: transparent;
     border: none;
     box-shadow: none;
+  }
+}
+
+// 聚焦输入框时浮出的搜索范围说明（slot 内容带 scoped 属性，可在此样式化）
+.keyword-scope {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    line-height: 1.5;
+
+    .el-icon {
+      flex-shrink: 0;
+      font-size: 14px;
+    }
+
+    &--hit {
+      color: var(--el-text-color-primary);
+
+      .el-icon {
+        color: var(--el-color-success);
+      }
+    }
+
+    &--miss {
+      color: var(--el-text-color-secondary);
+
+      .el-icon {
+        color: var(--el-text-color-secondary);
+      }
+    }
   }
 }
 

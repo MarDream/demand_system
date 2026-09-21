@@ -108,7 +108,7 @@
           </el-dropdown>
           <el-dropdown trigger="click">
             <span class="user-info">
-              <el-avatar :size="28">{{ userStore.userInfo?.realName?.charAt(0) || 'U' }}</el-avatar>
+              <el-avatar :size="28" :src="currentUserAvatarUrl || undefined">{{ userStore.userInfo?.realName?.charAt(0) || 'U' }}</el-avatar>
               <span class="user-meta">
                 <span class="user-name">{{ userStore.userInfo?.realName || '用户' }}</span>
                 <span v-if="roleDisplayText" class="user-role">{{ roleDisplayText }}</span>
@@ -126,7 +126,8 @@
       <div class="app-main">
         <router-view v-slot="{ Component, route: viewRoute }">
           <transition name="fade" mode="out-in">
-            <div :key="viewRoute.path" class="view-wrapper">
+            <!-- key 并入 activeRole：切角色时当前页强制重建（数据按新角色重拉，角标/统计/列表全刷新） -->
+            <div :key="`${userStore.activeRole || ''}:${viewRoute.path}`" class="view-wrapper">
               <component :is="Component" />
             </div>
           </transition>
@@ -157,6 +158,7 @@ import { formatDate } from '@/utils/format'
 import { resolveActiveMenuPath } from '@/utils/menuNavigation'
 import { getNotificationList, markAsRead } from '@/api/modules/notification'
 import { getCurrentMenus, type MenuItem } from '@/api/modules/menu'
+import { resolveAvatarUrl } from '@/utils/presetAvatars'
 
 const route = useRoute()
 const router = useRouter()
@@ -164,6 +166,9 @@ const appStore = useAppStore()
 const userStore = useUserStore()
 const { unreadCount } = useNotification()
 const { hasPermission, hasAnyRole, hasAnyPermission } = usePermission()
+
+/** 顶栏头像：preset:xxx 前缀转 data URL，其余原样；空回退姓名首字 */
+const currentUserAvatarUrl = computed(() => resolveAvatarUrl(userStore.userInfo?.avatar))
 
 const recentNotifications = ref<any[]>([])
 const menuList = shallowRef<MenuItem[]>([])
@@ -197,14 +202,14 @@ async function handleSwitchRole(roleCode: string | number) {
     ElMessage.success(`已切换到角色「${activeRoleName.value}」`)
     // 菜单按新角色重新拉取
     await fetchMenus()
-    // 当前页面若在新角色下无权限，回到工作台
+    // 当前页面若在新角色下无权限，回到有权限的首个菜单（无仪表盘权限时不硬回 /dashboard）
     const requiredRoles = Array.isArray(route.meta.requiredRoles) ? (route.meta.requiredRoles as string[]) : []
     const requiredPermissions = Array.isArray(route.meta.requiredPermissions) ? (route.meta.requiredPermissions as string[]) : []
     if (
       (requiredRoles.length > 0 && !hasAnyRole(requiredRoles)) ||
       (requiredPermissions.length > 0 && !hasAnyPermission(requiredPermissions))
     ) {
-      router.push('/dashboard')
+      router.push(appStore.resolveHomePath() ?? '/dashboard')
     }
   } catch (error: any) {
     ElMessage.error(error?.message || '角色切换失败')

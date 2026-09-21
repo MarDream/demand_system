@@ -24,6 +24,9 @@ public class FileRecord {
 
     private Long uploaderId;
 
+    /** 内容哈希(SHA-256 hex,64位小写);历史文件为 NULL,查询时惰性回填 */
+    private String contentHash;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 
@@ -81,6 +84,14 @@ public class FileRecord {
 
     public void setUploaderId(Long uploaderId) {
         this.uploaderId = uploaderId;
+    }
+
+    public String getContentHash() {
+        return contentHash;
+    }
+
+    public void setContentHash(String contentHash) {
+        this.contentHash = contentHash;
     }
 
     public LocalDateTime getCreatedAt() {

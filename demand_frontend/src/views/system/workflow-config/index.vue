@@ -55,7 +55,7 @@
               </div>
             </div>
 
-            <el-table :data="pagedVersions" border v-loading="versionLoading" :cell-style="{ textAlign: 'center' }" :header-cell-style="{ textAlign: 'center' }" class="workflow-table">
+            <el-table :data="pagedVersions" border v-loading="versionLoading" :cell-style="{ textAlign: 'center' }" :header-cell-style="{ textAlign: 'center' }" class="workflow-table" @sort-change="handleVersionSortChange">
               <el-table-column v-if="isVersionColumnVisible('version')" label="版本" min-width="220">
                 <template #default="{ row }">
                   <div class="version-name-cell">
@@ -130,32 +130,24 @@
                 </template>
               </el-table-column>
               <el-table-column v-if="isVersionColumnVisible('creatorName')" prop="creatorName" label="创建人" min-width="110" />
-              <el-table-column v-if="isVersionColumnVisible('createdAt')" label="创建时间" min-width="160">
+              <el-table-column v-if="isVersionColumnVisible('createdAt')" prop="createdAt" sortable="custom" label="创建时间" min-width="160">
                 <template #default="{ row }">
                   {{ formatDateTime(row.createdAt) }}
                 </template>
               </el-table-column>
-              <el-table-column v-if="isVersionColumnVisible('updatedAt')" label="编辑时间" min-width="160">
+              <el-table-column v-if="isVersionColumnVisible('updatedAt')" prop="updatedAt" sortable="custom" label="编辑时间" min-width="160">
                 <template #default="{ row }">
                   {{ row.updatedAt ? formatDateTime(row.updatedAt) : formatDateTime(row.createdAt) }}
                 </template>
               </el-table-column>
-              <el-table-column v-if="isVersionColumnVisible('latestSubmittedAt')" label="最近提交" min-width="160">
+              <el-table-column v-if="isVersionColumnVisible('activatedAt')" prop="activatedAt" sortable="custom" label="发布时间" min-width="160">
+                <template #default="{ row }">
+                  {{ row.activatedAt ? formatDateTime(row.activatedAt) : '-' }}
+                </template>
+              </el-table-column>
+              <el-table-column v-if="isVersionColumnVisible('latestSubmittedAt')" prop="latestSubmittedAt" sortable="custom" label="最近提交" min-width="160">
                 <template #default="{ row }">
                   {{ row.latestSubmittedAt ? formatDateTime(row.latestSubmittedAt) : '-' }}
-                </template>
-              </el-table-column>
-              <el-table-column v-if="isVersionColumnVisible('latestPublishedAt')" label="最近发布" min-width="160">
-                <template #default="{ row }">
-                  <template v-if="row.changeLog">
-                    {{ formatDateTime(row.changeLog) }}
-                  </template>
-                  <span v-else class="text-secondary">-</span>
-                </template>
-              </el-table-column>
-              <el-table-column v-if="isVersionColumnVisible('activatedAt')" label="启用时间" min-width="160">
-                <template #default="{ row }">
-                  {{ row.isActive === 1 && row.activatedAt ? formatDateTime(row.activatedAt) : '-' }}
                 </template>
               </el-table-column>
               <el-table-column v-if="isVersionColumnVisible('operations')" label="操作" min-width="120" fixed="right">
@@ -659,12 +651,11 @@ const versionAllColumns: ColumnDef[] = [
   { key: 'creatorName', label: '创建人', group: '人员与时间', width: 140 },
   { key: 'createdAt', label: '创建时间', group: '人员与时间', width: 180 },
   { key: 'updatedAt', label: '编辑时间', group: '人员与时间', width: 180 },
+  { key: 'activatedAt', label: '发布时间', group: '人员与时间', width: 180 },
   { key: 'latestSubmittedAt', label: '最近提交', group: '人员与时间', width: 180 },
-  { key: 'latestPublishedAt', label: '最近发布', group: '人员与时间', width: 180 },
-  { key: 'activatedAt', label: '启用时间', group: '人员与时间', width: 180 },
   { key: 'operations', label: '操作', width: 120 },
 ]
-const versionDefaultKeys = ['version', 'boundTypes', 'projectId', 'knowledgeBaseName', 'isActive', 'approvalEvaluation', 'approvalStatus', 'creatorName', 'createdAt', 'updatedAt', 'operations']
+const versionDefaultKeys = ['version', 'boundTypes', 'projectId', 'knowledgeBaseName', 'isActive', 'approvalEvaluation', 'approvalStatus', 'creatorName', 'createdAt', 'updatedAt', 'activatedAt', 'operations']
 
 const {
   showColumnConfig: showVersionColumnConfig,
@@ -684,6 +675,24 @@ const {
 
 function isVersionColumnVisible(key: string) {
   return versionVisibleColumns.value.some((c) => c.key === key)
+}
+
+// 当前参与排序的时间列被「列设置」隐藏时，清除不可见且无法取消的排序状态
+watch(versionVisibleColumns, (cols) => {
+  if (versionSort.value && !cols.some((c) => c.key === versionSort.value?.key)) {
+    versionSort.value = null
+  }
+})
+
+/** 版本表时间列表头排序（sortable="custom"，排序在 filteredVersions 内完成，跨页生效） */
+function handleVersionSortChange({ prop, order }: { prop: string; order: 'ascending' | 'descending' | null }) {
+  const allowed: VersionSortKey[] = ['createdAt', 'updatedAt', 'activatedAt', 'latestSubmittedAt']
+  if (!order || !allowed.includes(prop as VersionSortKey)) {
+    versionSort.value = null
+    return
+  }
+  versionSort.value = { key: prop as VersionSortKey, order: order === 'ascending' ? 'asc' : 'desc' }
+  pagination.page = 1
 }
 
 // ── 列表字段设置：审核记录表 ──
@@ -749,6 +758,9 @@ const activeTab = ref<'versions' | 'approvals'>('versions')
 const activationFilter = ref('')
 const versionApprovalStatusFilter = ref('')
 const versionKeyword = ref('')
+/** 版本列表时间列排序状态（null = 使用默认序：启用置顶 → 发布时间倒序） */
+type VersionSortKey = 'createdAt' | 'updatedAt' | 'activatedAt' | 'latestSubmittedAt'
+const versionSort = ref<{ key: VersionSortKey; order: 'asc' | 'desc' } | null>(null)
 const approvalStatusFilter = ref('')
 const approvalKeyword = ref('')
 const approvalPagination = reactive({ page: 1, size: 10 })
@@ -856,13 +868,29 @@ const filteredVersions = computed(() => {
     }
     return `${item.name} V${item.version}`.toLowerCase().includes(keyword)
   })
-  // 排序：启用状态置顶（启用在前）→ 编辑时间倒序（缺失时回退创建时间）→ id 倒序兜底
+  // 排序：有表头排序用表头排序；否则默认启用状态置顶（启用在前）→ 发布时间倒序
+  //（未发布的排在该组末尾，按 id 倒序兜底）
+  const timeValue = (item: WorkflowVersionDTO, key: VersionSortKey): number => {
+    // 编辑时间列显示 updatedAt ?? createdAt（存量数据回退），排序口径必须与显示一致
+    const raw = key === 'updatedAt' ? (item.updatedAt || item.createdAt) : item[key]
+    if (!raw) return 0
+    const parsed = Date.parse(raw)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+  if (versionSort.value) {
+    const { key, order } = versionSort.value
+    const dir = order === 'asc' ? 1 : -1
+    return [...list].sort((a, b) => {
+      const diff = timeValue(a, key) - timeValue(b, key)
+      if (diff !== 0) return diff * dir
+      return b.id - a.id
+    })
+  }
   return [...list].sort((a, b) => {
     const activeDiff = (b.isActive === 1 ? 1 : 0) - (a.isActive === 1 ? 1 : 0)
     if (activeDiff !== 0) return activeDiff
-    const timeA = Date.parse(a.updatedAt || a.createdAt || '')
-    const timeB = Date.parse(b.updatedAt || b.createdAt || '')
-    if (timeB !== timeA) return timeB - timeA
+    const diff = timeValue(a, 'activatedAt') - timeValue(b, 'activatedAt')
+    if (diff !== 0) return -diff
     return b.id - a.id
   })
 })
@@ -1581,9 +1609,9 @@ onMounted(() => {
 .approval-toolbar {
   padding: 10px 12px;
   margin-bottom: 10px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border, var(--color-border));
   border-radius: var(--radius-lg, 12px);
-  background: var(--color-surface-alt, #f8fafc);
+  background: var(--color-surface-alt, var(--color-background));
 }
 
 .toolbar-control {
@@ -1631,7 +1659,7 @@ onMounted(() => {
 
 .workflow-stats span + span {
   padding-left: 12px;
-  border-left: 1px solid var(--color-border, #e5e7eb);
+  border-left: 1px solid var(--color-border, var(--color-border));
 }
 
 .workflow-stats strong {
@@ -1644,7 +1672,7 @@ onMounted(() => {
   padding: 16px;
   border-radius: 14px;
   border: 1px solid var(--color-border);
-  background: #f8fafc;
+  background: var(--color-background);
 }
 
 .summary-value {
@@ -1683,20 +1711,20 @@ onMounted(() => {
 }
 
 .summary-chip.pending {
-  color: #b88230;
-  background: #fff7e6;
+  color: var(--color-warning-text);
+  background: var(--color-warning-bg);
   border-color: #f3d19e;
 }
 
 .summary-chip.approved {
   color: #3f8f53;
-  background: #f0f9eb;
+  background: var(--color-success-bg);
   border-color: #b3e19d;
 }
 
 .summary-chip.rejected {
   color: #c45656;
-  background: #fef0f0;
+  background: var(--color-danger-bg);
   border-color: #fab6b6;
 }
 
@@ -1705,7 +1733,7 @@ onMounted(() => {
    ============================================ */
 .workflow-table {
   flex: 1;
-  --el-table-border-color: var(--color-border, #e2e8f0);
+  --el-table-border-color: var(--color-border, var(--color-border));
   --el-table-header-bg-color: var(--color-surface-alt, #f8fafc);
   --el-table-row-hover-bg-color: rgba(59, 130, 246, 0.04);
 
@@ -1715,7 +1743,7 @@ onMounted(() => {
     font-size: 13px;
     font-weight: 600;
     color: var(--color-text-primary);
-    background: var(--color-surface-alt, #f8fafc);
+    background: var(--color-surface-alt, var(--color-background));
     letter-spacing: 0;
   }
 
@@ -1872,7 +1900,7 @@ onMounted(() => {
   gap: 12px;
   padding: 10px 12px;
   border-radius: 10px;
-  background: #fff;
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
 }
 
@@ -1933,14 +1961,14 @@ onMounted(() => {
   height: 12px;
   border-radius: 50%;
   border: 2px solid #c0c4cc;
-  background: #fff;
+  background: var(--color-surface);
   z-index: 3;
 }
-.history-timeline__dot.dot--create, .dot--approve { border-color: #67c23a; background: #f0f9eb; }
-.history-timeline__dot.dot--update { border-color: #409eff; background: #ecf5ff; }
-.history-timeline__dot.dot--publish, .dot--activate, .dot--submit { border-color: #e6a23c; background: #fdf6ec; }
-.history-timeline__dot.dot--reject, .dot--delete { border-color: #f56c6c; background: #fef0f0; }
-.history-timeline__dot.dot--deactivate { border-color: #909399; background: #f4f4f5; }
+.history-timeline__dot.dot--create, .dot--approve { border-color: #67c23a; background: var(--color-success-bg); }
+.history-timeline__dot.dot--update { border-color: var(--color-primary); background: var(--color-primary-subtle); }
+.history-timeline__dot.dot--publish, .dot--activate, .dot--submit { border-color: #e6a23c; background: var(--color-warning-bg); }
+.history-timeline__dot.dot--reject, .dot--delete { border-color: #f56c6c; background: var(--color-danger-bg); }
+.history-timeline__dot.dot--deactivate { border-color: #909399; background: var(--color-surface-alt); }
 .history-timeline__line {
   position: absolute;
   left: 5px;
@@ -1955,8 +1983,8 @@ onMounted(() => {
   min-width: 0;
   padding: 10px 14px;
   border-radius: 8px;
-  background: #fafbfc;
-  border: 1px solid #ebeef5;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
 }
 .history-timeline__header {
   display: flex;
@@ -1966,17 +1994,17 @@ onMounted(() => {
 }
 .history-timeline__time {
   font-size: 12px;
-  color: #909399;
+  color: var(--color-text-tertiary);
 }
 .history-timeline__summary {
   font-size: 13px;
   font-weight: 500;
-  color: #303133;
+  color: var(--color-text-primary);
   margin-bottom: 4px;
 }
 .history-timeline__operator {
   font-size: 12px;
-  color: #909399;
+  color: var(--color-text-tertiary);
   margin-bottom: 4px;
 }
 .history-timeline__snapshot {
@@ -1988,7 +2016,7 @@ onMounted(() => {
 }
 .snapshot-label {
   font-size: 11px;
-  color: #c0c4cc;
+  color: var(--color-text-tertiary);
 }
 .snapshot-chip {
   font-size: 11px;
@@ -2001,7 +2029,7 @@ onMounted(() => {
   text-align: center;
   padding: 40px 0;
   font-size: 14px;
-  color: #c0c4cc;
+  color: var(--color-text-tertiary);
 }
 </style>
 

@@ -585,6 +585,10 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             version.setApprovalEvaluationEnabled(updateDTO.getApprovalEvaluationEnabled());
         }
 
+        // 编辑时间 = 最近一次变更时间（列表「编辑时间」列）；此处实体是从库里查出来的，
+        // updatedAt 还带着旧值，必须显式覆盖，否则会原样写回、时间不刷新。
+        version.setUpdatedAt(LocalDateTime.now());
+
         workflowVersionMapper.updateById(version);
 
         return toVersionDTO(version);
@@ -843,6 +847,7 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
                 long remainingPending = workflowApprovalMapper.selectCount(query);
                 if (remainingPending == 0) {
                     version.setActivationStatus("draft");
+                    version.setUpdatedAt(LocalDateTime.now());
                     workflowVersionMapper.updateById(version);
                 }
             }
@@ -867,6 +872,7 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
                 WorkflowVersion version = workflowVersionMapper.selectById(versionId);
                 if (version != null && "pending".equals(version.getActivationStatus())) {
                     version.setActivationStatus("draft");
+                    version.setUpdatedAt(LocalDateTime.now());
                     workflowVersionMapper.updateById(version);
                 }
                 processedVersionIds.add(versionId);
@@ -1045,6 +1051,11 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
      * @param versionName      目标版本名称（可传 null，null 时不校验名称）
      */
     private void validateVersionMeta(Long projectId, Long excludeVersionId, String version, String versionName) {
+        // 两者都为空：由 createDraftVersion 自动生成默认版本号与名称（新建工作流保存草稿零门槛）。
+        // 仅修改版本元信息的入口（updateVersionMeta）DTO 带 @NotBlank，不会走到这里。
+        if (!StringUtils.hasText(version) && !StringUtils.hasText(versionName)) {
+            return;
+        }
         // 校验版本名称
         if (StringUtils.hasText(versionName)) {
             String normalized = normalizeVersionName(versionName);

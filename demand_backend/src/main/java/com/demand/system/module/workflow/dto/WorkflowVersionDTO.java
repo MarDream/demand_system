@@ -34,6 +34,12 @@ public class WorkflowVersionDTO {
 
     private LocalDateTime createdAt;
 
+    /**
+     * 编辑时间（最近一次保存/启停/复制/重命名等变更时间）。
+     * 必须保留该字段：列表「编辑时间」列取的就是它，DTO 缺字段时前端只能回退显示创建时间。
+     */
+    private LocalDateTime updatedAt;
+
     private String latestApprovalStatus;
 
     private String latestApprovalComment;
@@ -162,6 +168,14 @@ public class WorkflowVersionDTO {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
     }
 
     public String getLatestApprovalStatus() {

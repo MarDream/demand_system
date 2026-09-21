@@ -21,6 +21,14 @@ public class KnowledgeConfig {
     private int searchTopK = 20;
     /** 进入 LLM 上下文的片段最低分数（rerank/语义相关性量纲），低分尾部不参与回答生成 */
     private double contextMinScore = 0.15;
+    /**
+     * 相对相关度下限：片段分数低于「首条分数 × 该系数」即视为与问题弱相关，不进入 LLM 上下文与引用来源。
+     * 与 {@link #contextMinScore} 取较大值生效，用于自适应地砍掉高分结果后面的弱相关长尾
+     * （reranker 打分量纲随模型浮动，绝对阈值难以通吃，故再叠加相对阈值）。
+     * 取值偏保守：实测命中文档的分数会低到首条的 0.5 倍左右，取 0.5 会切进相关区间，
+     * 0.4 只砍掉明显无关的长尾。
+     */
+    private double contextRelativeFloor = 0.4;
     /** 注入 LLM 的参考资料字符预算，超出时丢弃低分尾部片段 */
     private int contextMaxChars = 24000;
 
@@ -103,6 +111,14 @@ public class KnowledgeConfig {
 
     public void setContextMinScore(double contextMinScore) {
         this.contextMinScore = contextMinScore;
+    }
+
+    public double getContextRelativeFloor() {
+        return contextRelativeFloor;
+    }
+
+    public void setContextRelativeFloor(double contextRelativeFloor) {
+        this.contextRelativeFloor = contextRelativeFloor;
     }
 
     public int getContextMaxChars() {

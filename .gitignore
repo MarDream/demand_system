@@ -69,3 +69,7 @@ start-claude.bat
 
 # Local agent runtime state (workbuddy memory, do not ship)
 .workbuddy/
+
+# Local verification/import scripts & artifacts (contain env-specific creds/logic, do not ship)
+scripts/
+req-import/

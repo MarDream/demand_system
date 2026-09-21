@@ -30,3 +30,20 @@
 - LLM 走 `LlmGateway`；模型解析走 `LlmModelResolver` + `LlmApplicationCode`（配在 `llm_applications`）。新功能点 = 常量 + 迁移 `INSERT IGNORE` + 未配置时回退。
 - **模型解析铁律**：未绑定时 `resolveFirst` 返回该类型 `is_default=1` 的全局默认模型，**不是** `assistant.chat` 绑的。
 - `llm_models.model_type` 只有 general/embedding/rerank/vision（**无 chat**）；同名模型跨接入组重复，切模型先选接入组。
+
+## 知识库问答 RAG / 引用来源 / 角标
+
+### 链路
+
+1. `AssistantServiceImpl` 分发 `knowledge_qa` → 改写 → `retrieve()`（hybrid/semantic/keyword）→ `actions` 事件（含 citations）→ `delta` 流式回答 → `done` 落盘。
+2. 回答正文中的 `[N]` 由 `markdownRender.ts` `replaceCitationLinks` 替换成 `<sup class="citation-ref">`。
+3. `SystemAssistant.vue` 底部渲染「引用来源」列表，编号与角标一一对应。
+
+### 踩坑
+
+- **角标必须在流式首帧就有**：后端 `actions` 事件必须在 `delta` 之前下发 `citations`，否则生成过程中 `[N]` 是裸文本。`stores/assistant.ts` 的 `onActions` 要写入 `target.citations`。
+- **引用来源 ≠ 全部召回结果**：`retrieve()` 里 `citations` 应收敛为「真正进入 LLM 上下文的资料」（`selectContextResults`），否则弱相关长尾会混进列表，出现「机械臂人脸识别对接」与小程序无关的文档。
+- **编号错位**：`buildContext` 给 `documentId=null` 的片段（工单正文）也编号，而 `buildCitationReferences` 过滤掉了它们 → 后续文档编号整体偏移。修复：null-doc 片段不编号，标注「无编号，不可引用」。
+- **模型编号写法不统一**：模型常写 `（资料[4]）`、`【资料4】`、`[资料4]`、`资料[4]`，前端 `normalizeCitationMarkers` 必须全部归一成裸 `[N]`。
+- **引用来源列表只展示正文引用过的编号**：`citationListOf(message)` 按正文里的 `[N]` 过滤；无角标时回退全量。编号沿用原始序号（`i+1`），不能重排，否则 `handleCitationClick` 映射断裂。
+- **助手意图路由不稳定**：同一问题有时走 `knowledge_qa`（有 citations、角标），有时走 `data_query`（无 citations，返回 SQL 表格）。用户报「没有角标」时先确认 intent。

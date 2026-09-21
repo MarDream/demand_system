@@ -27,6 +27,8 @@ export interface AuthUserInfo {
   jobNumber?: string | null
   /** 所属组织名称（只读展示） */
   orgName?: string | null
+  /** 外观设置 JSON 字符串（{mode,primary,radius}），null = 未自定义 */
+  appearanceConfig?: string | null
 }
 
 export function login(username: string, password: string) {
@@ -50,9 +52,14 @@ export function getMe() {
   return request.get<AuthUserInfo>('/v1/auth/me')
 }
 
-/** 个人设置：仅允许修改本人邮箱/手机号，其余信息只读 */
-export function updateProfile(data: { email: string; phone?: string }) {
+/** 个人设置：仅允许修改本人邮箱/手机号/头像，其余信息只读 */
+export function updateProfile(data: { email: string; phone?: string; avatar?: string }) {
   return request.put<AuthUserInfo>('/v1/auth/profile', data)
+}
+
+/** 个人设置：保存本人外观配置（主题模式/主题色/圆角档位），跟随账号持久化 */
+export function saveAppearance(data: { mode: string; primary: string; radius: string }) {
+  return request.put<void>('/v1/auth/appearance', data)
 }
 
 /** 个人设置：验证旧密码后修改本人密码 */
