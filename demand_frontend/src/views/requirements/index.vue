@@ -4,118 +4,23 @@
     <FilterCard class="requirement-control-card">
       <div class="requirement-control">
         <div class="requirement-control__top">
-          <!-- 左侧：视图选择器 + 快捷标签 -->
+          <!-- 左侧：视图标签栏（平铺全部视图） -->
           <div class="view-switch-area">
-            <!-- 下拉选择器：默认显示当前视图 -->
-            <el-dropdown
-              trigger="click"
-              class="view-dropdown"
-              @command="handleViewModeChange"
-            >
-              <el-button class="view-dropdown__trigger">
-                <el-icon class="view-dropdown__icon"><component :is="currentViewIcon" /></el-icon>
-                <span class="view-dropdown__text">{{ currentViewLabel }}</span>
-                <el-icon class="view-dropdown__arrow"><ArrowDown /></el-icon>
-              </el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item
-                    v-if="hasPermission('menu:requirement:view:all')"
-                    command="all"
-                    :class="{ 'is-active': viewMode === 'all' }"
-                  >
-                    <el-icon><Document /></el-icon>
-                    <span>全部需求</span>
-                  </el-dropdown-item>
-                  <el-dropdown-item
-                    v-if="hasPermission('menu:requirement:view:pending')"
-                    command="pending"
-                    :class="{ 'is-active': viewMode === 'pending' }"
-                  >
-                    <el-icon><Bell /></el-icon>
-                    <span>我的待办</span>
-                    <el-badge
-                      v-if="viewCounts.pending > 0"
-                      :value="viewCounts.pending"
-                      class="view-dropdown__badge"
-                    />
-                  </el-dropdown-item>
-                  <el-dropdown-item
-                    v-if="hasPermission('menu:requirement:view:done')"
-                    command="done"
-                    :class="{ 'is-active': viewMode === 'done' }"
-                  >
-                    <el-icon><CircleCheck /></el-icon>
-                    <span>我的已办</span>
-                  </el-dropdown-item>
-                  <el-dropdown-item
-                    v-if="hasPermission('menu:requirement:view:follow')"
-                    command="follows"
-                    :class="{ 'is-active': viewMode === 'follows' }"
-                  >
-                    <el-icon><Star /></el-icon>
-                    <span>我的关注</span>
-                    <el-badge
-                      v-if="viewCounts.follows > 0"
-                      :value="viewCounts.follows"
-                      class="view-dropdown__badge"
-                    />
-                  </el-dropdown-item>
-                  <el-dropdown-item
-                    v-if="hasPermission('menu:requirement:view:all')"
-                    command="cc"
-                    :class="{ 'is-active': viewMode === 'cc' }"
-                  >
-                    <el-icon><CopyDocument /></el-icon>
-                    <span>抄送我的</span>
-                    <el-badge
-                      v-if="viewCounts.cc > 0"
-                      :value="viewCounts.cc"
-                      class="view-dropdown__badge"
-                    />
-                  </el-dropdown-item>
-                  <el-dropdown-item
-                    v-if="hasPermission('menu:requirement:view:draft')"
-                    command="drafts"
-                    :class="{ 'is-active': viewMode === 'drafts' }"
-                  >
-                    <el-icon><EditPen /></el-icon>
-                    <span>我的草稿</span>
-                    <el-badge
-                      v-if="viewCounts.drafts > 0"
-                      :value="viewCounts.drafts"
-                      class="view-dropdown__badge"
-                    />
-                  </el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-
-            <!-- 快捷标签：高频视图 -->
-            <div class="view-quick-tags">
+            <!-- 视图切换：全部视图直接平铺展示（不再折叠为下拉框） -->
+            <div class="view-tabs" role="tablist">
               <el-button
-                v-if="hasPermission('menu:requirement:view:all')"
-                :type="viewMode === 'all' ? 'primary' : 'default'"
-                size="small"
-                class="view-quick-tag"
-                @click="handleViewModeChange('all')"
+                v-for="tab in visibleViewTabs"
+                :key="tab.key"
+                :type="viewMode === tab.key ? 'primary' : 'default'"
+                class="view-tab"
+                @click="handleViewModeChange(tab.key)"
               >
-                <el-icon><Document /></el-icon>
-                全部需求
-              </el-button>
-              <el-button
-                v-if="hasPermission('menu:requirement:view:pending')"
-                :type="viewMode === 'pending' ? 'primary' : 'default'"
-                size="small"
-                class="view-quick-tag"
-                @click="handleViewModeChange('pending')"
-              >
-                <el-icon><Bell /></el-icon>
-                我的待办
+                <el-icon class="view-tab__icon"><component :is="tab.icon" /></el-icon>
+                <span class="view-tab__text">{{ tab.label }}</span>
                 <el-badge
-                  v-if="viewCounts.pending > 0"
-                  :value="viewCounts.pending"
-                  class="view-quick-tag__badge"
+                  v-if="tab.countValue > 0"
+                  :value="tab.countValue"
+                  class="view-tab__badge"
                 />
               </el-button>
             </div>
@@ -198,7 +103,7 @@
                   </el-select>
                 </el-form-item>
                 <el-form-item label="状态" class="filter-item filter-item--status">
-                  <el-select v-model="filterForm.status" placeholder="全部" clearable class="filter-select--status">
+                  <el-select v-model="filterForm.status" placeholder="全部" clearable class="filter-select--status" @change="handleStatusFilterChange">
                     <el-option label="新建" value="新建" />
                     <el-option label="待分析" value="待分析" />
                     <el-option label="待确认" value="待确认" />
@@ -231,29 +136,12 @@
                       </el-option>
                     </el-select>
                   </el-form-item>
-                  <el-form-item label="节点状态" class="filter-item filter-item--node-status">
-                    <el-select v-model="filterForm.nodeStatus" placeholder="全部" clearable class="filter-select--status">
-                      <el-option label="新建" value="DRAFT" />
-                      <el-option label="待分析" value="PENDING_ANALYSIS" />
-                      <el-option label="待确认" value="PENDING_CONFIRM" />
-                      <el-option label="待评审" value="PENDING_REVIEW" />
-                      <el-option label="开发中" value="IN_DEVELOPMENT" />
-                      <el-option label="测试中" value="IN_TESTING" />
-                      <el-option label="已上线" value="DEPLOYED" />
-                      <el-option label="已验收" value="ACCEPTED" />
-                      <el-option label="已取消" value="CANCELLED" />
-                      <el-option label="已拒绝" value="REJECTED" />
-                      <el-option label="打回" value="ROLLBACK" />
-                      <el-option label="测试不通过" value="TEST_FAILED" />
-                      <el-option label="验收不通过" value="ACCEPTANCE_FAILED" />
-                    </el-select>
-                  </el-form-item>
                   <el-form-item v-show="isAllView" label="当前处理人" class="filter-item filter-item--assignee">
                     <el-select v-model="filterForm.assigneeId" placeholder="请选择" clearable class="filter-select--assignee">
                       <el-option v-for="user in filterUserList" :key="user.id" :label="user.realName || user.username" :value="user.id" />
                     </el-select>
                   </el-form-item>
-                  <el-form-item v-show="isAllView" label="时间维度" class="filter-item filter-item--dimension">
+                  <el-form-item label="时间维度" class="filter-item filter-item--dimension">
                     <el-select v-model="timeDimension" placeholder="选择时间维度" clearable class="filter-select--dimension">
                       <el-option label="创建时间" value="createdAt" />
                       <el-option label="分析完成" value="analysisCompletedAt" />
@@ -261,7 +149,7 @@
                       <el-option label="开发完成" value="developmentCompletedAt" />
                     </el-select>
                   </el-form-item>
-                  <el-form-item v-show="isAllView" label="日期范围" class="filter-item filter-item--date">
+                  <el-form-item label="日期范围" class="filter-item filter-item--date">
                     <el-date-picker
                       v-model="timeRange"
                       type="daterange"
@@ -274,45 +162,42 @@
                     />
                   </el-form-item>
                   <el-form-item class="filter-item filter-item--search">
-                    <el-popover
-                      placement="bottom-start"
-                      :width="240"
-                      trigger="focus"
-                      :show-arrow="false"
-                      :offset="4"
-                      popper-class="keyword-scope-popover"
+                    <el-input
+                      v-model="filterForm.keyword"
+                      :placeholder="keywordPlaceholder"
+                      clearable
+                      class="filter-input--keyword"
+                      @keyup.enter="handleSearch"
                     >
-                      <template #reference>
-                        <el-input
-                          v-model="filterForm.keyword"
-                          placeholder="关键词搜索"
-                          clearable
-                          class="filter-input--keyword"
-                          @keyup.enter="handleSearch"
+                      <template #prepend>
+                        <el-select
+                          v-model="filterForm.keywordScope"
+                          class="keyword-scope-select"
+                          aria-label="关键词搜索范围"
+                          @change="handleKeywordScopeChange"
                         >
-                          <template #append>
-                            <el-button
-                              class="filter-search-append"
-                              aria-label="执行搜索"
-                              @click="handleSearch"
-                            >
-                              <el-icon><Search /></el-icon>
-                              <span>搜索</span>
-                            </el-button>
-                          </template>
-                        </el-input>
+                          <el-option
+                            v-for="option in keywordScopeOptions"
+                            :key="option.value"
+                            :label="option.label"
+                            :value="option.value"
+                          >
+                            <span class="keyword-scope-option__label">{{ option.label }}</span>
+                            <span class="keyword-scope-option__hint">{{ option.hint }}</span>
+                          </el-option>
+                        </el-select>
                       </template>
-                      <div class="keyword-scope" role="note" aria-label="关键词搜索范围说明">
-                        <div class="keyword-scope__row keyword-scope__row--hit">
-                          <el-icon><CircleCheck /></el-icon>
-                          <span>可搜：需求标题、工单正文</span>
-                        </div>
-                        <div class="keyword-scope__row keyword-scope__row--miss">
-                          <el-icon><CircleClose /></el-icon>
-                          <span>不含：需求编号、处理人、评论</span>
-                        </div>
-                      </div>
-                    </el-popover>
+                      <template #append>
+                        <el-button
+                          class="filter-search-append"
+                          aria-label="执行搜索"
+                          @click="handleSearch"
+                        >
+                          <el-icon><Search /></el-icon>
+                          <span>搜索</span>
+                        </el-button>
+                      </template>
+                    </el-input>
                   </el-form-item>
                 </div>
               </div>
@@ -420,7 +305,7 @@
                   {{ formatDate(row[col.key]) }}
                 </template>
                 <template v-else-if="col.key === 'dueDate'">
-                  {{ formatDate(row[col.key], 'YYYY-MM-DD HH:mm:ss') }}
+                  {{ formatDate(row[col.key], 'YYYY-MM-DD') }}
                 </template>
                 <template v-else-if="col.key === 'operations'">
                   <div class="requirement-operation-cell">
@@ -511,9 +396,9 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import type { TableInstance } from 'element-plus'
-import { Setting, View, Edit, Delete, ArrowDown, ArrowUp, ArrowRight, Star, StarFilled, Document, Bell, CircleCheck, CircleClose, EditPen, CopyDocument, Search, Refresh, Download } from '@element-plus/icons-vue'
+import { Setting, View, Edit, Delete, ArrowDown, ArrowUp, ArrowRight, Star, StarFilled, Document, Bell, CircleCheck, EditPen, CopyDocument, Search, Refresh, Download, List } from '@element-plus/icons-vue'
 import { requirementApi, userApi } from '@/api'
-import { getMyRequirementPending, getMyRequirementDone, getMyRequirementFollows, getMyRequirementCc, exportRequirementExcel } from '@/api/modules/requirement'
+import { getMyRequirementPending, getMyRequirementDone, getMyRequirementFollows, getMyRequirementCc, getMyRequirementAll, exportRequirementExcel } from '@/api/modules/requirement'
 import { getTabBadgeCounts } from '@/api/modules/statistics'
 import { requirementConfigApi } from '@/api/modules/requirementConfig'
 import { workflowEngineApi, type CurrentNodeHandler } from '@/api/modules/workflow-engine'
@@ -578,7 +463,7 @@ function invalidatePendingCache() {
 let fetchAbortController: AbortController | null = null
 
 const filterExpanded = ref(true)
-type RequirementViewMode = 'all' | 'drafts' | 'pending' | 'done' | 'follows' | 'cc'
+type RequirementViewMode = 'all' | 'drafts' | 'pending' | 'done' | 'follows' | 'cc' | 'my-all'
 
 const viewMode = ref<RequirementViewMode>(
   route.query.view === 'drafts'
@@ -591,38 +476,42 @@ const viewMode = ref<RequirementViewMode>(
           ? 'follows'
           : route.query.view === 'cc'
             ? 'cc'
-            : 'all',
+            : route.query.view === 'my-all'
+              ? 'my-all'
+              : 'all',
 )
-// 计算当前视图显示信息
-const currentViewLabel = computed(() => {
-  const labels: Record<string, string> = {
-    all: '全部需求',
-    pending: '我的待办',
-    done: '我的已办',
-    follows: '我的关注',
-    cc: '抄送我的',
-    drafts: '我的草稿',
-  }
-  return labels[viewMode.value] || '全部需求'
-})
+// 视图标签定义：平铺展示全部视图（顺序固定，界面不再折叠为下拉框）
+// 说明：cc（抄送我的）沿用既有权限位 menu:requirement:view:all，保持原行为不变。
+interface ViewTab {
+  key: string
+  label: string
+  icon: any
+  permission: string
+  count?: () => number
+}
+const viewTabs: ViewTab[] = [
+  { key: 'all', label: '全部需求', icon: Document, permission: 'menu:requirement:view:all' },
+  { key: 'my-all', label: '我的全部', icon: List, permission: 'menu:requirement:view:all' },
+  { key: 'pending', label: '我的待办', icon: Bell, permission: 'menu:requirement:view:pending', count: () => viewCounts.pending },
+  { key: 'done', label: '我的已办', icon: CircleCheck, permission: 'menu:requirement:view:done' },
+  { key: 'follows', label: '我的关注', icon: Star, permission: 'menu:requirement:view:follow', count: () => viewCounts.follows },
+  { key: 'cc', label: '抄送我的', icon: CopyDocument, permission: 'menu:requirement:view:all', count: () => viewCounts.cc },
+  { key: 'drafts', label: '我的草稿', icon: EditPen, permission: 'menu:requirement:view:draft', count: () => viewCounts.drafts },
+]
 
-const currentViewIcon = computed(() => {
-  const icons: Record<string, any> = {
-    all: Document,
-    pending: Bell,
-    done: CircleCheck,
-    follows: Star,
-    cc: CopyDocument,
-    drafts: EditPen,
-  }
-  return icons[viewMode.value] || Document
-})
+// 仅保留有权限的视图，并解析角标数量
+const visibleViewTabs = computed(() =>
+  viewTabs
+    .filter((tab) => hasPermission(tab.permission))
+    .map((tab) => ({ ...tab, countValue: tab.count ? tab.count() : 0 })),
+)
 const isAllView = computed(() => viewMode.value === 'all')
 const isDraftView = computed(() => viewMode.value === 'drafts')
 const isPendingView = computed(() => viewMode.value === 'pending')
 const isDoneView = computed(() => viewMode.value === 'done')
 const isFollowView = computed(() => viewMode.value === 'follows')
 const isCcView = computed(() => viewMode.value === 'cc')
+const isMyAllView = computed(() => viewMode.value === 'my-all')
 
 const DEFAULT_PROJECT_ID = 1
 
@@ -637,7 +526,8 @@ const requirementAllColumns: ColumnDef[] = [
   { key: 'assigneeName', label: '当前处理人', group: '人员与时间', minWidth: 120 },
   { key: 'departmentName', label: '归属部门', group: '基础字段', minWidth: 120 },
   { key: 'createdAt', label: '创建时间', group: '人员与时间', minWidth: 170 },
-  { key: 'dueDate', label: '期望上线日期', group: '人员与时间', minWidth: 160 },
+  { key: 'updatedAt', label: '更新时间', group: '人员与时间', minWidth: 170, disabled: true },
+  { key: 'dueDate', label: '期望上线日期', group: '人员与时间', minWidth: 120 },
   { key: 'analysisCompletedAt', label: '分析完成时间', group: '人员与时间', minWidth: 160 },
   { key: 'confirmAt', label: '需求确认时间', group: '人员与时间', minWidth: 160 },
   { key: 'developmentCompletedAt', label: '开发完成时间', group: '人员与时间', minWidth: 160 },
@@ -661,6 +551,8 @@ const {
   pageKey: 'requirement_list',
   columns: requirementAllColumns,
   defaultKeys: requirementDefaultKeys,
+  // 更新时间为必选列：节点流转/编辑都会刷新该时间，列表按其倒序展示
+  requiredKeys: ['operations', 'updatedAt'],
 })
 
 // 配置
@@ -743,9 +635,33 @@ const filterForm = reactive({
   status: '',
   assigneeId: undefined as number | undefined,
   keyword: '',
+  keywordScope: 'all',
   nodeStatus: '',
   isOverdue: false,
 })
+
+/**
+ * 关键词搜索范围选项
+ * 选择具体范围后，搜索只在对应字段内匹配（后端 keywordScope 参数）
+ */
+const keywordScopeOptions = [
+  { value: 'all', label: '综合', hint: '需求标题 + 工单正文', placeholder: '关键词搜索' },
+  { value: 'title', label: '标题', hint: '仅匹配需求标题', placeholder: '按需求标题搜索' },
+  { value: 'requirementNo', label: '编号', hint: '仅匹配需求编号', placeholder: '按需求编号搜索' },
+  { value: 'description', label: '正文', hint: '仅匹配工单正文', placeholder: '按工单正文搜索' },
+  { value: 'assignee', label: '处理人', hint: '仅匹配当前处理人姓名', placeholder: '按当前处理人搜索' },
+  { value: 'comment', label: '评论', hint: '仅匹配需求评论内容', placeholder: '按评论内容搜索' },
+] as const
+
+const keywordPlaceholder = computed(
+  () => keywordScopeOptions.find(option => option.value === filterForm.keywordScope)?.placeholder ?? '关键词搜索',
+)
+
+/** 切换搜索范围：已输入关键词时立即按新范围重查 */
+function handleKeywordScopeChange() {
+  if (!filterForm.keyword) return
+  handleSearch()
+}
 
 // 时间筛选
 const timeDimension = ref<'createdAt' | 'analysisCompletedAt' | 'confirmAt' | 'developmentCompletedAt'>('createdAt')
@@ -774,18 +690,38 @@ const viewCounts = reactive({
   cc: 0,
 })
 
+// 时间维度筛选参数：按所选维度把日期范围映射到对应字段的起止参数
+// （"全部需求"与"我的待办/已办/关注/抄送/全部/草稿"视图共用同一口径）
+function applyTimeDimensionParams<T extends Record<string, any>>(target: T): T {
+  if (!timeRange.value) return target
+  const [start, end] = timeRange.value
+  const keyMap: Partial<Record<typeof timeDimension.value, [string, string]>> = {
+    createdAt: ['createdAtStart', 'createdAtEnd'],
+    analysisCompletedAt: ['analysisCompletedAtStart', 'analysisCompletedAtEnd'],
+    confirmAt: ['confirmAtStart', 'confirmAtEnd'],
+    developmentCompletedAt: ['developmentCompletedAtStart', 'developmentCompletedAtEnd'],
+  }
+  const keys = keyMap[timeDimension.value]
+  if (keys) {
+    target[keys[0]] = start
+    target[keys[1]] = end
+  }
+  return target
+}
+
 function buildMyListParams(): RequirementMyListQuery {
-  return {
+  return applyTimeDimensionParams({
     type: filterForm.type || undefined,
     priority: filterForm.priority || undefined,
     status: filterForm.status || undefined,
     assigneeId: filterForm.assigneeId,
     keyword: filterForm.keyword || undefined,
+    keywordScope: filterForm.keyword ? filterForm.keywordScope : undefined,
     nodeStatus: filterForm.nodeStatus || undefined,
     isOverdue: filterForm.isOverdue || undefined,
     pageNum: pagination.pageNum,
     pageSize: pagination.pageSize,
-  }
+  })
 }
 
 async function refreshViewCounts() {
@@ -875,6 +811,14 @@ async function fetchData() {
       return
     }
 
+    if (isMyAllView.value) {
+      const data = await getMyRequirementAll(buildMyListParams())
+      tableData.value = data.list
+      pagination.total = data.total
+      setCache(cacheKey, { data: data.list, total: data.total, timestamp: Date.now() })
+      return
+    }
+
     const params: RequirementQuery = {
       pageNum: pagination.pageNum,
       pageSize: pagination.pageSize,
@@ -886,23 +830,9 @@ async function fetchData() {
     if (filterForm.isOverdue) params.isOverdue = filterForm.isOverdue
     if (filterForm.assigneeId) params.assigneeId = filterForm.assigneeId
     if (filterForm.keyword) params.keyword = filterForm.keyword
+    if (filterForm.keyword) params.keywordScope = filterForm.keywordScope
 
-    if (timeRange.value) {
-      const [start, end] = timeRange.value
-      if (timeDimension.value === 'createdAt') {
-        params.createdAtStart = start
-        params.createdAtEnd = end
-      } else if (timeDimension.value === 'analysisCompletedAt') {
-        params.analysisCompletedAtStart = start
-        params.analysisCompletedAtEnd = end
-      } else if (timeDimension.value === 'confirmAt') {
-        params.confirmAtStart = start
-        params.confirmAtEnd = end
-      } else if (timeDimension.value === 'developmentCompletedAt') {
-        params.developmentCompletedAtStart = start
-        params.developmentCompletedAtEnd = end
-      }
-    }
+    applyTimeDimensionParams(params)
 
     const data = await requirementApi.getRequirementList(params)
     tableData.value = data.list
@@ -980,6 +910,7 @@ function handleReset() {
   filterForm.isOverdue = false
   filterForm.assigneeId = undefined
   filterForm.keyword = ''
+  filterForm.keywordScope = 'all'
   timeDimension.value = 'createdAt'
   timeRange.value = null
   pagination.pageNum = 1
@@ -998,6 +929,7 @@ function handleViewModeChange(name: string | number) {
   else if (value === 'done') query.view = 'done'
   else if (value === 'follows') query.view = 'follows'
   else if (value === 'cc') query.view = 'cc'
+  else if (value === 'my-all') query.view = 'my-all'
   router.replace({ query })
   // 主数据优先加载，视图计数异步刷新不阻塞
   fetchData()
@@ -1025,7 +957,10 @@ function handleOpen(row: Requirement) {
 }
 
 function handleViewDetail(id: number) {
-  router.push({ name: 'RequirementDetail', params: { id } })
+  // 携带来源视图：详情页返回（返回按钮/面包屑/浏览器后退）时恢复对应 tab 列表
+  const query: Record<string, string> = {}
+  if (viewMode.value !== 'all') query.view = viewMode.value
+  router.push({ name: 'RequirementDetail', params: { id }, query })
 }
 
 async function handleDelete(id: number) {
@@ -1038,14 +973,14 @@ async function handleDelete(id: number) {
   }
 }
 
-/** 判断是否可以删除需求（草稿：创建人可删除；非草稿：需要权限） */
+/** 判断是否可以删除需求：后端按 delete() 同款口径计算（草稿=创建人；非草稿=创建者或管理员+删除权限+无流转记录） */
 function canDeleteRequirement(row: Requirement) {
   // 草稿状态：创建人可以删除（无需特殊权限）
   if (row.isDraft) {
     return row.creatorId === userStore.userInfo?.id
   }
-  // 非草稿状态：需要删除权限
-  return hasPermission('button:requirement:delete')
+  // 非草稿：以后端 canDelete 为准（含「已流转不可删」判定，避免渲染必然报错的按钮）
+  return row.canDelete === true
 }
 
 async function handleToggleFollow(row: Requirement) {
@@ -1140,24 +1075,10 @@ async function handleExport() {
   if (filterForm.status) params.status = filterForm.status
   if (filterForm.assigneeId) params.assigneeId = filterForm.assigneeId
   if (filterForm.keyword) params.keyword = filterForm.keyword
+  if (filterForm.keyword) params.keywordScope = filterForm.keywordScope
 
-  // 高级筛选：时间维度
-  if (isAllView.value && timeRange.value) {
-    const [start, end] = timeRange.value
-    if (timeDimension.value === 'createdAt') {
-      params.createdAtStart = start
-      params.createdAtEnd = end
-    } else if (timeDimension.value === 'analysisCompletedAt') {
-      params.analysisCompletedAtStart = start
-      params.analysisCompletedAtEnd = end
-    } else if (timeDimension.value === 'confirmAt') {
-      params.confirmAtStart = start
-      params.confirmAtEnd = end
-    } else if (timeDimension.value === 'developmentCompletedAt') {
-      params.developmentCompletedAtStart = start
-      params.developmentCompletedAtEnd = end
-    }
-  }
+  // 高级筛选：时间维度（各视图导出与列表共用同一口径）
+  applyTimeDimensionParams(params)
 
   // 视图类型映射
   const viewMap: Record<string, string> = {
@@ -1167,6 +1088,7 @@ async function handleExport() {
     done: 'done',
     follows: 'follows',
     cc: 'cc',
+    'my-all': 'my-all',
   }
   const view = viewMap[viewMode.value] || 'all'
 
@@ -1239,6 +1161,29 @@ function statusTagType(status: string): string {
   return map[status] || 'info'
 }
 
+// 节点状态选择器已移除（与「状态」重复），但保留 nodeStatus 作为隐藏筛选值：
+// 首页卡片深链 ?nodeStatus= 仍需生效——单码直接映射到「状态」下拉，多码（逗号串）走隐藏传参
+const NODE_STATUS_LABEL_MAP: Record<string, string> = {
+  DRAFT: '新建',
+  PENDING_ANALYSIS: '待分析',
+  PENDING_CONFIRM: '待确认',
+  PENDING_REVIEW: '待评审',
+  IN_DEVELOPMENT: '开发中',
+  IN_TESTING: '测试中',
+  DEPLOYED: '已上线',
+  ACCEPTED: '已验收',
+  CANCELLED: '已取消',
+  REJECTED: '已拒绝',
+  ROLLBACK: '打回',
+  TEST_FAILED: '测试不通过',
+  ACCEPTANCE_FAILED: '验收不通过',
+}
+
+/** 手动改「状态」时清掉隐藏的 nodeStatus，避免两个过滤条件同时下发给后端做 AND */
+function handleStatusFilterChange() {
+  filterForm.nodeStatus = ''
+}
+
 onMounted(async () => {
   // 并行加载独立的配置数据（不相互依赖）
   await Promise.all([
@@ -1247,11 +1192,19 @@ onMounted(async () => {
     loadColumnConfig(),
   ])
 
-  // 从 URL query 读取 nodeStatus / isOverdue 筛选条件（由仪表盘卡片点击传入）
+  // 从 URL query 读取 nodeStatus / isOverdue 筛选条件（由首页/仪表盘卡片点击传入）
   const nodeStatusFromQuery = route.query.nodeStatus
   const isOverdueFromQuery = route.query.isOverdue
   if (nodeStatusFromQuery) {
-    filterForm.nodeStatus = String(nodeStatusFromQuery)
+    const raw = String(nodeStatusFromQuery)
+    const codes = raw.split(',').map(s => s.trim()).filter(Boolean)
+    if (codes.length === 1 && NODE_STATUS_LABEL_MAP[codes[0]]) {
+      // 单码：映射为「状态」下拉值，界面上可见
+      filterForm.status = NODE_STATUS_LABEL_MAP[codes[0]]
+    } else {
+      // 多码或未知码：保留隐藏传参（UI 上无对应选择器）
+      filterForm.nodeStatus = raw
+    }
   }
   if (isOverdueFromQuery !== undefined && isOverdueFromQuery !== null) {
     const overdueValue = Array.isArray(isOverdueFromQuery) ? isOverdueFromQuery[0] : isOverdueFromQuery
@@ -1366,7 +1319,7 @@ watch(tableData, (rows) => {
 }
 
 /* ============================================
-   视图切换区域 - 下拉选择 + 快捷标签
+   视图切换区域 - 平铺标签栏
    ============================================ */
 .view-switch-area {
   display: flex;
@@ -1376,60 +1329,37 @@ watch(tableData, (rows) => {
   min-width: 0;
 }
 
-/* 视图下拉选择器 */
-.view-dropdown {
-  flex-shrink: 0;
-
-  &__trigger {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    height: 30px;
-    padding: 0 10px;
-    font-size: 13px;
-    font-weight: 500;
-
-    .view-dropdown__icon {
-      font-size: 14px;
-    }
-
-    .view-dropdown__text {
-      max-width: 100px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .view-dropdown__arrow {
-      font-size: 12px;
-      margin-left: 2px;
-      transition: transform 0.2s ease;
-    }
-  }
-}
-
-/* 快捷标签 */
-.view-quick-tags {
+/* 视图标签栏：平铺全部视图 */
+.view-tabs {
   display: flex;
   align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
+  gap: 6px;
+  flex-wrap: wrap;
 
-  .view-quick-tag {
+  /* el-button 相邻默认 margin-left:12px，会与 flex gap 叠加，抹平 */
+  .view-tab + .view-tab {
+    margin-left: 0;
+  }
+
+  .view-tab {
     position: relative;
-    height: 28px;
-    padding: 0 10px;
-    font-size: 12px;
+    height: 30px;
+    padding: 0 12px;
+    font-size: 13px;
     font-weight: 500;
     border-radius: var(--radius-md);
 
-    .el-icon {
-      font-size: 13px;
-      margin-right: 3px;
+    .view-tab__icon {
+      font-size: 14px;
+      margin-right: 4px;
+    }
+
+    .view-tab__text {
+      white-space: nowrap;
     }
 
     &__badge {
-      margin-left: 2px;
+      margin-left: 4px;
 
       :deep(.el-badge__content) {
         font-size: 10px;
@@ -1438,24 +1368,6 @@ watch(tableData, (rows) => {
         padding: 0 4px;
       }
     }
-  }
-}
-
-/* 下拉菜单项激活状态 */
-:deep(.el-dropdown-menu__item.is-active) {
-  color: var(--el-color-primary);
-  background-color: var(--el-color-primary-light-9);
-  font-weight: 600;
-}
-
-.view-dropdown__badge {
-  margin-left: 4px;
-
-  :deep(.el-badge__content) {
-    font-size: 10px;
-    height: 14px;
-    line-height: 14px;
-    padding: 0 4px;
   }
 }
 
@@ -1701,13 +1613,61 @@ watch(tableData, (rows) => {
 
 /* ============================================
    关键词搜索（搜索按钮嵌入 input append）
+   提高优先级：.filter-item :deep(.el-input) 的 width:auto/min-width:0 会把本组件压扁，
+   导致 prepend/append 单元格被压缩、内部定宽的下拉和按钮溢出互相遮挡
    ============================================ */
-.filter-input--keyword {
-  width: 226px;
-  min-width: 226px;
+.filter-item--search .filter-input--keyword {
+  width: 400px;
+  min-width: 400px;
+  flex-shrink: 0;
 
   :deep(.el-input__wrapper) {
     min-width: 0;
+  }
+
+  // prepend/append 是 flex 单元格，禁止收缩才能装下内部定宽的范围下拉与搜索按钮
+  :deep(.el-input-group__prepend),
+  :deep(.el-input-group__append) {
+    flex-shrink: 0;
+  }
+
+  // 单元格宽度必须与内部定宽内容精确匹配（flex-basis 定死），
+  // 否则 EP 的 flex 分配会把单元格压小于内容，内容居中溢出、左右互相遮挡
+  :deep(.el-input-group__prepend) {
+    flex: 0 0 92px;
+    width: 92px;
+  }
+
+  :deep(.el-input-group__append) {
+    flex: 0 0 62px;
+    width: 62px;
+  }
+
+  // prepend 区域内的搜索范围下拉：去掉自身边框，与输入框融为一体
+  :deep(.el-input-group__prepend) {
+    padding: 0;
+    background: var(--el-fill-color-light);
+    border-right-color: var(--el-border-color);
+
+    .el-select {
+      width: 92px;
+      // EP 默认 margin: 0 -20px 是为抵消单元格自带 20px padding 的；单元格 padding 已归零，
+      // 保留负 margin 会让下拉比单元格宽 40px，向两侧溢出被邻块遮挡
+      margin: 0;
+    }
+
+    .el-select__wrapper {
+      min-height: 30px;
+      padding: 0 24px 0 10px;
+      background: transparent;
+      box-shadow: none !important;
+      font-size: 13px;
+    }
+
+    .el-select__suffix {
+      right: 7px;
+      font-size: 12px;
+    }
   }
 
   // append 区域内的搜索按钮：主色填充 + 紧凑布局
@@ -1716,43 +1676,23 @@ watch(tableData, (rows) => {
     background: transparent;
     border: none;
     box-shadow: none;
+
+    // 同 prepend：EP 默认的 margin: 0 -20px 会让按钮溢出单元格、盖住输入框的清除图标
+    .el-button {
+      margin: 0;
+    }
   }
 }
 
-// 聚焦输入框时浮出的搜索范围说明（slot 内容带 scoped 属性，可在此样式化）
-.keyword-scope {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+// 搜索范围下拉选项：左侧范围名称 + 右侧匹配说明
+.keyword-scope-option__label {
+  font-weight: 600;
+}
 
-  &__row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    line-height: 1.5;
-
-    .el-icon {
-      flex-shrink: 0;
-      font-size: 14px;
-    }
-
-    &--hit {
-      color: var(--el-text-color-primary);
-
-      .el-icon {
-        color: var(--el-color-success);
-      }
-    }
-
-    &--miss {
-      color: var(--el-text-color-secondary);
-
-      .el-icon {
-        color: var(--el-text-color-secondary);
-      }
-    }
-  }
+.keyword-scope-option__hint {
+  margin-left: 8px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 
 .filter-search-append {
@@ -1852,7 +1792,7 @@ watch(tableData, (rows) => {
     flex-wrap: wrap;
   }
 
-  .view-quick-tags {
+  .view-tabs {
     width: 100%;
     overflow-x: auto;
 
@@ -1884,7 +1824,7 @@ watch(tableData, (rows) => {
   }
 
   .filter-date-range,
-  .filter-input--keyword {
+  .filter-item--search .filter-input--keyword {
     width: 100%;
     min-width: 0;
   }

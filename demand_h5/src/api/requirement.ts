@@ -64,6 +64,7 @@ export interface TransitionHistoryItem {
   action?: string | null
   comment?: string | null
   operatorName?: string | null
+  operatorRoleName?: string | null
   completedAt?: string | null
   createdAt?: string | null
   durationDisplay?: string | null

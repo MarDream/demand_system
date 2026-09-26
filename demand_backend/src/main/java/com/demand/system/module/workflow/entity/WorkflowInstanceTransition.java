@@ -26,6 +26,11 @@ public class WorkflowInstanceTransition {
 
     private Long operatorId;
 
+    /**
+     * 操作人流转时的角色名称快照（多个角色取展示优先级最高者）
+     */
+    private String operatorRoleName;
+
     private String action;
 
     private String comment;
@@ -107,6 +112,14 @@ public class WorkflowInstanceTransition {
 
     public void setOperatorId(Long operatorId) {
         this.operatorId = operatorId;
+    }
+
+    public String getOperatorRoleName() {
+        return operatorRoleName;
+    }
+
+    public void setOperatorRoleName(String operatorRoleName) {
+        this.operatorRoleName = operatorRoleName;
     }
 
     public String getAction() {

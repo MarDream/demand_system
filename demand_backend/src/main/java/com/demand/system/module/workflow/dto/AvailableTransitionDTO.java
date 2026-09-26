@@ -40,6 +40,12 @@ public class AvailableTransitionDTO {
      */
     private String assigneeScopeName;
 
+    /**
+     * 处理人下拉框的辅助标签文字（仅多选时显示），用于说明"全部"选项的含义。
+     * 例如："该角色下有 3 位成员，选择「全部」则所有成员均可审批"
+     */
+    private String assigneeDisplayHint;
+
     public String getToNodeId() {
         return toNodeId;
     }
@@ -134,5 +140,13 @@ public class AvailableTransitionDTO {
 
     public void setAssigneeScopeName(String assigneeScopeName) {
         this.assigneeScopeName = assigneeScopeName;
+    }
+
+    public String getAssigneeDisplayHint() {
+        return assigneeDisplayHint;
+    }
+
+    public void setAssigneeDisplayHint(String assigneeDisplayHint) {
+        this.assigneeDisplayHint = assigneeDisplayHint;
     }
 }

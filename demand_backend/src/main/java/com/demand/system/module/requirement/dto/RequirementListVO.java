@@ -45,6 +45,8 @@ public class RequirementListVO {
 
     // 权限字段（前端操作按钮显示控制）
     private Boolean canEdit;
+    /** 当前用户是否可删除（与 RequirementServiceImpl#delete 的授权口径对齐；列表页删除按钮显示控制） */
+    private Boolean canDelete;
     private String operationType; // 'edit' | 'approve' | 'view' （待办/已办视图使用）
 
     // Getters and Setters
@@ -99,6 +101,8 @@ public class RequirementListVO {
     public void setFollowed(Boolean followed) { this.followed = followed; }
     public Boolean getCanEdit() { return canEdit; }
     public void setCanEdit(Boolean canEdit) { this.canEdit = canEdit; }
+    public Boolean getCanDelete() { return canDelete; }
+    public void setCanDelete(Boolean canDelete) { this.canDelete = canDelete; }
     public String getOperationType() { return operationType; }
     public void setOperationType(String operationType) { this.operationType = operationType; }
 }

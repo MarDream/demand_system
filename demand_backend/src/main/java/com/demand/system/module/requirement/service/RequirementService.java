@@ -65,6 +65,11 @@ public interface RequirementService {
      */
     PageResult<RequirementVO> listMyDone(RequirementMyListQueryDTO query, Long userId);
 
+    /**
+     * 我的全部：合并草稿/待办/已办/关注/抄送，按更新时间倒序。
+     */
+    PageResult<RequirementVO> listMyAll(RequirementMyListQueryDTO query, Long userId);
+
     void follow(Long requirementId, Long userId);
 
     void unfollow(Long requirementId, Long userId);

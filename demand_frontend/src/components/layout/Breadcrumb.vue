@@ -59,22 +59,29 @@ watch(
 const breadcrumbs = computed(() => {
   const chain = appStore.getBreadcrumbChain(activeMenuPath.value)
   if (chain.length > 0) {
-    if (route.path === activeMenuPath.value) {
-      return chain
+    let items = chain
+    if (route.path !== activeMenuPath.value) {
+      const lastItem = chain[chain.length - 1]
+      if (currentTitle.value && lastItem?.name !== currentTitle.value) {
+        items = [...chain, { name: currentTitle.value, path: null }]
+      }
     }
-
-    const lastItem = chain[chain.length - 1]
-    if (!currentTitle.value || lastItem?.name === currentTitle.value) {
-      return chain
+    // 需求详情：把来源视图（view）带回列表链接，返回时恢复进入前的 tab
+    if (route.name === 'RequirementDetail' && items.length > 1) {
+      const view = typeof route.query.view === 'string' && route.query.view ? route.query.view : null
+      if (view) {
+        const parentIndex = items.length - 2
+        const parent = items[parentIndex]
+        if (parent?.path) {
+          return [
+            ...items.slice(0, parentIndex),
+            { ...parent, path: `${parent.path}?view=${view}` },
+            ...items.slice(parentIndex + 1),
+          ]
+        }
+      }
     }
-
-    return [
-      ...chain,
-      {
-        name: currentTitle.value,
-        path: null,
-      },
-    ]
+    return items
   }
 
   return route.matched

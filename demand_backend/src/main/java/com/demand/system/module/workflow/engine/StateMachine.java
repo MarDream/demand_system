@@ -118,7 +118,9 @@ public class StateMachine {
         UpdateWrapper<Requirement> updateWrapper = new UpdateWrapper<>();
         updateWrapper.eq("id", requirementId)
                      .eq("status", currentStateName)  // 乐观锁条件：状态未变化
-                     .set("status", targetState.getName());
+                     .set("status", targetState.getName())
+                     // UpdateWrapper 直写不触发自动填充，节点流转须显式刷新更新时间
+                     .set("updated_at", LocalDateTime.now());
         int updated = requirementMapper.update(null, updateWrapper);
         if (updated <= 0) {
             log.warn("Requirement {} status changed concurrently during update, transition aborted", requirementId);

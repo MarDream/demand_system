@@ -309,12 +309,28 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException("用户不存在");
         }
 
-        // 入参已通过 Bean Validation 校验，此处规范 primary 为大写十六进制后序列化
+        // 入参已通过 Bean Validation 校验，此处规范 primary 为大写十六进制后序列化。
+        // sidebar 为后增字段：历史客户端不传时沿用库里已保存的值（避免旧端保存把用户侧边栏风格抹成默认）
+        String sidebar = (request.getSidebar() == null || request.getSidebar().isBlank())
+                ? extractStoredSidebar(user.getAppearanceConfig())
+                : request.getSidebar();
         String config = String.format(
-                "{\"mode\":\"%s\",\"primary\":\"%s\",\"radius\":\"%s\"}",
-                request.getMode(), request.getPrimary().toUpperCase(), request.getRadius());
+                "{\"mode\":\"%s\",\"primary\":\"%s\",\"radius\":\"%s\",\"sidebar\":\"%s\"}",
+                request.getMode(), request.getPrimary().toUpperCase(), request.getRadius(), sidebar);
         user.setAppearanceConfig(config);
         sysUserMapper.updateById(user);
+    }
+
+    /** 从已存储的外观 JSON 中取 sidebar 字段；缺失/解析失败回退 classic */
+    private String extractStoredSidebar(String appearanceConfig) {
+        if (appearanceConfig != null && appearanceConfig.contains("\"sidebar\"")) {
+            java.util.regex.Matcher matcher = java.util.regex.Pattern
+                    .compile("\"sidebar\"\\s*:\\s*\"([a-z-]+)\"").matcher(appearanceConfig);
+            if (matcher.find()) {
+                return matcher.group(1);
+            }
+        }
+        return "classic";
     }
 
     @Override

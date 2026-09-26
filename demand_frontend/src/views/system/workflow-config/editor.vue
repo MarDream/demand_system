@@ -230,6 +230,19 @@
                   <el-checkbox v-if="nodeForm.nodeType === 'approval'" v-model="nodeForm.allowModifyType">
                     允许变更工单类型
                   </el-checkbox>
+                  <!-- 需求详情页按钮可见性开关：勾选显示、不勾选隐藏（历史节点缺省显示） -->
+                  <el-checkbox v-model="nodeForm.allowEdit">
+                    允许编辑
+                  </el-checkbox>
+                  <el-checkbox v-model="nodeForm.allowSplit">
+                    允许拆分子需求
+                  </el-checkbox>
+                  <el-checkbox
+                    v-if="nodeForm.nodeType !== 'start'"
+                    v-model="nodeForm.allowReject"
+                  >
+                    允许驳回
+                  </el-checkbox>
                 </div>
               </el-form-item>
 
@@ -318,7 +331,8 @@
                 </el-form-item>
 
                 <el-form-item v-if="nodeForm.assigneeType === 'SPECIFIED_ROLE'" label="指定角色">
-                  <RoleSelect v-model="nodeForm.assigneeRoleId" placeholder="请选择角色" />
+                  <!-- el-tree-select 不消费 el-form 的禁用上下文，查看模式必须显式传 disabled -->
+                  <RoleSelect v-model="nodeForm.assigneeRoleId" placeholder="请选择角色" :disabled="isViewMode" />
                 </el-form-item>
 
                 <el-form-item v-if="nodeForm.assigneeType === 'SPECIFIED_ROLE_GROUP'" label="指定角色组">
@@ -351,6 +365,7 @@
                     :data="orgTreeData"
                     :props="{ label: 'name', value: 'id', children: 'children' }"
                     placeholder="请选择组织节点"
+                    :disabled="isViewMode"
                     check-strictly
                     filterable
                     clearable
@@ -400,6 +415,7 @@
                 <ParallelConfig
                   :parallel-type="nodeForm.parallelType"
                   :branches="nodeForm.parallelBranches"
+                  :disabled="isViewMode"
                   @update:parallel-type="nodeForm.parallelType = $event as 'AND' | 'OR'"
                   @update:branches="nodeForm.parallelBranches = $event"
                 />
@@ -495,6 +511,7 @@
               <el-form-item label="条件">
                 <ConditionConfig
                   :model-value="edgeConditionModel"
+                  :disabled="isViewMode"
                   @update:model-value="onEdgeConditionModelUpdate"
                   @update:expr="edgeForm.conditionExpr = $event"
                 />
@@ -710,6 +727,10 @@ const nodeForm = reactive<Partial<WorkflowNodeDTO> & {
   requireAttachment?: boolean
   /** 审核节点是否允许在流转时切换需求类型 */
   allowModifyType?: boolean
+  /** 需求详情页按钮可见性开关（缺省 true，历史节点不改变既有行为） */
+  allowEdit?: boolean
+  allowSplit?: boolean
+  allowReject?: boolean
   notifyOnEnter?: boolean
   notifyScope?: 'PATH_APPROVERS' | 'ACTUAL_HANDLERS'
   ratingConfig: {
@@ -754,6 +775,9 @@ const nodeForm = reactive<Partial<WorkflowNodeDTO> & {
   projectRequired: false,
   requireAttachment: false,
   allowModifyType: false,
+  allowEdit: true,
+  allowSplit: true,
+  allowReject: true,
   notifyOnEnter: false,
   notifyScope: 'PATH_APPROVERS',
   ratingConfig: {
@@ -1844,6 +1868,9 @@ const handleNodeClick = (data: any) => {
     projectRequired: data.properties?.projectRequired ?? data.properties?.properties?.projectRequired ?? false,
     requireAttachment: data.properties?.requireAttachment ?? data.properties?.properties?.requireAttachment ?? false,
     allowModifyType: data.properties?.allowModifyType ?? data.properties?.properties?.allowModifyType ?? false,
+    allowEdit: data.properties?.allowEdit ?? data.properties?.properties?.allowEdit ?? true,
+    allowSplit: data.properties?.allowSplit ?? data.properties?.properties?.allowSplit ?? true,
+    allowReject: data.properties?.allowReject ?? data.properties?.properties?.allowReject ?? true,
     notifyOnEnter: data.properties?.notifyOnEnter ?? data.properties?.properties?.notifyOnEnter ?? false,
     notifyScope: (() => {
       const scope = data.properties?.notifyScope ?? data.properties?.properties?.notifyScope
@@ -1999,6 +2026,9 @@ const handleSaveNodeConfig = () => {
       projectRequired: showProjectRequiredCheckbox.value ? nodeForm.projectRequired : false,
       requireAttachment: nodeForm.requireAttachment,
       allowModifyType: nodeForm.nodeType === 'approval' ? nodeForm.allowModifyType : false,
+      allowEdit: nodeForm.nodeType === 'end' ? false : nodeForm.allowEdit,
+      allowSplit: nodeForm.nodeType === 'end' ? false : nodeForm.allowSplit,
+      allowReject: (nodeForm.nodeType === 'start' || nodeForm.nodeType === 'end') ? false : nodeForm.allowReject,
       notifyOnEnter: nodeForm.notifyOnEnter ?? false,
       notifyScope: nodeForm.notifyOnEnter ? (nodeForm.notifyScope || 'PATH_APPROVERS') : undefined,
       ratingConfig: nodeForm.nodeType === 'approval' ? nodeForm.ratingConfig : undefined,
@@ -2215,14 +2245,16 @@ const handleSave = async () => {
         nodeId: node.id!,
         nodeType: node.type as any,
         nodeName: node.text?.value || '',
-        positionX: node.x!,
-        positionY: node.y!,
+        // 画布坐标缩放/拖拽后会带小数，后端 position_x/position_y 是 int，提交前取整
+        // 坐标缺失时保持不提交（undefined），不要用 ?? 0 兜底，否则节点会被静默挪到原点
+        positionX: node.x == null ? undefined : Math.round(node.x),
+        positionY: node.y == null ? undefined : Math.round(node.y),
         assigneeType: node.properties?.assigneeType,
         assigneeRoleId: node.properties?.assigneeRoleId,
         assigneeRoleGroupId: node.properties?.assigneeRoleGroupId,
         assigneeOrgId: node.properties?.assigneeOrgId,
         assigneeUserIds: node.properties?.assigneeUserIds,
-        timeoutHours: node.properties?.timeoutHours,
+        timeoutHours: node.properties?.timeoutHours == null ? undefined : Math.round(node.properties.timeoutHours),
         timeoutAction: node.properties?.timeoutAction,
         properties: node.properties
       })),
@@ -3108,6 +3140,111 @@ onBeforeUnmount(() => {
   &.active .resize-bar {
     background: var(--el-color-primary, var(--color-primary));
     height: 48px;
+  }
+}
+
+/* ===== 查看模式禁用控件：不置灰（保持正常观感），鼠标箭头显示「禁止」光标 ===== */
+:deep(.config-drawer .el-form) {
+  .el-select__wrapper.is-disabled {
+    background-color: var(--el-fill-color-blank);
+    box-shadow: 0 0 0 1px var(--el-border-color) inset;
+    cursor: not-allowed;
+
+    .el-select__selected-item,
+    .el-select__placeholder,
+    .el-select__placeholder.is-transparent {
+      color: var(--el-select-input-color, var(--el-text-color-regular));
+    }
+  }
+
+  .el-input.is-disabled .el-input__wrapper {
+    background-color: var(--el-fill-color-blank);
+    box-shadow: 0 0 0 1px var(--el-border-color) inset;
+    cursor: not-allowed;
+  }
+
+  .el-input.is-disabled .el-input__inner {
+    color: var(--el-text-color-regular);
+    -webkit-text-fill-color: var(--el-text-color-regular);
+    cursor: not-allowed;
+  }
+
+  .el-textarea.is-disabled .el-textarea__inner {
+    color: var(--el-text-color-regular);
+    background-color: var(--el-fill-color-blank);
+    box-shadow: 0 0 0 1px var(--el-border-color) inset;
+    cursor: not-allowed;
+  }
+
+  // 开关：未勾选时保持关闭态原色（勾选态保留 EP 默认，避免勾选开关被画成关闭观感）
+  .el-switch.is-disabled:not(.is-checked) .el-switch__core {
+    background: var(--el-switch-off-color);
+    border-color: var(--el-switch-off-color);
+    opacity: 1;
+    cursor: not-allowed;
+  }
+
+  .el-checkbox__input.is-disabled .el-checkbox__inner {
+    background-color: var(--el-fill-color-blank);
+    border-color: var(--el-border-color);
+    cursor: not-allowed;
+  }
+
+  .el-checkbox__input.is-disabled.is-checked .el-checkbox__inner {
+    background-color: var(--el-color-primary);
+    border-color: var(--el-color-primary);
+  }
+
+  .el-checkbox__input.is-disabled.is-checked .el-checkbox__inner::after {
+    border-color: #fff;
+  }
+
+  .el-checkbox__input.is-disabled + .el-checkbox__label,
+  .el-radio__input.is-disabled + .el-radio__label {
+    color: var(--el-text-color-regular);
+    cursor: not-allowed;
+  }
+
+  .el-radio__input.is-disabled .el-radio__inner {
+    background: var(--el-fill-color-blank);
+    border-color: var(--el-border-color);
+    cursor: not-allowed;
+  }
+
+  .el-radio__input.is-disabled.is-checked .el-radio__inner {
+    background: var(--el-color-primary);
+    border-color: var(--el-color-primary);
+  }
+
+  .el-radio__input.is-disabled.is-checked .el-radio__inner::after {
+    background: #fff;
+  }
+
+  .el-button.is-disabled {
+    opacity: 1;
+    cursor: not-allowed;
+  }
+
+  .el-button--primary.is-disabled {
+    color: var(--el-color-white);
+    background-color: var(--el-color-primary);
+    border-color: var(--el-color-primary);
+  }
+
+  .el-button--danger.is-disabled {
+    color: var(--el-color-danger);
+    background-color: var(--el-fill-color-blank);
+    border-color: var(--el-color-danger);
+  }
+
+  // ConditionConfig 的自定义按钮
+  .btn-remove:disabled,
+  .btn-add-rule:disabled {
+    opacity: 1;
+    color: var(--el-text-color-regular);
+    border-color: var(--el-border-color);
+    background: transparent;
+    cursor: not-allowed;
   }
 }
 </style>

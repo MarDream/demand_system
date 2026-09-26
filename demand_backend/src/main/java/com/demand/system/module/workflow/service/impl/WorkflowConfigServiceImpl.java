@@ -602,11 +602,24 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             throw new BusinessException("版本不存在");
         }
 
+        // 启停开关不改变行记录：activate() 会刷新 updatedAt 并重置 activatedAt，deactivate() 也会刷新 updatedAt，
+        // 这里把时间钉回原值（显式赋值同时抑制 DB 的 ON UPDATE CURRENT_TIMESTAMP），
+        // 避免拨开关导致该行按编辑/发布时间重排。审核通过、发布流程仍走 activate() 正常刷新时间。
+        LocalDateTime originalUpdatedAt = version.getUpdatedAt();
+        LocalDateTime originalActivatedAt = version.getActivatedAt();
+
         boolean active = Boolean.TRUE.equals(activationDTO.getActive());
-        if (active) {
-            return workflowActivationService.activate(versionId);
-        }
-        return workflowActivationService.deactivate(versionId);
+        WorkflowVersionDTO result = active
+                ? workflowActivationService.activate(versionId)
+                : workflowActivationService.deactivate(versionId);
+
+        // 发布时间仅首次启用时建立；重复启停保持原值
+        LocalDateTime pinnedActivatedAt = originalActivatedAt != null ? originalActivatedAt : result.getActivatedAt();
+        workflowVersionMapper.update(null, new LambdaUpdateWrapper<WorkflowVersion>()
+                .eq(WorkflowVersion::getId, versionId)
+                .set(WorkflowVersion::getUpdatedAt, originalUpdatedAt)
+                .set(WorkflowVersion::getActivatedAt, pinnedActivatedAt));
+        return result;
     }
 
     @Override

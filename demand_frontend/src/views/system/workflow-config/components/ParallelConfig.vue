@@ -14,7 +14,8 @@
       <el-card shadow="never">
         <div class="branch-header">
           <span class="branch-title">分支 {{ index + 1 }}</span>
-          <el-button type="danger" text :icon="Delete" @click="removeBranch(index)">删除</el-button>
+          <!-- el-button 不消费 el-form 的禁用上下文，查看模式需显式传入 disabled -->
+          <el-button type="danger" text :icon="Delete" :disabled="disabled" @click="removeBranch(index)">删除</el-button>
         </div>
         <el-form-item label="分支ID">
           <el-input v-model="branch.branchId" placeholder="如 branch_tech" />
@@ -62,7 +63,7 @@
     </div>
 
     <div class="branch-footer">
-      <el-button type="primary" plain :icon="Plus" @click="addBranch">添加分支</el-button>
+      <el-button type="primary" plain :icon="Plus" :disabled="disabled" @click="addBranch">添加分支</el-button>
     </div>
   </div>
 </template>
@@ -84,10 +85,19 @@ interface ParallelBranchConfig {
   condition: BranchCondition
 }
 
-const props = defineProps<{
-  parallelType?: string
-  branches?: ParallelBranchConfig[]
-}>()
+const props = withDefaults(
+  defineProps<{
+    parallelType?: string
+    branches?: ParallelBranchConfig[]
+    /** 查看模式禁用全部增删按钮（表单控件已由 el-form 禁用覆盖，el-button 不吃表单上下文） */
+    disabled?: boolean
+  }>(),
+  {
+    parallelType: undefined,
+    branches: undefined,
+    disabled: false,
+  },
+)
 
 const emit = defineEmits<{
   'update:parallelType': [value: string]

@@ -57,8 +57,8 @@ export function updateProfile(data: { email: string; phone?: string; avatar?: st
   return request.put<AuthUserInfo>('/v1/auth/profile', data)
 }
 
-/** 个人设置：保存本人外观配置（主题模式/主题色/圆角档位），跟随账号持久化 */
-export function saveAppearance(data: { mode: string; primary: string; radius: string }) {
+/** 个人设置：保存本人外观配置（主题模式/主题色/圆角档位/侧边栏风格），跟随账号持久化 */
+export function saveAppearance(data: { mode: string; primary: string; radius: string; sidebar?: string }) {
   return request.put<void>('/v1/auth/appearance', data)
 }
 

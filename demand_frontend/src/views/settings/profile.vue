@@ -142,6 +142,35 @@
           </div>
         </el-col>
       </el-row>
+
+      <!-- 侧边栏风格：六种高级质感方案 + 经典默认 -->
+      <div class="appearance-sub-title sidebar-style-title">侧边栏风格</div>
+      <div class="sidebar-style-row">
+        <div
+          v-for="s in SIDEBAR_STYLES"
+          :key="s.value"
+          class="sidebar-style-option"
+          :class="{ 'is-active': appearanceSidebar === s.value }"
+          @click="appearanceSidebar = s.value"
+        >
+          <span class="sidebar-style-preview" :class="`sidebar-style-preview--${s.value}`">
+            <i class="ssp-page"></i>
+            <i class="ssp-bar">
+              <i class="ssp-logo"></i>
+              <i class="ssp-line ssp-line--1"></i>
+              <i class="ssp-line ssp-line--2 is-active"></i>
+              <i class="ssp-line ssp-line--3"></i>
+            </i>
+            <i class="ssp-panel">
+              <i class="ssp-panel-title"></i>
+              <i class="ssp-panel-line"></i>
+              <i class="ssp-panel-line short"></i>
+            </i>
+          </span>
+          <span class="sidebar-style-name">{{ s.name }}</span>
+          <span class="sidebar-style-desc">{{ s.desc }}</span>
+        </div>
+      </div>
     </el-card>
 
     <el-row :gutter="16">
@@ -243,6 +272,7 @@ import {
   applyAppearance,
   PRIMARY_SWATCHES,
   RADIUS_LEVELS,
+  SIDEBAR_STYLES,
   type ThemeMode,
 } from '@/composables/useAppearance'
 
@@ -252,6 +282,7 @@ const appearance = useAppearance()
 const appearanceMode = appearance.mode
 const appearancePrimary = appearance.primary
 const appearanceRadius = appearance.radius
+const appearanceSidebar = appearance.sidebar
 const themeCards: Array<{ key: ThemeMode; name: string }> = [
   { key: 'light', name: '浅色' },
   { key: 'dark', name: '深色' },
@@ -1136,6 +1167,257 @@ onMounted(async () => {
   .radius-desc {
     font-size: 11px;
     color: var(--color-muted-text);
+  }
+}
+
+// ----- 侧边栏风格选择器 -----
+.sidebar-style-title {
+  margin-top: 18px;
+}
+
+.sidebar-style-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.sidebar-style-option {
+  cursor: pointer;
+  border: 1px solid var(--color-border);
+  border-radius: var(--app-radius-input);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+
+  &:hover {
+    border-color: var(--color-border-hover);
+  }
+
+  &.is-active {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px var(--color-primary-bg);
+
+    .sidebar-style-name {
+      color: var(--color-primary);
+      font-weight: 600;
+    }
+  }
+
+  .sidebar-style-name {
+    font-size: 13px;
+    color: var(--color-text-primary);
+    line-height: 1.4;
+  }
+
+  .sidebar-style-desc {
+    font-size: 11px;
+    color: var(--color-muted-text);
+    line-height: 1.4;
+    min-height: 15px;
+  }
+}
+
+// 迷你预览：一个页面底 + 侧边栏条，按风格变体绘制
+.sidebar-style-preview {
+  position: relative;
+  display: block;
+  height: 56px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  margin-bottom: 4px;
+
+  .ssp-page {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(60% 80% at 20% 20%, var(--color-accent-tint), transparent 70%),
+      var(--color-background);
+  }
+
+  // 侧边栏条（默认形态）
+  .ssp-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 22px;
+    background: var(--color-sidebar-bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding-top: 5px;
+  }
+
+  .ssp-logo {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    margin-bottom: 3px;
+    flex-shrink: 0;
+  }
+
+  .ssp-line {
+    width: 12px;
+    height: 3px;
+    border-radius: 2px;
+    background: rgba(148, 163, 184, 0.45);
+    flex-shrink: 0;
+
+    &.is-active {
+      background: var(--color-primary);
+    }
+  }
+
+  // 二级面板（双层图标轨用）
+  .ssp-panel {
+    display: none;
+    position: absolute;
+    top: 6px;
+    left: 26px;
+    width: 30px;
+    height: 44px;
+    border-radius: 5px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    box-shadow: 0 3px 8px rgba(15, 23, 42, 0.12);
+    flex-direction: column;
+    gap: 3px;
+    padding: 5px 4px;
+  }
+
+  .ssp-panel-title {
+    width: 60%;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--color-text-secondary);
+    opacity: 0.6;
+  }
+
+  .ssp-panel-line {
+    width: 100%;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--color-border);
+
+    &.short {
+      width: 70%;
+    }
+  }
+
+  .ssp-user {
+    display: none;
+  }
+
+  /* ① 悬浮岛：条体脱边 + 圆角 + 阴影 */
+  &--floating .ssp-bar {
+    top: 6px;
+    left: 6px;
+    bottom: 6px;
+    width: 18px;
+    border-radius: 6px;
+    box-shadow: 0 3px 8px rgba(15, 23, 42, 0.18);
+  }
+
+  /* ② 深色重底：整页浅、唯一深条，激活线高亮 */
+  &--dark .ssp-page {
+    background: var(--color-background);
+  }
+
+  &--dark .ssp-bar {
+    background: #0B111E;
+  }
+
+  &--dark .ssp-line {
+    background: rgba(255, 255, 255, 0.22);
+
+    &.is-active {
+      background: var(--color-primary);
+      width: 14px;
+      border-radius: 2px;
+    }
+  }
+
+  /* ③ 磨砂玻璃：底纹透出 + 半透明条 */
+  &--glass .ssp-page {
+    background:
+      radial-gradient(70% 90% at 15% 20%, var(--color-accent-tint), transparent 75%),
+      radial-gradient(80% 90% at 85% 85%, var(--color-accent-glow), transparent 75%),
+      var(--color-background);
+  }
+
+  &--glass .ssp-bar {
+    background: color-mix(in srgb, var(--color-surface) 55%, transparent);
+    backdrop-filter: blur(3px);
+    border-right: 1px solid rgba(255, 255, 255, 0.65);
+  }
+
+  /* ④ 双层图标轨：细轨 + 右侧二级面板 */
+  &--dual-rail .ssp-bar {
+    width: 12px;
+  }
+
+  &--dual-rail .ssp-logo {
+    width: 6px;
+    height: 6px;
+  }
+
+  &--dual-rail .ssp-line {
+    width: 6px;
+  }
+
+  &--dual-rail .ssp-panel {
+    display: flex;
+  }
+
+  /* ⑤ 折叠展开：窄条 + 展开虚线示意 */
+  &--collapsible .ssp-bar {
+    width: 12px;
+  }
+
+  &--collapsible .ssp-logo {
+    width: 6px;
+    height: 6px;
+  }
+
+  &--collapsible .ssp-line {
+    width: 6px;
+  }
+
+  &--collapsible .ssp-panel {
+    display: flex;
+    left: 14px;
+    border-style: dashed;
+    box-shadow: none;
+    opacity: 0.75;
+  }
+
+  /* ⑥ 分组留白：组名点 + 底部用户圆点 */
+  &--grouped .ssp-bar {
+    width: 26px;
+    align-items: flex-start;
+    padding-left: 5px;
+  }
+
+  &--grouped .ssp-line {
+    margin: 2px 0;
+  }
+
+  &--grouped .ssp-user {
+    display: block;
+    position: absolute;
+    left: 5px;
+    bottom: 5px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    opacity: 0.75;
   }
 }
 </style>

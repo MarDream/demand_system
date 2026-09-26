@@ -21,12 +21,15 @@ public class LenientBooleanIntegerDeserializer extends ValueDeserializer<Integer
             case VALUE_TRUE -> 1;
             case VALUE_FALSE -> 0;
             case VALUE_NUMBER_INT -> p.getIntValue();
+            // 画布坐标 positionX/positionY 等会带小数（缩放/拖拽后），数据库列是 int，四舍五入收敛
+            case VALUE_NUMBER_FLOAT -> (int) Math.round(p.getDoubleValue());
             case VALUE_STRING -> {
                 String s = p.getText().trim();
                 if (s.isEmpty() || "null".equalsIgnoreCase(s)) yield null;
                 if ("true".equalsIgnoreCase(s)) yield 1;
                 if ("false".equalsIgnoreCase(s)) yield 0;
-                yield Integer.valueOf(s);
+                // 形如 "240.5" 的数值串同样按小数收敛，避免 NumberFormatException
+                yield (int) Math.round(Double.parseDouble(s));
             }
             default -> (Integer) ctxt.handleUnexpectedToken(Integer.class, p);
         };

@@ -103,7 +103,9 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
             }
 
             RequirementApprovalEvaluationVO vo = buildTopLevelRecord(transition, evaluation, action, comment, currentUserId, requirement);
-            vo.setAssigneeRoleName(transitionRoleNames.get(transition.getId()));
+            // 角色展示优先用流转时快照的操作人角色，缺失时回退到来源节点配置的处理角色
+            String operatorRole = transition.getOperatorRoleName();
+            vo.setAssigneeRoleName(StringUtils.hasText(operatorRole) ? operatorRole : transitionRoleNames.get(transition.getId()));
             records.add(vo);
             if (evaluation != null) {
                 topLevelByRecordId.put(evaluation.getId(), vo);
@@ -379,6 +381,8 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
         vo.setTransitionId(transition.getId());
         vo.setNodeId(resolveNodeId(transition));
         vo.setNodeName(resolveNodeName(transition, action, evaluation));
+        vo.setFromNodeName(transition != null ? transition.getFromNodeName() : null);
+        vo.setToNodeName(transition != null ? transition.getToNodeName() : null);
         vo.setNodeStatusCode(evaluation != null ? evaluation.getNodeStatusCode() : null);
         vo.setParentId(null);
         vo.setIsSupplement(false);
@@ -465,7 +469,8 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
     }
 
     private boolean shouldKeepTransitionRecord(String action) {
-        return "submit".equals(action) || "rollback".equals(action) || "cancel".equals(action);
+        return "submit".equals(action) || "rollback".equals(action) || "cancel".equals(action)
+                || "draft".equals(action);
     }
 
     private String resolveComment(WorkflowInstanceTransition transition, RequirementApprovalEvaluation evaluation) {
@@ -512,6 +517,7 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
         return switch (action) {
             case "rollback" -> "驳回";
             case "cancel" -> "取消";
+            case "draft" -> "创建草稿";
             case "submit" -> isStartNode(transition) ? "提交" : "提交审核";
             default -> "审核";
         };
@@ -521,6 +527,7 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
         return switch (action) {
             case "rollback" -> "REJECT";
             case "cancel" -> "CANCEL";
+            case "draft" -> "DRAFT";
             case "submit" -> isStartNode(transition) ? "SUBMIT" : "PASS";
             default -> "PASS";
         };
@@ -530,6 +537,7 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
         return switch (action) {
             case "rollback" -> "驳回";
             case "cancel" -> "取消";
+            case "draft" -> "草稿";
             case "submit" -> isStartNode(transition) ? "提交" : "通过";
             default -> "通过";
         };

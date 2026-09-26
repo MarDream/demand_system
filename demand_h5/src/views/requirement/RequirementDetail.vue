@@ -17,7 +17,7 @@ import {
   type AvailableTransition,
   type TransitionHistoryItem,
 } from '@/api/requirement'
-import { statusColor, statusLabel, priorityInfo, typeLabel, formatTime, stripHtml } from '@/utils/format'
+import { statusColor, statusLabel, priorityInfo, typeLabel, formatTime, formatDate, stripHtml } from '@/utils/format'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
@@ -183,7 +183,7 @@ onMounted(loadAll)
           <van-cell-group inset style="margin-top: 8px">
             <van-cell title="提出人" :value="detail.creatorName || '-'" />
             <van-cell title="当前处理人" :value="detail.currentHandlerName || detail.assigneeName || '-'" />
-            <van-cell title="截止时间" :value="formatTime(detail.dueDate)" />
+            <van-cell title="期望上线日期" :value="formatDate(detail.dueDate)" />
             <van-cell title="创建时间" :value="formatTime(detail.createdAt)" />
           </van-cell-group>
         </van-collapse-item>
@@ -219,6 +219,7 @@ onMounted(loadAll)
             <div v-for="h in history" :key="h.id" class="flow-history__item">
               <div class="flow-history__line">
                 <b>{{ h.operatorName || '-' }}</b>
+                <span v-if="h.operatorRoleName" class="flow-history__role">{{ h.operatorRoleName }}</span>
                 <span v-if="h.fromNodeName && h.toNodeName">{{ h.fromNodeName }} → {{ h.toNodeName }}</span>
                 <span v-else-if="h.toNodeName">→ {{ h.toNodeName }}</span>
               </div>
@@ -383,6 +384,10 @@ onMounted(loadAll)
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.flow-history__role {
+  color: #969799;
 }
 
 .flow-history__sub {

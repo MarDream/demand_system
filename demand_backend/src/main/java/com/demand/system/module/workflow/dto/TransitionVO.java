@@ -22,6 +22,8 @@ public class TransitionVO {
 
     private String operatorName;
 
+    private String operatorRoleName;
+
     private String action;
 
     private String comment;
@@ -112,6 +114,14 @@ public class TransitionVO {
 
     public void setOperatorName(String operatorName) {
         this.operatorName = operatorName;
+    }
+
+    public String getOperatorRoleName() {
+        return operatorRoleName;
+    }
+
+    public void setOperatorRoleName(String operatorRoleName) {
+        this.operatorRoleName = operatorRoleName;
     }
 
     public String getAction() {

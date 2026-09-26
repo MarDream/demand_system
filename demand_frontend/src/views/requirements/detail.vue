@@ -6,6 +6,7 @@
           <div class="detail-main">
             <div class="detail-actions">
               <div class="detail-actions__title">
+                <el-button class="detail-back-btn" circle :icon="ArrowLeft" aria-label="返回列表" @click="handleBackToList" />
                 <h2 class="detail-actions__title-text" :title="detail.title">{{ detail.title || '未命名需求' }}</h2>
               </div>
               <div v-if="showPrimaryActions" class="detail-actions__primary">
@@ -22,6 +23,9 @@
                     </el-button>
                   </template>
                 </el-popconfirm>
+                <el-button v-if="canCancelRequirementTop" :loading="transitionLoading" @click="handleCancel">
+                  <el-icon style="margin-right:4px"><CircleClose /></el-icon>取消
+                </el-button>
               </div>
             </div>
 
@@ -35,7 +39,7 @@
               <span>基本信息</span>
             </span>
           </template>
-          <el-descriptions :column="2" border>
+          <el-descriptions :column="2">
             <el-descriptions-item label="所属项目">{{ projectLabel(detail.projectId) }}</el-descriptions-item>
             <el-descriptions-item label="需求编号">{{ detail.requirementNo || '-' }}</el-descriptions-item>
             <el-descriptions-item label="需求类型">{{ typeLabel(detail.type) }}</el-descriptions-item>
@@ -64,7 +68,7 @@
               <span class="dynamic-fields-section__label">扩展信息</span>
               <span class="dynamic-fields-section__hint">{{ typeLabel(detail.type) }} 专有字段</span>
             </div>
-            <el-descriptions :column="2" border>
+            <el-descriptions :column="2">
               <el-descriptions-item v-for="row in dynamicFieldRows" :key="row.code" :label="row.label">
                 <template v-if="dynamicFileUrls(row.code).length">
                   <el-link
@@ -193,7 +197,8 @@
               </el-table-column>
               <el-table-column label="标题" min-width="200">
                 <template #default="{ row }">
-                  <el-link type="primary" @click="router.push({ name: 'RequirementDetail', params: { id: row.id } })">
+                  <!-- 子需求跳转透传来源视图，返回链路不丢 tab -->
+                  <el-link type="primary" @click="router.push({ name: 'RequirementDetail', params: { id: row.id }, query: { view: route.query.view } })">
                     {{ row.title }}
                   </el-link>
                 </template>
@@ -248,12 +253,21 @@
                     <el-avatar :size="28" class="approval-evaluation-avatar">{{ item.evaluatorName?.charAt(0) || '审' }}</el-avatar>
                     <div class="approval-evaluation-meta">
                       <div class="approval-evaluation-title">
-                        <span v-if="item.assigneeRoleName" class="approval-evaluation-role">{{ item.assigneeRoleName }}</span>
                         <strong>{{ item.evaluatorName || '处理人' }}</strong>
+                        <span v-if="item.assigneeRoleName" class="approval-evaluation-role">{{ item.assigneeRoleName }}</span>
                         <el-tag v-if="item.id !== -1" size="small" effect="dark" round :type="approvalResultTagType(item.result)">
                           {{ item.resultLabel || item.actionLabel || '审核' }}
                         </el-tag>
-                        <span class="approval-evaluation-node">{{ item.nodeName }}</span>
+                        <span class="approval-evaluation-node">
+                          <template v-if="item.fromNodeName && item.toNodeName">
+                            {{ item.fromNodeName }}
+                            <el-icon class="approval-evaluation-arrow"><ArrowRightBold /></el-icon>
+                            {{ item.toNodeName }}
+                          </template>
+                          <template v-else>
+                            {{ item.nodeName }}
+                          </template>
+                        </span>
                       </div>
                       <div class="approval-evaluation-time">{{ formatDate(item.createdAt) }}</div>
                     </div>
@@ -449,7 +463,7 @@
                 description="因工作流正调整中或已停用，暂不支持提交审核、驳回或取消等操作。请等待管理员重新启用工作流。"
               />
 
-              <div class="workflow-action-panel__body">
+              <div v-if="!isReadOnlyView" class="workflow-action-panel__body">
                 <div class="workflow-action-panel__section">
                   <div class="workflow-action-panel__section-title">流转配置</div>
 
@@ -498,14 +512,22 @@
                       {{ selectedTransitionAssigneeName }}
                     </div>
                   </div>
+                  <!-- 当选中"全部"时，展示候选人提示文字 -->
+                  <div
+                    v-if="showTransitionAssigneeSelector && selectedTransitionAssigneeId === ALL_SENTINEL"
+                    class="workflow-action-panel__field workflow-action-panel__field--hint"
+                  >
+                    <span class="workflow-action-panel__field-label">&nbsp;</span>
+                    <span class="workflow-action-panel__hint-text">{{ selectedUnifiedTransition?.assigneeDisplayHint || '该节点有 ' + (selectedTransitionAssigneeCandidates.length - 1) + ' 位候选人，流转后所有成员均可处理' }}</span>
+                  </div>
 
                   <div v-if="requiresProjectBinding" class="workflow-action-panel__field">
-                    <span class="workflow-action-panel__field-label">绑定项目</span>
+                    <span class="workflow-action-panel__field-label">所属项目</span>
                     <el-select
                       v-model="bindingProjectId"
                       filterable
                       clearable
-                      placeholder="流转前绑定项目"
+                      placeholder="请核实并选择所属项目"
                       class="workflow-action-panel__control"
                     >
                       <el-option
@@ -637,15 +659,6 @@
                       @click="openCountersignDialog(workflowRuntime.currentNodeId || '')"
                     >
                       会签审批
-                    </AppButton>
-                    <AppButton
-                      v-if="usingUnifiedEngine && workflowRuntime.canCancel"
-                      size="small"
-                      :loading="transitionLoading"
-                      permission="button:requirement:cancel"
-                      @click="handleCancel"
-                    >
-                      取消
                     </AppButton>
                   </div>
 
@@ -818,7 +831,7 @@
 import { computed, ref, onMounted, watch, nextTick, type Ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
-import { ArrowLeftBold, ArrowRightBold, Document, Picture, List, ChatLineRound, ChatDotRound, View, Download, Edit, Delete, ZoomIn, ZoomOut, RefreshLeft, CircleCheck, Upload } from '@element-plus/icons-vue'
+import { ArrowLeftBold, ArrowLeft, ArrowRightBold, Document, Picture, List, ChatLineRound, ChatDotRound, View, Download, Edit, Delete, ZoomIn, ZoomOut, RefreshLeft, CircleCheck, CircleClose, Upload } from '@element-plus/icons-vue'
 import { requirementApi, projectApi, relationApi } from '@/api'
 import { downloadRequirementAttachment, uploadRequirementAttachment } from '@/api/modules/file'
 import type { RelationItem } from '@/api/modules/relation'
@@ -1075,6 +1088,8 @@ const workflowRuntime = ref<WorkflowAvailableActions>({
 })
 const usingUnifiedEngine = ref(false)
 const selectedTransitionTargetId = ref<string | number | null>(null)
+/** 处理人"全部"选项的占位 ID（大于 0，不与真实用户冲突） */
+const ALL_SENTINEL = -1
 const selectedTransitionAssigneeId = ref<number | null>(null)
 const selectedNewType = ref<string | null>(null)
 const approvalTypeOptions = computed<RequirementTypeOption[]>(() => {
@@ -1151,10 +1166,19 @@ const sortedApprovalEvaluations = computed(() => {
     return cmp !== 0 ? cmp : b.id - a.id
   })
 
-  // 创建人起始节点：如果后端尚未记录"新建"动作，在时间线最前面补一条虚拟记录
+  // 创建人起始节点：若后端流转记录中已存在"创建/起始"记录，则不再补虚拟卡片。
+  // 起始节点存在两种可能的渲染（见后端 RequirementApprovalEvaluationServiceImpl.isStartNode/resolveNodeName/resolveResultLabel）：
+  //   1) 起始节点 id 恰为 'start' → nodeName='新建'、resultLabel='提交'；
+  //   2) 起始节点 id 为其它的（本系统实际均为 v1_/tpl_ 等，node_type='start'），
+  //      后端 isStartNode() 不命中 → nodeName='开始'、resultLabel='通过'。
+  // 两者都代表"需求创建"这一同一动作，命中任一即视为已存在创建记录，跳过虚拟记录，
+  // 避免"开始"与"新建/创建需求"成对重复。
   if (detail.value && detail.value.creatorName && detail.value.createdAt) {
     const hasCreateRecord = sorted.some(
-      (item) => item.nodeName === '新建' || item.action === 'create',
+      (item) =>
+        item.action === 'create'
+        || item.nodeName === '新建'
+        || item.nodeName === '开始',
     )
     if (!hasCreateRecord) {
       const createRecord: RequirementApprovalEvaluation = {
@@ -1448,9 +1472,10 @@ function resetApprovalDialog() {
   selectedNewType.value = null
 }
 
-// 切换目标节点时重置审核信息（新节点可能有不同的意见/附件要求）
+// 切换目标节点时重置审核信息和处理人选择（新节点可能有不同的候选人列表）
 watch(selectedTransitionTargetId, () => {
   resetApprovalDialog()
+  selectedTransitionAssigneeId.value = null
   if (workflowRuntime.value.canModifyType) {
     selectedNewType.value = detail.value?.type || null
   }
@@ -1491,13 +1516,12 @@ async function executeTransition(extra?: { rating?: number; ratingDimensions?: R
       attachments: extra?.attachments,
       lockVersion: workflowRuntime.value.lockVersion ?? undefined,
       // 流转时选择的处理人（传给后端用于更新 assignee_id 和待办同步）
-      selectedAssigneeId: selectedTransitionAssigneeId.value,
+      // 选中「全部」时传 null，后端按角色/组织分配待办
+      selectedAssigneeId: selectedTransitionAssigneeId.value === ALL_SENTINEL ? null : selectedTransitionAssigneeId.value,
       // 流转时修改需求类型
       newType: extra?.newType,
     })
     toast.success('需求已更新')
-    selectedTransitionTargetId.value = null
-    resetApprovalDialog()
 
     // 智能跳转：检查待办数量决定跳转目标
     await navigateAfterSubmit()
@@ -1505,6 +1529,10 @@ async function executeTransition(extra?: { rating?: number; ratingDimensions?: R
     toast.error('操作失败，请重试')
   } finally {
     transitionLoading.value = false
+    // 清理放到跳转之后：若在跳转前清空选中项，流转配置区会瞬间塌陷、审核信息瞬间清空，
+    // 在等待待办计数与路由切换的窗口期里产生明显闪变
+    selectedTransitionTargetId.value = null
+    resetApprovalDialog()
   }
 }
 
@@ -1670,7 +1698,10 @@ const selectedUnifiedTransition = computed<AvailableTransition | null>(() => {
 })
 
 const selectedTransitionAssigneeCandidates = computed<TransitionAssigneeCandidate[]>(() => {
-  return selectedUnifiedTransition.value?.assigneeCandidates || []
+  const base = selectedUnifiedTransition.value?.assigneeCandidates || []
+  if (base.length <= 1) return base
+  // 候选人 > 1 时，在所有真实候选人前插入"全部"选项（id=-1，不影响后端校验）
+  return [{ id: ALL_SENTINEL, name: '全部' }, ...base] as TransitionAssigneeCandidate[]
 })
 
 const selectedTransitionAssigneeTypeName = computed(() => {
@@ -1697,11 +1728,14 @@ const selectedTransitionScopeName = computed(() => {
 })
 
 const showTransitionAssigneeSelector = computed(() => {
-  return selectedTransitionAssigneeCandidates.value.length > 1
+  // 有候选人时始终显示选择器（含"全部"选项），无需手动选具体人员
+  return selectedTransitionAssigneeCandidates.value.length > 0
 })
 
 const requiresSingleTransitionAssignee = computed(() => {
-  return showTransitionAssigneeSelector.value
+  // 仅当有具体候选人但不选"全部"时才要求必填
+  return selectedUnifiedTransition.value?.assigneeCandidates &&
+    selectedUnifiedTransition.value.assigneeCandidates.length > 1
 })
 
 const selectedTransitionAssigneeOption = computed<TransitionAssigneeCandidate | null>(() => {
@@ -1723,19 +1757,40 @@ const selectedTransitionAssigneeName = computed(() => {
 
 const requiresProjectBinding = computed(() => (
   usingUnifiedEngine.value
-  && !detail.value?.projectId
   && Boolean(selectedUnifiedTransition.value?.projectRequired)
 ))
 
 const bindableProjects = computed(() => projectOptions.value)
+
+/**
+ * 后端对本需求判定的操作类型：'view' 表示当前用户对该需求只有查看权。
+ *
+ * 与列表页「查看」按钮的显示条件同源（后端按 canTransition 派生），
+ * 因此无论从查看按钮、待办、通知还是直接访问 URL 进入，结论都与后端一致，
+ * 不会出现「列表只给查看、详情却可写」的错位。
+ */
+const isReadOnlyView = computed(() => detail.value?.operationType === 'view')
 
 const showPrimaryActions = computed(() => {
   // 草稿：创建人可见编辑/删除
   if (detail.value?.isDraft) {
     return hasPermission('button:requirement:update') || hasPermission('button:requirement:delete')
   }
-  // 非草稿：根据工作流权限动态判断
-  return Boolean(canEditRequirement.value || canSplitRequirement.value || canDeleteRequirement.value)
+  // 非草稿：根据工作流权限动态判断（canCancelRequirement 也在顶部操作区，只读态创建人仍可撤销）
+  return Boolean(canEditRequirement.value || canSplitRequirement.value || canDeleteRequirement.value || canCancelRequirementTop.value)
+})
+
+/**
+ * 顶部操作区的「取消」入口：后端 canCancel 口径（创建人/管理员 + 节点 allowCancel + 非 end 节点 + 工作流启用）。
+ *
+ * 「取消」按钮原本只在审批面板内，只读查看态屏蔽面板后创建人会失去唯一撤销入口，
+ * 故挪到顶部操作区，按后端 workflowRuntime.canCancel 判定；后端 cancel() 会全量复校验。
+ */
+const canCancelRequirementTop = computed(() => {
+  if (detail.value?.isDraft) {
+    return false
+  }
+  return usingUnifiedEngine.value && Boolean(workflowRuntime.value.canCancel)
 })
 
 /** 当前用户是否可编辑需求（基于工作流节点权限） */
@@ -1768,22 +1823,13 @@ const canSplitRequirement = computed(() => {
   return true
 })
 
-/** 当前用户是否可删除需求（草稿：创建人可删除；非草稿：需要权限） */
+/** 当前用户是否可删除需求：后端按 delete() 同款口径计算（草稿=创建人；非草稿=创建者或管理员+删除权限+无流转记录） */
 const canDeleteRequirement = computed(() => {
-  // 草稿状态：创建人可以删除（无需特殊权限）
-  if (detail.value?.isDraft) {
-    return detail.value?.creatorId === userStore.userInfo?.id
-  }
-
-  // 非草稿状态：需要删除权限
-  if (!hasPermission('button:requirement:delete')) {
+  // 只读查看态不提供写操作入口（双保险，后端 canDelete 已含完整口径）
+  if (isReadOnlyView.value) {
     return false
   }
-
-  if (usingUnifiedEngine.value) {
-    return Boolean(workflowRuntime.value.canDelete)
-  }
-  return true
+  return detail.value?.canDelete === true
 })
 
 const commentDraftDirty = computed(() => hasMeaningfulCommentContent(commentRichText.value))
@@ -1833,8 +1879,14 @@ const showWorkflowActionPanel = computed(() => {
 watch(
   selectedUnifiedTransition,
   (transition) => {
-    const fallbackId = transition?.defaultAssigneeId ?? transition?.assigneeCandidates?.[0]?.id ?? null
-    selectedTransitionAssigneeId.value = fallbackId
+    // 候选人 > 1 时默认不选中任何具体人（即「全部」），避免 watch 立即覆盖用户选择
+    const candidates = transition?.assigneeCandidates
+    if (candidates && candidates.length > 1) {
+      selectedTransitionAssigneeId.value = null
+    } else {
+      const fallbackId = transition?.defaultAssigneeId ?? candidates?.[0]?.id ?? null
+      selectedTransitionAssigneeId.value = fallbackId
+    }
   },
   { immediate: true },
 )
@@ -1873,11 +1925,17 @@ function transitionOptionValue(transition: TransitionOption) {
 
 function transitionOptionLabel(transition: TransitionOption) {
   const baseLabel = transition.label || transition.toNodeName
-  const projectLabel = transition.projectRequired ? ' [需绑定项目]' : ''
-  return `${baseLabel}${projectLabel}`
+  return baseLabel
 }
 
 // Handlers
+/** 返回列表：携带来源视图参数，恢复进入前的 tab（我的待办/全部需求等） */
+function handleBackToList() {
+  const view = route.query.view
+  const query: Record<string, string> = typeof view === 'string' && view ? { view } : {}
+  router.push({ path: '/requirements', query })
+}
+
 function handleEdit() {
   router.push({ name: 'RequirementCreate', query: { id } })
 }
@@ -1903,6 +1961,10 @@ async function handleStatusTransition() {
   }
   if (!selectedTransitionTargetId.value) {
     toast.warning('请选择目标节点')
+    return
+  }
+  if (selectedUnifiedTransition.value && selectedUnifiedTransition.value.assigneeCandidates && selectedUnifiedTransition.value.assigneeCandidates.length === 0) {
+    toast.warning('目标节点未配置处理人')
     return
   }
   if (requiresSingleTransitionAssignee.value && !selectedTransitionAssigneeId.value) {
@@ -2237,11 +2299,17 @@ onMounted(() => {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 16px;
-  padding: 12px 16px;
+  padding: 14px 20px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-accent, var(--el-color-primary));
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--duration-fast) var(--ease-standard);
+
+  &:hover {
+    box-shadow: var(--shadow-md);
+  }
 }
 
 .detail-actions__title {
@@ -2250,6 +2318,16 @@ onMounted(() => {
   gap: 8px;
   flex: 1;
   min-width: 0;
+}
+
+.detail-back-btn {
+  flex-shrink: 0;
+  color: var(--color-text-regular, var(--el-text-color-regular));
+
+  &:hover {
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+  }
 }
 
 .detail-actions__title-text {
@@ -2267,6 +2345,20 @@ onMounted(() => {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+
+  :deep(.el-button) {
+    transition: transform var(--duration-fast) var(--ease-standard),
+                box-shadow var(--duration-fast) var(--ease-standard);
+
+    &:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    &:active:not(:disabled) {
+      transform: translateY(0) scale(0.97);
+    }
+  }
 }
 
 /* ===== Tabs ===== */
@@ -2276,30 +2368,50 @@ onMounted(() => {
 
 .detail-tabs :deep(.el-tabs__header) {
   margin-bottom: 0;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-bottom: none;
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  padding: 0 8px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+
+  /* 去掉默认下边框，改用自定义指示器 */
+  &::after {
+    display: none;
+  }
 }
 
 .detail-tabs :deep(.el-tabs__nav-wrap) {
-  padding: 4px 0;
+  padding: 0;
+}
+
+.detail-tabs :deep(.el-tabs__active-bar) {
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  transition: width var(--duration-fast) var(--ease-standard),
+              left var(--duration-fast) var(--ease-standard);
+}
+
+.detail-tabs :deep(.el-tabs__item) {
+  padding: 0 4px !important;
+
+  /* 未激活 tab 悬停微亮 */
+  &:hover {
+    color: var(--color-accent, var(--el-color-primary));
+  }
 }
 
 .detail-tabs :deep(.el-tabs__content) {
   padding: 24px;
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-top: none;
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  border: none;
+  border-top: 1px solid var(--color-border);
+  border-radius: 0;
   min-height: 300px;
 }
 
-/* 工单内容独立区块 */
+/* 工单内容独立区块 — 去边框化，用浅底色块区分 */
 .description-content-section {
   margin-top: 24px;
-  border: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
   border-radius: var(--radius-lg);
   overflow: hidden;
 }
@@ -2319,8 +2431,7 @@ onMounted(() => {
   gap: 8px;
   padding: 12px 16px;
   background: var(--color-surface-alt);
-  border: 1px solid var(--color-border);
-  border-bottom: none;
+  border-bottom: 1px solid var(--color-border);
   border-top-left-radius: var(--radius-lg);
   border-top-right-radius: var(--radius-lg);
 }
@@ -3456,6 +3567,12 @@ onMounted(() => {
   white-space: nowrap;
 }
 
+.approval-evaluation-arrow {
+  margin: 0 3px;
+  font-size: 10px;
+  color: var(--color-muted-text);
+}
+
 .approval-evaluation-time {
   margin-top: 2px;
   color: var(--color-muted-text);
@@ -3739,5 +3856,125 @@ onMounted(() => {
   color: var(--el-text-color-regular);
   line-height: 1.6;
   word-break: break-word;
+}
+
+/* ===== 微动效：脉冲状态点 ===== */
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.35); }
+}
+
+.workflow-action-panel__status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: status-pulse 2.2s ease-in-out infinite;
+  box-shadow: 0 0 0 0 currentColor;
+
+  &.is-primary { background: var(--el-color-primary); }
+  &.is-success { background: var(--el-color-success); }
+  &.is-warning { background: var(--el-color-warning); }
+  &.is-danger { background: var(--el-color-danger); }
+  &.is-info { background: var(--el-color-info); }
+}
+
+/* ===== 工作流面板头部：渐变强化 ===== */
+.workflow-action-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--color-border);
+  background: linear-gradient(
+    to bottom,
+    rgba(99, 102, 241, 0.04) 0%,
+    transparent 100%
+  );
+}
+
+/* ===== el-descriptions 去边框化 ===== */
+.detail-page :deep(.el-descriptions) {
+  border: none !important;
+  background: transparent;
+
+  &::before {
+    display: none;
+  }
+}
+
+.detail-page :deep(.el-descriptions__table) {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+
+  td {
+    border: none;
+    padding: 12px 16px;
+    background: transparent;
+
+    &.el-descriptions__cell {
+      border-bottom: 1px dashed var(--color-border);
+    }
+  }
+}
+
+.detail-page :deep(.el-descriptions__label) {
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  background: transparent;
+  width: 140px;
+  flex-shrink: 0;
+}
+
+.detail-page :deep(.el-descriptions__content) {
+  color: var(--color-text-primary);
+}
+
+/* ===== 全局交互质感提升 ===== */
+.detail-page {
+  /* 所有可点击元素统一 transition */
+  :deep(button),
+  :deep(.el-button),
+  :deep(.el-link),
+  :deep([role="button"]) {
+    transition: transform var(--duration-fast) var(--ease-standard),
+                box-shadow var(--duration-fast) var(--ease-standard),
+                background-color var(--duration-fast) var(--ease-standard);
+  }
+
+  :deep(.el-button:hover:not(:disabled)) {
+    transform: translateY(-1px);
+  }
+
+  :deep(.el-button:active:not(:disabled)) {
+    transform: translateY(0) scale(0.97);
+  }
+
+  :deep(.el-link:hover) {
+    transform: none;
+    text-decoration: none;
+    opacity: 0.8;
+  }
+}
+
+/* ===== 子需求表格优化 ===== */
+.children-section {
+  :deep(.el-table) {
+    border-radius: var(--radius-md);
+    overflow: hidden;
+
+    th.el-table__cell {
+      background: var(--color-surface-alt) !important;
+      font-weight: 600;
+      color: var(--color-text-secondary);
+      font-size: 12px;
+      letter-spacing: 0.3px;
+    }
+
+    tr:hover > td {
+      background: var(--color-fill-blue, rgba(37, 99, 235, 0.04)) !important;
+    }
+  }
 }
 </style>

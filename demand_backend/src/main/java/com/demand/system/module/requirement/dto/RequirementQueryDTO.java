@@ -22,6 +22,12 @@ public class RequirementQueryDTO {
 
     private String keyword;
 
+    /**
+     * 关键词搜索范围：all(综合，标题+正文) / title / requirementNo / description / assignee / comment
+     * 为空时按 all 处理
+     */
+    private String keywordScope;
+
     @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createdAtStart;
 
@@ -141,6 +147,14 @@ public class RequirementQueryDTO {
 
     public void setKeyword(String keyword) {
         this.keyword = keyword;
+    }
+
+    public String getKeywordScope() {
+        return keywordScope;
+    }
+
+    public void setKeywordScope(String keywordScope) {
+        this.keywordScope = keywordScope;
     }
 
     public LocalDateTime getCreatedAtStart() {

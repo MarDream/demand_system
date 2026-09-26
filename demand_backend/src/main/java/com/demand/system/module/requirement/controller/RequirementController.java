@@ -301,6 +301,16 @@ public class RequirementController {
         return Result.success(requirementService.listMyCc(query, userId));
     }
 
+    @GetMapping("/my-all")
+    @PreAuthorize("isAuthenticated()")
+    public Result<PageResult<RequirementVO>> listMyAll(RequirementMyListQueryDTO query) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) {
+            return Result.fail(401, "未登录或登录已过期");
+        }
+        return Result.success(requirementService.listMyAll(query, userId));
+    }
+
     @PostMapping("/{id}/follow")
     @PreAuthorize("isAuthenticated()")
     public Result<Void> follow(@PathVariable Long id) {

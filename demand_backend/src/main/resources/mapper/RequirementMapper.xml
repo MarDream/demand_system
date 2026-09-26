@@ -2,6 +2,64 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.demand.system.module.requirement.mapper.RequirementMapper">
 
+    <!-- 关键词搜索条件（按搜索范围分支）
+         keywordScope 取值：
+           all（默认）/ 空 → 综合：标题 + 正文
+           title          → 仅需求标题
+           requirementNo  → 仅需求编号
+           description    → 仅工单正文
+           assignee       → 仅当前处理人姓名
+           comment        → 仅需求评论内容
+         说明：外层查询表别名统一为 r（requirements r）。 -->
+    <sql id="keywordScopeCondition">
+        <if test='keyword != null and keyword != ""'>
+            <choose>
+                <when test='keywordScope == "title"'>
+                    AND r.title LIKE CONCAT('%', #{keyword}, '%')
+                </when>
+                <when test='keywordScope == "requirementNo"'>
+                    AND r.requirement_no LIKE CONCAT('%', #{keyword}, '%')
+                </when>
+                <when test='keywordScope == "description"'>
+                    AND r.description LIKE CONCAT('%', #{keyword}, '%')
+                </when>
+                <when test='keywordScope == "assignee"'>
+                    AND EXISTS (
+                        SELECT 1 FROM users kwa
+                        WHERE kwa.id = r.assignee_id
+                          AND kwa.deleted_at = 0
+                          AND kwa.real_name LIKE CONCAT('%', #{keyword}, '%')
+                    )
+                </when>
+                <when test='keywordScope == "comment"'>
+                    AND EXISTS (
+                        SELECT 1 FROM requirement_comments kwc
+                        WHERE kwc.requirement_id = r.id
+                          AND kwc.content LIKE CONCAT('%', #{keyword}, '%')
+                    )
+                </when>
+                <otherwise>
+                    AND (r.title LIKE CONCAT('%', #{keyword}, '%') OR r.description LIKE CONCAT('%', #{keyword}, '%'))
+                </otherwise>
+            </choose>
+        </if>
+    </sql>
+
+    <!-- 时间维度筛选：timeQuery 为 RequirementMyListQueryDTO（与"全部需求"视图共用字段口径），
+         按所选时间字段（创建/分析完成/需求确认/开发完成）的起止范围过滤，仅在各 my-list 查询中通过 timeQuery 参数启用 -->
+    <sql id="myListTimeDimensionCondition">
+        <if test='timeQuery != null'>
+            <if test='timeQuery.createdAtStart != null'> AND r.created_at &gt;= #{timeQuery.createdAtStart} </if>
+            <if test='timeQuery.createdAtEnd != null'> AND r.created_at &lt;= #{timeQuery.createdAtEnd} </if>
+            <if test='timeQuery.analysisCompletedAtStart != null'> AND r.analysis_completed_at &gt;= #{timeQuery.analysisCompletedAtStart} </if>
+            <if test='timeQuery.analysisCompletedAtEnd != null'> AND r.analysis_completed_at &lt;= #{timeQuery.analysisCompletedAtEnd} </if>
+            <if test='timeQuery.confirmAtStart != null'> AND r.confirm_at &gt;= #{timeQuery.confirmAtStart} </if>
+            <if test='timeQuery.confirmAtEnd != null'> AND r.confirm_at &lt;= #{timeQuery.confirmAtEnd} </if>
+            <if test='timeQuery.developmentCompletedAtStart != null'> AND r.development_completed_at &gt;= #{timeQuery.developmentCompletedAtStart} </if>
+            <if test='timeQuery.developmentCompletedAtEnd != null'> AND r.development_completed_at &lt;= #{timeQuery.developmentCompletedAtEnd} </if>
+        </if>
+    </sql>
+
     <!-- 查询每日最大序列号 -->
     <select id="selectMaxDailySequence" resultType="java.lang.Integer">
         SELECT MAX(CAST(SUBSTRING(requirement_no, 17) AS UNSIGNED))
@@ -46,9 +104,8 @@
           <if test='isOverdue != null and isOverdue'> AND r.node_status NOT IN (SELECT code FROM node_statuses WHERE is_end = 1) AND r.due_date IS NOT NULL AND r.due_date &lt; CURDATE() </if>
           <if test='status != null and status != ""'> AND r.status = #{status} </if>
           <if test='assigneeId != null'> AND r.assignee_id = #{assigneeId} </if>
-          <if test='keyword != null and keyword != ""'>
-            AND (r.title LIKE CONCAT('%', #{keyword}, '%') OR r.description LIKE CONCAT('%', #{keyword}, '%'))
-          </if>
+          <include refid="keywordScopeCondition"/>
+          <include refid="myListTimeDimensionCondition"/>
         ORDER BY r.updated_at DESC, r.id DESC
     </select>
 
@@ -74,9 +131,8 @@
           <if test='priority != null and priority != ""'> AND r.priority = #{priority} </if>
           <if test='status != null and status != ""'> AND r.status = #{status} </if>
           <if test='assigneeId != null'> AND r.assignee_id = #{assigneeId} </if>
-          <if test='keyword != null and keyword != ""'>
-            AND (r.title LIKE CONCAT('%', #{keyword}, '%') OR r.description LIKE CONCAT('%', #{keyword}, '%'))
-          </if>
+          <include refid="keywordScopeCondition"/>
+          <include refid="myListTimeDimensionCondition"/>
           AND (
             (wn.assignee_type = 'SPECIFIED_USER' AND wn.assignee_user_ids IS NOT NULL
                 AND JSON_CONTAINS(wn.assignee_user_ids, CAST(#{userId} AS JSON)))
@@ -153,9 +209,8 @@
           <if test='isOverdue != null and isOverdue'> AND r.node_status NOT IN (SELECT code FROM node_statuses WHERE is_end = 1) AND r.due_date IS NOT NULL AND r.due_date &lt; CURDATE() </if>
           <if test='status != null and status != ""'> AND r.status = #{status} </if>
           <if test='assigneeId != null'> AND r.assignee_id = #{assigneeId} </if>
-          <if test='keyword != null and keyword != ""'>
-            AND (r.title LIKE CONCAT('%', #{keyword}, '%') OR r.description LIKE CONCAT('%', #{keyword}, '%'))
-          </if>
+          <include refid="keywordScopeCondition"/>
+          <include refid="myListTimeDimensionCondition"/>
           <if test='isSuperAdmin == false'>
             <choose>
               <when test='visibleOrgIds != null and visibleOrgIds.size() &gt; 0'>
@@ -198,9 +253,8 @@
           <if test='isOverdue != null and isOverdue'> AND r.node_status NOT IN (SELECT code FROM node_statuses WHERE is_end = 1) AND r.due_date IS NOT NULL AND r.due_date &lt; CURDATE() </if>
           <if test='status != null and status != ""'> AND r.status = #{status} </if>
           <if test='assigneeId != null'> AND r.assignee_id = #{assigneeId} </if>
-          <if test='keyword != null and keyword != ""'>
-            AND (r.title LIKE CONCAT('%', #{keyword}, '%') OR r.description LIKE CONCAT('%', #{keyword}, '%'))
-          </if>
+          <include refid="keywordScopeCondition"/>
+          <include refid="myListTimeDimensionCondition"/>
         ORDER BY (
             SELECT MAX(pt_sort.updated_at)
             FROM requirement_pending_tasks pt_sort
@@ -306,9 +360,8 @@
                 OR (wn2.assignee_type = 'CREATOR' AND r.creator_id = #{userId})
               )
           )
-          <if test='keyword != null and keyword != ""'>
-            AND (r.title LIKE CONCAT('%', #{keyword}, '%') OR r.description LIKE CONCAT('%', #{keyword}, '%'))
-          </if>
+          <include refid="keywordScopeCondition"/>
+          <include refid="myListTimeDimensionCondition"/>
         ORDER BY r.updated_at DESC
     </select>
 
@@ -332,9 +385,8 @@
           <if test='priority != null and priority != ""'> AND r.priority = #{priority} </if>
           <if test='status != null and status != ""'> AND r.status = #{status} </if>
           <if test='assigneeId != null'> AND r.assignee_id = #{assigneeId} </if>
-          <if test='keyword != null and keyword != ""'>
-            AND (r.title LIKE CONCAT('%', #{keyword}, '%') OR r.description LIKE CONCAT('%', #{keyword}, '%'))
-          </if>
+          <include refid="keywordScopeCondition"/>
+          <include refid="myListTimeDimensionCondition"/>
          ORDER BY pt.updated_at DESC, r.id DESC
     </select>
 
@@ -436,9 +488,8 @@
           <if test='isOverdue != null and isOverdue'> AND r.node_status NOT IN (SELECT code FROM node_statuses WHERE is_end = 1) AND r.due_date IS NOT NULL AND r.due_date &lt; CURDATE() </if>
           <if test='status != null and status != ""'> AND r.status = #{status} </if>
           <if test='assigneeId != null'> AND r.assignee_id = #{assigneeId} </if>
-          <if test='keyword != null and keyword != ""'>
-            AND (r.title LIKE CONCAT('%', #{keyword}, '%') OR r.description LIKE CONCAT('%', #{keyword}, '%'))
-          </if>
+          <include refid="keywordScopeCondition"/>
+          <include refid="myListTimeDimensionCondition"/>
         ORDER BY COALESCE((
           SELECT MAX(pt_sort.updated_at)
           FROM requirement_pending_tasks pt_sort
@@ -562,10 +613,222 @@
           <if test='isOverdue != null and isOverdue'> AND r.node_status NOT IN (SELECT code FROM node_statuses WHERE is_end = 1) AND r.due_date IS NOT NULL AND r.due_date &lt; CURDATE() </if>
           <if test='status != null and status != ""'> AND r.status = #{status} </if>
           <if test='assigneeId != null'> AND r.assignee_id = #{assigneeId} </if>
-          <if test='keyword != null and keyword != ""'>
-            AND (r.title LIKE CONCAT('%', #{keyword}, '%') OR r.description LIKE CONCAT('%', #{keyword}, '%'))
-          </if>
+          <include refid="keywordScopeCondition"/>
+          <include refid="myListTimeDimensionCondition"/>
         ORDER BY r.updated_at DESC
+    </select>
+
+    <!-- 我的全部：合并待办/已办/关注/抄送/草稿，按更新时间倒序 -->
+    <select id="selectMyAll" resultType="com.demand.system.module.requirement.entity.Requirement">
+        SELECT DISTINCT r.*
+        FROM requirements r
+        WHERE r.deleted_at = 0
+          <include refid="myListTimeDimensionCondition"/>
+          AND r.id IN (
+              -- 草稿（仅创建人可见）
+              SELECT r2.id FROM requirements r2
+              WHERE r2.deleted_at = 0 AND r2.is_draft = 1 AND r2.creator_id = #{userId}
+              <if test='projectId != null'> AND r2.project_id = #{projectId} </if>
+              <if test='type != null and type != ""'> AND r2.type = #{type} </if>
+              <if test='priority != null and priority != ""'> AND r2.priority = #{priority} </if>
+              <if test='status != null and status != ""'> AND r2.status = #{status} </if>
+              <if test='nodeStatus != null and nodeStatus != ""'> AND r2.node_status = #{nodeStatus} </if>
+              <if test='isOverdue != null and isOverdue'> AND r2.node_status NOT IN (SELECT code FROM node_statuses WHERE is_end = 1) AND r2.due_date IS NOT NULL AND r2.due_date &lt; CURDATE() </if>
+              <if test='assigneeId != null'> AND r2.assignee_id = #{assigneeId} </if>
+              <if test='keyword != null and keyword != ""'>
+                  <choose>
+                      <when test='keywordScope == "title"'>AND r2.title LIKE CONCAT('%', #{keyword}, '%')</when>
+                      <when test='keywordScope == "requirementNo"'>AND r2.requirement_no LIKE CONCAT('%', #{keyword}, '%')</when>
+                      <when test='keywordScope == "description"'>AND r2.description LIKE CONCAT('%', #{keyword}, '%')</when>
+                      <when test='keywordScope == "assignee"'>AND EXISTS (SELECT 1 FROM users kwa WHERE kwa.id = r2.assignee_id AND kwa.deleted_at = 0 AND kwa.real_name LIKE CONCAT('%', #{keyword}, '%'))</when>
+                      <when test='keywordScope == "comment"'>AND EXISTS (SELECT 1 FROM requirement_comments kc WHERE kc.requirement_id = r2.id AND kc.content LIKE CONCAT('%', #{keyword}, '%'))</when>
+                      <otherwise>AND (r2.title LIKE CONCAT('%', #{keyword}, '%') OR r2.description LIKE CONCAT('%', #{keyword}, '%'))</otherwise>
+                  </choose>
+              </if>
+              UNION
+              -- 待办：当前节点为我处理（含角色/组织/创建人/上一审批人）
+              SELECT DISTINCT r2.id FROM requirements r2
+              JOIN workflow_instances wi ON wi.id = r2.workflow_instance_id AND wi.status = 'running'
+              JOIN workflow_nodes wn ON wn.workflow_version_id = wi.workflow_version_id AND wn.node_id = wi.current_node_id
+              WHERE r2.deleted_at = 0 AND r2.is_draft = 0 AND wn.assignee_type IS NOT NULL AND wn.assignee_type != ''
+              <if test='isSuperAdmin != true'>
+                  AND r2.org_id IN
+                  <foreach collection='visibleOrgIds' item='orgId' open='(' separator=',' close=')'>#{orgId}</foreach>
+              </if>
+              <if test='projectId != null'> AND r2.project_id = #{projectId} </if>
+              <if test='type != null and type != ""'> AND r2.type = #{type} </if>
+              <if test='priority != null and priority != ""'> AND r2.priority = #{priority} </if>
+              <if test='status != null and status != ""'> AND r2.status = #{status} </if>
+              <if test='assigneeId != null'> AND r2.assignee_id = #{assigneeId} </if>
+              <if test='nodeStatus != null and nodeStatus != ""'> AND r2.node_status = #{nodeStatus} </if>
+              <if test='isOverdue != null and isOverdue'> AND r2.node_status NOT IN (SELECT code FROM node_statuses WHERE is_end = 1) AND r2.due_date IS NOT NULL AND r2.due_date &lt; CURDATE() </if>
+              <if test='keyword != null and keyword != ""'>
+                  <choose>
+                      <when test='keywordScope == "title"'>AND r2.title LIKE CONCAT('%', #{keyword}, '%')</when>
+                      <when test='keywordScope == "requirementNo"'>AND r2.requirement_no LIKE CONCAT('%', #{keyword}, '%')</when>
+                      <when test='keywordScope == "description"'>AND r2.description LIKE CONCAT('%', #{keyword}, '%')</when>
+                      <when test='keywordScope == "assignee"'>AND EXISTS (SELECT 1 FROM users kwa WHERE kwa.id = r2.assignee_id AND kwa.deleted_at = 0 AND kwa.real_name LIKE CONCAT('%', #{keyword}, '%'))</when>
+                      <when test='keywordScope == "comment"'>AND EXISTS (SELECT 1 FROM requirement_comments kc WHERE kc.requirement_id = r2.id AND kc.content LIKE CONCAT('%', #{keyword}, '%'))</when>
+                      <otherwise>AND (r2.title LIKE CONCAT('%', #{keyword}, '%') OR r2.description LIKE CONCAT('%', #{keyword}, '%'))</otherwise>
+                  </choose>
+              </if>
+              AND (
+                  (wn.assignee_type = 'SPECIFIED_USER' AND wn.assignee_user_ids IS NOT NULL
+                      AND JSON_CONTAINS(wn.assignee_user_ids, CAST(#{userId} AS JSON)))
+                  <if test='roleCodes != null and roleCodes.size() &gt; 0'>
+                    OR (wn.assignee_type = 'SPECIFIED_ROLE' AND EXISTS (
+                      SELECT 1 FROM roles rr WHERE rr.id = wn.assignee_role_id AND rr.deleted_at = 0
+                        AND (rr.code IN <foreach collection='roleCodes' item='rc' open='(' separator=',' close=')'>#{rc}</foreach>
+                           OR rr.name IN <foreach collection='roleCodes' item='roleName' open='(' separator=',' close=')'>#{roleName}</foreach>)
+                    ))
+                    OR (wn.assignee_type = 'SPECIFIED_ROLE_GROUP' AND EXISTS (
+                      SELECT 1 FROM roles rg WHERE rg.role_group_id = wn.assignee_role_group_id AND rg.deleted_at = 0
+                        AND (rg.code IN <foreach collection='roleCodes' item='groupRoleCode' open='(' separator=',' close=')'>#{groupRoleCode}</foreach>
+                           OR rg.name IN <foreach collection='roleCodes' item='groupRoleName' open='(' separator=',' close=')'>#{groupRoleName}</foreach>)
+                    ))
+                  </if>
+                  <if test='directOrgIds != null and directOrgIds.size() &gt; 0'>
+                    OR (wn.assignee_type = 'SPECIFIED_ORG' AND (
+                      (COALESCE(JSON_UNQUOTE(JSON_EXTRACT(wn.properties, '$.orgScopeType')), 'include_children') = 'current'
+                        AND wn.assignee_org_id IN <foreach collection='directOrgIds' item='orgId' open='(' separator=',' close=')'>#{orgId}</foreach>)
+                      <if test='scopedOrgIds != null and scopedOrgIds.size() &gt; 0'>
+                        OR (COALESCE(JSON_UNQUOTE(JSON_EXTRACT(wn.properties, '$.orgScopeType')), 'include_children') != 'current'
+                          AND wn.assignee_org_id IN <foreach collection='scopedOrgIds' item='scopedOrgId' open='(' separator=',' close=')'>#{scopedOrgId}</foreach>)
+                      </if>
+                    ))
+                  </if>
+                  OR (wn.assignee_type = 'PREV_APPROVER' AND #{userId} = (
+                      SELECT wit.operator_id FROM workflow_instance_transitions wit
+                      WHERE wit.instance_id = wi.id AND wit.to_node_id = wi.current_node_id
+                      ORDER BY wit.id DESC LIMIT 1))
+                  OR (wn.assignee_type = 'CREATOR' AND r2.creator_id = #{userId})
+              )
+              UNION
+              -- 已办：创建或审批过，且当前不在我待办的节点
+              SELECT DISTINCT r2.id FROM requirements r2
+              WHERE r2.deleted_at = 0 AND r2.is_draft = 0
+              <if test='isSuperAdmin != true'>
+                  AND r2.org_id IN
+                  <foreach collection='visibleOrgIds' item='orgId' open='(' separator=',' close=')'>#{orgId}</foreach>
+              </if>
+              <if test='projectId != null'> AND r2.project_id = #{projectId} </if>
+              <if test='type != null and type != ""'> AND r2.type = #{type} </if>
+              <if test='priority != null and priority != ""'> AND r2.priority = #{priority} </if>
+              <if test='status != null and status != ""'> AND r2.status = #{status} </if>
+              <if test='assigneeId != null'> AND r2.assignee_id = #{assigneeId} </if>
+              <if test='nodeStatus != null and nodeStatus != ""'> AND r2.node_status = #{nodeStatus} </if>
+              <if test='isOverdue != null and isOverdue'> AND r2.node_status NOT IN (SELECT code FROM node_statuses WHERE is_end = 1) AND r2.due_date IS NOT NULL AND r2.due_date &lt; CURDATE() </if>
+              <if test='keyword != null and keyword != ""'>
+                  <choose>
+                      <when test='keywordScope == "title"'>AND r2.title LIKE CONCAT('%', #{keyword}, '%')</when>
+                      <when test='keywordScope == "requirementNo"'>AND r2.requirement_no LIKE CONCAT('%', #{keyword}, '%')</when>
+                      <when test='keywordScope == "description"'>AND r2.description LIKE CONCAT('%', #{keyword}, '%')</when>
+                      <when test='keywordScope == "assignee"'>AND EXISTS (SELECT 1 FROM users kwa WHERE kwa.id = r2.assignee_id AND kwa.deleted_at = 0 AND kwa.real_name LIKE CONCAT('%', #{keyword}, '%'))</when>
+                      <when test='keywordScope == "comment"'>AND EXISTS (SELECT 1 FROM requirement_comments kc WHERE kc.requirement_id = r2.id AND kc.content LIKE CONCAT('%', #{keyword}, '%'))</when>
+                      <otherwise>AND (r2.title LIKE CONCAT('%', #{keyword}, '%') OR r2.description LIKE CONCAT('%', #{keyword}, '%'))</otherwise>
+                  </choose>
+              </if>
+              AND (
+                  r2.creator_id = #{userId}
+                  OR EXISTS (SELECT 1 FROM workflow_instance_transitions wit WHERE wit.requirement_id = r2.id AND wit.operator_id = #{userId})
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM workflow_instances wi2
+                  JOIN workflow_nodes wn2 ON wn2.workflow_version_id = wi2.workflow_version_id AND wn2.node_id = wi2.current_node_id
+                  WHERE wi2.id = r2.workflow_instance_id AND wi2.status = 'running' AND wn2.assignee_type IS NOT NULL
+                    AND wn2.assignee_type != ''
+                    AND (
+                        (wn2.assignee_type = 'SPECIFIED_USER' AND wn2.assignee_user_ids IS NOT NULL
+                            AND JSON_CONTAINS(wn2.assignee_user_ids, CAST(#{userId} AS JSON)))
+                        <if test='roleCodes != null and roleCodes.size() &gt; 0'>
+                          OR (wn2.assignee_type = 'SPECIFIED_ROLE' AND EXISTS (
+                            SELECT 1 FROM roles rr WHERE rr.id = wn2.assignee_role_id AND rr.deleted_at = 0
+                              AND (rr.code IN <foreach collection='roleCodes' item='rc' open='(' separator=',' close=')'>#{rc}</foreach>
+                                 OR rr.name IN <foreach collection='roleCodes' item='roleName' open='(' separator=',' close=')'>#{roleName}</foreach>)
+                          ))
+                          OR (wn2.assignee_type = 'SPECIFIED_ROLE_GROUP' AND EXISTS (
+                            SELECT 1 FROM roles rg WHERE rg.role_group_id = wn2.assignee_role_group_id AND rg.deleted_at = 0
+                              AND (rg.code IN <foreach collection='roleCodes' item='groupRoleCode' open='(' separator=',' close=')'>#{groupRoleCode}</foreach>
+                                 OR rg.name IN <foreach collection='roleCodes' item='groupRoleName' open='(' separator=',' close=')'>#{groupRoleName}</foreach>)
+                          ))
+                        </if>
+                        <if test='directOrgIds != null and directOrgIds.size() &gt; 0'>
+                          OR (wn2.assignee_type = 'SPECIFIED_ORG' AND (
+                              (COALESCE(JSON_UNQUOTE(JSON_EXTRACT(wn2.properties, '$.orgScopeType')), 'include_children') = 'current'
+                                  AND wn2.assignee_org_id IN <foreach collection='directOrgIds' item='orgId' open='(' separator=',' close=')'>#{orgId}</foreach>)
+                              <if test='scopedOrgIds != null and scopedOrgIds.size() &gt; 0'>
+                                  OR (COALESCE(JSON_UNQUOTE(JSON_EXTRACT(wn2.properties, '$.orgScopeType')), 'include_children') != 'current'
+                                      AND wn2.assignee_org_id IN <foreach collection='scopedOrgIds' item='scopedOrgId' open='(' separator=',' close=')'>#{scopedOrgId}</foreach>)
+                              </if>
+                          ))
+                        </if>
+                        OR (wn2.assignee_type = 'PREV_APPROVER' AND #{userId} = (
+                            SELECT wit2.operator_id FROM workflow_instance_transitions wit2
+                            WHERE wit2.instance_id = wi2.id AND wit2.to_node_id = wi2.current_node_id
+                            ORDER BY wit2.id DESC LIMIT 1))
+                        OR (wn2.assignee_type = 'CREATOR' AND r2.creator_id = #{userId})
+                    )
+              )
+              UNION
+              -- 关注
+              SELECT r2.id FROM requirement_follows rf
+              JOIN requirements r2 ON r2.id = rf.requirement_id
+              WHERE rf.user_id = #{userId} AND r2.deleted_at = 0 AND r2.is_draft = 0
+              <if test='projectId != null'> AND r2.project_id = #{projectId} </if>
+              <if test='type != null and type != ""'> AND r2.type = #{type} </if>
+              <if test='priority != null and priority != ""'> AND r2.priority = #{priority} </if>
+              <if test='status != null and status != ""'> AND r2.status = #{status} </if>
+              <if test='assigneeId != null'> AND r2.assignee_id = #{assigneeId} </if>
+              <if test='nodeStatus != null and nodeStatus != ""'> AND r2.node_status = #{nodeStatus} </if>
+              <if test='isOverdue != null and isOverdue'> AND r2.node_status NOT IN (SELECT code FROM node_statuses WHERE is_end = 1) AND r2.due_date IS NOT NULL AND r2.due_date &lt; CURDATE() </if>
+              <if test='keyword != null and keyword != ""'>
+                  <choose>
+                      <when test='keywordScope == "title"'>AND r2.title LIKE CONCAT('%', #{keyword}, '%')</when>
+                      <when test='keywordScope == "requirementNo"'>AND r2.requirement_no LIKE CONCAT('%', #{keyword}, '%')</when>
+                      <when test='keywordScope == "description"'>AND r2.description LIKE CONCAT('%', #{keyword}, '%')</when>
+                      <when test='keywordScope == "assignee"'>AND EXISTS (SELECT 1 FROM users kwa WHERE kwa.id = r2.assignee_id AND kwa.deleted_at = 0 AND kwa.real_name LIKE CONCAT('%', #{keyword}, '%'))</when>
+                      <when test='keywordScope == "comment"'>AND EXISTS (SELECT 1 FROM requirement_comments kc WHERE kc.requirement_id = r2.id AND kc.content LIKE CONCAT('%', #{keyword}, '%'))</when>
+                      <otherwise>AND (r2.title LIKE CONCAT('%', #{keyword}, '%') OR r2.description LIKE CONCAT('%', #{keyword}, '%'))</otherwise>
+                  </choose>
+              </if>
+              <if test='isSuperAdmin == false'>
+                  <choose>
+                      <when test='visibleOrgIds != null and visibleOrgIds.size() &gt; 0'>
+                          AND r2.org_id IN <foreach collection='visibleOrgIds' item='orgId' open='(' separator=',' close=')'>#{orgId}</foreach>
+                      </when>
+                      <otherwise>AND r2.creator_id = #{userId}</otherwise>
+                  </choose>
+              </if>
+              UNION
+              -- 抄送
+              SELECT r2.id FROM requirements r2
+              WHERE EXISTS (
+                  SELECT 1 FROM requirement_pending_tasks pt
+                  WHERE pt.task_type = 'CC_READ_ONLY' AND pt.user_id = #{userId} AND pt.requirement_id = r2.id
+              ) AND r2.deleted_at = 0 AND r2.is_draft = 0
+              <if test='isSuperAdmin != true'>
+                  AND r2.org_id IN
+                  <foreach collection='visibleOrgIds' item='orgId' open='(' separator=',' close=')'>#{orgId}</foreach>
+              </if>
+              <if test='projectId != null'> AND r2.project_id = #{projectId} </if>
+              <if test='type != null and type != ""'> AND r2.type = #{type} </if>
+              <if test='priority != null and priority != ""'> AND r2.priority = #{priority} </if>
+              <if test='status != null and status != ""'> AND r2.status = #{status} </if>
+              <if test='assigneeId != null'> AND r2.assignee_id = #{assigneeId} </if>
+              <if test='nodeStatus != null and nodeStatus != ""'> AND r2.node_status = #{nodeStatus} </if>
+              <if test='isOverdue != null and isOverdue'> AND r2.node_status NOT IN (SELECT code FROM node_statuses WHERE is_end = 1) AND r2.due_date IS NOT NULL AND r2.due_date &lt; CURDATE() </if>
+              <if test='keyword != null and keyword != ""'>
+                  <choose>
+                      <when test='keywordScope == "title"'>AND r2.title LIKE CONCAT('%', #{keyword}, '%')</when>
+                      <when test='keywordScope == "requirementNo"'>AND r2.requirement_no LIKE CONCAT('%', #{keyword}, '%')</when>
+                      <when test='keywordScope == "description"'>AND r2.description LIKE CONCAT('%', #{keyword}, '%')</when>
+                      <when test='keywordScope == "assignee"'>AND EXISTS (SELECT 1 FROM users kwa WHERE kwa.id = r2.assignee_id AND kwa.deleted_at = 0 AND kwa.real_name LIKE CONCAT('%', #{keyword}, '%'))</when>
+                      <when test='keywordScope == "comment"'>AND EXISTS (SELECT 1 FROM requirement_comments kc WHERE kc.requirement_id = r2.id AND kc.content LIKE CONCAT('%', #{keyword}, '%'))</when>
+                      <otherwise>AND (r2.title LIKE CONCAT('%', #{keyword}, '%') OR r2.description LIKE CONCAT('%', #{keyword}, '%'))</otherwise>
+                  </choose>
+              </if>
+          )
+        ORDER BY r.updated_at DESC, r.id DESC
     </select>
 
 </mapper>

@@ -84,6 +84,10 @@ export function getMyRequirementDone(params: RequirementMyListQuery) {
   return request.get<ApiResponse<PageResult<Requirement>>>('/v1/requirements/my-done', { params }) as unknown as Promise<PageResult<Requirement>>
 }
 
+export function getMyRequirementAll(params: RequirementMyListQuery) {
+  return request.get<ApiResponse<PageResult<Requirement>>>('/v1/requirements/my-all', { params }) as unknown as Promise<PageResult<Requirement>>
+}
+
 export function getRequirementNextNodes(id: number) {
   return request.get<ApiResponse<NextNodeOption[]>>(`/v1/requirements/${id}/next-nodes`) as unknown as Promise<NextNodeOption[]>
 }

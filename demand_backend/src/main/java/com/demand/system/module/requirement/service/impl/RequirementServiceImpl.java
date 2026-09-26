@@ -270,12 +270,7 @@ public class RequirementServiceImpl implements RequirementService {
             wrapper.eq(Requirement::getIterationId, query.getIterationId());
         }
         if (StringUtils.hasText(query.getKeyword())) {
-            // 使用全文索引替代 LIKE '%keyword%'，性能提升 10-50 倍
-            // 全文索引 ngram 已在 V20260626_01 迁移中创建
-            final String keyword = query.getKeyword();
-            wrapper.and(w -> w.apply("MATCH(title, description) AGAINST({0} IN BOOLEAN MODE)", keyword)
-                    .or().like(Requirement::getTitle, keyword) // 兜底：短词/特殊字符
-                    .or().like(Requirement::getDescription, keyword));
+            applyKeywordCondition(wrapper, query.getKeyword(), query.getKeywordScope());
         }
 
         if (query.getCreatedAtStart() != null) {
@@ -310,7 +305,9 @@ public class RequirementServiceImpl implements RequirementService {
                 wrapper.orderByDesc(getColumnFunction(query.getSortField()));
             }
         } else {
-            wrapper.orderByDesc(Requirement::getCreatedAt);
+            // 默认按更新时间倒序：节点流转/编辑都会刷新 updated_at
+            wrapper.orderByDesc(Requirement::getUpdatedAt);
+            wrapper.orderByDesc(Requirement::getId);
         }
 
         // === 混合分页策略 ===
@@ -334,6 +331,7 @@ public class RequirementServiceImpl implements RequirementService {
                         BeanUtils.copyProperties(r, vo);
                         voList.add(vo);
                     }
+                    batchFillCanDeleteForListVO(voList, records, currentUserId);
                     batchFillUserNamesAndOrgForListVO(voList, records);
                     batchFillFollowedForListVO(voList, currentUserId);
                 }
@@ -368,6 +366,7 @@ public class RequirementServiceImpl implements RequirementService {
                 BeanUtils.copyProperties(r, vo);
                 voList.add(vo);
             }
+            batchFillCanDeleteForListVO(voList, records, currentUserId);
             batchFillUserNamesAndOrgForListVO(voList, records);
             batchFillFollowedForListVO(voList, currentUserId);
         }
@@ -942,8 +941,8 @@ public class RequirementServiceImpl implements RequirementService {
     public PageResult<RequirementVO> listMyDrafts(RequirementMyListQueryDTO query, Long userId) {
         Page<Requirement> page = new Page<>(query.getPageNum(), query.getPageSize());
         var result = requirementMapper.selectMyDrafts(page, userId, null, null, query.getProjectId(),
-                query.getType(), query.getPriority(), query.getStatus(), query.getAssigneeId(), query.getKeyword(),
-                query.getNodeStatus(), query.getIsOverdue());
+                query.getType(), query.getPriority(), query.getStatus(), query.getAssigneeId(), query.getKeyword(), query.getKeywordScope(),
+                query.getNodeStatus(), query.getIsOverdue(), query);
         List<RequirementVO> list = new ArrayList<>();
         for (Requirement r : result.getRecords()) {
             RequirementVO vo = new RequirementVO();
@@ -984,14 +983,14 @@ public class RequirementServiceImpl implements RequirementService {
 
             result = requirementMapper.selectMyPendingV2(page, userId, roleIds, orgIds,
                     query.getProjectId(), query.getType(), query.getPriority(),
-                    query.getStatus(), query.getAssigneeId(), query.getKeyword(),
-                    query.getNodeStatus(), query.getIsOverdue(), isSuperAdmin, visibleOrgIds);
+                    query.getStatus(), query.getAssigneeId(), query.getKeyword(), query.getKeywordScope(),
+                    query.getNodeStatus(), query.getIsOverdue(), isSuperAdmin, visibleOrgIds, query);
         } else if (USE_PENDING_TASK_OPTIMIZATION) {
             // 使用物化表优化查询
             result = requirementMapper.selectMyPendingOptimized(page, userId,
                     query.getProjectId(), query.getType(), query.getPriority(),
-                    query.getStatus(), query.getAssigneeId(), query.getKeyword(),
-                    isSuperAdmin, visibleOrgIds);
+                    query.getStatus(), query.getAssigneeId(), query.getKeyword(), query.getKeywordScope(),
+                    isSuperAdmin, visibleOrgIds, query);
         } else {
             // 使用原始复杂查询（兼容模式）
             List<Long> directOrgIds = resolveDirectOrgIds(userId);
@@ -999,7 +998,7 @@ public class RequirementServiceImpl implements RequirementService {
 
             result = requirementMapper.selectMyPending(page, userId, currentRoleCodes, directOrgIds, scopedOrgIds,
                     query.getProjectId(), query.getType(), query.getPriority(), query.getStatus(), query.getAssigneeId(),
-                    query.getKeyword(), isSuperAdmin, visibleOrgIds);
+                    query.getKeyword(), query.getKeywordScope(), isSuperAdmin, visibleOrgIds, query);
         }
 
         List<RequirementVO> list = new ArrayList<>();
@@ -1026,8 +1025,8 @@ public class RequirementServiceImpl implements RequirementService {
 
         Page<Requirement> page = new Page<>(query.getPageNum(), query.getPageSize());
         var result = requirementMapper.selectMyFollows(page, userId, query.getProjectId(), query.getType(),
-                query.getPriority(), query.getStatus(), query.getAssigneeId(), query.getKeyword(), isSuperAdmin,
-                visibleOrgIds, query.getNodeStatus(), query.getIsOverdue());
+                query.getPriority(), query.getStatus(), query.getAssigneeId(), query.getKeyword(), query.getKeywordScope(), isSuperAdmin,
+                visibleOrgIds, query.getNodeStatus(), query.getIsOverdue(), query);
         List<RequirementVO> list = new ArrayList<>();
         for (Requirement r : result.getRecords()) {
             RequirementVO vo = new RequirementVO();
@@ -1056,8 +1055,8 @@ public class RequirementServiceImpl implements RequirementService {
         Page<Requirement> page = new Page<>(query.getPageNum(), query.getPageSize());
         IPage<Requirement> result = requirementMapper.selectMyCc(page, userId,
                 query.getProjectId(), query.getType(), query.getPriority(), query.getStatus(),
-                query.getAssigneeId(), query.getKeyword(), query.getNodeStatus(), query.getIsOverdue(),
-                isSuperAdmin, visibleOrgIds);
+                query.getAssigneeId(), query.getKeyword(), query.getKeywordScope(), query.getNodeStatus(), query.getIsOverdue(),
+                isSuperAdmin, visibleOrgIds, query);
         List<RequirementVO> list = new ArrayList<>();
         for (Requirement r : result.getRecords()) {
             RequirementVO vo = new RequirementVO();
@@ -1102,8 +1101,8 @@ public class RequirementServiceImpl implements RequirementService {
 
             result = requirementMapper.selectMyDoneV2(page, userId, roleIds, orgIds,
                     query.getProjectId(), query.getType(), query.getPriority(),
-                    query.getStatus(), query.getAssigneeId(), query.getKeyword(),
-                    query.getNodeStatus(), query.getIsOverdue(), isSuperAdmin, visibleOrgIds);
+                    query.getStatus(), query.getAssigneeId(), query.getKeyword(), query.getKeywordScope(),
+                    query.getNodeStatus(), query.getIsOverdue(), isSuperAdmin, visibleOrgIds, query);
         } else {
             // 使用旧查询（兼容模式）
             List<Long> directOrgIds = resolveDirectOrgIds(userId);
@@ -1111,7 +1110,7 @@ public class RequirementServiceImpl implements RequirementService {
 
             result = requirementMapper.selectMyDone(page, userId, currentRoleCodes, directOrgIds, scopedOrgIds,
                     query.getProjectId(), query.getType(), query.getPriority(), query.getStatus(), query.getAssigneeId(),
-                    query.getKeyword(), isSuperAdmin, visibleOrgIds);
+                    query.getKeyword(), query.getKeywordScope(), isSuperAdmin, visibleOrgIds, query);
         }
 
         List<RequirementVO> list = new ArrayList<>();
@@ -1124,6 +1123,39 @@ public class RequirementServiceImpl implements RequirementService {
         // 批量填充关注状态
         batchFillFollowed(list, userId);
         // 填充权限字段（我的已办需要 operationType 来显示操作按钮）
+        for (int i = 0; i < list.size(); i++) {
+            fillPermissionFields(list.get(i), result.getRecords().get(i), userId);
+        }
+        return new PageResult<>(list, result.getTotal(), query.getPageNum(), query.getPageSize());
+    }
+
+    @Override
+    public PageResult<RequirementVO> listMyAll(RequirementMyListQueryDTO query, Long userId) {
+        List<String> currentRoleCodes = SecurityUtils.getCurrentUserRoles();
+        boolean isSuperAdmin = isSuperAdmin(currentRoleCodes);
+        List<Long> visibleOrgIds = resolveVisibleOrgIds(userId, isSuperAdmin);
+
+        if (!isSuperAdmin && visibleOrgIds.isEmpty()) {
+            return new PageResult<>(Collections.emptyList(), 0L, query.getPageNum(), query.getPageSize());
+        }
+
+        List<Long> directOrgIds = resolveDirectOrgIds(userId);
+        List<Long> scopedOrgIds = resolveScopedOrgIds(directOrgIds);
+
+        Page<Requirement> page = new Page<>(query.getPageNum(), query.getPageSize());
+        IPage<Requirement> result = requirementMapper.selectMyAll(page, userId, currentRoleCodes,
+                directOrgIds, scopedOrgIds, query.getProjectId(), query.getType(), query.getPriority(),
+                query.getStatus(), query.getAssigneeId(), query.getKeyword(), query.getKeywordScope(),
+                query.getNodeStatus(), query.getIsOverdue(), isSuperAdmin, visibleOrgIds, query);
+
+        List<RequirementVO> list = new ArrayList<>();
+        for (Requirement r : result.getRecords()) {
+            RequirementVO vo = new RequirementVO();
+            BeanUtils.copyProperties(r, vo);
+            list.add(vo);
+        }
+        batchFillUserNamesAndOrg(list, result.getRecords());
+        batchFillFollowed(list, userId);
         for (int i = 0; i < list.size(); i++) {
             fillPermissionFields(list.get(i), result.getRecords().get(i), userId);
         }
@@ -1337,12 +1369,14 @@ public class RequirementServiceImpl implements RequirementService {
                 map.put("requirementId", t.getRequirementId());
                 map.put("operatorId", t.getOperatorId());
                 map.put("operatorName", t.getOperatorName());
+                map.put("operatorRoleName", t.getOperatorRoleName());
                 map.put("action", t.getAction());
                 // 根据action设置fieldName
                 String fieldName = "submit".equals(t.getAction()) ? "流程流转" :
                                  "rollback".equals(t.getAction()) ? "流程驳回" :
                                  "cancel".equals(t.getAction()) ? "流程取消" :
-                                 "proxy_approve".equals(t.getAction()) ? "代审批" : "流程流转";
+                                 "proxy_approve".equals(t.getAction()) ? "代审批" :
+                                 "draft".equals(t.getAction()) ? "创建草稿" : "流程流转";
                 map.put("fieldName", fieldName);
                 map.put("oldValue", t.getFromNodeName() != null ? t.getFromNodeName() : (t.getFromNodeId() != null ? t.getFromNodeId() : "开始"));
                 map.put("newValue", t.getToNodeName() != null ? t.getToNodeName() : (t.getToNodeId() != null ? t.getToNodeId() : "完成"));
@@ -1700,6 +1734,7 @@ public class RequirementServiceImpl implements RequirementService {
             case "dueDate" -> Requirement::getDueDate;
             case "orderNum" -> Requirement::getOrderNum;
             case "createdAt" -> Requirement::getCreatedAt;
+            case "updatedAt" -> Requirement::getUpdatedAt;
             default -> Requirement::getCreatedAt;
         };
     }
@@ -2136,6 +2171,58 @@ public class RequirementServiceImpl implements RequirementService {
     }
 
     /**
+     * 为列表页整页批量填充 canDelete（口径与 {@code delete()} 对齐）。
+     *
+     * <p>草稿：仅创建人可删；非草稿：创建者或管理员 + 静态删除权限 + 无流转记录。
+     * 缺「无流转记录」判定会让列表页渲染出「点击必然报错」的删除按钮
+     * （delete() 会抛「已流转的需求不能删除」）。
+     * 流转记录按整页需求 ID 批量查询（统一引擎表 + 旧表各 1 次），避免逐行 COUNT。</p>
+     */
+    private void batchFillCanDeleteForListVO(List<RequirementListVO> voList, List<Requirement> records, Long currentUserId) {
+        if (voList == null || voList.isEmpty() || records == null || records.isEmpty()) {
+            return;
+        }
+        // 整页非草稿需求中已有流转记录的 ID 集合（两次批量查询）
+        List<Long> nonDraftIds = new ArrayList<>();
+        for (Requirement r : records) {
+            if (r.getId() != null && !Boolean.TRUE.equals(r.getIsDraft())) {
+                nonDraftIds.add(r.getId());
+            }
+        }
+        Set<Long> flowedIds = new HashSet<>();
+        if (!nonDraftIds.isEmpty()) {
+            List<Long> unified = workflowInstanceTransitionMapper.selectList(
+                    new LambdaQueryWrapper<WorkflowInstanceTransition>()
+                            .in(WorkflowInstanceTransition::getRequirementId, nonDraftIds)
+                            .select(WorkflowInstanceTransition::getRequirementId))
+                    .stream().map(WorkflowInstanceTransition::getRequirementId).toList();
+            flowedIds.addAll(unified);
+            if (flowedIds.size() < nonDraftIds.size()) {
+                List<Long> legacy = workflowTransitionRecordMapper.selectList(
+                        new LambdaQueryWrapper<com.demand.system.module.workflow.entity.WorkflowTransitionRecord>()
+                                .in(com.demand.system.module.workflow.entity.WorkflowTransitionRecord::getRequirementId, nonDraftIds)
+                                .select(com.demand.system.module.workflow.entity.WorkflowTransitionRecord::getRequirementId))
+                        .stream().map(com.demand.system.module.workflow.entity.WorkflowTransitionRecord::getRequirementId).toList();
+                flowedIds.addAll(legacy);
+            }
+        }
+
+        boolean hasDeletePermission = SecurityUtils.hasAnyPermission("button:requirement:delete");
+
+        for (RequirementListVO vo : voList) {
+            if (Boolean.TRUE.equals(vo.getIsDraft())) {
+                vo.setCanDelete(Objects.equals(vo.getCreatorId(), currentUserId));
+                continue;
+            }
+            boolean allowed = (Objects.equals(vo.getCreatorId(), currentUserId)
+                    || SecurityUtils.getCurrentUserRoles().contains("admin"))
+                    && hasDeletePermission
+                    && !flowedIds.contains(vo.getId());
+            vo.setCanDelete(allowed);
+        }
+    }
+
+    /**
      * 批量补全需求列表的关注状态。
      *
      * <p>原实现按行调用 fillFollowed，每行触发 1 次 SELECT COUNT 查询（N 次）。
@@ -2493,6 +2580,8 @@ public class RequirementServiceImpl implements RequirementService {
             vo.setCanEdit(isCreator);
             vo.setCanView(isSuperAdmin || isCreator);
             vo.setCanApprove(false);
+            // 草稿仅创建人可删（与 delete() 的「只有创建者可以删除草稿」对齐）
+            vo.setCanDelete(isCreator);
             vo.setOperationType(isCreator ? "edit" : "view");
             return;
         }
@@ -2518,21 +2607,50 @@ public class RequirementServiceImpl implements RequirementService {
             }
         }
 
+        // 非草稿删除口径与 delete() 完全对齐：创建者或管理员 + 静态删除权限 + 无流转记录。
+        // 缺「无流转记录」判定会让前端渲染出「点击必然报错」的删除按钮（已流转的需求不能删除）。
+        boolean hasDeletePermission = SecurityUtils.hasAnyPermission("button:requirement:delete");
+        boolean noTransitionHistory = !hasTransitionHistory(r.getId());
+        boolean canDelete = (isCreator || isSuperAdmin)
+                && hasDeletePermission
+                && noTransitionHistory;
+
         // 流转中状态：有审批权限且未参与过可审批，否则可查看
         if (canApprove) {
             vo.setCanEdit(false);
             vo.setCanView(true);
             vo.setCanApprove(true);
+            vo.setCanDelete(canDelete);
             vo.setOperationType("approve");
             log.debug("Set operationType=approve for requirement: id={}, userId={}", r.getId(), userId);
         } else {
             vo.setCanEdit(false);
             vo.setCanView(true);
             vo.setCanApprove(false);
+            vo.setCanDelete(canDelete);
             vo.setOperationType("view");
             log.debug("Set operationType=view for requirement: id={}, userId={}, reason=no approve permission",
                      r.getId(), userId);
         }
+    }
+
+    /**
+     * 该需求是否已有流转记录（统一引擎表 + 旧表）。
+     *
+     * <p>与 {@code delete()} 中「已流转的需求不能删除」的判定、
+     * {@code WorkflowEngineService#hasTransitionHistory} 保持三处一致。</p>
+     */
+    private boolean hasTransitionHistory(Long requirementId) {
+        Long unifiedCount = workflowInstanceTransitionMapper.selectCount(
+                new LambdaQueryWrapper<WorkflowInstanceTransition>()
+                        .eq(WorkflowInstanceTransition::getRequirementId, requirementId));
+        if (unifiedCount != null && unifiedCount > 0) {
+            return true;
+        }
+        Long legacyCount = workflowTransitionRecordMapper.selectCount(
+                new LambdaQueryWrapper<com.demand.system.module.workflow.entity.WorkflowTransitionRecord>()
+                        .eq(com.demand.system.module.workflow.entity.WorkflowTransitionRecord::getRequirementId, requirementId));
+        return legacyCount != null && legacyCount > 0;
     }
 
     /**
@@ -2611,8 +2729,8 @@ public class RequirementServiceImpl implements RequirementService {
                 Page<Requirement> page = new Page<>(1, 10000);
                 var result = requirementMapper.selectMyDrafts(page, currentUserId, null, null,
                         myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
-                        myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(),
-                        myQuery.getNodeStatus(), myQuery.getIsOverdue());
+                        myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(), myQuery.getKeywordScope(),
+                        myQuery.getNodeStatus(), myQuery.getIsOverdue(), myQuery);
                 records = result.getRecords();
             }
             case "pending" -> {
@@ -2624,15 +2742,15 @@ public class RequirementServiceImpl implements RequirementService {
                     List<Long> orgIds = getUserOrgIds(currentUserId);
                     result = requirementMapper.selectMyPendingV2(page, currentUserId, roleIds, orgIds,
                             myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
-                            myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(),
-                            myQuery.getNodeStatus(), myQuery.getIsOverdue(), isSuperAdmin, visibleOrgIds);
+                            myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(), myQuery.getKeywordScope(),
+                            myQuery.getNodeStatus(), myQuery.getIsOverdue(), isSuperAdmin, visibleOrgIds, myQuery);
                 } else {
                     List<Long> directOrgIds = resolveDirectOrgIds(currentUserId);
                     List<Long> scopedOrgIds = resolveScopedOrgIds(directOrgIds);
                     result = requirementMapper.selectMyPending(page, currentUserId, currentRoleCodes, directOrgIds, scopedOrgIds,
                             myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
-                            myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(),
-                            isSuperAdmin, visibleOrgIds);
+                            myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(), myQuery.getKeywordScope(),
+                            isSuperAdmin, visibleOrgIds, myQuery);
                 }
                 records = result.getRecords();
             }
@@ -2645,15 +2763,15 @@ public class RequirementServiceImpl implements RequirementService {
                     List<Long> orgIds = getUserOrgIds(currentUserId);
                     result = requirementMapper.selectMyDoneV2(page, currentUserId, roleIds, orgIds,
                             myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
-                            myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(),
-                            myQuery.getNodeStatus(), myQuery.getIsOverdue(), isSuperAdmin, visibleOrgIds);
+                            myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(), myQuery.getKeywordScope(),
+                            myQuery.getNodeStatus(), myQuery.getIsOverdue(), isSuperAdmin, visibleOrgIds, myQuery);
                 } else {
                     List<Long> directOrgIds = resolveDirectOrgIds(currentUserId);
                     List<Long> scopedOrgIds = resolveScopedOrgIds(directOrgIds);
                     result = requirementMapper.selectMyDone(page, currentUserId, currentRoleCodes, directOrgIds, scopedOrgIds,
                             myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
-                            myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(),
-                            isSuperAdmin, visibleOrgIds);
+                            myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(), myQuery.getKeywordScope(),
+                            isSuperAdmin, visibleOrgIds, myQuery);
                 }
                 records = result.getRecords();
             }
@@ -2662,8 +2780,8 @@ public class RequirementServiceImpl implements RequirementService {
                 Page<Requirement> page = new Page<>(1, 10000);
                 var result = requirementMapper.selectMyFollows(page, currentUserId,
                         myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
-                        myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(),
-                        isSuperAdmin, visibleOrgIds, myQuery.getNodeStatus(), myQuery.getIsOverdue());
+                        myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(), myQuery.getKeywordScope(),
+                        isSuperAdmin, visibleOrgIds, myQuery.getNodeStatus(), myQuery.getIsOverdue(), myQuery);
                 records = result.getRecords();
             }
             case "cc" -> {
@@ -2671,8 +2789,8 @@ public class RequirementServiceImpl implements RequirementService {
                 Page<Requirement> page = new Page<>(1, 10000);
                 var result = requirementMapper.selectMyCc(page, currentUserId,
                         myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
-                        myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(),
-                        myQuery.getNodeStatus(), myQuery.getIsOverdue(), isSuperAdmin, visibleOrgIds);
+                        myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(), myQuery.getKeywordScope(),
+                        myQuery.getNodeStatus(), myQuery.getIsOverdue(), isSuperAdmin, visibleOrgIds, myQuery);
                 records = result.getRecords();
             }
             default -> {
@@ -2728,10 +2846,7 @@ public class RequirementServiceImpl implements RequirementService {
             wrapper.eq(Requirement::getIterationId, query.getIterationId());
         }
         if (StringUtils.hasText(query.getKeyword())) {
-            final String keyword = query.getKeyword();
-            wrapper.and(w -> w.apply("MATCH(title, description) AGAINST({0} IN BOOLEAN MODE)", keyword)
-                    .or().like(Requirement::getTitle, keyword)
-                    .or().like(Requirement::getDescription, keyword));
+            applyKeywordCondition(wrapper, query.getKeyword(), query.getKeywordScope());
         }
         if (query.getCreatedAtStart() != null) {
             wrapper.ge(Requirement::getCreatedAt, query.getCreatedAtStart());
@@ -2758,7 +2873,7 @@ public class RequirementServiceImpl implements RequirementService {
             wrapper.le(Requirement::getDevelopmentCompletedAt, query.getDevelopmentCompletedAtEnd());
         }
 
-        wrapper.orderByDesc(Requirement::getCreatedAt);
+        wrapper.orderByDesc(Requirement::getUpdatedAt);
 
         // 导出数据量上限保护：先查总数，超限拒绝导出
         Long count = requirementMapper.selectCount(wrapper);
@@ -2781,7 +2896,55 @@ public class RequirementServiceImpl implements RequirementService {
         myQuery.setStatus(query.getStatus());
         myQuery.setAssigneeId(query.getAssigneeId());
         myQuery.setKeyword(query.getKeyword());
+        myQuery.setKeywordScope(query.getKeywordScope());
+        myQuery.setNodeStatus(query.getNodeStatus());
+        myQuery.setIsOverdue(query.getIsOverdue());
+        // 时间维度筛选与"全部需求"视图共用字段口径
+        myQuery.setCreatedAtStart(query.getCreatedAtStart());
+        myQuery.setCreatedAtEnd(query.getCreatedAtEnd());
+        myQuery.setAnalysisCompletedAtStart(query.getAnalysisCompletedAtStart());
+        myQuery.setAnalysisCompletedAtEnd(query.getAnalysisCompletedAtEnd());
+        myQuery.setConfirmAtStart(query.getConfirmAtStart());
+        myQuery.setConfirmAtEnd(query.getConfirmAtEnd());
+        myQuery.setDevelopmentCompletedAtStart(query.getDevelopmentCompletedAtStart());
+        myQuery.setDevelopmentCompletedAtEnd(query.getDevelopmentCompletedAtEnd());
         return myQuery;
+    }
+
+    /**
+     * 按搜索范围构造关键词查询条件（"全部需求"视图与导出共用）。
+     * <p>
+     * scope 取值（不区分大小写，空值按综合处理）：
+     * <ul>
+     *   <li>all / 空 —— 综合：标题 + 正文（走全文索引，LIKE 兜底短词）</li>
+     *   <li>title —— 仅需求标题</li>
+     *   <li>requirementNo —— 仅需求编号</li>
+     *   <li>description —— 仅工单正文</li>
+     *   <li>assignee —— 仅当前处理人姓名</li>
+     *   <li>comment —— 仅需求评论内容</li>
+     * </ul>
+     */
+    private void applyKeywordCondition(LambdaQueryWrapper<Requirement> wrapper, String keyword, String scope) {
+        String normalized = scope == null ? "" : scope.trim().toLowerCase();
+        switch (normalized) {
+            case "title" -> wrapper.like(Requirement::getTitle, keyword);
+            case "requirementno" -> wrapper.like(Requirement::getRequirementNo, keyword);
+            case "description" -> wrapper.like(Requirement::getDescription, keyword);
+            case "assignee" -> wrapper.apply(
+                    "EXISTS (SELECT 1 FROM users kwa WHERE kwa.id = requirements.assignee_id"
+                            + " AND kwa.deleted_at = 0 AND kwa.real_name LIKE CONCAT('%', {0}, '%'))",
+                    keyword);
+            case "comment" -> wrapper.apply(
+                    "EXISTS (SELECT 1 FROM requirement_comments kwc WHERE kwc.requirement_id = requirements.id"
+                            + " AND kwc.content LIKE CONCAT('%', {0}, '%'))",
+                    keyword);
+            default -> wrapper.and(w -> w
+                    // 使用全文索引替代 LIKE '%keyword%'，性能提升 10-50 倍
+                    // 全文索引 ngram 已在 V20260626_01 迁移中创建
+                    .apply("MATCH(title, description) AGAINST({0} IN BOOLEAN MODE)", keyword)
+                    .or().like(Requirement::getTitle, keyword) // 兜底：短词/特殊字符
+                    .or().like(Requirement::getDescription, keyword));
+        }
     }
 
     /**

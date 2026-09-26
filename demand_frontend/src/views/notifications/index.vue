@@ -4,7 +4,6 @@
       <el-tooltip content="暂无未读通知" placement="top" :disabled="!list.every(n => n.isRead === 1)">
         <span>
           <AppButton
-            permission="button:notification:manage"
             type="primary"
             size="small"
             :disabled="list.every(n => n.isRead === 1)"

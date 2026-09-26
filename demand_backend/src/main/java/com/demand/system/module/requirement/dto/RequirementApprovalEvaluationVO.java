@@ -11,6 +11,10 @@ public class RequirementApprovalEvaluationVO {
     private Long transitionId;
     private String nodeId;
     private String nodeName;
+    /** 流转来源节点名（来自 workflow_instance_transitions.from_node_name） */
+    private String fromNodeName;
+    /** 流转目标节点名（来自 workflow_instance_transitions.to_node_name） */
+    private String toNodeName;
     private String nodeStatusCode;
     private String nodeStatusName;
     private Long parentId;
@@ -79,6 +83,22 @@ public class RequirementApprovalEvaluationVO {
 
     public void setNodeName(String nodeName) {
         this.nodeName = nodeName;
+    }
+
+    public String getFromNodeName() {
+        return fromNodeName;
+    }
+
+    public void setFromNodeName(String fromNodeName) {
+        this.fromNodeName = fromNodeName;
+    }
+
+    public String getToNodeName() {
+        return toNodeName;
+    }
+
+    public void setToNodeName(String toNodeName) {
+        this.toNodeName = toNodeName;
     }
 
     public String getNodeStatusCode() {

@@ -8,6 +8,20 @@ import { transformWithEsbuild } from 'vite'
 
 const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || 'http://localhost:8081'
 
+// 后端不可用时的代理错误治理：把 ECONNREFUSED 三行堆栈风暴收敛为限频一行提示，
+// 并向浏览器返回规范 503 JSON（request.ts 拦截器按"网络异常"分支处理，不弹全局 toast）。
+let lastProxyErrorLogAt = 0
+function handleProxyError(err: Error, req: { url?: string }, res?: { writeHead?: Function; end?: Function; headersSent?: boolean }) {
+  if (Date.now() - lastProxyErrorLogAt > 10_000) {
+    lastProxyErrorLogAt = Date.now()
+    console.warn(`[api-proxy] 后端 ${apiProxyTarget} 不可用（${err.code || err.message}），请求返回 503：${req?.url || ''}`)
+  }
+  if (res && typeof res.writeHead === 'function' && !res.headersSent) {
+    res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' })
+    res.end(JSON.stringify({ code: 503, message: '后端服务不可用（未启动或重启中）', data: null }))
+  }
+}
+
 // C1: 生产构建剥离 console / debugger 的 Vite 插件
 // 通过 transformWithEsbuild 在 build 阶段对每个业务模块显式 drop，避免 console.error 随产物上线
 function stripConsoleInProd() {
@@ -55,11 +69,17 @@ export default defineConfig({
       '/api': {
         target: apiProxyTarget,
         changeOrigin: true,
+        configure(proxy) {
+          proxy.on('error', handleProxyError)
+        },
       },
       '/ws': {
         target: apiProxyTarget,
         ws: true,
         changeOrigin: true,
+        configure(proxy) {
+          proxy.on('error', handleProxyError)
+        },
       },
     },
   },

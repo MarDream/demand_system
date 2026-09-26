@@ -2,6 +2,7 @@ package com.demand.system.module.requirement.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.demand.system.module.requirement.dto.RequirementMyListQueryDTO;
 import com.demand.system.module.requirement.entity.Requirement;
 import org.apache.ibatis.annotations.Param;
 
@@ -36,8 +37,10 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                       @Param("status") String status,
                                       @Param("assigneeId") Long assigneeId,
                                       @Param("keyword") String keyword,
+                                      @Param("keywordScope") String keywordScope,
                                       @Param("nodeStatus") String nodeStatus,
-                                      @Param("isOverdue") Boolean isOverdue);
+                                      @Param("isOverdue") Boolean isOverdue,
+                                      @Param("timeQuery") RequirementMyListQueryDTO timeQuery);
 
     IPage<Requirement> selectMyPending(IPage<Requirement> page,
                                        @Param("userId") Long userId,
@@ -50,8 +53,10 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                        @Param("status") String status,
                                        @Param("assigneeId") Long assigneeId,
                                        @Param("keyword") String keyword,
+                                       @Param("keywordScope") String keywordScope,
                                        @Param("isSuperAdmin") boolean isSuperAdmin,
-                                       @Param("visibleOrgIds") List<Long> visibleOrgIds);
+                                       @Param("visibleOrgIds") List<Long> visibleOrgIds,
+                                       @Param("timeQuery") RequirementMyListQueryDTO timeQuery);
 
     IPage<Requirement> selectMyFollows(IPage<Requirement> page,
                                        @Param("userId") Long userId,
@@ -61,10 +66,12 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                        @Param("status") String status,
                                        @Param("assigneeId") Long assigneeId,
                                        @Param("keyword") String keyword,
+                                       @Param("keywordScope") String keywordScope,
                                        @Param("isSuperAdmin") boolean isSuperAdmin,
                                        @Param("visibleOrgIds") List<Long> visibleOrgIds,
                                        @Param("nodeStatus") String nodeStatus,
-                                       @Param("isOverdue") Boolean isOverdue);
+                                       @Param("isOverdue") Boolean isOverdue,
+                                       @Param("timeQuery") RequirementMyListQueryDTO timeQuery);
 
     /**
      * 我的抄送：仅返回只读查阅待办，不参与审批权限判断。
@@ -77,10 +84,12 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                   @Param("status") String status,
                                   @Param("assigneeId") Long assigneeId,
                                   @Param("keyword") String keyword,
+                                  @Param("keywordScope") String keywordScope,
                                   @Param("nodeStatus") String nodeStatus,
                                   @Param("isOverdue") Boolean isOverdue,
                                   @Param("isSuperAdmin") boolean isSuperAdmin,
-                                  @Param("visibleOrgIds") List<Long> visibleOrgIds);
+                                  @Param("visibleOrgIds") List<Long> visibleOrgIds,
+                                  @Param("timeQuery") RequirementMyListQueryDTO timeQuery);
 
     /**
      * 我的已办 - 查询当前用户创建的已提交需求 或 审批过的需求，排除当前待我审批的需求
@@ -101,8 +110,31 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                     @Param("status") String status,
                                     @Param("assigneeId") Long assigneeId,
                                     @Param("keyword") String keyword,
+                                    @Param("keywordScope") String keywordScope,
                                     @Param("isSuperAdmin") boolean isSuperAdmin,
-                                    @Param("visibleOrgIds") List<Long> visibleOrgIds);
+                                    @Param("visibleOrgIds") List<Long> visibleOrgIds,
+                                    @Param("timeQuery") RequirementMyListQueryDTO timeQuery);
+
+    /**
+     * 我的全部：合并草稿/待办/已办/关注/抄送，按更新时间倒序去重。
+     */
+    IPage<Requirement> selectMyAll(IPage<Requirement> page,
+                                    @Param("userId") Long userId,
+                                    @Param("roleCodes") List<String> roleCodes,
+                                    @Param("directOrgIds") List<Long> directOrgIds,
+                                    @Param("scopedOrgIds") List<Long> scopedOrgIds,
+                                    @Param("projectId") Long projectId,
+                                    @Param("type") String type,
+                                    @Param("priority") String priority,
+                                    @Param("status") String status,
+                                    @Param("assigneeId") Long assigneeId,
+                                    @Param("keyword") String keyword,
+                                    @Param("keywordScope") String keywordScope,
+                                    @Param("nodeStatus") String nodeStatus,
+                                    @Param("isOverdue") Boolean isOverdue,
+                                    @Param("isSuperAdmin") boolean isSuperAdmin,
+                                    @Param("visibleOrgIds") List<Long> visibleOrgIds,
+                                    @Param("timeQuery") RequirementMyListQueryDTO timeQuery);
 
     /**
      * 我的待办 - 使用物化表优化（新版本）
@@ -117,8 +149,10 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                                 @Param("status") String status,
                                                 @Param("assigneeId") Long assigneeId,
                                                 @Param("keyword") String keyword,
+                                                @Param("keywordScope") String keywordScope,
                                                 @Param("isSuperAdmin") boolean isSuperAdmin,
-                                                @Param("visibleOrgIds") List<Long> visibleOrgIds);
+                                                @Param("visibleOrgIds") List<Long> visibleOrgIds,
+                                                @Param("timeQuery") RequirementMyListQueryDTO timeQuery);
 
     /**
      * 我的待办 - 使用运行期待办物化表判定当前处理权限。
@@ -134,10 +168,12 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                          @Param("status") String status,
                                          @Param("assigneeId") Long assigneeId,
                                          @Param("keyword") String keyword,
+                                         @Param("keywordScope") String keywordScope,
                                          @Param("nodeStatus") String nodeStatus,
                                          @Param("isOverdue") Boolean isOverdue,
                                          @Param("isSuperAdmin") boolean isSuperAdmin,
-                                         @Param("visibleOrgIds") List<Long> visibleOrgIds);
+                                         @Param("visibleOrgIds") List<Long> visibleOrgIds,
+                                         @Param("timeQuery") RequirementMyListQueryDTO timeQuery);
 
     /**
      * 我的已办 - 查询当前用户创建或已处理的需求，并使用运行期待办物化表排除当前仍待我处理的需求。
@@ -152,8 +188,10 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                       @Param("status") String status,
                                       @Param("assigneeId") Long assigneeId,
                                       @Param("keyword") String keyword,
+                                      @Param("keywordScope") String keywordScope,
                                       @Param("nodeStatus") String nodeStatus,
                                       @Param("isOverdue") Boolean isOverdue,
                                       @Param("isSuperAdmin") boolean isSuperAdmin,
-                                      @Param("visibleOrgIds") List<Long> visibleOrgIds);
+                                      @Param("visibleOrgIds") List<Long> visibleOrgIds,
+                                      @Param("timeQuery") RequirementMyListQueryDTO timeQuery);
 }

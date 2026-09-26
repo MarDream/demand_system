@@ -52,6 +52,7 @@ import com.demand.system.module.workflow.entity.*;
 import com.demand.system.module.workflow.mapper.WorkflowEdgeMapper;
 import com.demand.system.module.workflow.mapper.WorkflowInstanceMapper;
 import com.demand.system.module.workflow.mapper.WorkflowInstanceTransitionMapper;
+import com.demand.system.module.workflow.mapper.WorkflowTransitionRecordMapper;
 import com.demand.system.module.workflow.mapper.WorkflowNodeMapper;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.demand.system.module.workflow.mapper.NodeStatusMapper;
@@ -110,6 +111,8 @@ public class WorkflowEngineService {
 
     private final WorkflowInstanceMapper instanceMapper;
     private final WorkflowInstanceTransitionMapper transitionMapper;
+    /** 旧流转记录表（已由统一引擎取代，仅用于「已流转不可删」的兼容判定）。 */
+    private final WorkflowTransitionRecordMapper transitionRecordMapper;
     private final WorkflowNodeMapper nodeMapper;
     private final WorkflowEdgeMapper edgeMapper;
     private final WorkflowVersionMapper workflowVersionMapper;
@@ -141,6 +144,7 @@ public class WorkflowEngineService {
     private final WorkflowCcService ccService;
 
     public WorkflowEngineService(WorkflowInstanceMapper instanceMapper, WorkflowInstanceTransitionMapper transitionMapper,
+                               WorkflowTransitionRecordMapper transitionRecordMapper,
                                WorkflowNodeMapper nodeMapper, WorkflowEdgeMapper edgeMapper,
                                WorkflowVersionMapper workflowVersionMapper,
                                RequirementMapper requirementMapper, RequirementHistoryMapper requirementHistoryMapper,
@@ -166,6 +170,7 @@ public class WorkflowEngineService {
                                WorkflowCcService ccService) {
         this.instanceMapper = instanceMapper;
         this.transitionMapper = transitionMapper;
+        this.transitionRecordMapper = transitionRecordMapper;
         this.nodeMapper = nodeMapper;
         this.edgeMapper = edgeMapper;
         this.workflowVersionMapper = workflowVersionMapper;
@@ -255,6 +260,8 @@ public class WorkflowEngineService {
         if (requirement.getWorkflowInstanceId() != null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "需求已提交，无需重复提交");
         }
+        // 草稿创建时间：提交后需求的 created_at 将改写为本次提交时间，草稿时间仅保留在流转历史中
+        LocalDateTime draftCreatedAt = requirement.getCreatedAt();
 
         WorkflowGraphContext context = runtimeLoader.loadContext(workflowVersionId);
         WorkflowNode startNode = context.nodesById().values().stream()
@@ -285,6 +292,23 @@ public class WorkflowEngineService {
         instance.setLockVersion(0);
         instanceMapper.insert(instance);
 
+        // 草稿阶段落一条流转记录：展示草稿创建时间；completed_at 留空使 H5 端回退展示 createdAt
+        LocalDateTime submitTime = LocalDateTime.now();
+        WorkflowInstanceTransition draftTransition = new WorkflowInstanceTransition();
+        draftTransition.setInstanceId(instance.getId());
+        draftTransition.setRequirementId(requirementId);
+        draftTransition.setFromNodeId("draft");
+        draftTransition.setFromNodeName("草稿");
+        draftTransition.setToNodeId(startNode.getNodeId());
+        draftTransition.setToNodeName(startNode.getNodeName());
+        draftTransition.setOperatorId(operatorId);
+        draftTransition.setOperatorRoleName(resolveOperatorRoleName(operatorId));
+        draftTransition.setAction("draft");
+        draftTransition.setComment("创建草稿");
+        draftTransition.setStartedAt(draftCreatedAt != null ? draftCreatedAt : submitTime);
+        draftTransition.setCreatedAt(draftCreatedAt != null ? draftCreatedAt : submitTime);
+        transitionMapper.insert(draftTransition);
+
         WorkflowInstanceTransition transition = new WorkflowInstanceTransition();
         transition.setInstanceId(instance.getId());
         transition.setRequirementId(requirementId);
@@ -293,9 +317,10 @@ public class WorkflowEngineService {
         transition.setToNodeId(targetNodeId);
         transition.setToNodeName(targetNode.getNodeName());
         transition.setOperatorId(operatorId);
+        transition.setOperatorRoleName(resolveOperatorRoleName(operatorId, targetNode.getAssigneeRoleId() != null ? targetNode.getAssigneeRoleId().longValue() : null));
         transition.setAction("submit");
         transition.setComment(comment);
-        transition.setStartedAt(LocalDateTime.now());
+        transition.setStartedAt(submitTime);
         transitionMapper.insert(transition);
         approvalEvaluationService.saveOnTransition(instance, targetNode, transition.getId(), operatorId, comment);
 
@@ -305,7 +330,11 @@ public class WorkflowEngineService {
                 .set(Requirement::getWorkflowInstanceId, instance.getId())
                 .set(Requirement::getStatus, resolveNodeStatusName(nodeStatusCode))
                 .set(Requirement::getNodeStatus, nodeStatusCode)
-                .set(Requirement::getIsDraft, false));
+                .set(Requirement::getIsDraft, false)
+                // 创建时间以首次提交流转时间为准
+                .set(Requirement::getCreatedAt, submitTime)
+                // 更新时间：UpdateWrapper 直写不触发自动填充，须显式刷新（列表按更新时间倒序）
+                .set(Requirement::getUpdatedAt, LocalDateTime.now()));
 
         notificationService.notifyNodeEntered(requirement, targetNode, operatorId);
         // 节点消息提醒开关开启时，向已审批路径 / 实际处理用户推送站内消息
@@ -404,6 +433,7 @@ public class WorkflowEngineService {
         newTransition.setToNodeId(request.getToNodeId());
         newTransition.setToNodeName(targetNode.getNodeName());
         newTransition.setOperatorId(operatorId);
+        newTransition.setOperatorRoleName(resolveOperatorRoleName(operatorId, currentNode != null && currentNode.getAssigneeRoleId() != null ? currentNode.getAssigneeRoleId().longValue() : null));
         newTransition.setAction(resolvedAction);
         newTransition.setComment(request.getComment());
         newTransition.setStartedAt(LocalDateTime.now());
@@ -444,7 +474,9 @@ public class WorkflowEngineService {
         LambdaUpdateWrapper<Requirement> requirementUpdate = new LambdaUpdateWrapper<Requirement>()
             .eq(Requirement::getId, request.getRequirementId())
             .set(Requirement::getStatus, resolveNodeStatusName(nodeStatusCode))
-            .set(Requirement::getNodeStatus, nodeStatusCode);
+            .set(Requirement::getNodeStatus, nodeStatusCode)
+            // 更新时间：UpdateWrapper 直写不触发自动填充，须显式刷新（列表按更新时间倒序）
+            .set(Requirement::getUpdatedAt, LocalDateTime.now());
         // 记录离开"待分析/待确认/开发中"节点的结束时间
         stampNodeEndTime(requirementUpdate, currentNode);
         requirementMapper.update(null, requirementUpdate);
@@ -478,8 +510,12 @@ public class WorkflowEngineService {
     private void validateSelectedAssignee(WorkflowNode targetNode, Requirement requirement,
                                           Long operatorId, Long selectedAssigneeId) {
         List<AssigneeCandidateDTO> candidates = resolveAssigneeCandidates(targetNode, requirement, operatorId);
+        if (candidates.isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "目标节点未配置处理人或该节点无可用候选人");
+        }
         if (selectedAssigneeId == null && candidates.size() > 1) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择一个具体处理人");
+            // candidates > 1 时允许传 null（表示「全部」，流转后由待办系统按角色/组织分配）
+            return;
         }
         if (selectedAssigneeId == null) {
             return;
@@ -557,6 +593,7 @@ public class WorkflowEngineService {
         typeChangeTransition.setToNodeId(initialNodeId);
         typeChangeTransition.setToNodeName(resolveNodeNameById(newVersion.getId(), initialNodeId));
         typeChangeTransition.setOperatorId(operatorId);
+        typeChangeTransition.setOperatorRoleName(resolveOperatorRoleName(operatorId, currentNode.getAssigneeRoleId() != null ? currentNode.getAssigneeRoleId().longValue() : null));
         typeChangeTransition.setAction("type_change");
         typeChangeTransition.setComment("工单类型变更：" + oldType + " -> " + newType
                 + (StringUtils.hasText(request.getComment()) ? "（" + request.getComment() + "）" : ""));
@@ -844,6 +881,10 @@ public class WorkflowEngineService {
         if ("end".equals(currentNode.getNodeType())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "结束节点不可回退");
         }
+        // 节点配置了「允许驳回」开关且未勾选时，服务端同样拒绝（与前端按钮隐藏口径一致）
+        if (!isNodeActionAllowed(currentNode, "allowReject")) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "当前节点不允许驳回");
+        }
 
         // 如果 previousNodeId 为空（如迁移后），尝试从工作流图找到上一个节点
         String targetNodeId = instance.getPreviousNodeId();
@@ -873,6 +914,7 @@ public class WorkflowEngineService {
         rollbackTransition.setToNodeId(targetNodeId);
         rollbackTransition.setToNodeName(targetNode != null ? targetNode.getNodeName() : "");
         rollbackTransition.setOperatorId(operatorId);
+        rollbackTransition.setOperatorRoleName(resolveOperatorRoleName(operatorId, currentNode != null && currentNode.getAssigneeRoleId() != null ? currentNode.getAssigneeRoleId().longValue() : null));
         rollbackTransition.setAction("rollback");
         rollbackTransition.setComment(comment);
         rollbackTransition.setStartedAt(LocalDateTime.now());
@@ -937,6 +979,7 @@ public class WorkflowEngineService {
         cancelTransition.setToNodeId("cancelled");
         cancelTransition.setToNodeName("已取消");
         cancelTransition.setOperatorId(operatorId);
+        cancelTransition.setOperatorRoleName(resolveOperatorRoleName(operatorId));
         cancelTransition.setAction("cancel");
         cancelTransition.setComment(comment);
         cancelTransition.setStartedAt(LocalDateTime.now());
@@ -1015,9 +1058,12 @@ public class WorkflowEngineService {
 
         // 基于工作流节点权限判断编辑/删除/拆分权限
         boolean isCreatorOrAdmin = isCreatorOrAdmin(requirement, operatorId);
-        actions.setCanEdit(canOperate);
-        actions.setCanDelete(isCreatorOrAdmin);
-        actions.setCanSplit(canOperate);
+        // 节点配置开关（工作流节点详情勾选）：勾选显示、未勾选隐藏；历史节点缺省视为允许
+        actions.setCanEdit(canOperate && isNodeActionAllowed(currentNode, "allowEdit"));
+        // 与 RequirementServiceImpl#delete 的授权口径对齐：除创建人/管理员外，已流转的需求不可删除。
+        // 不对齐会让前端渲染出一个「点击必然报错」的删除按钮。
+        actions.setCanDelete(isCreatorOrAdmin && !hasTransitionHistory(requirement.getId()));
+        actions.setCanSplit(canOperate && isNodeActionAllowed(currentNode, "allowSplit"));
 
         List<AvailableTransitionDTO> transitions = Collections.emptyList();
         if (canOperate) {
@@ -1038,13 +1084,19 @@ public class WorkflowEngineService {
                 dto.setDefaultAssigneeId(!assigneeCandidates.isEmpty() ? assigneeCandidates.get(0).getId() : null);
                 dto.setAssigneeDisplayName(resolveAssigneeDisplayName(targetNode, requirement, operatorId, assigneeCandidates));
                 dto.setAssigneeScopeName(resolveAssigneeScopeName(targetNode, requirement, operatorId));
+                dto.setAssigneeDisplayHint(assigneeCandidates.size() > 1
+                        ? "该节点有 " + assigneeCandidates.size() + " 位候选人，选中「全部」则所有成员均可审批"
+                        : null);
                 return dto;
             }).collect(Collectors.toList());
         }
 
         actions.setTransitions(transitions);
         actions.setCanTransition(canOperate && !transitions.isEmpty());
-        actions.setCanRollback(canOperate && !"start".equals(currentNode.getNodeType()) && !"end".equals(currentNode.getNodeType()));
+        actions.setCanRollback(canOperate
+                && !"start".equals(currentNode.getNodeType())
+                && !"end".equals(currentNode.getNodeType())
+                && isNodeActionAllowed(currentNode, "allowReject"));
         actions.setCanCancel(canCancel);
 
         // 统一的评价配置解析（版本级别优先于节点级别）
@@ -1432,6 +1484,18 @@ public class WorkflowEngineService {
         return Boolean.TRUE.equals(value);
     }
 
+    /**
+     * 节点动作开关（工作流节点详情勾选：allowEdit/allowSplit/allowReject）。
+     * 历史节点配置无此字段时缺省视为允许（保持既有行为），显式 false 才视为隐藏/禁止。
+     */
+    private boolean isNodeActionAllowed(WorkflowNode currentNode, String key) {
+        if (currentNode == null || currentNode.getProperties() == null) {
+            return true;
+        }
+        Object value = currentNode.getProperties().get(key);
+        return value == null || Boolean.TRUE.equals(value);
+    }
+
     private void validateApprovalEvaluation(WorkflowNode currentNode, Integer rating,
                                             Map<String, Integer> ratingDimensions, String comment) {
         EvaluationConfig cfg = resolveNodeRatingConfig(currentNode);
@@ -1571,6 +1635,7 @@ public class WorkflowEngineService {
             vo.setToNodeId(t.getToNodeId());
             vo.setToNodeName(t.getToNodeName());
             vo.setOperatorId(t.getOperatorId());
+            vo.setOperatorRoleName(t.getOperatorRoleName());
             vo.setAction(t.getAction());
             vo.setComment(t.getComment());
             vo.setStartedAt(t.getStartedAt());
@@ -1939,21 +2004,15 @@ public class WorkflowEngineService {
         Long normalizedRequestedProjectId = normalizeProjectId(requestedProjectId);
         Long currentProjectId = normalizeProjectId(requirement.getProjectId());
 
-        if (normalizedRequestedProjectId <= 0) {
+        if (normalizedRequestedProjectId <= 0 || Objects.equals(currentProjectId, normalizedRequestedProjectId)) {
             return;
-        }
-        if (currentProjectId > 0 && !Objects.equals(currentProjectId, normalizedRequestedProjectId)) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "需求已绑定项目，不允许在流转时修改");
         }
         ensureProjectCanBeBound(normalizedRequestedProjectId);
-        if (currentProjectId > 0) {
-            return;
-        }
 
         requirementMapper.update(null, new LambdaUpdateWrapper<Requirement>()
                 .eq(Requirement::getId, requirement.getId())
                 .set(Requirement::getProjectId, normalizedRequestedProjectId));
-        recordProjectBindingHistory(requirement.getId(), operatorId, normalizedRequestedProjectId);
+        recordProjectBindingHistory(requirement.getId(), operatorId, currentProjectId, normalizedRequestedProjectId);
     }
 
     private boolean canCancelRequirement(Requirement requirement, WorkflowInstance instance, WorkflowNode currentNode, Long operatorId) {
@@ -1978,6 +2037,28 @@ public class WorkflowEngineService {
 
     private boolean hasAdminBypassPermission() {
         return SecurityUtils.hasAnyRole("admin", "super_admin", "SUPER_ADMIN");
+    }
+
+    /**
+     * 该需求是否已有流转记录（统一引擎表 + 旧表）。
+     *
+     * <p>与 {@code RequirementServiceImpl#delete} 中「已流转的需求不能删除」的判定保持一致，
+     * 供 {@code getAvailableActions} 计算 canDelete，避免前端渲染出必然失败的删除按钮。</p>
+     */
+    private boolean hasTransitionHistory(Long requirementId) {
+        if (requirementId == null) {
+            return false;
+        }
+        Long unifiedCount = transitionMapper.selectCount(
+                new LambdaQueryWrapper<WorkflowInstanceTransition>()
+                        .eq(WorkflowInstanceTransition::getRequirementId, requirementId));
+        if (unifiedCount != null && unifiedCount > 0) {
+            return true;
+        }
+        Long legacyCount = transitionRecordMapper.selectCount(
+                new LambdaQueryWrapper<WorkflowTransitionRecord>()
+                        .eq(WorkflowTransitionRecord::getRequirementId, requirementId));
+        return legacyCount != null && legacyCount > 0;
     }
 
     /**
@@ -2052,13 +2133,13 @@ public class WorkflowEngineService {
         return projectId == null || projectId <= 0 ? 0L : projectId;
     }
 
-    private void recordProjectBindingHistory(Long requirementId, Long operatorId, Long projectId) {
+    private void recordProjectBindingHistory(Long requirementId, Long operatorId, Long oldProjectId, Long newProjectId) {
         RequirementHistory history = new RequirementHistory();
         history.setRequirementId(requirementId);
         history.setOperatorId(operatorId);
         history.setFieldName("projectId");
-        history.setOldValue("未绑定");
-        history.setNewValue("绑定项目#" + projectId);
+        history.setOldValue(oldProjectId != null && oldProjectId > 0 ? "绑定项目#" + oldProjectId : "未绑定");
+        history.setNewValue("绑定项目#" + newProjectId);
         history.setCreatedAt(LocalDateTime.now());
         requirementHistoryMapper.insert(history);
     }
@@ -2106,6 +2187,63 @@ public class WorkflowEngineService {
 
     private String resolveNodeStatusCode(WorkflowNode node) {
         return WorkflowNodeUtils.resolveNodeStatusCode(node, true);
+    }
+
+    /**
+     * 解析操作人的展示角色名称（写入流转记录做快照）：
+     * <ol>
+     *   <li>如果提供了节点配置的角色 ID，且操作人拥有该角色，则优先使用该角色名称</li>
+     *   <li>否则取操作人所有角色中 sort_order 最小者，并列取 id 最小者</li>
+     * </ol>
+     */
+    private String resolveOperatorRoleName(Long operatorId, Long nodeRoleId) {
+        if (operatorId == null) {
+            return null;
+        }
+        List<UserRole> userRoles = userRoleMapper.selectList(
+                new LambdaQueryWrapper<UserRole>().eq(UserRole::getUserId, operatorId));
+        if (userRoles == null || userRoles.isEmpty()) {
+            return null;
+        }
+        List<Long> roleIds = userRoles.stream()
+                .map(UserRole::getRoleId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (roleIds.isEmpty()) {
+            return null;
+        }
+        // 优先使用节点配置的角色（如果操作人拥有该角色）
+        if (nodeRoleId != null && roleIds.contains(nodeRoleId)) {
+            Role nodeRole = roleMapper.selectById(nodeRoleId);
+            if (nodeRole != null) {
+                return nodeRole.getName();
+            }
+        }
+        // 回退：取用户主角色（sort_order 最小，并列取 id 最小）
+        Role best = null;
+        int bestSort = Integer.MAX_VALUE;
+        long bestId = Long.MAX_VALUE;
+        for (Role role : roleMapper.selectBatchIds(roleIds)) {
+            if (role == null) {
+                continue;
+            }
+            int sort = role.getSortOrder() == null ? Integer.MAX_VALUE : role.getSortOrder();
+            long id = role.getId() == null ? Long.MAX_VALUE : role.getId();
+            if (best == null || sort < bestSort || (sort == bestSort && id < bestId)) {
+                best = role;
+                bestSort = sort;
+                bestId = id;
+            }
+        }
+        return best != null ? best.getName() : null;
+    }
+
+    /**
+     * 无节点角色时的重载：只取用户主角色
+     */
+    private String resolveOperatorRoleName(Long operatorId) {
+        return resolveOperatorRoleName(operatorId, null);
     }
 
     /**

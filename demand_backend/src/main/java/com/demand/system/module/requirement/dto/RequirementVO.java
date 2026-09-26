@@ -108,6 +108,9 @@ public class RequirementVO {
 
     private Boolean canApprove;
 
+    /** 当前用户是否可删除（与 RequirementServiceImpl#delete 的授权口径对齐） */
+    private Boolean canDelete;
+
     private Boolean isParticipant;
 
     private String operationType;
@@ -491,6 +494,14 @@ public class RequirementVO {
 
     public void setCanApprove(Boolean canApprove) {
         this.canApprove = canApprove;
+    }
+
+    public Boolean getCanDelete() {
+        return canDelete;
+    }
+
+    public void setCanDelete(Boolean canDelete) {
+        this.canDelete = canDelete;
     }
 
     public Boolean getIsParticipant() {

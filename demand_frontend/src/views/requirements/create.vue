@@ -245,7 +245,7 @@
             </el-form-item>
 
             <el-form-item v-if="shouldShowField('dueDate')" label="期望上线日期">
-              <el-input v-if="isDueDateReadOnly" :model-value="formData.dueDate || '-'" readonly />
+              <el-input v-if="isDueDateReadOnly" :model-value="formatDate(formData.dueDate, 'YYYY-MM-DD')" readonly />
               <el-date-picker
                 v-else
                 v-model="formData.dueDate"

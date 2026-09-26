@@ -48,6 +48,7 @@ export interface Requirement {
   canEdit?: boolean        // 可编辑
   canView?: boolean        // 可查看
   canApprove?: boolean     // 可审批
+  canDelete?: boolean      // 可删除（后端按 delete() 同款口径计算；旧数据缺失时视为不可删）
   isParticipant?: boolean  // 是否参与人
   operationType?: 'edit' | 'approve' | 'view'  // 操作类型
   followed?: boolean       // 当前登录用户是否已关注
@@ -132,8 +133,19 @@ export interface RequirementMyListQuery {
   status?: string
   assigneeId?: number
   keyword?: string
+  /** 关键词搜索范围：all(综合) / title / requirementNo / description / assignee / comment */
+  keywordScope?: string
   nodeStatus?: string
   isOverdue?: boolean
+  /** 时间维度筛选（与全部需求视图共用口径） */
+  createdAtStart?: string
+  createdAtEnd?: string
+  analysisCompletedAtStart?: string
+  analysisCompletedAtEnd?: string
+  confirmAtStart?: string
+  confirmAtEnd?: string
+  developmentCompletedAtStart?: string
+  developmentCompletedAtEnd?: string
   pageNum: number
   pageSize: number
 }
@@ -164,6 +176,8 @@ export interface RequirementQuery {
   assigneeId?: number
   iterationId?: number
   keyword?: string
+  /** 关键词搜索范围：all(综合) / title / requirementNo / description / assignee / comment */
+  keywordScope?: string
   createdAtStart?: string
   createdAtEnd?: string
   analysisCompletedAtStart?: string
@@ -218,6 +232,10 @@ export interface RequirementApprovalEvaluation {
   transitionId?: number | null
   nodeId: string
   nodeName: string
+  /** 流转来源节点名 */
+  fromNodeName?: string | null
+  /** 流转目标节点名 */
+  toNodeName?: string | null
   nodeStatusCode?: string | null
   nodeStatusName?: string | null
   parentId?: number | null

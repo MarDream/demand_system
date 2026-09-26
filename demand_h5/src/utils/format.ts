@@ -83,6 +83,12 @@ export function formatTime(time?: string | null): string {
   return dayjs(time).format('YYYY-MM-DD HH:mm')
 }
 
+/** 纯日期格式化（YYYY-MM-DD），用于期望上线日期等不含时间的字段 */
+export function formatDate(time?: string | null): string {
+  if (!time) return '-'
+  return dayjs(time).format('YYYY-MM-DD')
+}
+
 /** 富文本描述剥离 HTML 标签为纯文本（H5 端不做富文本渲染，避免样式与 XSS 问题） */
 export function stripHtml(html?: string | null): string {
   if (!html) return ''
