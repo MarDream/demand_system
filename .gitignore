@@ -10,10 +10,18 @@ demand_frontend/.env.*.local
 demand_backend/target/
 demand_frontend/dist/
 demand_frontend/node_modules/
+demand_h5/dist/
+demand_h5/node_modules/
 
 # Test artifacts (临时调试截图、E2E 报告等，不入库)
 data/
 contracts/openapi/
+probe-*.png
+shots/
+demand_frontend/test-report.*
+demand_frontend/console-audit-result.json
+demand_frontend/e2e/.auth/
+*.bak
 
 # Auto-generated type declarations (unplugin-auto-import / unplugin-vue-components)
 demand_frontend/auto-imports.d.ts
@@ -69,6 +77,10 @@ start-claude.bat
 
 # Local agent runtime state (workbuddy memory, do not ship)
 .workbuddy/
+.workbuddy-ai/
+
+# 编辑器 / 本机工具配置
+.zcodeignore
 
 # Local verification/import scripts & artifacts (contain env-specific creds/logic, do not ship)
 scripts/
