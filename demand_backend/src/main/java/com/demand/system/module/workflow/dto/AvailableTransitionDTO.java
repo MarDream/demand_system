@@ -8,6 +8,9 @@ public class AvailableTransitionDTO {
 
     private String toNodeName;
 
+    /** 目标节点类型（start/approval/end 等）：end 表示流转到结束节点，无需处理人 */
+    private String toNodeType;
+
     private String label;
 
     private String bindStatusCode;
@@ -60,6 +63,14 @@ public class AvailableTransitionDTO {
 
     public void setToNodeName(String toNodeName) {
         this.toNodeName = toNodeName;
+    }
+
+    public String getToNodeType() {
+        return toNodeType;
+    }
+
+    public void setToNodeType(String toNodeType) {
+        this.toNodeType = toNodeType;
     }
 
     public String getLabel() {

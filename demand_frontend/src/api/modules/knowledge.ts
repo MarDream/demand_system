@@ -96,6 +96,13 @@ export interface SearchResponse {
   suggestedFollowUps?: string[]
 }
 
+export interface CitationSnippet {
+  content?: string | null
+  sectionTitle?: string | null
+  pageNum?: number | null
+  score?: number | null
+}
+
 export interface CitationReference {
   index: number
   documentId: number
@@ -112,6 +119,7 @@ export interface CitationReference {
   imageFileId?: number | null
   imagePosition?: number | null
   focus?: string | null
+  snippets?: CitationSnippet[]
 }
 
 /** auto=智能检索：服务端按问题特征自动路由 hybrid/semantic/keyword */
@@ -311,6 +319,14 @@ export function rebuildRequirementBodies(requirementIds?: number[]) {
 }
 
 // 语义检索
+export function getCitationSnippets(data: {
+  query?: string
+  knowledgeBaseId: number
+  documentId: number
+  topK?: number
+}) {
+  return request.post<CitationSnippet[]>('/v1/knowledge/citations/snippets', data)
+}
 export function searchKnowledge(data: {
   query: string
   knowledgeBaseId?: number

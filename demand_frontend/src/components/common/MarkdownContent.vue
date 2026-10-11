@@ -35,13 +35,15 @@ const renderedHtml = computed(() => {
 })
 
 function handleContentClick(e: MouseEvent) {
-  const target = e.target as HTMLElement
-  if (target.classList.contains('citation-ref') && !target.classList.contains('citation-ref--invalid')) {
+  const target = (e.target as HTMLElement).closest('.citation-ref') as HTMLElement | null
+  if (target && !target.classList.contains('citation-ref--invalid')) {
     const idx = target.dataset.citationIndex
     if (idx !== undefined) {
       e.preventDefault()
       e.stopPropagation()
-      emit('citation-click', parseInt(idx, 10))
+      // data-citation-index 在 HTML 中按数组下标保存，组件对外统一发出 1-based 编号，
+      // 与回答里的 [N] 以及下方引用来源列表保持一致。
+      emit('citation-click', parseInt(idx, 10) + 1)
     }
   }
 }

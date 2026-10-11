@@ -6,6 +6,7 @@ import com.demand.system.common.result.Result;
 import com.demand.system.module.auth.security.SecurityUtils;
 import com.demand.system.module.knowledge.config.KnowledgeConfig;
 import com.demand.system.module.knowledge.config.MilvusConfig;
+import com.demand.system.module.knowledge.dto.CitationSnippetRequest;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchRequest;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse;
 import com.demand.system.module.knowledge.service.EmbeddingService;
@@ -52,6 +53,19 @@ public class KnowledgeSearchController {
         this.embeddingService = embeddingService;
         this.llmModelMapper = llmModelMapper;
         this.llmProviderMapper = llmProviderMapper;
+    }
+
+    @PostMapping("/citations/snippets")
+    @PreAuthorize("isAuthenticated()")
+    public Result<List<KnowledgeSearchResponse.CitationSnippet>> citationSnippets(
+            @Valid @RequestBody CitationSnippetRequest request) {
+        List<KnowledgeSearchResponse.CitationSnippet> snippets = searchService.findCitationSnippets(
+                request.getQuery(),
+                request.getKnowledgeBaseId(),
+                request.getDocumentId(),
+                request.getTopK(),
+                SecurityUtils.getCurrentUserId());
+        return Result.success(snippets);
     }
 
     @PostMapping("/search")

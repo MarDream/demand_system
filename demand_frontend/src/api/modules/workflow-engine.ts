@@ -25,6 +25,8 @@ export interface TransitionAssigneeCandidate {
 export interface AvailableTransition {
   toNodeId: string
   toNodeName: string
+  /** 目标节点类型（start/approval/end 等）：end 表示流转到结束节点，无需处理人 */
+  toNodeType?: string | null
   label?: string | null
   bindStatusCode?: string | null
   bindStatusName?: string | null

@@ -36,6 +36,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -1087,6 +1088,7 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                     .knowledgeBaseId(first.getKnowledgeBaseId())
                     .sources(items.stream().map(KnowledgeSearchResponse.SearchResultItem::getSectionTitle)
                             .filter(Objects::nonNull).filter(value -> !value.isBlank()).distinct().limit(8).toList())
+                    .snippets(buildCitationSnippets(items))
                     .contentType(resolveCitationContentType(items))
                     .imageFileId(bestImageItem(items) != null ? bestImageItem(items).getImageFileId() : null)
                     .imagePosition(bestImageItem(items) != null ? bestImageItem(items).getImagePosition() : null)
@@ -1110,6 +1112,37 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         return refs;
     }
 
+    /**
+     * 为预览弹窗保留少量最相关的命中段落，展示足够的实际原文，同时避免把整份文档内容重复下发。
+     */
+    private List<KnowledgeSearchResponse.CitationSnippet> buildCitationSnippets(
+            List<KnowledgeSearchResponse.SearchResultItem> items) {
+        if (items == null || items.isEmpty()) {
+            return List.of();
+        }
+        Set<String> seen = new LinkedHashSet<>();
+        return items.stream()
+                .filter(item -> item.getContent() != null && !item.getContent().isBlank())
+                .sorted(Comparator.comparingDouble(item -> item.getScore() == null ? 0d : -item.getScore()))
+                .filter(item -> seen.add(item.getContent().replaceAll("\\s+", " ").trim()))
+                .limit(3)
+                .map(item -> KnowledgeSearchResponse.CitationSnippet.builder()
+                        .content(trimCitationSnippet(item.getContent(), 1200))
+                        .sectionTitle(item.getSectionTitle())
+                        .pageNum(item.getPageNum())
+                        .score(item.getScore())
+                        .build())
+                .toList();
+    }
+
+    private String trimCitationSnippet(String content, int maxLength) {
+        String normalized = content == null ? "" : content.replaceAll("\\s+", " ").trim();
+        if (normalized.length() <= maxLength) {
+            return normalized;
+        }
+        return normalized.substring(0, maxLength).trim() + "…";
+    }
+
     private KnowledgeSearchResponse.SearchResultItem bestImageItem(List<KnowledgeSearchResponse.SearchResultItem> items) {
         return items.stream()
                 .filter(item -> item.getImageFileId() != null)
@@ -1131,6 +1164,84 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         return "body";
     }
 
+    /**
+     * 为预览弹窗补查指定文档的命中片段。
+     *
+     * <p>正常回答会把 snippets 一并放进 citation；该方法主要服务于旧消息、
+     * 服务滚动升级期间或某些历史引用没有携带 snippets 的情况。优先复用完整检索
+     * 结果，确保返回的确实是和当前问题相关的内容；检索没有命中时再从该文档已索引
+     * 的分块中按关键词匹配，最后才退化为文档开头的少量分块。</p>
+     */
+    @Override
+    public List<KnowledgeSearchResponse.CitationSnippet> findCitationSnippets(
+            String query, Long knowledgeBaseId, Long documentId, Integer topK, Long requesterId) {
+        if (documentId == null) {
+            return List.of();
+        }
+        KnowledgeDocument document = knowledgeDocumentMapper.selectById(documentId);
+        if (document == null || !"indexed".equalsIgnoreCase(document.getStatus())
+                || (knowledgeBaseId != null && !Objects.equals(knowledgeBaseId, document.getKnowledgeBaseId()))) {
+            return List.of();
+        }
+
+        int limit = Math.min(Math.max(topK == null ? 3 : topK, 1), 5);
+        String normalizedQuery = query == null ? "" : query.trim();
+        List<KnowledgeSearchResponse.SearchResultItem> matched = List.of();
+        if (!normalizedQuery.isBlank()) {
+            try {
+                KnowledgeSearchRequest searchRequest = new KnowledgeSearchRequest();
+                searchRequest.setQuery(normalizedQuery);
+                searchRequest.setKnowledgeBaseId(knowledgeBaseId);
+                searchRequest.setMode("auto");
+                searchRequest.setTopK(Math.min(Math.max(limit * 10, 50), 100));
+                searchRequest.setSearchScopes(List.of(KnowledgeSearchScope.KNOWLEDGE_BASE));
+                searchRequest.setRequesterId(requesterId);
+                KnowledgeSearchResponse response = retrieve(searchRequest);
+                matched = response.getResults() == null ? List.of() : response.getResults().stream()
+                        .filter(item -> Objects.equals(documentId, item.getDocumentId()))
+                        .toList();
+            } catch (RuntimeException e) {
+                // 预览补查不应影响文件预览本身；后面仍会尝试数据库关键词兜底。
+                log.warn("引用段落补查失败，改用文档分块兜底: documentId={}", documentId, e);
+            }
+        }
+
+        List<KnowledgeSearchResponse.CitationSnippet> snippets = buildCitationSnippets(matched).stream()
+                .limit(limit)
+                .toList();
+        if (!snippets.isEmpty()) {
+            return snippets;
+        }
+
+        LambdaQueryWrapper<KnowledgeChunk> chunkWrapper = new LambdaQueryWrapper<KnowledgeChunk>()
+                .eq(KnowledgeChunk::getDocumentId, documentId)
+                .isNotNull(KnowledgeChunk::getContent);
+        if (!normalizedQuery.isBlank()) {
+            List<String> terms = tokenizeKeyword(normalizeKeyword(normalizedQuery));
+            chunkWrapper.and(wrapper -> appendContentMatches(wrapper, normalizeKeyword(normalizedQuery), terms));
+        }
+        chunkWrapper.orderByAsc(KnowledgeChunk::getChunkIndex)
+                .last("LIMIT " + limit);
+        List<KnowledgeChunk> chunks = knowledgeChunkMapper.selectList(chunkWrapper);
+        if (chunks.isEmpty() && !normalizedQuery.isBlank()) {
+            chunkWrapper = new LambdaQueryWrapper<KnowledgeChunk>()
+                    .eq(KnowledgeChunk::getDocumentId, documentId)
+                    .isNotNull(KnowledgeChunk::getContent)
+                    .orderByAsc(KnowledgeChunk::getChunkIndex)
+                    .last("LIMIT " + limit);
+            chunks = knowledgeChunkMapper.selectList(chunkWrapper);
+        }
+        return chunks.stream()
+                .filter(chunk -> chunk.getContent() != null && !chunk.getContent().isBlank())
+                .map(chunk -> KnowledgeSearchResponse.CitationSnippet.builder()
+                        .content(trimCitationSnippet(chunk.getContent(), 1200))
+                        .sectionTitle(chunk.getSectionTitle())
+                        .pageNum(chunk.getPageNum())
+                        .score(null)
+                        .build())
+                .limit(limit)
+                .toList();
+    }
     // ==================== 工具方法 ====================
 
     private String normalizeMode(String mode) {

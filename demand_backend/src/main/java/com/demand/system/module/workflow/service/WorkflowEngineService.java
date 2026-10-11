@@ -509,6 +509,10 @@ public class WorkflowEngineService {
 
     private void validateSelectedAssignee(WorkflowNode targetNode, Requirement requirement,
                                           Long operatorId, Long selectedAssigneeId) {
+        // 结束节点无需配置处理人，流转到结束节点即表示工作流完成
+        if (targetNode != null && "end".equalsIgnoreCase(targetNode.getNodeType())) {
+            return;
+        }
         List<AssigneeCandidateDTO> candidates = resolveAssigneeCandidates(targetNode, requirement, operatorId);
         if (candidates.isEmpty()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "目标节点未配置处理人或该节点无可用候选人");
@@ -1072,6 +1076,7 @@ public class WorkflowEngineService {
                 AvailableTransitionDTO dto = new AvailableTransitionDTO();
                 dto.setToNodeId(targetNode.getNodeId());
                 dto.setToNodeName(targetNode.getNodeName());
+                dto.setToNodeType(targetNode.getNodeType());
                 dto.setLabel(targetNode.getNodeName());
                 String nodeStatusCode = resolveNodeStatusCode(targetNode);
                 dto.setBindStatusCode(nodeStatusCode);

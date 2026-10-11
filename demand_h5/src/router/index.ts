@@ -3,7 +3,8 @@ import { showToast } from 'vant'
 import { useUserStore } from '@/stores/user'
 
 const router = createRouter({
-  history: createWebHistory(),
+  // 跟随 Vite base：dev 下 BASE_URL='/'(行为不变)，部署在子路径（如 /h5/）时自动适配
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
       path: '/login',

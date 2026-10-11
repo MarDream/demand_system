@@ -1,7 +1,7 @@
 // ===== 外观设置（个人设置 → 外观）=====
-// 参考桌面端外观面板：主题模式（浅色/深色/跟随系统）+ 主题色 + 圆角风格
-// 状态持久化：localStorage（即时生效/免闪烁）+ 后端 users.appearance_config（跟随账号，
-// 换设备/重登后仍保持），变更经 800ms 防抖同步到 PUT /auth/appearance
+// 参考桌面端外观面板：主题模式（浅色/深色/跟随系统）+ 主题色 + 圆角风格 + 侧边栏风格
+// 持久化模型：改动即时生效并写 localStorage（预览/刷新不丢），由个人设置页的
+// 「保存设置」按钮显式调用 persistAppearanceToRemote 同步到 users.appearance_config（下次登录应用）
 import { ref, watch, type Ref } from 'vue'
 import { saveAppearance } from '@/api/modules/auth'
 import { getToken } from '@/utils/auth'
@@ -122,31 +122,39 @@ function serializeState(): string {
   return JSON.stringify({ mode: mode.value, primary: primary.value, radius: radius.value, sidebar: sidebar.value })
 }
 
-function persist(options?: { remote?: boolean }) {
+function persistLocal() {
   localStorage.setItem(STORAGE_KEY, serializeState())
-  // remote === false：启动时 watch immediate 的首次持久化，只写本地缓存，
-  // 不能当作"本地改动"上报（否则会用默认值覆盖服务端配置并阻断远程恢复）
-  if (options?.remote === false) return
-  scheduleRemoteSave()
 }
 
-// ----- 用户级持久化（后端同步） -----
-let remoteSaveTimer: ReturnType<typeof setTimeout> | null = null
-/** 本地有改动尚未成功落库时，忽略远程回读，避免竞态回退 */
+// ----- 用户级持久化（「保存设置」按钮显式触发） -----
+/**
+ * 本地有改动尚未落库时，忽略远程回读，避免竞态回退。
+ * 仅在用户交互（booted 之后）的改动置位；显式保存成功后复位。
+ */
 let pendingLocalChange = false
-/** 是否已过 watch immediate 的首次启动持久化 */
+/** 是否已过 watch immediate 的首次启动应用 */
 let booted = false
 
-function scheduleRemoteSave() {
-  if (!getToken()) return
+/**
+ * 个人设置「保存设置」按钮：把当前外观显式持久化到后端（跟随账号，下次登录自动应用）。
+ * 失败时保持 pendingLocalChange，本地未保存改动不会被远程回读覆盖。
+ */
+export async function persistAppearanceToRemote(): Promise<boolean> {
+  persistLocal()
+  if (!getToken()) return false
   pendingLocalChange = true
-  if (remoteSaveTimer) clearTimeout(remoteSaveTimer)
-  remoteSaveTimer = setTimeout(() => {
-    remoteSaveTimer = null
-    saveAppearance({ mode: mode.value, primary: primary.value, radius: radius.value, sidebar: sidebar.value })
-      .then(() => { pendingLocalChange = false })
-      .catch(() => { /* 静默失败：localStorage 兜底，下次变更会重试 */ })
-  }, 800)
+  try {
+    await saveAppearance({
+      mode: mode.value,
+      primary: primary.value,
+      radius: radius.value,
+      sidebar: sidebar.value,
+    })
+    pendingLocalChange = false
+    return true
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -223,11 +231,13 @@ export function initAppearanceWatcher() {
   mediaQuery = window.matchMedia?.('(prefers-color-scheme: dark)') ?? null
   mediaQuery?.addEventListener('change', onSystemChange)
 
-  watch([mode, primary, radius, sidebar], () => {
-    applyAppearance()
-    persist({ remote: booted })
-    booted = true
-  }, { immediate: true })
+watch([mode, primary, radius, sidebar], () => {
+  applyAppearance()
+  persistLocal()
+  // 仅用户交互产生的改动置位（启动首跑只是应用状态，不能阻断登录后的远程恢复）
+  if (booted) pendingLocalChange = true
+  booted = true
+}, { immediate: true })
 }
 
 /** 供设置页使用的响应式状态（与模块级单例同源） */

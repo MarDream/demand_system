@@ -28,4 +28,11 @@ public interface KnowledgeSearchService {
      */
     List<KnowledgeSearchResponse.SearchResultItem> selectContextResults(
             List<KnowledgeSearchResponse.SearchResultItem> results);
+
+    /**
+     * 为预览弹窗补查指定文档的具体命中段落。历史消息或旧服务返回的 citations
+     * 可能没有 snippets，此接口让前端仍能按当前问题恢复可读的原文依据。
+     */
+    List<KnowledgeSearchResponse.CitationSnippet> findCitationSnippets(
+            String query, Long knowledgeBaseId, Long documentId, Integer topK, Long requesterId);
 }

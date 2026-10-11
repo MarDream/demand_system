@@ -193,7 +193,7 @@ async function loadShare(token: string) {
               setPreviewProgress(computeOfficePreviewProgress(event.progress, event.attempt, event.maxAttempts))
             },
           }) as any
-          officePreviewUrl.value = previewRes.data?.previewUrl ?? previewRes.previewUrl ?? ''
+          officePreviewUrl.value = appendPreviewFileName(previewRes.data?.previewUrl ?? previewRes.previewUrl ?? '', share.fileName)
           setPreviewProgress(97)
         } catch {
           endPreviewLoading()
@@ -210,6 +210,18 @@ async function loadShare(token: string) {
   } finally {
     pageLoadingProgress.value = 100
     pageLoading.value = false
+  }
+}
+
+function appendPreviewFileName(url: string, fileName: string): string {
+  if (!url || !fileName) return url
+  try {
+    const parsed = new URL(url, window.location.origin)
+    parsed.searchParams.set('fullfilename', fileName)
+    return parsed.toString()
+  } catch {
+    const separator = url.includes('?') ? '&' : '?'
+    return url + separator + 'fullfilename=' + encodeURIComponent(fileName)
   }
 }
 

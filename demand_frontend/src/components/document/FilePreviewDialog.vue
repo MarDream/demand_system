@@ -2,7 +2,7 @@
   <AppDialog
     v-model="visible"
     class="file-preview-dialog"
-    title="文件预览"
+    :title="fileName || '文件预览'"
     :show-footer="false"
     width="95%"
     top="3vh"
@@ -34,6 +34,44 @@
         </el-button>
       </div>
     </template>
+    <div
+      v-if="citationContext && (citationContext.question || citationContext.snippets?.length || citationContext.relationSummary)"
+      class="preview-citation-context"
+    >
+      <div class="preview-citation-context__header">
+        <el-icon><Collection /></el-icon>
+        <span>与当前问题的关联</span>
+      </div>
+      <div v-if="citationContext.question" class="preview-citation-context__row">
+        <span class="preview-citation-context__label">当前问题</span>
+        <span class="preview-citation-context__value">{{ citationContext.question }}</span>
+      </div>
+      <div v-if="citationContext.relationSummary" class="preview-citation-context__row">
+        <span class="preview-citation-context__label">关联性说明</span>
+        <span class="preview-citation-context__value">{{ citationContext.relationSummary }}</span>
+      </div>
+      <div v-if="citationContext.snippetsLoading" class="preview-citation-context__loading">
+        正在根据当前问题查找该文件中的具体命中段落…
+      </div>
+      <div v-else-if="citationContext.snippets?.length" class="preview-citation-context__snippets">
+        <div class="preview-citation-context__label">具体命中段落（实际原文片段）</div>
+        <div
+          v-for="(snippet, index) in citationContext.snippets"
+          :key="String(snippet.pageNum ?? 'x') + '-' + String(snippet.sectionTitle ?? 'section') + '-' + index"
+          class="preview-citation-context__snippet"
+        >
+          <div v-if="snippet.sectionTitle || snippet.pageNum || snippet.score != null" class="preview-citation-context__snippet-meta">
+            <span v-if="snippet.sectionTitle">{{ snippet.sectionTitle }}</span>
+            <span v-if="snippet.pageNum">第 {{ snippet.pageNum }} 页</span>
+            <span v-if="snippet.score != null && snippet.score >= 0 && snippet.score <= 1">相关度 {{ Math.round(snippet.score * 100) }}%</span>
+          </div>
+          <div v-if="snippet.content" class="preview-citation-context__snippet-content">{{ snippet.content }}</div>
+        </div>
+      </div>
+      <div v-else class="preview-citation-context__empty">
+        暂未返回可直接展示的命中段落，请结合下方文件预览查看原文。
+      </div>
+    </div>
     <div ref="previewContainerRef" class="preview-container" :class="{ 'preview-container--fullscreen': isFullscreen }">
       <div v-if="previewType === 'office'" class="preview-office-wrap">
         <iframe
@@ -91,7 +129,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Download, Document, FullScreen, ZoomIn, ZoomOut, RefreshLeft, CircleCloseFilled } from '@element-plus/icons-vue'
+import { Collection, Download, Document, FullScreen, ZoomIn, ZoomOut, RefreshLeft, CircleCloseFilled } from '@element-plus/icons-vue'
 import AppDialog from '@/components/common/AppDialog.vue'
 import PreviewLoadingCard from '@/components/document/PreviewLoadingCard.vue'
 import request from '@/api/request'
@@ -105,6 +143,18 @@ import { clampProgress, computeOfficePreviewProgress, fetchBlobWithProgress, fet
 
 const PREVIEW_LOADING_MIN_DURATION = 500
 const PREVIEW_SLOW_THRESHOLD_SECONDS = 15
+
+interface CitationPreviewContext {
+  question?: string
+  snippets?: Array<{
+    content?: string | null
+    sectionTitle?: string | null
+    pageNum?: number | null
+    score?: number | null
+  }>
+  snippetsLoading?: boolean
+  relationSummary?: string
+}
 
 /**
  * 文件预览弹窗，支持两种来源：
@@ -122,6 +172,7 @@ const props = defineProps<{
   documentId?: number
   fileId?: number
   downloadUrl?: string
+  citationContext?: CitationPreviewContext | null
 }>()
 
 const emit = defineEmits<{
@@ -216,7 +267,7 @@ watch(() => props.modelValue, async (open) => {
           setPreviewProgress(computeOfficePreviewProgress(event.progress, event.attempt, event.maxAttempts))
         },
       }) as any
-      officePreviewUrl.value = previewRes.data?.previewUrl ?? previewRes.previewUrl ?? ''
+      officePreviewUrl.value = appendPreviewFileName(previewRes.data?.previewUrl ?? previewRes.previewUrl ?? '', props.fileName)
       setPreviewProgress(97)
     } catch (err: unknown) {
       officePreviewUrl.value = ''
@@ -273,6 +324,22 @@ async function buildOfficeParamsForFileId(watermark: string) {
   return {
     fileUrl: presignedUrl,
     watermarkTxt: watermark || undefined,
+  }
+}
+
+/**
+ * kkFileView 通过 fullfilename 参数识别原始文件名。
+ * 预签名 URL 的路径通常是随机对象名，不补充该参数时 Excel 标题会显示随机 UUID。
+ */
+function appendPreviewFileName(url: string, fileName: string): string {
+  if (!url || !fileName) return url
+  try {
+    const parsed = new URL(url, window.location.origin)
+    parsed.searchParams.set('fullfilename', fileName)
+    return parsed.toString()
+  } catch {
+    const separator = url.includes('?') ? '&' : '?'
+    return url + separator + 'fullfilename=' + encodeURIComponent(fileName)
   }
 }
 
@@ -477,8 +544,19 @@ document.addEventListener('fullscreenchange', onFullscreenChange)
 
 :global(.file-preview-dialog .app-dialog__header) {
   position: relative;
+  justify-content: flex-end;
   padding-right: 0;
   width: 100%;
+}
+
+:global(.file-preview-dialog .app-dialog__title) {
+  position: absolute;
+  left: 50%;
+  max-width: calc(100% - 220px);
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  transform: translateX(-50%);
 }
 
 :global(.file-preview-dialog .app-dialog__header-actions) {
@@ -512,6 +590,88 @@ document.addEventListener('fullscreenchange', onFullscreenChange)
   font-weight: 600;
 }
 
+.preview-citation-context {
+  margin-bottom: 12px;
+  padding: 14px 16px;
+  border: 1px solid rgba(59, 130, 246, 0.18);
+  border-left: 4px solid #3b82f6;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(239, 246, 255, 0.98), rgba(248, 250, 252, 0.98));
+  color: var(--color-text-primary);
+}
+
+.preview-citation-context__header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 10px;
+  color: #2563eb;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.preview-citation-context__row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 7px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.preview-citation-context__label {
+  color: var(--color-text-secondary);
+  font-weight: 600;
+}
+
+.preview-citation-context__value {
+  color: var(--color-text-primary);
+  word-break: break-word;
+}
+
+.preview-citation-context__loading,
+.preview-citation-context__empty {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: var(--color-text-secondary);
+  background: rgba(255, 255, 255, 0.62);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.preview-citation-context__snippets {
+  display: grid;
+  gap: 8px;
+  max-height: min(30vh, 260px);
+  margin-top: 12px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.preview-citation-context__snippet {
+  padding: 9px 11px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.preview-citation-context__snippet-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.preview-citation-context__snippet-content {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .preview-container {
   position: relative;
   min-height: 60vh;
@@ -779,13 +939,17 @@ document.addEventListener('fullscreenchange', onFullscreenChange)
 }
 
 .preview-office-wrap {
+  --office-preview-header-height: 52px;
+  position: relative;
   width: 100%;
   height: 75vh;
+  overflow: hidden;
 }
 .preview-iframe {
   width: 100%;
-  height: 100%;
+  height: calc(100% + var(--office-preview-header-height));
   border: none;
+  transform: translateY(-52px);
 }
 .preview-image-wrap {
   display: flex;
@@ -832,5 +996,11 @@ document.addEventListener('fullscreenchange', onFullscreenChange)
 .file-preview-dialog :deep(.el-button:focus) {
   outline: none;
   box-shadow: none;
+}
+@media (max-width: 640px) {
+  .preview-citation-context__row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
 }
 </style>

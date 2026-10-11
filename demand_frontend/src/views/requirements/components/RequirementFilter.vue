@@ -17,6 +17,25 @@
       </el-select>
     </el-form-item>
 
+    <el-form-item label="状态">
+      <el-select
+        v-model="internalValue.status"
+        placeholder="全部"
+        clearable
+        style="width: 120px"
+        @change="emitChange"
+      >
+        <el-option label="新建" value="新建" />
+        <el-option label="待评审" value="待评审" />
+        <el-option label="评审中" value="评审中" />
+        <el-option label="已通过" value="已通过" />
+        <el-option label="开发中" value="开发中" />
+        <el-option label="测试中" value="测试中" />
+        <el-option label="已上线" value="已上线" />
+        <el-option label="已验收" value="已验收" />
+      </el-select>
+    </el-form-item>
+
     <el-form-item label="优先级">
       <el-select
         v-model="internalValue.priority"
@@ -36,25 +55,6 @@
             {{ priority.name }}
           </span>
         </el-option>
-      </el-select>
-    </el-form-item>
-
-    <el-form-item label="状态">
-      <el-select
-        v-model="internalValue.status"
-        placeholder="全部"
-        clearable
-        style="width: 120px"
-        @change="emitChange"
-      >
-        <el-option label="新建" value="新建" />
-        <el-option label="待评审" value="待评审" />
-        <el-option label="评审中" value="评审中" />
-        <el-option label="已通过" value="已通过" />
-        <el-option label="开发中" value="开发中" />
-        <el-option label="测试中" value="测试中" />
-        <el-option label="已上线" value="已上线" />
-        <el-option label="已验收" value="已验收" />
       </el-select>
     </el-form-item>
 

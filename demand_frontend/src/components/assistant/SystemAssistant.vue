@@ -461,8 +461,9 @@
                         type="button"
                         class="assistant-citation-item"
                         :class="{ 'is-previewable': citationPreviewable(entry.citation) }"
+                        :data-citation-number="entry.number"
                         :title="citationPreviewable(entry.citation) ? '点击预览来源' : '该来源不支持在线预览'"
-                        @click="handleCitationClick(message, entry.number)"
+                        @click="handleCitationSourceClick(message, entry.number)"
                       >
                         <span class="assistant-citation-item__index">[{{ entry.number }}]</span>
                         <span class="assistant-citation-item__title">{{ citationTitle(entry.citation) }}</span>
@@ -808,6 +809,7 @@
       :file-type="previewFile.fileType"
       :knowledge-base-id="previewFile.knowledgeBaseId"
       :document-id="previewFile.documentId"
+      :citation-context="previewFile.citationContext"
     />
   </div>
 </template>
@@ -830,9 +832,9 @@ import { useAssistantStore, ASSISTANT_FAB_POSITION_KEY } from '@/stores/assistan
 import { useAssistantContext } from '@/composables/useAssistantContext'
 import { useQuickQuestions } from '@/composables/useQuickQuestions'
 import { useFoldState } from '@/composables/useFoldState'
-import { getAllKnowledgeBases, type KnowledgeBase } from '@/api/modules/knowledge'
+import { getAllKnowledgeBases, getCitationSnippets, searchKnowledge, type KnowledgeBase } from '@/api/modules/knowledge'
 import { llmProviderApi, type ChatModelOption } from '@/api/modules/llmProvider'
-import type { AssistantFileAttachment, AssistantMessage, AssistantPageContext, AssistantSearchScope, AssistantSource, CitationReference } from '@/types/assistant'
+import type { AssistantFileAttachment, AssistantMessage, AssistantPageContext, AssistantSearchScope, AssistantSource, CitationReference, CitationSnippet } from '@/types/assistant'
 import FilePreviewDialog from '@/components/document/FilePreviewDialog.vue'
 
 type PathMatchType = 'current-page' | 'current-menu' | 'related' | 'none'
@@ -1006,11 +1008,19 @@ const webSearchEnabled = ref<boolean>(false)
 
 // ===== 文档预览 =====
 const previewVisible = ref(false)
+interface CitationPreviewContext {
+  question?: string
+  snippets?: CitationSnippet[]
+  snippetsLoading?: boolean
+  relationSummary?: string
+}
+
 const previewFile = ref<{
   fileName: string
   fileType: string
   knowledgeBaseId: number
   documentId: number
+  citationContext?: CitationPreviewContext
 } | null>(null)
 
 function openSourcePreview(source: AssistantSource) {
@@ -2063,32 +2073,48 @@ async function handleFollowUpAsk(question: string) {
   await submitMessage(question.trim(), true)
 }
 
-// ===== 回答角标 [N] 点击：支持预览的直接打开预览，否则回退滚动高亮 =====
+// ===== 回答角标 [N] 点击：跳转到当前消息的引用来源，并闪动提示对应角标 =====
 function handleCitationClick(message: AssistantMessage, citationIndex: number) {
   if (!citationIndex || citationIndex < 1) return
-  const citation = message.citations?.[citationIndex - 1]
-  if (citation && openCitationPreview(citation)) return
   const container = messageListRef.value?.querySelector(
     `.assistant-message[data-message-id="${String(message.id)}"]`,
   )
-  const chips = container?.querySelectorAll('.assistant-source-chip')
-  if (!chips || chips.length === 0) return
-  const target = chips[Math.min(citationIndex - 1, chips.length - 1)]
+  if (!container) return
+
+  // 知识库问答优先定位系统渲染的引用来源条目；旧消息没有 citations 列表时，
+  // 再回退到兼容旧数据的来源 chip，避免点击角标后只打开预览而看不到对应编号。
+  const target = container.querySelector<HTMLElement>(
+    `.assistant-citation-item[data-citation-number="${citationIndex}"]`,
+  ) || container.querySelectorAll<HTMLElement>('.assistant-source-chip')[citationIndex - 1]
   if (!target) return
-  target.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  target.classList.remove('is-citation-flash')
+  // 强制重排，确保连续点击同一个角标时动画也会重新播放。
+  void target.offsetWidth
   target.classList.add('is-citation-flash')
-  window.setTimeout(() => target.classList.remove('is-citation-flash'), 1600)
+  target.focus({ preventScroll: true })
+  window.setTimeout(() => target.classList.remove('is-citation-flash'), 1800)
+}
+
+// 引用来源条目自身负责打开文件预览；与回答中的角标点击分开，避免跳转时直接
+// 把用户带进预览弹窗，用户可以先看到并确认对应的 [N] 来源。
+async function handleCitationSourceClick(message: AssistantMessage, citationIndex: number) {
+  if (!citationIndex || citationIndex < 1) return
+  const citation = message.citations?.[citationIndex - 1]
+  if (citation && await openCitationPreview(citation, message)) return
+  handleCitationClick(message, citationIndex)
 }
 
 /**
  * 引用来源点击预览：知识库文档走 FilePreviewDialog，工单正文跳需求详情。
  * 返回 false 表示该来源不支持预览/跳转，由调用方兜底。
  */
-function openCitationPreview(citation: CitationReference): boolean {
+async function openCitationPreview(citation: CitationReference, message?: AssistantMessage): Promise<boolean> {
   const sourceType = citation.sourceType || ''
   if (sourceType.startsWith('requirement_body')) {
     if (citation.requirementId) {
-      router.push(`/requirements/${citation.requirementId}`)
+      await router.push(`/requirements/${citation.requirementId}`)
       return true
     }
     return false
@@ -2097,14 +2123,89 @@ function openCitationPreview(citation: CitationReference): boolean {
   if (!citation.documentId || !knowledgeBaseId) return false
   const fileName = citation.fileName || 'document'
   const fileType = fileName.includes('.') ? fileName.split('.').pop()?.toLowerCase() || 'pdf' : 'pdf'
+  const question = message ? findUserQuestionFor(message) : ''
+  const snippets = (citation.snippets || []).filter(snippet => !!snippet.content?.trim())
   previewFile.value = {
     fileName,
     fileType,
     knowledgeBaseId,
     documentId: citation.documentId,
+    citationContext: {
+      question,
+      snippets,
+      snippetsLoading: snippets.length === 0,
+      relationSummary: buildCitationRelationSummary(citation),
+    },
   }
   previewVisible.value = true
+
+  // 兼容旧消息和后端滚动升级期间未携带 snippets 的引用：预览先打开，
+  // 再按当前问题补查该文档的实际命中段落，不让用户只能看到抽象的相关性说明。
+  if (!snippets.length) {
+    void loadCitationSnippets(question.trim() || fileName, knowledgeBaseId, citation.documentId)
+  }
   return true
+}
+
+async function loadCitationSnippets(question: string, knowledgeBaseId: number, documentId: number) {
+  let snippets: CitationSnippet[] = []
+  try {
+    const response = await getCitationSnippets({
+      query: question,
+      knowledgeBaseId,
+      documentId,
+      topK: 3,
+    }) as unknown as CitationSnippet[] | { data?: CitationSnippet[] }
+    snippets = Array.isArray(response) ? response : (response.data || [])
+  } catch {
+    // 兼容后端尚未滚动到新接口的实例，退回已有检索接口从结果片段中提取原文。
+  }
+
+  if (!snippets.length) {
+    try {
+      const raw = await searchKnowledge({
+        query: question,
+        knowledgeBaseId,
+        mode: 'auto',
+        topK: 50,
+        searchScopes: ['KNOWLEDGE_BASE'],
+      }) as unknown as {
+        results?: Array<{ documentId?: number; content?: string | null; sectionTitle?: string | null; pageNum?: number | null; score?: number | null }>
+        data?: { results?: Array<{ documentId?: number; content?: string | null; sectionTitle?: string | null; pageNum?: number | null; score?: number | null }> }
+      }
+      const payload = raw.data || raw
+      snippets = (payload.results || [])
+        .filter(item => item.documentId === documentId && !!item.content?.trim())
+        .sort((left, right) => (right.score || 0) - (left.score || 0))
+        .slice(0, 3)
+        .map(item => ({
+          content: item.content,
+          sectionTitle: item.sectionTitle,
+          pageNum: item.pageNum,
+          score: item.score,
+        }))
+    } catch {
+      // 两个补查接口均不可用时，保留弹窗本身，不阻断文件预览。
+    }
+  }
+
+  const current = previewFile.value
+  if (!current || current.documentId !== documentId || current.knowledgeBaseId !== knowledgeBaseId) return
+  current.citationContext = {
+    ...current.citationContext,
+    snippets: snippets.filter(snippet => !!snippet.content?.trim()),
+    snippetsLoading: false,
+  }
+}
+
+function buildCitationRelationSummary(citation: CitationReference): string {
+  const sections = (citation.sources || []).filter(Boolean).slice(0, 3)
+  const parts = ['该来源包含与当前问题语义或关键词匹配的检索片段，是生成回答时采用的参考依据。']
+  if (sections.length) parts.push(`命中章节：${sections.join('、')}`)
+  if (typeof citation.maxScore === 'number' && citation.maxScore >= 0 && citation.maxScore <= 1) {
+    parts.push(`综合相关度约 ${(citation.maxScore * 100).toFixed(0)}%`)
+  }
+  return parts.join(' ')
 }
 
 /** 知识库问答消息：展示系统编号的引用来源列表（替代 LLM 手写清单） */
@@ -3889,6 +3990,28 @@ onBeforeUnmount(() => {
   color: var(--color-text-primary);
 }
 
+/* 回答角标跳转到来源后，给来源编号明确的视觉反馈；连续点击同一角标也会重播。 */
+.assistant-citation-item.is-citation-flash {
+  animation: assistant-citation-source-flash 0.9s ease-in-out 2;
+  border-color: var(--color-primary);
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
+}
+
+.assistant-citation-item.is-citation-flash .assistant-citation-item__index {
+  animation: assistant-citation-index-pulse 0.9s ease-in-out 2;
+}
+
+@keyframes assistant-citation-source-flash {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(64, 158, 255, 0); }
+  50% { box-shadow: 0 0 0 5px rgba(64, 158, 255, 0.28); }
+}
+
+@keyframes assistant-citation-index-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.18); }
+}
+
 .assistant-citation-item__index {
   font-weight: 700;
   color: var(--color-primary);
@@ -4639,4 +4762,3 @@ onBeforeUnmount(() => {
   line-height: 1.6;
 }
 </style>
-

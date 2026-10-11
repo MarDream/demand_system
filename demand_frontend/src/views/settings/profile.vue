@@ -2,7 +2,7 @@
   <div class="profile-page">
     <div class="page-header">
       <h2 class="page-title">个人设置</h2>
-      <p class="page-desc">仅支持修改邮箱和手机号，其余信息由管理员维护，如需变更请联系管理员。</p>
+      <p class="page-desc">联系方式、登录密码与外观可自行修改，其余信息由管理员维护，如需变更请联系管理员。</p>
     </div>
 
     <!-- ============ 外观设置 ============ -->
@@ -10,7 +10,7 @@
       <template #header>
         <div class="card-title-row">
           <span class="card-title">外观</span>
-          <span class="card-title-sub">对系统全局生效，自动保存</span>
+          <span class="card-title-sub">对系统全局生效，调整后点击「保存设置」持久化</span>
         </div>
       </template>
 
@@ -143,112 +143,146 @@
         </el-col>
       </el-row>
 
-      <!-- 侧边栏风格：六种高级质感方案 + 经典默认 -->
-      <div class="appearance-sub-title sidebar-style-title">侧边栏风格</div>
-      <div class="sidebar-style-row">
-        <div
-          v-for="s in SIDEBAR_STYLES"
-          :key="s.value"
-          class="sidebar-style-option"
-          :class="{ 'is-active': appearanceSidebar === s.value }"
-          @click="appearanceSidebar = s.value"
-        >
-          <span class="sidebar-style-preview" :class="`sidebar-style-preview--${s.value}`">
-            <i class="ssp-page"></i>
-            <i class="ssp-bar">
-              <i class="ssp-logo"></i>
-              <i class="ssp-line ssp-line--1"></i>
-              <i class="ssp-line ssp-line--2 is-active"></i>
-              <i class="ssp-line ssp-line--3"></i>
-            </i>
-            <i class="ssp-panel">
-              <i class="ssp-panel-title"></i>
-              <i class="ssp-panel-line"></i>
-              <i class="ssp-panel-line short"></i>
-            </i>
-          </span>
-          <span class="sidebar-style-name">{{ s.name }}</span>
-          <span class="sidebar-style-desc">{{ s.desc }}</span>
+      <!-- 侧边栏风格：轮播选择（不全部罗列） -->
+      <div class="appearance-section-title sidebar-style-title">
+        <span>侧边栏风格</span>
+        <span class="sidebar-style-current">当前：{{ currentSidebarStyleName }}</span>
+      </div>
+      <el-carousel
+        :autoplay="false"
+        arrow="always"
+        indicator-position="outside"
+        height="132px"
+        :initial-index="initialSidebarSlide"
+        class="sidebar-style-carousel"
+      >
+        <el-carousel-item v-for="(chunk, ci) in sidebarStyleChunks" :key="ci">
+          <div class="sidebar-style-slide">
+            <div
+              v-for="s in chunk"
+              :key="s.value"
+              class="sidebar-style-option"
+              :class="{ 'is-active': appearanceSidebar === s.value }"
+              @click="appearanceSidebar = s.value"
+            >
+              <span class="sidebar-style-preview" :class="`sidebar-style-preview--${s.value}`">
+                <i class="ssp-page"></i>
+                <i class="ssp-bar">
+                  <i class="ssp-logo"></i>
+                  <i class="ssp-line ssp-line--1"></i>
+                  <i class="ssp-line ssp-line--2 is-active"></i>
+                  <i class="ssp-line ssp-line--3"></i>
+                </i>
+                <i class="ssp-panel">
+                  <i class="ssp-panel-title"></i>
+                  <i class="ssp-panel-line"></i>
+                  <i class="ssp-panel-line short"></i>
+                </i>
+              </span>
+              <span class="sidebar-style-name">
+                {{ s.name }}
+                <el-icon v-if="appearanceSidebar === s.value" class="sidebar-style-check"><Check /></el-icon>
+              </span>
+              <span class="sidebar-style-desc">{{ s.desc }}</span>
+            </div>
+          </div>
+        </el-carousel-item>
+      </el-carousel>
+
+      <!-- 保存设置：显式持久化（下次登录自动应用） -->
+      <div class="appearance-footer">
+        <span class="appearance-footer__hint">
+          主题、侧边栏风格等调整即时预览，点击「保存设置」后永久生效，下次登录自动应用
+        </span>
+        <el-button type="primary" :loading="savingAppearance" @click="handleSaveAppearance">保存设置</el-button>
+      </div>
+    </el-card>
+
+    <!-- ============ 基本信息（含联系方式入口） ============ -->
+    <el-card shadow="never" class="profile-card">
+      <template #header>
+        <div class="card-title-row">
+          <span class="card-title">基本信息</span>
+          <span class="card-title-sub">联系方式与头像可自行修改，其余信息由管理员维护</span>
+        </div>
+      </template>
+      <div v-loading="loading" class="profile-base">
+        <div class="profile-avatar-block">
+          <el-avatar :size="72" :src="avatarUrl || undefined" class="profile-avatar">
+            {{ (userStore.userInfo?.realName || '?').slice(0, 1) }}
+          </el-avatar>
+          <el-button link type="primary" @click="avatarDialogVisible = true">修改头像</el-button>
+        </div>
+        <el-descriptions :column="2" border class="profile-descriptions">
+          <el-descriptions-item label="姓名">{{ userStore.userInfo?.realName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="账号名">{{ userStore.userInfo?.username || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="所属组织">{{ userStore.userInfo?.orgName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="角色">{{ roleText }}</el-descriptions-item>
+          <el-descriptions-item label="工号">{{ userStore.userInfo?.jobNumber || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="邮箱">
+            <span class="contact-value">{{ userStore.userInfo?.email || '-' }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="手机号">
+            <span class="contact-value">{{ userStore.userInfo?.phone || '-' }}</span>
+          </el-descriptions-item>
+        </el-descriptions>
+        <div class="profile-actions">
+          <el-button type="primary" plain :icon="Edit" @click="openContactDialog">修改联系方式</el-button>
+          <el-button :icon="Lock" @click="openPwdDialog">修改密码</el-button>
         </div>
       </div>
     </el-card>
 
-    <el-row :gutter="16">
-      <el-col :span="12">
-        <el-card shadow="never" class="profile-card">
-          <template #header><span class="card-title">基本信息（只读）</span></template>
-          <div v-loading="loading" class="profile-base">
-            <div class="profile-avatar-block">
-              <el-avatar :size="72" :src="avatarUrl || undefined" class="profile-avatar">
-                {{ (userStore.userInfo?.realName || '?').slice(0, 1) }}
-              </el-avatar>
-              <el-button link type="primary" @click="avatarDialogVisible = true">修改头像</el-button>
-            </div>
-            <el-descriptions :column="1" border>
-              <el-descriptions-item label="姓名">{{ userStore.userInfo?.realName || '-' }}</el-descriptions-item>
-              <el-descriptions-item label="账号名">{{ userStore.userInfo?.username || '-' }}</el-descriptions-item>
-              <el-descriptions-item label="所属组织">{{ userStore.userInfo?.orgName || '-' }}</el-descriptions-item>
-              <el-descriptions-item label="角色">{{ roleText }}</el-descriptions-item>
-              <el-descriptions-item label="工号">{{ userStore.userInfo?.jobNumber || '-' }}</el-descriptions-item>
-            </el-descriptions>
-          </div>
-        </el-card>
-      </el-col>
+    <!-- 修改联系方式弹框 -->
+    <el-dialog
+      v-model="contactDialogVisible"
+      title="修改联系方式"
+      width="460px"
+      :close-on-click-modal="false"
+      @closed="formRef?.clearValidate()"
+    >
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
+        <el-form-item label="邮箱" prop="email">
+          <el-input v-model="form.email" placeholder="请输入邮箱" clearable />
+        </el-form-item>
+        <el-form-item label="手机号" prop="phone">
+          <el-input v-model="form.phone" placeholder="请输入手机号" clearable />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="contactDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="handleSaveContact">保存</el-button>
+      </template>
+    </el-dialog>
 
-      <el-col :span="12">
-        <el-card shadow="never" class="profile-card">
-          <template #header><span class="card-title">联系方式（可修改）</span></template>
-          <el-form
-            ref="formRef"
-            :model="form"
-            :rules="rules"
-            label-width="90px"
-            class="profile-form"
-            v-loading="loading"
-          >
-            <el-form-item label="邮箱" prop="email">
-              <el-input v-model="form.email" placeholder="请输入邮箱" clearable />
-            </el-form-item>
-            <el-form-item label="手机号" prop="phone">
-              <el-input v-model="form.phone" placeholder="请输入手机号" clearable />
-            </el-form-item>
-            <el-form-item>
-              <el-button @click="resetForm">重置</el-button>
-              <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
-            </el-form-item>
-          </el-form>
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <el-card shadow="never" class="profile-card password-card">
-      <template #header><span class="card-title">安全设置（修改密码）</span></template>
-      <el-form
-        ref="pwdFormRef"
-        :model="pwdForm"
-        :rules="pwdRules"
-        label-width="110px"
-        class="profile-form"
-      >
+    <!-- 修改密码弹框 -->
+    <el-dialog
+      v-model="pwdDialogVisible"
+      title="修改密码"
+      width="460px"
+      :close-on-click-modal="false"
+      @closed="resetPwdForm"
+    >
+      <el-form ref="pwdFormRef" :model="pwdForm" :rules="pwdRules" label-width="90px">
         <el-form-item label="旧密码" prop="oldPassword">
           <el-input v-model="pwdForm.oldPassword" type="password" show-password placeholder="请输入当前密码" clearable />
         </el-form-item>
         <el-form-item label="新密码" prop="newPassword">
-          <el-input v-model="pwdForm.newPassword" type="password" show-password placeholder="6-20位" clearable />
+          <el-input v-model="pwdForm.newPassword" type="password" show-password placeholder="请输入新密码" clearable />
         </el-form-item>
         <el-form-item label="确认新密码" prop="confirmPassword">
           <el-input v-model="pwdForm.confirmPassword" type="password" show-password placeholder="请再次输入新密码" clearable />
         </el-form-item>
-        <el-form-item>
-          <el-button type="primary" :loading="changingPwd" @click="handleChangePassword">修改密码</el-button>
-        </el-form-item>
       </el-form>
-    </el-card>
+      <template #footer>
+        <el-button @click="pwdDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="changingPwd" @click="handleChangePassword">确认修改</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 头像编辑弹窗：预设选择 / 上传裁剪 -->
     <AvatarEditorDialog
       :visible="avatarDialogVisible"
-      :saving="avatarSaving"
       :current-avatar="userStore.userInfo?.avatar || null"
       @close="avatarDialogVisible = false"
       @confirm="handleAvatarConfirm"
@@ -260,7 +294,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
-import { Check, Document, Loading, CircleCheck, Warning } from '@element-plus/icons-vue'
+import { Check, Document, Edit, Loading, Lock, CircleCheck, Warning } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/modules/user'
 import { updateProfile, changePassword } from '@/api/modules/auth'
 import { uploadFile } from '@/api/modules/file'
@@ -270,10 +304,12 @@ import AvatarEditorDialog from './components/AvatarEditorDialog.vue'
 import {
   useAppearance,
   applyAppearance,
+  persistAppearanceToRemote,
   PRIMARY_SWATCHES,
   RADIUS_LEVELS,
   SIDEBAR_STYLES,
   type ThemeMode,
+  type SidebarStyle,
 } from '@/composables/useAppearance'
 
 // ===== 外观设置 =====
@@ -297,6 +333,41 @@ function setMode(mode: ThemeMode) {
   appearanceMode.value = mode
   // auto 档位下立即按系统主题应用一次，保证预览与全局即时联动
   applyAppearance()
+}
+
+// ===== 侧边栏风格轮播 =====
+const currentSidebarStyleName = computed(() =>
+  SIDEBAR_STYLES.find(s => s.value === appearanceSidebar.value)?.name || '经典',
+)
+/** 每页 3 个风格选项，轮播翻页选择 */
+const sidebarStyleChunks = computed(() => {
+  const chunks: Array<Array<{ value: SidebarStyle; name: string; desc: string }>> = [[]]
+  SIDEBAR_STYLES.forEach((s, index) => {
+    const chunkIndex = Math.floor(index / 3)
+    if (!chunks[chunkIndex]) chunks[chunkIndex] = []
+    chunks[chunkIndex].push(s)
+  })
+  return chunks.filter(chunk => chunk.length > 0)
+})
+const initialSidebarSlide = computed(() => {
+  const index = SIDEBAR_STYLES.findIndex(s => s.value === appearanceSidebar.value)
+  return index < 0 ? 0 : Math.floor(index / 3)
+})
+
+// ===== 外观保存（显式持久化） =====
+const savingAppearance = ref(false)
+async function handleSaveAppearance() {
+  savingAppearance.value = true
+  try {
+    const ok = await persistAppearanceToRemote()
+    if (ok) {
+      ElMessage.success('外观设置已保存，下次登录自动应用')
+    } else {
+      ElMessage.error('外观设置保存失败，请重试')
+    }
+  } finally {
+    savingAppearance.value = false
+  }
 }
 
 // ===== 首页概要预览（静态示意数据，与首页仪表盘同构） =====
@@ -417,18 +488,23 @@ function fillForm() {
   form.phone = userStore.userInfo?.phone || ''
 }
 
-function resetForm() {
+// ==================== 修改联系方式弹框 ====================
+const contactDialogVisible = ref(false)
+
+function openContactDialog() {
   fillForm()
   formRef.value?.clearValidate()
+  contactDialogVisible.value = true
 }
 
-async function handleSave() {
+async function handleSaveContact() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
   saving.value = true
   try {
     await updateProfile({ email: form.email.trim(), phone: form.phone?.trim() || undefined })
-    ElMessage.success('个人信息已更新')
+    ElMessage.success('联系方式已更新')
+    contactDialogVisible.value = false
     await userStore.getUserInfo()
     fillForm()
   } catch (error) {
@@ -438,9 +514,10 @@ async function handleSave() {
   }
 }
 
-// 修改密码
+// 修改密码（弹框）
 const pwdFormRef = ref<FormInstance>()
 const changingPwd = ref(false)
+const pwdDialogVisible = ref(false)
 const pwdForm = reactive({
   oldPassword: '',
   newPassword: '',
@@ -479,6 +556,11 @@ function resetPwdForm() {
   pwdFormRef.value?.clearValidate()
 }
 
+function openPwdDialog() {
+  resetPwdForm()
+  pwdDialogVisible.value = true
+}
+
 async function handleChangePassword() {
   const valid = await pwdFormRef.value?.validate().catch(() => false)
   if (!valid) return
@@ -486,6 +568,7 @@ async function handleChangePassword() {
   try {
     await changePassword({ oldPassword: pwdForm.oldPassword, newPassword: pwdForm.newPassword })
     ElMessage.success('密码已修改，下次登录请使用新密码')
+    pwdDialogVisible.value = false
     resetPwdForm()
   } catch (error) {
     // 错误提示由 request 拦截器统一弹出，这里不再重复 toast
@@ -1170,26 +1253,62 @@ onMounted(async () => {
   }
 }
 
-// ----- 侧边栏风格选择器 -----
+// ----- 侧边栏风格轮播选择器 -----
 .sidebar-style-title {
   margin-top: 18px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
 }
 
-.sidebar-style-row {
+.sidebar-style-current {
+  font-size: 12px;
+  font-weight: var(--font-weight-regular, 400);
+  color: var(--color-muted-text);
+}
+
+.sidebar-style-carousel {
+  :deep(.el-carousel__container) {
+    height: 132px;
+  }
+
+  :deep(.el-carousel__arrow) {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-regular);
+
+    &:hover {
+      color: var(--color-primary);
+      border-color: var(--color-primary);
+    }
+  }
+
+  :deep(.el-carousel__indicator) {
+    &.is-active .el-carousel__button {
+      background: var(--color-primary);
+    }
+  }
+}
+
+.sidebar-style-slide {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
+  height: 100%;
+  align-items: stretch;
+  padding: 0 8px;
 }
 
 .sidebar-style-option {
   cursor: pointer;
   border: 1px solid var(--color-border);
   border-radius: var(--app-radius-input);
-  padding: 10px;
+  padding: 8px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   transition: border-color 0.2s, box-shadow 0.2s;
+  background: var(--color-surface);
 
   &:hover {
     border-color: var(--color-border-hover);
@@ -1209,6 +1328,13 @@ onMounted(async () => {
     font-size: 13px;
     color: var(--color-text-primary);
     line-height: 1.4;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .sidebar-style-check {
+    color: var(--color-primary);
   }
 
   .sidebar-style-desc {
@@ -1419,5 +1545,39 @@ onMounted(async () => {
     background: var(--color-primary);
     opacity: 0.75;
   }
+}
+
+// ----- 外观卡底部：保存设置 -----
+.appearance-footer {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+
+  .appearance-footer__hint {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    color: var(--color-muted-text);
+  }
+}
+
+// ----- 基本信息（合并后的描述列表与操作区） -----
+.profile-descriptions {
+  margin-top: 4px;
+}
+
+.contact-value {
+  color: var(--color-text-primary);
+}
+
+.profile-actions {
+  margin-top: 14px;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
 }
 </style>

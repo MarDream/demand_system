@@ -196,6 +196,8 @@ public class KnowledgeSearchResponse {
         private Long imageFileId;
         private Integer imagePosition;
         private String focus;
+        /** 供预览弹窗展示的命中段落摘要，按当前文档的相关度排序。 */
+        private List<CitationSnippet> snippets;
 
         public Integer getIndex() { return index; }
         public void setIndex(Integer index) { this.index = index; }
@@ -227,6 +229,8 @@ public class KnowledgeSearchResponse {
         public void setImagePosition(Integer imagePosition) { this.imagePosition = imagePosition; }
         public String getFocus() { return focus; }
         public void setFocus(String focus) { this.focus = focus; }
+        public List<CitationSnippet> getSnippets() { return snippets; }
+        public void setSnippets(List<CitationSnippet> snippets) { this.snippets = snippets; }
 
         public static Builder builder() { return new Builder(); }
 
@@ -246,6 +250,7 @@ public class KnowledgeSearchResponse {
             private Long imageFileId;
             private Integer imagePosition;
             private String focus;
+            private List<CitationSnippet> snippets;
 
             public Builder index(Integer v) { this.index = v; return this; }
             public Builder documentId(Long v) { this.documentId = v; return this; }
@@ -262,6 +267,7 @@ public class KnowledgeSearchResponse {
             public Builder imageFileId(Long v) { this.imageFileId = v; return this; }
             public Builder imagePosition(Integer v) { this.imagePosition = v; return this; }
             public Builder focus(String v) { this.focus = v; return this; }
+            public Builder snippets(List<CitationSnippet> v) { this.snippets = v; return this; }
 
             public CitationReference build() {
                 CitationReference r = new CitationReference();
@@ -280,7 +286,48 @@ public class KnowledgeSearchResponse {
                 r.setImageFileId(imageFileId);
                 r.setImagePosition(imagePosition);
                 r.setFocus(focus);
+                r.setSnippets(snippets);
                 return r;
+            }
+        }
+    }
+
+    /** 预览时展示的知识库命中段落。 */
+    public static class CitationSnippet {
+        private String content;
+        private String sectionTitle;
+        private Integer pageNum;
+        private Double score;
+
+        public String getContent() { return content; }
+        public void setContent(String content) { this.content = content; }
+        public String getSectionTitle() { return sectionTitle; }
+        public void setSectionTitle(String sectionTitle) { this.sectionTitle = sectionTitle; }
+        public Integer getPageNum() { return pageNum; }
+        public void setPageNum(Integer pageNum) { this.pageNum = pageNum; }
+        public Double getScore() { return score; }
+        public void setScore(Double score) { this.score = score; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private String content;
+            private String sectionTitle;
+            private Integer pageNum;
+            private Double score;
+
+            public Builder content(String v) { this.content = v; return this; }
+            public Builder sectionTitle(String v) { this.sectionTitle = v; return this; }
+            public Builder pageNum(Integer v) { this.pageNum = v; return this; }
+            public Builder score(Double v) { this.score = v; return this; }
+
+            public CitationSnippet build() {
+                CitationSnippet snippet = new CitationSnippet();
+                snippet.setContent(content);
+                snippet.setSectionTitle(sectionTitle);
+                snippet.setPageNum(pageNum);
+                snippet.setScore(score);
+                return snippet;
             }
         }
     }

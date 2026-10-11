@@ -1704,12 +1704,19 @@ const selectedTransitionAssigneeCandidates = computed<TransitionAssigneeCandidat
   return [{ id: ALL_SENTINEL, name: '全部' }, ...base] as TransitionAssigneeCandidate[]
 })
 
+/** 目标节点是否为结束节点：结束节点无需配置处理人，流转到结束即表示工作流完成 */
+const selectedTransitionIsEndNode = computed(() => {
+  return selectedUnifiedTransition.value?.toNodeType === 'end'
+})
+
 const selectedTransitionAssigneeTypeName = computed(() => {
+  if (selectedTransitionIsEndNode.value) return ''
   return selectedUnifiedTransition.value?.assigneeTypeName || ''
 })
 
 /** 处理人作用域标签前缀：根据 assigneeType 返回中文前缀 */
 const selectedTransitionScopeLabel = computed(() => {
+  if (selectedTransitionIsEndNode.value) return ''
   const type = selectedUnifiedTransition.value?.assigneeType
   switch (type) {
     case 'SPECIFIED_USER': return '处理类型'
@@ -1728,12 +1735,13 @@ const selectedTransitionScopeName = computed(() => {
 })
 
 const showTransitionAssigneeSelector = computed(() => {
-  // 有候选人时始终显示选择器（含"全部"选项），无需手动选具体人员
-  return selectedTransitionAssigneeCandidates.value.length > 0
+  // 结束节点无需处理人；有候选人时始终显示选择器（含"全部"选项），无需手动选具体人员
+  return !selectedTransitionIsEndNode.value && selectedTransitionAssigneeCandidates.value.length > 0
 })
 
 const requiresSingleTransitionAssignee = computed(() => {
-  // 仅当有具体候选人但不选"全部"时才要求必填
+  // 结束节点无需处理人；仅当有具体候选人但不选"全部"时才要求必填
+  if (selectedTransitionIsEndNode.value) return false
   return selectedUnifiedTransition.value?.assigneeCandidates &&
     selectedUnifiedTransition.value.assigneeCandidates.length > 1
 })
@@ -1751,6 +1759,10 @@ const selectedTransitionAssigneeOption = computed<TransitionAssigneeCandidate | 
 const selectedTransitionAssigneeName = computed(() => {
   if (!selectedUnifiedTransition.value) {
     return transitionOptions.value.length > 0 ? '请选择目标节点' : '当前无可执行操作'
+  }
+  // 流转到结束节点即完成，无处理人概念
+  if (selectedTransitionIsEndNode.value) {
+    return '流程结束'
   }
   return selectedTransitionAssigneeOption.value?.name || '未配置处理人'
 })
@@ -1963,7 +1975,8 @@ async function handleStatusTransition() {
     toast.warning('请选择目标节点')
     return
   }
-  if (selectedUnifiedTransition.value && selectedUnifiedTransition.value.assigneeCandidates && selectedUnifiedTransition.value.assigneeCandidates.length === 0) {
+  // 结束节点无需配置处理人，流转到结束节点即表示工作流完成
+  if (!selectedTransitionIsEndNode.value && selectedUnifiedTransition.value && selectedUnifiedTransition.value.assigneeCandidates && selectedUnifiedTransition.value.assigneeCandidates.length === 0) {
     toast.warning('目标节点未配置处理人')
     return
   }

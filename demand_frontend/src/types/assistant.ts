@@ -104,6 +104,13 @@ export interface AssistantTask {
   logs: TaskLog[]
 }
 
+export interface CitationSnippet {
+  content?: string | null
+  sectionTitle?: string | null
+  pageNum?: number | null
+  score?: number | null
+}
+
 export interface CitationReference {
   index?: number
   documentId?: number
@@ -120,6 +127,8 @@ export interface CitationReference {
   imageFileId?: number | null
   imagePosition?: number | null
   focus?: string | null
+  /** 供预览弹窗展示的命中段落摘要 */
+  snippets?: CitationSnippet[]
 }
 
 export interface AssistantMessage {

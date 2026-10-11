@@ -121,21 +121,21 @@
                     <el-option label="验收不通过" value="验收不通过" />
                   </el-select>
                 </el-form-item>
+                <el-form-item label="优先级" class="filter-item filter-item--priority">
+                  <el-select v-model="filterForm.priority" placeholder="全部" clearable class="filter-select--priority">
+                    <el-option v-for="p in configPriorities" :key="p.code" :label="p.name" :value="p.code">
+                      <span class="priority-option">
+                        <span v-if="p.color" class="priority-dot" :style="{ backgroundColor: p.color }"></span>
+                        {{ p.name }}
+                      </span>
+                    </el-option>
+                  </el-select>
+                </el-form-item>
               </div>
 
               <!-- 高级筛选 -->
               <div class="filter-advanced">
                 <div class="filter-advanced__inner">
-                  <el-form-item label="优先级" class="filter-item filter-item--priority">
-                    <el-select v-model="filterForm.priority" placeholder="全部" clearable class="filter-select--priority">
-                      <el-option v-for="p in configPriorities" :key="p.code" :label="p.name" :value="p.code">
-                        <span class="priority-option">
-                          <span v-if="p.color" class="priority-dot" :style="{ backgroundColor: p.color }"></span>
-                          {{ p.name }}
-                        </span>
-                      </el-option>
-                    </el-select>
-                  </el-form-item>
                   <el-form-item v-show="isAllView" label="当前处理人" class="filter-item filter-item--assignee">
                     <el-select v-model="filterForm.assigneeId" placeholder="请选择" clearable class="filter-select--assignee">
                       <el-option v-for="user in filterUserList" :key="user.id" :label="user.realName || user.username" :value="user.id" />
@@ -703,8 +703,10 @@ function applyTimeDimensionParams<T extends Record<string, any>>(target: T): T {
   }
   const keys = keyMap[timeDimension.value]
   if (keys) {
-    target[keys[0]] = start
-    target[keys[1]] = end
+    // T 为泛型，不能直接按索引写入（TS2862），显式断言为可变字典；行为不变
+    const mutable = target as Record<string, any>
+    mutable[keys[0]] = start
+    mutable[keys[1]] = end
   }
   return target
 }
