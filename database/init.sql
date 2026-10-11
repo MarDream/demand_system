@@ -1,14 +1,36 @@
 -- =====================================================
 -- 需求管理系统 - 数据库初始化脚本（唯一入口）
--- 字符集: utf8mb4, 引擎: InnoDB
--- 说明: 一次性完整建表 + 基础数据初始化
--- 注: 此脚本基于当前数据库（demand_system）实际数据生成
+-- 字符集: utf8mb4, 引擎: InnoDB, 排序规则: utf8mb4_0900_ai_ci
+-- 说明: 一次性完整建表 + 基础数据初始化；在空库上执行一次即可得到完整可运行环境
+-- 用法: docker exec -i mysql mysql -uroot -padmin123 --default-character-set=utf8mb4 \
+--         -e "CREATE DATABASE IF NOT EXISTS demand_system DEFAULT CHARSET utf8mb4" \
+--       && docker exec -i mysql mysql -uroot -padmin123 --default-character-set=utf8mb4 \
+--         demand_system < database/init.sql
 --
--- 2026-09-14 整合：以下 SQL 已全部合并进本文件，原文件已删除
---   · migrations/ 下 34 个迁移脚本（V20260716_02 ~ V20260914_01）
---   · code_management_init.sql / question_logs.sql
---   · quick_questions.sql / workflow_history.sql
--- 备份: ../database_sql_backup_20260914.zip
+-- 执行顺序约定（改动本文件时请遵守）：
+--   ① 建表（DROP TABLE IF EXISTS + CREATE TABLE，按业务域分章）
+--   ② 补列 / 补索引（对已有表做结构补齐，幂等）
+--   ③ 初始化数据（字典 / 权限 / 角色 / 基础业务数据，全部 INSERT IGNORE 幂等）
+--   ④ 幂等收尾（SET FOREIGN_KEY_CHECKS = 1）
+--
+-- 整合历史：
+--   · 2026-09-14 合并 migrations/ 下 34 个脚本（V20260716_02 ~ V20260914_01）
+--     及 code_management_init.sql / question_logs.sql / quick_questions.sql / workflow_history.sql
+--   · 2026-10-11 合并 migrations/ 下剩余 23 个脚本（2026-09-15 ~ 2026-09-26、
+--     V20260917_01 / V20260919_01 / V20260920_01），合并后 migrations/ 目录已删除。
+--     合并时以线上库（Docker mysql:8.0 / demand_system）实际结构为准逐表比对补齐：
+--       新增表   bitable_base_groups
+--       新增列   bitable_bases.group_id / bitable_tables.row_height / workflow_approvals.updated_at
+--       新增索引 bitable_bases.idx_bitable_base_group_id / bitable_tables.idx_base_group_id /
+--                bitable_dashboards.idx_base_group_id / users.idx_birthday
+--       字典补齐 sys_permissions(id=9 menu:document) / sys_menus(id=6 文档中心) /
+--                node_statuses(PENDING、IN_PROGRESS) / 角色 3、4、8 的既有授权
+--   注：以下迁移是「存量数据订正」而非结构变更，空库执行时天然为空操作，故未并入本文件：
+--       · 2026-09-19-dashboard-sort-order（回填仪表盘 sort_order）
+--       · 2026-09-26-draft-created-at-semantics（回填需求创建时间口径）
+--       · 2026-09-26-transition-operator-role（回填流转角色快照）
+--       · 2026-09-26-fix-transition-role-snapshot（修正流转角色快照）
+--       若需升级既有库，请从 git 历史中取回对应脚本单独执行。
 -- =====================================================
 
 SET NAMES utf8mb4;
@@ -46,6 +68,7 @@ CREATE TABLE `users` (
   INDEX `idx_status` (`status`),
   INDEX `idx_employee_type` (`employee_type`),
   INDEX `idx_work_status` (`work_status`),
+  INDEX `idx_birthday` (`birthday`),
   INDEX `idx_region_id` (`region_id`),
   INDEX `idx_department_id` (`department_id`),
   INDEX `idx_org_id` (`org_id`)
@@ -527,6 +550,7 @@ CREATE TABLE `workflow_approvals` (
   `comment` TEXT COMMENT '审核意见',
   `submitted_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '提交时间',
   `approved_at` DATETIME DEFAULT NULL COMMENT '审核时间',
+  `updated_at` DATETIME DEFAULT NULL,
   PRIMARY KEY (`id`),
   INDEX `idx_workflow_version_id` (`workflow_version_id`),
   INDEX `idx_status` (`status`),
@@ -752,6 +776,23 @@ CREATE TABLE `workflow_migration_logs` (
   INDEX `idx_status` (`migration_status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='工作流版本迁移日志';
 
+-- 29.3.1 多维表格-Base分组（目录树，parent_id 自关联形成任意层级）
+DROP TABLE IF EXISTS `bitable_base_groups`;
+CREATE TABLE `bitable_base_groups` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `parent_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '父分组ID，NULL=根层级',
+  `name` VARCHAR(100) NOT NULL COMMENT '分组名称',
+  `sort_order` INT NOT NULL DEFAULT 0 COMMENT '同级排序',
+  `creator_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '创建人ID',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted_at` TINYINT NOT NULL DEFAULT 0 COMMENT '0=未删除, 1=已删除',
+  PRIMARY KEY (`id`),
+  INDEX `idx_bitable_base_group_parent` (`parent_id`),
+  INDEX `idx_bitable_base_group_deleted_at` (`deleted_at`),
+  INDEX `idx_bitable_base_group_parent_sort` (`parent_id`, `sort_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='多维表格-Base分组';
+
 -- 29.4 多维表格容器
 DROP TABLE IF EXISTS `bitable_bases`;
 CREATE TABLE `bitable_bases` (
@@ -761,6 +802,7 @@ CREATE TABLE `bitable_bases` (
   `icon` VARCHAR(50) DEFAULT NULL COMMENT '图标标识',
   `cover_color` VARCHAR(20) DEFAULT NULL COMMENT '封面颜色',
   `project_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联项目ID(可选)',
+  `group_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '所属分组ID，NULL=未分组',
   `creator_id` BIGINT UNSIGNED NOT NULL COMMENT '创建人ID',
   `is_template` TINYINT DEFAULT 0 COMMENT '是否模板: 0=否, 1=是',
   `sort_order` INT DEFAULT 0 COMMENT '排序',
@@ -769,6 +811,7 @@ CREATE TABLE `bitable_bases` (
   `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
   PRIMARY KEY (`id`),
   INDEX `idx_project_id` (`project_id`),
+  INDEX `idx_bitable_base_group_id` (`group_id`),
   INDEX `idx_creator_id` (`creator_id`),
   INDEX `idx_deleted_at` (`deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='多维表格容器';
@@ -784,6 +827,7 @@ CREATE TABLE `bitable_tables` (
   `description` TEXT DEFAULT NULL COMMENT '表描述',
   `icon` VARCHAR(50) DEFAULT NULL COMMENT '图标',
   `sort_order` INT DEFAULT 0 COMMENT '排序',
+  `row_height` INT UNSIGNED DEFAULT NULL COMMENT '网格行高(px)，NULL=使用前端默认(80)',
   `default_view_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '默认视图ID',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
@@ -791,6 +835,7 @@ CREATE TABLE `bitable_tables` (
   PRIMARY KEY (`id`),
   INDEX `idx_base_id` (`base_id`),
   INDEX `idx_group_id` (`group_id`),
+  INDEX `idx_base_group_id` (`base_group_id`),
   INDEX `idx_deleted_at` (`deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='多维表格-数据表';
 
@@ -817,11 +862,11 @@ CREATE TABLE `bitable_base_custom_roles` (
   `id`              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `base_id`         BIGINT UNSIGNED NOT NULL COMMENT '多维表格ID',
   `name`            VARCHAR(100) NOT NULL COMMENT '角色名称',
-  `sort_order`      INT DEFAULT 0 COMMENT '排序号',
+  `sort_order`      INT NOT NULL DEFAULT 0 COMMENT '排序号',
   `creator_id`      BIGINT UNSIGNED NOT NULL COMMENT '创建人ID',
-  `created_at`      DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `updated_at`      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-  `deleted_at`      TINYINT DEFAULT 0 COMMENT '软删除标志(0=正常,1=删除)',
+  `created_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted_at`      TINYINT NOT NULL DEFAULT 0 COMMENT '软删除标志(0=正常,1=删除)',
   PRIMARY KEY (`id`),
   INDEX `idx_base_id` (`base_id`),
   INDEX `idx_base_deleted` (`base_id`, `deleted_at`)
@@ -835,8 +880,9 @@ CREATE TABLE `bitable_base_custom_role_members` (
   `member_type`     VARCHAR(20) NOT NULL COMMENT '成员类型: user=用户, dept=部门',
   `member_id`       BIGINT UNSIGNED NOT NULL COMMENT '成员ID(用户ID或部门ID)',
   `creator_id`      BIGINT UNSIGNED NOT NULL COMMENT '创建人ID',
-  `created_at`      DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `updated_at`      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `created_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
   UNIQUE KEY `uk_role_member` (`role_id`, `member_type`, `member_id`),
   INDEX `idx_role_id` (`role_id`),
   INDEX `idx_member` (`member_type`, `member_id`)
@@ -854,9 +900,10 @@ CREATE TABLE `bitable_base_role_permissions` (
   `permission_type`     VARCHAR(20) NOT NULL DEFAULT 'data' COMMENT '权限类型: data=数据权限, automation=自动化权限',
   `permission_level`    VARCHAR(20) NOT NULL DEFAULT 'none' COMMENT '权限级别: full=完全权限, edit=可编辑, view=可查看, none=无权限',
   `creator_id`          BIGINT UNSIGNED NOT NULL COMMENT '创建人ID',
-  `created_at`          DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `updated_at`          DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `created_at`          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at`          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `role_identifier`     VARCHAR(120) AS (CONCAT(`role_type`, ':', COALESCE(`system_role_code`, ''), ':', COALESCE(`custom_role_id`, ''))) STORED,
+  PRIMARY KEY (`id`),
   UNIQUE KEY `uk_permission` (`base_id`, `role_identifier`, `table_id`, `permission_type`),
   INDEX `idx_base_table` (`base_id`, `table_id`),
   INDEX `idx_custom_role` (`custom_role_id`),
@@ -892,9 +939,9 @@ CREATE TABLE `bitable_fields` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `table_id` BIGINT UNSIGNED NOT NULL COMMENT '所属数据表ID',
   `name` VARCHAR(200) NOT NULL COMMENT '字段名',
-  `field_type` VARCHAR(50) NOT NULL COMMENT '字段类型: text/single_select/multi_select/user/group/date/attachment/number/checkbox/process/button/auto_number/phone/email/location/barcode/progress/currency/rating/lookup/rollup/link/bidirectional_link/system/formula/ai',
+  `field_type` VARCHAR(30) NOT NULL COMMENT '字段类型: text/single_select/multi_select/user/group/date/attachment/number/checkbox/process/button/auto_number/phone/email/location/barcode/progress/currency/rating/lookup/rollup/link/bidirectional_link/system/formula/ai',
   `config` JSON DEFAULT NULL COMMENT '字段配置(options/format/defaultValue/linkTargetTableId/formulaExpr等)',
-  `description` TEXT DEFAULT NULL COMMENT '字段说明/表单提示',
+  `description` VARCHAR(500) DEFAULT NULL COMMENT '字段说明/表单提示',
   `required` TINYINT DEFAULT 0 COMMENT '是否必填: 0=否, 1=是',
   `ai_prompt` TEXT DEFAULT NULL COMMENT 'AI填充提示词(AI字段专用)',
   `is_ai_field` TINYINT DEFAULT 0 COMMENT '是否AI自动填充字段: 0=否, 1=是',
@@ -1687,7 +1734,9 @@ INSERT IGNORE INTO `node_statuses` (`id`, `code`, `name`, `color`, `sort_order`,
 (6, 'IN_TESTING', '测试中', '#E6A23C', 6, 0, 0, 0),
 (7, 'LIVE', '已上线', '#67C23A', 7, 0, 0, 0),
 (8, 'ACCEPTED', '已验收', '#909399', 8, 0, 1, 0),
-(9, 'CANCELLED', '已取消', '#909399', 9, 0, 0, 1);
+(9, 'CANCELLED', '已取消', '#909399', 9, 0, 0, 1),
+(10, 'PENDING', '待处理', '#E6A23C', 10, 0, 0, 0),
+(11, 'IN_PROGRESS', '实施中', '#409EFF', 11, 0, 0, 0);
 
 -- LLM 功能点模型应用分组（目录树）
 INSERT IGNORE INTO `llm_application_groups` (`id`, `parent_id`, `name`, `sort_order`) VALUES
@@ -1722,6 +1771,7 @@ INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description
 (6,  'menu:settings:workflow',      '工作流配置菜单',     'MENU',   '系统设置-工作流配置', 1),
 (7,  'menu:settings:role',          '角色管理菜单',       'MENU',   '系统设置-角色管理', 1),
 (8,  'menu:menu-management',        '菜单管理菜单',       'MENU',   '系统设置-菜单管理', 1),
+(9,  'menu:document',               '文档中心菜单',       'MENU',   '文档中心入口', 0),
 (129,'menu:knowledge',               '知识库管理菜单',     'MENU',   '知识库管理入口', 1),
 (10, 'button:menu:create',          '新增菜单按钮',       'BUTTON', '菜单管理-新增', 1),
 (11, 'button:menu:update',          '编辑菜单按钮',       'BUTTON', '菜单管理-编辑', 1),
@@ -1830,6 +1880,7 @@ INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, 
 (15, 7, '菜单管理',     'MENU',      '/settings/menus',         'MenuManagement',     'views/settings/menus.vue',                    'Menu',         6, 'menu:menu-management',      1, 1, 0),
 (16, 7, '模型配置',     'MENU',      '/settings/llm',           'LlmConfig',          'views/settings/llm.vue',                       'MagicStick',   7, 'menu:settings:llm',         1, 1, 0),
 (17, 7, '角色管理',     'MENU',      '/settings/roles',         'RoleManage',         'views/settings/roles.vue',                    'UserFilled',   2, 'menu:settings:role',        1, 1, 0),
+(6,  7, '文档中心',     'MENU',      '/settings/documents',     'Documents',          'views/rag/index.vue',                         'Files',        7, 'menu:document',             0, 0, 0),
 -- 菜单管理下的按钮
 (20, 15, '新增菜单',     'BUTTON',    NULL, NULL, NULL, NULL, 1, 'button:menu:create',  1, 1, 0),
 (21, 15, '编辑菜单',     'BUTTON',    NULL, NULL, NULL, NULL, 2, 'button:menu:update',  1, 1, 0),
@@ -2001,6 +2052,24 @@ INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_
 INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_by`) VALUES
 (2, 141, 1), (3, 141, 1), (4, 141, 1), (5, 141, 1), (6, 141, 1),
 (7, 141, 1), (8, 141, 1), (9, 141, 1), (10, 141, 1), (11, 141, 1);
+
+-- 默认角色权限对齐（按线上库既有授权补齐，补齐后新部署的 RBAC 与线上一致）
+-- 部门管理员(3)：需求查看/新建/编辑/删除/导出/提交/评论/回退/撤销 + 角色授权
+INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_by`) VALUES
+(3, 13, 1), (3, 40, 1), (3, 41, 1), (3, 42, 1), (3, 43, 1), (3, 44, 1), (3, 46, 1), (3, 47, 1), (3, 48, 1),
+(3, 79, 1), (3, 80, 1), (3, 81, 1), (3, 82, 1), (3, 93, 1), (3, 116, 1), (3, 117, 1), (3, 118, 1), (3, 121, 1);
+-- 产品经理(4)：编辑/删除/提交/拆分/评论/回退/撤销 + 评审相关
+INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_by`) VALUES
+(4, 41, 1), (4, 42, 1), (4, 44, 1), (4, 45, 1), (4, 46, 1), (4, 47, 1), (4, 48, 1), (4, 58, 1), (4, 59, 1), (4, 60, 1),
+(4, 80, 1), (4, 81, 1), (4, 116, 1), (4, 117, 1), (4, 118, 1), (4, 119, 1), (4, 121, 1), (4, 122, 1);
+-- 评审人(8)：提交/评审相关
+INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_by`) VALUES
+(8, 44, 1), (8, 58, 1), (8, 59, 1), (8, 60, 1), (8, 117, 1), (8, 118, 1), (8, 119, 1);
+
+-- 需求自定义字段（需求类型维度）：验收标准 / 需求厂商
+INSERT IGNORE INTO `custom_fields` (`id`, `field_code`, `requirement_type_code`, `name`, `field_type`, `options`, `required`, `default_value`, `sort_order`, `enabled`) VALUES
+(5, 'acceptance_criteria', 'TECHNICAL_SUPPORT', '验收标准', 'SELECT', '[{"key": "opt_mu0t598r_0vtd", "label": "是"}, {"key": "opt_mu0t5fsx_8iwp", "label": "否"}]', 0, 'opt_mu0t598r_0vtd', 0, 1),
+(6, 'requirement', 'REQUIREMENT_DEVELOPER', '需求厂商', 'SELECT', '[{"key": "opt_mu0u6l2n_tff0", "label": "开普厂商"}, {"key": "opt_mu0u6tqv_4vfg", "label": "金赋厂商"}, {"key": "opt_mu0u6ysh_203e", "label": "奥格厂商"}]', 1, 'opt_mu0u6l2n_tff0', 0, 1);
 
 
 -- 官方工作流模板（复制工作流 -> 模板库）
@@ -2477,7 +2546,6 @@ FROM DUAL
 WHERE @workflow_template_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM workflow_edges WHERE workflow_version_id = @workflow_template_id AND edge_id = 'tpl_tpl_2_5_0_e10');
 COMMIT;
 
-SET FOREIGN_KEY_CHECKS = 1;
 -- =============================================================
 -- 56. 迁移补齐区：将以下迁移脚本中的表结构同步进初始化脚本
 --     V20260716_04 / V20260716_05 / V20260716_06 / V20260907_01 /
@@ -2633,6 +2701,7 @@ CREATE TABLE IF NOT EXISTS `bitable_dashboards` (
   `deleted_at` TINYINT DEFAULT 0 COMMENT '0=未删除, 1=已删除',
   PRIMARY KEY (`id`),
   INDEX `idx_base_id` (`base_id`),
+  INDEX `idx_base_group_id` (`base_group_id`),
   INDEX `idx_bitable_dashboard_base_sort` (`base_id`, `sort_order`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='多维表格-仪表盘';
 
@@ -2830,6 +2899,20 @@ CREATE TABLE `quick_questions` (
   INDEX `idx_source` (`source`),
   INDEX `idx_ai_cluster` (`ai_cluster_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='AI助手快捷提问配置表';
+
+-- 智能助手快捷问题种子数据（按页面路由分组，enabled 状态）
+INSERT IGNORE INTO `quick_questions` (`id`, `category`, `page_route`, `question_text`, `weight`, `sort_order`, `status`, `source`) VALUES
+(1, 'manual_curated', 'RequirementCreate', '创建需求时哪些字段必须填写？', 100, 1, 'enabled', 'admin_manual'),
+(2, 'manual_curated', 'RequirementCreate', '如何保存草稿或提交需求？', 90, 2, 'enabled', 'admin_manual'),
+(3, 'manual_curated', 'RequirementCreate', '如何选择项目、优先级和需求类型？', 80, 3, 'enabled', 'admin_manual'),
+(4, 'manual_curated', 'RequirementDetail', '如何查看这个需求的流转记录？', 100, 1, 'enabled', 'admin_manual'),
+(5, 'manual_curated', 'RequirementDetail', '这个需求下一步应该如何处理？', 80, 2, 'enabled', 'admin_manual'),
+(6, 'auto_extracted', 'RequirementDetail', '如何在需求详情里查看评论和附件？', 60, 3, 'enabled', 'user_behavior'),
+(7, 'manual_curated', 'Dashboard', '首页指标分别代表什么？', 100, 1, 'enabled', 'admin_manual'),
+(8, 'manual_curated', 'Dashboard', '如何从首页快速进入待办需求？', 90, 2, 'enabled', 'admin_manual'),
+(9, 'auto_extracted', 'Dashboard', '如何查看我负责事项的整体进展？', 60, 3, 'enabled', 'user_behavior'),
+(10, 'manual_curated', NULL, '这次系统更新了哪些内容？', 50, 1, 'enabled', 'admin_manual'),
+(11, 'auto_extracted', 'WorkflowConfigEditor', '如何新增工作流节点？', 60, 1, 'enabled', 'user_behavior');
 
 -- 前台查询视图(按排序权重取启用的问题)
 -- SELECT * FROM quick_questions 
@@ -3149,3 +3232,8 @@ INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`)
 SELECT rp.`role_id`, 140
 FROM `sys_role_permissions` rp
 JOIN `sys_permissions` p ON p.`id` = rp.`permission_id` AND p.`code` = 'button:user:batch-delete';
+
+-- =====================================================
+-- 幂等收尾（必须在文件最末尾执行）
+-- =====================================================
+SET FOREIGN_KEY_CHECKS = 1;

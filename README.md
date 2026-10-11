@@ -33,6 +33,23 @@ demand_system/
 └── docs/                     # PRD 等文档
 ```
 
+## 数据库初始化
+
+`database/init.sql` 是**唯一入口**：在空库上执行一次，即可建出全部表结构与基础数据
+（字典 / 权限 / 角色 / 需求类型 / 工作流模板等），无需再执行任何迁移脚本。
+
+```bash
+docker exec -i mysql mysql -uroot -padmin123 \
+  -e "CREATE DATABASE IF NOT EXISTS demand_system DEFAULT CHARSET utf8mb4 COLLATE utf8mb4_0900_ai_ci"
+docker exec -i mysql mysql -uroot -padmin123 --default-character-set=utf8mb4 \
+  demand_system < database/init.sql
+```
+
+- 执行顺序：① 建表 → ② 补列/补索引 → ③ 初始化数据（全部 `INSERT IGNORE` 幂等）→ ④ 收尾。
+- 脚本内含 `DROP TABLE IF EXISTS`，**在已有库上执行会清空数据**，请仅用于全新部署。
+- 模型配置（`llm_providers` / `llm_models`）含密钥，不入库初始化，部署后请在
+  「系统配置 → 模型配置」中录入。
+
 ## 本地开发（推荐）
 
 **唯一启动入口：`start-all.bat`**
