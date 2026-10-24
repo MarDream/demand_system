@@ -24,7 +24,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * 多维表格-Webhook Service 实现（MVP）。
+ * 多维表格-Webhook Service 实现。
  * <ul>
  *   <li>推送异步执行（独立线程池），失败不影响业务主流程；</li>
  *   <li>payload 为 JSON，HMAC-SHA256 签名，请求头携带 X-Webhook-Timestamp 与 X-Webhook-Signature；</li>
@@ -246,6 +246,7 @@ public class BitableWebhookServiceImpl implements BitableWebhookService {
                         .set("last_delivered_at", LocalDateTime.now());
                 subscriptionMapper.update(null, wrapper);
             } catch (Exception ignored) {
+                // 状态回写失败不影响投递结果，忽略
             }
             if (!succeeded) {
                 log.warn("Webhook 投递最终失败: subscriptionId={}, url={}, error={}", sub.getId(), sub.getUrl(), lastError);

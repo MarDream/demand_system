@@ -26,7 +26,7 @@ public class MigrationPlanVO {
     private String createdAt;
     private List<TargetNodeOption> toVersionNodes; // 目标版本节点列表（供前端下拉选择）
 
-    // ============ 目标节点选项（简化版，供前端下拉选择） ============
+    // --- 目标节点选项（简化版，供前端下拉选择） ---
 
     public static class TargetNodeOption {
         private String nodeId;
@@ -41,7 +41,7 @@ public class MigrationPlanVO {
         public void setNodeType(String nodeType) { this.nodeType = nodeType; }
     }
 
-    // ============ 节点映射 VO ============
+    // --- 节点映射 VO ---
 
     public static class NodeMappingVO {
         private String fromNodeId;
@@ -70,8 +70,6 @@ public class MigrationPlanVO {
         public boolean isSkipped() { return skipped; }
         public void setSkipped(boolean skipped) { this.skipped = skipped; }
     }
-
-    // ============ Getters & Setters ============
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }

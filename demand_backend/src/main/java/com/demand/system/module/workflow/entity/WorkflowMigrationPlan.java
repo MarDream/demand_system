@@ -48,7 +48,7 @@ public class WorkflowMigrationPlan {
 
     private LocalDateTime updatedAt;
 
-    // ============ 节点映射内部类 ============
+    // --- 节点映射内部类 ---
 
     public static class NodeMappingItem {
         private String fromNodeId;
@@ -74,8 +74,6 @@ public class WorkflowMigrationPlan {
         public String getToNodeName() { return toNodeName; }
         public void setToNodeName(String toNodeName) { this.toNodeName = toNodeName; }
     }
-
-    // ============ Getters & Setters ============
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }

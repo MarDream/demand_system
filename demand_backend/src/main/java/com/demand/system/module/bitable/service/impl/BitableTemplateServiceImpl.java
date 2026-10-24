@@ -183,7 +183,7 @@ public class BitableTemplateServiceImpl implements BitableTemplateService {
         return cell;
     }
 
-    // ======================== 字段定义 ========================
+    // --- 字段定义 ---
 
     /**
      * 模板内置日期值解析：兼容 {@code yyyy-MM-dd} 与 {@code yyyy-MM-dd HH:mm:ss}，
@@ -265,7 +265,7 @@ public class BitableTemplateServiceImpl implements BitableTemplateService {
         };
     }
 
-    // ======================== 示例记录 ========================
+    // --- 示例记录 ---
 
     private static List<List<String>> getSampleRecords(String templateCode) {
         return switch (templateCode) {

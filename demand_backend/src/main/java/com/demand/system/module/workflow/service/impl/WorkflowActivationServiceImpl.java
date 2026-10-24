@@ -171,7 +171,7 @@ public class WorkflowActivationServiceImpl implements WorkflowActivationService 
         return dto;
     }
 
-    // ==== 修改历史记录辅助方法 ====
+    // --- 修改历史记录辅助方法 ---
 
     private void recordHistory(WorkflowVersion version, String action, String summary) {
         if (version == null || version.getId() == null) {

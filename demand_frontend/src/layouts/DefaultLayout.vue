@@ -28,7 +28,7 @@
             </button>
           </div>
           <div class="rail__footer">
-            <el-avatar :size="30" :src="currentUserAvatarUrl || undefined">{{ userStore.userInfo?.realName?.charAt(0) || 'U' }}</el-avatar>
+            <UserAvatar :size="30" :avatar="userStore.userInfo?.avatar" :name="userStore.userInfo?.realName" />
           </div>
         </div>
         <transition name="rail-panel">
@@ -127,7 +127,7 @@
           </div>
           <!-- 风格⑥ 底部固定用户区（中间列表单独滚动） -->
           <div v-if="isGrouped" class="sidebar-user" @click="router.push('/profile')">
-            <el-avatar :size="30" :src="currentUserAvatarUrl || undefined">{{ userStore.userInfo?.realName?.charAt(0) || 'U' }}</el-avatar>
+            <UserAvatar :size="30" :avatar="userStore.userInfo?.avatar" :name="userStore.userInfo?.realName" />
             <div class="sidebar-user__meta">
               <span class="sidebar-user__name">{{ userStore.userInfo?.realName || '用户' }}</span>
               <span class="sidebar-user__role">{{ roleDisplayText || '个人设置' }}</span>
@@ -153,15 +153,18 @@
           <Breadcrumb />
         </div>
         <div class="header-right">
-          <el-popover placement="bottom" :width="320" trigger="click">
+          <el-popover placement="bottom" :width="340" trigger="click" @show="handleNotificationOpen">
             <template #reference>
-              <el-badge :value="unreadCount" :hidden="unreadCount === 0" class="notification-badge">
+              <el-badge :value="unreadCount" :max="99" :hidden="unreadCount === 0" class="notification-badge">
                 <el-icon style="font-size: 20px; cursor: pointer;"><Bell /></el-icon>
               </el-badge>
             </template>
             <div class="notification-popover">
               <div class="popover-header">
-                <span>通知</span>
+                <span class="popover-title">
+                  通知
+                  <span v-if="unreadCount > 0" class="popover-unread-count">{{ unreadCount }} 条未读</span>
+                </span>
                 <el-button type="primary" link size="small" @click="router.push('/notifications')">查看全部</el-button>
               </div>
               <div v-if="recentNotifications.length === 0" class="popover-empty">暂无通知</div>
@@ -173,9 +176,12 @@
                   :class="{ unread: item.isRead === 0 }"
                   @click="handleNotificationClick(item)"
                 >
-                  <div class="popover-item-title">{{ item.title }}</div>
-                  <div class="popover-item-content">{{ item.content }}</div>
-                  <div class="popover-item-time">{{ formatDate(item.createdAt) }}</div>
+                  <span v-if="item.isRead === 0" class="popover-item-dot" aria-label="未读"></span>
+                  <div class="popover-item-body">
+                    <div class="popover-item-title">{{ item.title }}</div>
+                    <div class="popover-item-content">{{ item.content }}</div>
+                    <div class="popover-item-time">{{ formatDate(item.createdAt) }}</div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -202,7 +208,7 @@
           </el-dropdown>
           <el-dropdown trigger="click">
             <span class="user-info">
-              <el-avatar :size="28" :src="currentUserAvatarUrl || undefined">{{ userStore.userInfo?.realName?.charAt(0) || 'U' }}</el-avatar>
+              <UserAvatar :size="28" :avatar="userStore.userInfo?.avatar" :name="userStore.userInfo?.realName" />
               <span class="user-meta">
                 <span class="user-name">{{ userStore.userInfo?.realName || '用户' }}</span>
                 <span v-if="roleDisplayText" class="user-role">{{ roleDisplayText }}</span>
@@ -247,23 +253,20 @@ import { ElMessage } from 'element-plus'
 import { isRemixIcon } from '@/components/common/RemixIconData'
 import Breadcrumb from '@/components/layout/Breadcrumb.vue'
 import OrgBindDialog from '@/components/OrgBindDialog.vue'
+import UserAvatar from '@/components/common/UserAvatar.vue'
 import SystemAssistant from '@/components/assistant/SystemAssistant.vue'
 import { formatDate } from '@/utils/format'
 import { resolveActiveMenuPath } from '@/utils/menuNavigation'
 import { getNotificationList, markAsRead } from '@/api/modules/notification'
 import { getCurrentMenus, type MenuItem } from '@/api/modules/menu'
-import { resolveAvatarUrl } from '@/utils/presetAvatars'
 import { useAppearance } from '@/composables/useAppearance'
 
 const route = useRoute()
 const router = useRouter()
 const appStore = useAppStore()
 const userStore = useUserStore()
-const { unreadCount } = useNotification()
+const { unreadCount, fetchUnreadCount } = useNotification()
 const { hasPermission, hasAnyRole, hasAnyPermission } = usePermission()
-
-/** 顶栏头像：preset:xxx 前缀转 data URL，其余原样；空回退姓名首字 */
-const currentUserAvatarUrl = computed(() => resolveAvatarUrl(userStore.userInfo?.avatar))
 
 const recentNotifications = ref<any[]>([])
 const menuList = shallowRef<MenuItem[]>([])
@@ -410,15 +413,27 @@ async function fetchRecentNotifications() {
   }
 }
 
+/** 打开通知弹层时刷新列表与未读数，保证看到的就是最新的（轮询之外的即时更新） */
+async function handleNotificationOpen() {
+  await Promise.all([fetchUnreadCount(), fetchRecentNotifications()])
+}
+
 async function handleNotificationClick(item: any) {
   if (item.isRead === 0) {
     try {
       await markAsRead(item.id)
+      item.isRead = 1
+      // 已读后立即刷新角标，不必等下一次轮询
+      void fetchUnreadCount()
     } catch {
     }
   }
   if (item.relatedId) {
-    router.push({ name: 'RequirementDetail', params: { id: item.relatedId } })
+    // @提醒类通知携带评论ID：直达该工单的评论处并高亮对应评论
+    const query = item.commentId
+      ? { tab: 'comments', commentId: String(item.commentId) }
+      : undefined
+    router.push({ name: 'RequirementDetail', params: { id: item.relatedId }, query })
   }
 }
 
@@ -989,6 +1004,22 @@ async function handleLogout() {
     border-bottom: 1px solid var(--color-border);
   }
 
+  .popover-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* 未读总数：与「查看全部」并排，一眼看到还有多少没看 */
+  .popover-unread-count {
+    font-size: 11px;
+    font-weight: var(--font-weight-regular, 400);
+    color: var(--el-color-danger, #f56c6c);
+    background: var(--el-color-danger-light-9, #fef0f0);
+    border-radius: 8px;
+    padding: 1px 6px;
+  }
+
   .popover-empty {
     text-align: center;
     color: var(--color-muted-text);
@@ -997,7 +1028,10 @@ async function handleLogout() {
   }
 
   .popover-item {
-    padding: 8px 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px;
     border-bottom: 1px solid var(--color-surface-alt);
     cursor: pointer;
     border-radius: var(--radius-sm);
@@ -1010,6 +1044,21 @@ async function handleLogout() {
 
   .popover-item.unread {
     background: var(--color-info-light);
+  }
+
+  /* 未读红点：未读条目逐条标识 */
+  .popover-item-dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    margin-top: 5px;
+    border-radius: 50%;
+    background: var(--el-color-danger, #f56c6c);
+  }
+
+  .popover-item-body {
+    flex: 1;
+    min-width: 0;
   }
 
   .popover-item-title {

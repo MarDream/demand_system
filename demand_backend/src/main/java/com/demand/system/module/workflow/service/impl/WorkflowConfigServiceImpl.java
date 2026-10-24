@@ -897,7 +897,7 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         log.info("清空全部审核记录，共处理 {} 条待审核记录关联的版本状态回退", pendingApprovals.size());
     }
 
-    // ========== 私有方法 ==========
+    // --- 私有方法 ---
 
     private WorkflowConfigDTO loadVersionConfig(Long versionId) {
         WorkflowConfigDTO configDTO = new WorkflowConfigDTO();
@@ -943,7 +943,7 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         workflowEdgeMapper.delete(edgeQuery);
     }
 
-    // ==== 修改历史记录辅助方法 ====
+    // --- 修改历史记录辅助方法 ---
 
     /**
      * 记录工作流版本修改历史。所有写操作均通过此方法落库，
@@ -1000,7 +1000,7 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
     }
 
     /**
-     * 修复：保存工作流前做基本结构校验，必须包含开始和结束节点，
+     * 保存工作流前做基本结构校验，必须包含开始和结束节点，
      * 且边引用的节点 ID 必须存在。避免保存无效流程。
      */
     private void validateConfigStructure(WorkflowConfigDTO configDTO) {

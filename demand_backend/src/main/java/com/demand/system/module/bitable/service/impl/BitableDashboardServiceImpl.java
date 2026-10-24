@@ -446,7 +446,7 @@ public class BitableDashboardServiceImpl implements BitableDashboardService {
         return tableIds;
     }
 
-    // ==================== 组件数据计算 ====================
+    // --- 组件数据计算 ---
 
     private Map<String, Object> computeWidgetData(BitableDashboard dashboard, BitableDashboardWidget widget,
                                                   Map<String, List<BitableRecordVO>> cache,
@@ -565,7 +565,7 @@ public class BitableDashboardServiceImpl implements BitableDashboardService {
         return data;
     }
 
-    // ==================== 多数据源聚合 ====================
+    // --- 多数据源聚合 ---
 
     /** 单源单组单指标的部分聚合结果：跨源合并的最小单元 */
     private record AggPart(long recordCount, BigDecimal sum, long numericCount, BigDecimal min, BigDecimal max) {
@@ -833,7 +833,7 @@ public class BitableDashboardServiceImpl implements BitableDashboardService {
         };
     }
 
-    // ==================== AI 一键生成仪表盘 ====================
+    // --- AI 一键生成仪表盘 ---
 
     /** AI 规划的组件类型 → 默认布局（12 列栅格 span + 高度 px） */
     private static final Map<String, int[]> AI_WIDGET_LAYOUT = Map.ofEntries(
@@ -1143,7 +1143,7 @@ public class BitableDashboardServiceImpl implements BitableDashboardService {
         return field != null && tableId.equals(field.getTableId());
     }
 
-    // ==================== 指标与聚合 ====================
+    // --- 指标与聚合 ---
 
     private record Metric(Long fieldId, String aggregation, String name, String fieldName) {
     }
@@ -1306,6 +1306,7 @@ public class BitableDashboardServiceImpl implements BitableDashboardService {
             try {
                 return new BigDecimal(text.trim());
             } catch (NumberFormatException ignored) {
+                // 文本无法解析为数字时返回 null
             }
         }
         return null;
@@ -1367,7 +1368,7 @@ public class BitableDashboardServiceImpl implements BitableDashboardService {
         };
     }
 
-    // ==================== 辅助 ====================
+    // --- 辅助 ---
 
     private BitableDashboard requireDashboard(Long id) {
         BitableDashboard dashboard = dashboardMapper.selectById(id);

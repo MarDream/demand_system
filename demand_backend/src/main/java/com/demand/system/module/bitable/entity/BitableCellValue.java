@@ -9,7 +9,7 @@ import java.util.Objects;
 
 /**
  * 多维表格-单元格值实体(EAV模式)
- * 注意: 此表无 deletedAt，删除记录时级联删除单元格值
+ * 注意：此表无 deletedAt，删除记录时级联删除单元格值。
  */
 @TableName("bitable_cell_values")
 public class BitableCellValue {

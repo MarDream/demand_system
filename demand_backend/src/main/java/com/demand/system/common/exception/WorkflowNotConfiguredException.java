@@ -14,7 +14,7 @@ import com.demand.system.common.result.ErrorCode;
  *   - 流转/审批时抛出 → 前端不应渲染"待办"操作按钮
  *   - 创建需求时抛出 → 该 type 不应出现在下拉选项中
  *
- * 与项目记忆 dual-workflow-engine-data-drift.md 中的"双轨流转引擎共用解析器"配套使用。
+ * 与"双轨流转引擎共用解析器"的设计配套使用。
  */
 public class WorkflowNotConfiguredException extends BusinessException {
 

@@ -7,7 +7,7 @@ import java.util.Objects;
 
 /**
  * 多维表格-操作历史审计实体
- * 注意: 此表无 updatedAt、无 deletedAt，仅追加写入
+ * 注意：此表无 updatedAt、无 deletedAt，仅追加写入。
  */
 @TableName("bitable_operations")
 public class BitableOperation {

@@ -45,8 +45,6 @@ public class WorkflowCopyRequest {
     @Schema(description = "目标项目ID（跨项目复制时使用）")
     private Long targetProjectId;
 
-    // Getters and Setters
-
     public String getNewName() {
         return newName;
     }

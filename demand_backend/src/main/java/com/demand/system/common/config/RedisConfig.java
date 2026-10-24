@@ -62,18 +62,15 @@ public class RedisConfig {
     /**
      * 配置 Spring Cache 使用的 RedisCacheManager
      *
-     * 性能优化：为 @Cacheable 注解提供 Redis 缓存支持
-     * - 默认 TTL: 5分钟（application.yml 中配置）
-     * - Key 前缀: "demand:"
-     * - 不缓存 null 值
+     * 为 @Cacheable 注解提供 Redis 缓存支持，缓存条目默认 TTL 为 5 分钟，且不缓存 null 值。
      */
     @Bean
     public RedisCacheManager cacheManager(RedisConnectionFactory connectionFactory) {
         RedisCacheConfiguration config = RedisCacheConfiguration.defaultCacheConfig()
-                .entryTtl(Duration.ofMinutes(5))  // 默认 TTL 5分钟
+                .entryTtl(Duration.ofMinutes(5))
                 .serializeKeysWith(RedisSerializationContext.SerializationPair.fromSerializer(new StringRedisSerializer()))
                 .serializeValuesWith(RedisSerializationContext.SerializationPair.fromSerializer(buildJsonSerializer()))
-                .disableCachingNullValues();  // 不缓存 null 值
+                .disableCachingNullValues();
 
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(config)

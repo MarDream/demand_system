@@ -412,7 +412,16 @@ public class LlmProviderServiceImpl implements LlmProviderService {
 
         LlmGatewayConfig.Provider gwProvider = buildGatewayProvider(provider, null);
 
-        List<LlmGateway.ModelInfo> remoteModels = llmGateway.fetchModelList(gwProvider);
+        List<LlmGateway.ModelInfo> remoteModels;
+        try {
+            remoteModels = llmGateway.fetchModelList(gwProvider);
+        } catch (Exception e) {
+            // 探测失败属于「可预期」的情况（供应商不支持 /v1/models、超时、Key 无效…）。
+            // 这里必须转成 BusinessException：
+            //   ① 不让它冒泡成 500（500 的语义是"本服务内部错误"，会误导排查方向）；
+            //   ② 502 + 可操作的原因，用户才知道下一步该改什么。
+            throw new BusinessException(ErrorCode.BAD_GATEWAY, describeSniffFailure(e));
+        }
 
         Set<String> existingModelIds = modelMapper.selectList(
                 new LambdaQueryWrapper<LlmModel>().eq(LlmModel::getProviderId, id)
@@ -466,6 +475,37 @@ public class LlmProviderServiceImpl implements LlmProviderService {
     }
 
     // ==================== Private ====================
+
+    /**
+     * 把「探测模型列表失败」翻译成用户能照着做的一句话。
+     *
+     * <p>{@code LlmGateway.fetchModelList} 抛出的 message 形如
+     * {@code 获取模型列表失败: HTTP 404}，这里剥掉前缀后按特征补上排查方向。</p>
+     */
+    private String describeSniffFailure(Exception e) {
+        String raw = e.getMessage() != null ? e.getMessage() : "";
+        String detail = raw.startsWith("获取模型列表失败: ")
+                ? raw.substring("获取模型列表失败: ".length())
+                : raw;
+        if (detail.isBlank()) {
+            detail = "未知错误";
+        }
+
+        String hint;
+        if (detail.contains("404")) {
+            hint = "该地址不提供 GET /v1/models 接口（部分供应商的 Anthropic 兼容端点只实现 /v1/messages），"
+                    + "可改用该供应商的 OpenAI 兼容地址，或在本页手工添加模型。";
+        } else if (detail.contains("401") || detail.contains("403")) {
+            hint = "API Key 无效或无访问权限，请检查 Key。";
+        } else if (detail.contains("timeout") || detail.contains("timed out") || detail.contains("超时")) {
+            hint = "上游响应超时，请确认 Base URL 可达（部分中转地址需放行服务器出口 IP）。";
+        } else if (detail.contains("Connection refused") || detail.contains("UnknownHost")) {
+            hint = "无法连接到该地址，请检查 Base URL 是否写错。";
+        } else {
+            hint = "请检查 Base URL 与 API Key 是否正确。";
+        }
+        return "探测模型失败：" + detail + "。" + hint;
+    }
 
     /**
      * 清理同类模型的默认标记。

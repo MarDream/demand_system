@@ -298,6 +298,14 @@ public class KnowledgeSearchResponse {
         private String sectionTitle;
         private Integer pageNum;
         private Double score;
+        /** 段落在文档内的序号（chunk_index），用于「第 N 段」定位 */
+        private Integer chunkIndex;
+        /** 段落字符数，供前端描述展示 */
+        private Integer charCount;
+        /** 来源内容类型：body、image_ocr、image_caption */
+        private String sourceContentType;
+        /** 段落内容的一句话描述（LLM 生成，失败时为 null） */
+        private String summary;
 
         public String getContent() { return content; }
         public void setContent(String content) { this.content = content; }
@@ -307,6 +315,14 @@ public class KnowledgeSearchResponse {
         public void setPageNum(Integer pageNum) { this.pageNum = pageNum; }
         public Double getScore() { return score; }
         public void setScore(Double score) { this.score = score; }
+        public Integer getChunkIndex() { return chunkIndex; }
+        public void setChunkIndex(Integer chunkIndex) { this.chunkIndex = chunkIndex; }
+        public Integer getCharCount() { return charCount; }
+        public void setCharCount(Integer charCount) { this.charCount = charCount; }
+        public String getSourceContentType() { return sourceContentType; }
+        public void setSourceContentType(String sourceContentType) { this.sourceContentType = sourceContentType; }
+        public String getSummary() { return summary; }
+        public void setSummary(String summary) { this.summary = summary; }
 
         public static Builder builder() { return new Builder(); }
 
@@ -315,11 +331,19 @@ public class KnowledgeSearchResponse {
             private String sectionTitle;
             private Integer pageNum;
             private Double score;
+            private Integer chunkIndex;
+            private Integer charCount;
+            private String sourceContentType;
+            private String summary;
 
             public Builder content(String v) { this.content = v; return this; }
             public Builder sectionTitle(String v) { this.sectionTitle = v; return this; }
             public Builder pageNum(Integer v) { this.pageNum = v; return this; }
             public Builder score(Double v) { this.score = v; return this; }
+            public Builder chunkIndex(Integer v) { this.chunkIndex = v; return this; }
+            public Builder charCount(Integer v) { this.charCount = v; return this; }
+            public Builder sourceContentType(String v) { this.sourceContentType = v; return this; }
+            public Builder summary(String v) { this.summary = v; return this; }
 
             public CitationSnippet build() {
                 CitationSnippet snippet = new CitationSnippet();
@@ -327,6 +351,10 @@ public class KnowledgeSearchResponse {
                 snippet.setSectionTitle(sectionTitle);
                 snippet.setPageNum(pageNum);
                 snippet.setScore(score);
+                snippet.setChunkIndex(chunkIndex);
+                snippet.setCharCount(charCount);
+                snippet.setSourceContentType(sourceContentType);
+                snippet.setSummary(summary);
                 return snippet;
             }
         }
@@ -444,6 +472,12 @@ public class KnowledgeSearchResponse {
         private Long imageFileId;
         private Integer imagePosition;
         private String focus;
+        /** 段落在文档内的序号（chunk_index） */
+        private Integer chunkIndex;
+        /** 段落字符数 */
+        private Integer charCount;
+        /** 来源内容类型：body、image_ocr、image_caption */
+        private String sourceContentType;
 
         public Long getChunkId() {
             return chunkId;
@@ -522,6 +556,12 @@ public class KnowledgeSearchResponse {
         public void setImagePosition(Integer imagePosition) { this.imagePosition = imagePosition; }
         public String getFocus() { return focus; }
         public void setFocus(String focus) { this.focus = focus; }
+        public Integer getChunkIndex() { return chunkIndex; }
+        public void setChunkIndex(Integer chunkIndex) { this.chunkIndex = chunkIndex; }
+        public Integer getCharCount() { return charCount; }
+        public void setCharCount(Integer charCount) { this.charCount = charCount; }
+        public String getSourceContentType() { return sourceContentType; }
+        public void setSourceContentType(String sourceContentType) { this.sourceContentType = sourceContentType; }
 
         public static Builder builder() {
             return new Builder();
@@ -540,6 +580,9 @@ public class KnowledgeSearchResponse {
             private Long imageFileId;
             private Integer imagePosition;
             private String focus;
+            private Integer chunkIndex;
+            private Integer charCount;
+            private String sourceContentType;
 
             public Builder chunkId(Long chunkId) {
                 this.chunkId = chunkId;
@@ -589,6 +632,9 @@ public class KnowledgeSearchResponse {
             public Builder imageFileId(Long v) { this.imageFileId = v; return this; }
             public Builder imagePosition(Integer v) { this.imagePosition = v; return this; }
             public Builder focus(String v) { this.focus = v; return this; }
+            public Builder chunkIndex(Integer v) { this.chunkIndex = v; return this; }
+            public Builder charCount(Integer v) { this.charCount = v; return this; }
+            public Builder sourceContentType(String v) { this.sourceContentType = v; return this; }
 
             public SearchResultItem build() {
                 SearchResultItem item = new SearchResultItem();
@@ -604,6 +650,9 @@ public class KnowledgeSearchResponse {
                 item.setImageFileId(imageFileId);
                 item.setImagePosition(imagePosition);
                 item.setFocus(focus);
+                item.setChunkIndex(chunkIndex);
+                item.setCharCount(charCount);
+                item.setSourceContentType(sourceContentType);
                 return item;
             }
         }

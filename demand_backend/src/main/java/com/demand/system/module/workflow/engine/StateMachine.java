@@ -114,7 +114,7 @@ public class StateMachine {
             return false;
         }
 
-        // 7. 使用乐观锁更新需求状态（状态条件作为乐观锁检查）
+        // 使用乐观锁更新需求状态（状态条件作为乐观锁检查）
         UpdateWrapper<Requirement> updateWrapper = new UpdateWrapper<>();
         updateWrapper.eq("id", requirementId)
                      .eq("status", currentStateName)  // 乐观锁条件：状态未变化
@@ -127,7 +127,7 @@ public class StateMachine {
             return false;
         }
 
-        // 8. 记录转换
+        // 记录转换
         WorkflowTransitionRecord record = new WorkflowTransitionRecord();
         record.setRequirementId(requirementId);
         record.setFromStateId(fromStateId);

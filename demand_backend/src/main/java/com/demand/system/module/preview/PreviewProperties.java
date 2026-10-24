@@ -16,6 +16,27 @@ public class PreviewProperties {
     /** 预览服务基础地址，如 http://kkfileview-host:8012 */
     private String baseUrl = "http://localhost:8012";
 
+    /**
+     * 浏览器侧可访问的预览地址前缀（<strong>同源相对路径</strong>，默认 {@code /kkfileview}）。
+     *
+     * <p>⚠️ 必须与 {@link #baseUrl} 分开 —— 这两个值描述的是<strong>两个不同的网络视角</strong>：
+     * <ul>
+     *   <li>{@code baseUrl}：<strong>后端容器内</strong>的视角，用于服务端调用 kkFileView 的
+     *       {@code /officeSubmit}、{@code /getOfficeOnlineHtmlUrl} 等接口，必须是容器网络可达地址
+     *       （如 {@code http://kkfileview:8012}）。</li>
+     *   <li>{@code browserBaseUrl}：<strong>用户浏览器</strong>的视角，会作为 iframe 的 src 交给浏览器，
+     *       必须与页面同源（相对路径即可）。</li>
+     * </ul>
+     *
+     * <p>若两者共用一个 {@code baseUrl=http://kkfileview:8012}，会导致
+     * ① HTTPS 页面里嵌 {@code http://} → 浏览器按 Mixed Content 直接拦截；
+     * ② {@code kkfileview} 是 Docker 内部服务名，浏览器根本解析不了。</p>
+     *
+     * <p>取值只写路径前缀（如 {@code /kkfileview}）时由前端同源解析，因此
+     * <strong>公网 HTTPS 入口与内网 HTTP 入口共用同一个值</strong>，不需要按环境切换。</p>
+     */
+    private String browserBaseUrl = "/kkfileview";
+
     /** 同步预览接口路径，默认 /onlinePreview */
     private String previewPath = "/onlinePreview";
 
@@ -57,6 +78,14 @@ public class PreviewProperties {
 
     public void setBaseUrl(String baseUrl) {
         this.baseUrl = baseUrl;
+    }
+
+    public String getBrowserBaseUrl() {
+        return browserBaseUrl;
+    }
+
+    public void setBrowserBaseUrl(String browserBaseUrl) {
+        this.browserBaseUrl = browserBaseUrl;
     }
 
     public String getPreviewPath() {

@@ -32,14 +32,9 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * 工作流版本迁移服务
- *
- * ADR-002 重构（2026-06-30）：
- * - 增加 MigrationPlan CRUD — 创建/更新/预检/执行
- * - 显式节点映射 — 管理员手动配置旧节点→新节点
- * - 自动建议映射 — 按 nodeStatusCode / nodeName 自动匹配
- * - 逐条独立事务执行 — 失败不阻断
- * - 完整审计日志 — 记录映射关系
+ * 工作流版本迁移服务。
+ * <p>以迁移计划为核心：管理员手动配置旧节点到新节点的映射，也可按 nodeStatusCode / nodeName 自动建议；
+ * 执行时逐条实例独立事务，失败不阻断，并记录完整审计日志。
  */
 @Service
 public class WorkflowMigrationService {
@@ -70,7 +65,7 @@ public class WorkflowMigrationService {
         this.sysUserMapper = sysUserMapper;
     }
 
-    // ==================== 迁移计划 CRUD ====================
+    // --- 迁移计划 CRUD ---
 
     /**
      * 创建迁移计划（草稿状态），自动建议节点映射
@@ -338,7 +333,7 @@ public class WorkflowMigrationService {
         return true;
     }
 
-    // ==================== 查询 ====================
+    // --- 查询 ---
 
     /**
      * 查询迁移计划列表
@@ -393,7 +388,7 @@ public class WorkflowMigrationService {
         );
     }
 
-    // ==================== 私有方法 ====================
+    // --- 私有方法 ---
 
     /**
      * 自动建议节点映射

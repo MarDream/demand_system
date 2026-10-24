@@ -1,12 +1,13 @@
 <template>
   <PageContainer title="通知中心">
     <template #headerActions>
-      <el-tooltip content="暂无未读通知" placement="top" :disabled="!list.every(n => n.isRead === 1)">
+      <span v-if="unreadCount > 0" class="unread-summary">未读 {{ unreadCount }} 条</span>
+      <el-tooltip content="暂无未读通知" placement="top" :disabled="unreadCount > 0">
         <span>
           <AppButton
             type="primary"
             size="small"
-            :disabled="list.every(n => n.isRead === 1)"
+            :disabled="unreadCount === 0"
             @click="handleMarkAllRead"
           >
             全部已读
@@ -69,9 +70,12 @@ import TableCard from '@/components/common/TableCard.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import AppPagination from '@/components/common/AppPagination.vue'
 import { usePagedList } from '@/composables/usePagedList'
+import { useNotification } from '@/composables/useNotification'
 import { formatDate } from '@/utils/format'
 
 const router = useRouter()
+// 未读数走全局共享状态（与顶栏铃铛同一来源），保证「未读 N 条」与角标一致
+const { unreadCount, fetchUnreadCount } = useNotification()
 const { list, pageNum, pageSize, total, loading, fetchPage } = usePagedList<any>(
   (pageNum, pageSize) => getNotificationList({ pageNum, pageSize }),
   {
@@ -85,10 +89,15 @@ async function handleClick(item: any) {
     try {
       await markAsRead(item.id)
       item.isRead = 1
+      void fetchUnreadCount()
     } catch { /* ignore */ }
   }
   if (item.relatedId) {
-    router.push({ name: 'RequirementDetail', params: { id: item.relatedId } })
+    // @提醒类通知携带评论ID：直达该工单的评论处并高亮对应评论
+    const query = item.commentId
+      ? { tab: 'comments', commentId: String(item.commentId) }
+      : undefined
+    router.push({ name: 'RequirementDetail', params: { id: item.relatedId }, query })
   }
 }
 
@@ -96,6 +105,7 @@ async function handleMarkAllRead() {
   try {
     await markAllAsRead()
     list.value.forEach(n => n.isRead = 1)
+    void fetchUnreadCount()
     ElMessage.success('已全部标记为已读')
   } catch {
     ElMessage.error('操作失败')
@@ -103,11 +113,18 @@ async function handleMarkAllRead() {
 }
 
 onMounted(() => {
+  void fetchUnreadCount()
   fetchPage()
 })
 </script>
 
 <style scoped lang="scss">
+.unread-summary {
+  margin-right: 12px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
 .notification-item {
   display: flex;
   gap: 12px;

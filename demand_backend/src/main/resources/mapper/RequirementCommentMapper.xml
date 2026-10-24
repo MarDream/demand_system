@@ -8,6 +8,9 @@
         <result property="userId" column="user_id"/>
         <result property="userName" column="user_name"/>
         <result property="content" column="content"/>
+        <result property="mentions" column="mentions"
+                typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"
+                javaType="java.util.List"/>
         <result property="createdAt" column="created_at"/>
     </resultMap>
 
@@ -17,6 +20,7 @@
                rc.user_id,
                u.real_name AS user_name,
                rc.content,
+               rc.mentions,
                rc.created_at
         FROM requirement_comments rc
         LEFT JOIN users u ON rc.user_id = u.id

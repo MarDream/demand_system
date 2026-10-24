@@ -55,8 +55,6 @@ public class WorkflowTemplateDTO {
     @Schema(description = "激活状态", example = "active")
     private String activationStatus;
 
-    // Getters and Setters
-
     public Long getId() {
         return id;
     }

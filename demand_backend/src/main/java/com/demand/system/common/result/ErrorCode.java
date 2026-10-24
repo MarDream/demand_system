@@ -12,6 +12,12 @@ public final class ErrorCode {
     public static final int FORBIDDEN = 403;
     public static final int NOT_FOUND = 404;
     public static final int CONFLICT = 409;
+    /**
+     * 上游依赖异常（如 LLM 供应商 API 返回 404 / 超时）。
+     * 语义上不是"本服务内部错误"，因此不用 500 —— 否则前端控制台只看到 500，
+     * 无法区分"我们挂了"和"上游不给力"。
+     */
+    public static final int BAD_GATEWAY = 502;
     public static final int BUSINESS_ERROR = 500;
     public static final int INTERNAL_ERROR = 5000;
 

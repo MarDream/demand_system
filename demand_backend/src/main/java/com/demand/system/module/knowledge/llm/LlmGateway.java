@@ -25,7 +25,7 @@ import java.util.regex.Pattern;
 public class LlmGateway {
     private static final Logger log = LoggerFactory.getLogger(LlmGateway.class);
     private static final Pattern V1_PATH_SEGMENT = Pattern.compile("(?i)(^|/)v1($|/)");
-    /** Matches any versioned path segment like /v1, /v2, /v4, /v1beta1 etc. */
+    /** 匹配任意带版本号的路径段，如 /v1、/v2、/v4、/v1beta1 等。 */
     private static final Pattern VERSION_PATH_SEGMENT = Pattern.compile("(?i)(^|/)v\\d+[a-z\\d]*($|/)");
     private static final List<String> MODEL_LIST_FIELDS = List.of("data", "models", "model", "items", "results", "list");
     private static final List<String> MODEL_ID_FIELDS = List.of("id", "model", "model_id", "modelId", "name", "value");
@@ -45,6 +45,14 @@ public class LlmGateway {
     private final LlmGatewayConfig config;
     private final ObjectMapper objectMapper;
     private final RestTemplate sharedRestTemplate;
+    /**
+     * 探测 / 测试类调用（模型列表）专用：短超时。
+     *
+     * <p>⚠️ 别拿 sharedRestTemplate 跑探测 —— 它 readTimeout 是 120s，而前端 axios 只等 30s，
+     * 上游卡住时前端先超时、后端还在空跑（2026-10-12 实测：智谱接入组探测必然走到 120s）。
+     * 探测本身是"锦上添花"的辅助功能，宁可快速失败让用户手工添加模型。</p>
+     */
+    private final RestTemplate probeRestTemplate;
 
     public LlmGateway(LlmGatewayConfig config, ObjectMapper objectMapper) {
         this.config = config;
@@ -54,13 +62,18 @@ public class LlmGateway {
         requestFactory.setConnectTimeout(java.time.Duration.ofSeconds(10));
         requestFactory.setReadTimeout(java.time.Duration.ofSeconds(120));
         this.sharedRestTemplate = new RestTemplate(requestFactory);
+
+        var probeFactory = new SimpleClientHttpRequestFactory();
+        probeFactory.setConnectTimeout(java.time.Duration.ofSeconds(5));
+        probeFactory.setReadTimeout(java.time.Duration.ofSeconds(15));
+        this.probeRestTemplate = new RestTemplate(probeFactory);
     }
 
     public LlmGatewayConfig getConfig() {
         return config;
     }
 
-    // ==================== Embedding ====================
+    // --- Embedding ---
 
     /**
      * 使用指定的 Provider 配置调用 Embedding 接口，
@@ -996,7 +1009,8 @@ public class LlmGateway {
             HttpEntity<Void> entity = new HttpEntity<>(headers);
             String url = buildApiUrl(provider, "/models");
 
-            ResponseEntity<String> response = sharedRestTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            // 用短超时的 probeRestTemplate：探测失败要快速反馈，不能让前端干等 120s
+            ResponseEntity<String> response = probeRestTemplate.exchange(url, HttpMethod.GET, entity, String.class);
             JsonNode root = objectMapper.readTree(response.getBody());
 
             return parseModelList(root);

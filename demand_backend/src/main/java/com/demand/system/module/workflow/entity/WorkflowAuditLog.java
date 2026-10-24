@@ -32,8 +32,6 @@ public class WorkflowAuditLog {
 
     private LocalDateTime createdAt;
 
-    // Constructors
-
     public WorkflowAuditLog() {
     }
 
@@ -43,8 +41,6 @@ public class WorkflowAuditLog {
         this.operatorId = operatorId;
         this.operatorName = operatorName;
     }
-
-    // Getters and Setters
 
     public Long getId() {
         return id;

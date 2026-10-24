@@ -137,7 +137,7 @@ public class WorkflowChangeLogBuilder {
         return buildResult(items);
     }
 
-    // ==== 节点 diff ====
+    // --- 节点 diff ---
 
     private void diffNodes(Map<String, WorkflowNode> oldNodeMap, List<WorkflowNodeDTO> newNodes,
                            List<ChangeItem> items) {
@@ -223,7 +223,7 @@ public class WorkflowChangeLogBuilder {
         }
     }
 
-    // ==== 连线 diff ====
+    // --- 连线 diff ---
 
     private void diffEdges(Map<String, WorkflowEdge> oldEdgeMap, List<WorkflowEdgeDTO> newEdges,
                            String prefix, Map<String, String> nodeNameMap, List<ChangeItem> items) {
@@ -278,7 +278,7 @@ public class WorkflowChangeLogBuilder {
         return fields;
     }
 
-    // ==== 元数据 diff ====
+    // --- 元数据 diff ---
 
     private void diffMeta(WorkflowVersion oldVersion, WorkflowVersion newVersion, List<ChangeItem> items) {
         if (oldVersion == null || newVersion == null) {
@@ -300,7 +300,7 @@ public class WorkflowChangeLogBuilder {
         }
     }
 
-    // ==== 汇总 ====
+    // --- 汇总 ---
 
     private ChangeLogResult buildResult(List<ChangeItem> items) {
         long addedNodes = items.stream().filter(i -> "node".equals(i.scope()) && "added".equals(i.change())).count();
@@ -333,7 +333,7 @@ public class WorkflowChangeLogBuilder {
         return new ChangeLogResult(summary, json);
     }
 
-    // ==== 展示格式化 ====
+    // --- 展示格式化 ---
 
     private Map<String, String> buildNodeNameMap(Map<String, WorkflowNode> oldNodeMap,
                                                  List<WorkflowEdge> oldEdges, String prefix) {

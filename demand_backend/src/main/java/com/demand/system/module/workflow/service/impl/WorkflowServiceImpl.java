@@ -113,7 +113,7 @@ public class WorkflowServiceImpl implements WorkflowService {
         this.workflowHistoryMapper = workflowHistoryMapper;
     }
 
-    // ==== 修改历史记录辅助方法 ====
+    // --- 修改历史记录辅助方法 ---
 
     private void recordHistory(Long versionId, Long projectId, String action, String summary, String changeLogJson, String snapshotJson) {
         WorkflowHistory history = new WorkflowHistory();
@@ -385,7 +385,7 @@ public class WorkflowServiceImpl implements WorkflowService {
         validateDefinitionOrThrow(version.getDefinition());
         syncNodePermissionsFromDefinition(version.getId(), version.getDefinition());
 
-        // TODO: JSON定义工作流的权限验证需要额外的DTO转换逻辑
+        // JSON定义工作流的权限验证需要额外的DTO转换逻辑
         // 目前JSON定义工作流较少使用，可视化工作流已经有完整的权限验证
 
         publishVersionToRuntime(projectId, version.getDefinition());

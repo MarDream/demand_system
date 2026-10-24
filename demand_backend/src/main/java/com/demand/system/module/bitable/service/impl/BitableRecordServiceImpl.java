@@ -439,7 +439,7 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         target.setValueJson(BitableJsonUtils.toJsonString(source.getValueJson()));
     }
 
-    // ==================== 选项级权限校验 ====================
+    // --- 选项级权限校验 ---
 
     /** 选项级权限批量校验：recordId 非空时查原 cell 值，原值里的受限选项允许保留 */
     private void checkSelectOptionPermissions(Long tableId, Map<Long, CellValueDTO> cells, Long recordId, Long userId) {
@@ -562,7 +562,7 @@ public class BitableRecordServiceImpl implements BitableRecordService {
             "yyyy-MM-dd'T'HH:mm:ss",
             "yyyy-MM-dd'T'HH:mm");
 
-    // ==================== 私有辅助方法：唯一性约束 ====================
+    // --- 私有辅助方法：唯一性约束 ---
 
     /** 委托 {@link BitableUniqueConstraintChecker}，本类只做参数转发便于阅读。 */
     private void validateUniqueCells(Long tableId, List<BitableCellValue> incoming, Long excludeRecordId) {
@@ -1169,7 +1169,7 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         }
     }
 
-    // ==================== 筛选/排序/分组查询 ====================
+    // --- 筛选/排序/分组查询 ---
 
     @Override
     public PageResult<BitableRecordVO> queryRecords(Long tableId, RecordQueryDTO query) {
@@ -1296,7 +1296,7 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         return groups;
     }
 
-    // ==================== 私有辅助方法：视图配置解析 ====================
+    // --- 私有辅助方法：视图配置解析 ---
 
     /**
      * 如果 query 传了 viewId，从视图配置加载筛选/排序/分组，
@@ -1348,7 +1348,7 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         return null;
     }
 
-    // ==================== 私有辅助方法：筛选 ====================
+    // --- 私有辅助方法：筛选 ---
 
     /**
      * 应用层筛选。筛选配置先解析为统一递归规则树，再执行短路匹配。
@@ -1566,7 +1566,7 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         return null;
     }
 
-    // ==================== 私有辅助方法：排序 ====================
+    // --- 私有辅助方法：排序 ---
 
     /**
      * 应用层排序。
@@ -1649,7 +1649,7 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         return j1.compareToIgnoreCase(j2);
     }
 
-    // ==================== 私有辅助方法：分组 ====================
+    // --- 私有辅助方法：分组 ---
 
     /**
      * 提取记录的分组键值
@@ -1693,7 +1693,7 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         return "(空)";
     }
 
-    // ==================== 内部数据类 ====================
+    // --- 内部数据类 ---
 
     /** 排序规则 */
     private static class SortRule {

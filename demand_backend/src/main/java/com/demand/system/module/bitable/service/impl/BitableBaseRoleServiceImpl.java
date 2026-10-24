@@ -414,7 +414,7 @@ public class BitableBaseRoleServiceImpl implements BitableBaseRoleService {
         }
     }
 
-    // ==================== 视图 / 仪表盘权限解析与校验 ====================
+    // --- 视图 / 仪表盘权限解析与校验 ---
 
     /** 权限宽松度权重（越大越宽松） */
     private static int permissionWeight(String level) {

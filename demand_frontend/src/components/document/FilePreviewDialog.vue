@@ -54,18 +54,31 @@
         正在根据当前问题查找该文件中的具体命中段落…
       </div>
       <div v-else-if="citationContext.snippets?.length" class="preview-citation-context__snippets">
-        <div class="preview-citation-context__label">具体命中段落（实际原文片段）</div>
+        <div class="preview-citation-context__label">具体命中段落（含章节定位与段落描述）</div>
         <div
           v-for="(snippet, index) in citationContext.snippets"
-          :key="String(snippet.pageNum ?? 'x') + '-' + String(snippet.sectionTitle ?? 'section') + '-' + index"
+          :key="String(snippet.chunkIndex ?? 'x') + '-' + String(snippet.sectionTitle ?? 'section') + '-' + index"
           class="preview-citation-context__snippet"
         >
-          <div v-if="snippet.sectionTitle || snippet.pageNum || snippet.score != null" class="preview-citation-context__snippet-meta">
-            <span v-if="snippet.sectionTitle">{{ snippet.sectionTitle }}</span>
+          <div
+            v-if="snippet.chunkIndex != null || snippet.sectionTitle || snippet.pageNum || snippet.score != null || snippet.charCount || snippet.sourceContentType"
+            class="preview-citation-context__snippet-meta"
+          >
+            <span v-if="snippet.sectionTitle" class="preview-citation-context__snippet-section">{{ snippet.sectionTitle }}</span>
+            <span v-if="snippet.chunkIndex != null">第 {{ snippet.chunkIndex + 1 }} 段</span>
             <span v-if="snippet.pageNum">第 {{ snippet.pageNum }} 页</span>
+            <span v-if="snippet.sourceContentType">{{ sourceContentTypeLabel(snippet.sourceContentType) }}</span>
+            <span v-if="snippet.charCount">{{ snippet.charCount }} 字</span>
             <span v-if="snippet.score != null && snippet.score >= 0 && snippet.score <= 1">相关度 {{ Math.round(snippet.score * 100) }}%</span>
           </div>
-          <div v-if="snippet.content" class="preview-citation-context__snippet-content">{{ snippet.content }}</div>
+          <div v-if="snippet.summary" class="preview-citation-context__snippet-summary">
+            <span class="preview-citation-context__snippet-summary-label">段落描述</span>
+            {{ snippet.summary }}
+          </div>
+          <div v-if="snippet.content" class="preview-citation-context__snippet-content">
+            <span class="preview-citation-context__snippet-content-label">原文片段</span>
+            {{ snippet.content }}
+          </div>
         </div>
       </div>
       <div v-else class="preview-citation-context__empty">
@@ -151,9 +164,27 @@ interface CitationPreviewContext {
     sectionTitle?: string | null
     pageNum?: number | null
     score?: number | null
+    chunkIndex?: number | null
+    charCount?: number | null
+    sourceContentType?: string | null
+    summary?: string | null
   }>
   snippetsLoading?: boolean
   relationSummary?: string
+}
+
+/** 命中段落的来源内容类型中文说明 */
+function sourceContentTypeLabel(type: string): string {
+  switch (type) {
+    case 'body':
+      return '正文'
+    case 'image_ocr':
+      return '图片文字识别'
+    case 'image_caption':
+      return '图片理解'
+    default:
+      return type
+  }
 }
 
 /**
@@ -642,7 +673,7 @@ document.addEventListener('fullscreenchange', onFullscreenChange)
 .preview-citation-context__snippets {
   display: grid;
   gap: 8px;
-  max-height: min(30vh, 260px);
+  max-height: min(38vh, 340px);
   margin-top: 12px;
   overflow-y: auto;
   padding-right: 4px;
@@ -663,6 +694,44 @@ document.addEventListener('fullscreenchange', onFullscreenChange)
   color: #2563eb;
   font-size: 11px;
   font-weight: 600;
+}
+
+.preview-citation-context__snippet-section {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: rgba(59, 130, 246, 0.12);
+}
+
+/* 段落描述：一行说明这段讲了什么、与当前问题的关联点 */
+.preview-citation-context__snippet-summary {
+  margin: 2px 0 6px;
+  padding: 6px 9px;
+  border-radius: 7px;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px dashed rgba(59, 130, 246, 0.35);
+  color: var(--color-text-primary);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.preview-citation-context__snippet-summary-label,
+.preview-citation-context__snippet-content-label {
+  margin-right: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  vertical-align: 1px;
+}
+
+.preview-citation-context__snippet-summary-label {
+  background: rgba(37, 99, 235, 0.14);
+  color: #2563eb;
+}
+
+.preview-citation-context__snippet-content-label {
+  background: rgba(148, 163, 184, 0.2);
+  color: var(--color-text-secondary);
 }
 
 .preview-citation-context__snippet-content {

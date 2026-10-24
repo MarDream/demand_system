@@ -19,6 +19,34 @@ export interface Requirement {
   currentHandlerName?: string | null
   childCount?: number
   followed?: boolean
+  /** 需求附件（详情接口返回） */
+  attachments?: RequirementAttachment[] | null
+  /** 流转附件（按节点分组） */
+  transitionAttachments?: TransitionAttachmentGroup[] | null
+}
+
+/** 附件元信息（与后端 RequirementAttachmentDTO 对齐） */
+export interface RequirementAttachment {
+  fileId?: number | null
+  name?: string | null
+  url?: string | null
+  size?: number | null
+  contentType?: string | null
+  bucketName?: string | null
+  objectName?: string | null
+  uploadedAt?: string | null
+  uploaderId?: number | null
+  uploaderName?: string | null
+}
+
+/** 同一流转节点上传的附件分组 */
+export interface TransitionAttachmentGroup {
+  transitionId?: number | null
+  nodeName?: string | null
+  action?: string | null
+  operatorName?: string | null
+  operatedAt?: string | null
+  attachments?: RequirementAttachment[] | null
 }
 
 export interface RequirementComment {
@@ -144,6 +172,16 @@ export function getTransitionHistory(id: number) {
 
 export function getHistory(id: number) {
   return get<RequirementHistoryItem[]>(`/v1/requirements/${id}/history`)
+}
+
+/** 子需求列表 */
+export function getChildren(id: number) {
+  return get<Requirement[]>(`/v1/requirements/${id}/children`)
+}
+
+/** 我的抄送 */
+export function getMyCc(params: MyListQuery) {
+  return get<PageResult<Requirement>>('/v1/requirements/my-cc', params)
 }
 
 export function followRequirement(id: number) {

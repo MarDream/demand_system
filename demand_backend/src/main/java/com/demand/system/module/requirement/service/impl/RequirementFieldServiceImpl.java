@@ -485,9 +485,7 @@ public class RequirementFieldServiceImpl implements RequirementFieldService {
         }
     }
 
-    // ------------------------------------------------------------------
-    // helpers
-    // ------------------------------------------------------------------
+    // --- 辅助方法 ---
 
     private String loadFieldCode(Long fieldId) {
         if (fieldId == null) {

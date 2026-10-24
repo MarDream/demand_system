@@ -179,10 +179,9 @@ public class WorkflowGraphValidator {
             }
         }
 
-        // ADR-002（2026-06-30）：
-        // 在途需求状态兼容性检查从 error 改为 warning。
-        // 原因：采用版本快照策略后，在途实例继续按旧版本执行，不会被自动对齐。
-        // 新版本中不存在的状态不会导致运行时错误，仅表示需要管理员手动迁移。
+        // 在途需求状态兼容性检查为告警而非错误：
+        // 采用版本快照策略后，在途实例继续按旧版本执行，不会被自动对齐，
+        // 新版本中不存在的状态不会引发运行时错误，仅需管理员手动迁移。
         if (forActivation && projectId != null && !hasErrors(issues)) {
             Set<String> supportedCodes = new HashSet<>();
             for (WorkflowNode node : nodes) {

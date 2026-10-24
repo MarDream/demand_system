@@ -211,7 +211,7 @@ public class BitableViewShareServiceImpl implements BitableViewShareService {
         return result;
     }
 
-    // ==================== 私有辅助 ====================
+    // --- 私有辅助 ---
 
     private BitableViewShare selectByViewId(Long viewId) {
         return shareMapper.selectOne(new LambdaQueryWrapper<BitableViewShare>()

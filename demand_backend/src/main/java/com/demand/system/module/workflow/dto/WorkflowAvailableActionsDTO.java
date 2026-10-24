@@ -45,7 +45,7 @@ public class WorkflowAvailableActionsDTO {
     /** 并行分支列表 */
     private java.util.List<ParallelBranchVO> parallelBranches;
 
-    /** 修复 P2：当前节点是否要求必填审批意见（来自节点 properties.requireComment） */
+    /** 当前节点是否要求必填审批意见（来自节点 properties.requireComment） */
     private Boolean currentNodeRequireComment;
 
     /** 当前节点是否要求必须上传附件（来自节点 properties.requireAttachment） */

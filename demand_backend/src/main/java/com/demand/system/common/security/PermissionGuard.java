@@ -21,8 +21,6 @@ import java.util.Objects;
  *     <li>非超管用户只能操作自己创建的资源。</li>
  *     <li>校验失败抛 {@link BusinessException}，业务码 403。</li>
  * </ul>
- *
- * @author Claude Code (Sprint 12 / PR-A 权限控制补全)
  */
 public final class PermissionGuard {
 

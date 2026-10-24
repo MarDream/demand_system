@@ -103,7 +103,7 @@ export async function request<T>(config: Parameters<AxiosInstance['request']>[0]
   return response.data.data
 }
 
-export function get<T>(url: string, params?: Record<string, unknown>): Promise<T> {
+export function get<T>(url: string, params?: object): Promise<T> {
   return request<T>({ method: 'GET', url, params })
 }
 

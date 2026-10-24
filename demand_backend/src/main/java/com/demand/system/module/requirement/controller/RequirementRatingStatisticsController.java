@@ -13,7 +13,6 @@ import java.util.Map;
 
 /**
  * 需求评分统计 Controller
- * 对应 ADR-002 Phase 2: 统计分析
  */
 @RestController
 @RequestMapping("/api/v1/statistics/rating")

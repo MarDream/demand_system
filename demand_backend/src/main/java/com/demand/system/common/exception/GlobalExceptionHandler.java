@@ -51,6 +51,7 @@ public class GlobalExceptionHandler {
             Map.entry(ErrorCode.FORBIDDEN, HttpStatus.FORBIDDEN),
             Map.entry(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND),
             Map.entry(ErrorCode.CONFLICT, HttpStatus.CONFLICT),
+            Map.entry(ErrorCode.BAD_GATEWAY, HttpStatus.BAD_GATEWAY),
             Map.entry(410, HttpStatus.GONE),
             Map.entry(ErrorCode.BUSINESS_ERROR, HttpStatus.INTERNAL_SERVER_ERROR),
             Map.entry(ErrorCode.INTERNAL_ERROR, HttpStatus.INTERNAL_SERVER_ERROR),

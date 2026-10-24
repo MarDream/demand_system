@@ -14,7 +14,7 @@ public class BitableFunctions {
     private BitableFunctions() {
     }
 
-    // ===== 逻辑函数 =====
+    // --- 逻辑函数 ---
 
     public static Object IF(boolean condition, Object trueVal, Object falseVal) {
         return condition ? trueVal : falseVal;
@@ -51,7 +51,7 @@ public class BitableFunctions {
         return !toBool(val);
     }
 
-    // ===== 文本函数 =====
+    // --- 文本函数 ---
 
     public static String CONCATENATE(Object... args) {
         StringBuilder sb = new StringBuilder();
@@ -79,7 +79,7 @@ public class BitableFunctions {
         if (text == null) {
             return "";
         }
-        int idx = Math.max(0, start - 1); // 1-based to 0-based
+        int idx = Math.max(0, start - 1); // 1-based 转 0-based
         int end = Math.min(idx + len, text.length());
         return idx >= text.length() ? "" : text.substring(idx, end);
     }
@@ -104,7 +104,7 @@ public class BitableFunctions {
         return text.substring(0, idx) + rep + text.substring(Math.min(idx + len, text.length()));
     }
 
-    // ===== 数学函数 =====
+    // --- 数学函数 ---
 
     public static double SUM(Object... args) {
         double sum = 0;
@@ -152,7 +152,7 @@ public class BitableFunctions {
         return b == 0 ? 0 : a % b;
     }
 
-    // ===== 日期函数 =====
+    // --- 日期函数 ---
 
     public static LocalDate TODAY() {
         return LocalDate.now();
@@ -178,7 +178,7 @@ public class BitableFunctions {
         return date != null ? date.getDayOfWeek().getValue() : 0;
     }
 
-    // ===== 数组/聚合函数 =====
+    // --- 数组/聚合函数 ---
 
     public static String ARRAYJOIN(List<?> arr, String separator) {
         if (arr == null) {
@@ -212,7 +212,7 @@ public class BitableFunctions {
         return null;
     }
 
-    // ===== 辅助方法 =====
+    // --- 辅助方法 ---
 
     private static boolean toBool(Object val) {
         if (val instanceof Boolean b) {

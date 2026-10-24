@@ -164,7 +164,7 @@ public class BitableOpenApiServiceImpl implements BitableOpenApiService {
         }
     }
 
-    // ==================== 辅助 ====================
+    // --- 辅助 ---
 
     private String randomToken() {
         byte[] bytes = new byte[16];

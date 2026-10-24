@@ -4,7 +4,6 @@ import com.demand.system.module.requirement.entity.RequirementApprovalEvaluation
 
 /**
  * 评分反馈服务
- * 对应 ADR-002 Phase 3: 反馈回路
  */
 public interface RatingFeedbackService {
 

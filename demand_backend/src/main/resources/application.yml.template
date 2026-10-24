@@ -7,6 +7,15 @@ server:
 spring:
   profiles:
     active: dev
+  # 上传体积上限放在**公共配置**里，保证 dev / prod 两个 profile 一致。
+  # ⚠️ 曾经只写在 application-dev.yml 里（且未同步到 template），这是个雷：
+  #    切到 prod profile 时会静默退回 Spring 默认值（单文件 1MB / 请求 10MB），
+  #    表现为"上传突然只能传小文件"，且不报任何配置错误 —— 2026-10-12 排查 413 时发现。
+  # 配套：公网 nginx 与内网 nginx 均需 client_max_body_size ≥ 100m（见部署记录）。
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 100MB
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: Asia/Shanghai
@@ -22,6 +31,18 @@ mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+# 文件预览（kkFileView）
+# ⚠️ base-url 与 browser-base-url 是**两个不同的网络视角**，不能合并成一个值：
+#    · base-url         后端容器视角，用于服务端调 kkFileView 接口（容器网络可达地址，如 http://kkfileview:8012）
+#    · browser-base-url 用户浏览器视角，会作为 iframe src 交给浏览器，必须与页面同源
+#    2026-10-12 事故：两者共用 http://kkfileview:8012 → HTTPS 页面里嵌 http:// 被浏览器
+#    按 Mixed Content 拦截，且 kkfileview 是 Docker 内部名，浏览器无法解析。
+#    放在公共配置（而非 dev）的原因同 multipart：只写 dev 时切 prod 会静默丢失。
+#    browser-base-url 写同源相对路径，公网 HTTPS 与内网 HTTP 入口共用同一个值。
+#    配套：nginx 需把 /kkfileview/ 反代到 kkFileView（见部署记录）。
+kkfileview:
+  browser-base-url: ${KKFILEVIEW_BROWSER_BASE_URL:/kkfileview}
 
 logging:
   level:

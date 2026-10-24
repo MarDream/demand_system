@@ -8,6 +8,8 @@ export interface NotificationItem {
   type?: string
   isRead?: number
   relatedId?: number | null
+  /** 关联评论ID（@提醒场景：跳转到工单评论处定位用） */
+  commentId?: number | null
   relatedType?: string | null
   createdAt?: string
 }

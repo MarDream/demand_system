@@ -16,7 +16,7 @@ import java.io.IOException;
 import java.util.UUID;
 
 /**
- * B1: 统一访问日志过滤器
+ * 统一访问日志过滤器
  * - 请求进入时生成 8 位 traceId 并写入 MDC，确保本次请求内所有业务日志（含异常）都带同一 traceId
  * - 请求结束时记录 method / uri / status / 耗时 / 客户端 IP / traceId，补齐后台响应日志缺口
  * - 置于最高优先级，早于 RateLimitFilter 等执行，使下游日志均携带 traceId

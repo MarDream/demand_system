@@ -102,7 +102,7 @@
         >
           <el-option v-for="u in scopedUserOptions(field)" :key="u.id" :label="u.realName" :value="u.id">
             <div class="record-edit-dialog__user-option">
-              <el-avatar :size="20" :src="u.avatar || undefined">{{ u.realName.slice(0, 1) }}</el-avatar>
+              <UserAvatar :size="20" :avatar="u.avatar" :name="u.realName" />
               <span>{{ u.realName }}</span>
               <span class="record-edit-dialog__user-option__username">{{ u.username }}</span>
             </div>
@@ -140,6 +140,7 @@ import { getOrgTree } from '@/api/modules/user'
 import { useUserStore } from '@/stores/modules/user'
 import { allUsers, ensureUsersLoaded, filterUsersByScope, type UserOption } from '@/composables/useUserOptions'
 import RichTextEditor from '@/components/rich/RichTextEditor.vue'
+import UserAvatar from '@/components/common/UserAvatar.vue'
 import type { BitableField, BitableRecord } from '@/types/bitable'
 import {
   buildFieldRules,

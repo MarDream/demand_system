@@ -25,7 +25,7 @@ import java.util.stream.Collectors;
 
 /**
  * 多维表格-高级视图 Service 实现
- * Phase 4 简单实现: 返回 records + 字段配置
+ * 简单实现：返回 records + 字段配置
  */
 @Service
 public class BitableAdvancedViewServiceImpl implements BitableAdvancedViewService {

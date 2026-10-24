@@ -25,13 +25,9 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * 工作流运行时迁移服务实现
- *
- * ADR-002 变更（2026-06-30）：
- * - 移除 alignRunningInstancesToActiveVersion() 和 alignRequirementInstanceIfNeeded()
- * - 移除 buildMigratedInstance()、resolveEquivalentNode()、matchesRequirement()、resolveNodeStatusName()
- * - 移除 @Lazy 自注入 self（仅用于对齐的独立事务代理）
- * - 保留 markLegacyRequirements() 和 backfillInstances()
+ * 工作流运行时迁移服务实现。
+ * <p>不随版本切换自动对齐在途实例，仅提供一次性存量迁移工具：
+ * 标记历史遗留需求、为缺失实例的需求补建实例。
  */
 @Service
 public class WorkflowRuntimeMigrationServiceImpl implements WorkflowRuntimeMigrationService {

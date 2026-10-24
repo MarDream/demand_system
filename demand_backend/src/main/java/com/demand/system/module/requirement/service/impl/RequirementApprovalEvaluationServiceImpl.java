@@ -19,6 +19,7 @@ import com.demand.system.module.workflow.entity.WorkflowNode;
 import com.demand.system.module.workflow.mapper.WorkflowInstanceMapper;
 import com.demand.system.module.workflow.mapper.WorkflowInstanceTransitionMapper;
 import com.demand.system.module.workflow.mapper.WorkflowNodeMapper;
+import com.demand.system.module.workflow.support.TransitionHistoryFilter;
 import com.demand.system.module.workflow.support.WorkflowNodeUtils;
 import org.springframework.beans.BeanUtils;
 import org.slf4j.Logger;
@@ -71,6 +72,8 @@ public class RequirementApprovalEvaluationServiceImpl implements RequirementAppr
                         .eq(WorkflowInstanceTransition::getRequirementId, requirementId)
                         .orderByAsc(WorkflowInstanceTransition::getCreatedAt)
                         .orderByAsc(WorkflowInstanceTransition::getId));
+        // 工单不一定有草稿阶段：仅保留"确实早于全部真实流转"的草稿记录（详见 TransitionHistoryFilter）
+        transitions = TransitionHistoryFilter.dropStaleDraftTransitions(transitions);
         List<RequirementApprovalEvaluation> evaluations = evaluationMapper.selectList(
                 new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<RequirementApprovalEvaluation>()
                         .eq(RequirementApprovalEvaluation::getRequirementId, requirementId)

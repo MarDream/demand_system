@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 多维表格-Webhook 订阅 Service（MVP）
+ * 多维表格-Webhook 订阅 Service
  */
 public interface BitableWebhookService {
 

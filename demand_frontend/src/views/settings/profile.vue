@@ -208,9 +208,12 @@
       </template>
       <div v-loading="loading" class="profile-base">
         <div class="profile-avatar-block">
-          <el-avatar :size="72" :src="avatarUrl || undefined" class="profile-avatar">
-            {{ (userStore.userInfo?.realName || '?').slice(0, 1) }}
-          </el-avatar>
+          <UserAvatar
+            :size="72"
+            :avatar="userStore.userInfo?.avatar"
+            :name="userStore.userInfo?.realName"
+            class="profile-avatar"
+          />
           <el-button link type="primary" @click="avatarDialogVisible = true">修改头像</el-button>
         </div>
         <el-descriptions :column="2" border class="profile-descriptions">
@@ -298,9 +301,9 @@ import { Check, Document, Edit, Loading, Lock, CircleCheck, Warning } from '@ele
 import { useUserStore } from '@/stores/modules/user'
 import { updateProfile, changePassword } from '@/api/modules/auth'
 import { uploadFile } from '@/api/modules/file'
-import { resolveAvatarUrl } from '@/utils/presetAvatars'
 import { resolveErrorMessage } from '@/utils/error'
 import AvatarEditorDialog from './components/AvatarEditorDialog.vue'
+import UserAvatar from '@/components/common/UserAvatar.vue'
 import {
   useAppearance,
   applyAppearance,
@@ -442,9 +445,6 @@ const roleText = computed(() => {
 // ==================== 头像设置 ====================
 const avatarDialogVisible = ref(false)
 const avatarSaving = ref(false)
-
-/** 当前头像可渲染地址（preset: 前缀转 data URL；空回退姓名首字） */
-const avatarUrl = computed(() => resolveAvatarUrl(userStore.userInfo?.avatar))
 
 /**
  * 头像确认：

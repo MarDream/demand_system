@@ -29,8 +29,6 @@ public class WorkflowCopyResponse {
     @Schema(description = "复制的连线数量", example = "20")
     private Integer copiedEdgeCount;
 
-    // Constructors
-
     public WorkflowCopyResponse() {
     }
 
@@ -40,8 +38,6 @@ public class WorkflowCopyResponse {
         this.version = version;
         this.message = "工作流复制成功";
     }
-
-    // Getters and Setters
 
     public Long getWorkflowVersionId() {
         return workflowVersionId;

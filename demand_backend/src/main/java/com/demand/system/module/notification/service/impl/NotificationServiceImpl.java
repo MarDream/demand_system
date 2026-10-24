@@ -78,12 +78,18 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     public void sendNotification(Long userId, String title, String content, String type, Long relatedId) {
+        sendNotification(userId, title, content, type, relatedId, null);
+    }
+
+    @Override
+    public void sendNotification(Long userId, String title, String content, String type, Long relatedId, Long commentId) {
         Notification notification = new Notification();
         notification.setUserId(userId);
         notification.setTitle(title);
         notification.setContent(content);
         notification.setType(type);
         notification.setRelatedId(relatedId);
+        notification.setCommentId(commentId);
         notification.setIsRead(0);
         notificationMapper.insert(notification);
     }

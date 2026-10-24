@@ -109,6 +109,14 @@ export interface CitationSnippet {
   sectionTitle?: string | null
   pageNum?: number | null
   score?: number | null
+  /** 段落在文档内的序号（chunk_index），用于「第 N 段」定位 */
+  chunkIndex?: number | null
+  /** 段落字符数 */
+  charCount?: number | null
+  /** 来源内容类型：body、image_ocr、image_caption */
+  sourceContentType?: string | null
+  /** 段落内容的一句话描述（后端 LLM 生成，可能为空） */
+  summary?: string | null
 }
 
 export interface CitationReference {

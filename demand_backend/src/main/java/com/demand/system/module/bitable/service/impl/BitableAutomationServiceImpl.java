@@ -62,7 +62,7 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
         this.rabbitTemplate = rabbitTemplate;
     }
 
-    // ==================== CRUD ====================
+    // --- CRUD ---
 
     @Override
     public List<BitableAutomationVO> listAutomations(Long baseId) {
@@ -162,7 +162,7 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
         automationMapper.update(null, wrapper);
     }
 
-    // ==================== 事件触发 ====================
+    // --- 事件触发 ---
 
     @Override
     public void onRecordChanged(Long tableId, Long recordId, String changeType, Map<String, Object> changedFields) {
@@ -245,7 +245,7 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
         }
     }
 
-    // ==================== 动作执行（MQ消费者调用） ====================
+    // --- 动作执行（MQ消费者调用） ---
 
     @Override
     public boolean fireScheduledAutomation(Long automationId) {
@@ -354,7 +354,7 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
         }
     }
 
-    // ==================== 动作执行器 ====================
+    // --- 动作执行器 ---
 
     private Object executeAction(BitableAutomation automation, Map<String, Object> context) {
         String actionType = automation.getActionType();
@@ -470,13 +470,13 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
     }
 
     /**
-     * 动作: 发送消息（MVP阶段记录到操作日志）
+     * 动作：发送消息（当前仅记录到操作日志）
      */
     private Object executeSendMessage(Map<String, Object> config, Map<String, Object> context) {
         String messageTemplate = (String) config.getOrDefault("message", "");
         String channel = (String) config.getOrDefault("channel", "log");
 
-        // MVP: 仅记录日志，暂不实现真实推送
+        // 当前仅记录日志，不实现真实推送
         log.info("[自动化消息] channel={}, message={}", channel, messageTemplate);
         return Map.of("channel", channel, "message", messageTemplate, "sent", true, "note", "MVP阶段仅记录日志");
     }
@@ -589,7 +589,7 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
         return bytes.length == 16 && (bytes[0] & 0xfe) == 0xfc;
     }
 
-    // ==================== 辅助方法 ====================
+    // --- 辅助方法 ---
 
     private boolean matchesTriggerType(String automationTriggerType, String changeType) {
         return automationTriggerType.equals(changeType);

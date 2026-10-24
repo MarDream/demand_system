@@ -43,7 +43,7 @@ public class BitableAdvancedController {
         this.authorizationService = authorizationService;
     }
 
-    // ==================== 高级视图 ====================
+    // --- 高级视图 ---
 
     /**
      * 获取甘特视图数据
@@ -87,7 +87,7 @@ public class BitableAdvancedController {
         return Result.success(data);
     }
 
-    // ==================== 关联字段 ====================
+    // --- 关联字段 ---
 
     /**
      * 获取可关联的记录列表
@@ -132,7 +132,7 @@ public class BitableAdvancedController {
         return Result.success(ids);
     }
 
-    // ==================== 公式字段 ====================
+    // --- 公式字段 ---
 
     /**
      * 计算公式（测试用）

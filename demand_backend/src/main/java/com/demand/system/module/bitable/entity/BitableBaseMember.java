@@ -7,7 +7,7 @@ import java.util.Objects;
 
 /**
  * 多维表格-协作成员权限实体
- * 注意: 此表无 deletedAt，成员移除时直接删除记录
+ * 注意：此表无 deletedAt，成员移除时直接删除记录。
  */
 @TableName("bitable_base_members")
 public class BitableBaseMember {

@@ -46,7 +46,7 @@ public class SecurityConfig {
     private String jwtSecret;
 
     /**
-     * S6 修复: 启动时校验 JWT Secret 长度，HMAC-SHA256 要求密钥至少 32 字节。
+     * 启动时校验 JWT Secret 长度，HMAC-SHA256 要求密钥至少 32 字节。
      * 避免运行期才出现 WeakKeyException 导致鉴权不可用。
      */
     @PostConstruct
@@ -67,7 +67,7 @@ public class SecurityConfig {
         return new JwtAuthenticationFilter(jwtSecret, rbacPermissionResolver);
     }
 
-    // ===== BUG-03 修复: 自定义 Security 异常 EntryPoint/AccessDeniedHandler 返回统一 JSON 而非空 body =====
+    // --- 自定义 Security 异常 EntryPoint/AccessDeniedHandler 返回统一 JSON 而非空 body ---
     @Bean
     public AuthenticationEntryPoint jwtAuthenticationEntryPoint(ObjectMapper objectMapper) {
         return (request, response, authException) -> writeJson(response, objectMapper,
@@ -178,6 +178,7 @@ public class SecurityConfig {
                         SecurityContextHolder.getContext().setAuthentication(authentication);
                     }
                 } catch (Exception e) {
+                    // token 无效或解析/鉴权异常时按匿名处理，不设置认证信息，放行后续过滤链。
                 }
             }
             filterChain.doFilter(request, response);

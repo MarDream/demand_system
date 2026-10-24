@@ -40,7 +40,7 @@ public class WorkflowNotificationService {
     }
 
     /**
-     * 进入新节点时，向该节点的处理人发送站内消息（原有逻辑，保持不变）。
+     * 进入新节点时，向该节点的处理人发送站内消息。
      */
     public void notifyNodeEntered(Requirement requirement, WorkflowNode node, Long operatorId) {
         if (requirement == null || node == null) {

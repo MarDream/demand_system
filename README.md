@@ -76,6 +76,65 @@ start-all.bat contract   # 导出 OpenAPI 契约到 contracts/openapi/
 MinIO 控制台：`http://localhost:9001`（admin / admin123456）
 RabbitMQ 管理：`http://localhost:15672`（admin / admin）
 
+## 前端构建与部署
+
+两个前端各自独立构建，产物分别在 `demand_frontend/dist`（PC）与 `demand_h5/dist`（H5）：
+
+```bash
+cd demand_frontend && npm run build     # vue-tsc → vite build → 产物断言
+cd demand_h5       && npm run build     # vite build → 产物断言
+```
+
+### ⚠️ 产物断言：dev / 内网地址不许进生产
+
+`npm run build` 会扫产物，一旦**业务代码**里出现 `localhost:端口`、`127.0.0.1:端口`
+或指向私网 IP 的绝对 URL，**直接构建失败**（实现见 `tools/wb-dev-address-guard.mjs`）。
+
+> 为什么要有这道闸：2026-10-12 线上故障 —— `useBitableWebSocket.ts` 的兜底值
+> `ws://localhost:8081` 被原样打进产物，而 `.env.production` 没设 `VITE_WS_URL`，
+> 于是用户浏览器去连**用户自己的机器** → 协同表格 `ERR_CONNECTION_REFUSED`。
+
+**铁律：前端地址的兜底值只能是「相对路径」或「同源推导」。**
+
+```ts
+const WS_BASE = import.meta.env.VITE_WS_URL
+  || `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}`
+// dev 走 vite 的 /ws 代理、生产走 nginx 的 location /ws/，同源两头都通
+```
+
+- 后端地址同理：`VITE_API_BASE_URL` 写 `/api`，不要写 `http://localhost:8081/api`。
+- 要改 dev 后端地址，用 `VITE_API_PROXY_TARGET`（只在 dev server 生效，**不进产物**）。
+- 生产环境变量规范见 `demand_frontend/.env.production.template`
+  （`.env.production` 本身被 `.gitignore` 排除，不入库）。
+- 校验已构建 / 已部署目录：`node tools/check-dist.mjs /home/www/demand/pc`
+- 守卫自身自测：`node tools/selftest-guard.mjs`
+- 临时放行（**仅限本地验证，勿用于部署**）：`ALLOW_DEV_ADDR=1 npm run build`
+- ⚠️ **不要全量 grep `localhost`**：第三方库自带（`vendor-CTXUQT0Q.js` 里有 3 处），
+  守卫按「模块来源」区分业务 / 第三方，只判业务代码，避免误报。
+
+## 跨域白名单：HTTP CORS 与 WebSocket 只有一份
+
+后端 **HTTP CORS**（`CorsConfig`）与 **WebSocket 握手 Origin 校验**（`BitableWebSocketConfig`）
+读的是**同一个属性** `cors.allowed-origins`，线上由环境变量 `CORS_ALLOWED_ORIGINS` 注入：
+
+```yaml
+# /data2/demand-system/docker-compose.yml
+CORS_ALLOWED_ORIGINS: "http://dg.gov.demand.cn,http://19.106.101.220,https://demand.zxmeng.asia"
+```
+
+- 加域名 = 两个门同时放开；漏域名 = 两个门同时拒。**改完必须 `docker compose up -d`（recreate）**。
+- 启动日志会打印实际生效的 Origin 列表，别靠猜：
+  `WebSocket /ws/bitable/{baseId} 允许的握手 Origin（与 cors.allowed-origins 同源，共 N 个）: [...]`
+- ⚠️ **历史坑（2026-10-12 线上故障）**：WS 原本自己写死
+  `setAllowedOrigins("http://localhost:5170", "http://127.0.0.1:5170")`，
+  于是公网与内网入口握手全部 **403**，而普通接口因为 CORS 配的是另一份白名单反而是好的。
+  **判据：两份白名单必然分叉 —— 只要"同一个东西配了两处"，迟早出事。**
+- 区分两个 403（都叫 403，但不是一个门）：
+  | 响应体 | 来源 |
+  |---|---|
+  | **空** | WebSocket 的 `OriginHandshakeInterceptor` |
+  | `Invalid CORS request` | Spring 的 `CorsFilter` |
+
 ## 全量集成测试
 
 ### 后端集成测试（Testcontainers，需要本机可用 Docker）

@@ -38,8 +38,6 @@ public class CurrentNodeHandlerDTO {
      */
     private String assigneeScopeName;
 
-    // Getters & Setters
-
     public Long getRequirementId() {
         return requirementId;
     }

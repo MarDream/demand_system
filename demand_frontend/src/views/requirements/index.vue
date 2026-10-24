@@ -38,27 +38,17 @@
               新建需求
             </el-button>
 
-            <!-- 更多操作下拉 -->
-            <el-dropdown trigger="click" class="more-actions-dropdown">
-              <el-button class="more-actions-trigger">
-                更多操作
-                <el-icon class="more-actions__arrow"><ArrowDown /></el-icon>
-              </el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item
-                    v-if="hasPermission('button:requirement:export')"
-                    :disabled="exporting"
-                    @click="handleExport"
-                  >
-                    <el-icon><Download /></el-icon>
-                    {{ exporting ? '导出中...' : '导出Excel' }}
-                  </el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-
             <!-- 工具按钮 -->
+            <el-tooltip v-if="hasPermission('button:requirement:export')" content="导出Excel" placement="top">
+              <el-button
+                class="requirement-export-icon-btn"
+                :icon="Download"
+                circle
+                :loading="exporting"
+                aria-label="导出Excel"
+                @click="handleExport"
+              />
+            </el-tooltip>
             <el-tooltip content="重置筛选条件" placement="top">
               <el-button
                 class="filter-reset-icon-btn"
@@ -326,11 +316,25 @@
 
                       <el-button v-if="row.operationType === 'view'" link type="primary" @click="handleOpen(row)">查看</el-button>
                     </template>
-                    <!-- 全部需求/草稿视图：根据 canEdit 和权限双重判断 -->
+                    <!-- 全部需求/我的全部/草稿/抄送我：查看详情入口 + 按后端下发的 operationType/canEdit 渲染 -->
                     <template v-else>
                       <el-tooltip content="查看详情" placement="top">
                         <el-button link type="primary" :icon="View" aria-label="查看详情" @click="handleOpen(row)" />
                       </el-tooltip>
+
+                      <!-- 待办：后端判定当前节点轮到我（operationType='approve'），与详情页审批面板同源；
+                           缺【提交需求】RBAC 权限时显示禁用态并说明原因 -->
+                      <el-tooltip
+                        v-if="row.operationType === 'approve' && !hasPermission('button:requirement:submit')"
+                        content="您缺少【提交需求】权限，请联系管理员在【角色管理】中配置"
+                        placement="top">
+                        <el-button link type="warning" disabled>待办</el-button>
+                      </el-tooltip>
+                      <el-button
+                        v-else-if="row.operationType === 'approve' && hasPermission('button:requirement:submit')"
+                        link type="warning" @click="handleOpen(row)">待办</el-button>
+
+                      <!-- 编辑：草稿=创建人；非草稿=后端按节点权限下发 canEdit（与详情页「编辑」按钮同源） -->
                       <el-tooltip v-if="row.canEdit && hasPermission('button:requirement:update')" content="编辑" placement="top">
                         <el-button
                           link
@@ -1398,21 +1402,6 @@ watch(tableData, (rows) => {
 
 .requirement-primary-action {
   box-shadow: 0 4px 12px rgba(37, 99, 235, 0.18);
-}
-
-/* 更多操作下拉 */
-.more-actions-dropdown {
-  .more-actions-trigger {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 12px;
-
-    .more-actions__arrow {
-      font-size: 10px;
-      margin-left: 2px;
-    }
-  }
 }
 
 /* ============================================

@@ -85,7 +85,6 @@ public class WorkflowVersionVO {
     @Schema(description = "关联知识库名称")
     private String knowledgeBaseName;
 
-    // Getters and Setters
     public Long getId() {
         return id;
     }

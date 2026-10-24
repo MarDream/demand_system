@@ -92,13 +92,12 @@
 
         <div class="perm-member-page__list">
           <div v-for="member in filteredMembers" :key="memberKey(member)" class="perm-member-row">
-            <el-avatar
+            <UserAvatar
               :size="32"
-              :src="member.memberAvatar || undefined"
-              :style="{ backgroundColor: avatarColor(memberLabel(member)) }"
-            >
-              {{ memberInitial(member) }}
-            </el-avatar>
+              :avatar="member.memberAvatar"
+              :name="memberLabel(member)"
+              :color="avatarColor(memberLabel(member))"
+            />
             <span class="perm-member-row__name">{{ memberLabel(member) }}</span>
 
             <!-- 成员所属角色：悬停展开角色清单（系统角色至多 1 个 + 自定义角色可多个） -->
@@ -165,14 +164,13 @@
                   :class="{ 'is-removable': isRemovableMember(member) }"
                   @click="handleRemoveMember(member)"
                 >
-                  <el-avatar
+                  <UserAvatar
                     :size="26"
-                    :src="member.memberAvatar || undefined"
-                    :style="{ backgroundColor: avatarColor(memberLabel(member)) }"
+                    :avatar="member.memberAvatar"
+                    :name="memberLabel(member)"
+                    :color="avatarColor(memberLabel(member))"
                     class="perm-members__avatar"
-                  >
-                    {{ memberInitial(member) }}
-                  </el-avatar>
+                  />
                 </span>
               </el-tooltip>
 
@@ -528,13 +526,12 @@
             :model-value="newMemberUserIds.includes(user.id)"
             @change="toggleMemberPick(user.id)"
           >
-            <el-avatar
+            <UserAvatar
               :size="24"
-              :src="user.avatar || undefined"
-              :style="{ backgroundColor: avatarColor(user.realName || user.username) }"
-            >
-              {{ (user.realName || user.username || '?').charAt(0) }}
-            </el-avatar>
+              :avatar="user.avatar"
+              :name="user.realName || user.username"
+              :color="avatarColor(user.realName || user.username)"
+            />
             <span class="member-pick__name">{{ user.realName || user.username }}</span>
             <span class="member-pick__username">{{ user.username }}</span>
             <!-- 系统角色一人只有一个：标出用户当前角色，避免误以为能并列加入 -->
@@ -630,6 +627,7 @@ import type {
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { resolveErrorMessage } from '@/utils/error'
 import { resolveAvatarUrl } from '@/utils/presetAvatars'
+import UserAvatar from '@/components/common/UserAvatar.vue'
 
 const props = defineProps<{
   modelValue: boolean
@@ -899,12 +897,6 @@ function memberKey(member: BitableBaseRoleMember) {
 function memberLabel(member: BitableBaseRoleMember) {
   if (member.memberName) return member.memberName
   return member.memberType === 'dept' ? `部门 #${member.memberId}` : `用户 #${member.memberId}`
-}
-
-/** 头像占位：取姓名首字（中文取第一个字，英文取首字母大写） */
-function memberInitial(member: BitableBaseRoleMember) {
-  const name = memberLabel(member).trim()
-  return name ? name.charAt(0).toUpperCase() : '?'
 }
 
 const AVATAR_COLORS = ['#2563EB', '#7C3AED', '#DB2777', '#EA580C', '#0891B2', '#059669', '#4F46E5', '#B45309']

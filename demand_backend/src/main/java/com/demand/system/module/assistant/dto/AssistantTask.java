@@ -90,7 +90,7 @@ public class AssistantTask {
         this.logs.add(new TaskLog(Instant.now().toEpochMilli(), level, message));
     }
 
-    // ===== 内部类 =====
+    // --- 内部类 ---
 
     public static class TaskLog {
         private Long timestamp;

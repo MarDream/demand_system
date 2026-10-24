@@ -83,6 +83,6 @@ public class BitableWebSocketAuthInterceptor implements HandshakeInterceptor {
                                ServerHttpResponse response,
                                WebSocketHandler wsHandler,
                                Exception exception) {
-        // no-op
+        // 握手完成回调，无需额外处理
     }
 }

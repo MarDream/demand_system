@@ -552,7 +552,7 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
 
         // 查询创建人姓名
         if (version.getCreatorId() != null) {
-            // TODO: 从user表查询创建人姓名
+            // 暂以 ID 拼接占位，后续可改为从用户表查询姓名
             dto.setCreatorName("User-" + version.getCreatorId());
         }
 

@@ -2139,11 +2139,10 @@ async function openCitationPreview(citation: CitationReference, message?: Assist
   }
   previewVisible.value = true
 
-  // 兼容旧消息和后端滚动升级期间未携带 snippets 的引用：预览先打开，
-  // 再按当前问题补查该文档的实际命中段落，不让用户只能看到抽象的相关性说明。
-  if (!snippets.length) {
-    void loadCitationSnippets(question.trim() || fileName, knowledgeBaseId, citation.documentId)
-  }
+  // 无论 citation 是否自带 snippets，都再按当前问题补查一次：
+  // 补查结果带有章节定位（chunkIndex/页码/来源类型）与 LLM 段落描述，
+  // 旧消息、后端滚动升级期间未携带这些字段的引用也能恢复完整的关联性展示。
+  void loadCitationSnippets(question.trim() || fileName, knowledgeBaseId, citation.documentId)
   return true
 }
 
@@ -2170,8 +2169,8 @@ async function loadCitationSnippets(question: string, knowledgeBaseId: number, d
         topK: 50,
         searchScopes: ['KNOWLEDGE_BASE'],
       }) as unknown as {
-        results?: Array<{ documentId?: number; content?: string | null; sectionTitle?: string | null; pageNum?: number | null; score?: number | null }>
-        data?: { results?: Array<{ documentId?: number; content?: string | null; sectionTitle?: string | null; pageNum?: number | null; score?: number | null }> }
+        results?: Array<{ documentId?: number; content?: string | null; sectionTitle?: string | null; pageNum?: number | null; score?: number | null; chunkIndex?: number | null; charCount?: number | null; sourceContentType?: string | null }>
+        data?: { results?: Array<{ documentId?: number; content?: string | null; sectionTitle?: string | null; pageNum?: number | null; score?: number | null; chunkIndex?: number | null; charCount?: number | null; sourceContentType?: string | null }> }
       }
       const payload = raw.data || raw
       snippets = (payload.results || [])
@@ -2183,6 +2182,9 @@ async function loadCitationSnippets(question: string, knowledgeBaseId: number, d
           sectionTitle: item.sectionTitle,
           pageNum: item.pageNum,
           score: item.score,
+          chunkIndex: item.chunkIndex,
+          charCount: item.charCount,
+          sourceContentType: item.sourceContentType,
         }))
     } catch {
       // 两个补查接口均不可用时，保留弹窗本身，不阻断文件预览。
@@ -2191,9 +2193,15 @@ async function loadCitationSnippets(question: string, knowledgeBaseId: number, d
 
   const current = previewFile.value
   if (!current || current.documentId !== documentId || current.knowledgeBaseId !== knowledgeBaseId) return
+  const enriched = snippets.filter(snippet => !!snippet.content?.trim())
+  // 补查无结果时保留 citation 自带的 snippets，避免把已有内容擦掉只剩空态
+  if (!enriched.length && current.citationContext?.snippets?.length) {
+    current.citationContext = { ...current.citationContext, snippetsLoading: false }
+    return
+  }
   current.citationContext = {
     ...current.citationContext,
-    snippets: snippets.filter(snippet => !!snippet.content?.trim()),
+    snippets: enriched,
     snippetsLoading: false,
   }
 }

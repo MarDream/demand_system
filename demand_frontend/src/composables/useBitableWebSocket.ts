@@ -65,7 +65,16 @@ export interface RecordDeletedEvent {
   userName: string
 }
 
-const WS_BASE = (import.meta.env.VITE_WS_URL || 'ws://localhost:8081').replace(/\/$/, '')
+// ⚠️ 默认必须走「当前站点同源」：
+//   dev  → vite.config.ts 里已配 `/ws` 代理（ws: true）
+//   生产 → nginx 里已配 `location /ws/`（带 Upgrade/Connection 头）反代到后端
+// 绝不能写死 ws://localhost:8081 —— 那会让浏览器去连**用户自己的机器**，
+// 直接 ERR_CONNECTION_REFUSED（2026-10-12 线上就是这个现象）。
+// 只有确实要连到另一个域时，才用 VITE_WS_URL 显式覆盖。
+const WS_BASE = (
+  import.meta.env.VITE_WS_URL
+  || `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`
+).replace(/\/$/, '')
 
 export function useBitableWebSocket(baseId: number) {
   const ws = ref<WebSocket | null>(null)

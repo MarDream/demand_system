@@ -6,7 +6,6 @@ import java.util.Map;
 
 /**
  * 需求评分统计 VO
- * 对应 ADR-002 工作流节点评分功能设计
  */
 public class RequirementRatingStatisticsVO {
 

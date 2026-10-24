@@ -39,8 +39,8 @@ public class BitableFieldPermissionServiceImpl implements BitableFieldPermission
     /** 隐藏：既不可见也不可修改。 */
     public static final String LEVEL_HIDDEN = "hidden";
 
+    /** add_only：字段可见、新增记录时可填写，但不能修改已有记录的字段值。 */
     public static final String LEVEL_ADD_ONLY = "add_only";
-    /** add_only：字段可见、新增记录时可填写，但不能修改已有记录的字段值 */
     private static final Set<String> VALID_LEVELS = Set.of(LEVEL_EDITABLE, LEVEL_ADD_ONLY, LEVEL_READONLY, LEVEL_HIDDEN);
 
     private final BitableFieldPermissionMapper fieldPermissionMapper;
@@ -243,7 +243,7 @@ public class BitableFieldPermissionServiceImpl implements BitableFieldPermission
         fieldPermissionMapper.deleteByTableId(tableId);
     }
 
-    // ==================== 选项级权限 ====================
+    // --- 选项级权限 ---
 
     /** 选项级配置解析结果：editableKeys=可编辑选项 label 集合；manage=选项定义管理权限 */
     private record OptionRule(Set<String> editableKeys, String manage) {

@@ -59,20 +59,17 @@
               :aria-label="`查看协作者：${c.name}`"
               :style="{ marginLeft: idx === 0 ? 0 : '-8px', zIndex: visibleCollaborators.length - idx }"
             >
-              <el-avatar
+              <UserAvatar
                 :size="28"
-                :src="c.avatar || undefined"
-                :style="{ background: c.color }"
+                :avatar="c.avatar"
+                :name="c.name"
+                :color="c.color"
                 class="editor-header__avatar"
-              >
-                {{ c.initial }}
-              </el-avatar>
+              />
             </button>
           </template>
           <div class="collaborator-card">
-            <el-avatar :size="36" :src="c.avatar || undefined" :style="{ background: c.color }">
-              {{ c.initial }}
-            </el-avatar>
+            <UserAvatar :size="36" :avatar="c.avatar" :name="c.name" :color="c.color" />
             <div>
               <strong>{{ c.name }}</strong>
               <span>正在协作</span>
@@ -88,9 +85,7 @@
           </template>
           <div class="collaborator-list">
             <div v-for="c in remainingCollaborators" :key="c.id" class="collaborator-card">
-              <el-avatar :size="30" :src="c.avatar || undefined" :style="{ background: c.color }">
-                {{ c.initial }}
-              </el-avatar>
+              <UserAvatar :size="30" :avatar="c.avatar" :name="c.name" :color="c.color" />
               <div>
                 <strong>{{ c.name }}</strong>
                 <span>正在协作</span>
@@ -554,6 +549,7 @@ import LinkFieldSelector from './components/LinkFieldSelector.vue'
 import FormulaEditor from './components/FormulaEditor.vue'
 import FieldAttributeForm from './components/FieldAttributeForm.vue'
 import FieldQuickEditDialog from './components/FieldQuickEditDialog.vue'
+import UserAvatar from '@/components/common/UserAvatar.vue'
 import { useBitableWebSocket, type CellUpdateEvent, type ConflictEvent, type RecordCreatedEvent, type RecordDeletedEvent } from '@/composables/useBitableWebSocket'
 import { createDefaultFieldConfig, LINK_FIELD_TYPES, normalizeFieldConfig, sanitizeFieldConfig } from '@/utils/bitableFieldConfig'
 import {

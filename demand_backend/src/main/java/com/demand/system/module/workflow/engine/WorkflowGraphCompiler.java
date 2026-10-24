@@ -354,6 +354,7 @@ public class WorkflowGraphCompiler {
             byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(hash);
         } catch (Exception ex) {
+            // 摘要算法不可用时降级为 hashCode，保证编译流程不中断
             return String.valueOf(input.hashCode());
         }
     }

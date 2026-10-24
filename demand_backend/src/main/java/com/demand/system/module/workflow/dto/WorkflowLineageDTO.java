@@ -31,8 +31,6 @@ public class WorkflowLineageDTO {
     @Schema(description = "是否循环引用")
     private Boolean isCircular;
 
-    // Getters and Setters
-
     public Long getId() {
         return id;
     }

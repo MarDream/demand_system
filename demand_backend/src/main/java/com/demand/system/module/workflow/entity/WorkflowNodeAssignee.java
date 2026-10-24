@@ -47,8 +47,6 @@ public class WorkflowNodeAssignee {
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
 
-    // Getters and Setters
-
     public Long getId() {
         return id;
     }

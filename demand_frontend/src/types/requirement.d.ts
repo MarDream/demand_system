@@ -213,11 +213,15 @@ export interface RequirementComment {
   userId: number
   userName?: string
   content: string
+  /** 评论中被@的用户ID列表 */
+  mentions?: number[]
   createdAt: string
 }
 
 export interface RequirementCommentCreate {
   content: string
+  /** 被@的用户ID列表（由评论编辑器提取） */
+  mentionedUserIds?: number[]
 }
 
 export interface RequirementApprovalSupplementCreate {

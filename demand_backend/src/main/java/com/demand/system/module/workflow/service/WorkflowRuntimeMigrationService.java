@@ -3,12 +3,8 @@ package com.demand.system.module.workflow.service;
 import com.demand.system.module.workflow.dto.WorkflowMigrationReportDTO;
 
 /**
- * 工作流运行时迁移服务
- *
- * ADR-002 变更（2026-06-30）：
- * - 移除 alignRunningInstancesToActiveVersion() — 不再定时自动对齐
- * - 移除 alignRequirementInstanceIfNeeded() — 引擎操作前不再自动对齐
- * - 保留 markLegacyRequirements() 和 backfillInstances() — 一次性迁移工具
+ * 工作流运行时迁移服务：提供一次性存量数据迁移工具，
+ * 不提供定时或引擎操作前的自动对齐能力。
  */
 public interface WorkflowRuntimeMigrationService {
 

@@ -81,6 +81,12 @@ function goNext() {
   const redirect = (route.query.redirect as string) || '/tasks'
   router.replace(redirect)
 }
+
+/** picker confirm 回调不能写在模板里带类型标注（vue-tsc 解析报错），抽成方法 */
+function onOrgPickerConfirm(e: { selectedIndexes: number[] }) {
+  selectedOrgIndex.value = e.selectedIndexes[0]
+  void handleBindOrg()
+}
 </script>
 
 <template>
@@ -119,14 +125,14 @@ function goNext() {
     </van-form>
 
     <van-popup v-model:show="showOrgPicker" round position="bottom" :close-on-click-overlay="false">
-      <van-picker
-        title="选择所属组织"
-        :columns="orgColumns"
-        :loading="orgLoading"
-        :columns-field-names="{ text: 'name', value: 'id' }"
-        @confirm="(e: { selectedIndexes: number[] }) => { selectedOrgIndex = e.selectedIndexes[0]; handleBindOrg() }"
-        @cancel="showOrgPicker = false"
-      />
+    <van-picker
+      title="选择所属组织"
+      :columns="orgColumns"
+      :loading="orgLoading"
+      :columns-field-names="{ text: 'name', value: 'id' }"
+      @confirm="onOrgPickerConfirm"
+      @cancel="showOrgPicker = false"
+    />
     </van-popup>
   </div>
 </template>

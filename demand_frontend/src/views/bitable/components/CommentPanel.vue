@@ -21,9 +21,7 @@
           class="comment-item"
         >
           <div class="comment-avatar">
-            <el-avatar :size="32" :src="comment.avatar">
-              {{ (comment.userName || '?')[0] }}
-            </el-avatar>
+            <UserAvatar :size="32" :avatar="comment.avatar" :name="comment.userName" />
           </div>
           <div class="comment-body">
             <div class="comment-header">
@@ -78,6 +76,7 @@ import { ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { resolveErrorMessage } from '@/utils/error'
 import { resolveAvatarUrl } from '@/utils/presetAvatars'
+import UserAvatar from '@/components/common/UserAvatar.vue'
 import { formatRelativeTime } from '@/utils/format'
 import { listComments, createComment, deleteComment } from '@/api/modules/bitable'
 import type { BitableComment } from '@/types/bitable'

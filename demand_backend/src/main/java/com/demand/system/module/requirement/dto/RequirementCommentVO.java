@@ -1,6 +1,7 @@
 package com.demand.system.module.requirement.dto;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public class RequirementCommentVO {
 
@@ -13,6 +14,9 @@ public class RequirementCommentVO {
     private String userName;
 
     private String content;
+
+    /** 评论中被@的用户ID列表 */
+    private List<Long> mentions;
 
     private LocalDateTime createdAt;
 
@@ -54,6 +58,14 @@ public class RequirementCommentVO {
 
     public void setContent(String content) {
         this.content = content;
+    }
+
+    public List<Long> getMentions() {
+        return mentions;
+    }
+
+    public void setMentions(List<Long> mentions) {
+        this.mentions = mentions;
     }
 
     public LocalDateTime getCreatedAt() {

@@ -179,7 +179,7 @@
                   :value="user.id"
                 >
                   <div class="user-option">
-                    <el-avatar :size="24" :src="user.avatar">{{ userDisplayName(user)[0] }}</el-avatar>
+                    <UserAvatar :size="24" :avatar="user.avatar" :name="userDisplayName(user)" />
                     <span>{{ userDisplayName(user) }}</span>
                   </div>
                 </el-option>
@@ -202,7 +202,7 @@
                   :value="user.id"
                 >
                   <div class="user-option">
-                    <el-avatar :size="24" :src="user.avatar">{{ userDisplayName(user)[0] }}</el-avatar>
+                    <UserAvatar :size="24" :avatar="user.avatar" :name="userDisplayName(user)" />
                     <span>{{ userDisplayName(user) }}</span>
                   </div>
                 </el-option>
@@ -445,6 +445,7 @@ import { buildRichTextImagePreviewUrl, hydrateRichTextImageHtml, serializeRichTe
 import { formatDate, getFileExt, normalizeText, stripPriorityPrefix } from '@/utils/format'
 import { resolveErrorMessage } from '@/utils/error'
 import PageContainer from '@/components/common/PageContainer.vue'
+import UserAvatar from '@/components/common/UserAvatar.vue'
 import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import FilePreviewDialog from '@/components/document/FilePreviewDialog.vue'
 import DynamicFieldsForm from './components/DynamicFieldsForm.vue'

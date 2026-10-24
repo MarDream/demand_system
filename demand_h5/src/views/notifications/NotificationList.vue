@@ -2,16 +2,17 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
+import { storeToRefs } from 'pinia'
 import {
   getNotificationList,
-  getUnreadCount,
-  markAsRead,
-  markAllAsRead,
   type NotificationItem,
 } from '@/api/notification'
+import { useNotificationStore } from '@/stores/notification'
 import { formatRelative } from '@/utils/format'
 
 const router = useRouter()
+const notificationStore = useNotificationStore()
+const { unread } = storeToRefs(notificationStore)
 
 const list = ref<NotificationItem[]>([])
 const refreshing = ref(false)
@@ -20,7 +21,6 @@ const finished = ref(false)
 const error = ref(false)
 const pageNum = ref(1)
 const PAGE_SIZE = 20
-const unread = ref(0)
 
 async function loadPage(reset = false) {
   if (reset) {
@@ -47,39 +47,29 @@ async function loadPage(reset = false) {
   }
 }
 
-async function refreshUnread() {
-  try {
-    unread.value = await getUnreadCount()
-  } catch {
-    unread.value = 0
-  }
-}
-
 async function onRefresh() {
-  await Promise.all([loadPage(true), refreshUnread()])
+  await Promise.all([loadPage(true), notificationStore.refresh(false)])
 }
 
 async function onClick(item: NotificationItem) {
   if (!item.isRead) {
-    try {
-      await markAsRead(item.id)
+    const ok = await notificationStore.markOneRead(item.id)
+    if (ok) {
       item.isRead = 1
-      unread.value = Math.max(0, unread.value - 1)
-    } catch {
-      // ignore
     }
   }
-  // 需求类通知跳转到对应需求详情
-  if (item.type === 'requirement' && item.relatedId) {
-    router.push(`/requirement/${item.relatedId}`)
+  // 需求类通知跳转到对应需求详情；@提醒类通知额外定位到评论处
+  if (item.relatedId) {
+    const query = item.commentId ? { tab: 'comments', commentId: String(item.commentId) } : undefined
+    router.push({ path: `/requirement/${item.relatedId}`, query })
   }
 }
 
 async function onMarkAll() {
-  await markAllAsRead()
+  const ok = await notificationStore.markAllRead()
+  if (!ok) return
   showToast('已全部标记为已读')
   list.value.forEach((n) => (n.isRead = 1))
-  unread.value = 0
 }
 
 onRefresh()

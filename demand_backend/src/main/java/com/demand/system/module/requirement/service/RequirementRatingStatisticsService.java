@@ -9,7 +9,6 @@ import java.util.Map;
 
 /**
  * 需求评分统计服务
- * 对应 ADR-002 Phase 2: 统计分析
  */
 public interface RequirementRatingStatisticsService {
 

@@ -379,7 +379,13 @@
               </div>
             </template>
             <el-empty v-if="comments.length === 0" description="暂无评论" :image-size="40" />
-            <div v-for="comment in comments" :key="comment.id" class="comment-item">
+            <div
+              v-for="comment in comments"
+              :key="comment.id"
+              class="comment-item"
+              :class="{ 'is-mention-target': highlightedCommentId === comment.id }"
+              :data-comment-id="comment.id"
+            >
               <el-avatar :size="32">{{ comment.userName?.charAt(0) || 'U' }}</el-avatar>
               <div class="comment-content">
                 <div class="comment-header">
@@ -859,6 +865,7 @@ import { hydrateRichTextImageHtml, buildRichTextImagePreviewUrl } from '@/utils/
 import { IsleEditor, IsleEditorToolbar, RichTextKit } from '@isle-editor/vue3'
 import { addLocale } from '@isle-editor/core'
 import Image from '@tiptap/extension-image'
+import { createCommentMentionExtension, collectMentionedUserIds } from '@/components/rich/mentionSuggestion'
 import '@isle-editor/vue3/dist/style.css'
 import PageContainer from '@/components/common/PageContainer.vue'
 import FilePreviewDialog from '@/components/document/FilePreviewDialog.vue'
@@ -1056,6 +1063,8 @@ async function loadActiveUsers() {
 watch(dynamicFields, () => { void loadActiveUsers() }, { immediate: true })
 const relatedRequirements = ref<any[]>([])
 const comments = ref<RequirementComment[]>([])
+/** 从通知跳转进入时短暂高亮的评论ID */
+const highlightedCommentId = ref<number | null>(null)
 const approvalEvaluations = ref<RequirementApprovalEvaluation[]>([])
 const approvalRating = ref(0)
 const approvalComment = ref('')
@@ -1209,7 +1218,7 @@ const commentSubmitting = ref(false)
 const commentEditorInstance = ref<any>(null)
 const commentEditorExtensions = [
   RichTextKit.configure({
-    placeholder: { placeholder: '输入评论内容...' },
+    placeholder: { placeholder: '输入评论内容，@ 可提醒相关人…' },
     table: {
       resizable: true,
       HTMLAttributes: {
@@ -1231,6 +1240,8 @@ const commentEditorExtensions = [
       class: 'comment-editor-image',
     },
   }),
+  // 评论 @ 提及：输入 @ 唤起候选用户，选中后插入 mention 节点
+  createCommentMentionExtension(),
 ]
 
 function onCommentEditorCreate({ editor }: { editor: any }) {
@@ -2186,10 +2197,12 @@ async function submitCommentRich() {
     return
   }
   const content = html.trim()
+  // 提取被@用户，供后端发送@提醒（后端另有正文兜底解析）
+  const mentionedUserIds = collectMentionedUserIds(commentEditorInstance.value)
 
   commentSubmitting.value = true
   try {
-    await requirementApi.createRequirementComment(id, { content })
+    await requirementApi.createRequirementComment(id, { content, mentionedUserIds })
     toast.success('评论已提交')
     resetCommentDraft()
     await fetchComments()
@@ -2248,6 +2261,55 @@ async function focusRequirementImageFromQuery() {
 }
 
 
+/**
+ * 通知点击进入时的评论定位：支持 ?tab=comments&commentId=xxx。
+ * 切到评论 tab，等评论渲染出来后滚动到目标评论并短暂高亮，随后清掉 query 避免刷新重复触发。
+ */
+async function focusCommentFromQuery() {
+  const tab = String(route.query.tab || '')
+  const commentIdRaw = route.query.commentId
+  if (tab !== 'comments' && !commentIdRaw) return
+
+  if (tab === 'comments') {
+    activeTab.value = 'comments'
+  }
+  const targetId = Number(commentIdRaw)
+  if (!commentIdRaw || Number.isNaN(targetId)) {
+    clearCommentQuery()
+    return
+  }
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    await nextTick()
+    if (attempt > 0) {
+      await new Promise(resolve => window.setTimeout(resolve, attempt >= 4 ? 320 : 120 * attempt))
+    }
+    const target = document.querySelector<HTMLElement>(`.comment-item[data-comment-id="${targetId}"]`)
+    if (!target) continue
+
+    highlightedCommentId.value = targetId
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    window.setTimeout(() => {
+      if (highlightedCommentId.value === targetId) {
+        highlightedCommentId.value = null
+      }
+    }, 3000)
+    clearCommentQuery()
+    return
+  }
+  // 目标评论不存在（可能已被删除）：仅切 tab，不留悬挂 query
+  clearCommentQuery()
+}
+
+/** 清理评论定位 query，避免刷新/回退时重复触发 */
+function clearCommentQuery() {
+  if (route.query.tab === undefined && route.query.commentId === undefined) return
+  const nextQuery = { ...route.query }
+  delete nextQuery.tab
+  delete nextQuery.commentId
+  void router.replace({ query: nextQuery })
+}
+
 async function initializePage() {
   // Load config and project options in parallel with batch detail fetch
   // 注：getRequirementDetailBatch 在用户无权查看时会返回 code=403，
@@ -2278,6 +2340,8 @@ async function initializePage() {
     relatedRequirements.value = (batchData.relations || []) as any
     comments.value = (batchData.comments || []) as any
     approvalEvaluations.value = (batchData.approvalEvaluations || []) as any
+    // 从通知跳转进入时定位到对应评论（?tab=comments&commentId=xxx）
+    void focusCommentFromQuery()
 
     // Load project name and workflow meta after getting detail
     await Promise.all([loadProjectName(), loadWorkflowMeta()])
@@ -3168,6 +3232,38 @@ onMounted(() => {
 .comment-time {
   color: var(--color-muted-text);
   font-size: 12px;
+}
+
+/* ===== 评论 @ 提及 ===== */
+/* 展示态：v-html 渲染出的 mention 节点（作用域样式需 :deep 才能命中） */
+.comment-body :deep(.mention-chip) {
+  display: inline-block;
+  padding: 0 6px;
+  margin: 0 2px;
+  border-radius: 4px;
+  background: var(--el-color-primary-light-9, #ecf5ff);
+  color: var(--el-color-primary, #409eff);
+  font-weight: 500;
+  line-height: 1.7;
+}
+
+/* 编辑态：编辑器内同样呈现为浅色标签，避免与正文混淆 */
+.comment-editor-dropzone :deep(.mention-chip) {
+  display: inline-block;
+  padding: 0 6px;
+  margin: 0 2px;
+  border-radius: 4px;
+  background: var(--el-color-primary-light-9, #ecf5ff);
+  color: var(--el-color-primary, #409eff);
+  font-weight: 500;
+}
+
+/* 从通知跳转定位到某条评论时的高亮 */
+.comment-item.is-mention-target {
+  border-radius: var(--radius-md);
+  background: var(--el-color-warning-light-9, #fdf6ec);
+  box-shadow: 0 0 0 2px var(--el-color-warning-light-5, #f5dab1);
+  transition: background 0.3s ease, box-shadow 0.3s ease;
 }
 
 .comment-section-block {

@@ -14,13 +14,13 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
     Integer selectMaxDailySequence(@Param("datePrefix") String datePrefix);
 
     /**
-     * 修复 P0：绕过 @TableLogic 过滤，按 ID 查询需求（包括已删除记录）
+     * 绕过 @TableLogic 过滤，按 ID 查询需求（包括已删除记录）
      * 用于 restore 等需要访问已删除数据的场景
      */
     Requirement selectByIdIncludeDeleted(@Param("id") Long id);
 
     /**
-     * 修复 P0：绕过 @TableLogic 过滤，更新需求（包括已删除记录）
+     * 绕过 @TableLogic 过滤，更新需求（包括已删除记录）
      * 用于 restore 操作
      */
     int restoreById(@Param("id") Long id);

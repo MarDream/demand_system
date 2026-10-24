@@ -14,7 +14,7 @@ import java.util.List;
 @Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface BitableConverter {
 
-    // ==================== Base ====================
+    // --- Base ---
 
     BitableBase toBase(BitableBaseCreateDTO dto);
 
@@ -24,7 +24,7 @@ public interface BitableConverter {
 
     List<BitableBaseVO> toBaseVOList(List<BitableBase> list);
 
-    // ==================== Table ====================
+    // --- Table ---
 
     BitableTable toTable(BitableTableCreateDTO dto);
 
@@ -32,7 +32,7 @@ public interface BitableConverter {
 
     List<BitableTableVO> toTableVOList(List<BitableTable> list);
 
-    // ==================== TableGroup ====================
+    // --- TableGroup ---
 
     BitableTableGroup toTableGroup(BitableTableGroupCreateDTO dto);
 
@@ -40,13 +40,13 @@ public interface BitableConverter {
 
     List<BitableTableGroupVO> toTableGroupVOList(List<BitableTableGroup> list);
 
-    // ==================== BaseGroup ====================
+    // --- BaseGroup ---
 
     BitableBaseGroupVO toBaseGroupVO(BitableBaseGroup group);
 
     List<BitableBaseGroupVO> toBaseGroupVOList(List<BitableBaseGroup> list);
 
-    // ==================== Field ====================
+    // --- Field ---
 
     @Mapping(target = "config", expression = "java(com.demand.system.module.bitable.util.BitableJsonUtils.toJsonString(dto.getConfig()))")
     BitableField toField(BitableFieldCreateDTO dto);
@@ -56,7 +56,7 @@ public interface BitableConverter {
 
     List<BitableFieldVO> toFieldVOList(List<BitableField> list);
 
-    // ==================== View ====================
+    // --- View ---
 
     @Mapping(target = "sortConfig", expression = "java(com.demand.system.module.bitable.util.BitableJsonUtils.toJsonString(dto.getSortConfig()))")
     @Mapping(target = "filterConfig", expression = "java(com.demand.system.module.bitable.util.BitableJsonUtils.toJsonString(dto.getFilterConfig()))")
@@ -77,7 +77,7 @@ public interface BitableConverter {
 
     List<BitableViewVO> toViewVOList(List<BitableView> list);
 
-    // ==================== Record ====================
+    // --- Record ---
 
     /**
      * Record VO 仅映射基础字段，cells 字段由 Service 层单独装配
@@ -86,26 +86,26 @@ public interface BitableConverter {
 
     List<BitableRecordVO> toRecordVOList(List<BitableRecord> list);
 
-    // ==================== CellValue ====================
+    // --- CellValue ---
 
     @Mapping(target = "valueJson", expression = "java(com.demand.system.module.bitable.util.BitableJsonUtils.parseJson(cell.getValueJson()))")
     BitableCellValueVO toCellValueVO(BitableCellValue cell);
 
     List<BitableCellValueVO> toCellValueVOList(List<BitableCellValue> list);
 
-    // ==================== Member ====================
+    // --- Member ---
 
     BitableBaseMemberVO toMemberVO(BitableBaseMember member);
 
     List<BitableBaseMemberVO> toMemberVOList(List<BitableBaseMember> list);
 
-    // ==================== Comment ====================
+    // --- Comment ---
 
     BitableCommentVO toCommentVO(BitableComment comment);
 
     List<BitableCommentVO> toCommentVOList(List<BitableComment> list);
 
-    // ==================== Operation ====================
+    // --- Operation ---
 
     BitableOperationVO toOperationVO(BitableOperation operation);
 

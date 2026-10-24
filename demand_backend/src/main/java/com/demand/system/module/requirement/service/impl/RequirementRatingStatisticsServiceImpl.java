@@ -197,7 +197,7 @@ public class RequirementRatingStatisticsServiceImpl implements RequirementRating
         return result;
     }
 
-    // ==================== 私有工具 ====================
+    // --- 私有工具 ---
 
     private List<RequirementApprovalEvaluation> queryEvaluations(
             Long projectId, Long iterationId, LocalDate startDate, LocalDate endDate) {

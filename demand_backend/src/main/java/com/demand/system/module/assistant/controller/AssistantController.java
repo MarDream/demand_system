@@ -99,7 +99,7 @@ public class AssistantController {
         return Result.success();
     }
 
-    // ==================== 后台管理 API（ADMIN） ====================
+    // --- 后台管理 API（ADMIN） ---
 
     /**
      * 后台：查询全部快捷问题

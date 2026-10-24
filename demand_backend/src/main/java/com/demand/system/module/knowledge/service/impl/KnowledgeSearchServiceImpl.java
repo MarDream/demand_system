@@ -11,6 +11,7 @@ import com.demand.system.module.knowledge.dto.QueryRewriteResult;
 import com.demand.system.module.knowledge.entity.KnowledgeChunk;
 import com.demand.system.module.knowledge.entity.KnowledgeDocument;
 import com.demand.system.module.knowledge.llm.LlmGateway;
+import com.demand.system.module.knowledge.llm.LlmGatewayConfig;
 import com.demand.system.module.knowledge.mapper.KnowledgeChunkMapper;
 import com.demand.system.module.knowledge.mapper.KnowledgeDocumentMapper;
 import com.demand.system.module.knowledge.service.EmbeddingService;
@@ -20,6 +21,8 @@ import com.demand.system.module.knowledge.service.QueryRewriteService;
 import com.demand.system.module.knowledge.service.RagAnswerService;
 import com.demand.system.module.knowledge.support.RetrievalModeRouter;
 import com.demand.system.module.knowledge.vectorstore.MilvusVectorStore;
+import com.demand.system.module.llm.constant.LlmApplicationCode;
+import com.demand.system.module.llm.service.LlmModelResolver;
 import com.demand.system.module.requirement.entity.Requirement;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
 import com.demand.system.module.requirement.service.RequirementService;
@@ -55,6 +58,22 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
     /** 文件名兜底匹配的候选文件名上限，超过则跳过兜底，避免大范围 LIKE 扫描 */
     private static final int MAX_FILENAME_FALLBACK_MATCHES = 20;
 
+    /** 命中段落描述生成的系统提示词 */
+    private static final String SNIPPET_SUMMARY_SYSTEM_PROMPT = """
+            你是知识库检索结果的段落说明助手。用户会给出一个问题和一个文档中的若干命中段落（带编号）。
+            请为每个段落生成一句中文描述，说明：该段落讲述了什么内容、它与用户问题的关联点在哪里。
+
+            【输出要求】
+            1. 每个段落输出一行，格式严格为「编号：描述」，编号必须与输入一致，禁止合并、禁止缺失
+            2. 每句描述不超过 60 字，直接输出描述本身，不要加任何前后缀
+            3. 只依据段落原文描述，禁止引入外部知识或编造原文没有的信息
+            4. 如果段落只是文件名、标题等没有实质正文内容的片段，描述为「该片段未包含正文内容」
+            5. 如果段落与用户问题无明显关联，也要如实描述段落主题，不得强行说成相关
+            """;
+
+    /** 段落描述的单句长度上限（超出截断） */
+    private static final int SNIPPET_SUMMARY_MAX_CHARS = 120;
+
     private final EmbeddingService embeddingService;
     private final MilvusVectorStore milvusVectorStore;
     private final KnowledgeConfig knowledgeConfig;
@@ -66,6 +85,8 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
     private final RequirementService requirementService;
     private final ImageUnderstandingService imageUnderstandingService;
     private final Executor sseExecutor;
+    private final LlmGateway llmGateway;
+    private final LlmModelResolver llmModelResolver;
 
     public KnowledgeSearchServiceImpl(EmbeddingService embeddingService,
                                      MilvusVectorStore milvusVectorStore,
@@ -77,7 +98,9 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                                      KnowledgeChunkMapper knowledgeChunkMapper,
                                      RequirementService requirementService,
                                      ImageUnderstandingService imageUnderstandingService,
-                                     @Qualifier(SseExecutorConfig.SSE_TASK_EXECUTOR) Executor sseExecutor) {
+                                     @Qualifier(SseExecutorConfig.SSE_TASK_EXECUTOR) Executor sseExecutor,
+                                     LlmGateway llmGateway,
+                                     LlmModelResolver llmModelResolver) {
         this.embeddingService = embeddingService;
         this.milvusVectorStore = milvusVectorStore;
         this.knowledgeConfig = knowledgeConfig;
@@ -89,6 +112,8 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         this.requirementService = requirementService;
         this.imageUnderstandingService = imageUnderstandingService;
         this.sseExecutor = sseExecutor;
+        this.llmGateway = llmGateway;
+        this.llmModelResolver = llmModelResolver;
     }
 
     // ==================== 对外入口 ====================
@@ -694,6 +719,9 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                 .imageFileId(metadata != null ? metadata.getSourceRefId() : null)
                 .imagePosition(metadata != null ? metadata.getSourcePosition() : null)
                 .focus(metadata != null && metadata.getSourceRefId() != null ? "image" : null)
+                .chunkIndex(metadata != null ? metadata.getChunkIndex() : null)
+                .charCount(metadata != null ? metadata.getCharCount() : null)
+                .sourceContentType(metadata != null ? metadata.getSourceContentType() : null)
                 .build();
     }
 
@@ -719,6 +747,9 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                 .imageFileId(chunk.getSourceRefId())
                 .imagePosition(chunk.getSourcePosition())
                 .focus(chunk.getSourceRefId() != null ? "image" : null)
+                .chunkIndex(chunk.getChunkIndex())
+                .charCount(chunk.getCharCount())
+                .sourceContentType(chunk.getSourceContentType())
                 .build();
     }
 
@@ -1131,6 +1162,9 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                         .sectionTitle(item.getSectionTitle())
                         .pageNum(item.getPageNum())
                         .score(item.getScore())
+                        .chunkIndex(item.getChunkIndex())
+                        .charCount(item.getCharCount())
+                        .sourceContentType(item.getSourceContentType())
                         .build())
                 .toList();
     }
@@ -1210,7 +1244,7 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                 .limit(limit)
                 .toList();
         if (!snippets.isEmpty()) {
-            return snippets;
+            return enrichSnippetsWithSummary(normalizedQuery, snippets);
         }
 
         LambdaQueryWrapper<KnowledgeChunk> chunkWrapper = new LambdaQueryWrapper<KnowledgeChunk>()
@@ -1231,16 +1265,107 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                     .last("LIMIT " + limit);
             chunks = knowledgeChunkMapper.selectList(chunkWrapper);
         }
-        return chunks.stream()
+        List<KnowledgeSearchResponse.CitationSnippet> fallbackSnippets = chunks.stream()
                 .filter(chunk -> chunk.getContent() != null && !chunk.getContent().isBlank())
                 .map(chunk -> KnowledgeSearchResponse.CitationSnippet.builder()
                         .content(trimCitationSnippet(chunk.getContent(), 1200))
                         .sectionTitle(chunk.getSectionTitle())
                         .pageNum(chunk.getPageNum())
                         .score(null)
+                        .chunkIndex(chunk.getChunkIndex())
+                        .charCount(chunk.getCharCount())
+                        .sourceContentType(chunk.getSourceContentType())
                         .build())
                 .limit(limit)
                 .toList();
+        return enrichSnippetsWithSummary(normalizedQuery, fallbackSnippets);
+    }
+
+    /**
+     * 为命中段落生成一句话描述（LLM），让预览弹窗能说明「这段讲了什么、与问题何干」。
+     *
+     * <p>任何一步失败（模型未配置、调用超时、输出无法解析）都只记录日志并原样返回，
+     * summary 保持 null，由前端退化为仅展示章节/段落定位等结构化信息，绝不阻断预览。</p>
+     */
+    private List<KnowledgeSearchResponse.CitationSnippet> enrichSnippetsWithSummary(
+            String query, List<KnowledgeSearchResponse.CitationSnippet> snippets) {
+        if (snippets == null || snippets.isEmpty()) {
+            return snippets == null ? List.of() : snippets;
+        }
+        try {
+            LlmModelResolver.ResolvedModel resolved =
+                    llmModelResolver.resolveFirst(LlmApplicationCode.KNOWLEDGE_ANSWER);
+            if (resolved == null) {
+                return snippets;
+            }
+            LlmGatewayConfig.Provider provider = llmModelResolver.toGatewayProvider(resolved);
+            String userMessage = buildSnippetSummaryUserMessage(query, snippets);
+            LlmGateway.ChatResult result = llmGateway.chatWithProvider(
+                    provider,
+                    SNIPPET_SUMMARY_SYSTEM_PROMPT,
+                    userMessage,
+                    new java.math.BigDecimal("0.3"),
+                    400);
+            String content = result == null ? null : result.getContent();
+            if (content == null || content.isBlank()) {
+                return snippets;
+            }
+            Map<Integer, String> summaries = parseSnippetSummaries(content);
+            for (int i = 0; i < snippets.size(); i++) {
+                String summary = summaries.get(i + 1);
+                if (summary != null && !summary.isBlank()) {
+                    snippets.get(i).setSummary(trimCitationSnippet(summary, SNIPPET_SUMMARY_MAX_CHARS));
+                }
+            }
+        } catch (RuntimeException e) {
+            log.warn("命中段落描述生成失败，降级为无描述展示: {}", e.getMessage());
+        }
+        return snippets;
+    }
+
+    /** 构造段落描述生成的用户消息：编号 + 章节定位 + 原文（截断到 600 字，控制 token） */
+    private String buildSnippetSummaryUserMessage(
+            String query, List<KnowledgeSearchResponse.CitationSnippet> snippets) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("用户问题：").append(query == null || query.isBlank() ? "（未提供）" : query.trim()).append("\n\n");
+        sb.append("段落列表：\n");
+        for (int i = 0; i < snippets.size(); i++) {
+            KnowledgeSearchResponse.CitationSnippet snippet = snippets.get(i);
+            sb.append('[').append(i + 1).append("] ");
+            if (snippet.getSectionTitle() != null && !snippet.getSectionTitle().isBlank()) {
+                sb.append("章节：").append(snippet.getSectionTitle().trim()).append("；");
+            }
+            sb.append("内容：")
+                    .append(trimCitationSnippet(snippet.getContent(), 600))
+                    .append('\n');
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 解析「编号：描述」格式的模型输出。
+     * 容忍 [1] / 1. / 1： 等编号写法，取冒号后的内容；无法识别的行忽略。
+     */
+    private Map<Integer, String> parseSnippetSummaries(String content) {
+        Map<Integer, String> summaries = new HashMap<>();
+        for (String line : content.split("\\R")) {
+            java.util.regex.Matcher matcher =
+                    java.util.regex.Pattern.compile("^\\s*\\[?(\\d{1,2})\\]?\\s*[.、:：]\\s*(\\S.*)$")
+                            .matcher(line);
+            if (!matcher.find()) {
+                continue;
+            }
+            try {
+                int index = Integer.parseInt(matcher.group(1));
+                String summary = matcher.group(2).trim();
+                if (index >= 1 && !summary.isBlank()) {
+                    summaries.putIfAbsent(index, summary);
+                }
+            } catch (NumberFormatException ignored) {
+                // 编号无法解析时跳过该行
+            }
+        }
+        return summaries;
     }
     // ==================== 工具方法 ====================
 

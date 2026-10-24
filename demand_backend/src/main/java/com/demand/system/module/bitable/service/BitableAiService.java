@@ -78,7 +78,7 @@ public interface BitableAiService {
 
     /**
      * AI 对话式查询
-     * 根据问题调用 LLM 生成条件，在内存过滤记录（Phase 3 简化实现）
+     * 根据问题调用 LLM 生成条件，在内存过滤记录（简化实现）
      *
      * @param baseId   Base ID
      * @param tableId  数据表ID（可选）

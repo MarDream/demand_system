@@ -3,6 +3,7 @@ package com.demand.system.module.knowledge.service.impl;
 import com.demand.system.module.knowledge.config.KnowledgeConfig;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchRequest;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse;
+import com.demand.system.module.knowledge.llm.LlmGateway;
 import com.demand.system.module.knowledge.mapper.KnowledgeChunkMapper;
 import com.demand.system.module.knowledge.mapper.KnowledgeDocumentMapper;
 import com.demand.system.module.knowledge.service.EmbeddingService;
@@ -10,6 +11,7 @@ import com.demand.system.module.knowledge.service.ImageUnderstandingService;
 import com.demand.system.module.knowledge.service.QueryRewriteService;
 import com.demand.system.module.knowledge.service.RagAnswerService;
 import com.demand.system.module.knowledge.vectorstore.MilvusVectorStore;
+import com.demand.system.module.llm.service.LlmModelResolver;
 import com.demand.system.module.requirement.mapper.RequirementMapper;
 import com.demand.system.module.requirement.service.RequirementService;
 import org.junit.jupiter.api.Test;
@@ -34,7 +36,9 @@ class KnowledgeSearchServiceImplTest {
                 mock(KnowledgeChunkMapper.class),
                 mock(RequirementService.class),
                 disabledImageUnderstandingService(),
-                Runnable::run);
+                Runnable::run,
+                mock(LlmGateway.class),
+                mock(LlmModelResolver.class));
 
         KnowledgeSearchRequest request = new KnowledgeSearchRequest();
         request.setQuery("只允许有效范围");

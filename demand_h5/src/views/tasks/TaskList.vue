@@ -49,7 +49,6 @@ async function loadPage(reset = false) {
     finished.value = false
   }
   loading.value = true
-  loading.value = true
   try {
     const meta = tabMeta[activeTab.value]
     const result = await meta.loader({
@@ -91,7 +90,7 @@ function goDetail(item: Requirement) {
 const tabTitle = computed(() => tabMeta[activeTab.value].title)
 
 function toDraftTag(item: Requirement) {
-  return item.isDraft === 1 || item.isDraft === true
+  return !!item.isDraft
 }
 </script>
 

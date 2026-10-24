@@ -227,13 +227,21 @@ public class PreviewService {
         return knowledgeDocumentService.getPreviewUrl(knowledgeBaseId, documentId, PREVIEW_PRESIGN_HOURS);
     }
 
+    /**
+     * 拼装「交给浏览器」的预览 URL（会被前端直接塞进 iframe 的 src）。
+     *
+     * <p>⚠️ 这里用的是 {@code browserBaseUrl}（同源相对路径），<strong>不是</strong>
+     * {@code baseUrl}。用 {@code baseUrl} 会把后端容器视角的地址
+     * （{@code http://kkfileview:8012}）交给浏览器，导致 Mixed Content + 域名无法解析。
+     * 详见 {@link PreviewProperties#getBrowserBaseUrl()}。</p>
+     */
     private String buildPreviewUrlInternal(String fileUrl, String watermarkTxt) {
         if (!StringUtils.hasText(fileUrl)) {
             throw new IllegalArgumentException("fileUrl 不能为空");
         }
         validateFileUrl(fileUrl);
 
-        String base = normalizeBaseUrl(properties.getBaseUrl());
+        String base = resolveBrowserBaseUrl();
         String path = normalizePath(properties.getPreviewPath());
 
         StringBuilder query = new StringBuilder();
@@ -354,6 +362,39 @@ public class PreviewService {
         }
         if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
             throw new IllegalStateException("文件预览服务 base-url 必须以 http:// 或 https:// 开头");
+        }
+        return trimmed;
+    }
+
+    /**
+     * 解析「浏览器侧」的预览地址前缀。
+     *
+     * <p>允许两种写法：</p>
+     * <ul>
+     *   <li>{@code /kkfileview} —— <strong>推荐</strong>。同源相对路径，前端按页面 origin 解析，
+     *       公网 HTTPS 与内网 HTTP 入口共用同一个值，不必按环境切换。</li>
+     *   <li>{@code https://preview.example.com} —— 独立域名（需该域名能直连预览服务且证书有效）。</li>
+     * </ul>
+     *
+     * <p>刻意拒绝 {@code //host/path} 这种协议相对写法：它继承页面协议，看似"同源"，
+     * 实则指向另一台主机，属于同类隐患。</p>
+     *
+     * <p>未配置时退回 {@code baseUrl}，保持向后兼容（仅当浏览器能直达该地址时才成立）。</p>
+     */
+    private String resolveBrowserBaseUrl() {
+        String configured = properties.getBrowserBaseUrl();
+        if (!StringUtils.hasText(configured)) {
+            return normalizeBaseUrl(properties.getBaseUrl());
+        }
+        String trimmed = configured.trim();
+        if (trimmed.endsWith("/")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1);
+        }
+        boolean sameOriginPath = trimmed.startsWith("/") && !trimmed.startsWith("//");
+        boolean absolute = trimmed.startsWith("http://") || trimmed.startsWith("https://");
+        if (!sameOriginPath && !absolute) {
+            throw new IllegalStateException(
+                    "kkfileview.browser-base-url 必须是同源相对路径（以 / 开头）或 http(s):// 绝对地址，当前值: " + configured);
         }
         return trimmed;
     }

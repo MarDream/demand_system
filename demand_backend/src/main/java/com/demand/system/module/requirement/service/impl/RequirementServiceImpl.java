@@ -116,6 +116,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.BiConsumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
@@ -142,6 +144,15 @@ public class RequirementServiceImpl implements RequirementService {
      * false: 使用旧查询（JSON_CONTAINS + 复杂子查询）
      */
     private static final boolean USE_V2_ARCHITECTURE = true;
+
+    /** 评论@提醒的通知类型标识（前端据此决定点击后跳转到评论处） */
+    private static final String NOTIFICATION_TYPE_COMMENT_MENTION = "requirement_comment_mention";
+
+    /** 单条评论最多触发的@提醒人数，防止刷屏 */
+    private static final int MAX_MENTION_PER_COMMENT = 50;
+
+    /** 正文中 mention 节点的 data-id 兜底解析正则 */
+    private static final Pattern MENTION_DATA_ID_PATTERN = Pattern.compile("data-id\\s*=\\s*[\"'](\\d+)[\"']");
 
     private final RequirementMapper requirementMapper;
     private final RequirementPendingTaskMapper pendingTaskMapper;
@@ -332,6 +343,7 @@ public class RequirementServiceImpl implements RequirementService {
                         voList.add(vo);
                     }
                     batchFillCanDeleteForListVO(voList, records, currentUserId);
+                    batchFillPermissionForListVO(voList, records, currentUserId);
                     batchFillUserNamesAndOrgForListVO(voList, records);
                     batchFillFollowedForListVO(voList, currentUserId);
                 }
@@ -346,6 +358,8 @@ public class RequirementServiceImpl implements RequirementService {
 
         // 正常 OFFSET 分页
         // 字段精简：列表页只需 14 个核心字段，排除 description/ccUserIds/attachments 等大字段
+        // workflowInstanceId 只用于「是否有工作流实例」的判定（决定要不要逐行解析可用动作），
+        // 不进 RequirementListVO，不破坏列表字段精简的初衷
         wrapper.select(
             Requirement::getId, Requirement::getRequirementNo, Requirement::getTitle,
             Requirement::getType, Requirement::getPriority, Requirement::getStatus,
@@ -353,7 +367,8 @@ public class RequirementServiceImpl implements RequirementService {
             Requirement::getOpsFollowId, Requirement::getMaintFollowId,
             Requirement::getIsDraft, Requirement::getCreatedAt, Requirement::getUpdatedAt,
             Requirement::getDueDate, Requirement::getAnalysisCompletedAt,
-            Requirement::getConfirmAt, Requirement::getDevelopmentCompletedAt
+            Requirement::getConfirmAt, Requirement::getDevelopmentCompletedAt,
+            Requirement::getWorkflowInstanceId
         );
 
         Page<Requirement> resultPage = requirementMapper.selectPage(page, wrapper);
@@ -367,6 +382,7 @@ public class RequirementServiceImpl implements RequirementService {
                 voList.add(vo);
             }
             batchFillCanDeleteForListVO(voList, records, currentUserId);
+            batchFillPermissionForListVO(voList, records, currentUserId);
             batchFillUserNamesAndOrgForListVO(voList, records);
             batchFillFollowedForListVO(voList, currentUserId);
         }
@@ -688,7 +704,7 @@ public class RequirementServiceImpl implements RequirementService {
     }
 
     /**
-     * BUG-01 修复: 校验需求 priority 是否在已配置的字典中
+     * 校验需求 priority 是否在已配置的字典中
      */
     private void validatePriorityAgainstDict(String priority) {
         if (!StringUtils.hasText(priority)) {
@@ -1271,7 +1287,7 @@ public class RequirementServiceImpl implements RequirementService {
             throw new BusinessException("只有创建者或管理员可以恢复需求");
         }
 
-        // 修复 P0：使用自定义 SQL 绕过 @TableLogic 拦截
+        // 使用自定义 SQL 绕过 @TableLogic 拦截
         requirementMapper.restoreById(id);
         knowledgeDocumentService.syncRequirementBody(
                 existing.getProjectId(), existing.getId(), existing.getRequirementNo(),
@@ -1294,14 +1310,38 @@ public class RequirementServiceImpl implements RequirementService {
             throw new BusinessException(400, "评论内容不能为空");
         }
 
+        // 解析被@用户：编辑器显式传参 + 正文HTML兜底解析，去重、剔除自己，并校验可见性
+        List<Long> mentionIds = resolveMentionedUserIds(requirement, dto.getMentionedUserIds(), content, userId);
+
         RequirementComment comment = new RequirementComment();
         comment.setRequirementId(requirementId);
         comment.setUserId(userId);
         comment.setContent(content);
+        comment.setMentions(mentionIds.isEmpty() ? null : mentionIds);
         requirementCommentMapper.insert(comment);
 
         recordHistory(requirementId, userId, "comment", null, "新增评论");
-        if (requirement.getCreatorId() != null && !Objects.equals(requirement.getCreatorId(), userId)) {
+
+        // @提醒：每位被@用户一条通知，携带评论ID供前端跳转定位到对应评论
+        if (!mentionIds.isEmpty()) {
+            String commenterName = userNameResolver.resolveUserName(userId, "有用户");
+            String excerpt = buildCommentExcerpt(content);
+            for (Long mentionedUserId : mentionIds) {
+                notificationService.sendNotification(
+                        mentionedUserId,
+                        "有人在评论中@了你",
+                        commenterName + " 在需求《" + requirement.getTitle() + "》的评论中@了你"
+                                + (excerpt.isEmpty() ? "" : "：" + excerpt),
+                        NOTIFICATION_TYPE_COMMENT_MENTION,
+                        requirementId,
+                        comment.getId());
+            }
+        }
+
+        // 需求创建者收到"新评论"通知；若其已被@（已收到专门的@提醒）或就是评论人本人，则不重复打扰
+        if (requirement.getCreatorId() != null
+                && !Objects.equals(requirement.getCreatorId(), userId)
+                && !mentionIds.contains(requirement.getCreatorId())) {
             notificationService.sendNotification(
                     requirement.getCreatorId(),
                     "需求新增评论",
@@ -1309,6 +1349,109 @@ public class RequirementServiceImpl implements RequirementService {
                     "requirement_comment",
                     requirementId);
         }
+    }
+
+    /**
+     * 解析并校验评论中被@的用户ID。
+     * <ol>
+     *   <li>合并两路来源：前端显式传入的 {@code mentionedUserIds} 与正文 HTML 中 mention 节点的
+     *       {@code data-id}（任一缺失都能正常工作，也能防止绕过前端伪造）；</li>
+     *   <li>去重，并剔除评论人自己（不给自己发提醒）；</li>
+     *   <li>仅保留真实存在、状态启用、且有权查看该需求的用户，避免通知发给看不到工单的人。</li>
+     * </ol>
+     */
+    private List<Long> resolveMentionedUserIds(Requirement requirement, List<Long> explicitIds,
+                                               String contentHtml, Long commenterId) {
+        LinkedHashSet<Long> candidates = new LinkedHashSet<>();
+        if (explicitIds != null) {
+            explicitIds.stream().filter(Objects::nonNull).forEach(candidates::add);
+        }
+        if (StringUtils.hasText(contentHtml)) {
+            Matcher matcher = MENTION_DATA_ID_PATTERN.matcher(contentHtml);
+            while (matcher.find()) {
+                try {
+                    candidates.add(Long.parseLong(matcher.group(1)));
+                } catch (NumberFormatException ignored) {
+                    // 非法ID直接忽略
+                }
+            }
+        }
+        candidates.remove(commenterId);
+        if (candidates.isEmpty()) {
+            return List.of();
+        }
+
+        List<User> users = userMapper.selectBatchIds(candidates);
+        Map<Long, User> userMap = users == null ? Map.of() : users.stream()
+                .filter(u -> u != null && u.getId() != null)
+                .collect(Collectors.toMap(User::getId, u -> u, (a, b) -> a));
+
+        List<Long> validIds = new ArrayList<>();
+        for (Long candidate : candidates) {
+            User user = userMap.get(candidate);
+            if (user == null || !User.STATUS_ACTIVE.equals(user.getStatus())) {
+                continue;
+            }
+            if (!canTargetUserViewRequirement(requirement, candidate)) {
+                continue;
+            }
+            validIds.add(candidate);
+            if (validIds.size() >= MAX_MENTION_PER_COMMENT) {
+                break;
+            }
+        }
+        return validIds;
+    }
+
+    /**
+     * 判断「目标用户」是否有权查看该需求（@提醒前置校验，避免通知点击后 403）。
+     * 与 {@link #canViewRequirement} 同口径，区别在于超管判定基于目标用户自身角色，而非当前登录人。
+     */
+    private boolean canTargetUserViewRequirement(Requirement requirement, Long targetUserId) {
+        if (requirement == null || targetUserId == null) {
+            return false;
+        }
+        if (Objects.equals(requirement.getCreatorId(), targetUserId)) {
+            return true;
+        }
+        if (isParticipant(requirement.getId(), targetUserId)) {
+            return true;
+        }
+        List<Long> targetRoleIds = getUserRoleIds(targetUserId);
+        if (isAssignedAsCurrentNodeApprover(requirement, targetUserId, new HashSet<>(targetRoleIds))) {
+            return true;
+        }
+        if (!targetRoleIds.isEmpty()) {
+            List<String> targetRoleCodes = roleMapper.selectBatchIds(targetRoleIds).stream()
+                    .map(Role::getCode)
+                    .filter(StringUtils::hasText)
+                    .toList();
+            if (isSuperAdmin(targetRoleCodes)) {
+                return true;
+            }
+        }
+        List<Long> visibleOrgIds = resolveVisibleOrgIds(targetUserId, false);
+        return requirement.getOrgId() != null && visibleOrgIds.contains(requirement.getOrgId());
+    }
+
+    /**
+     * 从富文本 HTML 中提取纯文本摘要，用于通知内容（超长截断）。
+     */
+    private String buildCommentExcerpt(String contentHtml) {
+        if (!StringUtils.hasText(contentHtml)) {
+            return "";
+        }
+        String text = contentHtml
+                .replaceAll("(?i)<br\\s*/?>", " ")
+                .replaceAll("<[^>]+>", " ")
+                .replace("&nbsp;", " ")
+                .replace("&amp;", "&")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&quot;", "\"")
+                .replaceAll("\\s+", " ")
+                .trim();
+        return text.length() > 60 ? text.substring(0, 60) + "…" : text;
     }
 
     @Override
@@ -2223,6 +2366,51 @@ public class RequirementServiceImpl implements RequirementService {
     }
 
     /**
+     * 为「全部需求」列表批量填充 operationType / canEdit（与 {@link #fillPermissionFields} 同源）。
+     *
+     * <p>列表「操作」列据此渲染「编辑 / 待办 / 查看」。此前 {@code RequirementListVO} 只填了 canDelete，
+     * operationType/canEdit 恒为 null，导致「全部需求」的操作列永远只显示「查看」；
+     * 而详情页按 {@code GET /v1/workflow-engine/actions/{id}} 的 canEdit/canSplit/canTransition 渲染
+     * 编辑/拆分子需求/提交，两个页面结论相反（「列表只给查看、详情却可写」）。</p>
+     *
+     * <p>成本控制：只有「非草稿且挂了工作流实例」的行才逐行解析可用动作；
+     * 无实例（历史数据 / 未提交）直接按 view 处理，不额外查库。</p>
+     */
+    private void batchFillPermissionForListVO(List<RequirementListVO> voList, List<Requirement> records, Long currentUserId) {
+        if (voList == null || voList.isEmpty() || records == null || records.isEmpty()) {
+            return;
+        }
+        for (int i = 0; i < voList.size(); i++) {
+            RequirementListVO vo = voList.get(i);
+            Requirement r = records.get(i);
+            boolean isCreator = Objects.equals(r.getCreatorId(), currentUserId);
+
+            // 草稿：仅创建人可编辑（与 fillPermissionFields 草稿分支一致）
+            if (Boolean.TRUE.equals(r.getIsDraft())) {
+                vo.setCanEdit(isCreator);
+                vo.setOperationType(isCreator ? "edit" : "view");
+                continue;
+            }
+
+            boolean canTransition = false;
+            boolean canEdit = false;
+            if (r.getWorkflowInstanceId() != null) {
+                try {
+                    WorkflowAvailableActionsDTO actions = workflowEngineService.getAvailableActions(r.getId());
+                    canTransition = Boolean.TRUE.equals(actions.getCanTransition());
+                    canEdit = Boolean.TRUE.equals(actions.getCanEdit());
+                } catch (Exception e) {
+                    // 与 fillPermissionFields 一致：工作流异常时按「只读」处理，不放大权限
+                    log.warn("Failed to get available actions for list row: id={}, userId={}, error={}",
+                            r.getId(), currentUserId, e.getMessage());
+                }
+            }
+            vo.setCanEdit(canEdit);
+            vo.setOperationType(canTransition ? "approve" : "view");
+        }
+    }
+
+    /**
      * 批量补全需求列表的关注状态。
      *
      * <p>原实现按行调用 fillFollowed，每行触发 1 次 SELECT COUNT 查询（N 次）。
@@ -2586,12 +2774,14 @@ public class RequirementServiceImpl implements RequirementService {
             return;
         }
 
-        // 判断是否有审批权限
+        // 判断是否有审批权限 / 编辑权限（两者同源：都来自工作流引擎的可用动作）
         boolean canApprove = false;
+        boolean canEdit = false;
         if (r.getWorkflowInstanceId() != null) {
             try {
                 WorkflowAvailableActionsDTO actions = workflowEngineService.getAvailableActions(r.getId());
                 canApprove = Boolean.TRUE.equals(actions.getCanTransition());
+                canEdit = Boolean.TRUE.equals(actions.getCanEdit());
 
                 // 添加详细日志用于诊断
                 log.debug("Permission check for requirement: id={}, userId={}, workflowInstanceId={}, " +
@@ -2615,22 +2805,25 @@ public class RequirementServiceImpl implements RequirementService {
                 && hasDeletePermission
                 && noTransitionHistory;
 
-        // 流转中状态：有审批权限且未参与过可审批，否则可查看
+        // 流转中状态：有审批权限且未参与过可审批，否则可查看。
+        // canEdit 取工作流引擎的节点级判定（此前硬编码 false，会让列表「编辑」按钮永远不出现，
+        // 与详情页按 workflowRuntime.canEdit 渲染的口径不一致）。
         if (canApprove) {
-            vo.setCanEdit(false);
+            vo.setCanEdit(canEdit);
             vo.setCanView(true);
             vo.setCanApprove(true);
             vo.setCanDelete(canDelete);
             vo.setOperationType("approve");
-            log.debug("Set operationType=approve for requirement: id={}, userId={}", r.getId(), userId);
+            log.debug("Set operationType=approve for requirement: id={}, userId={}, canEdit={}",
+                     r.getId(), userId, canEdit);
         } else {
-            vo.setCanEdit(false);
+            vo.setCanEdit(canEdit);
             vo.setCanView(true);
             vo.setCanApprove(false);
             vo.setCanDelete(canDelete);
             vo.setOperationType("view");
-            log.debug("Set operationType=view for requirement: id={}, userId={}, reason=no approve permission",
-                     r.getId(), userId);
+            log.debug("Set operationType=view for requirement: id={}, userId={}, canEdit={}, reason=no approve permission",
+                     r.getId(), userId, canEdit);
         }
     }
 

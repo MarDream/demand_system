@@ -163,7 +163,7 @@
               >
                 <template v-if="col.key === 'realName'" #default="{ row }">
                   <div class="member-cell">
-                    <el-avatar :size="34" :src="userAvatarUrl(row) || undefined">{{ avatarText(row) }}</el-avatar>
+                    <UserAvatar :size="34" :avatar="row.avatar" :name="row.realName || row.username" />
                     <div class="member-info">
                       <div class="member-name">
                         {{ row.realName || row.username }}
@@ -439,7 +439,7 @@
                 >
                   <template v-if="col.key === 'realName'" #default="{ row }">
                     <div class="member-cell">
-                      <el-avatar :size="34" :src="userAvatarUrl(row) || undefined">{{ avatarText(row) }}</el-avatar>
+                      <UserAvatar :size="34" :avatar="row.avatar" :name="row.realName || row.username" />
                       <div class="member-info">
                         <div class="member-name">{{ row.realName || row.username }}</div>
                         <div class="member-sub">{{ row.jobNumber || row.username }}</div>
@@ -627,9 +627,12 @@
         <!-- 头像：编辑态可设置（预设选择 / 上传裁剪） -->
         <el-form-item v-if="isEdit" label="头像">
           <div class="avatar-edit-block">
-            <el-avatar :size="56" :src="editAvatarUrl || undefined" class="avatar-edit-block__preview">
-              {{ (form.realName || '?').slice(0, 1) }}
-            </el-avatar>
+            <UserAvatar
+              :size="56"
+              :avatar="form.avatar"
+              :name="form.realName"
+              class="avatar-edit-block__preview"
+            />
             <div class="avatar-edit-block__actions">
               <el-button size="small" @click="avatarEditVisible = true">设置头像</el-button>
               <el-button v-if="form.avatar" size="small" text type="danger" @click="form.avatar = ''">
@@ -1146,7 +1149,6 @@ import RoleSelect from '@/components/common/RoleSelect.vue'
 import InviteMemberDialog from './components/InviteMemberDialog.vue'
 import ApplicationRecordsDialog from './components/ApplicationRecordsDialog.vue'
 import AvatarEditorDialog from './components/AvatarEditorDialog.vue'
-import { resolveAvatarUrl } from '@/utils/presetAvatars'
 import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import { formatDate as formatDateTime } from '@/utils/format'
 import { getRoleList } from '@/api/modules/role'
@@ -1157,6 +1159,7 @@ import { useUserStore } from '@/stores/modules/user'
 import { useCollapsibleSidebar } from '@/composables/useCollapsibleSidebar'
 import { usePermission } from '@/composables/usePermission'
 import { loadOrgTree, normalizeArray } from '@/composables/useOrgTree'
+import UserAvatar from '@/components/common/UserAvatar.vue'
 import Sortable, { type SortableEvent } from 'sortablejs'
 
 interface FlatOrgNode {
@@ -1355,8 +1358,6 @@ const form = reactive<UserForm>({
 
 // ── 编辑成员-头像设置 ──
 const avatarEditVisible = ref(false)
-/** 编辑弹窗头像预览地址（preset: 前缀转 data URL） */
-const editAvatarUrl = computed(() => resolveAvatarUrl(form.avatar))
 
 /** 头像弹窗确认：preset 直接写值；上传裁剪结果由弹窗内先裁剪、这里接收 Blob 再上传 */
 async function handleEditAvatarConfirm(payload: { kind: 'preset'; value: string } | { kind: 'crop'; blob: Blob }) {
@@ -2843,15 +2844,6 @@ function orgName(id?: number | null) {
   return found?.name || '-'
 }
 
-
-function avatarText(row: UserInfo) {
-  return (row.realName || row.username || '?').slice(0, 1)
-}
-
-/** 列表头像地址解析：preset:xxx → SVG data URL；URL/路径原样；空回退首字 */
-function userAvatarUrl(row: UserInfo) {
-  return resolveAvatarUrl(row.avatar)
-}
 
 function maskPhone(phone?: string | null) {
   if (!phone) return '-'

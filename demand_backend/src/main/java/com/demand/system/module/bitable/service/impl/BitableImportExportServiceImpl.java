@@ -532,6 +532,7 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
                         try {
                             value.setValueNumber(new BigDecimal(text.trim()));
                         } catch (NumberFormatException ignored) {
+                            // 文本无法解析为数字时保留原文本
                         }
                     }
                 }

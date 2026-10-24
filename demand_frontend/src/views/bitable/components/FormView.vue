@@ -132,7 +132,7 @@
           >
             <el-option v-for="u in scopedUserOptions(field)" :key="u.id" :label="u.realName" :value="u.id">
               <div class="form-view__user-option">
-                <el-avatar :size="20" :src="u.avatar || undefined">{{ u.realName.slice(0, 1) }}</el-avatar>
+                <UserAvatar :size="20" :avatar="u.avatar" :name="u.realName" />
                 <span>{{ u.realName }}</span>
                 <span class="form-view__user-option__username">{{ u.username }}</span>
               </div>
@@ -191,6 +191,7 @@ import {
 } from '@/utils/bitableFieldConfig'
 import LinkFieldSelector from './LinkFieldSelector.vue'
 import RichTextEditor from '@/components/rich/RichTextEditor.vue'
+import UserAvatar from '@/components/common/UserAvatar.vue'
 import { useUserStore } from '@/stores/modules/user'
 import { allUsers, ensureUsersLoaded, filterUsersByScope, type UserOption } from '@/composables/useUserOptions'
 

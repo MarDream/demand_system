@@ -56,6 +56,7 @@ import com.demand.system.module.workflow.mapper.WorkflowTransitionRecordMapper;
 import com.demand.system.module.workflow.mapper.WorkflowNodeMapper;
 import com.demand.system.module.workflow.mapper.WorkflowVersionMapper;
 import com.demand.system.module.workflow.mapper.NodeStatusMapper;
+import com.demand.system.module.workflow.support.TransitionHistoryFilter;
 import com.demand.system.module.workflow.support.WorkflowNodeUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -341,10 +342,9 @@ public class WorkflowEngineService {
         notificationService.notifyApproversOnTransition(requirement, targetNode, operatorId, instance.getId());
         initCountersignIfNeeded(instance.getId(), targetNode, requirement);
 
-        // ====== 待办任务同步（提交时无 selectedAssigneeId，按角色/角色组/组织分配）======
+        // --- 待办任务同步（提交时无 selectedAssigneeId，按角色/角色组/组织分配）---
         pendingTaskSyncService.syncPendingTasks(requirementId, null);
         ccService.process(requirement, instance, context, startNode.getNodeId(), targetNode.getNodeId(), operatorId);
-        // ====== 待办任务同步 END ======
     }
 
     @Transactional
@@ -400,7 +400,7 @@ public class WorkflowEngineService {
                 validateApprovalEvaluation(currentNode, request.getRating(), request.getRatingDimensions(), request.getComment());
             }
         }
-        // 修复 P2：按节点 properties.requireComment 校验意见必填
+        // 按节点 properties.requireComment 校验意见必填
         if (isCommentRequired(currentNode)
                 && (request.getComment() == null || request.getComment().trim().isEmpty())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "当前节点要求必须填写意见");
@@ -418,7 +418,7 @@ public class WorkflowEngineService {
 
         closeCurrentTransition(instance.getId());
 
-        // 修复：检测代审批行为。SUPER_ADMIN 不在节点 assignee 中时，action 标记为 proxy_approve
+        // 检测代审批行为。SUPER_ADMIN 不在节点 assignee 中时，action 标记为 proxy_approve
         String resolvedAction = request.getAction() != null ? request.getAction() : "submit";
         boolean isProxyApproval = isProxyApproval(currentNode, operatorId);
         if (isProxyApproval && !"cancel".equals(resolvedAction) && !"rollback".equals(resolvedAction)) {
@@ -485,16 +485,15 @@ public class WorkflowEngineService {
         // 节点消息提醒开关开启时，向已审批路径 / 实际处理用户推送站内消息
         notificationService.notifyApproversOnTransition(requirement, targetNode, operatorId, instance.getId());
 
-        // ====== 知识库自动入库：流转附件归集到工作流绑定的知识库 ======
+        // --- 知识库自动入库：流转附件归集到工作流绑定的知识库 ---
         autoIngestTransitionAttachments(instance, request, requirement, operatorId);
-        // ====== 知识库自动入库 END ======
 
         instance = instanceMapper.selectById(instance.getId());
         parallelBranchService.initParallelBranchesIfNeeded(instance, context, request.getToNodeId(), requirement);
         parallelBranchService.afterTransition(instance, context, instance.getPreviousNodeId(), request.getToNodeId(), requirement);
         initCountersignIfNeeded(instance.getId(), targetNode, requirement);
 
-        // ====== 待办任务同步 ======
+        // --- 待办任务同步 ---
         requirementMapper.update(null, new LambdaUpdateWrapper<Requirement>()
             .eq(Requirement::getId, request.getRequirementId())
             .set(Requirement::getAssigneeId, request.getSelectedAssigneeId()));
@@ -504,7 +503,6 @@ public class WorkflowEngineService {
             ccService.process(requirement, latestInstance, context, latestInstance.getPreviousNodeId(),
                     latestInstance.getCurrentNodeId(), operatorId);
         }
-        // ====== 待办任务同步 END ======
     }
 
     private void validateSelectedAssignee(WorkflowNode targetNode, Requirement requirement,
@@ -1052,7 +1050,7 @@ public class WorkflowEngineService {
         actions.setCurrentNodeStatusCode(currentNodeStatusCode);
         actions.setCurrentNodeStatusName(resolveNodeStatusName(currentNodeStatusCode));
         actions.setLockVersion(instance.getLockVersion());
-        // 修复 P2：返回当前节点是否必填意见，前端按此显示必填提示
+        // 返回当前节点是否必填意见，前端按此显示必填提示
         actions.setCurrentNodeRequireComment(isCommentRequired(currentNode));
         actions.setCurrentNodeRequireAttachment(isAttachmentRequired(currentNode));
 
@@ -1390,7 +1388,7 @@ public class WorkflowEngineService {
     }
 
     /**
-     * 修复：判断当前操作是否属于"代审批"。
+     * 判断当前操作是否属于"代审批"。
      * 当 SUPER_ADMIN 提交审批节点但其本身不在节点 assignee 列表中时，
      * 标记为代审批（proxy_approve），便于审计追踪。
      */
@@ -1466,7 +1464,7 @@ public class WorkflowEngineService {
     }
 
     /**
-     * 修复 P2：判断当前节点是否要求必填审批意见。
+     * 判断当前节点是否要求必填审批意见。
      * 读取节点 properties.requireComment。
      */
     private boolean isCommentRequired(WorkflowNode currentNode) {
@@ -1582,12 +1580,22 @@ public class WorkflowEngineService {
         return resolveEvaluationConfig(version, node);
     }
 
+    /**
+     * 剔除「时间不早于任一真实流转」的草稿记录，规则见 {@link TransitionHistoryFilter}。
+     */
+    private List<WorkflowInstanceTransition> dropStaleDraftTransitions(List<WorkflowInstanceTransition> transitions) {
+        return TransitionHistoryFilter.dropStaleDraftTransitions(transitions);
+    }
+
     public List<TransitionVO> getTransitionHistory(Long requirementId) {
         List<WorkflowInstanceTransition> transitions = transitionMapper.selectList(
             new LambdaQueryWrapper<WorkflowInstanceTransition>()
                 .eq(WorkflowInstanceTransition::getRequirementId, requirementId)
                 .orderByAsc(WorkflowInstanceTransition::getCreatedAt)
         );
+
+        // 草稿记录只有在「确实早于全部真实流转」时才有展示意义，详见方法注释
+        transitions = dropStaleDraftTransitions(transitions);
 
         // 收集所有需要补全的字段：操作人姓名、附件元信息
         Set<Long> operatorIds = new LinkedHashSet<>();

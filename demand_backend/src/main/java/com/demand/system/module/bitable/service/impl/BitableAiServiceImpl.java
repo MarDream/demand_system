@@ -56,7 +56,7 @@ public class BitableAiServiceImpl implements BitableAiService {
         this.rabbitTemplate = rabbitTemplate;
     }
 
-    // ==================== Chat Provider 解析 ====================
+    // --- Chat Provider 解析 ---
 
     private LlmGatewayConfig.Provider resolveChatProvider() {
         LlmModelResolver.ResolvedModel resolved = llmModelResolver.resolveFirst(LlmApplicationCode.BITABLE_AI);
@@ -114,7 +114,7 @@ public class BitableAiServiceImpl implements BitableAiService {
         return sb.toString();
     }
 
-    // ==================== AI 建表 ====================
+    // --- AI 建表 ---
 
     @Override
     public AiBuildTableResult previewBuildTable(String description) {
@@ -201,7 +201,7 @@ public class BitableAiServiceImpl implements BitableAiService {
         return tableId;
     }
 
-    // ==================== AI 智能填充 ====================
+    // --- AI 智能填充 ---
 
     @Override
     public Object fillCell(Long tableId, Long recordId, Long fieldId, Long userId) {
@@ -315,7 +315,7 @@ public class BitableAiServiceImpl implements BitableAiService {
                 tableId, fieldId, records.size(), succeeded, failed);
     }
 
-    // ==================== AI 对话式查询 ====================
+    // --- AI 对话式查询 ---
 
     @Override
     public AiQueryResult query(Long baseId, Long tableId, String question, Long userId) {
@@ -343,7 +343,7 @@ public class BitableAiServiceImpl implements BitableAiService {
             fieldListBuilder.append(String.format("- %s (类型: %s, ID: %s)\n", f.getName(), f.getFieldType(), f.getId()));
         }
 
-        // 读取所有记录（Phase 3 简化：取前100条）
+        // 读取所有记录（仅取前 100 条）
         PageResult<BitableRecordVO> pageResult = recordService.listRecords(queryTableId, 1, 100);
         List<BitableRecordVO> records = pageResult.getList();
 
@@ -429,7 +429,7 @@ public class BitableAiServiceImpl implements BitableAiService {
         }
     }
 
-    // ==================== AI 自动分类 ====================
+    // --- AI 自动分类 ---
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -437,7 +437,7 @@ public class BitableAiServiceImpl implements BitableAiService {
         // 读取字段列表
         List<BitableFieldVO> fields = fieldService.listFields(tableId);
 
-        // 读取所有记录（Phase 3 取前200条）
+        // 读取所有记录（仅取前 200 条）
         PageResult<BitableRecordVO> pageResult = recordService.listRecords(tableId, 1, 200);
         List<BitableRecordVO> records = pageResult.getList();
 
@@ -537,11 +537,11 @@ public class BitableAiServiceImpl implements BitableAiService {
         }
     }
 
-    // ==================== AI 自动摘要 ====================
+    // --- AI 自动摘要 ---
 
     @Override
     public void summarizeRecords(Long tableId, Long sourceFieldId, String targetFieldName, Long userId) {
-        // 读取所有记录（Phase 3 取前200条）
+        // 读取所有记录（仅取前 200 条）
         PageResult<BitableRecordVO> pageResult = recordService.listRecords(tableId, 1, 200);
         List<BitableRecordVO> records = pageResult.getList();
 
@@ -588,7 +588,7 @@ public class BitableAiServiceImpl implements BitableAiService {
         }
     }
 
-    // ==================== AI 自然语言筛选 ====================
+    // --- AI 自然语言筛选 ---
 
     /** 筛选 UI 不支持的复杂类型不参与 AI 生成 */
     private static final Set<String> FILTER_EXCLUDED_TYPES = Set.of(
@@ -612,6 +612,7 @@ public class BitableAiServiceImpl implements BitableAiService {
                 tableName = table.getName();
             }
         } catch (Exception ignored) {
+            // 表名获取失败不影响筛选生成，按空表名继续
         }
         String recordNoun = "记录（本表名：" + tableName + "）";
 
@@ -838,6 +839,7 @@ public class BitableAiServiceImpl implements BitableAiService {
             try {
                 return objectMapper.readTree(s.substring(start, end + 1));
             } catch (Exception ignored) {
+                // 片段仍无法解析时返回 null
             }
         }
         return null;

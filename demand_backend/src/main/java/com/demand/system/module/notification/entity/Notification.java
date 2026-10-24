@@ -22,6 +22,9 @@ public class Notification {
 
     private Long relatedId;
 
+    /** 关联评论ID（@提醒场景：点击通知跳转到对应评论处定位用） */
+    private Long commentId;
+
     private Integer isRead;
 
     @TableField(fill = FieldFill.INSERT)
@@ -73,6 +76,14 @@ public class Notification {
 
     public void setRelatedId(Long relatedId) {
         this.relatedId = relatedId;
+    }
+
+    public Long getCommentId() {
+        return commentId;
+    }
+
+    public void setCommentId(Long commentId) {
+        this.commentId = commentId;
     }
 
     public Integer getIsRead() {

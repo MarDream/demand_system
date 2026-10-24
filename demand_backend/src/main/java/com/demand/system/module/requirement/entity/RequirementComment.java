@@ -5,11 +5,13 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Objects;
 
-@TableName("requirement_comments")
+@TableName(value = "requirement_comments", autoResultMap = true)
 public class RequirementComment {
 
     @TableId(type = IdType.AUTO)
@@ -20,6 +22,10 @@ public class RequirementComment {
     private Long userId;
 
     private String content;
+
+    /** 评论中被@的用户ID列表（@提醒通知由此驱动） */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private List<Long> mentions;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
@@ -54,6 +60,14 @@ public class RequirementComment {
 
     public void setContent(String content) {
         this.content = content;
+    }
+
+    public List<Long> getMentions() {
+        return mentions;
+    }
+
+    public void setMentions(List<Long> mentions) {
+        this.mentions = mentions;
     }
 
     public LocalDateTime getCreatedAt() {
