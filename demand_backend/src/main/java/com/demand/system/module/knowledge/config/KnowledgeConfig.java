@@ -7,17 +7,17 @@ import org.springframework.context.annotation.Configuration;
 @ConfigurationProperties(prefix = "knowledge")
 public class KnowledgeConfig {
 
-    // ==== Document chunking ====
+    // --- 文档分片 ---
     private int chunkSize = 512;
     private int chunkOverlap = 128;
-    /** "char" | "token" - chunking strategy */
+    /** 分片策略："char" 或 "token"。 */
     private String chunkingMode = "char";
-    /** token mode: max tokens per chunk */
+    /** token 模式：单分片的最大 token 数。 */
     private int maxTokens = 512;
-    /** token mode: overlap tokens between chunks */
+    /** token 模式：相邻分片的重叠 token 数。 */
     private int overlapTokens = 128;
 
-    // ==== Search ====
+    // --- 检索 ---
     private int searchTopK = 20;
     /** 进入 LLM 上下文的片段最低分数（rerank/语义相关性量纲），低分尾部不参与回答生成 */
     private double contextMinScore = 0.15;
@@ -32,29 +32,29 @@ public class KnowledgeConfig {
     /** 注入 LLM 的参考资料字符预算，超出时丢弃低分尾部片段 */
     private int contextMaxChars = 24000;
 
-    // ==== Multi-hop event expansion ====
-    /** max multi-hop expansion depth */
+    // --- 多跳事件扩展 ---
+    /** 多跳扩展的最大深度。 */
     private int maxHops = 1;
-    /** max candidate events after expansion */
+    /** 扩展后候选事件的最大数量。 */
     private int maxEvents = 100;
-    /** top-K entities to recall from query */
+    /** 从 query 召回的实体 top-K。 */
     private int entityTopK = 20;
-    /** minimum vector similarity threshold (0.0 ~ 1.0) */
+    /** 向量相似度的最低阈值（0.0 ~ 1.0）。 */
     private double similarityThreshold = 0.4;
 
-    // ==== Rerank ====
-    /** candidates sent to reranker */
+    // --- 重排序 ---
+    /** 送入 reranker 的候选数量。 */
     private int rerankTopK = 50;
-    /** rerank call timeout in milliseconds */
+    /** rerank 调用超时（毫秒）。 */
     private int rerankTimeoutMs = 15000;
-    /** enable LLM rerank (standard mode) */
+    /** 是否启用 LLM 精排（standard 模式）。 */
     private boolean enableLlmRerank = false;
 
-    // ==== Embedding ====
+    // --- Embedding ---
     private int embeddingBatchSize = 16;
     private long embeddingDelayMs = 100;
 
-    // ==== Milvus batch insert ====
+    // --- Milvus 批量写入 ---
     private int milvusInsertBatchSize = 200;
 
     public int getChunkSize() {

@@ -1173,7 +1173,7 @@ async function submitAddField() {
       data.aiPrompt = addFieldBase.value.aiPrompt
     }
     await createField(activeTableId.value, data)
-    // 走查 P2-3：新列在表格中即时可见，不再弹顶部 toast（遮挡工具栏）
+    // 新列在表格中即时可见，不再弹顶部 toast（会遮挡工具栏）。
     await loadFields(activeTableId.value)
     addFieldDialogVisible.value = false
   } catch (e: any) {
@@ -1749,7 +1749,7 @@ function handleFieldConfigClose() {
   editingFieldId.value = null
 }
 
-// ===== 字段隐藏 / 恢复（当前视图）=====
+// --- 字段隐藏 / 恢复（当前视图） ---
 // 隐藏状态持久化到当前视图的 config.hiddenFieldIds（各视图记录独立，按视图生效）。
 // visibleFields 已按它过滤，当前视图的所有展示形态（网格/看板/日历等）一致遵循。
 function isFieldHiddenInView(fieldId: number) {

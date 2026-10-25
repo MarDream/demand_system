@@ -73,9 +73,6 @@ public class OrgLocalCache {
         }
     }
 
-    /**
-     * 批量获取组织
-     */
     public Map<Long, SysOrgVO> batchGetOrgs(Collection<Long> ids) {
         if (ids == null || ids.isEmpty()) return Collections.emptyMap();
 
@@ -115,9 +112,6 @@ public class OrgLocalCache {
         }
     }
 
-    /**
-     * 使缓存失效
-     */
     public void invalidate(Long id) {
         caffeineCache.invalidate(id);
         try {

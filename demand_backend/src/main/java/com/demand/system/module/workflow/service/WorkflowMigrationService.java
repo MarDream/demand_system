@@ -87,19 +87,15 @@ public class WorkflowMigrationService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "目标版本必须是已启用状态");
         }
 
-        // 加载两个版本的节点
         List<WorkflowNode> fromNodes = workflowRuntimeLoader.loadNodes(fromVersion.getId());
         List<WorkflowNode> toNodes = workflowRuntimeLoader.loadNodes(toVersion.getId());
 
-        // 自动建议映射
         List<MigrationPlanVO.NodeMappingVO> mapping = buildAutoSuggestedMapping(fromNodes, toNodes);
 
-        // 统计待迁移实例数
         Long runningCount = workflowInstanceMapper.selectCount(new LambdaQueryWrapper<WorkflowInstance>()
                 .eq(WorkflowInstance::getWorkflowVersionId, fromVersion.getId())
                 .eq(WorkflowInstance::getStatus, "running"));
 
-        // 保存计划
         WorkflowMigrationPlan plan = new WorkflowMigrationPlan();
         plan.setFromVersionId(fromVersion.getId());
         plan.setToVersionId(toVersion.getId());
@@ -116,9 +112,6 @@ public class WorkflowMigrationService {
         return toPlanVO(plan, fromVersion, toVersion, mapping);
     }
 
-    /**
-     * 更新节点映射配置
-     */
     @Transactional(rollbackFor = Exception.class)
     public MigrationPlanVO updateNodeMapping(Long planId, List<WorkflowMigrationPlan.NodeMappingItem> nodeMapping) {
         WorkflowMigrationPlan plan = workflowMigrationPlanMapper.selectById(planId);
@@ -146,25 +139,19 @@ public class WorkflowMigrationService {
         return toPlanVO(plan, fromVersion, toVersion, convertToVOMapping(nodeMapping));
     }
 
-    /**
-     * 预检迁移计划
-     */
     public MigrationPreviewVO previewMigration(Long planId) {
         WorkflowMigrationPlan plan = workflowMigrationPlanMapper.selectById(planId);
         if (plan == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "迁移计划不存在");
         }
 
-        // 构建映射查找表
         Map<String, WorkflowMigrationPlan.NodeMappingItem> mappingMap = plan.getNodeMapping().stream()
                 .collect(Collectors.toMap(WorkflowMigrationPlan.NodeMappingItem::getFromNodeId, m -> m, (a, b) -> a));
 
-        // 查找所有运行中实例
         List<WorkflowInstance> instances = workflowInstanceMapper.selectList(new LambdaQueryWrapper<WorkflowInstance>()
                 .eq(WorkflowInstance::getWorkflowVersionId, plan.getFromVersionId())
                 .eq(WorkflowInstance::getStatus, "running"));
 
-        // 加载旧版本节点名称
         WorkflowGraphContext fromContext = workflowRuntimeLoader.loadContext(plan.getFromVersionId());
 
         MigrationPreviewVO preview = new MigrationPreviewVO();
@@ -214,17 +201,14 @@ public class WorkflowMigrationService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "只有草稿或待执行状态的计划才能执行");
         }
 
-        // 更新状态为执行中
         plan.setStatus("executing");
         plan.setStartedAt(LocalDateTime.now());
         workflowMigrationPlanMapper.updateById(plan);
 
-        // 构建映射查找表
         Map<String, WorkflowMigrationPlan.NodeMappingItem> mappingMap = plan.getNodeMapping().stream()
                 .filter(m -> StringUtils.hasText(m.getToNodeId()))
                 .collect(Collectors.toMap(WorkflowMigrationPlan.NodeMappingItem::getFromNodeId, m -> m, (a, b) -> a));
 
-        // 查找所有运行中实例
         List<WorkflowInstance> instances = workflowInstanceMapper.selectList(new LambdaQueryWrapper<WorkflowInstance>()
                 .eq(WorkflowInstance::getWorkflowVersionId, plan.getFromVersionId())
                 .eq(WorkflowInstance::getStatus, "running"));
@@ -249,7 +233,6 @@ public class WorkflowMigrationService {
             }
         }
 
-        // 更新计划状态
         plan.setStatus(failedCount == 0 ? "completed" : (successCount > 0 ? "completed" : "failed"));
         plan.setMigratedCount(successCount);
         plan.setFailedCount(failedCount);
@@ -335,9 +318,6 @@ public class WorkflowMigrationService {
 
     // --- 查询 ---
 
-    /**
-     * 查询迁移计划列表
-     */
     public List<MigrationPlanVO> listMigrationPlans(Long projectId) {
         LambdaQueryWrapper<WorkflowMigrationPlan> wrapper = new LambdaQueryWrapper<>();
         if (projectId != null) {
@@ -355,9 +335,6 @@ public class WorkflowMigrationService {
         return result;
     }
 
-    /**
-     * 查询迁移计划详情
-     */
     public MigrationPlanVO getMigrationPlan(Long planId) {
         WorkflowMigrationPlan plan = workflowMigrationPlanMapper.selectById(planId);
         if (plan == null) {
@@ -368,18 +345,12 @@ public class WorkflowMigrationService {
         return toPlanVO(plan, fromVersion, toVersion, convertToVOMapping(plan.getNodeMapping()));
     }
 
-    /**
-     * 查询迁移日志
-     */
     public List<WorkflowMigrationLog> listMigrationLogs(Long planId) {
         return workflowMigrationLogMapper.selectList(new LambdaQueryWrapper<WorkflowMigrationLog>()
                 .eq(planId != null, WorkflowMigrationLog::getPlanId, planId)
                 .orderByDesc(WorkflowMigrationLog::getCreatedAt));
     }
 
-    /**
-     * 查询版本关联的运行中工单数量
-     */
     public Long countRunningInstances(Long versionId) {
         return workflowInstanceMapper.selectCount(
                 new LambdaQueryWrapper<WorkflowInstance>()
@@ -515,7 +486,6 @@ public class WorkflowMigrationService {
             vo.setCreatedAt(plan.getCreatedAt().toString());
         }
 
-        // 填充操作人姓名
         if (plan.getOperatorId() != null) {
             try {
                 SysUser operator = sysUserMapper.selectById(plan.getOperatorId());

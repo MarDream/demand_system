@@ -199,7 +199,7 @@ import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import { usePagedList } from '@/composables/usePagedList'
 import { resolveErrorMessage } from '@/utils/error'
 
-// ── 列表字段设置 ──
+// --- 列表字段设置 ---
 const iterationAllColumns: ColumnDef[] = [
   { key: 'name', label: '迭代名称', group: '基础字段', minWidth: 180 },
   { key: 'startDate', label: '开始日期', group: '基础字段', width: 120 },

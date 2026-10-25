@@ -18,7 +18,7 @@ export const useAppStore = defineStore('app', () => {
 
   const sidebarWidth = ref(DEFAULT_SIDEBAR_WIDTH)
 
-  // Restore from localStorage
+  // 从 localStorage 恢复上次的侧边栏状态。
   const saved = localStorage.getItem('sidebar-opened')
   if (saved !== null) sidebarOpened.value = saved === 'true'
   const savedWidth = localStorage.getItem('sidebar-width')

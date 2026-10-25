@@ -184,8 +184,7 @@ function parseStreamMessage(payload: string) {
   }
 }
 
-// ==================== 快捷提问 API ====================
-
+// --- 快捷提问 API ---
 export interface QuickQuestion {
   id: number
   category: 'manual_curated' | 'auto_extracted' | 'ai_suggested'

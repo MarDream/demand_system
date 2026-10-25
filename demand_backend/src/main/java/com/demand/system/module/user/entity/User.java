@@ -10,30 +10,21 @@ import java.util.Objects;
 @TableName(value = "users", autoResultMap = true)
 public class User {
 
-    /** 用户状态：激活 */
     public static final String STATUS_ACTIVE = "active";
 
-    /** 用户状态：未激活 */
     public static final String STATUS_INACTIVE = "inactive";
 
-    /** 员工类型：全职 */
     public static final String EMPLOYEE_TYPE_FULL_TIME = "full_time";
-    /** 员工类型：兼职 */
     public static final String EMPLOYEE_TYPE_PART_TIME = "part_time";
-    /** 员工类型：实习 */
     public static final String EMPLOYEE_TYPE_INTERN = "intern";
     /** 员工类型：劳务派遣 */
     public static final String EMPLOYEE_TYPE_DISPATCH = "dispatch";
-    /** 员工类型：其他 */
     public static final String EMPLOYEE_TYPE_OTHER = "other";
 
-    /** 用工状态：试用期 */
     public static final String WORK_STATUS_PROBATION = "probation";
     /** 用工状态：已转正 */
     public static final String WORK_STATUS_CONFIRMED = "confirmed";
-    /** 用工状态：待离职 */
     public static final String WORK_STATUS_PENDING_RESIGN = "pending_resign";
-    /** 用工状态：已离职 */
     public static final String WORK_STATUS_RESIGNED = "resigned";
 
     @TableId(type = IdType.AUTO)
@@ -67,10 +58,8 @@ public class User {
     /** 用工状态(试用期/已转正/待离职/已离职) */
     private String workStatus;
 
-    /** 入职日期 */
     private LocalDate hireDate;
 
-    /** 生日 */
     private LocalDate birthday;
 
     @TableField(fill = FieldFill.INSERT)

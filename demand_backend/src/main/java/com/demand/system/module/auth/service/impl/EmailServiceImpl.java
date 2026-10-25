@@ -6,9 +6,6 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 
-/**
- * 邮件服务实现类
- */
 @Service
 public class EmailServiceImpl implements EmailService {
 
@@ -69,7 +66,6 @@ public class EmailServiceImpl implements EmailService {
         } catch (Exception e) {
             log.error("发送验证码邮件失败: to={}, type={}, error={}", to, type, e.getMessage(), e);
             // 不抛出异常，避免影响接口返回
-            // 在实际生产环境中，邮件服务器配置正确后，这里应该抛出异常
         }
     }
 

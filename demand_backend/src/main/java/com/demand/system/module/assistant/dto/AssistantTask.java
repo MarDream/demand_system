@@ -51,9 +51,6 @@ public class AssistantTask {
     public List<TaskLog> getLogs() { return logs; }
     public void setLogs(List<TaskLog> logs) { this.logs = logs; }
 
-    /**
-     * 标记任务开始运行，追加日志。
-     */
     public void start(String message) {
         this.status = "running";
         this.startedAt = Instant.now().toEpochMilli();
@@ -62,9 +59,6 @@ public class AssistantTask {
         }
     }
 
-    /**
-     * 标记任务成功完成。
-     */
     public void complete(String message) {
         this.status = "completed";
         this.completedAt = Instant.now().toEpochMilli();
@@ -73,18 +67,12 @@ public class AssistantTask {
         }
     }
 
-    /**
-     * 标记任务失败。
-     */
     public void fail(String message) {
         this.status = "failed";
         this.completedAt = Instant.now().toEpochMilli();
         log("error", message != null ? message : "任务失败");
     }
 
-    /**
-     * 追加一条过程日志。
-     */
     public void log(String level, String message) {
         if (message == null || message.isBlank()) return;
         this.logs.add(new TaskLog(Instant.now().toEpochMilli(), level, message));

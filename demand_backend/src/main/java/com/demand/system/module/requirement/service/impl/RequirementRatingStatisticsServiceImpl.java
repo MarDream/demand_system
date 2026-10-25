@@ -55,7 +55,6 @@ public class RequirementRatingStatisticsServiceImpl implements RequirementRating
 
         vo.setTotalEvaluations((long) evaluations.size());
 
-        // 整体平均
         double overall = evaluations.stream()
                 .filter(e -> e.getRating() != null)
                 .mapToInt(RequirementApprovalEvaluation::getRating)
@@ -63,16 +62,12 @@ public class RequirementRatingStatisticsServiceImpl implements RequirementRating
                 .orElse(0.0);
         vo.setOverallAverage(round(overall));
 
-        // 维度平均
         vo.setDimensionAverages(getDimensionAverages(projectId, startDate, endDate));
 
-        // 评分分布
         vo.setDistribution(getRatingDistribution(projectId, startDate, endDate));
 
-        // 节点平均
         vo.setNodeAverages(getNodeAverageRatings(projectId, null, startDate, endDate));
 
-        // 低分需求
         vo.setTopLowRated(getLowRatingRequirements(projectId, startDate, endDate, 3, 10));
 
         return vo;
@@ -148,7 +143,6 @@ public class RequirementRatingStatisticsServiceImpl implements RequirementRating
         if (limit == null) limit = 10;
         final int finalThreshold = threshold;
         List<RequirementApprovalEvaluation> evaluations = queryEvaluations(projectId, null, startDate, endDate);
-        // 过滤低分
         List<RequirementApprovalEvaluation> low = evaluations.stream()
                 .filter(e -> e.getRating() != null && e.getRating() < finalThreshold)
                 .sorted(Comparator.comparing(RequirementApprovalEvaluation::getCreatedAt).reversed())

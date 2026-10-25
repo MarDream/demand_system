@@ -25,6 +25,5 @@ public interface CustomFieldConfigService {
     /** 软删除字段。存在值引用时提示，不物理删除。 */
     Result<Void> deleteField(Long id);
 
-    /** 批量排序。 */
     Result<List<CustomField>> sortFields(List<SortItemDTO> items);
 }

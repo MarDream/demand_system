@@ -32,7 +32,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
- * ADR-002 工作流版本快照优化 — 集成测试
+ * 工作流版本快照 — 集成测试
  *
  * 覆盖范围：
  * 1. 定时对齐已移除（确认无残留调用）
@@ -62,7 +62,7 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
-    // ==================== 辅助方法 ====================
+    // --- 辅助方法 ---
 
     @BeforeEach
     void setUpMockMvc() {
@@ -207,7 +207,7 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
         return UUID.randomUUID().toString().substring(0, 8);
     }
 
-    // ==================== Phase 1: 定时对齐已移除 ====================
+    // --- Phase 1: 定时对齐已移除 ---
 
     @Test
     void scheduledAlignmentTask_shouldBeDeleted() throws Exception {
@@ -234,7 +234,7 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
                 .andExpect(status().isNotFound());
     }
 
-    // ==================== Phase 2: 迁移计划 CRUD ====================
+    // --- Phase 2: 迁移计划 CRUD ---
 
     @Test
     @Transactional
@@ -367,7 +367,7 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.data.status").value("draft"));
     }
 
-    // ==================== Phase 3: 节点映射配置 ====================
+    // --- Phase 3: 节点映射配置 ---
 
     @Test
     @Transactional
@@ -469,7 +469,7 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
                 .andExpect(status().isBadRequest());
     }
 
-    // ==================== Phase 4: 预检 ====================
+    // --- Phase 4: 预检 ---
 
     @Test
     @Transactional
@@ -521,7 +521,7 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.data.needManualCount").exists());
     }
 
-    // ==================== Phase 5: 执行迁移 ====================
+    // --- Phase 5: 执行迁移 ---
 
     @Test
     @Transactional
@@ -648,15 +648,13 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
 
-        // 验证只有部分实例被迁移
+        // 仅统计仍运行在 v2 上的实例数：c 节点因未配置映射被跳过，流程不应报错
         Long runningOnV2 = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM workflow_instances WHERE workflow_version_id = ? AND status = 'running'",
                 Long.class, v2Id);
-        // 至少有一个实例在 v2 上（如果之前有的话），或者全部还在 v1
-        // 关键是：c 节点的实例因为没有映射而跳过，不会报错
     }
 
-    // ==================== Phase 6: 版本激活兼容性检查 ====================
+    // --- Phase 6: 版本激活兼容性检查 ---
 
     @Test
     @Transactional
@@ -737,7 +735,7 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.data").exists());
     }
 
-    // ==================== Phase 7: 权限控制 ====================
+    // --- Phase 7: 权限控制 ---
 
     @Test
     void migrationPlanEndpoints_shouldRequireSuperAdmin() throws Exception {
@@ -749,7 +747,7 @@ class WorkflowVersionSnapshotIT extends BaseIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
-    // ==================== 工具方法 ====================
+    // --- 工具方法 ---
 
     private boolean hasClass(String className) {
         try {

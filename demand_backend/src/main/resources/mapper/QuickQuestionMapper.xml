@@ -2,7 +2,7 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.demand.system.module.assistant.mapper.QuickQuestionMapper">
 
-    <!-- ===== 前台查询：人工优先 + AI 补齐 ===== -->
+    <!-- 前台查询：人工优先 + AI 补齐 -->
     <select id="selectForFrontend" resultType="com.demand.system.module.assistant.dto.QuickQuestionVO">
         SELECT id, category, question_text AS questionText, page_route AS pageRoute,
                weight, sort_order AS sortOrder, hit_count AS hitCount
@@ -16,7 +16,7 @@
         LIMIT #{limit}
     </select>
 
-    <!-- ===== AI 提炼：从 question_logs 聚合高频问题 ===== -->
+    <!-- AI 提炼：从 question_logs 聚合高频问题 -->
     <select id="selectExtractedFromLogs" resultType="com.demand.system.module.assistant.dto.ExtractedQuestionVO">
         SELECT
             ql.question_text AS questionText,

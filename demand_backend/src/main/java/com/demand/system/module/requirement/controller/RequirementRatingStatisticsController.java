@@ -11,9 +11,6 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 需求评分统计 Controller
- */
 @RestController
 @RequestMapping("/api/v1/statistics/rating")
 public class RequirementRatingStatisticsController {
@@ -21,9 +18,6 @@ public class RequirementRatingStatisticsController {
     @Autowired
     private RequirementRatingStatisticsService statisticsService;
 
-    /**
-     * 综合统计
-     */
     @GetMapping
     public Result<RequirementRatingStatisticsVO> getStatistics(
             @RequestParam(required = false) Long projectId,
@@ -33,9 +27,6 @@ public class RequirementRatingStatisticsController {
         return Result.success(statisticsService.getStatistics(projectId, iterationId, startDate, endDate));
     }
 
-    /**
-     * 评分趋势
-     */
     @GetMapping("/trend")
     public Result<List<RequirementRatingStatisticsVO.RatingTrendPoint>> getTrend(
             @RequestParam(required = false) Long projectId,
@@ -45,9 +36,6 @@ public class RequirementRatingStatisticsController {
         return Result.success(statisticsService.getRatingTrend(projectId, startDate, endDate, granularity));
     }
 
-    /**
-     * 评分分布
-     */
     @GetMapping("/distribution")
     public Result<Map<Integer, Long>> getDistribution(
             @RequestParam(required = false) Long projectId,
@@ -56,9 +44,6 @@ public class RequirementRatingStatisticsController {
         return Result.success(statisticsService.getRatingDistribution(projectId, startDate, endDate));
     }
 
-    /**
-     * 维度平均分
-     */
     @GetMapping("/dimensions")
     public Result<Map<String, Double>> getDimensionAverages(
             @RequestParam(required = false) Long projectId,
@@ -67,9 +52,6 @@ public class RequirementRatingStatisticsController {
         return Result.success(statisticsService.getDimensionAverages(projectId, startDate, endDate));
     }
 
-    /**
-     * 低分需求列表
-     */
     @GetMapping("/low-rated")
     public Result<List<LowRatingRequirementVO>> getLowRated(
             @RequestParam(required = false) Long projectId,
@@ -80,9 +62,6 @@ public class RequirementRatingStatisticsController {
         return Result.success(statisticsService.getLowRatingRequirements(projectId, startDate, endDate, threshold, limit));
     }
 
-    /**
-     * 节点平均分
-     */
     @GetMapping("/node-averages")
     public Result<Map<String, Double>> getNodeAverages(
             @RequestParam(required = false) Long projectId,

@@ -25,27 +25,18 @@ public class LlmApplicationGroupController {
         this.groupService = groupService;
     }
 
-    /**
-     * 查询分组树
-     */
     @GetMapping("/tree")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN')")
     public Result<?> tree() {
         return Result.success(groupService.listGroupTree());
     }
 
-    /**
-     * 新建分组
-     */
     @PostMapping
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:llm-provider:update')")
     public Result<?> create(@Valid @RequestBody LlmApplicationGroupCreateDTO dto) {
         return Result.success(groupService.createGroup(dto));
     }
 
-    /**
-     * 重命名分组
-     */
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:llm-provider:update')")
     public Result<?> rename(@PathVariable Long id, @Valid @RequestBody LlmApplicationGroupUpdateDTO dto) {

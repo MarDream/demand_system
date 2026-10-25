@@ -70,7 +70,6 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
         List<BitableAutomationVO> voList = new ArrayList<>();
         for (BitableAutomation automation : automations) {
             BitableAutomationVO vo = toVO(automation);
-            // 填充最近一次执行状态
             BitableAutomationRun latestRun = runMapper.selectLatestByAutomationId(automation.getId());
             if (latestRun != null) {
                 vo.setLastRunStatus(latestRun.getStatus());
@@ -179,14 +178,12 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
             log.warn("Webhook 分发失败: tableId={}, changeType={}", tableId, changeType, e);
         }
 
-        // 查询该表所有 enabled 状态的自动化规则
         List<BitableAutomation> automations = automationMapper.selectByTableIdAndStatus(tableId, "enabled");
         if (automations.isEmpty()) {
             return;
         }
 
         for (BitableAutomation automation : automations) {
-            // 匹配触发类型
             if (!matchesTriggerType(automation.getTriggerType(), changeType)) {
                 continue;
             }
@@ -199,7 +196,6 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
             // 构建幂等 eventId
             String eventId = buildEventId(automation.getId(), tableId, recordId, changeType);
 
-            // 创建执行记录
             BitableAutomationRun run = new BitableAutomationRun();
             run.setAutomationId(automation.getId());
             run.setEventId(eventId);
@@ -239,7 +235,6 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
                         automation.getId(), run.getId(), tableId, recordId);
             } catch (Exception e) {
                 log.error("发送自动化MQ消息失败: automationId={}, runId={}", automation.getId(), run.getId(), e);
-                // 更新执行记录为失败
                 markRunFailed(run.getId(), "MQ_SEND_FAILED", "消息发送失败: " + e.getMessage());
             }
         }
@@ -254,7 +249,6 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
             return false;
         }
 
-        // 创建执行记录
         BitableAutomationRun run = new BitableAutomationRun();
         run.setAutomationId(automation.getId());
         run.setEventId(buildEventId(automation.getId(), automation.getTableId(), 0L, "scheduled"));
@@ -339,7 +333,6 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
         try {
             Object actionResult = executeAction(automation, context);
 
-            // 更新执行记录为 succeeded
             UpdateWrapper<BitableAutomationRun> successWrapper = new UpdateWrapper<>();
             successWrapper.eq("id", runId)
                     .set("status", "succeeded")
@@ -370,9 +363,6 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
         };
     }
 
-    /**
-     * 动作: 更新记录字段
-     */
     private Object executeUpdateRecord(Map<String, Object> config, Map<String, Object> context,
                                        BitableAutomation automation) {
         Long recordId = asLong(config.get("recordId"));
@@ -398,7 +388,6 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
         String valueText = (String) config.get("valueText");
         Object valueJson = config.get("valueJson");
 
-        // 构建更新值
         Map<String, Object> valueMap = new HashMap<>();
         if (valueText != null) {
             valueMap.put("valueText", valueText);
@@ -414,9 +403,6 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
         return Map.of("recordId", recordId, "fieldId", fieldId, "updated", true);
     }
 
-    /**
-     * 动作: 创建记录
-     */
     private Object executeCreateRecord(Map<String, Object> config, Map<String, Object> context,
                                        BitableAutomation automation) {
         Long targetTableId = asLong(config.get("targetTableId"));
@@ -482,7 +468,6 @@ public class BitableAutomationServiceImpl implements BitableAutomationService {
     }
 
     /**
-     * 动作: HTTP 请求
      * 安全约束：仅允许 http/https；拒绝回环/私网/链路本地地址（SSRF 防护）；限制超时与响应大小
      */
     private Object executeHttpRequest(Map<String, Object> config, Map<String, Object> context) {

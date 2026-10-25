@@ -2,9 +2,6 @@ package com.demand.system.module.auth.dto;
 
 import java.util.List;
 
-/**
- * 用户信息响应DTO
- */
 public class UserInfoResponse {
 
     private Long id;

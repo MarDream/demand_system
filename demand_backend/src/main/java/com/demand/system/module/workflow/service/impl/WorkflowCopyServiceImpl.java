@@ -158,9 +158,6 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
         }
     }
 
-    /**
-     * 创建新工作流版本
-     */
     private WorkflowVersion createNewVersion(WorkflowVersion source, WorkflowCopyRequest request,
                                             String newName, String newVersion, 
                                             Long targetProjectId, Long operatorId) {
@@ -191,12 +188,8 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
         return newVer;
     }
 
-    /**
-     * 复制节点
-     */
     private int copyNodes(Long sourceVersionId, Long targetVersionId, 
                          WorkflowCopyRequest request, Map<String, String> nodeIdMap) {
-        // 查询源节点
         List<WorkflowNode> sourceNodes = workflowNodeMapper.selectList(
             new LambdaQueryWrapper<WorkflowNode>()
                 .eq(WorkflowNode::getWorkflowVersionId, sourceVersionId)
@@ -206,7 +199,6 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
             return 0;
         }
 
-        // 批量复制节点
         for (WorkflowNode sourceNode : sourceNodes) {
             WorkflowNode newNode = new WorkflowNode();
             newNode.setWorkflowVersionId(targetVersionId);
@@ -222,7 +214,6 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
             newNode.setTimeoutHours(sourceNode.getTimeoutHours());
             newNode.setTimeoutAction(sourceNode.getTimeoutAction());
 
-            // 处理审批人配置
             if (request.getResetApprovers()) {
                 newNode.setAssigneeType(null);
                 newNode.setAssigneeRoleId(null);
@@ -237,7 +228,6 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
                 newNode.setAssigneeUserIds(sourceNode.getAssigneeUserIds());
             }
 
-            // 处理节点属性（脱敏）
             if (sourceNode.getProperties() != null) {
                 Map<String, Object> sanitizedProps = sanitizeProperties(
                     sourceNode.getProperties(), request
@@ -252,11 +242,7 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
         return sourceNodes.size();
     }
 
-    /**
-     * 复制连线
-     */
     private int copyEdges(Long sourceVersionId, Long targetVersionId, Map<String, String> nodeIdMap) {
-        // 查询源连线
         List<WorkflowEdge> sourceEdges = workflowEdgeMapper.selectList(
             new LambdaQueryWrapper<WorkflowEdge>()
                 .eq(WorkflowEdge::getWorkflowVersionId, sourceVersionId)
@@ -266,9 +252,7 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
             return 0;
         }
 
-        // 批量复制连线
         for (WorkflowEdge sourceEdge : sourceEdges) {
-            // 验证节点ID是否存在
             if (!nodeIdMap.containsKey(sourceEdge.getSourceNodeId()) ||
                 !nodeIdMap.containsKey(sourceEdge.getTargetNodeId())) {
                 log.warn("跳过无效连线: edgeId={}, sourceNode={}, targetNode={}",
@@ -282,7 +266,6 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
             // 格式：v{targetVersionId}_{原edgeId}，与节点 ID 前缀规则保持一致
             String newEdgeId = "v" + targetVersionId + "_" + sourceEdge.getEdgeId();
             newEdge.setEdgeId(newEdgeId);
-            // 使用 nodeIdMap 映射后的新节点 ID
             newEdge.setSourceNodeId(nodeIdMap.get(sourceEdge.getSourceNodeId()));
             newEdge.setTargetNodeId(nodeIdMap.get(sourceEdge.getTargetNodeId()));
             newEdge.setLabel(sourceEdge.getLabel());
@@ -295,9 +278,6 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
         return sourceEdges.size();
     }
 
-    /**
-     * 脱敏属性配置
-     */
     private Map<String, Object> sanitizeProperties(Map<String, Object> properties, WorkflowCopyRequest request) {
         if (properties == null || properties.isEmpty()) {
             return properties;
@@ -312,7 +292,6 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
             String key = entry.getKey();
             Object value = entry.getValue();
 
-            // 检查是否为敏感字段
             boolean isSensitive = isSensitiveField(key, request.getCustomSensitiveFields());
 
             if (isSensitive && value != null) {
@@ -329,20 +308,15 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
         return sanitized;
     }
 
-    /**
-     * 判断是否为敏感字段
-     */
     private boolean isSensitiveField(String fieldName, List<String> customPatterns) {
         String lowerFieldName = fieldName.toLowerCase();
 
-        // 检查内置敏感模式
         for (String pattern : SENSITIVE_FIELD_PATTERNS) {
             if (Pattern.matches(pattern, lowerFieldName)) {
                 return true;
             }
         }
 
-        // 检查自定义敏感字段
         if (customPatterns != null) {
             for (String customField : customPatterns) {
                 if (lowerFieldName.contains(customField.toLowerCase())) {
@@ -354,9 +328,6 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
         return false;
     }
 
-    /**
-     * 脱敏值
-     */
     private String maskValue(String value) {
         if (value == null || value.length() < 4) {
             return "***";
@@ -527,9 +498,6 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
         return buildLineageTree(versionId, visited, 0);
     }
 
-    /**
-     * 递归构建溯源树
-     */
     private WorkflowLineageDTO buildLineageTree(Long versionId, Set<Long> visited, int depth) {
         if (versionId == null || visited.contains(versionId) || depth > 10) {
             WorkflowLineageDTO dto = new WorkflowLineageDTO();
@@ -550,13 +518,11 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
         dto.setVersion(WorkflowVersionUtils.normalize(version.getVersion()));
         dto.setCreatedAt(version.getCreatedAt());
 
-        // 查询创建人姓名
         if (version.getCreatorId() != null) {
             // 暂以 ID 拼接占位，后续可改为从用户表查询姓名
             dto.setCreatorName("User-" + version.getCreatorId());
         }
 
-        // 递归查询源工作流
         if (version.getSourceVersionId() != null) {
             dto.setSource(buildLineageTree(version.getSourceVersionId().longValue(), visited, depth + 1));
         }
@@ -564,9 +530,6 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
         return dto;
     }
 
-    /**
-     * 生成下一个版本号
-     */
     private String generateNextVersion(Long projectId) {
         return workflowVersionMapper.selectList(
                     new LambdaQueryWrapper<WorkflowVersion>()
@@ -601,9 +564,6 @@ public class WorkflowCopyServiceImpl implements WorkflowCopyService {
         return definition.getId();
     }
 
-    /**
-     * 创建审计日志
-     */
     private void createAuditLog(Long workflowVersionId, String action, Long operatorId, String operatorName,
                                Map<String, Object> details, String ipAddress, String userAgent) {
         WorkflowAuditLog log = new WorkflowAuditLog(workflowVersionId, action, operatorId, operatorName);

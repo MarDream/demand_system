@@ -30,9 +30,6 @@ public class WorkflowVisualConfigController {
         this.workflowDefinitionService = workflowDefinitionService;
     }
 
-    /**
-     * 获取当前工作流配置（节点+连线）
-     */
     @GetMapping("/workflows/{projectId}/config")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
     public Result<WorkflowConfigDTO> getWorkflowConfig(@PathVariable Long projectId) {
@@ -49,9 +46,6 @@ public class WorkflowVisualConfigController {
         return Result.success(workflowConfigService.saveWorkflowConfig(projectId, configDTO));
     }
 
-    /**
-     * 提交审核
-     */
     @PostMapping("/workflows/{projectId}/publish")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
     public Result<Void> submitForApproval(@PathVariable Long projectId,
@@ -60,9 +54,6 @@ public class WorkflowVisualConfigController {
         return Result.success();
     }
 
-    /**
-     * 获取历史版本列表
-     */
     @GetMapping("/workflows/{projectId}/versions")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config', 'button:requirement-config:update')")
     public Result<List<WorkflowVersionDTO>> getVersionHistory(@PathVariable Long projectId) {
@@ -87,18 +78,12 @@ public class WorkflowVisualConfigController {
         return Result.success(workflowDefinitionService.listAll());
     }
 
-    /**
-     * 获取指定版本配置
-     */
     @GetMapping("/workflows/versions/{versionId}")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
     public Result<WorkflowVersionDTO> getVersionConfig(@PathVariable Long versionId) {
         return Result.success(workflowConfigService.getVersionConfig(versionId));
     }
 
-    /**
-     * 更新版本元数据
-     */
     @PutMapping("/workflows/versions/{versionId}/meta")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
     public Result<WorkflowVersionDTO> updateVersionMeta(@PathVariable Long versionId,
@@ -106,9 +91,6 @@ public class WorkflowVisualConfigController {
         return Result.success(workflowConfigService.updateVersionMeta(versionId, updateDTO));
     }
 
-    /**
-     * 更新版本启停状态
-     */
     @PutMapping("/workflows/versions/{versionId}/activation")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
     public Result<WorkflowVersionDTO> updateVersionActivation(@PathVariable Long versionId,
@@ -116,9 +98,6 @@ public class WorkflowVisualConfigController {
         return Result.success(workflowConfigService.updateVersionActivation(versionId, activationDTO));
     }
 
-    /**
-     * 删除工作流版本
-     */
     @DeleteMapping("/workflows/versions/{versionId}")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
     public Result<Void> deleteVersion(@PathVariable Long versionId) {
@@ -144,9 +123,6 @@ public class WorkflowVisualConfigController {
         return Result.success(workflowConfigService.getWorkflowApprovals());
     }
 
-    /**
-     * 审核通过
-     */
     @PostMapping("/workflow-approvals/{id}/approve")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN')")
     public Result<Void> approveWorkflow(@PathVariable Long id,
@@ -155,9 +131,6 @@ public class WorkflowVisualConfigController {
         return Result.success();
     }
 
-    /**
-     * 审核拒绝
-     */
     @PostMapping("/workflow-approvals/{id}/reject")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN')")
     public Result<Void> rejectWorkflow(@PathVariable Long id,
@@ -166,9 +139,6 @@ public class WorkflowVisualConfigController {
         return Result.success();
     }
 
-    /**
-     * 删除单条审核记录
-     */
     @DeleteMapping("/workflow-approvals/{id}")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:approve')")
     public Result<Void> deleteApproval(@PathVariable Long id) {
@@ -176,9 +146,6 @@ public class WorkflowVisualConfigController {
         return Result.success();
     }
 
-    /**
-     * 清空全部审核记录
-     */
     @DeleteMapping("/workflow-approvals")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN')")
     public Result<Void> clearAllApprovals() {

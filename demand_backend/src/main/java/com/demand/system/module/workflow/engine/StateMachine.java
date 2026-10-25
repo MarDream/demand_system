@@ -127,7 +127,6 @@ public class StateMachine {
             return false;
         }
 
-        // 记录转换
         WorkflowTransitionRecord record = new WorkflowTransitionRecord();
         record.setRequirementId(requirementId);
         record.setFromStateId(fromStateId);
@@ -142,9 +141,6 @@ public class StateMachine {
         return true;
     }
 
-    /**
-     * 验证必填字段是否已填写
-     */
     private boolean validateRequiredFields(Requirement requirement, String requiredFieldsJson) {
         // 简单解析：requiredFields 是 JSON 数组格式如 ["title","description","priority"]
         String cleaned = requiredFieldsJson.replaceAll("[\"\\[\\]]", "").trim();

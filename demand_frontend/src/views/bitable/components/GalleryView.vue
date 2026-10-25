@@ -127,7 +127,7 @@ function handleCardClick(record: BitableRecord) {
 </script>
 
 <style scoped lang="scss">
-// ===== 多维表格 GalleryView 激进风格精修（2026-08-03）=====
+// --- 多维表格 GalleryView 样式要点 ---
 // 设计目标：
 // 1. 卡片 14px 圆角、3:2 比例封面、hover 阴影抬起
 // 2. 缺图占位：品牌渐变 + 标题首字符大写

@@ -157,7 +157,6 @@ public class WorkflowGraphNavigator {
                 if (found != null) return found;
             }
         }
-        // 如果当前节点是开始节点，返回开始节点
         WorkflowNode current = context.getNode(fromNodeId);
         if (current != null && "start".equalsIgnoreCase(current.getNodeType())) {
             return current;

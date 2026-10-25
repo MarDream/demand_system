@@ -78,9 +78,6 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status).body(body);
     }
 
-    /**
-     * 处理认证失败异常（用户名/密码错误），返回401状态码
-     */
     @ExceptionHandler(BadCredentialsException.class)
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
     public Result<Void> handleBadCredentialsException(BadCredentialsException e) {
@@ -88,9 +85,6 @@ public class GlobalExceptionHandler {
         return Result.fail(ErrorCode.AUTH_FAILED, "用户名或密码错误");
     }
 
-    /**
-     * 处理账户被禁用异常，返回401状态码
-     */
     @ExceptionHandler(DisabledException.class)
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
     public Result<Void> handleDisabledException(DisabledException e) {
@@ -108,9 +102,6 @@ public class GlobalExceptionHandler {
         return Result.fail(ErrorCode.BAD_REQUEST, message);
     }
 
-    /**
-     * 处理JSR-303约束校验异常
-     */
     @ExceptionHandler(ConstraintViolationException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Result<Void> handleConstraintViolationException(ConstraintViolationException e) {
@@ -121,9 +112,6 @@ public class GlobalExceptionHandler {
         return Result.fail(ErrorCode.VALIDATION_ERROR, message);
     }
 
-    /**
-     * 处理空指针异常
-     */
     @ExceptionHandler(NullPointerException.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public Result<Void> handleNullPointerException(NullPointerException e) {
@@ -131,9 +119,6 @@ public class GlobalExceptionHandler {
         return Result.fail(ErrorCode.NULL_POINTER_ERROR, "系统数据异常，请稍后重试");
     }
 
-    /**
-     * 处理非法参数异常
-     */
     @ExceptionHandler(IllegalArgumentException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Result<Void> handleIllegalArgumentException(IllegalArgumentException e) {
@@ -141,9 +126,6 @@ public class GlobalExceptionHandler {
         return Result.fail(ErrorCode.VALIDATION_ERROR, "请求参数不合法，请检查后重试");
     }
 
-    /**
-     * 处理非法状态异常
-     */
     @ExceptionHandler(IllegalStateException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Result<Void> handleIllegalStateException(IllegalStateException e) {
@@ -151,9 +133,6 @@ public class GlobalExceptionHandler {
         return Result.fail(ErrorCode.VALIDATION_ERROR, "当前操作不可用，请检查操作条件");
     }
 
-    /**
-     * 处理乐观锁异常
-     */
     @ExceptionHandler(OptimisticLockingFailureException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     public Result<Void> handleOptimisticLockException(OptimisticLockingFailureException e) {
@@ -161,9 +140,6 @@ public class GlobalExceptionHandler {
         return Result.fail(ErrorCode.CONCURRENT_ERROR, "数据已被其他用户修改，请刷新后重试");
     }
 
-    /**
-     * 处理文件未找到异常
-     */
     @ExceptionHandler(FileNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public Result<Void> handleFileNotFoundException(FileNotFoundException e) {
@@ -171,9 +147,6 @@ public class GlobalExceptionHandler {
         return Result.fail(ErrorCode.FILE_ERROR, "文件不存在或已被删除");
     }
 
-    /**
-     * 处理IO异常
-     */
     @ExceptionHandler(IOException.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public Result<Void> handleIOException(IOException e) {
@@ -181,9 +154,6 @@ public class GlobalExceptionHandler {
         return Result.fail(ErrorCode.FILE_ERROR, "文件操作失败，请稍后重试");
     }
 
-    /**
-     * 处理SQL异常和数据完整性异常
-     */
     @ExceptionHandler({SQLException.class, DataIntegrityViolationException.class})
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public Result<Void> handleSQLException(Exception e) {
@@ -202,9 +172,6 @@ public class GlobalExceptionHandler {
         return Result.fail(ErrorCode.BAD_REQUEST, "请求体缺失或格式错误");
     }
 
-    /**
-     * 处理上传文件超过大小限制，返回413
-     */
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     @ResponseStatus(HttpStatus.PAYLOAD_TOO_LARGE)
     public Result<Void> handleMaxUploadSizeExceededException(MaxUploadSizeExceededException e) {
@@ -212,9 +179,6 @@ public class GlobalExceptionHandler {
         return Result.fail(ErrorCode.BAD_REQUEST, "上传文件大小超出限制");
     }
 
-    /**
-     * 处理路径变量类型转换失败（如把非数字当 id），返回400
-     */
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Result<Void> handleMethodArgumentTypeMismatchException(MethodArgumentTypeMismatchException e) {
@@ -272,9 +236,6 @@ public class GlobalExceptionHandler {
                 || message.contains("Reranker调用失败");
     }
 
-    /**
-     * 清理错误信息中的敏感内容
-     */
     private String sanitizeErrorMessage(String message) {
         if (message == null) {
             return "服务器内部错误，请联系管理员";
@@ -374,7 +335,6 @@ public class GlobalExceptionHandler {
             return "服务器内部错误，请联系管理员";
         }
 
-        // 检查是否包含敏感技术信息
         if (containsSensitiveInfo(message)) {
             log.warn("Sanitizing error message containing sensitive info");
             return sanitizeErrorMessage(message);
@@ -383,9 +343,6 @@ public class GlobalExceptionHandler {
         return message;
     }
 
-    /**
-     * 检查消息是否包含敏感信息
-     */
     private boolean containsSensitiveInfo(String message) {
         String[] sensitiveKeywords = {
                 "java.", "javax.", "jakarta.",
@@ -405,18 +362,13 @@ public class GlobalExceptionHandler {
         return false;
     }
 
-    /**
-     * 记录异常日志并附加请求上下文信息
-     */
     private void logExceptionWithContext(String message, Exception e) {
-        // 生成或获取追踪ID
         String traceId = MDC.get("traceId");
         if (traceId == null) {
             traceId = UUID.randomUUID().toString().substring(0, 8);
             MDC.put("traceId", traceId);
         }
 
-        // 获取请求信息
         ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
         if (attributes != null) {
             HttpServletRequest request = attributes.getRequest();
@@ -448,9 +400,6 @@ public class GlobalExceptionHandler {
         }
     }
 
-    /**
-     * 获取客户端真实IP
-     */
     private String getClientIp(HttpServletRequest request) {
         String ip = request.getHeader("X-Forwarded-For");
         if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {

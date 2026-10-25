@@ -305,7 +305,7 @@ function onFieldChange(rule: DraftRule) {
   void ensureValueOptions(rule.fieldId)
 }
 
-// ===== 值下拉（已有取值 + 模糊搜索）：文本/选择类字段 + 等值与包含类运算符 =====
+// --- 值下拉（已有取值 + 模糊搜索）：文本/选择类字段 + 等值与包含类运算符 ---
 const VALUE_SELECT_TYPES: string[] = ['text', 'rich_text', 'url', 'email', 'phone', 'single_select', 'multi_select', 'ai_text', 'ai_select']
 const VALUE_SELECT_OPERATORS: FilterOperator[] = ['eq', 'ne', 'contains', 'not_contains']
 
@@ -436,7 +436,7 @@ function addRule() {
   rules.value.push({ fieldId: null, operator: 'contains', valueText: '', valueMin: '', valueMax: '' })
 }
 
-// ==================== AI 智能筛选：自然语言生成条件 ====================
+// --- AI 智能筛选：自然语言生成条件 ---
 
 const aiText = ref('')
 const aiGenerating = ref(false)

@@ -131,9 +131,6 @@ public class RequirementPendingTaskSyncService {
         syncPendingTasks(requirementId, null);
     }
 
-    /**
-     * 构建待办任务列表
-     */
     private List<RequirementPendingTask> buildPendingTasks(Requirement requirement, WorkflowInstance instance,
                                                           WorkflowNode node, Long selectedAssigneeId) {
         List<RequirementPendingTask> tasks = new ArrayList<>();
@@ -255,9 +252,6 @@ public class RequirementPendingTaskSyncService {
         return tasks;
     }
 
-    /**
-     * 批量同步多个需求的待办任务
-     */
     @Transactional(rollbackFor = Exception.class)
     public void syncPendingTasksBatch(List<Long> requirementIds) {
         for (Long requirementId : requirementIds) {

@@ -208,7 +208,7 @@ const emit = defineEmits<{
 const formRef = ref<FormInstance>()
 const formModel = reactive<Record<number, any>>({})
 
-// ==================== 人员字段可选项（系统用户列表） ====================
+// --- 人员字段可选项（系统用户列表） ---
 const userStore = useUserStore()
 
 /** 按字段属性 userScope 过滤后的可选项 */
@@ -396,7 +396,7 @@ defineExpose({ reset })
 </script>
 
 <style scoped lang="scss">
-// ===== 多维表格 FormView 激进风格精修（2026-08-03）=====
+// --- 多维表格 FormView 样式要点 ---
 // 设计目标：
 // 1. 字段按类型分组章节
 // 2. 提交按钮 sticky 底部

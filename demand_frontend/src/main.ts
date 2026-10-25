@@ -20,7 +20,7 @@ import { ElMessage } from 'element-plus'
 // 注册多维表格自定义单元格渲染器（进度条 / 彩色标签 / 复选框 / 评分星级）
 import '@/utils/bitableCellRenderers'
 
-// ECharts 按需引入 graphic 组件（修复 [ECharts] Component graphic is used but not imported 报错）
+// ECharts 按需引入 graphic 组件（饼图中心文字依赖 graphic 渲染，缺省会告警）
 import * as echarts from 'echarts/core'
 import { GraphicComponent } from 'echarts/components'
 import { PieChart, BarChart, LineChart, RadarChart, FunnelChart, TreemapChart } from 'echarts/charts'
@@ -45,7 +45,7 @@ echarts.use([
   CanvasRenderer,
 ])
 
-// 修复 zrender (ECharts 底层) 对 wheel/mousewheel 事件未标记 passive 的 Chrome Violation 警告
+// 为 zrender (ECharts 底层) 注册的滚动类事件补挂 { passive: true }，规避 Chrome 的 scroll-blocking Violation 警告
 // zrender 5.x 内部注册 scroll-blocking 事件时未传 { passive: true }，属于上游已知问题
 // 此补丁仅对 wheel/mousewheel/touchstart/touchmove 自动注入 passive，不影响其他事件
 const PASSIVE_EVENTS = new Set(['wheel', 'mousewheel', 'touchstart', 'touchmove'])
@@ -72,7 +72,7 @@ app.directive('permission', permission)
 // 外观设置：恢复持久化的主题模式/主题色/圆角档位，并监听系统主题变化
 initAppearanceWatcher()
 
-// C3: 全局错误边界 - 兜底渲染期未捕获异常，避免整页白屏
+// 全局错误边界：兜底渲染期未捕获异常，避免整页白屏。
 // 注意：生产构建已通过 vite esbuild.drop 剥离 console，此处 console.error 仅在 dev 可见；
 // 用户侧反馈依赖 ElMessage（不被剥离）。节流 3s 避免同一异常连续刷屏。
 let lastErrorToastAt = 0

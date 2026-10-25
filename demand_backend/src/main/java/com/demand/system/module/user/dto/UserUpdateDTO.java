@@ -28,10 +28,8 @@ public class UserUpdateDTO {
     /** 用工状态(试用期/已转正/待离职/已离职) */
     private String workStatus;
 
-    /** 入职日期 */
     private LocalDate hireDate;
 
-    /** 生日 */
     private LocalDate birthday;
 
     public String getEmployeeType() {

@@ -211,7 +211,7 @@ export function buildChartOption(widget: WidgetInstance, data: WidgetData | unde
     }
   }
 
-  // ---- 直角坐标图：bar/line/area/hbar/combo ----
+  // --- 直角坐标图：bar/line/area/hbar/combo ---
   const horizontal = type === 'hbar'
   const valueFormatter = (v: unknown) => formatNumber(v, decimals, unit)
   const categoryAxis = {

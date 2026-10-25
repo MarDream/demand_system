@@ -700,7 +700,6 @@ const roleGroupSections = computed<RoleGroupSection[]>(() => {
     groupedRoles.set(`role-group-${group.id}`, [])
   })
 
-  // 按 groupIds 分组
   filteredRoles.value.forEach((role) => {
     const gids = role.groupIds || []
     if (gids.length === 0) {
@@ -1383,7 +1382,7 @@ function isSuperAdminRole(role: RoleItem | null) {
   return !!role && SUPER_ADMIN_CODES.has(role.code)
 }
 
-// ===== 数据权限 - 组织树 =====
+// --- 数据权限 - 组织树 ---
 const dataScopeExpanded = ref(false)
 const orgTreeRef = ref<any>(null)
 

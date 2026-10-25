@@ -3,9 +3,6 @@ package com.demand.system.module.invitation.dto;
 import java.time.LocalDateTime;
 import java.util.List;
 
-/**
- * 邀请记录视图对象
- */
 public class InvitationVO {
 
     private Long id;

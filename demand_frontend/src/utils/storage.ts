@@ -4,6 +4,7 @@ function get<T>(key: string): T | null {
   try {
     return JSON.parse(value) as T
   } catch {
+    // 非 JSON 的原始字符串直接返回。
     return value as unknown as T
   }
 }

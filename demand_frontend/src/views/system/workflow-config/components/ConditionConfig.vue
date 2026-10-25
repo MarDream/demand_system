@@ -225,7 +225,7 @@ const emit = defineEmits<{
 
 const tagInputMap = reactive<Record<number, string>>({})
 
-// ========== 字典数据 ==========
+// --- 字典数据 ---
 const typeOptions = ref<RequirementType[]>([])
 const priorityOptions = ref<Priority[]>([])
 const projectOptions = ref<DictOption[]>([])
@@ -407,7 +407,7 @@ const exprPreview = computed(() => buildExpr({ logic: logic.value, rules: rules.
 </script>
 
 <style scoped>
-/* ===== 匹配逻辑行 ===== */
+/* --- 匹配逻辑行 --- */
 .logic-row {
   display: flex;
   align-items: center;
@@ -421,7 +421,7 @@ const exprPreview = computed(() => buildExpr({ logic: logic.value, rules: rules.
   white-space: nowrap;
 }
 
-/* ===== 条件规则卡片 ===== */
+/* --- 条件规则卡片 --- */
 .rule-card {
   display: flex;
   align-items: center;
@@ -535,7 +535,7 @@ const exprPreview = computed(() => buildExpr({ logic: logic.value, rules: rules.
   opacity: 0.4;
 }
 
-/* ===== 添加条件按钮（虚线）===== */
+/* --- 添加条件按钮（虚线） --- */
 .btn-add-rule {
   display: inline-flex;
   align-items: center;
@@ -559,7 +559,7 @@ const exprPreview = computed(() => buildExpr({ logic: logic.value, rules: rules.
   opacity: 0.45;
 }
 
-/* ===== 表达式预览 ===== */
+/* --- 表达式预览 --- */
 .expr-preview {
   margin-top: 14px;
   padding: 8px 14px;

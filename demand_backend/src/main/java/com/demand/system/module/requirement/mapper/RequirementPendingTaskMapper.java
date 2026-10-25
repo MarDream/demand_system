@@ -25,14 +25,8 @@ import java.util.List;
  */
 public interface RequirementPendingTaskMapper extends BaseMapper<RequirementPendingTask> {
 
-    /**
-     * 删除指定需求的所有待办任务
-     */
     int deleteByRequirementId(@Param("requirementId") Long requirementId);
 
-    /**
-     * 批量删除需求的待办任务
-     */
     int deleteByRequirementIds(@Param("requirementIds") List<Long> requirementIds);
 
     /**
@@ -62,14 +56,8 @@ public interface RequirementPendingTaskMapper extends BaseMapper<RequirementPend
                                            @Param("projectId") Long projectId,
                                            @Param("limit") int limit);
 
-    /**
-     * 统计用户的待办任务数量
-     */
     Long countByUserId(@Param("userId") Long userId);
 
-    /**
-     * 统计用户的待办任务数量（带数据权限 org 过滤）
-     */
     Long countByUserIdWithOrgFilter(@Param("userId") Long userId,
                                     @Param("isSuperAdmin") boolean isSuperAdmin,
                                     @Param("visibleOrgIds") List<Long> visibleOrgIds);

@@ -7,9 +7,6 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 需求评分统计服务
- */
 public interface RequirementRatingStatisticsService {
 
     /**
@@ -29,14 +26,8 @@ public interface RequirementRatingStatisticsService {
      */
     Map<Integer, Long> getRatingDistribution(Long projectId, LocalDate startDate, LocalDate endDate);
 
-    /**
-     * 获取各维度的平均分
-     */
     Map<String, Double> getDimensionAverages(Long projectId, LocalDate startDate, LocalDate endDate);
 
-    /**
-     * 获取低分需求列表
-     */
     List<LowRatingRequirementVO> getLowRatingRequirements(
             Long projectId, LocalDate startDate, LocalDate endDate,
             Integer threshold, Integer limit);

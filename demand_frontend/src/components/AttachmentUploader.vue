@@ -65,6 +65,7 @@
           <el-icon><View /></el-icon>
         </el-button>
         <el-button
+          v-if="isRemovable(file)"
           link
           type="danger"
           aria-label="删除附件"
@@ -94,6 +95,8 @@ interface Props {
   required?: boolean
   /** 额外参与去重的附件(如同工单主附件/流转附件);自身列表 modelValue 始终参与 */
   dedupeAgainst?: RequirementAttachment[]
+  /** 锁定挂载时已存在的附件不可删除（编辑已提交需求且无「删除需求附件」权限时使用）；新上传的不受限 */
+  lockExisting?: boolean
 }
 
 interface Emits {
@@ -105,9 +108,21 @@ const props = withDefaults(defineProps<Props>(), {
   maxSize: 50,
   showPreview: true,
   required: false,
+  lockExisting: false,
 })
 
 const emit = defineEmits<Emits>()
+
+/** 挂载时已有附件的唯一键集合，用于 lockExisting 判定 */
+const initialKeys = new Set(
+  (props.modelValue || []).map(file => file.fileId != null ? `id:${file.fileId}` : `url:${file.url}`),
+)
+
+function isRemovable(file: RequirementAttachment) {
+  if (!props.lockExisting) return true
+  const key = file.fileId != null ? `id:${file.fileId}` : `url:${file.url}`
+  return !initialKeys.has(key)
+}
 
 const fileInputRef = ref<HTMLInputElement>()
 const folderInputRef = ref<HTMLInputElement>()
@@ -320,6 +335,11 @@ async function handlePaste(event: ClipboardEvent) {
 }
 
 function removeAttachment(index: number) {
+  const file = attachments.value[index]
+  if (file && !isRemovable(file)) {
+    ElMessage.warning('已有附件已锁定，删除需求附件需要「删除需求附件」权限')
+    return
+  }
   attachments.value = attachments.value.filter((_, i) => i !== index)
 }
 

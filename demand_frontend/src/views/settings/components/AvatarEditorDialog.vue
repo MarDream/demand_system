@@ -116,7 +116,7 @@ const emit = defineEmits<{
   confirm: [payload: { kind: 'preset'; value: string } | { kind: 'crop'; blob: Blob }]
 }>()
 
-// ==================== 预设 ====================
+// --- 预设 ---
 /** 分组：卡通人物（图片素材）/ 动漫风女生/男生 + 经典扁平款 */
 const presetGroups = [
   { key: 'cartoon', label: '卡通人物' },
@@ -154,7 +154,7 @@ const activeTab = ref<'preset' | 'upload'>('preset')
 const selectedPreset = ref<string>('')
 const saving = computed(() => props.saving ?? false)
 
-// ==================== 上传 + 裁剪 ====================
+// --- 上传 + 裁剪 ---
 const fileInputRef = ref<HTMLInputElement>()
 const imageSrc = ref('')
 const imgNatural = ref({ width: 0, height: 0 })
@@ -326,7 +326,7 @@ async function exportCropBlob(): Promise<Blob> {
   })
 }
 
-// ==================== 事件 ====================
+// --- 事件 ---
 function handleOpen() {
   activeTab.value = props.currentAvatar?.startsWith('preset:') || !props.currentAvatar ? 'preset' : 'upload'
   const presetId = props.currentAvatar?.startsWith('preset:') ? props.currentAvatar.slice(7) : ''

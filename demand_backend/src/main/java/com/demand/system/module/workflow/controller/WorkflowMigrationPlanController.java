@@ -38,27 +38,18 @@ public class WorkflowMigrationPlanController {
         return Result.success(workflowMigrationService.createMigrationPlan(request));
     }
 
-    /**
-     * 查询迁移计划列表
-     */
     @GetMapping
     @PreAuthorize("hasAuthority('SUPER_ADMIN')")
     public Result<List<MigrationPlanVO>> listPlans(@RequestParam(required = false) Long projectId) {
         return Result.success(workflowMigrationService.listMigrationPlans(projectId));
     }
 
-    /**
-     * 查询迁移计划详情
-     */
     @GetMapping("/{planId}")
     @PreAuthorize("hasAuthority('SUPER_ADMIN')")
     public Result<MigrationPlanVO> getPlan(@PathVariable Long planId) {
         return Result.success(workflowMigrationService.getMigrationPlan(planId));
     }
 
-    /**
-     * 更新节点映射配置
-     */
     @PutMapping("/{planId}/mapping")
     @PreAuthorize("hasAuthority('SUPER_ADMIN')")
     public Result<MigrationPlanVO> updateMapping(@PathVariable Long planId,
@@ -75,18 +66,12 @@ public class WorkflowMigrationPlanController {
         return Result.success(workflowMigrationService.previewMigration(planId));
     }
 
-    /**
-     * 执行迁移计划
-     */
     @PostMapping("/{planId}/execute")
     @PreAuthorize("hasAuthority('SUPER_ADMIN')")
     public Result<MigrationResultDTO> execute(@PathVariable Long planId) {
         return Result.success(workflowMigrationService.executeMigration(planId));
     }
 
-    /**
-     * 查询迁移日志
-     */
     @GetMapping("/{planId}/logs")
     @PreAuthorize("hasAuthority('SUPER_ADMIN')")
     public Result<List<WorkflowMigrationLog>> listLogs(@PathVariable Long planId) {

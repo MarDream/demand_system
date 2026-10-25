@@ -11,9 +11,6 @@ import java.util.List;
 
 public interface WorkflowConfigService {
 
-    /**
-     * 获取当前工作流配置（节点+连线）
-     */
     WorkflowConfigDTO getWorkflowConfig(Long projectId);
 
     /**
@@ -21,14 +18,8 @@ public interface WorkflowConfigService {
      */
     WorkflowVersionDTO saveWorkflowConfig(Long projectId, WorkflowConfigDTO configDTO);
 
-    /**
-     * 提交审核
-     */
     void submitForApproval(Long projectId, Long versionId);
 
-    /**
-     * 获取历史版本列表
-     */
     List<WorkflowVersionDTO> getVersionHistory(Long projectId);
 
     /**
@@ -36,24 +27,12 @@ public interface WorkflowConfigService {
      */
     List<WorkflowVersionDTO> listActiveVersions();
 
-    /**
-     * 获取指定版本配置
-     */
     WorkflowVersionDTO getVersionConfig(Long versionId);
 
-    /**
-     * 更新版本元数据
-     */
     WorkflowVersionDTO updateVersionMeta(Long versionId, WorkflowVersionMetaUpdateDTO updateDTO);
 
-    /**
-     * 更新版本启停状态
-     */
     WorkflowVersionDTO updateVersionActivation(Long versionId, WorkflowVersionActivationDTO activationDTO);
 
-    /**
-     * 删除工作流版本
-     */
     void deleteVersion(Long versionId);
 
     /**
@@ -66,24 +45,12 @@ public interface WorkflowConfigService {
      */
     List<WorkflowApprovalDTO> getWorkflowApprovals();
 
-    /**
-     * 审核通过
-     */
     void approveWorkflow(Long approvalId, String comment);
 
-    /**
-     * 审核拒绝
-     */
     void rejectWorkflow(Long approvalId, String comment);
 
-    /**
-     * 删除单条审核记录
-     */
     void deleteApproval(Long approvalId);
 
-    /**
-     * 清空全部审核记录
-     */
     void clearAllApprovals();
 
     WorkflowValidationReport validateLatestDraft(Long projectId, Long versionId);

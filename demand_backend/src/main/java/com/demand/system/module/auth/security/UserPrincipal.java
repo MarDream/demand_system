@@ -4,9 +4,6 @@ import java.io.Serializable;
 import java.util.List;
 import java.util.Objects;
 
-/**
- * 用户认证主体
- */
 public class UserPrincipal implements Serializable {
     private static final long serialVersionUID = 1L;
 

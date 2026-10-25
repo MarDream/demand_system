@@ -112,7 +112,6 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
             try {
                 Sheet sheet = workbook.createSheet(safeSheetName(table.getName()));
 
-                // 表头样式
                 CellStyle headerStyle = workbook.createCellStyle();
                 Font headerFont = workbook.createFont();
                 headerFont.setBold(true);
@@ -437,7 +436,6 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
                 colToField.put(col, field);
             }
 
-            // 遍历数据行（从第二行开始）
             for (int rowIdx = 1; rowIdx <= sheet.getLastRowNum(); rowIdx++) {
                 if (rowIdx > IMPORT_MAX_ROWS) {
                     throw new BusinessException("导入数据超过 " + IMPORT_MAX_ROWS + " 行上限，请拆分后分批导入");
@@ -447,12 +445,10 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
                     continue;
                 }
 
-                // 跳过空行
                 if (isRowEmpty(row, colToField.keySet())) {
                     continue;
                 }
 
-                // 创建记录
                 BitableRecord record = new BitableRecord();
                 record.setTableId(tableId);
                 record.setCreatedBy(userId);
@@ -461,7 +457,6 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
                 record.setVersion(0);
                 recordMapper.insert(record);
 
-                // 填充单元格
                 List<BitableCellValue> rowCells = new ArrayList<>();
                 for (Map.Entry<Integer, BitableField> entry : colToField.entrySet()) {
                     Cell cell = row.getCell(entry.getKey());
@@ -754,7 +749,6 @@ public class BitableImportExportServiceImpl implements BitableImportExportServic
             colToField.put(col, field);
         }
 
-        // 遍历数据行
         for (int rowIdx = 1; rowIdx < rows.size(); rowIdx++) {
             if (rowIdx > IMPORT_MAX_ROWS) {
                 throw new BusinessException("导入数据超过 " + IMPORT_MAX_ROWS + " 行上限，请拆分后分批导入");

@@ -196,7 +196,6 @@ function getRecordTitle(record: BitableRecord): string {
   return resolveRecordTitle(props.fields, record)
 }
 
-// 获取记录的日期范围
 function getRecordDateRange(record: BitableRecord): { start: string; end: string } | null {
   if (rangeFieldId.value && record.cells?.[rangeFieldId.value]) {
     const cell = record.cells[rangeFieldId.value]
@@ -219,7 +218,6 @@ function getRecordDateRange(record: BitableRecord): { start: string; end: string
   return null
 }
 
-// 计算甘特条样式
 function getBarStyle(record: BitableRecord): Record<string, string> {
   const range = getRecordDateRange(record)
   if (!range) return {}
@@ -257,7 +255,7 @@ function getBarStyle(record: BitableRecord): Record<string, string> {
 </script>
 
 <style scoped lang="scss">
-// ===== 多维表格 GanttView 激进风格精修（2026-08-03）=====
+// --- 多维表格 GanttView 样式要点 ---
 // 设计目标：
 // 1. 甘特条：品牌渐变 + 8px 圆角 + 强化阴影
 // 2. 今日竖线：danger 色 0.5px 虚线

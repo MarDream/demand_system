@@ -82,7 +82,7 @@ function formatCell(cell: any, field: any): string {
   if (Array.isArray(json)) return json.filter(Boolean).join(', ')
   if (json != null && typeof json === 'object') return JSON.stringify(json)
   if (json != null) return String(json)
-  // 单元格为空但字段是数字/日期类型时也显示空
+  // 其余情况（空值或未识别的值类型）统一显示为空
   return field?.fieldType === 'check' || field?.fieldType === 'checkbox' ? '' : ''
 }
 </script>

@@ -4,9 +4,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 需求评分统计 VO
- */
 public class RequirementRatingStatisticsVO {
 
     /**

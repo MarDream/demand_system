@@ -15,7 +15,6 @@ public class HrRecordVO {
     /** 员工姓名 */
     private String userName;
 
-    /** 员工部门名 */
     private String departmentName;
 
     private String title;

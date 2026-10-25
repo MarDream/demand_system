@@ -122,7 +122,6 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         List<BitableRecord> records = recordMapper.selectByTableId(tableId, offset, pageSize);
         List<BitableRecordVO> voList = converter.toRecordVOList(records);
 
-        // 批量查询这些 records 的 cell_values
         if (!records.isEmpty()) {
             List<Long> recordIds = records.stream().map(BitableRecord::getId).collect(Collectors.toList());
             List<BitableCellValue> cells = cellMapper.selectByRecordIds(recordIds);
@@ -159,7 +158,6 @@ public class BitableRecordServiceImpl implements BitableRecordService {
 
         BitableRecordVO vo = converter.toRecordVO(record);
 
-        // 查询该记录的所有单元格值
         List<BitableCellValue> cells = cellMapper.selectByRecordIds(List.of(id));
         Map<Long, BitableCellValueVO> cellsMap = new LinkedHashMap<>();
         for (BitableCellValue cell : cells) {
@@ -275,7 +273,6 @@ public class BitableRecordServiceImpl implements BitableRecordService {
             }
         }
 
-        // 触发自动化事件
         try {
             automationService.onRecordChanged(tableId, record.getId(), "record_created", null);
         } catch (Exception e) {
@@ -286,7 +283,6 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         // 广播记录创建，让协作端实时新增行
         broadcastRecordChanged(tableId, record.getId(), "record_created", userId);
 
-        // 审计
         auditHelper.recordByTable(tableId, userId, OperationType.INSERT_RECORD, "{\"recordId\":" + record.getId() + "}");
 
         return record.getId();
@@ -368,7 +364,6 @@ public class BitableRecordServiceImpl implements BitableRecordService {
             }
         }
 
-        // 触发自动化事件
         try {
             automationService.onRecordChanged(existing.getTableId(), id, "record_updated", changedFields);
         } catch (Exception e) {
@@ -402,7 +397,6 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         // 软删 record（@TableLogic 自动设置 deleted_at=1）
         recordMapper.deleteById(id);
 
-        // 触发自动化事件
         try {
             automationService.onRecordChanged(existing.getTableId(), id, "record_deleted", null);
         } catch (Exception e) {
@@ -412,7 +406,6 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         // 广播记录删除，让协作端实时移除行
         broadcastRecordChanged(existing.getTableId(), id, "record_deleted", null);
 
-        // 审计
         auditHelper.recordByTable(existing.getTableId(), userId, OperationType.DELETE_RECORD, "{\"recordId\":" + id + "}");
     }
 
@@ -1104,7 +1097,6 @@ public class BitableRecordServiceImpl implements BitableRecordService {
 
         cellMapper.saveOrUpdateCell(cell);
 
-        // 触发自动化事件
         try {
             Map<String, Object> changedFields = new HashMap<>();
             changedFields.put(String.valueOf(fieldId), Map.of("newValue", value));
@@ -1287,7 +1279,6 @@ public class BitableRecordServiceImpl implements BitableRecordService {
             groupMap.computeIfAbsent(groupKey, k -> new ArrayList<>()).add(record);
         }
 
-        // 转为 RecordGroupVO 列表
         List<RecordGroupVO> groups = new ArrayList<>();
         for (Map.Entry<String, List<BitableRecordVO>> entry : groupMap.entrySet()) {
             groups.add(new RecordGroupVO(entry.getKey(), entry.getValue()));
@@ -1438,9 +1429,6 @@ public class BitableRecordServiceImpl implements BitableRecordService {
                 && compareCell(cell, max, field) <= 0;
     }
 
-    /**
-     * 判断单元格是否为空
-     */
     private boolean isCellEmpty(BitableCellValueVO cell) {
         if (cell == null) return true;
         if (cell.getValueText() != null && !cell.getValueText().isBlank()) return false;
@@ -1531,7 +1519,6 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         String filterText = asString(filterValue);
         if (filterText == null || filterText.isBlank()) return true;
 
-        // 检查文本值
         if (cell.getValueText() != null
                 && cell.getValueText().toLowerCase().contains(filterText.toLowerCase())) {
             return true;
@@ -1550,9 +1537,6 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         return false;
     }
 
-    /**
-     * 将对象转为 BigDecimal
-     */
     private BigDecimal toBigDecimal(Object value) {
         if (value instanceof BigDecimal bd) return bd;
         if (value instanceof Number n) return new BigDecimal(n.toString());
@@ -1580,7 +1564,6 @@ public class BitableRecordServiceImpl implements BitableRecordService {
             return records;
         }
 
-        // 解析排序规则
         List<SortRule> sortRules = new ArrayList<>();
         for (Object item : list) {
             if (!(item instanceof Map<?, ?> map)) continue;
@@ -1609,9 +1592,6 @@ public class BitableRecordServiceImpl implements BitableRecordService {
         return records;
     }
 
-    /**
-     * 按指定字段比较两条记录的值
-     */
     private int compareRecordByField(BitableRecordVO r1, BitableRecordVO r2,
                                       Long fieldId, Map<Long, BitableField> fieldMap) {
         BitableCellValueVO c1 = r1.getCells() != null ? r1.getCells().get(fieldId) : null;
@@ -1651,9 +1631,6 @@ public class BitableRecordServiceImpl implements BitableRecordService {
 
     // --- 私有辅助方法：分组 ---
 
-    /**
-     * 提取记录的分组键值
-     */
     private String extractGroupKey(BitableRecordVO record, Long groupByFieldId,
                                     Map<Long, BitableField> fieldMap) {
         BitableCellValueVO cell = record.getCells() != null

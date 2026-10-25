@@ -639,7 +639,7 @@ import { requirementConfigApi, type RequirementType } from '@/api/modules/requir
 import { getWorkflowVersionHistory } from '@/api/modules/workflow'
 import type { WorkflowHistory } from '@/types/workflow'
 
-// ── 列表字段设置：版本管理表 ──
+// --- 列表字段设置：版本管理表 ---
 const versionAllColumns: ColumnDef[] = [
   { key: 'version', label: '版本', group: '基础字段', minWidth: 200 },
   { key: 'boundTypes', label: '适用工单类型', group: '基础字段', minWidth: 160 },
@@ -1415,12 +1415,10 @@ async function handleExportWorkflow(row: WorkflowVersionDTO) {
   try {
     const data = await exportWorkflowVersion(row.id)
 
-    // 生成文件名
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
     const safeName = row.name.replace(/[^\w\u4E00-\u9FA5-]/g, '_')
     const filename = `workflow-${safeName}-v${row.version}-${timestamp}.json`
 
-    // 触发下载
     const blob = new Blob([JSON.stringify(data, null, 2)], {
       type: 'application/json',
     })
@@ -1448,33 +1446,27 @@ function handleImportWorkflow() {
       const text = await file.text()
       const data: WorkflowExportData = JSON.parse(text)
 
-      // 校验数据格式
       if (!data.workflow?.config?.nodes || !data.workflow?.config?.edges) {
         ElMessage.error('导入文件格式不正确')
         return
       }
 
-      // 确认导入
       await ElMessageBox.confirm(
         `确认导入工作流"${data.workflow.name}"吗？\n\n原版本号：V${data.workflow.version}\n导入后将自动分配新的版本号和名称（如有冲突）`,
         '导入确认',
         { type: 'info' },
       )
 
-      // 调用导入接口
       const result = await importWorkflowVersion(data, GLOBAL_WORKFLOW_PROJECT_ID)
 
-      // 显示结果
       let message = `导入成功！\n新版本：V${result.version}\n新名称：${result.name}`
       if (result.conflicts?.nameConflict) {
         message += '\n（已自动重命名避免冲突）'
       }
       ElMessage.success(message)
 
-      // 刷新列表
       await reloadAllData()
 
-      // 跳转到新导入的版本
       const newVersion = versions.value.find(v => v.id === result.versionId)
       if (newVersion) {
         viewWorkflow(newVersion)
@@ -1492,7 +1484,7 @@ function handleImportWorkflow() {
   input.click()
 }
 
-// ===== 修改历史时间线 =====
+// --- 修改历史时间线 ---
 const historyDrawerVisible = ref(false)
 const historyTitle = ref('修改历史')
 const historyLoading = ref(false)
@@ -1728,9 +1720,7 @@ onMounted(() => {
   border-color: #fab6b6;
 }
 
-/* ============================================
-   表格样式：紧凑自适应 + 居中对齐 + 行高舒适
-   ============================================ */
+/* --- 表格样式：紧凑自适应 + 居中对齐 + 行高舒适 --- */
 .workflow-table {
   flex: 1;
   --el-table-border-color: var(--color-border, var(--color-border));
@@ -1942,7 +1932,7 @@ onMounted(() => {
   }
 }
 
-// ===== 修改历史时间线样式 =====
+// --- 修改历史时间线样式 ---
 .history-timeline {
   position: relative;
   padding: 8px 0;

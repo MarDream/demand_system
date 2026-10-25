@@ -116,7 +116,7 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         this.llmModelResolver = llmModelResolver;
     }
 
-    // ==================== 对外入口 ====================
+    // --- 对外入口 ---
 
     @Override
     public KnowledgeSearchResponse search(KnowledgeSearchRequest request) {
@@ -162,14 +162,14 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
             String query = request.getQuery();
             String mode = normalizeMode(request.getMode());
             try {
-                // Step 1: 查询改写（结合多轮历史消解指代，同时产出关键词/意图/追问推荐；失败自动降级）
+                // 步骤 1：查询改写（结合多轮历史消解指代，同时产出关键词/意图/追问推荐；失败自动降级）。
                 QueryRewriteResult rewrite = queryRewriteService.rewrite(query, request.getHistory());
                 List<KnowledgeSearchResponse.ThinkingStep> thinkingSteps = new ArrayList<>();
                 thinkingSteps.add(new KnowledgeSearchResponse.ThinkingStep(
                         "query_parse", "问题解析", buildQueryParseDetail(query, rewrite)));
 
-                // Step 2: 用改写后的独立问题执行检索（auto 模式在 retrieve 内按问题特征路由；
-                // 改写产出的关键词并入关键词召回词表）
+                // 步骤 2：用改写后的独立问题执行检索（auto 模式在 retrieve 内按问题特征路由；
+                // 改写产出的关键词并入关键词召回词表）。
                 KnowledgeSearchRequest retrieveRequest = copyWithQuery(request, rewrite.safeStandaloneQuery());
                 retrieveRequest.setRewriteKeywords(rewrite.keywords());
                 KnowledgeSearchResponse response = retrieve(retrieveRequest);
@@ -201,7 +201,7 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                         resultCount > 0 ? Math.min(1.0, resultCount / 10.0) : 0.0
                 ));
 
-                // Step 3: 重排序说明（降级时 warnings 已如实提示，这里不再虚构“已重排”）
+                // 步骤 3：重排序说明（降级时 warnings 已如实提示，这里不再虚构“已重排”）。
                 if ("hybrid".equals(effectiveMode) && !hasRerankDegraded(response)) {
                     thinkingSteps.add(new KnowledgeSearchResponse.ThinkingStep(
                             "rerank",
@@ -210,7 +210,7 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                     ));
                 }
 
-                // Step 4: 流式生成回答（token / 深度思考 / 真实 token 用量分别推送）
+                // 步骤 4：流式生成回答（token / 深度思考 / 真实 token 用量分别推送）。
                 boolean shouldGenerateAnswer = !response.getResults().isEmpty()
                         && ("rag".equals(mode) || request.getLlmModelId() != null);
                 if (shouldGenerateAnswer) {
@@ -286,7 +286,7 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         return emitter;
     }
 
-    // ==================== 检索编排 ====================
+    // --- 检索编排 ---
 
     @Override
     public KnowledgeSearchResponse retrieve(KnowledgeSearchRequest request) {
@@ -476,7 +476,7 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         return selected;
     }
 
-    // ==================== 向量检索 ====================
+    // --- 向量检索 ---
 
     private List<KnowledgeSearchResponse.SearchResultItem> semanticSearch(
             float[] queryVector, String knowledgeBaseId, int topK,
@@ -571,7 +571,7 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                 .toList();
     }
 
-    // ==================== 关键词检索 ====================
+    // --- 关键词检索 ---
 
     private List<KnowledgeSearchResponse.SearchResultItem> keywordSearch(
             String query, Long knowledgeBaseId, int topK,
@@ -696,7 +696,7 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
                 .collect(Collectors.toList());
     }
 
-    // ==================== 结果组装与过滤 ====================
+    // --- 结果组装与过滤 ---
 
     private KnowledgeSearchResponse.SearchResultItem toResultItem(
             MilvusVectorStore.SearchResult sr,
@@ -959,7 +959,7 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         return knowledgeConfig.getSearchTopK();
     }
 
-    // ==================== 思维链 / 摘要 / 引用 ====================
+    // --- 思维链 / 摘要 / 引用 ---
 
     private List<KnowledgeSearchResponse.ThinkingStep> buildThinkingSteps(
             String query, String requestedMode, KnowledgeSearchResponse response) {
@@ -1367,7 +1367,7 @@ public class KnowledgeSearchServiceImpl implements KnowledgeSearchService {
         }
         return summaries;
     }
-    // ==================== 工具方法 ====================
+    // --- 工具方法 ---
 
     private String normalizeMode(String mode) {
         return mode == null || mode.isBlank() ? "auto" : mode;

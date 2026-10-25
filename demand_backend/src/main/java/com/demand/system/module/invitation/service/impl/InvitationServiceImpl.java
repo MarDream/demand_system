@@ -69,7 +69,7 @@ public class InvitationServiceImpl implements InvitationService {
         this.userService = userService;
     }
 
-    // ==================== 管理员侧 ====================
+    // --- 管理员侧 ---
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -307,7 +307,7 @@ public class InvitationServiceImpl implements InvitationService {
         joinRequestMapper.updateById(request);
     }
 
-    // ==================== 匿名侧 ====================
+    // --- 匿名侧 ---
 
     @Override
     public InviteInfoVO getInviteInfo(String code) {
@@ -365,7 +365,7 @@ public class InvitationServiceImpl implements InvitationService {
         invitationMapper.updateById(inv);
     }
 
-    // ==================== 内部工具 ====================
+    // --- 内部工具 ---
 
     private void applyInvitationStatusFilter(LambdaQueryWrapper<SysInvitation> wrapper, String status) {
         if (!isNotBlank(status)) {

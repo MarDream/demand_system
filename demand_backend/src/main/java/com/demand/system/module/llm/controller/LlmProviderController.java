@@ -20,7 +20,7 @@ public class LlmProviderController {
         this.providerService = providerService;
     }
 
-    // ==================== Provider ====================
+    // --- Provider ---
 
     @GetMapping
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN')")
@@ -74,7 +74,7 @@ public class LlmProviderController {
         return key.substring(0, 3) + "****" + key.substring(key.length() - 4);
     }
 
-    // ==================== Model ====================
+    // --- Model ---
 
     @PostMapping("/{id:\\d+}/models")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:llm-provider:create')")
@@ -139,7 +139,7 @@ public class LlmProviderController {
         return ResponseEntity.ok(Map.of("code", 200, "message", "测试完成", "data", result));
     }
 
-    // ==================== Roles ====================
+    // --- Roles ---
 
     @GetMapping("/models/roles")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN')")
@@ -147,7 +147,7 @@ public class LlmProviderController {
         return ResponseEntity.ok(Map.of("code", 200, "message", "操作成功", "data", LlmModelRole.PRESET_ROLES));
     }
 
-    // ==================== Chat Models (for RAG) ====================
+    // --- Chat Models（RAG 用） ---
 
     /**
      * 获取可用的 Chat 模型列表（供 RAG 文档中心使用）。
@@ -160,7 +160,7 @@ public class LlmProviderController {
         return ResponseEntity.ok(Map.of("code", 200, "message", "操作成功", "data", providerService.listChatModels()));
     }
 
-    // ==================== Translate ====================
+    // --- Translate ---
 
     /**
      * 使用已配置的大模型将中文文本翻译为英文编码（供角色编码生成等场景使用）。
@@ -178,7 +178,7 @@ public class LlmProviderController {
         return ResponseEntity.ok(response);
     }
 
-    // ==================== Sniff ====================
+    // --- Sniff ---
 
     @PostMapping("/{id:\\d+}/sniff-models")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:llm-provider:test')")

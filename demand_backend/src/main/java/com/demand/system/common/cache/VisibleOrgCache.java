@@ -74,9 +74,6 @@ public class VisibleOrgCache {
         }
     }
 
-    /**
-     * 使缓存失效
-     */
     public void invalidate(Long userId) {
         caffeineCache.invalidate(userId);
         try {

@@ -243,9 +243,6 @@ public class WorkflowVersionService {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * 获取当前活跃版本（根据工单类型）
-     */
     public WorkflowVersion getActiveVersionByType(Long requirementTypeId) {
         WorkflowRequirementType requirementType = requirementTypeMapper.selectOne(
                 new LambdaQueryWrapper<WorkflowRequirementType>()
@@ -302,9 +299,6 @@ public class WorkflowVersionService {
         }
     }
 
-    /**
-     * 提取工作流名称
-     */
     private String extractWorkflowName(String definition) {
         try {
             JsonNode root = objectMapper.readTree(definition);
@@ -315,9 +309,6 @@ public class WorkflowVersionService {
         }
     }
 
-    /**
-     * 生成下一个版本号
-     */
     private String generateNextVersion(Long projectId, Long requirementTypeId) {
         return workflowVersionMapper.selectList(
                         new LambdaQueryWrapper<WorkflowVersion>()
@@ -330,9 +321,6 @@ public class WorkflowVersionService {
                 .orElse("1.0.0");
     }
 
-    /**
-     * 查询工单类型（根据版本ID）
-     */
     private WorkflowRequirementType findRequirementTypeByVersion(Long versionId) {
         return requirementTypeMapper.selectOne(
                 new LambdaQueryWrapper<WorkflowRequirementType>()
@@ -345,14 +333,10 @@ public class WorkflowVersionService {
      * 通过角色判断，由前端按钮权限控制
      */
     private boolean hasApprovalPermission(Long userId) {
-        // 检查用户是否拥有 SUPER_ADMIN 角色
         // 前端通过 workflow:approve 权限标签控制按钮显示
         return SecurityUtils.hasAnyRole("SUPER_ADMIN");
     }
 
-    /**
-     * 转换为VO
-     */
     private WorkflowVersionVO toVO(WorkflowVersion version, Map<Long, Project> projectMap,
                                    Map<Long, User> userMap, Map<Long, Long> instanceCountMap) {
         WorkflowVersionVO vo = new WorkflowVersionVO();
@@ -401,9 +385,6 @@ public class WorkflowVersionService {
         return vo;
     }
 
-    /**
-     * 解析激活状态名称
-     */
     private String resolveActivationStatusName(String status) {
         if (status == null) {
             return "未知";

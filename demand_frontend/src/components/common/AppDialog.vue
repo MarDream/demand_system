@@ -94,7 +94,6 @@ defineEmits<{
     background: var(--color-surface-alt);
   }
 
-  // 关闭按钮
   .el-dialog__headerbtn {
     top: 16px;
     right: 16px;

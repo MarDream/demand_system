@@ -67,13 +67,13 @@
         WHERE requirement_no LIKE CONCAT(#{datePrefix}, '%')
     </select>
 
-    <!-- 修复 P0：绕过 @TableLogic 过滤，按 ID 查询需求（包括已删除记录）
+    <!-- 绕过 @TableLogic 过滤，按 ID 查询需求（包括已删除记录）
          用于 restore 等需要访问已删除数据的场景 -->
     <select id="selectByIdIncludeDeleted" resultType="com.demand.system.module.requirement.entity.Requirement">
         SELECT * FROM requirements WHERE id = #{id} LIMIT 1
     </select>
 
-    <!-- 修复 P0：绕过 @TableLogic 过滤，更新需求（包括已删除记录）
+    <!-- 绕过 @TableLogic 过滤，更新需求（包括已删除记录）
          用于 restore 操作 -->
     <update id="restoreById">
         UPDATE requirements SET deleted_at = 0, updated_at = NOW() WHERE id = #{id}
@@ -365,7 +365,7 @@
         ORDER BY r.updated_at DESC
     </select>
 
-    <!-- 我的待办 - 使用物化表优化（新版本，带数据权限过滤） -->
+    <!-- 我的待办 - 使用待办物化表 requirement_pending_tasks（带数据权限过滤） -->
     <select id="selectMyPendingOptimized" resultType="com.demand.system.module.requirement.entity.Requirement">
         SELECT DISTINCT r.*
         FROM requirements r
@@ -500,12 +500,9 @@
         ), r.updated_at) DESC, r.id DESC
     </select>
 
-    <!-- 我的已办 - V2架构重构版（使用workflow_node_assignees关联表，带数据权限过滤）
-         性能提升：排除当前待办时使用索引JOIN而非JSON_CONTAINS
-
-         性能优化（2026-06-26）：移除 DISTINCT
-         - 逻辑：creator_id 和 EXISTS 查询本身不会产生重复记录
-         - 收益：避免临时表和排序开销 -->
+    <!-- 我的已办 - 基于 workflow_node_assignees 关联表，带数据权限过滤
+         creator_id 与 EXISTS 子查询不会产生重复行，故不使用 DISTINCT；
+         排除当前待办用 JOIN 而非 JSON_CONTAINS 以命中索引 -->
     <select id="selectMyDoneV2" resultType="com.demand.system.module.requirement.entity.Requirement">
         SELECT r.*
         FROM requirements r

@@ -821,7 +821,7 @@ import { useColumnConfig, type ColumnDef } from '@/composables/useColumnConfig'
 import { usePermission } from '@/composables/usePermission'
 import { useCollapsibleSidebar } from '@/composables/useCollapsibleSidebar'
 
-// ==================== 列字段设置 ====================
+// --- 列字段设置 ---
 
 const llmModelColumns: ColumnDef[] = [
   { key: 'modelId', label: '模型名称', group: '基础字段', prop: 'modelId', minWidth: 140, showOverflowTooltip: true },
@@ -1110,7 +1110,7 @@ function handleSniffSelectAllFiltered(checked: boolean) {
   }
 }
 
-// ==================== Lifecycle ====================
+// --- Lifecycle ---
 
 onMounted(() => {
   loadProviders()
@@ -1121,7 +1121,7 @@ onMounted(() => {
   loadApplications()
 })
 
-// ==================== Data ====================
+// --- Data ---
 
 async function loadProviders() {
   loading.value = true
@@ -1409,7 +1409,7 @@ async function loadRoles() {
   } catch { /* use defaults */ }
 }
 
-// ==================== Provider CRUD ====================
+// --- Provider CRUD ---
 
 function resetProviderForm() {
   editingProviderId.value = null
@@ -1543,7 +1543,7 @@ async function handleViewApiKey(row: LlmProvider) {
   }
 }
 
-// ==================== Model CRUD ====================
+// --- Model CRUD ---
 
 function resetModelForm() {
   editingModelId.value = null
@@ -1667,7 +1667,7 @@ async function handleBatchDeleteModels() {
   await loadProviders()
 }
 
-// ==================== Test ====================
+// --- Test ---
 
 function connLightClass(model: LlmModel): string {
   if (!model.testSuccess) return 'conn-red'
@@ -1773,7 +1773,6 @@ async function handleBatchTest() {
     return result
   })
 
-  // 等待所有测试完成
   await Promise.all(testPromises)
 
   batchTesting.value = false
@@ -1781,7 +1780,6 @@ async function handleBatchTest() {
   // 所有模型测试完成后，统一刷新一次接入组列表（更新左侧卡片的总模型数/有效数）
   await loadProviders()
 
-  // 显示最终统计结果
   if (failCount === 0 && timeoutCount === 0) {
     ElMessage.success(`批量测试完成：全部 ${successCount} 个模型连通正常`)
   } else {
@@ -1850,7 +1848,7 @@ function providerValidCount(p: LlmProvider): number {
   return p.models.filter(m => m.testSuccess === true).length
 }
 
-// ==================== Role ====================
+// --- Role ---
 
 function typeTagType(modelType: string): string {
   const map: Record<string, string> = {
@@ -1875,7 +1873,7 @@ function sniffTypeTagType(modelType: string): string {
   return map[modelType] ?? 'info'
 }
 
-// ==================== Sniff ====================
+// --- Sniff ---
 
 async function handleSniff(row: LlmProvider) {
   sniffProviderId.value = row.id!
@@ -1992,7 +1990,7 @@ async function handleSniffImport() {
 </script>
 
 <style scoped lang="scss">
-// ==================== 两栏布局 ====================
+// --- 两栏布局 ---
 .config-layout {
   flex: 1;
   display: grid;
@@ -2002,7 +2000,7 @@ async function handleSniffImport() {
   position: relative;
 }
 
-// ==================== 左侧接入组面板 ====================
+// --- 左侧接入组面板 ---
 .provider-panel {
   display: flex;
   background: var(--color-surface);
@@ -2199,7 +2197,7 @@ async function handleSniffImport() {
   border-top: 1px solid var(--color-border);
 }
 
-// ==================== 右侧模型面板 ====================
+// --- 右侧模型面板 ---
 .model-panel {
   flex: 1;
   display: flex;
@@ -2226,7 +2224,7 @@ async function handleSniffImport() {
   border-radius: 0;
 }
 
-// ==================== 操作图标 ====================
+// --- 操作图标 ---
 .action-icon {
   font-size: 15px;
   cursor: pointer;
@@ -2247,7 +2245,7 @@ async function handleSniffImport() {
   &.danger:hover { color: #dc2626; background: rgba(239, 68, 68, 0.08); }
 }
 
-// ==================== 连通性状态 ====================
+// --- 连通性状态 ---
 .conn-status {
   display: flex;
   align-items: center;
@@ -2278,7 +2276,7 @@ async function handleSniffImport() {
 .conn-yellow { background-color: #f59e0b; }
 .conn-red { background-color: #ef4444; }
 
-// ==================== 对话框 ====================
+// --- 对话框 ---
 .form-section-title {
   font-size: 13px;
   font-weight: 600;
@@ -2400,7 +2398,7 @@ async function handleSniffImport() {
 
 // 列设置弹窗样式已迁至 src/styles/column-config.scss（全局）
 
-// ==================== 测试详情 Drawer ====================
+// --- 测试详情 Drawer ---
 .test-detail-section {
   margin-bottom: 20px;
 }
@@ -2488,7 +2486,7 @@ async function handleSniffImport() {
   color: #dc2626;
 }
 
-// ==================== 嗅探搜索 ====================
+// --- 嗅探搜索 ---
 .sniff-model-list {
   max-height: 340px;
   overflow-y: auto;
@@ -2561,7 +2559,7 @@ async function handleSniffImport() {
   color: var(--color-text-secondary);
 }
 
-// ==================== 模型表格底栏 ====================
+// --- 模型表格底栏 ---
 .model-table-footer {
   display: flex;
   align-items: center;
@@ -2594,7 +2592,7 @@ async function handleSniffImport() {
   color: var(--color-text-tertiary);
 }
 
-// ==================== RAG 状态条 ====================
+// --- RAG 状态条 ---
 .rag-status-bar {
   display: flex;
   align-items: center;
@@ -2643,7 +2641,7 @@ async function handleSniffImport() {
   font-weight: 500;
 }
 
-// ==================== 模型类型筛选 ====================
+// --- 模型类型筛选 ---
 .model-type-filter {
   display: flex;
   align-items: center;

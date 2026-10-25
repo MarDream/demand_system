@@ -9,7 +9,7 @@
     <!-- 日志文件名前缀 -->
     <property name="APP_NAME" value="demand-system" />
 
-    <!-- ==================== 控制台输出 ==================== -->
+    <!-- 控制台输出 -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
             <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} | %-5level | [%thread] | %X{traceId:-} | %logger{36} | %msg%n</pattern>
@@ -17,7 +17,7 @@
         </encoder>
     </appender>
 
-    <!-- ==================== 文件输出（按天滚动） ==================== -->
+    <!-- 文件输出（按天滚动） -->
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>${LOG_DIR}/${APP_NAME}.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
@@ -35,7 +35,7 @@
         </encoder>
     </appender>
 
-    <!-- ==================== 错误日志单独一份 ==================== -->
+    <!-- 错误日志单独一份 -->
     <appender name="ERROR_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>${LOG_DIR}/error.log</file>
         <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
@@ -53,7 +53,7 @@
         </encoder>
     </appender>
 
-    <!-- ==================== 环境区分 ==================== -->
+    <!-- 环境区分 -->
     <!-- 开发环境：控制台 + 文件 -->
     <springProfile name="dev">
         <root level="INFO">

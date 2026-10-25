@@ -41,6 +41,12 @@ public interface RequirementService {
 
     void update(RequirementUpdateDTO dto, Long userId);
 
+    /**
+     * 删除需求附件（仅从 requirements.attachments 移除引用，不物理删除文件）。
+     * 权限矩阵：草稿期=我的待办视图权限+本人上传；提交后=button:requirement:attachment:delete；管理员直通。
+     */
+    void deleteAttachment(Long requirementId, Long fileId, Long userId);
+
     Long createDraft(RequirementDraftCreateDTO dto, Long creatorId);
 
     void updateDraft(RequirementDraftUpdateDTO dto, Long userId);

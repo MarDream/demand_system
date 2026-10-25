@@ -79,14 +79,12 @@ public class UserController {
         return Result.success();
     }
 
-    /** 批量启用 / 批量停用 */
     @PostMapping("/batch/status")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:batch-update', 'button:user:update')")
     public Result<Integer> batchUpdateStatus(@RequestBody BatchUserActionDTO dto) {
         return Result.success(userService.batchUpdateStatus(dto.getIds(), dto.getStatus()));
     }
 
-    /** 批量删除 */
     @PostMapping("/batch/delete")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:batch-delete')")
     public Result<Integer> batchDelete(@RequestBody BatchUserActionDTO dto) {
@@ -123,7 +121,6 @@ public class UserController {
         return Result.success(userService.rosterStats(query));
     }
 
-    /** 花名册导入模板下载 */
     @GetMapping("/import-template")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:import')")
     public void importTemplate(HttpServletResponse response) {
@@ -161,7 +158,6 @@ public class UserController {
         return Result.success(userService.listExportHistory(pageNum, pageSize));
     }
 
-    /** 删除导出历史 */
     @DeleteMapping("/export-history/{id}")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:export')")
     public Result<Void> deleteExportHistory(@PathVariable Long id) {
@@ -169,7 +165,6 @@ public class UserController {
         return Result.success();
     }
 
-    /** 下载历史导出文件 */
     @GetMapping("/export-history/{id}/download")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:export')")
     public void downloadExportHistory(@PathVariable Long id, HttpServletResponse response) {

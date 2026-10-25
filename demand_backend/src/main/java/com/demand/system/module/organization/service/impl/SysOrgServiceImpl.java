@@ -43,9 +43,7 @@ public class SysOrgServiceImpl implements SysOrgService {
         if (!SecurityUtils.isSuperAdmin()) {
             Long currentUserOrgId = getCurrentUserOrgId();
             if (currentUserOrgId != null) {
-                // 获取当前用户组织及所有子孙组织ID
                 List<Long> visibleOrgIds = getDescendantIds(currentUserOrgId);
-                // 过滤只保留可见组织
                 all = all.stream()
                         .filter(org -> visibleOrgIds.contains(org.getId()))
                         .collect(Collectors.toList());
@@ -59,9 +57,6 @@ public class SysOrgServiceImpl implements SysOrgService {
         return buildTree(voList);
     }
 
-    /**
-     * 获取当前登录用户的 orgId
-     */
     private Long getCurrentUserOrgId() {
         Long userId = SecurityUtils.getCurrentUserId();
         if (userId == null) return null;
@@ -164,7 +159,7 @@ public class SysOrgServiceImpl implements SysOrgService {
 
         sysOrgMapper.updateById(org);
 
-        // Cascade update descendants path
+        // 级联更新所有子孙节点的 path，并同步调整 level
         if (oldPath != null && !oldPath.equals(org.getPath())) {
             sysOrgMapper.update(null, new LambdaUpdateWrapper<SysOrg>()
                     .likeRight(SysOrg::getPath, oldPath)
@@ -174,7 +169,7 @@ public class SysOrgServiceImpl implements SysOrgService {
             );
         }
 
-        // Re-index sibling sort orders
+        // 重排同级节点排序，保证排序值连续
         reindexSiblingSortOrders(org.getParentId());
     }
 
@@ -240,7 +235,6 @@ public class SysOrgServiceImpl implements SysOrgService {
     private SysOrgVO toVO(SysOrg org) {
         SysOrgVO vo = new SysOrgVO();
         BeanUtils.copyProperties(org, vo);
-        // 递归统计该组织及其所有子组织的成员数量
         vo.setMemberCount(countMembersRecursively(org.getId()));
         return vo;
     }
@@ -251,10 +245,8 @@ public class SysOrgServiceImpl implements SysOrgService {
      * @return 成员总数
      */
     private int countMembersRecursively(Long orgId) {
-        // 获取当前组织及其所有子组织的ID列表
         List<Long> orgIds = getDescendantIds(orgId);
 
-        // 统计这些组织中的所有成员（去重）
         // 查询 User 表中 orgId、regionId 或 departmentId 在列表中的用户
         long memberCount = userMapper.selectCount(
                 new LambdaQueryWrapper<User>()

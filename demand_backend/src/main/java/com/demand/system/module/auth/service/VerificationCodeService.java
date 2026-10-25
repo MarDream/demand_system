@@ -1,8 +1,5 @@
 package com.demand.system.module.auth.service;
 
-/**
- * 验证码服务接口
- */
 public interface VerificationCodeService {
 
     /**

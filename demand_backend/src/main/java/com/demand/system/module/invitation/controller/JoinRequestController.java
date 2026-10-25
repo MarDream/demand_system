@@ -19,7 +19,6 @@ public class JoinRequestController {
         this.invitationService = invitationService;
     }
 
-    /** 添加/申请记录列表 */
     @GetMapping
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:update', 'button:user:create')")
     public Result<PageResult<JoinRequestVO>> list(JoinRequestQueryDTO query) {
@@ -34,7 +33,6 @@ public class JoinRequestController {
         return Result.success();
     }
 
-    /** 审批拒绝 */
     @PutMapping("/{id}/reject")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:update')")
     public Result<Void> reject(@PathVariable Long id, @RequestBody(required = false) ReviewJoinRequestDTO dto) {

@@ -8,13 +8,10 @@ import java.util.List;
  */
 public class RoleTreeNodeVO {
 
-    /** 分组ID */
     private Long groupId;
 
-    /** 分组名称 */
     private String groupName;
 
-    /** 是否默认分组 */
     private Integer isDefault;
 
     /** 分组下的角色列表 */
@@ -52,9 +49,6 @@ public class RoleTreeNodeVO {
         this.children = children;
     }
 
-    /**
-     * 角色项 VO
-     */
     public static class RoleItemVO {
         private Long id;
         private String name;

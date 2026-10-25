@@ -96,8 +96,7 @@ export function canCurrentUserCountersign(requirementId: number, nodeId: string)
   }) as unknown as Promise<boolean>
 }
 
-// ==================== 工作流复制相关 API ====================
-
+// --- 工作流复制相关 API ---
 export interface WorkflowCopyRequest {
   newName: string
   newVersion?: string
@@ -205,7 +204,7 @@ export interface ParallelBranch {
 }
 
 /**
- * 节点评分配置（对应 ADR-002 工作流节点评分功能）
+ * 节点评分配置。
  */
 export interface RatingDimension {
   key: string

@@ -8,13 +8,7 @@ import org.apache.ibatis.annotations.Param;
 @Mapper
 public interface RoleGroupRelationMapper extends BaseMapper<RoleGroupRelation> {
 
-    /**
-     * 删除角色下的所有关联分组
-     */
     void deleteByRoleId(@Param("roleId") Long roleId);
 
-    /**
-     * 删除角色组下的所有关联
-     */
     void deleteByRoleGroupId(@Param("roleGroupId") Long roleGroupId);
 }

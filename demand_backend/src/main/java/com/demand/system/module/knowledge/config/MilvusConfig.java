@@ -7,28 +7,28 @@ import org.springframework.context.annotation.Configuration;
 @ConfigurationProperties(prefix = "milvus")
 public class MilvusConfig {
 
-    // ==== Connection ====
+    // --- 连接 ---
     private String host = "localhost";
     private int port = 19530;
 
-    // ==== Collection ====
+    // --- Collection ---
     private String collectionName = "knowledge_chunks";
-    /** event vector collection name */
+    /** 事件向量集合名。 */
     private String eventsCollectionName = "knowledge_events";
-    /** entity vector collection name */
+    /** 实体向量集合名。 */
     private String entitiesCollectionName = "knowledge_entities";
 
-    // ==== Index ====
+    // --- 索引 ---
     private String indexType = "HNSW";
     private String metricType = "COSINE";
     private int dimension = 2048;
 
-    // ==== HNSW ====
+    // --- HNSW ---
     private int hnswM = 16;
     private int hnswEfConstruction = 256;
-    /** default efSearch for normal search */
+    /** 普通检索的默认 efSearch。 */
     private int hnswEfSearchDefault = 128;
-    /** high-recall efSearch for expansion phase */
+    /** 扩展阶段的高召回 efSearch。 */
     private int hnswEfSearchHigh = 256;
 
     public String getHost() {

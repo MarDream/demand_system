@@ -75,7 +75,6 @@ public class BitableBaseController {
         Long userId = SecurityUtils.getCurrentUserId();
         authorizationService.checkOwnerPermission(id, userId);
         bitableBaseService.deleteBase(id);
-        // 删除后清除角色缓存
         authorizationService.clearRoleCache(id);
         return Result.success();
     }

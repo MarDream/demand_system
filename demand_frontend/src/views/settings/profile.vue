@@ -315,7 +315,7 @@ import {
   type SidebarStyle,
 } from '@/composables/useAppearance'
 
-// ===== 外观设置 =====
+// --- 外观设置 ---
 const appearance = useAppearance()
 // 模板顶层解包（模板内非顶层 ref 不会自动 unwrap，直接比较会出类型问题）
 const appearanceMode = appearance.mode
@@ -338,7 +338,7 @@ function setMode(mode: ThemeMode) {
   applyAppearance()
 }
 
-// ===== 侧边栏风格轮播 =====
+// --- 侧边栏风格轮播 ---
 const currentSidebarStyleName = computed(() =>
   SIDEBAR_STYLES.find(s => s.value === appearanceSidebar.value)?.name || '经典',
 )
@@ -357,7 +357,7 @@ const initialSidebarSlide = computed(() => {
   return index < 0 ? 0 : Math.floor(index / 3)
 })
 
-// ===== 外观保存（显式持久化） =====
+// --- 外观保存（显式持久化） ---
 const savingAppearance = ref(false)
 async function handleSaveAppearance() {
   savingAppearance.value = true
@@ -373,7 +373,7 @@ async function handleSaveAppearance() {
   }
 }
 
-// ===== 首页概要预览（静态示意数据，与首页仪表盘同构） =====
+// --- 首页概要预览（静态示意数据，与首页仪表盘同构） ---
 const previewGreeting = computed(() => {
   const hour = new Date().getHours()
   if (hour < 6) return '夜深了'
@@ -442,7 +442,7 @@ const roleText = computed(() => {
   return names.length ? names.join('、') : '-'
 })
 
-// ==================== 头像设置 ====================
+// --- 头像设置 ---
 const avatarDialogVisible = ref(false)
 const avatarSaving = ref(false)
 
@@ -488,7 +488,7 @@ function fillForm() {
   form.phone = userStore.userInfo?.phone || ''
 }
 
-// ==================== 修改联系方式弹框 ====================
+// --- 修改联系方式弹框 ---
 const contactDialogVisible = ref(false)
 
 function openContactDialog() {
@@ -631,7 +631,7 @@ onMounted(async () => {
   margin-top: 16px;
 }
 
-// ============ 头像区块 ============
+// --- 头像区块 ---
 .profile-base {
   display: flex;
   gap: 18px;
@@ -657,7 +657,7 @@ onMounted(async () => {
   flex: 1;
 }
 
-// ============ 外观设置 ============
+// --- 外观设置 ---
 .appearance-card {
   margin-bottom: 16px;
 }

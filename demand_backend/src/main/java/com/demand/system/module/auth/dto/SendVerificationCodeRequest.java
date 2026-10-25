@@ -4,9 +4,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 
-/**
- * 发送验证码请求DTO
- */
 @Schema(description = "发送验证码请求")
 public class SendVerificationCodeRequest {
 

@@ -274,7 +274,6 @@ const activeAdvanced = ref<string[]>([])
 const nameStatus = ref<'idle' | 'checking' | 'conflict' | 'available'>('idle')
 const suggestedName = ref('')
 
-// 打开对话框
 const open = (mode: 'blank' | 'copy' = 'blank', sourceVersionId?: number) => {
   visible.value = true
   createMode.value = mode
@@ -301,7 +300,6 @@ const open = (mode: 'blank' | 'copy' = 'blank', sourceVersionId?: number) => {
   }
 }
 
-// 加载模板列表
 const loadTemplates = async () => {
   loading.value = true
   try {
@@ -326,12 +324,10 @@ const loadTemplates = async () => {
   }
 }
 
-// 搜索
 const handleSearch = () => {
   loadTemplates()
 }
 
-// 选择模板
 const handleSelectTemplate = (template: WorkflowTemplateDTO) => {
   selectedWorkflow.value = template
   copyOptions.newName = `${template.name} - 副本`
@@ -345,7 +341,6 @@ const handleCopyVersionInput = (value: string) => {
   copyOptions.newVersion = normalizeWorkflowVersion(value)
 }
 
-// 检查名称冲突
 const checkNameConflict = async () => {
   if (!copyOptions.newName.trim()) {
     nameStatus.value = 'idle'
@@ -369,7 +364,6 @@ const checkNameConflict = async () => {
   }
 }
 
-// 使用建议名称
 const useSuggestedName = () => {
   copyOptions.newName = suggestedName.value
   nameStatus.value = 'available'
@@ -379,9 +373,9 @@ const useSuggestedName = () => {
 // 创建或复制
 const handleCreate = async () => {
   if (createMode.value === 'blank') {
-    // 空白创建逻辑（保持原有逻辑）
+    // 空白创建：仅做前端校验与提示
     await blankFormRef.value?.validate()
-    // TODO: 调用空白创建API
+    // 空白创建工作流暂未接入后端接口
     ElMessage.success('创建成功')
     handleClose()
   } else {
@@ -413,7 +407,6 @@ const handleCreate = async () => {
   }
 }
 
-// 关闭对话框
 const handleClose = () => {
   visible.value = false
   selectedWorkflow.value = null
@@ -423,17 +416,14 @@ const handleClose = () => {
   copyFormRef.value?.resetFields()
 }
 
-// 格式化日期
 const formatDate = (date: string) => {
   return formatDateUtil(date)
 }
 
-// 监听标签页切换
 watch(activeTab, () => {
   loadTemplates()
 })
 
-// 监听创建模式切换
 watch(createMode, () => {
   if (createMode.value === 'copy') {
     loadTemplates()

@@ -91,7 +91,7 @@ public class Nl2SqlServiceImpl implements Nl2SqlService {
         Nl2SqlProgressListener progress = listener == null ? Nl2SqlProgressListener.NOOP : listener;
         List<String> warnings = new ArrayList<>();
 
-        // ===== Task 1: 问题理解 + SQL 生成 =====
+        // --- 任务 1：问题理解 + SQL 生成 ---
         AssistantTask parseTask = new AssistantTask("nl2sql_generate", "理解问题并生成查询");
         parseTask.start("加载数据表结构，理解问题「" + shorten(context.question(), 30) + "」");
         progress.onTask(parseTask);
@@ -166,7 +166,7 @@ public class Nl2SqlServiceImpl implements Nl2SqlService {
         parseTask.log("info", "涉及数据表：" + String.join("、", validation.tables()));
         progress.onTask(parseTask);
 
-        // ===== Task 2: 安全校验 + 数据权限注入 =====
+        // --- 任务 2：安全校验 + 数据权限注入 ---
         AssistantTask validateTask = new AssistantTask("nl2sql_validate", "安全校验与权限过滤");
         validateTask.start("校验只读语句、表白名单与行级数据范围");
         validateTask.log("info", "表结构校验通过，引用表：" + String.join("、", validation.tables()));
@@ -206,7 +206,7 @@ public class Nl2SqlServiceImpl implements Nl2SqlService {
         validateTask.complete("安全校验通过");
         progress.onTask(validateTask);
 
-        // ===== Task 3: 执行查询 =====
+        // --- 任务 3：执行查询 ---
         AssistantTask executeTask = new AssistantTask("nl2sql_execute", "查询数据库");
         executeTask.start("执行只读查询…");
         progress.onTask(executeTask);
@@ -243,7 +243,7 @@ public class Nl2SqlServiceImpl implements Nl2SqlService {
                 execution.durationMs(),
                 scopeApplied);
 
-        // ===== Task 4: 生成整合性回答 =====
+        // --- 任务 4：生成整合性回答 ---
         AssistantTask answerTask = new AssistantTask("nl2sql_answer", "生成回答");
         answerTask.start("基于查询结果生成整合性回答…");
         progress.onTask(answerTask);
@@ -292,7 +292,7 @@ public class Nl2SqlServiceImpl implements Nl2SqlService {
         return Nl2SqlOutcome.success(dataResult, warnings);
     }
 
-    // ==================== 内部方法 ====================
+    // --- 内部方法 ---
 
     private boolean hasOrgScopedTable(Set<String> tables, SchemaCatalogService.CatalogSnapshot catalog) {
         Set<String> orgScoped = catalog.orgScopedTables();

@@ -69,6 +69,10 @@ export function formatStatus(status: string, map?: Record<string, string>): stri
   return formatLabel(status, map)
 }
 
+/**
+ * 修复被按 Latin-1 误解码的中文乱码（mojibake）。
+ * 已是正常文本（含中文，或无 Latin-1 扩展区可疑字符）时原样返回。
+ */
 export function normalizeText(text: string): string {
   if (!text) return text
   if (/[\u4E00-\u9FFF]/.test(text)) return text

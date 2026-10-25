@@ -48,9 +48,9 @@ public class LlmGateway {
     /**
      * 探测 / 测试类调用（模型列表）专用：短超时。
      *
-     * <p>⚠️ 别拿 sharedRestTemplate 跑探测 —— 它 readTimeout 是 120s，而前端 axios 只等 30s，
-     * 上游卡住时前端先超时、后端还在空跑（2026-10-12 实测：智谱接入组探测必然走到 120s）。
-     * 探测本身是"锦上添花"的辅助功能，宁可快速失败让用户手工添加模型。</p>
+     * <p>不可复用 sharedRestTemplate 探测：其 readTimeout 为 120s，而前端 axios 只等 30s，
+     * 上游卡住时前端先超时、后端仍在空跑，白白占用连接。
+     * 探测本身是辅助功能，宁可快速失败让用户手工添加模型。</p>
      */
     private final RestTemplate probeRestTemplate;
 
@@ -109,7 +109,7 @@ public class LlmGateway {
         return embedWithProvider(provider, List.of(text)).get(0);
     }
 
-    // ==================== Reranker ====================
+    // --- Reranker ---
 
     /**
      * 使用指定的 Provider 配置调用 Reranker 接口，
@@ -136,7 +136,7 @@ public class LlmGateway {
         }
     }
 
-    // ==================== Event Extraction (SAG) ====================
+    // --- 事件提取（SAG） ---
 
     /**
      * 从文档chunk中提取事件和实体（SAG事件提取）。
@@ -204,7 +204,6 @@ public class LlmGateway {
                     chunkText
             );
 
-            // 构建 OpenAI chat 请求
             Map<String, Object> body = new HashMap<>();
             body.put("model", provider.getModel());
             body.put("messages", List.of(
@@ -221,16 +220,13 @@ public class LlmGateway {
                 return "{\"events\":[],\"entities\":[]}";
             }
 
-            // 清理可能的 markdown 代码块包裹
             content = cleanJsonResponse(content);
 
-            // 验证是合法 JSON
             try {
                 objectMapper.readTree(content);
                 return content;
             } catch (Exception e) {
                 log.warn("LLM返回内容非合法JSON，尝试提取JSON片段: {}", content.substring(0, Math.min(200, content.length())));
-                // 尝试从 markdown 代码块或文本中提取 JSON
                 return extractJsonFromText(content);
             }
         } catch (Exception e) {
@@ -277,9 +273,7 @@ public class LlmGateway {
         return "{\"events\":[],\"entities\":[]}";
     }
 
-    // ==================== Chat (RAG Answer Generation) ====================
-
-    // ==================== Core HTTP Call ====================
+    // --- 核心 HTTP 调用 ---
 
     private JsonNode call(LlmGatewayConfig.Provider provider, String path, Map<String, Object> body) {
         try {
@@ -342,7 +336,7 @@ public class LlmGateway {
         }
     }
 
-    // ==================== Chat with arbitrary provider (for test) ====================
+    // --- 指定 Provider 的对话（用于测试） ---
 
     public ChatResult chatWithProvider(LlmGatewayConfig.Provider provider, String systemPrompt, String userMessage) {
         return chatWithProvider(provider, systemPrompt, userMessage, null, null);
@@ -999,7 +993,7 @@ public class LlmGateway {
         return maxTokens != null && maxTokens > 0 ? maxTokens : 2048;
     }
 
-    // ==================== Model List (Sniff) ====================
+    // --- 模型列表（探测） ---
 
     public List<ModelInfo> fetchModelList(LlmGatewayConfig.Provider provider) {
         try {
@@ -1055,26 +1049,26 @@ public class LlmGateway {
     }
 
     private String normalizeVersionedApiRoot(String base) {
-        // 1. If the URL already contains /v1, truncate after it
+        // 1. 若 URL 已含 /v1，则截断其后的内容。
         String versionRoot = truncateAfterV1Segment(base);
         if (versionRoot != null) {
             return versionRoot;
         }
 
-        // 2. Strip known endpoint suffixes (e.g. /chat/completions) and check again
+        // 2. 去掉已知端点后缀（如 /chat/completions）后再次检查。
         String endpointRoot = stripKnownEndpointSuffix(base);
         versionRoot = truncateAfterV1Segment(endpointRoot);
         if (versionRoot != null) {
             return versionRoot;
         }
 
-        // 3. If the URL already contains a versioned segment (e.g. /v4, /v2, /v1beta1),
-        //    don't append /v1 — the provider uses a non-standard version path (e.g. ZhiPu /v4)
+        // 3. 若已含版本段（如 /v4、/v2、/v1beta1）则不再追加 /v1：
+        //    该厂商使用非标准版本路径（如智谱 /v4）。
         if (hasVersionedPathSegment(endpointRoot)) {
             return endpointRoot;
         }
 
-        // 4. No version segment found at all, append /v1 (standard OpenAI convention)
+        // 4. 未找到任何版本段，追加 /v1（OpenAI 标准约定）。
         return endpointRoot + "/v1";
     }
 
@@ -1153,9 +1147,9 @@ public class LlmGateway {
                 return error.asText();
             }
         } catch (IllegalArgumentException e) {
-            // Fall through to a capped raw body; some OpenAI-compatible services return plain text.
+            // JSON 解析失败：回退到截断后的原始响应体（部分兼容服务返回纯文本）。
         } catch (Exception e) {
-            // Fall through to a capped raw body; some OpenAI-compatible services return plain text.
+            // 其它异常同样回退到原始响应体。
         }
         return body.length() > 500 ? body.substring(0, 500) : body;
     }

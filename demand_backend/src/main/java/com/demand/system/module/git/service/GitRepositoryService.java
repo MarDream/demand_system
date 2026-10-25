@@ -12,19 +12,10 @@ public interface GitRepositoryService {
      */
     List<GitRepositoryVO> listRepositories(String keyword, Long platformId, Long projectId, String status);
 
-    /**
-     * 创建仓库
-     */
     GitRepositoryVO createRepository(GitRepositoryDTO dto);
 
-    /**
-     * 更新仓库
-     */
     GitRepositoryVO updateRepository(Long id, GitRepositoryDTO dto);
 
-    /**
-     * 仓库详情
-     */
     GitRepositoryVO getRepositoryDetail(Long id);
 
     /**
@@ -32,8 +23,5 @@ public interface GitRepositoryService {
      */
     void archiveRepository(Long id);
 
-    /**
-     * 删除仓库
-     */
     void deleteRepository(Long id);
 }

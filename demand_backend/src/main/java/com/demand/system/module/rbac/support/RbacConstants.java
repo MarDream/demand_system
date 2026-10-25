@@ -105,6 +105,7 @@ public final class RbacConstants {
             "button:requirement:rollback",
             "button:requirement:cancel",
             "button:requirement:batch-delete",
+            "button:requirement:attachment:delete",
             PERMISSION_BUTTON_BITABLE_CREATE,
             PERMISSION_BUTTON_BITABLE_UPDATE,
             PERMISSION_BUTTON_BITABLE_DELETE

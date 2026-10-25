@@ -123,7 +123,6 @@ public class BitableFormulaServiceImpl implements BitableFormulaService {
 
     @Override
     public Object calculateRollup(Long fieldId, Long recordId, Long targetFieldId, String aggregation) {
-        // 验证字段存在
         BitableField rollupField = fieldMapper.selectById(fieldId);
         if (rollupField == null) {
             throw new BusinessException("rollup 字段不存在");
@@ -132,13 +131,11 @@ public class BitableFormulaServiceImpl implements BitableFormulaService {
             throw new BusinessException("字段不是 rollup 类型");
         }
 
-        // 获取关联字段信息（从 config 中解析）
         Long linkFieldId = parseLinkFieldId(rollupField);
         if (linkFieldId == null) {
             throw new BusinessException("rollup 字段缺少关联字段配置");
         }
 
-        // 获取关联记录ID列表
         List<Long> linkedRecordIds = linkService.getLinkedRecordIds(linkFieldId, recordId);
         if (linkedRecordIds.isEmpty()) {
             return getDefaultRollupResult(aggregation);
@@ -147,13 +144,11 @@ public class BitableFormulaServiceImpl implements BitableFormulaService {
         // 批量查询目标字段值（优化：一次 IN 查询替代 N+1）
         List<Object> values = batchExtractCellValues(linkedRecordIds, targetFieldId);
 
-        // 聚合计算
         return aggregate(values, aggregation);
     }
 
     @Override
     public List<Object> calculateLookup(Long fieldId, Long recordId, Long targetFieldId) {
-        // 验证字段存在
         BitableField lookupField = fieldMapper.selectById(fieldId);
         if (lookupField == null) {
             throw new BusinessException("lookup 字段不存在");
@@ -162,13 +157,11 @@ public class BitableFormulaServiceImpl implements BitableFormulaService {
             throw new BusinessException("字段不是 lookup 类型");
         }
 
-        // 获取关联字段信息
         Long linkFieldId = parseLinkFieldId(lookupField);
         if (linkFieldId == null) {
             throw new BusinessException("lookup 字段缺少关联字段配置");
         }
 
-        // 获取关联记录ID列表
         List<Long> linkedRecordIds = linkService.getLinkedRecordIds(linkFieldId, recordId);
         if (linkedRecordIds.isEmpty()) {
             return Collections.emptyList();
@@ -276,7 +269,6 @@ public class BitableFormulaServiceImpl implements BitableFormulaService {
         // 一次 IN 查询获取所有关联记录的单元格值
         List<BitableCellValue> cells = cellMapper.selectByRecordIds(recordIds);
 
-        // 过滤出目标字段的值
         List<Object> values = new ArrayList<>();
         for (BitableCellValue cell : cells) {
             if (targetFieldId.equals(cell.getFieldId())) {
@@ -289,9 +281,6 @@ public class BitableFormulaServiceImpl implements BitableFormulaService {
         return values;
     }
 
-    /**
-     * 提取单元格值
-     */
     private Object extractCellValue(BitableCellValue cell) {
         if (cell.getValueNumber() != null) {
             return cell.getValueNumber();

@@ -50,7 +50,7 @@ public class EmbeddingServiceImpl implements EmbeddingService {
         this.milvusVectorStore = milvusVectorStore;
     }
 
-    // ==================== Embedding with fallback ====================
+    // --- Embedding（含降级） ---
 
     @Override
     public List<float[]> embed(List<String> texts) {
@@ -76,7 +76,7 @@ public class EmbeddingServiceImpl implements EmbeddingService {
         return embed(List.of(text)).get(0);
     }
 
-    // ==================== Reranker with fallback ====================
+    // --- Reranker（含降级） ---
 
     @Override
     public List<Double> rerank(String query, List<String> documents) {
@@ -95,7 +95,7 @@ public class EmbeddingServiceImpl implements EmbeddingService {
         });
     }
 
-    // ==================== 模型配置 ====================
+    // --- 模型配置 ---
 
     @Override
     public EmbeddingModelConfig getDefaultModelConfig() {
@@ -119,7 +119,7 @@ public class EmbeddingServiceImpl implements EmbeddingService {
         );
     }
 
-    // ==================== 动态模型解析（默认 + 兜底列表） ====================
+    // --- 动态模型解析（默认 + 兜底列表） ---
 
     /**
      * 通用调用入口：解析该类型下所有可用的 Provider 列表（默认在前，兜底在后），

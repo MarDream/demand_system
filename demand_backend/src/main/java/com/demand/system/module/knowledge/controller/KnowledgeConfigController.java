@@ -95,7 +95,7 @@ public class KnowledgeConfigController {
         return getConfig();
     }
 
-    // ==================== 私有方法 ====================
+    // --- 私有方法 ---
 
     private KnowledgeConfigVO.ModelStatus buildModelStatus(String applicationCode, Integer milvusDimension) {
         // 状态展示与实际业务调用保持一致：优先使用功能点绑定模型，再回退全局默认模型。

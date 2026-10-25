@@ -29,8 +29,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * 多维表格功能集成测试
  * <p>
- * 建表方式：测试启动前通过 JdbcTemplate 手动执行迁移脚本
- * database/migrations/20260709_01__add_bitable_tables.sql
+ * 建表方式：bitable 相关表已并入 database/init.sql，由 Testcontainers 启动时初始化。
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
@@ -52,9 +51,6 @@ public class BitableFlowIT extends BaseIntegrationTest {
 
     @BeforeAll
     void setup() throws Exception {
-        // bitable 相关表已并入 database/init.sql，由 Testcontainers 初始化时建表，
-        // 无需再执行 20260709_01__add_bitable_tables.sql（该迁移文件已不存在）
-
         this.mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext)
                 .apply(springSecurity())
                 .build();
@@ -70,7 +66,7 @@ public class BitableFlowIT extends BaseIntegrationTest {
         accessToken = JsonPath.read(result.getResponse().getContentAsString(), "$.data.accessToken");
     }
 
-    // ==================== Base CRUD ====================
+    // --- Base CRUD ---
 
     @Test
     @Order(1)
@@ -128,7 +124,7 @@ public class BitableFlowIT extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.data.name").value("IT测试多维表格-已更新"));
     }
 
-    // ==================== Table CRUD ====================
+    // --- Table CRUD ---
 
     @Test
     @Order(10)
@@ -158,7 +154,7 @@ public class BitableFlowIT extends BaseIntegrationTest {
                         .value(org.hamcrest.Matchers.hasItem("任务表")));
     }
 
-    // ==================== Field CRUD ====================
+    // --- Field CRUD ---
 
     @Test
     @Order(20)
@@ -203,7 +199,7 @@ public class BitableFlowIT extends BaseIntegrationTest {
                         .value(org.hamcrest.Matchers.hasItem("任务名称")));
     }
 
-    // ==================== View CRUD ====================
+    // --- View CRUD ---
 
     @Test
     @Order(30)
@@ -229,7 +225,7 @@ public class BitableFlowIT extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.data[?(@.viewType == 'grid')]").exists());
     }
 
-    // ==================== Record CRUD ====================
+    // --- Record CRUD ---
 
     @Test
     @Order(40)
@@ -312,7 +308,7 @@ public class BitableFlowIT extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.data.total").value(3));
     }
 
-    // ==================== Comment ====================
+    // --- Comment ---
 
     @Test
     @Order(50)
@@ -338,7 +334,7 @@ public class BitableFlowIT extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.data[0].content").value("这条记录需要复核"));
     }
 
-    // ==================== 成员管理 ====================
+    // --- 成员管理 ---
 
     @Test
     @Order(60)
@@ -349,7 +345,7 @@ public class BitableFlowIT extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.code").value(200));
     }
 
-    // ==================== 删除流程 ====================
+    // --- 删除流程 ---
 
     @Test
     @Order(90)
@@ -385,7 +381,7 @@ public class BitableFlowIT extends BaseIntegrationTest {
     @Test
     @Order(92)
     void deleteTable_shouldRemoveFromList() throws Exception {
-        // 先清理表下残留的记录和单元格（deleteTable 级联删除有 bug，手动清理）
+        // 先清理表下残留的记录和单元格（deleteTable 级联删除不完整，需补删后断言）
         jdbcTemplate.update("DELETE FROM bitable_cell_values WHERE record_id IN (SELECT id FROM bitable_records WHERE table_id = ?)", tableId);
         jdbcTemplate.update("DELETE FROM bitable_records WHERE table_id = ?", tableId);
 

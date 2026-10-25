@@ -26,13 +26,11 @@ public class DataInitializer implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        // 检查是否已存在admin用户
         SysUser existingAdmin = sysUserMapper.selectOne(
                 new LambdaQueryWrapper<SysUser>().eq(SysUser::getUsername, "admin")
         );
 
         if (existingAdmin == null) {
-            // 创建admin用户
             SysUser admin = new SysUser();
             admin.setUsername("admin");
             admin.setRealName("系统管理员");
@@ -41,7 +39,6 @@ public class DataInitializer implements CommandLineRunner {
             sysUserMapper.insert(admin);
             log.info("Created default admin user (username: admin, password: admin)");
 
-            // 创建组织关联
             UserOrganization org = new UserOrganization();
             org.setUserId(admin.getId());
             org.setSystemRole("admin");

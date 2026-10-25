@@ -16,14 +16,8 @@ public class VerificationCode {
     @TableId(type = IdType.AUTO)
     private Long id;
 
-    /**
-     * 邮箱地址
-     */
     private String email;
 
-    /**
-     * 验证码
-     */
     private String code;
 
     /**
@@ -36,14 +30,8 @@ public class VerificationCode {
      */
     private Integer used;
 
-    /**
-     * 过期时间
-     */
     private LocalDateTime expiresAt;
 
-    /**
-     * 创建时间
-     */
     private LocalDateTime createdAt;
 
     public VerificationCode() {

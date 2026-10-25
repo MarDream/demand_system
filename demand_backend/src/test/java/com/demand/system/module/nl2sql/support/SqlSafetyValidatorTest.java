@@ -42,7 +42,7 @@ class SqlSafetyValidatorTest {
         assertTrue(result.tables().isEmpty(), "被拒绝时不应返回表清单：" + sql);
     }
 
-    // ---------------------------------------------------------------- 基本形态
+    // --- 基本形态
 
     @Test
     void rejectsEmptyOrMissingSql() {
@@ -75,7 +75,7 @@ class SqlSafetyValidatorTest {
         assertRejected("SELECT (SELECT COUNT(*) FROM users) AS c FROM requirements");
     }
 
-    // ---------------------------------------------------------------- 关键字黑名单
+    // --- 关键字黑名单
 
     @Test
     void rejectsWriteAndDdlKeywords() {
@@ -111,7 +111,7 @@ class SqlSafetyValidatorTest {
         assertRejected("SELECT r.id FROM requirements r, users u");
     }
 
-    // ---------------------------------------------------------------- 白名单
+    // --- 白名单
 
     @Test
     void rejectsTablesOutsideWhitelist() {
@@ -129,7 +129,7 @@ class SqlSafetyValidatorTest {
                 "错误信息应指向表白名单越界，实际为：" + result.errorMessage());
     }
 
-    // ---------------------------------------------------------------- 敏感列
+    // --- 敏感列
 
     @Test
     void rejectsSensitiveColumns() {
@@ -167,7 +167,7 @@ class SqlSafetyValidatorTest {
         assertFalse(SqlSafetyValidator.isSensitiveColumn(null, DENIED));
     }
 
-    // ---------------------------------------------------------------- 通配符
+    // --- 通配符
 
     @Test
     void rejectsTopLevelWildcard() {
@@ -187,7 +187,7 @@ class SqlSafetyValidatorTest {
         assertTrue(ratio.valid(), "表达式内乘法不应被误判：" + ratio.errorMessage());
     }
 
-    // ---------------------------------------------------------------- 字面量与注释
+    // --- 字面量与注释
 
     @Test
     void ignoresKeywordsHiddenInsideStringLiteralsAndComments() {
@@ -207,7 +207,7 @@ class SqlSafetyValidatorTest {
         assertTrue(result.tables().contains("requirements"));
     }
 
-    // ---------------------------------------------------------------- 别名解析
+    // --- 别名解析
 
     @Test
     void resolvesAliasesAndTreatsClauseKeywordsAsNonAliases() {
@@ -233,7 +233,7 @@ class SqlSafetyValidatorTest {
         assertTrue(result.valid(), "SELECT 列表中的逗号不应被误判为逗号连接：" + result.errorMessage());
     }
 
-    // ---------------------------------------------------------------- LIMIT 规范化
+    // --- LIMIT 规范化
 
     @Test
     void appendsLimitWhenMissing() {
@@ -294,7 +294,7 @@ class SqlSafetyValidatorTest {
         assertTrue(result.sql().contains("\nLIMIT 200"), result.sql());
     }
 
-    // ---------------------------------------------------------------- 真实取数形态
+    // --- 真实取数形态
 
     @Test
     void acceptsRepresentativeRealWorldQueries() {

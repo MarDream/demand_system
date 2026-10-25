@@ -31,9 +31,6 @@ public class WorkflowCopyController {
         this.workflowCopyService = workflowCopyService;
     }
 
-    /**
-     * 复制工作流版本
-     */
     @PostMapping("/versions/{versionId}/copy")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
     @Operation(summary = "复制工作流", description = "从现有工作流版本创建副本")
@@ -42,12 +39,10 @@ public class WorkflowCopyController {
             @Valid @RequestBody WorkflowCopyRequest request,
             HttpServletRequest httpRequest) {
         
-        // 获取当前用户信息
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         Long operatorId = extractUserId(auth);
         String operatorName = extractUserName(auth);
-        
-        // 获取请求信息
+
         String ipAddress = getClientIpAddress(httpRequest);
         String userAgent = httpRequest.getHeader("User-Agent");
 
@@ -58,9 +53,6 @@ public class WorkflowCopyController {
         return Result.success(response);
     }
 
-    /**
-     * 获取可复制的工作流模板列表
-     */
     @GetMapping("/templates")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
     @Operation(summary = "获取工作流模板列表", description = "查询可用于复制的工作流模板")
@@ -81,9 +73,6 @@ public class WorkflowCopyController {
         return Result.success(result);
     }
 
-    /**
-     * 检查工作流名称是否冲突
-     */
     @GetMapping("/check-name")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
     @Operation(summary = "检查名称冲突", description = "验证工作流名称是否已存在")
@@ -107,9 +96,6 @@ public class WorkflowCopyController {
         return Result.success(result);
     }
 
-    /**
-     * 标记工作流为模板
-     */
     @PostMapping("/versions/{versionId}/mark-as-template")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN')")
     @Operation(summary = "标记为模板", description = "将工作流版本标记为可复用模板")
@@ -123,9 +109,6 @@ public class WorkflowCopyController {
         return Result.success();
     }
 
-    /**
-     * 获取工作流溯源树
-     */
     @GetMapping("/versions/{versionId}/lineage")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:workflow:config')")
     @Operation(summary = "获取溯源树", description = "查看工作流的复制来源链")
@@ -136,9 +119,6 @@ public class WorkflowCopyController {
         return Result.success(lineage);
     }
 
-    /**
-     * 从Authentication中提取用户ID
-     */
     private Long extractUserId(Authentication auth) {
         if (auth != null && auth.getPrincipal() instanceof Map) {
             @SuppressWarnings("unchecked")
@@ -151,9 +131,6 @@ public class WorkflowCopyController {
         return 1L; // 默认返回1（系统用户）
     }
 
-    /**
-     * 从Authentication中提取用户名
-     */
     private String extractUserName(Authentication auth) {
         if (auth != null && auth.getPrincipal() instanceof Map) {
             @SuppressWarnings("unchecked")
@@ -166,9 +143,6 @@ public class WorkflowCopyController {
         return "System";
     }
 
-    /**
-     * 获取客户端IP地址
-     */
     private String getClientIpAddress(HttpServletRequest request) {
         String ip = request.getHeader("X-Forwarded-For");
         if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {

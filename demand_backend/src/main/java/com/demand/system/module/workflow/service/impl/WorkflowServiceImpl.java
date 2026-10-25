@@ -676,9 +676,6 @@ public class WorkflowServiceImpl implements WorkflowService {
         }
     }
 
-    /**
-     * 转换 WorkflowNode 实体为 DTO
-     */
     private WorkflowNodeDTO convertToNodeDTO(WorkflowNode node) {
         WorkflowNodeDTO dto = new WorkflowNodeDTO();
         dto.setNodeId(node.getNodeId());
@@ -689,7 +686,6 @@ public class WorkflowServiceImpl implements WorkflowService {
         dto.setAssigneeRoleGroupId(node.getAssigneeRoleGroupId());
         dto.setAssigneeOrgId(node.getAssigneeOrgId());
 
-        // 复制 assignee_user_ids
         dto.setAssigneeUserIds(node.getAssigneeUserIds());
 
         return dto;

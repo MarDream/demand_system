@@ -18,7 +18,6 @@ public class InviteInfoVO {
 
     private LocalDateTime expiresAt;
 
-    /** 链接当前是否可用 */
     private boolean valid;
 
     /** 不可用时的原因，可直接展示给用户 */

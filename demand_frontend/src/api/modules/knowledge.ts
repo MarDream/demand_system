@@ -1,8 +1,7 @@
 import request from '@/api/request'
 import { getToken } from '@/utils/auth'
 
-// ===== 类型定义 =====
-
+// --- 类型定义 ---
 export interface KnowledgeBase {
   id: number
   name: string
@@ -142,8 +141,7 @@ export interface DocumentRequirementRef {
   createdAt: string
 }
 
-// ===== API 函数 =====
-
+// --- API 函数 ---
 // 知识库管理
 export function createKnowledgeBase(data: { name: string; description?: string; projectId?: number; docTimeoutMinutes?: number }) {
   return request.post<KnowledgeBase>('/v1/knowledge/bases', data)
@@ -187,7 +185,6 @@ export function migrateKnowledgeBaseDocuments(id: number, data: KnowledgeMigrate
   return request.post<KnowledgeMigrateResult>(`/v1/knowledge/bases/${id}/migrate`, data)
 }
 
-// 设置/取消默认知识库
 export function setAsDefaultKnowledgeBase(id: number) {
   return request.patch<void>(`/v1/knowledge/bases/${id}/set-default`)
 }
@@ -261,7 +258,6 @@ export function generateDocumentShareLink(
   )
 }
 
-// 获取文档的需求引用
 export function getDocumentRequirementRefs(knowledgeBaseId: number, documentId: number) {
   return request.get<DocumentRequirementRef[]>(`/v1/knowledge/bases/${knowledgeBaseId}/documents/${documentId}/requirement-refs`)
 }
@@ -460,8 +456,7 @@ function parseStreamMessage(payload: string) {
   }
 }
 
-// ===== RAG 配置动态获取 =====
-
+// --- RAG 配置动态获取 ---
 export interface RagModelStatus {
   configured: boolean
   modelId?: string

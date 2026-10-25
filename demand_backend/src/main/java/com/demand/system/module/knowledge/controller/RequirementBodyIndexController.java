@@ -189,7 +189,7 @@ public class RequirementBodyIndexController {
             try {
                 if (item != null) ids.add(Long.valueOf(String.valueOf(item)));
             } catch (NumberFormatException ignored) {
-                // Ignore malformed IDs and continue processing the batch.
+                // 忽略格式非法的 ID，继续处理其余元素。
             }
         }
         return ids.stream().distinct().toList();

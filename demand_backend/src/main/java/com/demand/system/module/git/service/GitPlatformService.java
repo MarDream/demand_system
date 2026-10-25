@@ -13,23 +13,11 @@ public interface GitPlatformService {
      */
     List<GitPlatformVO> listPlatforms();
 
-    /**
-     * 创建平台
-     */
     GitPlatformVO createPlatform(GitPlatformDTO dto);
 
-    /**
-     * 更新平台
-     */
     GitPlatformVO updatePlatform(Long id, GitPlatformDTO dto);
 
-    /**
-     * 删除平台
-     */
     void deletePlatform(Long id);
 
-    /**
-     * 测试平台连接
-     */
     Map<String, Object> testConnection(Long id);
 }

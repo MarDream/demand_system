@@ -32,14 +32,12 @@ public class InvitationController {
         return Result.success(invitationService.batchInvite(dto));
     }
 
-    /** 邀请记录列表 */
     @GetMapping
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:invite', 'button:user:update')")
     public Result<PageResult<InvitationVO>> list(InvitationQueryDTO query) {
         return Result.success(invitationService.listInvitations(query));
     }
 
-    /** 撤回邀请 */
     @PutMapping("/{id}/revoke")
     @PreAuthorize("hasAnyAuthority('admin', 'SUPER_ADMIN', 'button:user:invite')")
     public Result<InvitationVO> revoke(@PathVariable Long id) {

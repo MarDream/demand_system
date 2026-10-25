@@ -201,8 +201,7 @@ export const requirementConfigApi = {
 
   sortPriorities: (items: SortItem[]) => request.post('/v1/requirement-config/priorities/sort', items),
 
-  // ============ 动态字段 ============
-
+  // --- 动态字段 ---
   /** 查询需求类型下的动态字段定义 */
   listCustomFields: (typeCode?: string | null) =>
     request.get<CustomFieldDef[]>('/v1/requirement-config/fields', {

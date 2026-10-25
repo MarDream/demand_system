@@ -89,7 +89,6 @@ public class WorkflowPermissionValidator {
             }
         }
 
-        // 如果有验证错误，抛出异常
         if (!validationErrors.isEmpty()) {
             String errorMessage = "工作流权限配置不完整：\n" + String.join("\n", validationErrors);
             log.error("工作流权限验证失败: {}", errorMessage);
@@ -133,7 +132,6 @@ public class WorkflowPermissionValidator {
             return;
         }
 
-        // 检查角色是否拥有必要的权限
         List<String> missingPermissions = checkRoleMissingPermissions(role.getId());
         if (!missingPermissions.isEmpty()) {
             errors.add(String.format("• 节点 [%s] 配置的角色 [%s(%s)] 缺少权限: %s\n  " +
@@ -156,7 +154,6 @@ public class WorkflowPermissionValidator {
             return;
         }
 
-        // 查询角色组下的所有角色
         List<Role> roles = roleMapper.selectList(
             new LambdaQueryWrapper<Role>()
                 .eq(Role::getRoleGroupId, roleGroupId)
@@ -169,7 +166,6 @@ public class WorkflowPermissionValidator {
             return;
         }
 
-        // 检查角色组下的每个角色
         for (Role role : roles) {
             List<String> missingPermissions = checkRoleMissingPermissions(role.getId());
             if (!missingPermissions.isEmpty()) {
@@ -189,7 +185,6 @@ public class WorkflowPermissionValidator {
      * @return 缺少的权限代码列表
      */
     private List<String> checkRoleMissingPermissions(Long roleId) {
-        // 查询角色已有的权限
         List<Long> existingPermissionIds = rolePermissionMapper.selectList(
             new LambdaQueryWrapper<SysRolePermission>()
                 .eq(SysRolePermission::getRoleId, roleId)
@@ -197,13 +192,11 @@ public class WorkflowPermissionValidator {
          .map(SysRolePermission::getPermissionId)
          .collect(Collectors.toList());
 
-        // 查询必要的权限
         List<SysPermission> requiredPermissions = permissionMapper.selectList(
             new LambdaQueryWrapper<SysPermission>()
                 .in(SysPermission::getCode, REQUIRED_PERMISSION_CODES)
         );
 
-        // 找出缺少的权限
         return requiredPermissions.stream()
             .filter(permission -> !existingPermissionIds.contains(permission.getId()))
             .map(permission -> String.format("%s(%s)", permission.getName(), permission.getCode()))
@@ -225,7 +218,6 @@ public class WorkflowPermissionValidator {
 
         log.warn("自动为角色 [{}] 添加缺少的权限: {}", roleId, missingPermissions);
 
-        // 查询权限ID
         List<SysPermission> permissions = permissionMapper.selectList(
             new LambdaQueryWrapper<SysPermission>()
                 .in(SysPermission::getCode, REQUIRED_PERMISSION_CODES)
@@ -233,7 +225,6 @@ public class WorkflowPermissionValidator {
 
         int addedCount = 0;
         for (SysPermission permission : permissions) {
-            // 检查是否已存在
             Long count = rolePermissionMapper.selectCount(
                 new LambdaQueryWrapper<SysRolePermission>()
                     .eq(SysRolePermission::getRoleId, roleId)

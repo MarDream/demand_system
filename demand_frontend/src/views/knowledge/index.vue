@@ -303,7 +303,7 @@ function openEditDialog(kb: KnowledgeBase) {
   showCreateDialog.value = true
 }
 
-// ===== 迁移流程 =====
+// --- 迁移流程 ---
 function openMigrateDialog(kb: KnowledgeBase) {
   migratingKb.value = kb
   migrateForm.targetId = undefined

@@ -183,7 +183,7 @@ function dropIndex(e: DragEvent, row: DashboardRow): number {
   return row.widgets.length
 }
 
-// ---- 行标题编辑 ----
+// --- 行标题编辑 ---
 const titleEditingId = ref<string | null>(null)
 const titleDraft = ref('')
 function startTitleEdit(row: DashboardRow) {
@@ -197,7 +197,7 @@ function commitTitle(row: DashboardRow) {
   if (title && title !== row.title) emit('update-row-title', { rowId: row.id, title })
 }
 
-// ---- 尺寸调整 ----
+// --- 尺寸调整 ---
 function startResize(e: MouseEvent, widgetId: number | string, mode: 'span' | 'height' | 'both') {
   const cardEl = (e.target as HTMLElement).closest('.widget-card') as HTMLElement
   const bodyEl = cardEl?.parentElement as HTMLElement

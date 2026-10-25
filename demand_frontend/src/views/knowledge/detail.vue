@@ -109,7 +109,6 @@
           </div>
         </transition>
 
-        <!-- 表格 -->
         <div class="table-wrapper">
           <el-table
             :data="store.documents"
@@ -770,18 +769,18 @@ function statusLabel(status: string) {
 </script>
 
 <style scoped>
-/* ===== 布局 ===== */
+/* --- 布局 --- */
 .kb-detail-layout {
   /* 主内容区占满宽度 */
 }
 
-/* ===== 主内容区 ===== */
+/* --- 主内容区 --- */
 .kb-main {
   flex: 1;
   min-width: 0;
 }
 
-/* ===== 筛选栏 ===== */
+/* --- 筛选栏 --- */
 .filter-bar {
   background:
     linear-gradient(180deg, rgba(248, 251, 255, 0.96) 0%, rgba(255, 255, 255, 0.98) 100%);
@@ -948,7 +947,7 @@ function statusLabel(status: string) {
   }
 }
 
-/* ===== 批量操作栏 ===== */
+/* --- 批量操作栏 --- */
 .batch-bar {
   display: flex;
   align-items: center;
@@ -987,7 +986,7 @@ function statusLabel(status: string) {
   transform: translateY(-8px);
 }
 
-/* ===== 表格 ===== */
+/* --- 表格 --- */
 .table-wrapper {
   background: var(--color-surface);
   border-radius: 8px;
@@ -1065,7 +1064,7 @@ function statusLabel(status: string) {
   box-shadow: 0 0 0 2px #fff;
 }
 
-/* ===== 翻页区 ===== */
+/* --- 翻页区 --- */
 .pagination-wrapper {
   display: flex;
   align-items: center;
@@ -1093,7 +1092,7 @@ function statusLabel(status: string) {
   --el-pagination-hover-color: var(--color-accent);
 }
 
-/* ===== 分享弹窗 ===== */
+/* --- 分享弹窗 --- */
 .share-dialog {
   text-align: center;
 }
@@ -1121,7 +1120,7 @@ function statusLabel(status: string) {
   font-size: 12px;
 }
 
-/* ===== 日志弹窗 ===== */
+/* --- 日志弹窗 --- */
 .log-dialog {
   text-align: left;
 }

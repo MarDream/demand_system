@@ -15,14 +15,8 @@ public class WorkflowNodeAssignee {
     @TableId(value = "id", type = IdType.AUTO)
     private Long id;
 
-    /**
-     * 工作流版本ID
-     */
     private Long workflowVersionId;
 
-    /**
-     * 节点ID
-     */
     private String nodeId;
 
     /**
@@ -35,15 +29,9 @@ public class WorkflowNodeAssignee {
      */
     private Long assigneeId;
 
-    /**
-     * 创建时间
-     */
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 
-    /**
-     * 更新时间
-     */
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
 

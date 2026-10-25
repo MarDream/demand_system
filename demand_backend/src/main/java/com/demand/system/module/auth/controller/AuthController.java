@@ -9,9 +9,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
-/**
- * 认证控制器
- */
 @Tag(name = "认证管理", description = "用户认证相关接口")
 @RestController
 @RequestMapping("/api/v1/auth")

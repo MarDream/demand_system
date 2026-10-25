@@ -163,6 +163,8 @@ export interface RequirementSubmit {
   nextNodeId?: string
   projectId?: number | null
   comment?: string
+  /** 提交前是否真实保存过草稿；创建页直接提交时为 false，后端不再补插草稿流转记录 */
+  draftSaved?: boolean
 }
 
 export interface RequirementQuery {
@@ -201,7 +203,7 @@ export interface RequirementHistory {
   newValue: string
   createdAt: string
   operatorName?: string
-  /** 修复 P1：后端 transition action（submit/rollback/cancel/proxy_approve 等） */
+  /** 后端 transition action（submit/rollback/cancel/proxy_approve 等）。 */
   action?: string
   /** 流转时的评审意见 */
   comment?: string

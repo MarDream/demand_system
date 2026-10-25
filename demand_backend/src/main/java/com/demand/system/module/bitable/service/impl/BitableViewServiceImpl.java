@@ -45,7 +45,6 @@ public class BitableViewServiceImpl implements BitableViewService {
     @Override
     public List<BitableViewVO> listViews(Long tableId) {
         List<BitableView> views = viewMapper.selectByTableId(tableId);
-        // 获取表的默认视图ID
         BitableTable table = tableMapper.selectById(tableId);
         Long defaultViewId = table != null ? table.getDefaultViewId() : null;
 
@@ -59,7 +58,6 @@ public class BitableViewServiceImpl implements BitableViewService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long createView(Long tableId, BitableViewCreateDTO dto, Long userId) {
-        // 验证 viewType 合法
         ViewType viewType = ViewType.fromCode(dto.getViewType());
         if (viewType == null) {
             throw new BusinessException("不支持的视图类型: " + dto.getViewType());
@@ -106,7 +104,6 @@ public class BitableViewServiceImpl implements BitableViewService {
             throw new BusinessException("视图已被他人修改，请刷新后重试");
         }
 
-        // 验证 viewType（如果传了新的 viewType）
         if (dto.getViewType() != null) {
             ViewType viewType = ViewType.fromCode(dto.getViewType());
             if (viewType == null) {
@@ -166,13 +163,11 @@ public class BitableViewServiceImpl implements BitableViewService {
             throw new BusinessException("视图不存在");
         }
 
-        // 检查是否为默认视图
         BitableTable table = tableMapper.selectById(existing.getTableId());
         if (table != null && id.equals(table.getDefaultViewId())) {
             throw new BusinessException("不能删除默认视图，请先设置其他视图为默认视图");
         }
 
-        // 检查是否为最后一个视图
         Long viewCount = viewMapper.selectCount(new LambdaQueryWrapper<BitableView>()
                 .eq(BitableView::getTableId, existing.getTableId()));
         if (viewCount <= 1) {
@@ -208,7 +203,6 @@ public class BitableViewServiceImpl implements BitableViewService {
         copy.setCreatedBy(userId);
         viewMapper.insert(copy);
 
-        // 审计
         auditHelper.recordByTable(source.getTableId(), userId, OperationType.ADD_VIEW,
                 "{\"viewId\":" + copy.getId() + ",\"name\":\"" + copy.getName()
                         + "\",\"duplicatedFrom\":" + viewId + "}");
@@ -228,7 +222,6 @@ public class BitableViewServiceImpl implements BitableViewService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void setDefaultView(Long tableId, Long viewId) {
-        // 验证视图属于该表
         BitableView view = viewMapper.selectById(viewId);
         if (view == null || !view.getTableId().equals(tableId)) {
             throw new BusinessException("视图不存在或不属于该数据表");

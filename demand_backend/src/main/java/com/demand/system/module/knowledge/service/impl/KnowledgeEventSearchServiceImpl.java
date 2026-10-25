@@ -31,12 +31,12 @@ import java.util.stream.Collectors;
  * SAG 多跳检索服务实现。
  *
  * 检索流程：
- *  1. Query Entity Recall（向量 + 文本召回实体）
- *  2. Event Seed（实体关联事件 + 标题向量匹配）
- *  3. Multi-Hop Expansion（固定跳数 BFS 遍历事件-实体二分图）
- *  4. Coarse Ranking（content embedding 余弦相似度粗排）
- *  5. Rerank（模型精排 + 可选 LLM 精排）
- *  6. Section Retrieval（根据 event ID 获取原始 chunk 原文）
+ *  1. Query 实体召回（向量 + 文本召回实体）
+ *  2. 事件种子（实体关联事件 + 标题向量匹配）
+ *  3. 多跳扩展（固定跳数 BFS 遍历事件-实体二分图）
+ *  4. 粗排（content embedding 余弦相似度）
+ *  5. 精排（模型精排 + 可选 LLM 精排）
+ *  6. 段落检索（根据 event ID 获取原始 chunk 原文）
  */
 @Service
 public class KnowledgeEventSearchServiceImpl implements KnowledgeEventSearchService {
@@ -99,27 +99,29 @@ public class KnowledgeEventSearchServiceImpl implements KnowledgeEventSearchServ
         String kbId = knowledgeBaseId;
         int resolvedTopK = topK;
 
-        // Step 1: Query → Entity Recall (vector + text search)
+        // 步骤 1：Query → 实体召回（向量 + 文本检索）。
         List<KnowledgeEntity> seedEntities = recallEntities(query, kbId, knowledgeConfig.getEntityTopK());
 
-        // Step 2: Entity → Event lookup
+        // 步骤 2：实体 → 事件查询。
         Set<Long> eventIds = getEventIdsByEntityIds(toEntityIdSet(seedEntities));
 
-        // Step 3: Title vector → Event lookup
+        // 步骤 3：标题向量 → 事件查询。
         Set<Long> titleMatchedEventIds = searchEventsByTitleVector(query, kbId, resolvedTopK);
         eventIds.addAll(titleMatchedEventIds);
 
         if (eventIds.isEmpty()) {
             log.info("SAG 检索未找到种子事件，query={}", query);
             return buildEmptyResult(query);
-        }        // Step 4: Multi-hop expansion (BFS on event-entity bipartite graph)
+        }
+
+        // 步骤 4：多跳扩展（在事件-实体二分图上做 BFS）。
         Set<Long> expandedEventIds = expandFixedHops(eventIds, kbId, knowledgeConfig.getMaxHops());
         eventIds.addAll(expandedEventIds);
 
-        // Cap the candidate events
+        // 限制候选事件数量。
         int maxEvents = knowledgeConfig.getMaxEvents();
         if (eventIds.size() > maxEvents) {
-            // Keep only the top maxEvents IDs (by natural order as approximation)
+            // 仅保留前 maxEvents 个 ID（以自然顺序近似）。
             eventIds = eventIds.stream().limit(maxEvents).collect(Collectors.toSet());
         }
 
@@ -129,16 +131,16 @@ public class KnowledgeEventSearchServiceImpl implements KnowledgeEventSearchServ
             return buildEmptyResult(query);
         }
 
-        // Step 5: Coarse ranking by content embedding
+        // 步骤 5：基于内容向量的粗排。
         List<ScoredEvent> coarseRanked = coarseRankEventsByContent(query, candidateEvents);
 
-        // Step 6: Rerank — model rerank + optional LLM rerank
+        // 步骤 6：精排 —— 模型精排 + 可选 LLM 精排。
         List<ScoredEvent> finalRanked = coarseRanked;
 
         int rerankTopK = Math.min(knowledgeConfig.getRerankTopK(), coarseRanked.size());
         List<ScoredEvent> rerankCandidates = coarseRanked.subList(0, rerankTopK);
 
-        // 6a: Model rerank
+        // 6a：模型精排。
         try {
             List<ScoredEvent> modelReranked = modelRerank(query, rerankCandidates);
             finalRanked = modelReranked;
@@ -146,7 +148,7 @@ public class KnowledgeEventSearchServiceImpl implements KnowledgeEventSearchServ
             log.warn("Model rerank 失败，回退粗排结果: {}", e.getMessage());
         }
 
-        // 6b: LLM rerank (only in "standard" mode when enabled)
+        // 6b：LLM 精排（仅在 standard 模式且开启时）。
         boolean useLlmRerank = "standard".equals(mode) && knowledgeConfig.isEnableLlmRerank();
         if (useLlmRerank) {
             try {
@@ -156,7 +158,7 @@ public class KnowledgeEventSearchServiceImpl implements KnowledgeEventSearchServ
             }
         }
 
-        // Step 7: Final section retrieval — convert ScoredEvent to SearchResultItem
+        // 步骤 7：最终段落检索 —— 将 ScoredEvent 转换为 SearchResultItem。
         List<KnowledgeEvent> finalEvents = finalRanked.stream()
                 .limit(resolvedTopK)
                 .map(se -> se.event)
@@ -165,9 +167,7 @@ public class KnowledgeEventSearchServiceImpl implements KnowledgeEventSearchServ
         return buildResultFromEvents(finalEvents, query, resolvedTopK);
     }
 
-    // ========================================================================
-    //  Step 1: Entity Recall
-    // ========================================================================
+    // --- 步骤 1：实体召回 ---
 
     /**
      * 从 Query 中召回种子实体：向量搜索 + 文本模糊匹配。
@@ -175,7 +175,7 @@ public class KnowledgeEventSearchServiceImpl implements KnowledgeEventSearchServ
     private List<KnowledgeEntity> recallEntities(String query, String kbId, int entityTopK) {
         List<KnowledgeEntity> entities = new ArrayList<>();
 
-        // 1a: Vector search — embed query and find nearest entity embeddings
+        // 1a：向量检索 —— 对 query 做 embedding，取最近的实体向量。
         try {
             float[] queryVector = embeddingService.embed(query);
             List<KnowledgeEntity> vectorMatched = searchEntitiesByVector(queryVector, kbId, entityTopK);
@@ -184,7 +184,7 @@ public class KnowledgeEventSearchServiceImpl implements KnowledgeEventSearchServ
             log.warn("Entity 向量召回失败: {}", e.getMessage());
         }
 
-        // 1b: Text search — fuzzy match by name / normalized_name / description
+        // 1b：文本检索 —— 按 name / normalized_name / description 模糊匹配。
         try {
             List<KnowledgeEntity> textMatched = searchEntitiesByText(query, kbId, entityTopK);
             entities.addAll(textMatched);
@@ -192,7 +192,6 @@ public class KnowledgeEventSearchServiceImpl implements KnowledgeEventSearchServ
             log.warn("Entity 文本召回失败: {}", e.getMessage());
         }
 
-        // Deduplicate
         return entities.stream()
                 .filter(Objects::nonNull)
                 .distinct()
@@ -256,9 +255,7 @@ public class KnowledgeEventSearchServiceImpl implements KnowledgeEventSearchServ
         return entityMapper.selectList(wrapper);
     }
 
-    // ========================================================================
-    //  Step 2: Entity → Event Lookup
-    // ========================================================================
+    // --- 步骤 2：实体 → 事件查询 ---
 
     /**
      * 根据 entity IDs 查询关联的 event IDs。
@@ -276,9 +273,7 @@ public class KnowledgeEventSearchServiceImpl implements KnowledgeEventSearchServ
                 .collect(Collectors.toSet());
     }
 
-    // ========================================================================
-    //  Step 3: Title Vector → Event Lookup
-    // ========================================================================
+    // --- 步骤 3：标题向量 → 事件查询 ---
 
     /**
      * 通过 query embedding 与 event title embedding 的向量相似度匹配事件。
@@ -323,9 +318,7 @@ public class KnowledgeEventSearchServiceImpl implements KnowledgeEventSearchServ
         }
     }
 
-    // ========================================================================
-    //  Step 4: Multi-Hop Expansion (BFS)
-    // ========================================================================
+    // --- 步骤 4：多跳扩展（BFS） ---
 
     /**
      * 固定跳数 BFS 遍历事件-实体二分图，扩展相关事件。
@@ -345,13 +338,13 @@ public class KnowledgeEventSearchServiceImpl implements KnowledgeEventSearchServ
         for (int hop = 1; hop <= maxHops; hop++) {
             log.debug("SAG 多跳扩展: hop={}, currentEvents={}", hop, currentEvents.size());
 
-            // Step A: Event → Entity
+            // 步骤 A：事件 → 实体。
             Set<Long> currentEntityIds = getEntityIdsByEventIds(currentEvents);
             if (currentEntityIds.isEmpty()) {
                 break;
             }
 
-            // Step B: Entity → Event
+            // 步骤 B：实体 → 事件。
             Set<Long> nextEvents = getEventIdsByEntityIds(currentEntityIds);
             nextEvents.removeAll(visitedEvents);
 
@@ -383,9 +376,7 @@ public class KnowledgeEventSearchServiceImpl implements KnowledgeEventSearchServ
                 .collect(Collectors.toSet());
     }
 
-    // ========================================================================
-    //  Step 5: Coarse Ranking
-    // ========================================================================
+    // --- 步骤 5：粗排 ---
 
     /**
      * 基于 content embedding 余弦相似度对事件进行粗排。
@@ -456,9 +447,7 @@ public class KnowledgeEventSearchServiceImpl implements KnowledgeEventSearchServ
         return value != null ? value : "";
     }
 
-    // ========================================================================
-    //  Step 6a: Model Rerank
-    // ========================================================================
+    // --- 步骤 6a：模型精排 ---
 
     /**
      * 使用 reranker 模型对粗排结果进行精排。
@@ -510,9 +499,7 @@ public class KnowledgeEventSearchServiceImpl implements KnowledgeEventSearchServ
         return sb.toString();
     }
 
-    // ========================================================================
-    //  Step 6b: LLM Rerank
-    // ========================================================================
+    // --- 步骤 6b：LLM 精排 ---
 
     /**
      * 使用 LLM 对精排结果进行重排序（仅在 standard 模式下启用）。
@@ -557,20 +544,15 @@ public class KnowledgeEventSearchServiceImpl implements KnowledgeEventSearchServ
         }
     }
 
-    /**
-     * 批量调用 LLM 评估事件相关性。
-     */
     private double[] llmRerankBatch(
             String query, List<ScoredEvent> candidates, LlmGatewayConfig.Provider provider) {
 
-        // 构建 system prompt
         String systemPrompt = "你是一个专业的相关性评估助手。" +
                 "请判断以下每个事件与用户查询的相关程度。" +
                 "对每个事件输出一个 0-10 的相关性分数（0 表示完全不相关，10 表示高度相关）。" +
                 "仅输出 JSON 格式数组，不要额外解释。\n\n" +
                 "格式：[score1, score2, ...]";
 
-        // 构建 user message
         StringBuilder sb = new StringBuilder();
         sb.append("用户查询：").append(query).append("\n\n事件列表：\n");
         for (int i = 0; i < candidates.size(); i++) {
@@ -589,7 +571,6 @@ public class KnowledgeEventSearchServiceImpl implements KnowledgeEventSearchServ
                 throw new RuntimeException("LLM rerank 返回内容为空");
             }
 
-            // 提取 JSON 数组
             int start = content.indexOf('[');
             int end = content.lastIndexOf(']');
             if (start < 0 || end <= start) {
@@ -625,9 +606,7 @@ public class KnowledgeEventSearchServiceImpl implements KnowledgeEventSearchServ
         }
     }
 
-    // ========================================================================
-    //  Step 7: Build ResultItem from ScoredEvents → Section Retrieval
-    // ========================================================================
+    // --- 步骤 7：由事件构建结果项（段落检索） ---
 
     /**
      * 将最终的事件列表转换为 SearchResultItem，并降级到普通的 KnowledgeSearchService 搜索。
@@ -645,9 +624,7 @@ public class KnowledgeEventSearchServiceImpl implements KnowledgeEventSearchServ
         return response != null ? response.getResults() : Collections.emptyList();
     }
 
-    // ========================================================================
-    //  Utility / Internal helpers
-    // ========================================================================
+    // --- 工具 / 内部辅助方法 ---
 
     /**
      * 构建空结果（降级到常规搜索）。
@@ -732,9 +709,7 @@ public class KnowledgeEventSearchServiceImpl implements KnowledgeEventSearchServ
         return denominator == 0.0 ? 0.0 : dotProduct / denominator;
     }
 
-    // ========================================================================
-    //  Inner Types
-    // ========================================================================
+    // --- 内部类型 ---
 
     /**
      * 带分数的实体。

@@ -1587,7 +1587,6 @@ const togglePriorityDefault = async (row: Priority, val: boolean) => {
   }
 }
 
-// 初始化拖拽排序
 const initTypeSortable = () => {
   nextTick(() => {
     const el = typeTableRef.value?.$el.querySelector('.el-table__body-wrapper tbody')
@@ -1601,7 +1600,6 @@ const initTypeSortable = () => {
         const { oldIndex, newIndex } = evt
         if (oldIndex === newIndex) return
 
-        // 更新本地数据
         const movedItem = types.value.splice(oldIndex!, 1)[0]
         types.value.splice(newIndex!, 0, movedItem)
 
@@ -1637,7 +1635,6 @@ const initPrioritySortable = () => {
         const { oldIndex, newIndex } = evt
         if (oldIndex === newIndex) return
 
-        // 更新本地数据
         const movedItem = priorities.value.splice(oldIndex!, 1)[0]
         priorities.value.splice(newIndex!, 0, movedItem)
 

@@ -246,7 +246,7 @@ const calendarDays = computed(() => {
 </script>
 
 <style scoped lang="scss">
-// ===== 多维表格 CalendarView 激进风格精修（2026-08-03）=====
+// --- 多维表格 CalendarView 样式要点 ---
 // 设计目标：
 // 1. 今日：主色边框 + 圆形日期徽章 + 主色底色
 // 2. 事件块加左侧色条（按字段类型可选色）

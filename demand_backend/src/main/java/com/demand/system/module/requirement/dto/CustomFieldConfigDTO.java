@@ -40,12 +40,12 @@ public class CustomFieldConfigDTO {
 
     private Boolean enabled;
 
-    // ---- 运行时权限 ----
+    // --- 运行时权限 ---
     private Boolean visible;
 
     private Boolean editable;
 
-    // ---- 当前值 ----
+    // --- 当前值 ---
     private String value;
 
     private BigDecimal valueNumber;

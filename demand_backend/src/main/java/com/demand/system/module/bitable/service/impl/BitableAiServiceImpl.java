@@ -118,7 +118,6 @@ public class BitableAiServiceImpl implements BitableAiService {
 
     @Override
     public AiBuildTableResult previewBuildTable(String description) {
-        // 构建字段类型清单供 LLM 参考
         StringBuilder fieldTypeList = new StringBuilder();
         for (FieldType ft : FieldType.values()) {
             fieldTypeList.append(String.format("- %s (%s)\n", ft.getCode(), ft.getLabel()));
@@ -181,13 +180,11 @@ public class BitableAiServiceImpl implements BitableAiService {
             throw new BusinessException("建表结果无效");
         }
 
-        // 创建数据表
         BitableTableCreateDTO tableDTO = new BitableTableCreateDTO();
         tableDTO.setName(result.getTableName());
         tableDTO.setDescription(result.getTableDescription());
         Long tableId = tableService.createTable(baseId, tableDTO, userId);
 
-        // 创建字段
         if (result.getFields() != null) {
             for (AiBuildTableResult.FieldDefinition fieldDef : result.getFields()) {
                 BitableFieldCreateDTO fieldDTO = new BitableFieldCreateDTO();
@@ -205,7 +202,6 @@ public class BitableAiServiceImpl implements BitableAiService {
 
     @Override
     public Object fillCell(Long tableId, Long recordId, Long fieldId, Long userId) {
-        // 读取字段信息
         List<BitableFieldVO> fields = fieldService.listFields(tableId);
         BitableFieldVO targetField = null;
         StringBuilder fieldListBuilder = new StringBuilder();
@@ -259,7 +255,6 @@ public class BitableAiServiceImpl implements BitableAiService {
         String fillValue = callChat(systemPrompt, userMessage);
         fillValue = cleanJsonResponse(fillValue).trim();
 
-        // 更新单元格
         CellValueDTO cellValue = new CellValueDTO();
         if ("number".equals(targetField.getFieldType())) {
             try {
@@ -336,14 +331,12 @@ public class BitableAiServiceImpl implements BitableAiService {
             }
         }
 
-        // 读取字段列表
         List<BitableFieldVO> fields = fieldService.listFields(queryTableId);
         StringBuilder fieldListBuilder = new StringBuilder();
         for (BitableFieldVO f : fields) {
             fieldListBuilder.append(String.format("- %s (类型: %s, ID: %s)\n", f.getName(), f.getFieldType(), f.getId()));
         }
 
-        // 读取所有记录（仅取前 100 条）
         PageResult<BitableRecordVO> pageResult = recordService.listRecords(queryTableId, 1, 100);
         List<BitableRecordVO> records = pageResult.getList();
 
@@ -434,14 +427,11 @@ public class BitableAiServiceImpl implements BitableAiService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void classifyRecords(Long tableId, Long sourceFieldId, String targetFieldName, Long userId) {
-        // 读取字段列表
         List<BitableFieldVO> fields = fieldService.listFields(tableId);
 
-        // 读取所有记录（仅取前 200 条）
         PageResult<BitableRecordVO> pageResult = recordService.listRecords(tableId, 1, 200);
         List<BitableRecordVO> records = pageResult.getList();
 
-        // 提取源字段文本值
         StringBuilder textListBuilder = new StringBuilder();
         List<BitableRecordVO> recordsWithText = new ArrayList<>();
         for (BitableRecordVO r : records) {
@@ -491,7 +481,6 @@ public class BitableAiServiceImpl implements BitableAiService {
         try {
             Map<String, Object> parsed = objectMapper.readValue(cleaned, new TypeReference<Map<String, Object>>() {});
 
-            // 创建目标字段（单选类型）
             List<String> categories = new ArrayList<>();
             Object catsObj = parsed.get("categories");
             if (catsObj instanceof List<?> list) {
@@ -503,7 +492,6 @@ public class BitableAiServiceImpl implements BitableAiService {
             BitableFieldCreateDTO fieldDTO = new BitableFieldCreateDTO();
             fieldDTO.setName(targetFieldName);
             fieldDTO.setFieldType("single_select");
-            // 构建选项配置
             List<Map<String, String>> options = new ArrayList<>();
             for (String cat : categories) {
                 options.add(Map.of("label", cat));
@@ -511,7 +499,6 @@ public class BitableAiServiceImpl implements BitableAiService {
             fieldDTO.setConfig(objectMapper.writeValueAsString(Map.of("options", options)));
             Long targetFieldId = fieldService.createField(tableId, fieldDTO, userId);
 
-            // 批量更新记录
             Map<String, String> classification = new HashMap<>();
             Object classObj = parsed.get("classification");
             if (classObj instanceof Map<?, ?> map) {
@@ -541,11 +528,9 @@ public class BitableAiServiceImpl implements BitableAiService {
 
     @Override
     public void summarizeRecords(Long tableId, Long sourceFieldId, String targetFieldName, Long userId) {
-        // 读取所有记录（仅取前 200 条）
         PageResult<BitableRecordVO> pageResult = recordService.listRecords(tableId, 1, 200);
         List<BitableRecordVO> records = pageResult.getList();
 
-        // 创建目标字段（文本类型）
         BitableFieldCreateDTO fieldDTO = new BitableFieldCreateDTO();
         fieldDTO.setName(targetFieldName);
         fieldDTO.setFieldType("text");
@@ -566,7 +551,6 @@ public class BitableAiServiceImpl implements BitableAiService {
 
                 String summary = callChat(systemPrompt, userMessage);
                 summary = cleanJsonResponse(summary).trim();
-                // 截断过长摘要
                 if (summary.length() > 500) {
                     summary = summary.substring(0, 500);
                 }

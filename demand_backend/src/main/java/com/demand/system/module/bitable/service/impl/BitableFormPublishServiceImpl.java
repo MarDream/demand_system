@@ -241,7 +241,6 @@ public class BitableFormPublishServiceImpl implements BitableFormPublishService 
             log.warn("表单提交触发自动化失败: tableId={}, recordId={}", tableId, recordId, e);
         }
 
-        // 递增提交计数
         UpdateWrapper<BitableFormPublish> wrapper = new UpdateWrapper<>();
         wrapper.eq("id", publish.getId())
                 .set("submit_count", (publish.getSubmitCount() != null ? publish.getSubmitCount() : 0) + 1);

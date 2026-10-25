@@ -887,8 +887,7 @@ watch(
   { immediate: true },
 )
 
-/* ---------------- 交互 ---------------- */
-
+// --- 交互 ---
 function toggleExpand(node: FlatNode) {
   if (!node.hasChildren) return
   const key = node.kind === 'group' ? `g:${node.id}` : node.key
@@ -1040,7 +1039,7 @@ function confirmDeleteTable(id: number, baseId: number, name: string) {
     .catch(() => {})
 }
 
-// ==================== 叶子节点行内图标操作（重命名/删除） ====================
+// --- 叶子节点行内图标操作（重命名/删除） ---
 
 /** 数据表/仪表盘节点：⋯ 菜单替换为行内图标；删除时原位出现红色「确认」按钮 */
 const confirmDeleteKey = ref<string | null>(null)
@@ -1108,8 +1107,7 @@ function confirmDeleteGroup(id: number, name: string, count: number) {
     .catch(() => {})
 }
 
-/* ---------------- 移动 Base ---------------- */
-
+// --- 移动 Base ---
 function openMoveDialog(baseId: number, currentGroupId: number | null) {
   moveBaseId.value = baseId
   moveTargetGroupId.value = currentGroupId ?? -1

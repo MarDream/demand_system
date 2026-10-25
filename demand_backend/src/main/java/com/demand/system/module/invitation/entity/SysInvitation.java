@@ -15,22 +15,17 @@ import java.util.Objects;
 @TableName("sys_invitations")
 public class SysInvitation {
 
-    /** 邀请方式：通过链接邀请 */
     public static final String TYPE_LINK = "link";
 
-    /** 邀请方式：批量邀请 */
     public static final String TYPE_BATCH = "batch";
 
-    /** 状态：待接受 */
     public static final String STATUS_PENDING = "pending";
 
     /** 状态：已接受（对应申请已审批通过） */
     public static final String STATUS_ACCEPTED = "accepted";
 
-    /** 状态：已过期 */
     public static final String STATUS_EXPIRED = "expired";
 
-    /** 状态：已撤回 */
     public static final String STATUS_REVOKED = "revoked";
 
     @TableId(type = IdType.AUTO)

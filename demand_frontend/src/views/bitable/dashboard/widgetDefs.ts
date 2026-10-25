@@ -68,8 +68,7 @@ export function isStaticWidget(type: string): boolean {
   return getWidgetDef(type).dataMode === 'none'
 }
 
-// ==================== 组件实例与布局模型 ====================
-
+// --- 组件实例与布局模型 ---
 export interface WidgetMetric {
   fieldId?: number | null
   /** 多数据源模式下按字段名跨表对齐（此时 fieldId 为空） */

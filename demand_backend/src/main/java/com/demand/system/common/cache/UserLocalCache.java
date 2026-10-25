@@ -164,9 +164,6 @@ public class UserLocalCache {
         return user;
     }
 
-    /**
-     * 获取缓存统计信息
-     */
     public String getCacheStats() {
         var stats = caffeineCache.stats();
         return String.format(

@@ -120,7 +120,7 @@ export function deletePosition(id: number) {
   return request.delete<void>('/v1/positions/' + id)
 }
 
-// Unified Org API
+// 统一组织 API
 export function getOrgTree() {
   return request.get<OrgNode[]>('/v1/org/tree')
 }

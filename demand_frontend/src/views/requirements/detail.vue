@@ -130,6 +130,17 @@
                 >
                   <el-icon><View /></el-icon>
                 </el-button>
+                <el-button
+                  v-if="canDeleteAttachment(attachment)"
+                  link
+                  type="danger"
+                  class="attachment-delete"
+                  title="删除附件"
+                  aria-label="删除附件"
+                  @click="handleDeleteAttachment(attachment)"
+                >
+                  <el-icon><Delete /></el-icon>
+                </el-button>
               </div>
             </div>
             <div v-else class="attachment-empty">暂无附件</div>
@@ -979,11 +990,8 @@ const id = Number(route.params.id)
 const loading = ref(false)
 const detail = ref<Requirement | null>(null)
 
-// ------------------------------------------------------------------
-// 需求动态字段（只读展示，字段集合与权限由后端按当前流程节点下发）
-// ------------------------------------------------------------------
+// --- 需求动态字段（只读展示，字段集合与权限由后端按当前流程节点下发） ---
 const activeUsers = ref<Array<{ id: number; username: string; realName: string }>>([])
-
 const dynamicFields = computed<DynamicFieldSchema[]>(() =>
   Array.isArray(detail.value?.dynamicFields) ? detail.value!.dynamicFields! : [],
 )
@@ -1172,7 +1180,13 @@ const sortedApprovalEvaluations = computed(() => {
   // ISO 8601 字符串可直接字符串比较，无需 new Date() 分配
   const sorted = [...approvalEvaluations.value].sort((a, b) => {
     const cmp = (b.createdAt || '').localeCompare(a.createdAt || '')
-    return cmp !== 0 ? cmp : b.id - a.id
+    if (cmp !== 0) return cmp
+    // 同秒时草稿记录沉底：它是提交时按草稿创建时间补插的（id 更大但语义时间更早），
+    // 按 id 倒序会把「草稿」排到「开始 → 待分析」上面，违反时间倒序
+    const aDraft = a.action === 'draft'
+    const bDraft = b.action === 'draft'
+    if (aDraft !== bDraft) return aDraft ? 1 : -1
+    return b.id - a.id
   })
 
   // 创建人起始节点：若后端流转记录中已存在"创建/起始"记录，则不再补虚拟卡片。
@@ -1345,7 +1359,6 @@ function resetWorkflowMeta() {
   workflowPanelCollapsed.value = false
 }
 
-// Fetch detail
 async function fetchDetail() {
   loading.value = true
   try {
@@ -1419,7 +1432,6 @@ async function loadWorkflowMeta() {
   resetWorkflowMeta()
 }
 
-// Fetch children
 async function fetchChildren() {
   try {
     const res = await requirementApi.getRequirementChildren(id)
@@ -1644,6 +1656,44 @@ const richImagePreviewZoom = ref(100)
  */
 function canPreviewAttachment(attachment: RequirementAttachment) {
   return !!(attachment.fileId || attachment.url)
+}
+
+/**
+ * 附件删除显隐（与服务端 assertAttachmentRemovalAllowed 同口径）：
+ * - 只读查看态不显示
+ * - 草稿（提交审核前）：拥有我的待办视图权限的用户，可删自己上传的附件
+ * - 已提交：需「删除需求附件」权限（button:requirement:attachment:delete），可删任意附件
+ */
+function canDeleteAttachment(attachment: RequirementAttachment) {
+  if (!attachment.fileId) return false
+  if (isReadOnlyView.value) return false
+  if (!detail.value) return false
+  if (detail.value.isDraft) {
+    if (!hasPermission('menu:requirement:view:pending')) return false
+    const currentUserId = userStore.userInfo?.id
+    return attachment.uploaderId == null || attachment.uploaderId === currentUserId
+  }
+  return hasPermission('button:requirement:attachment:delete')
+}
+
+async function handleDeleteAttachment(attachment: RequirementAttachment) {
+  if (!attachment.fileId || !detail.value) return
+  try {
+    await ElMessageBox.confirm(
+      `确定删除附件「${attachment.name}」吗？删除后可重新上传。`,
+      '删除附件',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await requirementApi.deleteRequirementAttachment(id, attachment.fileId)
+    toast.success('附件已删除')
+    await fetchDetail()
+  } catch (error) {
+    toast.error(resolveErrorMessage(error, '删除附件失败'))
+  }
 }
 
 function handleAttachmentPreview(attachment: RequirementAttachment) {
@@ -2343,7 +2393,7 @@ async function initializePage() {
     // 从通知跳转进入时定位到对应评论（?tab=comments&commentId=xxx）
     void focusCommentFromQuery()
 
-    // Load project name and workflow meta after getting detail
+    // 详情获取后再加载项目名与工作流元信息
     await Promise.all([loadProjectName(), loadWorkflowMeta()])
   }
 }
@@ -2935,7 +2985,7 @@ onMounted(() => {
   color: var(--el-color-danger, #f56c6c);
 }
 
-/* ===== 当前节点状态栏 ===== */
+/* --- 当前节点状态栏 --- */
 .current-node-status {
   display: flex;
   align-items: center;
@@ -3234,7 +3284,7 @@ onMounted(() => {
   font-size: 12px;
 }
 
-/* ===== 评论 @ 提及 ===== */
+/* --- 评论 @ 提及 --- */
 /* 展示态：v-html 渲染出的 mention 节点（作用域样式需 :deep 才能命中） */
 .comment-body :deep(.mention-chip) {
   display: inline-block;
@@ -3967,7 +4017,7 @@ onMounted(() => {
   word-break: break-word;
 }
 
-/* ===== 微动效：脉冲状态点 ===== */
+/* --- 微动效：脉冲状态点 --- */
 @keyframes status-pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.6; transform: scale(1.35); }
@@ -4040,7 +4090,7 @@ onMounted(() => {
   color: var(--color-text-primary);
 }
 
-/* ===== 全局交互质感提升 ===== */
+/* --- 全局交互质感提升 --- */
 .detail-page {
   /* 所有可点击元素统一 transition */
   :deep(button),
@@ -4067,7 +4117,7 @@ onMounted(() => {
   }
 }
 
-/* ===== 子需求表格优化 ===== */
+/* --- 子需求表格 --- */
 .children-section {
   :deep(.el-table) {
     border-radius: var(--radius-md);

@@ -145,14 +145,12 @@ public class BitableTableServiceImpl implements BitableTableService {
         defaultView.setCreatedBy(userId);
         viewMapper.insert(defaultView);
 
-        // 设置默认视图ID
         table.setDefaultViewId(defaultView.getId());
         UpdateWrapper<BitableTable> updateWrapper = new UpdateWrapper<>();
         updateWrapper.eq("id", table.getId())
                 .set("default_view_id", defaultView.getId());
         tableMapper.update(null, updateWrapper);
 
-        // 审计
         auditHelper.record(baseId, table.getId(), userId, OperationType.ADD_TABLE,
                 "{\"tableId\":" + table.getId() + ",\"name\":\"" + dto.getName() + "\"}");
 
@@ -200,7 +198,6 @@ public class BitableTableServiceImpl implements BitableTableService {
         }
         tableMapper.update(null, wrapper);
 
-        // 审计
         auditHelper.record(existing.getBaseId(), id, userId, OperationType.UPDATE_TABLE,
                 "{\"tableId\":" + id + "}");
     }
@@ -229,7 +226,6 @@ public class BitableTableServiceImpl implements BitableTableService {
         // 软删数据表
         tableMapper.deleteById(id);
 
-        // 审计
         auditHelper.record(existing.getBaseId(), id, userId, OperationType.DELETE_TABLE,
                 "{\"tableId\":" + id + ",\"name\":\"" + existing.getName() + "\"}");
     }

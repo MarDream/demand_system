@@ -87,7 +87,6 @@ public class BitableBaseMemberServiceImpl implements BitableBaseMemberService {
             demoteOtherOwners(baseId, userId);
         }
 
-        // 审计
         auditHelper.record(baseId, null, operatorId, OperationType.ADD_MEMBER,
                 "{\"userId\":" + userId + ",\"role\":\"" + role + "\"}");
     }
@@ -122,7 +121,6 @@ public class BitableBaseMemberServiceImpl implements BitableBaseMemberService {
             demoteOtherOwners(baseId, userId);
         }
 
-        // 审计
         auditHelper.record(baseId, null, operatorId, OperationType.UPDATE_MEMBER_ROLE,
                 "{\"userId\":" + userId + ",\"role\":\"" + role + "\"}");
     }

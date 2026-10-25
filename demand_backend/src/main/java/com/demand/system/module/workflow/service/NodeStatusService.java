@@ -14,6 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -21,16 +23,14 @@ import java.util.stream.Collectors;
 @Service
 public class NodeStatusService {
 
-    private static final Map<String, String> BUILT_IN_STATUS_NAMES = Map.ofEntries(
-            Map.entry("DRAFT", "新建"),
-            Map.entry("PENDING_ANALYSIS", "待分析"),
-            Map.entry("PENDING_CONFIRM", "待确认"),
-            Map.entry("IN_DEVELOPMENT", "开发中"),
-            Map.entry("IN_TESTING", "测试中"),
-            Map.entry("LIVE", "已上线"),
-            Map.entry("ACCEPTED", "已验收"),
-            Map.entry("CANCELLED", "已取消")
-    );
+    /**
+     * 乱码来源编码：中文以 UTF-8 写入却被按单字节编码读取时会产生这两种乱码。
+     * ISO-8859-1 为 JDK 规范保证的字符集，始终可用；
+     * windows-1252 非规范保证（精简运行时可能缺失），故先探测、缺失时降级，避免类初始化失败。
+     */
+    private static final List<Charset> MOJIBAKE_SOURCE_CHARSETS = Charset.isSupported("windows-1252")
+            ? List.of(StandardCharsets.ISO_8859_1, Charset.forName("windows-1252"))
+            : List.of(StandardCharsets.ISO_8859_1);
 
     private final NodeStatusMapper nodeStatusMapper;
     private final WorkflowNodeMapper workflowNodeMapper;
@@ -51,14 +51,32 @@ public class NodeStatusService {
         List<NodeStatus> statuses = nodeStatusMapper.selectList(null);
         int repaired = 0;
         for (NodeStatus status : statuses) {
-            String builtInName = BUILT_IN_STATUS_NAMES.get(status.getCode());
-            if (builtInName != null && !builtInName.equals(status.getName()) && isGarbledName(status.getName())) {
-                status.setName(builtInName);
+            String name = status.getName();
+            if (!isGarbledName(name)) {
+                continue;
+            }
+            String recovered = recoverName(name);
+            if (!recovered.equals(name) && !isGarbledName(recovered)) {
+                status.setName(recovered);
                 nodeStatusMapper.updateById(status);
                 repaired++;
             }
         }
         return repaired;
+    }
+
+    /**
+     * 动态还原乱码名称：按可能被误解的源编码取回原始字节，再以 UTF-8 重新解码。
+     * 不依赖任何固定的状态名对照表；还原后仍判定为乱码则放弃，避免写入脏数据。
+     */
+    private String recoverName(String garbled) {
+        for (Charset source : MOJIBAKE_SOURCE_CHARSETS) {
+            String decoded = new String(garbled.getBytes(source), StandardCharsets.UTF_8);
+            if (!decoded.equals(garbled) && !isGarbledName(decoded)) {
+                return decoded;
+            }
+        }
+        return garbled;
     }
 
     @Transactional

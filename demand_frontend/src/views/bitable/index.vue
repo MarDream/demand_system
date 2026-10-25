@@ -332,8 +332,7 @@ const treeSelection = ref<{ type: 'all' | 'group' | 'ungrouped'; groupId: number
 /** 分组管理为管理员能力，与后端权限一致 */
 const canManageGroups = computed(() => hasRole('admin'))
 
-/* ---------------- 同名检测辅助 ---------------- */
-
+// --- 同名检测辅助 ---
 /** 同名检测（不区分大小写）：名称是否已被同级同类文件占用 */
 function isNameTaken(name: string, existingNames: string[]): boolean {
   const lower = name.toLowerCase()
@@ -839,8 +838,7 @@ async function handleMoveLeaf(payload: { kind: 'table' | 'dashboard'; id: number
   }
 }
 
-/* ---------------- Base CRUD ---------------- */
-
+// --- Base CRUD ---
 function goToEditor(id: number) {
   router.push({ name: 'BitableEditor', params: { baseId: id } })
 }
@@ -939,8 +937,7 @@ function handleCreateInGroup(groupId: number | null) {
   showDialog.value = true
 }
 
-/* ---------------- 叶子卡片：菜单 / 行内重命名 / 移动分组 ---------------- */
-
+// --- 叶子卡片：菜单 / 行内重命名 / 移动分组 ---
 function handleLeafAction(command: string, leaf: LeafCardVM) {
   if (command === 'rename') {
     startLeafRename(leaf)

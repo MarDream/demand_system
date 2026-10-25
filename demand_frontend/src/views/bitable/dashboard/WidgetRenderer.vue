@@ -155,7 +155,7 @@ const clockDate = computed(() => {
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 星期${week}`
 })
 
-// ---- 图表实例注册（导出图片用） ----
+// --- 图表实例注册（导出图片用） ---
 const chartRef = ref<any>()
 function setChartRef(inst: any) {
   chartRef.value = inst
@@ -270,7 +270,7 @@ watch(() => props.widget.id, () => {
   }
 }
 
-// ---- 排行榜 ----
+// --- 排行榜 ---
 .rank-list {
   flex: 1;
   display: flex;

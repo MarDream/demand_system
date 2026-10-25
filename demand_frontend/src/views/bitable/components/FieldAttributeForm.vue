@@ -77,7 +77,7 @@
       </el-form-item>
     </template>
 
-    <!-- ==================== 富文本 ==================== -->
+    <!-- 富文本 -->
     <template v-else-if="fieldType === 'rich_text'">
       <el-divider content-position="left">富文本属性</el-divider>
       <div class="attr-hint" style="line-height: 1.6">
@@ -188,7 +188,7 @@
       </el-form-item>
     </template>
 
-    <!-- ==================== 货币 ==================== -->
+    <!-- 货币 -->
     <template v-else-if="fieldType === 'currency'">
       <el-divider content-position="left">货币属性</el-divider>
       <el-form-item label="币种">
@@ -218,7 +218,7 @@
       </el-form-item>
     </template>
 
-    <!-- ==================== 进度 ==================== -->
+    <!-- 进度 -->
     <template v-else-if="fieldType === 'progress'">
       <el-divider content-position="left">进度属性</el-divider>
       <el-form-item label="显示样式">
@@ -329,7 +329,7 @@
       </el-form-item>
     </template>
 
-    <!-- ==================== 复选框 ==================== -->
+    <!-- 复选框 -->
     <template v-else-if="fieldType === 'checkbox' || fieldType === 'check'">
       <el-divider content-position="left">复选框属性</el-divider>
       <el-form-item label="默认状态">
@@ -441,7 +441,7 @@
       </el-form-item>
     </template>
 
-    <!-- ==================== 群组 ==================== -->
+    <!-- 群组 -->
     <template v-else-if="fieldType === 'group'">
       <el-divider content-position="left">群组属性</el-divider>
       <el-form-item label="选择模式">
@@ -586,7 +586,7 @@
       </el-form-item>
     </template>
 
-    <!-- ==================== 按钮 ==================== -->
+    <!-- 按钮 -->
     <template v-else-if="fieldType === 'button'">
       <el-divider content-position="left">按钮属性</el-divider>
       <el-form-item label="按钮文案">
@@ -738,7 +738,7 @@
       </el-form-item>
     </template>
 
-    <!-- ==================== AI 字段 ==================== -->
+    <!-- AI 字段 -->
     <template v-else-if="fieldType === 'ai_text' || fieldType === 'ai_select'">
       <el-divider content-position="left">AI 字段属性</el-divider>
       <el-form-item label="AI 提示词">
@@ -888,8 +888,7 @@ const emit = defineEmits<{ 'update:fieldType': [value: string] }>()
 const linkTargetFields = ref<BitableField[]>([])
 const orgTree = ref<{ id: number; name: string }[]>([])
 
-// ==================== 派生 ====================
-
+// --- 派生 ---
 const isSystemTimeType = computed(() =>
   ['created_time', 'modified_time', 'last_modified_time'].includes(props.fieldType),
 )
@@ -923,7 +922,7 @@ const aiSourceFields = computed(() =>
   otherFields.value.filter((f) => f.fieldType !== 'ai_text' && f.fieldType !== 'ai_select'),
 )
 
-// ==================== AI 提示词 {{字段}} 自动补全 ====================
+// --- AI 提示词 {{字段}} 自动补全 ---
 
 const aiPromptInputRef = ref()
 const aiSuggest = reactive({
@@ -1099,7 +1098,7 @@ const defaultNumber = computed({
   },
 })
 
-// ==================== 交互 ====================
+// --- 交互 ---
 
 function onTypeChange(next: string) {
   // 切换类型：清空旧键，避免残留上一类型的配置

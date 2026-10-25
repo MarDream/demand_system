@@ -210,8 +210,7 @@ function entry(code: string): CustomFieldValuePayload {
   return map[code]
 }
 
-// ---------------------------------------------------------------- 选项
-
+// --- 选项 ---
 /** 选项列表：优先后端解析的 optionList，兜底本地解析（兼容历史字符串数组） */
 function optionsOf(field: DynamicFieldSchema): CustomFieldOption[] {
   if (field.optionList && field.optionList.length) {

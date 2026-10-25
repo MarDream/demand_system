@@ -50,13 +50,11 @@ public class BitableFormulaDependencyServiceImpl implements BitableFormulaDepend
             return;
         }
 
-        // 解析公式中的字段引用
         Set<Long> referencedFieldIds = parseFieldReferences(formulaExpr);
         if (referencedFieldIds.isEmpty()) {
             return;
         }
 
-        // 批量插入新依赖
         List<BitableFormulaDependency> dependencies = new ArrayList<>();
         for (Long depId : referencedFieldIds) {
             // 排除自引用（公式引用自身）

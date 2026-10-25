@@ -133,7 +133,6 @@ public class GitPlatformServiceImpl implements GitPlatformService {
             result.put("latencyMs", System.currentTimeMillis() - start);
             result.put("message", "连接失败: " + e.getMessage());
         }
-        // 更新最近检测时间
         GitPlatform update = new GitPlatform();
         update.setId(id);
         update.setLastCheckedAt(LocalDateTime.now());

@@ -178,7 +178,7 @@ const userValues = reactive<Record<number, number | number[] | null>>({})
 // 本对话框支持的简单可编辑类型；link/群组等复杂类型仍回网格编辑
 const supportedTypes = ['text', 'rich_text', 'url', 'email', 'phone', 'number', 'currency', 'progress', 'rating', 'date', 'single_select', 'multi_select', 'process', 'check', 'checkbox', 'department', 'user']
 
-// ==================== 人员字段可选项（系统用户列表） ====================
+// --- 人员字段可选项（系统用户列表） ---
 const userStore = useUserStore()
 
 /** 按字段属性 userScope 过滤后的可选项 */

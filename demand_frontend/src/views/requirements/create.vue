@@ -132,6 +132,7 @@
               <!-- 附件上传区 -->
               <AttachmentUploader
                 v-model="formData.attachments"
+                :lock-existing="lockExistingAttachments"
                 @preview="handleAttachmentPreview"
               />
             </div>
@@ -468,6 +469,9 @@ const selectedRelations = ref<any[]>([])
 const createFormVisibleFields = ref<string[]>([])
 const createFormRequiredFields = ref<string[]>([])
 const currentRequirement = ref<Requirement | null>(null)
+// 提交前是否真实保存过草稿（点过「保存草稿」或打开的是草稿箱里的已有草稿）。
+// 创建页直接提交也会先建草稿落库，但那不算草稿阶段，后端据此决定是否补插草稿流转记录。
+const hasExplicitDraftSave = ref(false)
 
 // 需求动态字段（按需求类型 + 流程节点权限渲染）
 const dynamicFields = ref<DynamicFieldSchema[]>([])
@@ -568,7 +572,6 @@ async function applyRequirementTemplate(typeCode?: string, force = false) {
   if (!typeCode || isEditMode.value || templateApplying.value) return
   templateApplying.value = true
   try {
-    // 获取该类型下所有启用的模板
     const templateList = await getRequirementTemplatesByType(typeCode)
     let template
 
@@ -659,6 +662,18 @@ const parentId = computed(() => {
 
 const isEditMode = computed(() => editId.value > 0)
 const isDraftMode = computed(() => !isEditMode.value || currentRequirement.value?.isDraft === true)
+/**
+ * 编辑页已有附件是否锁定删除，与服务端附件删除权限矩阵对齐：
+ * 草稿（提交审核前）=我的待办视图权限；已提交=「删除需求附件」权限点。
+ * 锁定时仅隐藏已有附件的删除按钮，新上传的附件仍可删可重传。
+ */
+const lockExistingAttachments = computed(() => {
+  if (!isEditMode.value) return false
+  if (currentRequirement.value?.isDraft === true) {
+    return !hasPermission('menu:requirement:view:pending')
+  }
+  return !hasPermission('button:requirement:attachment:delete')
+})
 const CREATE_VISIBLE_FIELD_FALLBACK = ['dueDate']
 const FIELD_NAME_ALIASES: Record<string, string> = {
   startDate: 'startDate',
@@ -958,7 +973,6 @@ const ccUsers = computed(() => {
   return mergeSelectedUsers(filtered, formData.ccUserIds)
 })
 
-// Load data
 async function loadProjects() {
   try {
     const res = await projectApi.getProjectList({ pageNum: 1, pageSize: 100 }) as any
@@ -1100,6 +1114,10 @@ async function loadEditData(targetId = editId.value) {
   try {
     const data = await requirementApi.getRequirementById(targetId) as Requirement
     applyRequirementToForm(data)
+    // 能以草稿身份被打开，说明它此前被真实保存过
+    if (data.isDraft) {
+      hasExplicitDraftSave.value = true
+    }
     await loadRelations(targetId)
   } catch {
     ElMessage.error('加载需求数据失败')
@@ -1232,10 +1250,7 @@ async function validateForms() {
   return !!basicValid && !!infoValid && !!dynamicValid
 }
 
-// ------------------------------------------------------------------
-// 需求动态字段
-// ------------------------------------------------------------------
-
+// --- 需求动态字段 ---
 /** 将后端返回的 schema 当前值回填到本地值表 */
 function applyDynamicSchema(schema: DynamicFieldSchema[]) {
   dynamicFields.value = Array.isArray(schema) ? schema : []
@@ -1443,6 +1458,7 @@ async function handleSaveDraft() {
   submitting.value = true
   try {
     const draft = await persistDraft(false)
+    hasExplicitDraftSave.value = true
     if (hadExistingRequirement || relatedRequirements.value.length > 0) {
       await syncRelations(draft.id)
     }
@@ -1454,7 +1470,6 @@ async function handleSaveDraft() {
   }
 }
 
-// Submit
 async function handleSubmit() {
   if (noAvailableTypeReason.value) {
     ElMessage.warning({ message: noAvailableTypeReason.value, duration: 5000 })
@@ -1507,6 +1522,7 @@ async function handleSubmit() {
       version: draft.version,
       nextNodeId,
       projectId: formData.projectId,
+      draftSaved: hasExplicitDraftSave.value,
     })
     ElMessage.success('提交审核成功')
     await navigateAfterSubmit()
@@ -1556,12 +1572,10 @@ async function loadConfig() {
     configPriorities.value = priorityList.map((p: any) => ({ ...p, name: stripPriorityPrefix(normalizeText(p.name)) }))
     if (!isEditMode.value) {
       formData.startDate = formatDateOnly()
-      // 设置默认需求类型
       if (configTypes.value.length > 0) {
         formData.type = configTypes.value[0].code
         await applyRequirementTemplate(formData.type, true)
       }
-      // 设置默认优先级
       if (configPriorities.value.length > 0) {
         const defaultPriority = configPriorities.value.find((p: any) => p.isDefault === true)
         formData.priority = defaultPriority ? defaultPriority.code : configPriorities.value[0].code

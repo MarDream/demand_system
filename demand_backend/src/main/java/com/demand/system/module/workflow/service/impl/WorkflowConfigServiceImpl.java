@@ -113,7 +113,6 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
     @Override
     public WorkflowConfigDTO getWorkflowConfig(Long projectId) {
         Long normalizedProjectId = normalizeProjectId(projectId);
-        // 获取当前激活的版本
         LambdaQueryWrapper<WorkflowVersion> versionQuery = new LambdaQueryWrapper<>();
         versionQuery.eq(WorkflowVersion::getProjectId, normalizedProjectId)
                 .eq(WorkflowVersion::getIsActive, 1);
@@ -199,12 +198,9 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
                         existingVersion.getProjectId(), targetName, existingVersion.getCreatorId()));
             }
 
-            // 删除旧节点和连线
             deleteVersionConfig(existingVersion.getId());
 
-            // 保存新节点
             saveNodes(configDTO.getNodes(), existingVersion.getId());
-            // 保存新连线
             saveEdges(configDTO.getEdges(), existingVersion.getId());
 
             // 重新编译
@@ -268,10 +264,8 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
                 : null;
         validateVersionMeta(normalizedProjectId, null, targetVersion, targetName);
 
-        // 创建新草稿版本
         WorkflowVersion draftVersion = createDraftVersion(normalizedProjectId, currentUserId, targetVersion, targetName);
 
-        // 设置知识库绑定
         if (configDTO.getKnowledgeBaseId() != null) {
             KnowledgeBase kb = knowledgeBaseMapper.selectById(configDTO.getKnowledgeBaseId());
             if (kb == null) {
@@ -281,9 +275,7 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             workflowVersionMapper.updateById(draftVersion);
         }
 
-        // 保存节点
         saveNodes(configDTO.getNodes(), draftVersion.getId());
-        // 保存连线
         saveEdges(configDTO.getEdges(), draftVersion.getId());
 
         // 编译并更新版本
@@ -491,7 +483,6 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         draftVersion.setUpdatedAt(LocalDateTime.now());
         workflowVersionMapper.updateById(draftVersion);
 
-        // 创建审核记录
         WorkflowApproval approval = new WorkflowApproval();
         approval.setWorkflowVersionId(draftVersion.getId());
         approval.setSubmitterId(currentUserId);
@@ -539,7 +530,6 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
 
         WorkflowVersionDTO dto = toVersionDTO(version);
 
-        // 加载配置
         WorkflowConfigDTO config = loadVersionConfig(versionId);
         dto.setConfig(config);
 
@@ -567,7 +557,6 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         version.setWorkflowDefinitionId(resolveOrCreateDefinition(
                 version.getProjectId(), targetName, version.getCreatorId()));
 
-        // 更新知识库绑定关系
         if (updateDTO.getKnowledgeBaseId() != null) {
             // 校验知识库存在且可用
             KnowledgeBase kb = knowledgeBaseMapper.selectById(updateDTO.getKnowledgeBaseId());
@@ -580,7 +569,6 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             version.setKnowledgeBaseId(null);
         }
 
-        // 更新评价开关
         if (updateDTO.getApprovalEvaluationEnabled() != null) {
             version.setApprovalEvaluationEnabled(updateDTO.getApprovalEvaluationEnabled());
         }
@@ -781,7 +769,6 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             throw new BusinessException("该审核已处理");
         }
 
-        // 更新审核记录
         approval.setStatus("approved");
         approval.setApproverId(currentUserId);
         approval.setComment(normalizeComment(comment));
@@ -821,7 +808,6 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             throw new BusinessException("该审核已处理");
         }
 
-        // 更新审核记录
         approval.setStatus("rejected");
         approval.setApproverId(currentUserId);
         approval.setComment(normalizedComment);
@@ -902,7 +888,6 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
     private WorkflowConfigDTO loadVersionConfig(Long versionId) {
         WorkflowConfigDTO configDTO = new WorkflowConfigDTO();
 
-        // 加载节点
         LambdaQueryWrapper<WorkflowNode> nodeQuery = new LambdaQueryWrapper<>();
         nodeQuery.eq(WorkflowNode::getWorkflowVersionId, versionId);
         List<WorkflowNode> nodes = workflowNodeMapper.selectList(nodeQuery);
@@ -915,7 +900,6 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
 
         configDTO.setNodes(nodeDTOs);
 
-        // 加载连线
         LambdaQueryWrapper<WorkflowEdge> edgeQuery = new LambdaQueryWrapper<>();
         edgeQuery.eq(WorkflowEdge::getWorkflowVersionId, versionId);
         List<WorkflowEdge> edges = workflowEdgeMapper.selectList(edgeQuery);
@@ -932,12 +916,10 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
     }
 
     private void deleteVersionConfig(Long versionId) {
-        // 删除节点
         LambdaQueryWrapper<WorkflowNode> nodeQuery = new LambdaQueryWrapper<>();
         nodeQuery.eq(WorkflowNode::getWorkflowVersionId, versionId);
         workflowNodeMapper.delete(nodeQuery);
 
-        // 删除连线
         LambdaQueryWrapper<WorkflowEdge> edgeQuery = new LambdaQueryWrapper<>();
         edgeQuery.eq(WorkflowEdge::getWorkflowVersionId, versionId);
         workflowEdgeMapper.delete(edgeQuery);
@@ -1069,7 +1051,6 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
         if (!StringUtils.hasText(version) && !StringUtils.hasText(versionName)) {
             return;
         }
-        // 校验版本名称
         if (StringUtils.hasText(versionName)) {
             String normalized = normalizeVersionName(versionName);
             if (normalized == null || normalized.isEmpty()) {
@@ -1079,7 +1060,6 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             throw new BusinessException("版本名称不能为空");
         }
 
-        // 校验版本号格式和重复
         if (StringUtils.hasText(version)) {
             String normalized = normalizeVersion(version);
             if (!WorkflowVersionUtils.isValid(normalized)) {
@@ -1251,7 +1231,6 @@ public class WorkflowConfigServiceImpl implements WorkflowConfigService {
             }
         }
 
-        // 填充知识库名称
         if (version.getKnowledgeBaseId() != null) {
             KnowledgeBase kb = knowledgeBaseMapper.selectById(version.getKnowledgeBaseId());
             if (kb != null) {

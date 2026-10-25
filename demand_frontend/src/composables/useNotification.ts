@@ -20,12 +20,12 @@ async function fetchUnreadCount() {
 
   pendingFetch = getUnreadCount()
     // 注意：request 拦截器已把响应解包到 ApiResponse.data，
-    // 这里拿到的**直接就是数字**，不是 AxiosResponse（此前多取一层 .data.data 导致未读数恒为 0）
+    // 这里拿到的直接就是数字，不要再取一层 .data。
     .then((count) => {
       unreadCount.value = Number(count) || 0
     })
     .catch(() => {
-      // ignore
+      // 未读数拉取失败静默忽略，等待下次轮询重试。
     })
     .finally(() => {
       pendingFetch = null

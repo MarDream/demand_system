@@ -50,7 +50,7 @@ public class PreviewController {
     /**
      * 异步预览：提交转换任务，<strong>不阻塞</strong>等待完成。
      *
-     * <p>该方法只负责"提交"环节：调 kkFileView 的 /onlinePreview 拿到 taskId
+     * <p>该方法只负责"提交"环节：调 kkFileView 的 /officeSubmit 拿到 taskId
      * （小文件可能直接返回 completed previewUrl）。前端在 status=processing 时
      * 调用 {@link #pollOfficeStatus} 轮询状态。</p>
      *

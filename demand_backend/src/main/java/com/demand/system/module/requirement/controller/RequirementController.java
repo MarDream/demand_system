@@ -78,7 +78,6 @@ public class RequirementController {
             response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
             response.setHeader("Content-Disposition", "attachment; filename*=UTF-8''" + fileName);
 
-            // 解析前端传来的列配置
             List<String> columnKeys = null;
             if (columns != null && !columns.isBlank()) {
                 columnKeys = java.util.Arrays.stream(columns.split(","))
@@ -164,7 +163,6 @@ public class RequirementController {
         try (var workbook = new org.apache.poi.xssf.streaming.SXSSFWorkbook(100)) {
             var sheet = workbook.createSheet("需求列表");
 
-            // 表头样式
             var headerStyle = workbook.createCellStyle();
             var headerFont = workbook.createFont();
             headerFont.setBold(true);
@@ -178,7 +176,6 @@ public class RequirementController {
             headerStyle.setBorderLeft(org.apache.poi.ss.usermodel.BorderStyle.THIN);
             headerStyle.setBorderRight(org.apache.poi.ss.usermodel.BorderStyle.THIN);
 
-            // 数据样式
             var dataStyle = workbook.createCellStyle();
             dataStyle.setBorderBottom(org.apache.poi.ss.usermodel.BorderStyle.THIN);
             dataStyle.setBorderTop(org.apache.poi.ss.usermodel.BorderStyle.THIN);
@@ -186,7 +183,6 @@ public class RequirementController {
             dataStyle.setBorderRight(org.apache.poi.ss.usermodel.BorderStyle.THIN);
             dataStyle.setWrapText(true);
 
-            // 写入表头
             var headerRow = sheet.createRow(0);
             for (int i = 0; i < columns.length; i++) {
                 var cell = headerRow.createCell(i);
@@ -194,12 +190,10 @@ public class RequirementController {
                 cell.setCellStyle(headerStyle);
             }
 
-            // 设置列宽
             for (int i = 0; i < columns.length; i++) {
                 sheet.setColumnWidth(i, Integer.parseInt(columns[i][1]) * 256);
             }
 
-            // 写入数据行
             for (int rowIdx = 0; rowIdx < dataList.size(); rowIdx++) {
                 var row = sheet.createRow(rowIdx + 1);
                 var data = dataList.get(rowIdx);
@@ -373,6 +367,17 @@ public class RequirementController {
             return Result.fail(401, "未登录或登录已过期");
         }
         requirementService.delete(id, userId);
+        return Result.success();
+    }
+
+    @DeleteMapping("/{id}/attachments/{fileId}")
+    @PreAuthorize("isAuthenticated()")
+    public Result<Void> deleteAttachment(@PathVariable Long id, @PathVariable Long fileId) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        if (userId == null) {
+            return Result.fail(401, "未登录或登录已过期");
+        }
+        requirementService.deleteAttachment(id, fileId, userId);
         return Result.success();
     }
 

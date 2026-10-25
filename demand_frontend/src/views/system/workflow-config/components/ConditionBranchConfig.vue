@@ -129,7 +129,7 @@ function emitBranches() {
 </script>
 
 <style scoped>
-/* ===== 区块通用样式 ===== */
+/* --- 区块通用样式 --- */
 .section-block {
   margin-bottom: 20px;
 }
@@ -141,7 +141,7 @@ function emitBranches() {
   margin-bottom: 8px;
 }
 
-/* ===== 分支标题行 ===== */
+/* --- 分支标题行 --- */
 .section-header {
   display: flex;
   align-items: baseline;
@@ -158,7 +158,7 @@ function emitBranches() {
   color: var(--el-text-color-secondary, var(--color-text-tertiary));
 }
 
-/* ===== 分支卡片 ===== */
+/* --- 分支卡片 --- */
 .branch-card {
   background: var(--color-surface);
   border: 1px solid var(--el-border-color-lighter, var(--color-border));

@@ -8,7 +8,6 @@ public class HrRecordQueryDTO {
     /** 状态：processing/done/cancelled */
     private String status;
 
-    /** 关联员工 */
     private Long userId;
 
     private Integer pageNum = 1;

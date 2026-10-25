@@ -19,7 +19,7 @@
 import { ref, onErrorCaptured } from 'vue'
 import { ElButton, ElResult } from 'element-plus'
 
-// C3: 全局错误边界 - 捕获子树渲染期未捕获异常，展示兜底 UI 而非整页白屏
+// 全局错误边界：捕获子树渲染期未捕获异常，展示兜底 UI 而非整页白屏。
 const hasError = ref(false)
 const errorMessage = ref('')
 

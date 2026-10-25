@@ -7,9 +7,6 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
 import java.util.Objects;
 
-/**
- * 系统用户实体
- */
 @TableName("users")
 public class SysUser {
 

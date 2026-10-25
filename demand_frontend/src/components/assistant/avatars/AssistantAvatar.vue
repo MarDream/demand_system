@@ -6,7 +6,7 @@
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
   >
-    <!-- ============ 共同层 ============ -->
+    <!-- --- 共同层 --- -->
 
     <!-- A. 圆脸少女（双马尾） -->
     <g v-if="variant === 'girl'" class="avatar-girl">
@@ -197,7 +197,7 @@ defineProps<{
   overflow: visible;
 }
 
-/* ===== 通用动画 ===== */
+/* --- 通用动画 --- */
 .assistant-fab__face {
   transform-origin: 24px 26px;
   animation: avatar-face 3s ease-in-out infinite;
@@ -280,7 +280,7 @@ defineProps<{
   animation: avatar-star 1.6s ease-in-out infinite;
 }
 
-/* ===== Keyframes ===== */
+/* --- Keyframes --- */
 @keyframes avatar-face {
   0%, 100% { transform: translateY(0) scale(1); }
   50% { transform: translateY(-0.5px) scale(1.02); }

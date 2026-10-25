@@ -77,7 +77,7 @@ public class AssistantController {
         return assistantService.regenerateMessage(sessionId, request);
     }
 
-    // ==================== 快捷提问 API ====================
+    // --- 快捷提问 API ---
 
     /**
      * 前台获取快捷提问列表（人工优先 + AI 补齐，最多 3 条）

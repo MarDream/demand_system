@@ -8,7 +8,6 @@
       </el-button>
     </div>
 
-    <!-- 搜索 -->
     <div class="agtree-search">
       <el-input
         v-model="keyword"
@@ -65,7 +64,6 @@
             <el-icon><ArrowRight /></el-icon>
           </span>
 
-          <!-- 图标 -->
           <span class="agtree-node__icon" :class="`agtree-node__icon--${node.kind}`">
             <el-icon>
               <Grid v-if="node.kind === 'all'" />

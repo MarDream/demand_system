@@ -578,6 +578,9 @@ public class RequirementServiceImpl implements RequirementService {
             updateWrapper.set("actual_hours", dto.getActualHours());
         }
         if (dto.getAttachments() != null && !Objects.equals(existing.getAttachments(), dto.getAttachments())) {
+            // 防绕过：编辑保存时整体覆盖 attachments 同样触发附件删除权限矩阵
+            assertAttachmentRemovalAllowed(existing,
+                    diffRemovedAttachments(existing.getAttachments(), dto.getAttachments()));
             recordHistory(dto.getId(), operatorId, "attachments", null, "更新附件");
             updateWrapper.set("attachments", writeJson(dto.getAttachments()));
         }
@@ -616,6 +619,106 @@ public class RequirementServiceImpl implements RequirementService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public void deleteAttachment(Long requirementId, Long fileId, Long userId) {
+        Requirement requirement = ensureRequirementExists(requirementId);
+        List<RequirementAttachmentDTO> attachments = requirement.getAttachments() == null
+                ? List.of()
+                : requirement.getAttachments();
+        RequirementAttachmentDTO target = attachments.stream()
+                .filter(att -> Objects.equals(att.getFileId(), fileId))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "该附件不在需求附件列表中"));
+
+        assertAttachmentRemovalAllowed(requirement, List.of(target));
+
+        List<RequirementAttachmentDTO> remaining = attachments.stream()
+                .filter(att -> !Objects.equals(att.getFileId(), fileId))
+                .toList();
+
+        // 仅移除 JSON 引用，不物理删除 file_records/MinIO：同一文件可能被流转附件、知识库、评价附件引用
+        UpdateWrapper<Requirement> wrapper = new UpdateWrapper<>();
+        wrapper.eq("id", requirementId)
+                .set("attachments", writeJson(remaining))
+                // UpdateWrapper 直写不触发自动填充，显式刷新更新时间（列表按更新时间倒序）
+                .set("updated_at", java.time.LocalDateTime.now());
+        requirementMapper.update(null, wrapper);
+
+        recordHistory(requirementId, userId, "attachments", target.getName(), "删除附件");
+
+        knowledgeDocumentService.syncRequirementAttachmentsWithContext(
+                requirement.getProjectId(),
+                requirement.getId(),
+                requirement.getRequirementNo(),
+                requirement.getTitle(),
+                remaining,
+                userId
+        );
+    }
+
+    /**
+     * 附件移除权限矩阵（2026-10 需求附件删除分阶段管控）：
+     * <ul>
+     *   <li>admin / SUPER_ADMIN 直通</li>
+     *   <li>草稿（提交审核前）：拥有我的待办视图权限的用户，仅可删除自己上传的附件</li>
+     *   <li>已提交：需 button:requirement:attachment:delete 权限，可删除任意附件</li>
+     * </ul>
+     */
+    private void assertAttachmentRemovalAllowed(Requirement requirement,
+                                                List<RequirementAttachmentDTO> removedAttachments) {
+        if (removedAttachments == null || removedAttachments.isEmpty()) {
+            return;
+        }
+        if (SecurityUtils.isSuperAdmin() || SecurityUtils.hasAnyRole("admin")) {
+            return;
+        }
+        if (Boolean.TRUE.equals(requirement.getIsDraft())) {
+            if (!SecurityUtils.hasAnyPermission("menu:requirement:view:pending")) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "删除附件需要「我的待办」视图权限");
+            }
+            Long currentUserId = SecurityUtils.getCurrentUserId();
+            boolean allOwn = removedAttachments.stream().allMatch(att ->
+                    att.getUploaderId() == null || Objects.equals(att.getUploaderId(), currentUserId));
+            if (!allOwn) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "提交审核前仅允许删除自己上传的附件");
+            }
+            return;
+        }
+        if (!SecurityUtils.hasAnyPermission("button:requirement:attachment:delete")) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "需求已提交审核，删除附件需要「删除需求附件」权限");
+        }
+    }
+
+    /** 计算整体覆盖保存时被移除的附件（fileId 优先，无 fileId 的历史项按 url 兜底比对）。 */
+    private List<RequirementAttachmentDTO> diffRemovedAttachments(List<RequirementAttachmentDTO> oldList,
+                                                                  List<RequirementAttachmentDTO> newList) {
+        if (oldList == null || oldList.isEmpty()) {
+            return List.of();
+        }
+        Set<Long> newFileIds = new HashSet<>();
+        Set<String> newUrls = new HashSet<>();
+        if (newList != null) {
+            for (RequirementAttachmentDTO att : newList) {
+                if (att.getFileId() != null) {
+                    newFileIds.add(att.getFileId());
+                }
+                if (StringUtils.hasText(att.getUrl())) {
+                    newUrls.add(att.getUrl());
+                }
+            }
+        }
+        return oldList.stream()
+                .filter(att -> {
+                    if (att.getFileId() != null) {
+                        return !newFileIds.contains(att.getFileId());
+                    }
+                    return att.getUrl() != null && !newUrls.contains(att.getUrl());
+                })
+                .toList();
+    }
+
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public Long createDraft(RequirementDraftCreateDTO dto, Long creatorId) {
         if (!StringUtils.hasText(dto.getTitle())) {
             throw new BusinessException(400, "请输入需求标题");
@@ -625,7 +728,7 @@ public class RequirementServiceImpl implements RequirementService {
         }
         requireProjectSelection(dto.getProjectId());
 
-        // ===== BUG-01 修复: type/priority 字典校验（防止非法值落库）=====
+        // --- type/priority 字典校验（防止非法值落库）---
         validateTypeAgainstDict(dto.getType());
         validatePriorityAgainstDict(dto.getPriority());
 
@@ -634,7 +737,6 @@ public class RequirementServiceImpl implements RequirementService {
         requirement.setProjectId(normalizeProjectId(dto.getProjectId()));
         ensureProjectCanBeBound(requirement.getProjectId());
 
-        // 如果前端未传递type，使用默认类型；否则使用前端传递的值
         if (!StringUtils.hasText(requirement.getType())) {
             RequirementTypeConfig defaultType = requirementConfigService.getDefaultType();
             if (defaultType == null || !StringUtils.hasText(defaultType.getCode())) {
@@ -684,9 +786,6 @@ public class RequirementServiceImpl implements RequirementService {
         return requirement.getId();
     }
 
-    /**
-     * BUG-01 修复: 校验需求 type 是否在已配置的字典中
-     */
     private void validateTypeAgainstDict(String type) {
         if (!StringUtils.hasText(type)) {
             return; // null/空由调用方走"默认类型"逻辑
@@ -703,9 +802,6 @@ public class RequirementServiceImpl implements RequirementService {
         }
     }
 
-    /**
-     * 校验需求 priority 是否在已配置的字典中
-     */
     private void validatePriorityAgainstDict(String priority) {
         if (!StringUtils.hasText(priority)) {
             return;
@@ -722,7 +818,7 @@ public class RequirementServiceImpl implements RequirementService {
     }
 
     /**
-     * BUG-02 辅助: 规范化提交 DTO。草稿提交场景允许客户端省略 version（默认为 0）；
+     * 规范化提交 DTO。草稿提交场景允许客户端省略 version（默认为 0）；
      * 其他场景保留原 version 用于乐观锁。
      * 注：返回新的 final 引用，避免调用方对原 dto 重新赋值破坏 lambda 的 effectively final 捕获。
      */
@@ -881,7 +977,7 @@ public class RequirementServiceImpl implements RequirementService {
         if (!Objects.equals(requirement.getCreatorId(), userId)) {
             throw new BusinessException(403, "只有创建人可以提交草稿");
         }
-        // BUG-02 修复: 草稿场景（version 必为 0）允许客户端省略 version，自动补 0；
+        // 草稿场景（version 必为 0）允许客户端省略 version，自动补 0；
         // 非草稿场景仍要求显式传 version 用于乐观锁。
         // 注：dto 参数本身不能再赋值（后续 lambda 依赖 effectively final），
         //     所以必须新建 final 变量，并在所有引用点替换为 effectiveDto。
@@ -939,7 +1035,8 @@ public class RequirementServiceImpl implements RequirementService {
         }
 
         workflowEngineService.submitFromDraft(requirementId, active.getId(), targetNodeId,
-                normalizeProjectId(effectiveDto.getProjectId()), effectiveDto.getComment(), userId);
+                normalizeProjectId(effectiveDto.getProjectId()), effectiveDto.getComment(), userId,
+                Boolean.TRUE.equals(effectiveDto.getDraftSaved()));
 
         Requirement latest = requirementMapper.selectById(requirementId);
         RequirementVO vo = new RequirementVO();
@@ -966,7 +1063,6 @@ public class RequirementServiceImpl implements RequirementService {
             list.add(vo);
         }
         batchFillUserNamesAndOrg(list, result.getRecords());
-        // 批量填充关注状态
         batchFillFollowed(list, userId);
         // 填充权限字段（草稿视图需要 canEdit/operationType 来显示"编辑"按钮）
         for (int i = 0; i < list.size(); i++) {
@@ -977,7 +1073,7 @@ public class RequirementServiceImpl implements RequirementService {
 
     @Override
     public PageResult<RequirementVO> listMyPending(RequirementMyListQueryDTO query, Long userId) {
-        // 版本对齐已移除（ADR-002），在途实例始终按启动时锁定的版本执行
+        // 版本对齐已移除，在途实例始终按启动时锁定的版本执行
 
         List<String> currentRoleCodes = SecurityUtils.getCurrentUserRoles();
         boolean isSuperAdmin = isSuperAdmin(currentRoleCodes);
@@ -1024,7 +1120,6 @@ public class RequirementServiceImpl implements RequirementService {
             list.add(vo);
         }
         batchFillUserNamesAndOrg(list, result.getRecords());
-        // 批量填充关注状态
         batchFillFollowed(list, userId);
         // 填充权限字段（我的待办/已办需要 operationType 字段来显示"待办"/"查看"按钮）
         for (int i = 0; i < list.size(); i++) {
@@ -1136,7 +1231,6 @@ public class RequirementServiceImpl implements RequirementService {
             list.add(vo);
         }
         batchFillUserNamesAndOrg(list, result.getRecords());
-        // 批量填充关注状态
         batchFillFollowed(list, userId);
         // 填充权限字段（我的已办需要 operationType 来显示操作按钮）
         for (int i = 0; i < list.size(); i++) {
@@ -1238,7 +1332,6 @@ public class RequirementServiceImpl implements RequirementService {
             throw new BusinessException("只有创建者或管理员可以删除需求");
         }
 
-        // 检查是否有删除权限
         boolean hasDeletePermission = SecurityUtils.hasAnyPermission("button:requirement:delete");
 
         if (!hasDeletePermission && !isAdmin) {
@@ -1267,13 +1360,12 @@ public class RequirementServiceImpl implements RequirementService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void restore(Long id, Long userId) {
-        // 修复 P0：使用自定义 SQL 绕过 @TableLogic 过滤，查询包含已删除记录
+        // 使用自定义 SQL 绕过 @TableLogic 过滤，查询包含已删除记录
         Requirement existing = requirementMapper.selectByIdIncludeDeleted(id);
         if (existing == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "需求不存在");
         }
 
-        // 检查删除状态
         if (existing.getDeletedAt() == null || existing.getDeletedAt() == 0) {
             throw new BusinessException("该需求未被删除，无需恢复");
         }
@@ -1514,7 +1606,6 @@ public class RequirementServiceImpl implements RequirementService {
                 map.put("operatorName", t.getOperatorName());
                 map.put("operatorRoleName", t.getOperatorRoleName());
                 map.put("action", t.getAction());
-                // 根据action设置fieldName
                 String fieldName = "submit".equals(t.getAction()) ? "流程流转" :
                                  "rollback".equals(t.getAction()) ? "流程驳回" :
                                  "cancel".equals(t.getAction()) ? "流程取消" :
@@ -1523,7 +1614,7 @@ public class RequirementServiceImpl implements RequirementService {
                 map.put("fieldName", fieldName);
                 map.put("oldValue", t.getFromNodeName() != null ? t.getFromNodeName() : (t.getFromNodeId() != null ? t.getFromNodeId() : "开始"));
                 map.put("newValue", t.getToNodeName() != null ? t.getToNodeName() : (t.getToNodeId() != null ? t.getToNodeId() : "完成"));
-                map.put("comment", t.getComment());  // 添加评审意见
+                map.put("comment", t.getComment());
                 map.put("createdAt", t.getCreatedAt());
                 historyList.add(map);
             }
@@ -1758,7 +1849,6 @@ public class RequirementServiceImpl implements RequirementService {
         if (userId == null) {
             return List.of();
         }
-        // 查询用户的角色ID
         List<Long> roleIds = userMapper.selectRoleIdsByUserId(userId);
         return roleIds != null ? roleIds : List.of();
     }
@@ -1820,9 +1910,6 @@ public class RequirementServiceImpl implements RequirementService {
         return new ArrayList<>(orgIds);
     }
 
-    /**
-     * 查询用户所有角色配置的数据权限组织 ID 列表
-     */
     private List<Long> resolveRoleDataScopeOrgIds(Long userId) {
         List<Long> roleIds = getUserRoleIds(userId);
         if (roleIds == null || roleIds.isEmpty()) {
@@ -1856,7 +1943,7 @@ public class RequirementServiceImpl implements RequirementService {
                 try {
                     orgIds.add(Long.parseLong(pathPart));
                 } catch (NumberFormatException ignored) {
-                    // ignore invalid path fragment
+                    // 非数字的路径片段直接跳过
                 }
             }
         }
@@ -1900,7 +1987,6 @@ public class RequirementServiceImpl implements RequirementService {
             return;
         }
 
-        // 查询所有子需求
         LambdaQueryWrapper<Requirement> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Requirement::getParentId, parentId)
                .eq(Requirement::getDeletedAt, 0);
@@ -1910,7 +1996,6 @@ public class RequirementServiceImpl implements RequirementService {
             return;
         }
 
-        // 统计各状态数量
         Set<String> childStatuses = children.stream()
                 .map(Requirement::getStatus)
                 .filter(Objects::nonNull)
@@ -1918,7 +2003,6 @@ public class RequirementServiceImpl implements RequirementService {
 
         String newParentStatus = null;
 
-        // 汇总逻辑
         if (childStatuses.size() == 1) {
             // 所有子需求状态一致
             String onlyStatus = childStatuses.iterator().next();
@@ -1936,7 +2020,6 @@ public class RequirementServiceImpl implements RequirementService {
             }
         }
 
-        // 更新父需求状态
         if (newParentStatus != null && !newParentStatus.equals(parent.getStatus())) {
             UpdateWrapper<Requirement> updateWrapper = new UpdateWrapper<>();
             updateWrapper.eq("id", parentId).set("status", newParentStatus);
@@ -2294,9 +2377,6 @@ public class RequirementServiceImpl implements RequirementService {
                 (vo, name) -> { /* 列表 VO 不暴露提出人所属组织，忽略 */ });
     }
 
-    /**
-     * 为 RequirementListVO 批量填充关注状态
-     */
     private void batchFillFollowedForListVO(List<RequirementListVO> voList, Long currentUserId) {
         if (voList == null || voList.isEmpty() || currentUserId == null) {
             return;
@@ -2610,7 +2690,6 @@ public class RequirementServiceImpl implements RequirementService {
         if (isSuperAdmin || userId == null) {
             return List.of();
         }
-        // 先查缓存
         List<Long> cached = visibleOrgCache.getVisibleOrgIds(userId);
         if (cached != null) {
             return cached;
@@ -2625,7 +2704,6 @@ public class RequirementServiceImpl implements RequirementService {
         }
 
         List<Long> finalResult = new ArrayList<>(result);
-        // 写入缓存
         visibleOrgCache.putVisibleOrgIds(userId, finalResult);
         return finalResult;
     }
@@ -2763,7 +2841,6 @@ public class RequirementServiceImpl implements RequirementService {
         boolean participant = isParticipant(r.getId(), userId);
         vo.setIsParticipant(participant);
 
-        // 草稿状态
         if (Boolean.TRUE.equals(r.getIsDraft())) {
             vo.setCanEdit(isCreator);
             vo.setCanView(isSuperAdmin || isCreator);
@@ -2872,11 +2949,11 @@ public class RequirementServiceImpl implements RequirementService {
         String title = "需求状态变更";
         String content = String.format("需求【%s】状态已变更为【%s】", requirement.getTitle(), newStatus);
 
-        // Notify creator (if not the operator)
+        // 通知创建人（操作人本人除外）
         if (requirement.getCreatorId() != null && !requirement.getCreatorId().equals(operatorId)) {
             notificationService.sendNotification(requirement.getCreatorId(), title, content, "requirement", requirement.getId());
         }
-        // Notify assignee (if not the operator and not the creator)
+        // 通知处理人（操作人本人及创建人除外）
         if (requirement.getAssigneeId() != null
                 && !requirement.getAssigneeId().equals(operatorId)
                 && !requirement.getAssigneeId().equals(requirement.getCreatorId())) {
@@ -2894,7 +2971,6 @@ public class RequirementServiceImpl implements RequirementService {
             throw new BusinessException(401, "未登录或登录已过期");
         }
 
-        // 构建类型/优先级映射
         Map<String, String> typeMap = requirementConfigService.listTypes().getData().stream()
                 .collect(Collectors.toMap(
                         t -> t.getCode() != null ? t.getCode() : "",
@@ -2992,7 +3068,6 @@ public class RequirementServiceImpl implements RequirementService {
             }
         }
 
-        // 转换为导出 Map 列表
         return convertToExportMaps(records, typeMap, priorityMap);
     }
 
@@ -3078,9 +3153,6 @@ public class RequirementServiceImpl implements RequirementService {
         return requirementMapper.selectList(wrapper);
     }
 
-    /**
-     * 将 RequirementQueryDTO 转换为 RequirementMyListQueryDTO
-     */
     private RequirementMyListQueryDTO buildMyListQuery(RequirementQueryDTO query) {
         RequirementMyListQueryDTO myQuery = new RequirementMyListQueryDTO();
         myQuery.setProjectId(query.getProjectId());
@@ -3140,9 +3212,6 @@ public class RequirementServiceImpl implements RequirementService {
         }
     }
 
-    /**
-     * 将 Requirement 列表转换为导出用的 Map 列表
-     */
     /** 将可见动态字段值追加到导出行 Map，字段 key = fieldCode。 */
     private void appendDynamicFieldsToExportRow(Map<String, Object> row, Requirement r, DynamicExportContext ctx) {
         String typeKey = r.getType();

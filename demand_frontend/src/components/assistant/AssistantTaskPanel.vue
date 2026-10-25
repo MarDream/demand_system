@@ -177,7 +177,7 @@ function formatLogTime(timestamp: number) {
 </script>
 
 <style scoped lang="scss">
-/* ===== 任务面板（对标 WorkBuddy 视觉）===== */
+/* --- 任务面板（对标 WorkBuddy 视觉） --- */
 .assistant-task-panel {
   margin-top: 12px;
   width: 100%;

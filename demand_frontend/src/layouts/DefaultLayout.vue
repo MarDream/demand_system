@@ -446,7 +446,7 @@ const sidebarOpened = computed(() => appStore.sidebarOpened)
 const sidebarWidth = computed(() => appStore.sidebarWidth)
 const activeMenu = computed(() => resolveActiveMenuPath(route))
 
-// ===== 侧边栏风格（个人设置 → 外观 → 侧边栏风格） =====
+// --- 侧边栏风格（个人设置 → 外观 → 侧边栏风格） ---
 const { sidebar: sidebarStyle } = useAppearance()
 const isDualRail = computed(() => sidebarStyle.value === 'dual-rail')
 const isCollapsible = computed(() => sidebarStyle.value === 'collapsible')
@@ -568,7 +568,7 @@ async function handleLogout() {
   display: flex;
 }
 
-// ===== 侧边栏 =====
+// --- 侧边栏 ---
 .sidebar {
   width: var(--sidebar-width);
   background: var(--color-sidebar-bg-gradient);
@@ -598,7 +598,7 @@ async function handleLogout() {
   min-height: 0;
 }
 
-// ===== 风格⑥ 分组留白 + 底部收口（节点仅在 grouped 风格渲染） =====
+// --- 风格⑥ 分组留白 + 底部收口（节点仅在 grouped 风格渲染） ---
 .nav-group {
   margin-bottom: 32px;
 
@@ -816,7 +816,7 @@ async function handleLogout() {
   flex-shrink: 0;
 }
 
-// ===== 主内容区 =====
+// --- 主内容区 ---
 .main-container {
   flex: 1;
   display: flex;
@@ -1083,9 +1083,9 @@ async function handleLogout() {
 </style>
 
 <style lang="scss">
-/* ==================== 侧边栏高级风格（html[data-sidebar] 驱动，个人设置选择） ==================== */
+/* --- 侧边栏高级风格（html[data-sidebar] 驱动，个人设置选择） --- */
 
-/* ---- ① 悬浮岛式：栏体脱离屏幕边缘，四边 16px 留白，圆角 20，淡阴影 ---- */
+/* --- ① 悬浮岛式：栏体脱离屏幕边缘，四边 16px 留白，圆角 20，淡阴影 --- */
 html[data-sidebar='floating'] .layout-container {
   padding: 16px;
   gap: 16px;
@@ -1102,7 +1102,7 @@ html[data-appearance-mode='dark'][data-sidebar='floating'] .sidebar {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
 }
 
-/* ---- ② 深色重底：整页浅色，唯一深色给侧边栏；常规项低对比浅灰，仅激活项高亮 ---- */
+/* --- ② 深色重底：整页浅色，唯一深色给侧边栏；常规项低对比浅灰，仅激活项高亮 --- */
 html[data-sidebar='dark'] .sidebar {
   background: linear-gradient(180deg, #0B111E 0%, #070C16 100%);
   box-shadow: 1px 0 0 rgba(255, 255, 255, 0.04);
@@ -1135,7 +1135,7 @@ html[data-appearance-mode='dark'][data-sidebar='dark'] .sidebar {
   box-shadow: 1px 0 0 rgba(255, 255, 255, 0.08);
 }
 
-/* ---- ③ 磨砂玻璃：半透明背景 + 24px 模糊，边缘 1px 亮白描边 ---- */
+/* --- ③ 磨砂玻璃：半透明背景 + 24px 模糊，边缘 1px 亮白描边 --- */
 html[data-sidebar='glass'] .layout-container {
   background:
     radial-gradient(720px 480px at 6% 10%, var(--color-accent-tint), transparent 62%),
@@ -1172,7 +1172,7 @@ html[data-appearance-mode='dark'][data-sidebar='glass'] .sidebar {
   border-right-color: rgba(255, 255, 255, 0.10);
 }
 
-/* ---- ④ 双层图标轨：72px 图标轨 + 240px 二级面板 ---- */
+/* --- ④ 双层图标轨：72px 图标轨 + 240px 二级面板 --- */
 html[data-sidebar='dual-rail'] .sidebar {
   width: 72px !important;
   min-width: 72px;
@@ -1314,7 +1314,7 @@ html[data-sidebar='dual-rail'] .rail-flyout {
   transform: translateX(-8px);
 }
 
-/* ---- ⑤ 折叠展开式：默认 72px 纯图标，悬停平滑展开到 240px，文字延迟 80ms 淡入 ---- */
+/* --- ⑤ 折叠展开式：默认 72px 纯图标，悬停平滑展开到 240px，文字延迟 80ms 淡入 --- */
 html[data-sidebar='collapsible'] .sidebar {
   width: 72px !important;
   min-width: 72px;
@@ -1374,7 +1374,7 @@ html[data-sidebar='collapsible'] .sidebar--collapsed .sidebar-logo {
   padding: 0 16px;
 }
 
-/* ---- ⑥ 分组留白：中间列表单独滚动（组间距/组名样式在 scoped 块） ---- */
+/* --- ⑥ 分组留白：中间列表单独滚动（组间距/组名样式在 scoped 块） --- */
 html[data-sidebar='grouped'] .sidebar-nav {
   overflow-y: auto;
   padding: 8px 10px;

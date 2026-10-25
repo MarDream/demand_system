@@ -863,19 +863,19 @@ const miniBarSubtitle = computed(() => {
   return '点击此处还原窗口'
 })
 
-// ===== 快捷提问（动态轮询） =====
+// --- 快捷提问（动态轮询） ---
 const quickQuestions = useQuickQuestions({
   pageRoute: () => currentPageContext.value?.routeName ?? '',
   dialogVisible: () => visible.value,
   hasActiveConversation: () => (activeSessionId.value !== null && messages.value.length > 0),
 })
 
-// ===== 会话搜索与分组 =====
+// --- 会话搜索与分组 ---
 const sessionSearchKeyword = ref('')
 // 历史会话按时间分组，各组可独立折叠；折叠偏好持久化到 localStorage
 const { toggle: toggleGroupFold, isFolded: isGroupFolded } = useFoldState('assistant.session-groups-folded')
 
-// ===== 会话侧栏收起/展开 =====
+// --- 会话侧栏收起/展开 ---
 // 收起后侧栏变为窄条（仅保留展开按钮），偏好持久化到 localStorage
 const SESSION_LIST_COLLAPSED_KEY = 'assistant.session-list-collapsed'
 const sessionListCollapsed = ref((() => {
@@ -958,7 +958,7 @@ function formatSessionTime(value?: string | null) {
   return md
 }
 
-// ===== 知识库问答范围 =====
+// --- 知识库问答范围 ---
 // null = 通用助手（不检索知识库）；-1 = 全部知识库；具体值 = 指定知识库
 // 注意：el-option.value 不允许 null（prop validator 拒绝），故 UI 绑定到 selectedScopeKey
 //（'general' | -1 | kb.id），再由 watcher 同步到 selectedKbScope（number | null）。
@@ -986,7 +986,7 @@ watch(selectedKbScope, (val) => {
   }
 })
 
-// ===== RAG 检索参数 =====
+// --- RAG 检索参数 ---
 // 智能检索：固定 auto，由服务端按问题特征自动路由 hybrid/semantic/keyword
 const searchMode = ref<'auto' | 'hybrid' | 'semantic' | 'keyword'>('auto')
 const topK = ref<number>(10)
@@ -1003,10 +1003,10 @@ function buildAssistantSearchScopes(): AssistantSearchScope[] | undefined {
   return scopes
 }
 
-// ===== 联网搜索（仅通用助手模式生效）=====
+// --- 联网搜索（仅通用助手模式生效） ---
 const webSearchEnabled = ref<boolean>(false)
 
-// ===== 文档预览 =====
+// --- 文档预览 ---
 const previewVisible = ref(false)
 interface CitationPreviewContext {
   question?: string
@@ -1037,7 +1037,7 @@ function openSourcePreview(source: AssistantSource) {
   previewVisible.value = true
 }
 
-// ===== 文件上传（拖拽 / 粘贴 / 点击选择）=====
+// --- 文件上传（拖拽 / 粘贴 / 点击选择） ---
 interface AttachedFile {
   uid: string
   file: File
@@ -1118,7 +1118,6 @@ async function uploadAndExtract(attached: AttachedFile) {
         // 读取失败则跳过内容提取
       }
     }
-    // 上传到文件服务
     const baseURL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
     const token = getToken() || ''
     const formData = new FormData()
@@ -1187,7 +1186,7 @@ async function loadKnowledgeBases() {
   }
 }
 
-// ===== 聊天模型选择 =====
+// --- 聊天模型选择 ---
 interface AssistantModelOption {
   id: number
   providerId: number
@@ -1296,7 +1295,7 @@ function handleModelSelect(modelId: number) {
   modelPopoverVisible.value = false
 }
 
-// ===== 模型连通性圆点（与模型管理页连通性测试结果同源） =====
+// --- 模型连通性圆点（与模型管理页连通性测试结果同源） ---
 function connDotClass(model: AssistantModelOption): string {
   if (model.testSuccess == null) return 'is-untested'
   if (!model.testSuccess) return 'is-failed'
@@ -1313,7 +1312,7 @@ function connDotTitle(model: AssistantModelOption): string {
   return `连通正常（${model.testDuration ?? 0}ms）`
 }
 
-// ===== 浮标头像切换 =====
+// --- 浮标头像切换 ---
 type AvatarVariant = 'default' | 'girl' | 'fox' | 'cat' | 'elf'
 const AVATAR_STORAGE_KEY = 'assistantFabAvatar'
 
@@ -1355,7 +1354,7 @@ function setAvatarVariant(variant: AvatarVariant) {
   }
 }
 
-// ===== 拖拽浮标 =====
+// --- 拖拽浮标 ---
 const fabRef = ref<HTMLButtonElement | null>(null)
 
 const FAB_SIZE = 48
@@ -1498,7 +1497,7 @@ function handleFabResize() {
   fabPos.value = clampPosition(fabPos.value.x, fabPos.value.y)
 }
 
-// ===== 弹框拖动（normal 态拖 header，minimized 态拖迷你条；全屏态不拖） =====
+// --- 弹框拖动（normal 态拖 header，minimized 态拖迷你条；全屏态不拖） ---
 const windowRef = ref<HTMLElement | null>(null)
 /** null 表示沿用 CSS 默认定位（右下角）；拖动后改为 left/top 内联定位 */
 const windowPos = ref<{ x: number; y: number } | null>(null)
@@ -2067,13 +2066,13 @@ async function handleQuickAsk(question: string) {
   await submitMessage(question, true)
 }
 
-// ===== 追问推荐 =====
+// --- 追问推荐 ---
 async function handleFollowUpAsk(question: string) {
   if (!question.trim()) return
   await submitMessage(question.trim(), true)
 }
 
-// ===== 回答角标 [N] 点击：跳转到当前消息的引用来源，并闪动提示对应角标 =====
+// --- 回答角标 [N] 点击：跳转到当前消息的引用来源，并闪动提示对应角标 ---
 function handleCitationClick(message: AssistantMessage, citationIndex: number) {
   if (!citationIndex || citationIndex < 1) return
   const container = messageListRef.value?.querySelector(
@@ -2271,7 +2270,7 @@ function citationTitle(citation: CitationReference): string {
   return citation.fileName || '未知文档'
 }
 
-// ===== 思维链折叠 =====
+// --- 思维链折叠 ---
 const thinkingFoldState = reactive<Record<string, boolean>>({})
 
 function toggleThinkingFold(message: AssistantMessage) {
@@ -2279,7 +2278,7 @@ function toggleThinkingFold(message: AssistantMessage) {
   thinkingFoldState[key] = !thinkingFoldState[key]
 }
 
-// ===== 深度思考折叠 =====
+// --- 深度思考折叠 ---
 const reasoningFoldState = reactive<Record<string, boolean>>({})
 
 function toggleReasoningFold(message: AssistantMessage) {
@@ -2307,9 +2306,9 @@ function reasoningLiveLine(content?: string | null) {
   return last.length > 48 ? `…${last.slice(-48)}` : last
 }
 
-// ===== 任务日志折叠已迁移到 AssistantTaskPanel 子组件 =====
+// 任务日志折叠逻辑已迁移到 AssistantTaskPanel 子组件。
 
-// ===== 复制回答 =====
+// --- 复制回答 ---
 async function handleCopyMessage(message: AssistantMessage) {
   const text = message.content || ''
   if (!text) return
@@ -2334,7 +2333,7 @@ async function handleCopyMessage(message: AssistantMessage) {
   }
 }
 
-// ===== 重新生成 =====
+// --- 重新生成 ---
 function findUserQuestionFor(assistantMessage: AssistantMessage): string {
   const index = messages.value.findIndex(item => String(item.id) === String(assistantMessage.id))
   for (let i = index - 1; i >= 0; i--) {
@@ -2457,7 +2456,7 @@ watch(visible, async (opened) => {
   }
 })
 
-// ===== 动态思考提示（对标 WorkBuddy 等待模型响应）=====
+// --- 动态思考提示（对标 WorkBuddy 等待模型响应） ---
 const thinkingHintTicker = ref(0)
 let thinkingHintTimer: ReturnType<typeof setInterval> | null = null
 
@@ -2588,12 +2587,11 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped lang="scss">
-/* ===========================================================
- * 自管理弹框容器
+/* --- 自管理弹框容器 ---
  * - normal    视口居中浮动 920×720（打开时 JS 居中定位，right/bottom 仅作未拖动前兜底）
  * - maximized 100vw × 100vh
  * - minimized 右下角 320×56 迷你条
- * =========================================================== */
+ */
 .assistant-window {
   position: fixed;
   z-index: 1200;
@@ -2680,10 +2678,9 @@ onBeforeUnmount(() => {
   transform: translateY(8px) scale(0.96);
 }
 
-/* ===========================================================
- * 迷你条（minimized 态）
+/* --- 迷你条（minimized 态）---
  * 与普通面板共用 Teleport 出口，缩为单行浮条
- * =========================================================== */
+ */
 .assistant-mini-bar {
   display: flex;
   align-items: center;
@@ -3538,7 +3535,7 @@ onBeforeUnmount(() => {
   color: var(--color-text-primary);
 }
 
-/* ===== 动态思考提示 ===== */
+/* --- 动态思考提示 --- */
 .assistant-streaming-hint {
   display: flex;
   align-items: center;
@@ -3668,7 +3665,7 @@ onBeforeUnmount(() => {
   }
 }
 
-/* ===== 流式状态条 HUD（对标 WorkBuddy 等待模型响应）===== */
+/* --- 流式状态条 HUD（对标 WorkBuddy 等待模型响应） --- */
 .assistant-stream-hud {
   display: flex;
   align-items: center;

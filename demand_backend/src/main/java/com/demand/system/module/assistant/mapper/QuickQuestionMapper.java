@@ -23,8 +23,5 @@ public interface QuickQuestionMapper extends BaseMapper<QuickQuestion> {
      */
     List<ExtractedQuestionVO> selectExtractedFromLogs(@Param("windowDays") int windowDays, @Param("minFrequency") int minFrequency);
 
-    /**
-     * 增加点击次数
-     */
     int incrementHitCount(@Param("id") Long id);
 }

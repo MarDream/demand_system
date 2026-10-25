@@ -65,7 +65,7 @@ export interface WorkflowAvailableActions {
   parallelActive?: boolean | null
   activeParallelBranchId?: number | null
   parallelBranches?: import('@/api/modules/workflow').ParallelBranch[] | null
-  /** 修复 P2：当前节点是否要求必填审批意见 */
+  /** 当前节点是否要求必填审批意见。 */
   currentNodeRequireComment?: boolean | null
   /** 当前节点是否要求流转时必须上传附件 */
   currentNodeRequireAttachment?: boolean | null

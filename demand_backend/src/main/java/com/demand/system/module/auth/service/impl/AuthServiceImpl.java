@@ -310,7 +310,7 @@ public class AuthServiceImpl implements AuthService {
         }
 
         // 入参已通过 Bean Validation 校验，此处规范 primary 为大写十六进制后序列化。
-        // sidebar 为后增字段：历史客户端不传时沿用库里已保存的值（避免旧端保存把用户侧边栏风格抹成默认）
+        // 侧边栏（sidebar）为后增字段：历史客户端不传时沿用库里已保存的值（避免旧端保存把用户侧边栏风格抹成默认）
         String sidebar = (request.getSidebar() == null || request.getSidebar().isBlank())
                 ? extractStoredSidebar(user.getAppearanceConfig())
                 : request.getSidebar();
@@ -463,7 +463,6 @@ public class AuthServiceImpl implements AuthService {
         user.setEmail(request.getEmail());
         user.setPhone(request.getPhone());
         // 注册流程已通过邮箱验证码完成邮箱验证，直接激活账号。
-        // 此前写死 "inactive" 且无任何激活流程，导致新注册用户永远无法登录（Account disabled）。
         user.setStatus("active");
         user.setCreatedAt(LocalDateTime.now());
         user.setUpdatedAt(LocalDateTime.now());

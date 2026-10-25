@@ -659,7 +659,7 @@ const bulkLevel = ref('')
 const showAddRole = ref(false)
 const newRoleName = ref('')
 
-// ========== 角色成员 ==========
+// --- 角色成员 ---
 // 中间面板两种形态：'permission' = 角色 × 数据表的权限设计；'members' = 该角色的成员维护页
 const panelMode = ref<'permission' | 'members'>('permission')
 const memberSearch = ref('')
@@ -673,11 +673,11 @@ const memberUsers = ref<Array<{ id: number; username: string; realName: string; 
 const memberUsersLoaded = ref(false)
 const memberUsersLoading = ref(false)
 
-// ========== 本地缓存未保存的改动 ==========
+// --- 本地缓存未保存的改动 ---
 // key = `${roleType}:${systemRoleCode||customRoleId}:${tableId}:${permissionType}`
 const pendingChanges = ref<Map<string, PermissionLevel>>(new Map())
 
-// ========== 字段级权限 ==========
+// --- 字段级权限 ---
 // 当前选中表的字段列表
 const fieldList = ref<BitableField[]>([])
 const fieldPermLoading = ref(false)
@@ -1024,8 +1024,7 @@ function selectTable(table: BitableTable) {
   void loadFieldPermissions(table.id)
 }
 
-// ==================== 仪表盘节点（树）与仪表盘权限 ====================
-
+// --- 仪表盘节点（树）与仪表盘权限 ---
 const selectedDashboard = ref<{ id: number; name: string; baseId: number } | null>(null)
 /** 全局目录树数据：所有 Base 的表与仪表盘（树按全局分组展示，跨 Base） */
 const globalTables = ref<Array<BitableTable & { baseId: number; baseName?: string }>>([])
@@ -1237,7 +1236,7 @@ function setDashboardDataPermission(dashboardId: number, level: PermissionLevel)
   pendingChanges.value = next
 }
 
-// ========== 字段级权限：读取 / 本地改动 / 提交 ==========
+// --- 字段级权限：读取 / 本地改动 / 提交 ---
 
 /** 字段权限的缓存键：角色 + 字段 */
 function fieldPermKey(role: BitableBaseRoleVO, fieldId: number): string {
@@ -1309,7 +1308,7 @@ function setFieldPermission(fieldId: number, level: FieldPermissionLevel) {
   fieldPermPending.value = next
 }
 
-// ==================== 选项级权限（单选/多选字段） ====================
+// --- 选项级权限（单选/多选字段） ---
 
 function parseOptionConfig(raw: string | null | undefined): FieldOptionPermissionConfig | null {
   if (!raw) return null
@@ -1479,8 +1478,7 @@ function setFieldPermMode(mode: 'all' | 'specific') {
   fieldPermMode.value = mode
 }
 
-// ==================== 字段权限表格：可查看 / 可新增 / 可编辑 三列 ====================
-
+// --- 字段权限表格：可查看 / 可新增 / 可编辑 三列 ---
 const FIELD_COLUMNS = [
   { key: 'view', label: '可查看' },
   { key: 'add', label: '可新增' },
@@ -1694,7 +1692,6 @@ async function handleSave() {
   }
 }
 
-/** 取消 / 关闭 */
 async function handleCancel() {
   if (hasChanges.value) {
     try {
@@ -1741,8 +1738,7 @@ async function handleAddRole() {
   }
 }
 
-/* ---------------- 自定义角色：重命名 / 删除 ---------------- */
-
+// --- 自定义角色：重命名 / 删除 ---
 function handleRoleCommand(command: string, role: BitableBaseRoleVO) {
   if (command === 'rename') handleRenameRole(role)
   else if (command === 'delete') handleDeleteRole(role)
@@ -2735,7 +2731,7 @@ watch(() => props.modelValue, (v) => {
   }
 }
 
-/* ========== 单个角色的成员维护页（参考设计稿「X包含的成员」） ========== */
+/* --- 单个角色的成员维护页（参考设计稿「X包含的成员」）--- */
 .perm-member-page {
   &__header {
     display: flex;

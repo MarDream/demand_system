@@ -170,7 +170,7 @@ public class StatisticsServiceImpl implements StatisticsService {
         List<Long> visibleOrgIds = requirementService.resolveVisibleOrgIds(userId, isSuperAdmin);
         List<Map<String, Object>> rawList = statisticsMapper.getCfdDataWithOrgFilter(projectId, isSuperAdmin, visibleOrgIds);
 
-        // Group by date, accumulate counts per state per date
+        // 按日期聚合各状态的当日数量
         Map<String, Map<String, Long>> dateStateCounts = new LinkedHashMap<>();
         for (Map<String, Object> row : rawList) {
             String date = row.get("date") != null ? row.get("date").toString() : "";
@@ -183,11 +183,11 @@ public class StatisticsServiceImpl implements StatisticsService {
             stateMap.put(status, stateMap.getOrDefault(status, 0L) + count);
         }
 
-        // Build cumulative CFD data
+        // 构建 CFD 累计数据
         Set<String> allStates = new LinkedHashSet<>();
         dateStateCounts.values().forEach(m -> allStates.addAll(m.keySet()));
 
-        // Cumulative counts per state
+        // 各状态累计数（初始为 0）
         Map<String, Long> cumulativeCounts = new LinkedHashMap<>();
         for (String state : allStates) {
             cumulativeCounts.put(state, 0L);

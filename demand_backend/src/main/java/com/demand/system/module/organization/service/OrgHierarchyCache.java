@@ -32,9 +32,9 @@ public class OrgHierarchyCache {
     public OrgHierarchyCache(SysOrgService sysOrgService) {
         this.sysOrgService = sysOrgService;
         this.descendantsCache = Caffeine.newBuilder()
-                .maximumSize(10000) // 最多缓存10000个组织的子孙数据
-                .expireAfterWrite(Duration.ofMinutes(30)) // 写入后30分钟过期
-                .recordStats() // 记录统计信息
+                .maximumSize(10000)
+                .expireAfterWrite(Duration.ofMinutes(30))
+                .recordStats()
                 .build(this::loadDescendants);
     }
 
@@ -86,13 +86,9 @@ public class OrgHierarchyCache {
             }
         }
 
-        // 去重
         return allDescendants.stream().distinct().toList();
     }
 
-    /**
-     * 加载组织的子孙节点（实际查询逻辑）
-     */
     private List<Long> loadDescendants(Long orgId) {
         try {
             List<Long> descendants = sysOrgService.getDescendantIds(orgId);
@@ -104,9 +100,6 @@ public class OrgHierarchyCache {
         }
     }
 
-    /**
-     * 手动刷新指定组织的缓存
-     */
     public void refresh(Long orgId) {
         if (orgId != null) {
             descendantsCache.refresh(orgId);
@@ -114,9 +107,6 @@ public class OrgHierarchyCache {
         }
     }
 
-    /**
-     * 手动使指定组织的缓存失效
-     */
     public void invalidate(Long orgId) {
         if (orgId != null) {
             descendantsCache.invalidate(orgId);
@@ -134,9 +124,6 @@ public class OrgHierarchyCache {
         log.info("清空所有组织缓存");
     }
 
-    /**
-     * 获取缓存统计信息
-     */
     public String getCacheStats() {
         var stats = descendantsCache.stats();
         return String.format(

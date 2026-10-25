@@ -69,7 +69,7 @@ export interface RecordDeletedEvent {
 //   dev  → vite.config.ts 里已配 `/ws` 代理（ws: true）
 //   生产 → nginx 里已配 `location /ws/`（带 Upgrade/Connection 头）反代到后端
 // 绝不能写死 ws://localhost:8081 —— 那会让浏览器去连**用户自己的机器**，
-// 直接 ERR_CONNECTION_REFUSED（2026-10-12 线上就是这个现象）。
+// 直接 ERR_CONNECTION_REFUSED。
 // 只有确实要连到另一个域时，才用 VITE_WS_URL 显式覆盖。
 const WS_BASE = (
   import.meta.env.VITE_WS_URL
@@ -132,7 +132,7 @@ export function useBitableWebSocket(baseId: number) {
           onlineUsers.value = Array.isArray(msg.users) ? msg.users : []
         }
       } catch {
-        // ignore parse errors
+        // 解析失败的消息直接忽略。
       }
     }
 
@@ -148,7 +148,7 @@ export function useBitableWebSocket(baseId: number) {
   }
 
   function disconnect() {
-    reconnectAttempts.value = 99 // prevent reconnect
+    reconnectAttempts.value = 99 // 置大值以阻止 onclose 触发自动重连
     ws.value?.close()
     ws.value = null
     connected.value = false

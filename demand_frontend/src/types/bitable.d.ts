@@ -54,7 +54,7 @@ export interface ButtonActionConfig {
  * 只在读取时由 `normalizeFieldConfig()` 迁移，写入一律使用本接口声明的规范键。
  */
 export interface FieldConfig {
-  // ===== 通用 =====
+  // --- 通用 ---
   defaultValue?: unknown
   /** 表单中隐藏 */
   formHidden?: boolean
@@ -63,33 +63,33 @@ export interface FieldConfig {
   /** 同表内取值唯一 */
   unique?: boolean
 
-  // ===== 文本 =====
+  // --- 文本 ---
   inputMode?: 'single' | 'multiline'
   maxLength?: number
   /** 自定义正则校验（正则源码，不含斜杠） */
   pattern?: string
   patternMessage?: string
 
-  // ===== 电话 =====
+  // --- 电话 ---
   countryCode?: string
   allowCountrySwitch?: boolean
   masked?: boolean
 
-  // ===== 邮箱 =====
+  // --- 邮箱 ---
   /** 允许的邮箱域名（留空不限），如 example.com；校验时不区分大小写 */
   allowedEmailDomains?: string[]
   /** 展示为可点击的邮件链接（点击唤起本机邮件客户端） */
   emailClickable?: boolean
 
-  // ===== 超链接 =====
+  // --- 超链接 ---
   displayText?: string
   openInNewTab?: boolean
 
-  // ===== 地理位置 =====
+  // --- 地理位置 ---
   locationInputMethod?: 'map' | 'text' | 'latlng'
   locationDisplayMode?: 'name' | 'address' | 'latlng'
 
-  // ===== 数字 =====
+  // --- 数字 ---
   numberFormat?: 'plain' | 'percent'
   precision?: number
   thousandSeparator?: boolean
@@ -98,41 +98,41 @@ export interface FieldConfig {
   min?: number
   max?: number
 
-  // ===== 货币 =====
+  // --- 货币 ---
   currency?: string
   currencySymbolPosition?: 'prefix' | 'suffix'
 
-  // ===== 进度 =====
+  // --- 进度 ---
   progressStyle?: 'bar' | 'percent' | 'number'
   step?: number
   progressColorMode?: 'single' | 'threshold'
   progressColor?: string
   progressRules?: ProgressColorRule[]
 
-  // ===== 评分 =====
+  // --- 评分 ---
   maxRating?: number
   ratingIcon?: 'star' | 'heart' | 'thumb' | 'number'
   ratingColor?: string
   allowHalf?: boolean
 
-  // ===== 选择类 =====
+  // --- 选择类 ---
   options?: FieldOption[]
   defaultOption?: string
   allowAddOption?: boolean
   maxSelect?: number
   processNodes?: FieldOption[]
 
-  // ===== 复选框 =====
+  // --- 复选框 ---
   defaultChecked?: boolean
   checkboxStyle?: 'checkbox' | 'switch'
 
-  // ===== 日期 / 系统时间 =====
+  // --- 日期 / 系统时间 ---
   dateFormat?: string
   withTime?: boolean
   timeFormat?: '24h' | '12h'
   dateDefaultMode?: 'none' | 'now' | 'today' | 'fixed'
 
-  // ===== 人员 / 群组 =====
+  // --- 人员 / 群组 ---
   userMode?: 'single' | 'multiple'
   userScope?: 'all' | 'dept' | 'self'
   /** 人员范围=指定部门时选中的部门 ID */
@@ -142,20 +142,20 @@ export interface FieldConfig {
   groupMode?: 'single' | 'multiple'
   groupScope?: 'joined' | 'all'
 
-  // ===== 部门 =====
+  // --- 部门 ---
   departmentMode?: 'single' | 'multiple'
   departmentScope?: 'all' | 'dept'
   /** 可选范围=指定部门时选中的部门 ID */
   departmentIds?: number[]
 
-  // ===== 附件 =====
+  // --- 附件 ---
   fileTypeLimit?: 'any' | 'image' | 'doc' | 'custom'
   allowedExtensions?: string[]
   maxFileSizeMb?: number
   maxFiles?: number
   attachmentDisplay?: 'list' | 'thumbnail' | 'cover'
 
-  // ===== 条码 =====
+  // --- 条码 ---
   barcodeType?: 'qrcode' | 'code128' | 'ean13'
   barcodeSource?: 'self' | 'field'
   barcodeSourceFieldId?: number
@@ -163,21 +163,21 @@ export interface FieldConfig {
   barcodeSize?: number
   barcodeColor?: string
 
-  // ===== 自动编号 =====
+  // --- 自动编号 ---
   digits?: number
   resetCycle?: 'never' | 'year' | 'month' | 'day'
 
-  // ===== 按钮 =====
+  // --- 按钮 ---
   button?: ButtonActionConfig
 
-  // ===== 关联 =====
+  // --- 关联 ---
   linkTargetTableId?: number
   linkDisplayFieldId?: number
   reverseFieldId?: number
   allowMultipleLink?: boolean
   linkDeleteStrategy?: 'clear' | 'keep'
 
-  // ===== 查找引用 / 汇总 =====
+  // --- 查找引用 / 汇总 ---
   linkFieldId?: number
   targetFieldId?: number
   lookupFieldId?: number
@@ -185,13 +185,13 @@ export interface FieldConfig {
   aggregation?: 'count' | 'sum' | 'average' | 'min' | 'max' | 'concat' | 'distinctCount'
   rollupFormat?: 'number' | 'date' | 'text'
 
-  // ===== 公式 =====
+  // --- 公式 ---
   formulaExpr?: string
   formulaResultFormat?: 'auto' | 'text' | 'number' | 'date'
   formulaErrorDisplay?: 'empty' | 'zero' | 'custom'
   formulaErrorText?: string
 
-  // ===== AI 字段 =====
+  // --- AI 字段 ---
   sourceFieldIds?: number[]
   autoCompute?: boolean
   aiTriggerMode?: 'manual' | 'onCreate' | 'onDependencyChange'
@@ -616,8 +616,7 @@ export interface RecordGroupVO {
   count: number
 }
 
-// ========== 权限管理 ==========
-
+// --- 权限管理 ---
 export type PermissionLevel = 'full' | 'edit' | 'view' | 'none'
 /** 权限类型：data=数据表权限；view=视图权限；dashboard=仪表盘整体；dashboard_data=仪表盘数据；automation=自动化（已下线） */
 export type PermissionType = 'data' | 'automation' | 'view' | 'dashboard' | 'dashboard_data'

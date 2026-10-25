@@ -96,7 +96,7 @@ public class RbacPermissionResolver {
                 names.put(code, StringUtils.hasText(role.getName()) ? role.getName() : code);
             }
         }
-        // legacy 编码在 roles 表中无对应行时，用内置中文名兜底，避免把编码直接展示给用户
+        // 当 roles 表中无对应行时，对 legacy 编码用内置中文名兜底，避免把编码直接展示给用户
         if (!legacyCodes.isEmpty()) {
             List<Role> matched = roleMapper.selectList(new LambdaQueryWrapper<Role>()
                     .in(Role::getCode, legacyCodes)

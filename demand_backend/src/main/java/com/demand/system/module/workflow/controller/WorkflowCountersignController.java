@@ -19,9 +19,6 @@ public class WorkflowCountersignController {
         this.countersignService = countersignService;
     }
 
-    /**
-     * 提交会签审批
-     */
     @PostMapping("/submit")
     @PreAuthorize("isAuthenticated()")
     public Result<Void> submitCountersignApproval(@RequestBody CountersignSubmitDTO dto) {
@@ -29,9 +26,6 @@ public class WorkflowCountersignController {
         return Result.success();
     }
 
-    /**
-     * 获取会签记录列表
-     */
     @GetMapping("/records")
     @PreAuthorize("isAuthenticated()")
     public Result<List<CountersignRecordVO>> getCountersignRecords(
@@ -41,9 +35,6 @@ public class WorkflowCountersignController {
         return Result.success(records);
     }
 
-    /**
-     * 检查当前用户是否可以会签
-     */
     @GetMapping("/can-countersign")
     @PreAuthorize("isAuthenticated()")
     public Result<Boolean> canCurrentUserCountersign(

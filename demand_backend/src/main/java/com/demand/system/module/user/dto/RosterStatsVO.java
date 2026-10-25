@@ -11,31 +11,24 @@ public class RosterStatsVO {
     /** 待入职（未激活账号） */
     private long inactive;
 
-    /** 试用期 */
     private long probation;
 
     /** 已转正 */
     private long confirmed;
 
-    /** 待离职 */
     private long pendingResign;
 
-    /** 已离职 */
     private long resigned;
 
-    /** 全职 */
     private long fullTime;
 
-    /** 兼职 */
     private long partTime;
 
-    /** 实习 */
     private long intern;
 
     /** 劳务派遣 */
     private long dispatch;
 
-    /** 其他类型 */
     private long other;
 
     public long getActive() {

@@ -638,8 +638,7 @@ VxeUI.renderer.add('BitableRichText', {
   },
 })
 
-// ==================== 可编辑列的展示钩子 ====================
-
+// --- 可编辑列的展示钩子 ---
 /**
  * vxe 的渲染优先级是 **editRender > cellRender**（vxe-table/es/table/src/cell.js:451）：
  * 列上一旦同时配了 editRender，展示态走的就是「编辑渲染器」的 `renderTableCell`，

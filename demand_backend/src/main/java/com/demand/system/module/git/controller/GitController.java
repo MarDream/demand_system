@@ -56,7 +56,7 @@ public class GitController {
         this.gitAuditService = gitAuditService;
     }
 
-    // ==================== Git 平台 ====================
+    // --- Git 平台 ---
 
     @GetMapping("/platforms")
     public Result<List<GitPlatformVO>> listPlatforms() {
@@ -87,7 +87,7 @@ public class GitController {
         return Result.success(gitPlatformService.testConnection(id));
     }
 
-    // ==================== 仓库 ====================
+    // --- 仓库 ---
 
     @GetMapping("/repositories")
     public Result<List<GitRepositoryVO>> listRepositories(
@@ -129,7 +129,7 @@ public class GitController {
         return Result.success();
     }
 
-    // ==================== 分支保护规则 ====================
+    // --- 分支保护规则 ---
 
     @GetMapping("/repositories/{id}/protection/rules")
     public Result<List<BranchProtectionRuleVO>> listProtectionRules(@PathVariable Long id) {
@@ -182,7 +182,7 @@ public class GitController {
         return Result.success(branchProtectionService.applyRuleSet(id, repoId));
     }
 
-    // ==================== 合并请求 ====================
+    // --- 合并请求 ---
 
     @GetMapping("/repositories/{id}/merge-requests")
     public Result<List<MergeRequestVO>> listMergeRequests(@PathVariable Long id) {
@@ -214,7 +214,7 @@ public class GitController {
         return Result.success(mergeRequestService.mergeMergeRequest(id));
     }
 
-    // ==================== 审计日志 ====================
+    // --- 审计日志 ---
 
     @GetMapping("/audit-logs")
     public Result<List<GitAuditLogVO>> listAuditLogs(

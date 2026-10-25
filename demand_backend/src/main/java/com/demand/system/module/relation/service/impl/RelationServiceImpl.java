@@ -46,20 +46,20 @@ public class RelationServiceImpl implements RelationService {
         String relationType = dto.getRelationType();
         Long targetId = dto.getTargetId();
 
-        // 1. Check not duplicate
+        // 1. 校验关联是否已存在
         int count = relationMapper.exists(sourceId, targetId, relationType);
         if (count > 0) {
             throw new BusinessException("关联关系已存在");
         }
 
-        // 2. Cycle check for DEPENDENCY and PARENT_CHILD
+        // 2. DEPENDENCY 与 PARENT_CHILD 类型需做循环依赖校验
         if ("DEPENDENCY".equals(relationType) || "PARENT_CHILD".equals(relationType)) {
             if (hasCycle(sourceId, targetId)) {
                 throw new BusinessException("创建关联将导致循环依赖");
             }
         }
 
-        // 3. Insert
+        // 3. 插入关联记录
         RequirementRelation relation = new RequirementRelation();
         relation.setSourceId(sourceId);
         relation.setTargetId(targetId);
@@ -78,14 +78,14 @@ public class RelationServiceImpl implements RelationService {
             return true;
         }
 
-        // Build adjacency map from all requirement_relations
+        // 构建邻接表（sourceId → targetId 列表）
         List<RequirementRelation> allRelations = relationMapper.selectList(null);
         Map<Long, List<Long>> adjacency = new HashMap<>();
         for (RequirementRelation rel : allRelations) {
             adjacency.computeIfAbsent(rel.getSourceId(), k -> new ArrayList<>()).add(rel.getTargetId());
         }
 
-        // BFS from targetId to see if we can reach sourceId
+        // 从 targetId 出发 BFS，判断是否能到达 sourceId（能到达说明存在环）
         Queue<Long> queue = new LinkedList<>();
         queue.offer(targetId);
         Set<Long> visited = new HashSet<>();

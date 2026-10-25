@@ -7,10 +7,7 @@
     "dev": "vite",
     "build": "vue-tsc && vite build && node ../tools/check-dist.mjs dist",
     "verify:dist": "node ../tools/check-dist.mjs dist",
-    "preview": "vite preview",
-    "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui",
-    "test:e2e:report": "playwright show-report"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",
@@ -48,7 +45,6 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "@playwright/test": "^1.44.0",
     "@types/js-cookie": "^3.0.6",
     "@types/node": "^20.11.0",
     "@types/nprogress": "^0.2.3",

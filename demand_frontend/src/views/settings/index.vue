@@ -80,7 +80,6 @@ onMounted(async () => {
     const res = await getCurrentMenus() as any
     const data = res?.data ?? res
     const list: MenuItem[] = Array.isArray(data) ? data : []
-    // 找到系统配置的子菜单
     const systemConfig = list.find((m: MenuItem) => m.permissionCode === 'menu:system-config' || m.name === '系统配置')
     menuItems.value = systemConfig?.children ?? []
   } catch {

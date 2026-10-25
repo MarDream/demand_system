@@ -70,7 +70,6 @@ public class WorkflowDefinitionServiceImpl implements WorkflowDefinitionService 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int backfill() {
-        // 扫描所有未关联定义的版本
         List<WorkflowVersion> orphanVersions = workflowVersionMapper.selectList(
                 new LambdaQueryWrapper<WorkflowVersion>()
                         .isNull(WorkflowVersion::getWorkflowDefinitionId));
@@ -95,7 +94,6 @@ public class WorkflowDefinitionServiceImpl implements WorkflowDefinitionService 
             Long projectId = normalizeProjectId(first.getProjectId());
             String name = StringUtils.hasText(first.getName()) ? first.getName().trim() : "未命名工作流";
 
-            // 查现有定义（按 projectId + name）
             WorkflowDefinition existing = workflowDefinitionMapper.selectOne(
                     new LambdaQueryWrapper<WorkflowDefinition>()
                             .eq(WorkflowDefinition::getProjectId, projectId)
@@ -114,7 +112,6 @@ public class WorkflowDefinitionServiceImpl implements WorkflowDefinitionService 
                 definitionId = def.getId();
             }
 
-            // 回填该组所有版本
             for (WorkflowVersion v : groupVersions) {
                 v.setWorkflowDefinitionId(definitionId);
                 workflowVersionMapper.updateById(v);

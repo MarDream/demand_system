@@ -416,28 +416,23 @@ public class RequirementConfigService {
             return Result.fail("排序列表不能为空");
         }
 
-        // 提取所有ID
         List<Long> ids = sortRequests.stream()
                 .map(SortRequest::getId)
                 .collect(Collectors.toList());
 
-        // 查询所有需要更新的记录
         List<RequirementTypeConfig> types = typeMapper.selectBatchIds(ids);
         if (types.size() != sortRequests.size()) {
             return Result.fail("部分ID不存在");
         }
 
-        // 创建ID到sortOrder的映射
         Map<Long, Integer> sortOrderMap = sortRequests.stream()
                 .collect(Collectors.toMap(SortRequest::getId, SortRequest::getSortOrder));
 
-        // 更新sortOrder并逐个更新
         types.forEach(type -> {
             type.setSortOrder(sortOrderMap.get(type.getId()));
             typeMapper.updateById(type);
         });
 
-        // 返回更新后的列表
         return listTypes();
     }
 
@@ -447,28 +442,23 @@ public class RequirementConfigService {
             return Result.fail("排序列表不能为空");
         }
 
-        // 提取所有ID
         List<Long> ids = sortRequests.stream()
                 .map(SortRequest::getId)
                 .collect(Collectors.toList());
 
-        // 查询所有需要更新的记录
         List<PriorityConfig> priorities = priorityMapper.selectBatchIds(ids);
         if (priorities.size() != sortRequests.size()) {
             return Result.fail("部分ID不存在");
         }
 
-        // 创建ID到sortOrder的映射
         Map<Long, Integer> sortOrderMap = sortRequests.stream()
                 .collect(Collectors.toMap(SortRequest::getId, SortRequest::getSortOrder));
 
-        // 更新sortOrder并逐个更新
         priorities.forEach(priority -> {
             priority.setSortOrder(sortOrderMap.get(priority.getId()));
             priorityMapper.updateById(priority);
         });
 
-        // 返回更新后的列表
         return listPriorities();
     }
 

@@ -7,9 +7,6 @@ import java.util.List;
 
 public interface MergeRequestService {
 
-    /**
-     * 查询某仓库的合并请求列表
-     */
     List<MergeRequestVO> listMergeRequests(Long repoId);
 
     /**
@@ -17,9 +14,6 @@ public interface MergeRequestService {
      */
     MergeRequestVO createMergeRequest(Long repoId, MergeRequestDTO dto);
 
-    /**
-     * 合并请求详情
-     */
     MergeRequestVO getMergeRequestDetail(Long id);
 
     /**

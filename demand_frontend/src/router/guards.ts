@@ -22,14 +22,14 @@ export function setupGuards(router: Router) {
       return
     }
 
-    // Override with dynamic menu name if available
+    // 若有匹配的动态菜单名，则覆盖浏览器标题。
     try {
       const appStore = useAppStore()
       const menuName = appStore.getMenuNameByPath(to.path)
       if (menuName) {
         document.title = `${menuName} - 综合运营管理平台`
       }
-    } catch { /* ignore */ }
+    } catch { /* 忽略：菜单未加载时保持默认标题 */ }
 
     const token = getToken()
     const userStore = useUserStore()
@@ -104,7 +104,7 @@ export function setupGuards(router: Router) {
             const data = res.data ?? res
             appStore.setMenuList(Array.isArray(data) ? data : [])
           }
-        } catch { /* ignore */ }
+        } catch { /* 忽略：菜单未加载时按兜底逻辑处理 */ }
         const home = appStore.resolveHomePath()
         if (home && home !== '/dashboard') {
           next(home)

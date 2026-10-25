@@ -1,7 +1,6 @@
 import request from '../request'
 
-// ---- Provider ----
-
+// --- Provider ---
 export interface LlmProvider {
   id?: number
   name: string
@@ -24,8 +23,7 @@ export interface LlmProviderForm {
   enabled: boolean
 }
 
-// ---- Model ----
-
+// --- Model ---
 export interface LlmModel {
   id?: number
   providerId: number
@@ -86,8 +84,7 @@ export interface LlmModelForm {
   searchTopK?: number | null
 }
 
-// ---- Test ----
-
+// --- Test ---
 export interface LlmTestRequest {
   userMessage: string
   systemPrompt?: string
@@ -136,8 +133,7 @@ export interface LlmApplicationUpdateForm {
   enabled?: boolean
 }
 
-// ---- 功能点分组（目录树） ----
-
+// --- 功能点分组（目录树） ---
 export interface LlmApplicationGroup {
   id: number
   parentId: number | null
@@ -175,11 +171,9 @@ export interface ChatModelOption {
   testDuration?: number | null
 }
 
-// ---- Column Config (re-export from common) ----
+// --- 列配置（从 common 重导出） ---
 export { getColumnConfig, saveColumnConfig } from './columnConfig'
-
-// ---- API ----
-
+// --- API ---
 export const llmProviderApi = {
   // Provider
   list: () => request.get<LlmProvider[]>('/v1/llm-providers'),
@@ -224,10 +218,10 @@ export const llmProviderApi = {
     request.put(`/v1/llm-application-groups/${id}/move`, data),
   deleteApplicationGroup: (id: number) => request.delete(`/v1/llm-application-groups/${id}`),
 
-  // Chat Models (for RAG)
+  // 对话模型（用于 RAG）
   listChatModels: () => request.get<ChatModelOption[]>('/v1/llm-providers/chat-models'),
 
-  // Translate (for role code generation)
+  // 翻译（用于角色编码生成）
   translate: (text: string) => request.post<string | null>('/v1/llm-providers/translate', { text }, { timeout: 15000 }),
 
   // Sniff

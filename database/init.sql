@@ -1864,7 +1864,8 @@ INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description
 (127, 'button:bitable:update',      '编辑多维表格按钮',   'BUTTON', '多维表格-编辑', 1),
 (128, 'button:bitable:delete',      '删除多维表格按钮',   'BUTTON', '多维表格-删除', 1),
 (130, 'menu:iteration',             '迭代管理菜单',       'MENU',   '迭代管理一级菜单入口', 1),
-(141, 'menu:dashboard',             '仪表盘菜单',         'MENU',   '仪表盘一级菜单入口', 1);
+(141, 'menu:dashboard',             '仪表盘菜单',         'MENU',   '仪表盘一级菜单入口', 1),
+(142, 'button:requirement:attachment:delete', '删除需求附件', 'BUTTON', '需求管理-删除附件(需求提交审核后需赋权才能删除)', 1);
 
 -- 菜单数据（基于数据库实际数据生成）
 INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`) VALUES
@@ -1989,6 +1990,15 @@ INSERT IGNORE INTO `sys_menus` (`id`, `parent_id`, `name`, `menu_type`, `path`, 
 -- 工作流配置
 (224, 14, '工作流配置', 'BUTTON', NULL, NULL, NULL, NULL, 8, 'button:workflow:config', 1, 1, 0);
 
+-- 需求管理：删除附件按钮（提交审核后需赋权）；id 走自增（历史库 id 已被自增菜单占用），按 permission_code 判重
+INSERT IGNORE INTO `sys_menus`
+  (`parent_id`, `name`, `menu_type`, `path`, `route_name`, `component`, `icon`, `sort_order`, `permission_code`, `visible`, `enabled`, `keep_alive`)
+SELECT
+  2, '删除需求附件', 'BUTTON', NULL, NULL, NULL, NULL, 25, 'button:requirement:attachment:delete', 1, 1, 0
+WHERE NOT EXISTS (
+  SELECT 1 FROM `sys_menus` WHERE `permission_code` = 'button:requirement:attachment:delete'
+);
+
 -- AI 助手设置菜单（系统配置 → AI 助手设置；来源 V20260807_02）
 -- 说明: sys_menus.id 使用自增（不写死 id，避免与既有数据冲突）；parent_id=7 为「系统配置」目录
 INSERT IGNORE INTO `sys_menus`
@@ -2031,7 +2041,8 @@ INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_
 (1, 121, 1), (1, 122, 1),
 (1, 123, 1), (1, 124, 1),
 (1, 125, 1), (1, 126, 1), (1, 127, 1), (1, 128, 1),
-(1, 129, 1), (1, 130, 1), (1, 141, 1);
+(1, 129, 1), (1, 130, 1), (1, 141, 1),
+(1, 142, 1);
 
 -- 业务角色授权需求管理视图权限
 INSERT IGNORE INTO `sys_role_permissions` (`role_id`, `permission_id`, `granted_by`) VALUES

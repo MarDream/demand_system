@@ -197,7 +197,6 @@
       </div>
     </FilterCard>
 
-    <!-- Table -->
     <TableCard class="requirement-table-card">
       <template #table="{ height }">
         <el-table
@@ -681,7 +680,6 @@ const tableRef = ref<TableInstance>()
 const selectedIds = ref<number[]>([])
 const expandedRowKeys = ref<number[]>([])
 
-// Pagination
 const pagination = reactive({
   pageNum: 1,
   pageSize: 20,
@@ -739,11 +737,10 @@ async function refreshViewCounts() {
     viewCounts.cc = counts?.cc ?? 0
     viewCounts.drafts = counts?.drafts ?? 0
   } catch {
-    // ignore count refresh failures
+    // 计数刷新失败不阻塞列表展示
   }
 }
 
-// Fetch data
 async function fetchData() {
   // 取消上一个未完成的请求，避免竞态
   if (fetchAbortController) {
@@ -891,8 +888,7 @@ watch(tableData, () => {
   loadCurrentHandlers()
 })
 
-// Handlers
-
+// --- 事件处理 ---
 // 防抖定时器：handleSearch 和 handleReset 共享，避免快速连续触发时竞态
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -1071,7 +1067,6 @@ async function handleExport() {
     return
   }
 
-  // 构建检索条件参数
   const params: RequirementQuery = {
     pageNum: 1,
     pageSize: pagination.pageSize,
@@ -1269,9 +1264,7 @@ watch(tableData, (rows) => {
   flex-shrink: 0;
 }
 
-/* ============================================
-   响应式设计令牌系统
-   ============================================ */
+/* --- 响应式设计令牌系统 --- */
 :root {
   --filter-gap-sm: 8px;
   --filter-gap-md: 16px;
@@ -1404,9 +1397,7 @@ watch(tableData, (rows) => {
   box-shadow: 0 4px 12px rgba(37, 99, 235, 0.18);
 }
 
-/* ============================================
-   筛选表单主体 - 响应式网格布局
-   ============================================ */
+/* --- 筛选表单主体 - 响应式网格布局 --- */
 .filter-form {
   :deep(.el-form-item) {
     margin-right: 0;
@@ -1775,9 +1766,7 @@ watch(tableData, (rows) => {
   }
 }
 
-/* ============================================
-   响应式适配
-   ============================================ */
+/* --- 响应式适配 --- */
 @media (max-width: 767px) {
   .view-switch-area {
     flex-wrap: wrap;

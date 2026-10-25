@@ -31,13 +31,10 @@ public class VerificationCodeServiceImpl implements VerificationCodeService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void generateAndSendCode(String email, String type) {
-        // 生成6位随机数字验证码
         String code = generateRandomCode();
 
-        // 设置过期时间（10分钟后）
         LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(CODE_EXPIRATION_MINUTES);
 
-        // 保存验证码到数据库
         VerificationCode verificationCode = new VerificationCode();
         verificationCode.setEmail(email);
         verificationCode.setCode(code);
@@ -50,7 +47,6 @@ public class VerificationCodeServiceImpl implements VerificationCodeService {
         log.info("验证码已保存到数据库: email={}, code={}, type={}, expiresAt={}",
                  email, code, type, expiresAt);
 
-        // 发送验证码邮件
         emailService.sendVerificationCode(email, code, type);
     }
 

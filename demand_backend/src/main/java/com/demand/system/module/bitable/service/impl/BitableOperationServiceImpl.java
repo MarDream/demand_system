@@ -84,7 +84,6 @@ public class BitableOperationServiceImpl implements BitableOperationService {
         vo.setDetail(operation.getDetail());
         vo.setCreatedAt(operation.getCreatedAt());
 
-        // 解析操作类型标签
         OperationType type = OperationType.fromCode(operation.getOperationType());
         if (type != null) {
             vo.setOperationTypeLabel(type.getLabel());

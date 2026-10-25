@@ -2,7 +2,7 @@ import request from '@/api/request'
 import type { RoleItem, RolePermissionInfo } from '@/api/modules/menu'
 import type { ApiResponse } from '@/types/api'
 
-// Role group and role batch sort APIs
+// 角色分组与角色批量排序 API
 
 export interface RoleGroupItem {
   id: number

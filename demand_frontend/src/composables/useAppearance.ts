@@ -1,4 +1,4 @@
-// ===== 外观设置（个人设置 → 外观）=====
+// --- 外观设置（个人设置 → 外观） ---
 // 参考桌面端外观面板：主题模式（浅色/深色/跟随系统）+ 主题色 + 圆角风格 + 侧边栏风格
 // 持久化模型：改动即时生效并写 localStorage（预览/刷新不丢），由个人设置页的
 // 「保存设置」按钮显式调用 persistAppearanceToRemote 同步到 users.appearance_config（下次登录应用）
@@ -81,7 +81,7 @@ function loadState(): AppearanceState {
   }
 }
 
-// ----- 颜色工具：hex → rgb，及按亮度混合 light-3/5/7/9 与 dark-2 梯度 -----
+// --- 颜色工具：hex → rgb，及按亮度混合 light-3/5/7/9 与 dark-2 梯度 ---
 function hexToRgb(hex: string): [number, number, number] {
   const v = hex.replace('#', '')
   return [
@@ -106,7 +106,7 @@ function resolveIsDark(mode: ThemeMode): boolean {
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false
 }
 
-// ----- 应用级单例（模块级状态，多组件共享同一份） -----
+// --- 应用级单例（模块级状态，多组件共享同一份） ---
 const state = loadState()
 const mode = ref<ThemeMode>(state.mode)
 const primary = ref(state.primary)
@@ -126,7 +126,7 @@ function persistLocal() {
   localStorage.setItem(STORAGE_KEY, serializeState())
 }
 
-// ----- 用户级持久化（「保存设置」按钮显式触发） -----
+// --- 用户级持久化（「保存设置」按钮显式触发） ---
 /**
  * 本地有改动尚未落库时，忽略远程回读，避免竞态回退。
  * 仅在用户交互（booted 之后）的改动置位；显式保存成功后复位。

@@ -71,7 +71,6 @@ public class BitableFieldServiceImpl implements BitableFieldService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long createField(Long tableId, BitableFieldCreateDTO dto, Long userId) {
-        // 验证 fieldType 是合法枚举值
         FieldType fieldType = FieldType.fromCode(dto.getFieldType());
         if (fieldType == null) {
             throw new BusinessException("不支持的字段类型: " + dto.getFieldType());
@@ -90,13 +89,11 @@ public class BitableFieldServiceImpl implements BitableFieldService {
         field.setDescription(dto.getDescription());
         field.setTableId(tableId);
 
-        // 设置 sortOrder: 当前最大 + 1
         Integer maxOrder = fieldMapper.selectMaxSortOrderByTableId(tableId);
         field.setSortOrder(maxOrder != null ? maxOrder + 1 : 1);
 
         fieldMapper.insert(field);
 
-        // AI 字段：自动设置 is_ai_field
         if (fieldType != null && fieldType.isAiType()) {
             fieldMapper.update(null, new UpdateWrapper<BitableField>()
                     .eq("id", field.getId())
@@ -117,7 +114,6 @@ public class BitableFieldServiceImpl implements BitableFieldService {
             }
         }
 
-        // 审计
         auditHelper.recordByTable(tableId, userId, OperationType.ADD_FIELD,
                 "{\"fieldId\":" + field.getId() + ",\"name\":\"" + fieldName + "\",\"fieldType\":\"" + dto.getFieldType() + "\"}");
 
@@ -131,7 +127,6 @@ public class BitableFieldServiceImpl implements BitableFieldService {
             throw new BusinessException("字段不存在");
         }
 
-        // 验证 fieldType（如果传了新的 fieldType）
         if (dto.getFieldType() != null) {
             FieldType fieldType = FieldType.fromCode(dto.getFieldType());
             if (fieldType == null) {
@@ -179,7 +174,6 @@ public class BitableFieldServiceImpl implements BitableFieldService {
         }
         fieldMapper.update(null, wrapper);
 
-        // 审计
         auditHelper.recordByTable(existing.getTableId(), userId, OperationType.UPDATE_FIELD,
                 "{\"fieldId\":" + id + "}");
 
@@ -220,7 +214,6 @@ public class BitableFieldServiceImpl implements BitableFieldService {
         cellWrapper.eq(com.demand.system.module.bitable.entity.BitableCellValue::getFieldId, id);
         cellMapper.delete(cellWrapper);
 
-        // 清理公式依赖关系
         formulaDependencyService.deleteDependencies(id);
 
         // 清理字段级权限（表上无外键，不显式删就会留下指向已删字段的孤儿行）
@@ -229,7 +222,6 @@ public class BitableFieldServiceImpl implements BitableFieldService {
         // 软删字段（MyBatis-Plus @TableLogic 自动设置 deleted_at=1）
         fieldMapper.deleteById(id);
 
-        // 审计
         auditHelper.recordByTable(existing.getTableId(), userId, OperationType.DELETE_FIELD,
                 "{\"fieldId\":" + id + ",\"name\":\"" + existing.getName() + "\"}");
     }

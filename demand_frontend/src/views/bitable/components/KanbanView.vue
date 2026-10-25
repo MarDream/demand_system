@@ -145,11 +145,9 @@ const groups = computed(() => {
   const options = field.config.options
   const groupMap = new Map<string, { label: string; color?: string; records: BitableRecord[] }>()
 
-  // 初始化分组桶
   for (const opt of options) {
     groupMap.set(opt.label, { label: opt.label, color: opt.color, records: [] })
   }
-  // 添加"未分组"桶
   groupMap.set('__ungrouped__', { label: '未分组', records: [] })
 
   for (const record of props.records) {
@@ -226,7 +224,7 @@ function handleAddRecord(groupValue: string) {
 </script>
 
 <style scoped lang="scss">
-// ===== 多维表格 KanbanView 激进风格精修（2026-08-03）=====
+// --- 多维表格 KanbanView 样式要点 ---
 // 设计目标：
 // 1. 列容器浅灰蓝 + 14px 圆角（与卡片形成层级反差）
 // 2. 卡片 14px 圆角 + 拖拽态旋转 1.5deg + 强化阴影

@@ -11,10 +11,8 @@ import java.util.List;
  */
 public class BatchInviteResultVO {
 
-    /** 成功创建的邀请数量 */
     private int successCount;
 
-    /** 被跳过的行 */
     private List<Skipped> skipped = new ArrayList<>();
 
     public int getSuccessCount() { return successCount; }
@@ -27,7 +25,6 @@ public class BatchInviteResultVO {
         this.skipped.add(new Skipped(name, target, reason));
     }
 
-    /** 被跳过的一行 */
     public static class Skipped {
 
         private String name;

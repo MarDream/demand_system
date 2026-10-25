@@ -117,7 +117,7 @@ public class UserServiceImpl implements UserService {
             wrapper.eq(User::getId, currentUserId);
         } else {
             // 超管无 orgId 过滤，可查看所有用户
-            // Fallback to old fields for backward compatibility
+            // 兼容旧字段：regionId / departmentId 仍可作为过滤条件
             if (query.getRegionId() != null) {
                 List<Long> orgIds = sysOrgService.getDescendantIds(query.getRegionId());
                 orgIds.add(query.getRegionId());
@@ -535,7 +535,6 @@ public class UserServiceImpl implements UserService {
             return requestedOrgId;
         }
 
-        // 获取当前用户的 orgId
         Long currentUserOrgId = getCurrentUserOrgId();
 
         if (requestedOrgId == null) {
@@ -560,9 +559,6 @@ public class UserServiceImpl implements UserService {
         return currentUserOrgId;
     }
 
-    /**
-     * 获取当前登录用户的 orgId
-     */
     private Long getCurrentUserOrgId() {
         Long userId = SecurityUtils.getCurrentUserId();
         if (userId == null) return null;
@@ -570,7 +566,6 @@ public class UserServiceImpl implements UserService {
         return user != null ? user.getOrgId() : null;
     }
 
-    /** 收集所有 SUPER_ADMIN 角色关联的用户ID */
     private Set<Long> collectSuperAdminUserIds() {
         try {
             List<Role> superRoles = roleMapper.selectList(
@@ -653,7 +648,7 @@ public class UserServiceImpl implements UserService {
 
         User user = new User();
         BeanUtil.copyProperties(dto, user);
-        // Derive regionId/departmentId from orgId
+        // 根据 orgId 推导 regionId / departmentId
         if (dto.getOrgId() != null) {
             deriveOrgFields(user, dto.getOrgId());
         }
@@ -959,7 +954,7 @@ public class UserServiceImpl implements UserService {
             vo.setSystemRole(roleNames.isEmpty() ? null : roleNames);
         }
 
-        // Prefer orgId for display, fallback to regionId/departmentId
+        // 展示优先用 orgId，回退到 departmentId / regionId
         Long displayOrgId = user.getOrgId() != null ? user.getOrgId() : user.getDepartmentId();
         if (displayOrgId == null) {
             displayOrgId = user.getRegionId();
@@ -973,7 +968,7 @@ public class UserServiceImpl implements UserService {
             }
         }
 
-        // Fill region name from regionId
+        // 根据 regionId 填充区域名称
         if (user.getRegionId() != null) {
             SysOrgVO region = sysOrgService.getDetail(user.getRegionId());
             if (region != null) {
@@ -981,7 +976,7 @@ public class UserServiceImpl implements UserService {
             }
         }
 
-        // Fill department name from departmentId
+        // 根据 departmentId 填充部门名称
         if (user.getDepartmentId() != null) {
             SysOrgVO dept = sysOrgService.getDetail(user.getDepartmentId());
             if (dept != null) {
@@ -993,9 +988,9 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
-     * Derive regionId and departmentId from the org the user belongs to.
-     * region/company/bureau -> regionId, department/group -> departmentId
-     * Walks up the tree to fill both fields.
+     * 根据用户归属组织推导 regionId 与 departmentId。
+     * region/company/bureau 归入 regionId，department/group 归入 departmentId。
+     * 沿组织树向上回溯以补全两个字段。
      */
     private void deriveOrgFields(User user, Long orgId) {
         user.setOrgId(orgId);
@@ -1007,7 +1002,7 @@ public class UserServiceImpl implements UserService {
             user.setRegionId(orgId);
         } else if ("department".equals(orgType) || "group".equals(orgType)) {
             user.setDepartmentId(orgId);
-            // Walk up to find regionId
+            // 沿路径向上查找 regionId
             if (org.getPath() != null) {
                 String[] ids = org.getPath().split("/");
                 for (String idStr : ids) {
@@ -1071,7 +1066,7 @@ public class UserServiceImpl implements UserService {
     }
 
     private String incrementJobNumber(String current) {
-        // Split letter prefix and number suffix: "A001" -> prefix="A", num=1
+        // 拆分字母前缀与数字后缀："A001" -> prefix="A", num=1
         int splitIdx = 0;
         while (splitIdx < current.length() && !Character.isDigit(current.charAt(splitIdx))) {
             splitIdx++;
@@ -1090,7 +1085,7 @@ public class UserServiceImpl implements UserService {
         if (num < 999) {
             return prefix + String.format("%03d", num + 1);
         }
-        // num == 999, advance letter: A -> B, ... Z -> AA
+        // 当 num == 999 时进位字母：A -> B，... Z -> AA
         return incrementLetterPrefix(prefix) + "001";
     }
 
@@ -1105,7 +1100,7 @@ public class UserServiceImpl implements UserService {
             chars[i] = 'A';
             i--;
         }
-        // All Z's, add one more A: Z -> AA, ZZ -> AAA
+        // 全为 Z 时补一个 A：Z -> AA，ZZ -> AAA
         return "A" + new String(chars);
     }
 }

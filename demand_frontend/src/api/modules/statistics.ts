@@ -21,8 +21,7 @@ export function getCfdData(projectId: number) {
   return request.get<ApiResponse>(`/v1/projects/${projectId}/stats/cfd`)
 }
 
-// ==================== 评分统计（对应 ADR-002 Phase 2） ====================
-
+// --- 评分统计 ---
 export interface RatingTrendPoint {
   label: string
   average: number
@@ -102,8 +101,7 @@ export function getNodeAverageRatings(params: RatingQueryParams = {}) {
   return request.get<ApiResponse<Record<string, number>>>('/v1/statistics/rating/node-averages', { params: toParams(params) })
 }
 
-// ==================== 流程统计 ====================
-
+// --- 流程统计 ---
 export interface WorkflowProcessStats {
   /** 待办流程数 */
   pending: number

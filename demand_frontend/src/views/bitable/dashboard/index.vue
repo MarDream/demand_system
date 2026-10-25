@@ -188,7 +188,7 @@ const dirty = ref(false)
 
 const selectedWidget = computed(() => widgets.value.find((w) => w.id === selectedId.value) || null)
 
-// ==================== 新建仪表盘界面（AI 一键生成 / 手动搭建） ====================
+// --- 新建仪表盘界面（AI 一键生成 / 手动搭建） ---
 
 /** 由「+菜单直接自动新建」落地：仪表盘已建好（空白），手动搭建不再二次创建 */
 const landedFromQuickCreate = Boolean(props.startInCreateMode)
@@ -249,7 +249,7 @@ function clearCreateQuery() {
   }
 }
 
-// ==================== 加载 ====================
+// --- 加载 ---
 
 onMounted(async () => {
   loading.value = true
@@ -377,7 +377,7 @@ async function refreshData() {
   }
 }
 
-// ==================== 编辑与保存 ====================
+// --- 编辑与保存 ---
 
 let saveTimer: number | undefined
 watch([widgets, rows], () => {
@@ -465,7 +465,7 @@ async function saveAll() {
   }
 }
 
-// ==================== 组件操作 ====================
+// --- 组件操作 ---
 
 function onSelect(widgetId: number | string) {
   selectedId.value = widgetId || null
@@ -590,8 +590,7 @@ function updateLayout(payload: { widgetId: number | string; span?: number; heigh
   if (payload.height != null) w.layoutConfig.height = payload.height
 }
 
-// ==================== 行操作 ====================
-
+// --- 行操作 ---
 function sectionName(): string {
   return `组合布局 ${rows.value.filter((r) => r.title).length + 1}`
 }
@@ -624,7 +623,7 @@ function removeRow(rowId: string) {
   })
 }
 
-// ==================== 仪表盘管理 ====================
+// --- 仪表盘管理 ---
 
 async function handleCreateDashboard() {
   try {
@@ -685,7 +684,7 @@ watch(showPermissionDialog, (open, wasOpen) => {
   }
 })
 
-// ==================== 全屏 ====================
+// --- 全屏 ---
 
 const pageRef = ref<HTMLElement>()
 const isFullscreen = ref(false)
@@ -769,7 +768,7 @@ onBeforeUnmount(() => {
   }
 }
 
-// ==================== 新建仪表盘界面 ====================
+// --- 新建仪表盘界面 ---
 .dash-create {
   flex: 1;
   display: flex;

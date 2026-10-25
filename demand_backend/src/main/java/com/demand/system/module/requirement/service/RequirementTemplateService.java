@@ -82,9 +82,6 @@ public class RequirementTemplateService {
             .collect(Collectors.toList());
     }
 
-    /**
-     * 获取所有模板列表
-     */
     public List<RequirementTemplateVO> getAllTemplates() {
         List<RequirementTemplate> templates = templateMapper.selectList(
             new LambdaQueryWrapper<RequirementTemplate>()
@@ -92,7 +89,6 @@ public class RequirementTemplateService {
                 .orderByDesc(RequirementTemplate::getCreatedAt)
         );
 
-        // 批量获取类型名称映射
         Map<String, String> typeNameMap = getTypeNameMap();
 
         return templates.stream()
@@ -178,9 +174,6 @@ public class RequirementTemplateService {
         templateMapper.updateById(template);
     }
 
-    /**
-     * 启用/禁用模板
-     */
     @Transactional
     public void toggleTemplateStatus(Long id, Integer isActive) {
         if (isActive == null || (isActive != 0 && isActive != 1)) {
@@ -196,9 +189,6 @@ public class RequirementTemplateService {
         templateMapper.updateById(template);
     }
 
-    /**
-     * 将指定模板设为该类型的默认模板
-     */
     @Transactional
     public void setDefaultTemplate(Long id) {
         RequirementTemplate template = templateMapper.selectById(id);
@@ -209,10 +199,8 @@ public class RequirementTemplateService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "禁用的模板不能设为默认");
         }
 
-        // 取消同类型其他模板的默认标记
         clearOtherDefaults(template.getRequirementTypeCode(), id);
 
-        // 设为默认
         template.setIsDefault(1);
         templateMapper.updateById(template);
     }
@@ -229,9 +217,6 @@ public class RequirementTemplateService {
         return vo;
     }
 
-    /**
-     * 创建默认模板内容
-     */
     private Map<String, Object> createDefaultTemplateContent() {
         Map<String, Object> content = new HashMap<>();
         content.put("contentHtml", "<h3>需求描述</h3><p>请填写...</p>");
@@ -292,9 +277,6 @@ public class RequirementTemplateService {
             .trim();
     }
 
-    /**
-     * 取消同类型其他模板的默认标记
-     */
     private void clearOtherDefaults(String typeCode, Long excludeId) {
         List<RequirementTemplate> others = templateMapper.selectList(
             new LambdaQueryWrapper<RequirementTemplate>()
@@ -309,22 +291,15 @@ public class RequirementTemplateService {
         }
     }
 
-    /**
-     * 获取类型编码 -> 类型名称的映射
-     */
     private Map<String, String> getTypeNameMap() {
         List<RequirementTypeConfig> types = typeMapper.selectList(null);
         return types.stream()
             .collect(Collectors.toMap(RequirementTypeConfig::getCode, RequirementTypeConfig::getName, (a, b) -> a));
     }
 
-    /**
-     * 转换为VO
-     */
     private RequirementTemplateVO convertToVO(RequirementTemplate template) {
         RequirementTemplateVO vo = new RequirementTemplateVO();
         BeanUtils.copyProperties(template, vo);
-        // 补充类型名称
         Map<String, String> typeNameMap = getTypeNameMap();
         vo.setRequirementTypeName(typeNameMap.getOrDefault(template.getRequirementTypeCode(), template.getRequirementTypeCode()));
         return vo;

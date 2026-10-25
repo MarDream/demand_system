@@ -253,7 +253,7 @@ public class WorkflowEngineService {
 
     @Transactional
     public void submitFromDraft(Long requirementId, Long workflowVersionId, String targetNodeId,
-                                Long projectId, String comment, Long operatorId) {
+                                Long projectId, String comment, Long operatorId, boolean draftSaved) {
         Requirement requirement = requirementMapper.selectById(requirementId);
         if (requirement == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "需求不存在");
@@ -261,8 +261,6 @@ public class WorkflowEngineService {
         if (requirement.getWorkflowInstanceId() != null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "需求已提交，无需重复提交");
         }
-        // 草稿创建时间：提交后需求的 created_at 将改写为本次提交时间，草稿时间仅保留在流转历史中
-        LocalDateTime draftCreatedAt = requirement.getCreatedAt();
 
         WorkflowGraphContext context = runtimeLoader.loadContext(workflowVersionId);
         WorkflowNode startNode = context.nodesById().values().stream()
@@ -293,22 +291,30 @@ public class WorkflowEngineService {
         instance.setLockVersion(0);
         instanceMapper.insert(instance);
 
-        // 草稿阶段落一条流转记录：展示草稿创建时间；completed_at 留空使 H5 端回退展示 createdAt
+        // 草稿阶段落一条流转记录：展示草稿创建时间；completed_at 留空使 H5 端回退展示 createdAt。
+        // 仅当用户确实保存过草稿时才补插——创建页直接提交也会先建草稿落库，但那不代表存在草稿阶段，
+        // 无条件插入会让所有工单都多出一条与提交同秒的「草稿 → 开始」记录。
+        if (draftSaved) {
+            LocalDateTime submitTime = LocalDateTime.now();
+            // 草稿创建时间：提交后需求的 created_at 将改写为本次提交时间，草稿时间仅保留在流转历史中
+            LocalDateTime draftCreatedAt = requirement.getCreatedAt();
+            WorkflowInstanceTransition draftTransition = new WorkflowInstanceTransition();
+            draftTransition.setInstanceId(instance.getId());
+            draftTransition.setRequirementId(requirementId);
+            draftTransition.setFromNodeId("draft");
+            draftTransition.setFromNodeName("草稿");
+            draftTransition.setToNodeId(startNode.getNodeId());
+            draftTransition.setToNodeName(startNode.getNodeName());
+            draftTransition.setOperatorId(operatorId);
+            draftTransition.setOperatorRoleName(resolveOperatorRoleName(operatorId));
+            draftTransition.setAction("draft");
+            draftTransition.setComment("创建草稿");
+            draftTransition.setStartedAt(draftCreatedAt != null ? draftCreatedAt : submitTime);
+            draftTransition.setCreatedAt(draftCreatedAt != null ? draftCreatedAt : submitTime);
+            transitionMapper.insert(draftTransition);
+        }
+
         LocalDateTime submitTime = LocalDateTime.now();
-        WorkflowInstanceTransition draftTransition = new WorkflowInstanceTransition();
-        draftTransition.setInstanceId(instance.getId());
-        draftTransition.setRequirementId(requirementId);
-        draftTransition.setFromNodeId("draft");
-        draftTransition.setFromNodeName("草稿");
-        draftTransition.setToNodeId(startNode.getNodeId());
-        draftTransition.setToNodeName(startNode.getNodeName());
-        draftTransition.setOperatorId(operatorId);
-        draftTransition.setOperatorRoleName(resolveOperatorRoleName(operatorId));
-        draftTransition.setAction("draft");
-        draftTransition.setComment("创建草稿");
-        draftTransition.setStartedAt(draftCreatedAt != null ? draftCreatedAt : submitTime);
-        draftTransition.setCreatedAt(draftCreatedAt != null ? draftCreatedAt : submitTime);
-        transitionMapper.insert(draftTransition);
 
         WorkflowInstanceTransition transition = new WorkflowInstanceTransition();
         transition.setInstanceId(instance.getId());
@@ -633,7 +639,6 @@ public class WorkflowEngineService {
         notificationService.notifyApproversOnTransition(updatedRequirement, initialNode, operatorId, instance.getId());
         initCountersignIfNeeded(instance.getId(), initialNode, updatedRequirement);
 
-        // 记录需求历史变更
         RequirementHistory history = new RequirementHistory();
         history.setRequirementId(request.getRequirementId());
         history.setOperatorId(operatorId);
@@ -661,9 +666,6 @@ public class WorkflowEngineService {
                 request.getRequirementId(), oldType, newType, newVersion.getId(), initialNodeId, typeChangeTransition.getId());
     }
 
-    /**
-     * 解析工作流版本中 startEvent 之后的第一个 wait 节点 ID
-     */
     private String resolveInitialWaitNodeId(Long workflowVersionId, Requirement requirement) {
         WorkflowGraphContext context = runtimeLoader.loadContext(workflowVersionId);
         WorkflowNode startNode = context.nodesById().values().stream()
@@ -677,9 +679,6 @@ public class WorkflowEngineService {
         return targets.isEmpty() ? null : targets.get(0).getNodeId();
     }
 
-    /**
-     * 查找工作流版本中的 start 节点 ID
-     */
     private String findStartNodeId(Long workflowVersionId) {
         WorkflowGraphContext context = runtimeLoader.loadContext(workflowVersionId);
         return context.nodesById().values().stream()
@@ -689,9 +688,6 @@ public class WorkflowEngineService {
                 .orElse(null);
     }
 
-    /**
-     * 根据节点 ID 解析节点状态码
-     */
     private String resolveNodeStatusCodeByNodeId(Long workflowVersionId, String nodeId) {
         WorkflowGraphContext context = runtimeLoader.loadContext(workflowVersionId);
         WorkflowNode node = context.getNode(nodeId);
@@ -701,18 +697,12 @@ public class WorkflowEngineService {
         return resolveNodeStatusCode(node);
     }
 
-    /**
-     * 根据节点 ID 解析节点名称
-     */
     private String resolveNodeNameById(Long workflowVersionId, String nodeId) {
         WorkflowGraphContext context = runtimeLoader.loadContext(workflowVersionId);
         WorkflowNode node = context.getNode(nodeId);
         return node != null && StringUtils.hasText(node.getNodeName()) ? node.getNodeName() : "";
     }
 
-    /**
-     * 初始化会签记录
-     */
     private void initCountersignIfNeeded(Long instanceId, WorkflowNode targetNode, Requirement requirement) {
         if (targetNode == null || !"approval".equalsIgnoreCase(targetNode.getNodeType())) {
             return;
@@ -728,7 +718,6 @@ public class WorkflowEngineService {
             return;
         }
 
-        // 获取会签人列表
         List<Long> approverIds = resolveCountersignApprovers(targetNode, requirement);
         if (approverIds == null || approverIds.isEmpty()) {
             return;
@@ -1079,7 +1068,9 @@ public class WorkflowEngineService {
                 String nodeStatusCode = resolveNodeStatusCode(targetNode);
                 dto.setBindStatusCode(nodeStatusCode);
                 dto.setBindStatusName(resolveNodeStatusName(nodeStatusCode));
-                dto.setProjectRequired(WorkflowNodeUtils.isProjectRequired(targetNode));
+                // 项目必选：当前节点或目标节点任一勾选，流转面板都显示所属项目选择器
+                dto.setProjectRequired(WorkflowNodeUtils.isProjectRequired(targetNode)
+                        || WorkflowNodeUtils.isProjectRequired(currentNode));
                 dto.setAssigneeType(targetNode.getAssigneeType());
                 dto.setAssigneeTypeName(resolveAssigneeTypeName(targetNode));
                 List<AssigneeCandidateDTO> assigneeCandidates = resolveAssigneeCandidates(targetNode, requirement, operatorId);
@@ -1713,7 +1704,9 @@ public class WorkflowEngineService {
 
         validatePermission(instance, requirementMapper.selectById(instance.getRequirementId()), currentNode, operatorId);
 
-        if (WorkflowNodeUtils.isProjectRequired(targetNode)) {
+        // 项目必选：当前节点或目标节点任一勾选「项目必选」，流转时都必须已绑定项目
+        // （勾选在当前节点上时，用户在该节点的流转动作中核实/选择项目——与前端面板口径一致）
+        if (WorkflowNodeUtils.isProjectRequired(targetNode) || WorkflowNodeUtils.isProjectRequired(currentNode)) {
             Requirement requirement = requirementMapper.selectById(instance.getRequirementId());
             if (requirement == null || requirement.getProjectId() == null || requirement.getProjectId() <= 0) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "目标节点要求必须绑定项目后才能提交流转");
@@ -1855,7 +1848,6 @@ public class WorkflowEngineService {
         if (roleGroupId == null) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
         }
-        // 查询角色组下的所有角色
         List<Role> roles = roleMapper.selectList(
             new LambdaQueryWrapper<Role>()
                 .eq(Role::getRoleGroupId, roleGroupId)
@@ -1864,7 +1856,6 @@ public class WorkflowEngineService {
         if (roles.isEmpty()) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "您没有权限操作此节点");
         }
-        // 检查用户是否拥有角色组中的任一角色
         boolean hasPermission = roles.stream()
             .anyMatch(this::currentUserMatchesRole);
         if (!hasPermission) {

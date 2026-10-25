@@ -3,10 +3,10 @@
     <transition name="el-fade-in-linear">
       <div v-if="visible" class="bqf-overlay" @click.self="handleCancel">
         <div class="bqf" :style="{ width: width + 'px' }">
-          <!-- 弹层标题（走查 P2-1：与「添加字段」弹窗语境对齐） -->
+          <!-- 弹层标题：与「添加字段」弹窗语境对齐 -->
           <div class="bqf__header">
             <span class="bqf__header-title">编辑字段</span>
-            <!-- 右上角关闭按钮（走查 P1-1：与 ESC 等效的显式关闭点） -->
+            <!-- 右上角关闭按钮：与 ESC 等效的显式关闭点 -->
             <button class="bqf__close" type="button" title="关闭 (Esc)" @click="handleCancel">
               <i class="ri-close-line" />
             </button>
@@ -307,7 +307,6 @@ watch(
     }
     form.config = normalizeFieldConfig(field.fieldType, field.config)
     showDesc.value = Boolean(field.description)
-    // 重置类型搜索
     typeKeyword.value = ''
     // flush 掉 fieldType watcher 后再恢复用户切换监听
     nextTick(() => {
@@ -573,7 +572,7 @@ function handleConfirm() {
 <style lang="scss">
 /* 类型下拉 popper（teleport 到 body，需全局样式）；钉钉风格：分组标题 + 图标选项 + 选中高亮 */
 .bqf-type-popper {
-  /* 弹层 overlay z-index 1980，popper 必须压过它（走查 P0-1） */
+  /* 弹层 overlay z-index 1980，popper 必须压过它。 */
   z-index: 3100 !important;
 
   .el-select-dropdown__item {

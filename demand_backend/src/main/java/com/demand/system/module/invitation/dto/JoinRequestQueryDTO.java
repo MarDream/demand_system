@@ -1,8 +1,5 @@
 package com.demand.system.module.invitation.dto;
 
-/**
- * 申请记录列表查询条件
- */
 public class JoinRequestQueryDTO {
 
     /** pending / approved / rejected，空 = 全部 */

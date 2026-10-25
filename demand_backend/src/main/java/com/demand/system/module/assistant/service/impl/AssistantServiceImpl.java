@@ -361,7 +361,7 @@ public class AssistantServiceImpl implements AssistantService {
         List<AssistantSource> sources = new ArrayList<>();
         Long userId = assistantMessage.getUserId();
 
-        // ===== 数据问答摘要：命中数据类问句时直接查库 =====
+        // --- 数据问答摘要：命中数据类问句时直接查库 ---
         if (nl2SqlService.isEnabled() && nl2SqlService.looksLikeDataQuery(userContent)) {
             try {
                 List<Long> visibleOrgIds = requirementService.resolveVisibleOrgIds(userId, superAdmin);
@@ -415,7 +415,7 @@ public class AssistantServiceImpl implements AssistantService {
             }
         }
 
-        // ===== 知识库摘要：检索相关片段供引用 =====
+        // --- 知识库摘要：检索相关片段供引用 ---
         try {
             KnowledgeSearchRequest searchRequest = new KnowledgeSearchRequest();
             searchRequest.setQuery(userContent);
@@ -472,7 +472,7 @@ public class AssistantServiceImpl implements AssistantService {
             enhancedMessage = enhancedMessage + "\n\n" + crossSourceDigest;
         }
 
-        // ===== 任务节点 =====
+        // --- 任务节点 ---
         List<AssistantTask> tasks = new ArrayList<>();
         AssistantTask contextTask = new AssistantTask("general_context", "理解上下文");
         AssistantTask llmTask = new AssistantTask("general_llm", "调用模型");
@@ -492,7 +492,7 @@ public class AssistantServiceImpl implements AssistantService {
                     "tasks", tasks
             )));
 
-            // ===== Task 1: 理解上下文（注入页面 / 权限 / 文件）=====
+            // --- Task 1: 理解上下文（注入页面 / 权限 / 文件） ---
             contextTask.start("融合当前页面、权限与上传文件上下文");
             pushTaskUpdate(emitter, contextTask);
             try {
@@ -508,7 +508,7 @@ public class AssistantServiceImpl implements AssistantService {
             ResolvedChatModel chatModel = resolveChatModel(llmModelId);
             boolean llmSucceeded = false;
             if (chatModel != null) {
-                // ===== Task 2: 调用模型 =====
+                // --- Task 2: 调用模型 ---
                 String modelLabel = chatModel.provider.getModel() != null && !chatModel.provider.getModel().isBlank()
                         ? chatModel.provider.getModel()
                         : (chatModel.provider.getProtocol() != null ? chatModel.provider.getProtocol() : "LLM");
@@ -807,7 +807,7 @@ public class AssistantServiceImpl implements AssistantService {
             String mode = request.getMode() != null && !request.getMode().isBlank() ? request.getMode() : "auto";
             int topK = request.getTopK() != null ? request.getTopK() : 10;
 
-            // ===== Task 1: 问题解析（LLM 查询改写，失败自动降级）=====
+            // --- Task 1: 问题解析（LLM 查询改写，失败自动降级） ---
             AssistantTask parseTask = new AssistantTask("query_parse", "问题解析");
             tasks.add(parseTask);
             parseTask.start("解析用户问题：「" + shorten(userMessage, 30) + "」");
@@ -827,7 +827,7 @@ public class AssistantServiceImpl implements AssistantService {
             }
             pushTaskUpdate(emitter, parseTask);
 
-            // ===== Task 2: 文档检索 =====
+            // --- Task 2: 文档检索 ---
             AssistantTask searchTask = new AssistantTask("retrieve", "文档检索");
             tasks.add(searchTask);
             searchTask.start("向量嵌入 + 知识库检索…");
@@ -879,7 +879,7 @@ public class AssistantServiceImpl implements AssistantService {
             }
             pushTaskUpdate(emitter, searchTask);
 
-            // ===== 组装来源与检索元信息 =====
+            // --- 组装来源与检索元信息 ---
             List<AssistantSource> sources = mapCitationsToSources(searchResponse.getCitations(), rawKbId);
             assistantMessage.setSources(sources);
             assistantMessage.setWarnings(searchResponse.getWarnings());
@@ -903,7 +903,7 @@ public class AssistantServiceImpl implements AssistantService {
                     "warnings", searchResponse.getWarnings() == null ? List.of() : searchResponse.getWarnings()
             )));
 
-            // ===== Task 3: 生成回答（真流式；命中即有产出，不再误报“未找到”）=====
+            // --- Task 3: 生成回答（真流式；命中即有产出，不再误报“未找到”） ---
             AssistantTask generateTask = new AssistantTask("synthesize", "生成回答");
             tasks.add(generateTask);
             StringBuilder reasoning = new StringBuilder();
@@ -1027,7 +1027,7 @@ public class AssistantServiceImpl implements AssistantService {
                     "assistantMessageId", assistantMessage.getId()
             )));
 
-            // ===== Task 1: 问题解析（含查询改写）=====
+            // --- Task 1: 问题解析（含查询改写） ---
             AssistantTask parseTask = new AssistantTask("query_parse", "问题解析");
             tasks.add(parseTask);
             parseTask.start("解析用户问题：「" + shorten(userMessage, 30) + "」");
@@ -1044,7 +1044,7 @@ public class AssistantServiceImpl implements AssistantService {
             }
             pushTaskUpdate(emitter, parseTask);
 
-            // ===== Task 2: 轻量检索全部本地知识库 =====
+            // --- Task 2: 轻量检索全部本地知识库 ---
             AssistantTask kbTask = new AssistantTask("retrieve", "本地知识库检索");
             tasks.add(kbTask);
             String kbContext = "";
@@ -1097,7 +1097,7 @@ public class AssistantServiceImpl implements AssistantService {
                 pushTaskUpdate(emitter, kbTask);
             }
 
-            // ===== Task 3: 联网搜索 =====
+            // --- Task 3: 联网搜索 ---
             AssistantTask webTask = new AssistantTask("web_search", "联网搜索");
             tasks.add(webTask);
             webTask.start("调用 LLM 联网搜索…");
@@ -1126,7 +1126,7 @@ public class AssistantServiceImpl implements AssistantService {
                     "warnings", retrievalWarnings
             )));
 
-            // ===== 调用 LLM 联网搜索流式回答 =====
+            // --- 调用 LLM 联网搜索流式回答 ---
             ResolvedChatModel chatModel = resolveChatModel(request.getLlmModelId());
             if (chatModel != null) {
                 String systemPrompt = buildWebSearchSystemPrompt(request.getPageContext(), kbContext, retrievedCount);
@@ -1592,7 +1592,7 @@ public class AssistantServiceImpl implements AssistantService {
         }
     }
 
-    // ==================== 提问埋点 ====================
+    // --- 提问埋点 ---
 
     /** 记录用户提问；插入时 answered=0，回答成功后由 markQuestionAnswered 置 1 */
     private Long recordQuestionLog(Long userId, AssistantChatRequest request, String questionText, Long sessionId) {

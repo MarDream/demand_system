@@ -39,7 +39,7 @@ const SKIN_TAN = '#EFBE93'
 const SKIN_TAN_DARK = '#DCA675'
 
 export const ANIME_AVATAR_DEFS: AnimeAvatarDef[] = [
-  // ===== 女生 ×10 =====
+  // --- 女生 ×10 ---
   { id: 'anime-f1', name: '银发绾', gender: 'female', bg1: '#F3F6F4', bg2: '#DCE7DE', hair: '#9D9AAB', hairDark: '#7E7B90', skin: SKIN_LIGHT, skinDark: SKIN_LIGHT_DARK, eye: '#8FA8C8', eyeDark: '#6C86AB', cloth: '#EFE6DA', clothDark: '#D9CCBA', hairStyle: 'bun', accessory: 'ribbon' },
   { id: 'anime-f2', name: '栗语', gender: 'female', bg1: '#FBF1E6', bg2: '#F0DFC8', hair: '#8A5A3B', hairDark: '#6E4429', skin: SKIN_LIGHT, skinDark: SKIN_LIGHT_DARK, eye: '#9C7B4D', eyeDark: '#7A5D36', cloth: '#E8B4B8', clothDark: '#D19AA0', hairStyle: 'long', accessory: 'none' },
   { id: 'anime-f3', name: '樱鲤', gender: 'female', bg1: '#FDEEF2', bg2: '#F8D8E2', hair: '#E8A0B4', hairDark: '#CE7F97', skin: SKIN_LIGHT, skinDark: SKIN_LIGHT_DARK, eye: '#C25E7E', eyeDark: '#9E4563', cloth: '#FFF6F0', clothDark: '#EBD9CC', hairStyle: 'twin', accessory: 'hairpin' },
@@ -51,7 +51,7 @@ export const ANIME_AVATAR_DEFS: AnimeAvatarDef[] = [
   { id: 'anime-f9', name: '霜华', gender: 'female', bg1: '#F2F4F8', bg2: '#DDE3EC', hair: '#C4BFCE', hairDark: '#A9A3B6', skin: SKIN_LIGHT, skinDark: SKIN_LIGHT_DARK, eye: '#7FA3B8', eyeDark: '#618197', cloth: '#B7C6D9', clothDark: '#9BB0C8', hairStyle: 'twin', accessory: 'ribbon' },
   { id: 'anime-f10', name: '朱砂', gender: 'female', bg1: '#FBEDE8', bg2: '#F4D5CB', hair: '#6E3A32', hairDark: '#54291F', skin: SKIN_TAN, skinDark: SKIN_TAN_DARK, eye: '#A65B3F', eyeDark: '#84442C', cloth: '#C96A5B', clothDark: '#AE5244', hairStyle: 'ponytail', accessory: 'earrings' },
 
-  // ===== 男生 ×10 =====
+  // --- 男生 ×10 ---
   { id: 'anime-m1', name: '玄墨', gender: 'male', bg1: '#EEF1F4', bg2: '#D9DEE5', hair: '#2E3138', hairDark: '#1C1E24', skin: SKIN_MID, skinDark: SKIN_MID_DARK, eye: '#4E6E96', eyeDark: '#3A557A', cloth: '#3D4C63', clothDark: '#2F3C50', hairStyle: 'spiky', accessory: 'none' },
   { id: 'anime-m2', name: '松风', gender: 'male', bg1: '#EFF3EC', bg2: '#D9E3D0', hair: '#4A3A2A', hairDark: '#332719', skin: SKIN_MID, skinDark: SKIN_MID_DARK, eye: '#6B5A3E', eyeDark: '#51432C', cloth: '#E9E4DA', clothDark: '#D2CBBB', hairStyle: 'sidepart', accessory: 'none' },
   { id: 'anime-m3', name: '青野', gender: 'male', bg1: '#EAF2F0', bg2: '#D2E4DF', hair: '#2F4A42', hairDark: '#1F342E', skin: SKIN_MID, skinDark: SKIN_MID_DARK, eye: '#3E6B5C', eyeDark: '#2C5245', cloth: '#5E7C72', clothDark: '#4A655C', hairStyle: 'spiky', accessory: 'headset' },
@@ -98,7 +98,7 @@ export function buildAnimeAvatarSvg(def: AnimeAvatarDef): string {
     none: '',
   }
 
-  // ---- 后层头发（体前主体后面的长发/发束） ----
+  // --- 后层头发（体前主体后面的长发/发束） ---
   const backHair = {
     long: `<path d="M14 30 Q13 12 32 12 Q51 12 50 30 L51.5 52 Q48 54 45.5 52 L45 40 Q44 44 32 44 Q20 44 19 40 L18.5 52 Q16 54 12.5 52 Z" fill="${def.hairDark}"/>`,
     twin: `
@@ -120,7 +120,7 @@ export function buildAnimeAvatarSvg(def: AnimeAvatarDef): string {
   }
   const backKey = def.hairStyle as keyof typeof backHair
 
-  // ---- 前发（刘海） ----
+  // --- 前发（刘海） ---
   const frontHair = {
     long: `<path d="M18.5 31 Q17 16.5 32 16.5 Q47 16.5 45.5 31 Q45 23.5 39.5 22 Q40.5 26 37 27.5 Q37.5 23.5 33.5 22.5 Q27 21.5 22.5 26.5 Q19.5 28.5 18.5 31 Z" fill="${def.hair}"/>`,
     twin: `<path d="M18.5 31 Q17 16.5 32 16.5 Q47 16.5 45.5 31 Q45.5 24 41 21.8 Q40 25.5 36 26 Q37 22.5 33 21.5 Q26.5 20.5 22 26 Q19 28 18.5 31 Z" fill="${def.hair}"/>`,

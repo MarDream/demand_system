@@ -2,9 +2,6 @@ package com.demand.system.module.invitation.dto;
 
 import java.util.List;
 
-/**
- * 生成邀请链接的入参
- */
 public class InvitationLinkCreateDTO {
 
     /** 预分配组织ID，可空（接受后由审批人再指定） */
@@ -16,7 +13,6 @@ public class InvitationLinkCreateDTO {
     /** 有效期天数；null 或 <=0 且 neverExpire=false 时使用默认 7 天 */
     private Integer expireDays;
 
-    /** true = 永不过期 */
     private Boolean neverExpire;
 
     /** 链接最多可用次数，0 或不传 = 不限次 */

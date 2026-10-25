@@ -14,25 +14,18 @@ import java.util.Objects;
 @TableName("sys_join_requests")
 public class SysJoinRequest {
 
-    /** 来源：邀请链接 */
     public static final String SOURCE_LINK = "link";
 
-    /** 来源：批量邀请 */
     public static final String SOURCE_BATCH = "batch";
 
-    /** 来源：管理员直接添加 */
     public static final String SOURCE_ADMIN = "admin";
 
-    /** 来源：用户自助申请 */
     public static final String SOURCE_SELF = "self";
 
-    /** 状态：待处理 */
     public static final String STATUS_PENDING = "pending";
 
-    /** 状态：已通过 */
     public static final String STATUS_APPROVED = "approved";
 
-    /** 状态：已拒绝 */
     public static final String STATUS_REJECTED = "rejected";
 
     @TableId(type = IdType.AUTO)

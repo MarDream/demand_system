@@ -9,8 +9,7 @@ import type {
   GitAuditLog,
 } from '@/types/git'
 
-// ==================== 平台管理 ====================
-
+// --- 平台管理 ---
 export function getGitPlatforms() {
   return request.get<GitPlatform[]>('/v1/git/platforms')
 }
@@ -31,8 +30,7 @@ export function testGitPlatform(id: number) {
   return request.post<GitTestResult>(`/v1/git/platforms/${id}/test`)
 }
 
-// ==================== 仓库管理 ====================
-
+// --- 仓库管理 ---
 export interface GitRepositoryQuery {
   keyword?: string
   platformId?: number
@@ -64,8 +62,7 @@ export function deleteGitRepository(id: number) {
   return request.delete<void>(`/v1/git/repositories/${id}`)
 }
 
-// ==================== 分支保护规则 ====================
-
+// --- 分支保护规则 ---
 export function getProtectionRules(repoId: number) {
   return request.get<BranchProtectionRule[]>(`/v1/git/repositories/${repoId}/protection/rules`)
 }
@@ -86,8 +83,7 @@ export function toggleProtectionRule(id: number, enabled: boolean) {
   return request.put<void>(`/v1/git/protection/rules/${id}/toggle`, null, { params: { enabled } })
 }
 
-// ==================== 规则集 ====================
-
+// --- 规则集 ---
 export function getRuleSets() {
   return request.get<ProtectionRuleSet[]>('/v1/git/protection/rule-sets')
 }
@@ -100,8 +96,7 @@ export function applyRuleSet(id: number, repoIds: number[]) {
   return request.post<void>(`/v1/git/protection/rule-sets/${id}/apply`, null, { params: { repoIds: repoIds.join(',') } })
 }
 
-// ==================== 合并请求 ====================
-
+// --- 合并请求 ---
 export interface MergeRequestQuery {
   status?: string
 }
@@ -130,8 +125,7 @@ export function mergeMergeRequest(id: number) {
   return request.post<MergeRequest>(`/v1/git/merge-requests/${id}/merge`)
 }
 
-// ==================== 审计日志 ====================
-
+// --- 审计日志 ---
 export interface GitAuditLogQuery {
   keyword?: string
   operatorId?: number

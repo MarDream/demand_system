@@ -162,6 +162,13 @@ for (Long orgId : allOrgIds) {
   developmentCompletedAt, moduleId, iterationId, orderNum, version, projectId, parentId, departmentId,
   legacyWorkflow, creatorRoleCodes, currentHandlerName, departmentName, childCount, 
   canEdit, canView, canApprove, isParticipant, operationType
+
+> **⚠️ 后续修订（2026-10-13）**：上面的「不包含 canEdit/operationType」已被推翻。
+> 这两个字段虽然不出现在 SQL 的精简 SELECT 里，但 **必须由 `batchFillPermissionForListVO()` 回填**，
+> 否则「全部需求」列表的操作列永远只渲染「查看」（编辑按钮成死代码），
+> 而详情页按 `GET /v1/workflow-engine/actions/{id}` 渲染编辑/拆分/提交，
+> 会出现「列表只给查看、详情却可写」的口径错位（用户已报障）。
+> 回填逻辑与 `fillPermissionFields()` 同源，不要按本文档原描述删掉这两个字段的填充。
 - Mapper 新增 `selectListPage` 方法，SQL 只 SELECT 上述 15 个字段
 - `RequirementServiceImpl.list()` 方法使用 `selectListPage` 替代 `selectPage`
 - 其余 4 个列表方法暂不改（走 `SELECT r.*` 是 Mapper 注解硬编码，改造成本高，优先级低）

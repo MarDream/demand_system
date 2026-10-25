@@ -84,9 +84,6 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         }).toList());
     }
 
-    /**
-     * 批量加载角色关联分组ID
-     */
     private Map<Long, List<Long>> loadRoleGroupIdsMap(List<Role> roles) {
         if (roles.isEmpty()) {
             return Map.of();
@@ -129,7 +126,6 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         role.setDeletedAt(0);
         roleMapper.insert(role);
 
-        // 写入关联分组
         saveRoleGroupRelations(role.getId(), request.getRoleGroupId(), request.getGroupIds(), now);
 
         RoleVO result = RoleVO.from(role);
@@ -430,7 +426,7 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         group.setDeletedAt(0);
         roleGroupMapper.insert(group);
 
-        // Assign roles to the new group
+        // 为新分组关联角色
         if (request.getRoleIds() != null && !request.getRoleIds().isEmpty()) {
             for (Long roleId : request.getRoleIds()) {
                 Role role = roleMapper.selectById(roleId);
@@ -468,7 +464,7 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         if (group == null) {
             throw new BusinessException("角色组不存在");
         }
-        // Move roles in this group to default group (set roleGroupId to null)
+        // 组内角色迁出分组（roleGroupId 置空，归入默认分组）
         List<Role> rolesInGroup = roleMapper.selectList(new LambdaQueryWrapper<Role>()
                 .eq(Role::getRoleGroupId, roleGroupId));
         if (!rolesInGroup.isEmpty()) {
@@ -479,7 +475,6 @@ public class RolePermissionServiceImpl implements RolePermissionService {
                 roleMapper.updateById(role);
             }
         }
-        // 删除关联表记录
         roleGroupRelationMapper.deleteByRoleGroupId(roleGroupId);
         roleGroupMapper.deleteById(roleGroupId);
         return Result.success();
@@ -548,17 +543,14 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         }
     }
 
-    // ========== 角色分组树 ==========
+    // --- 角色分组树 ---
 
     @Override
     public Result<List<RoleTreeNodeVO>> getRoleTree() {
-        // 查询所有分组
         List<RoleGroup> groups = roleGroupMapper.selectList(
                 new LambdaQueryWrapper<RoleGroup>().orderByAsc(RoleGroup::getSortOrder));
-        // 查询所有角色
         List<Role> roles = roleMapper.selectList(
                 new LambdaQueryWrapper<Role>().orderByAsc(Role::getSortOrder).orderByAsc(Role::getId));
-        // 批量查询关联分组
         Map<Long, List<Long>> roleGroupMap = loadRoleGroupIdsMap(roles);
 
         List<RoleTreeNodeVO> result = new ArrayList<>();
@@ -609,7 +601,7 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         return item;
     }
 
-    // ========== 关联分组工具方法 ==========
+    // --- 关联分组工具方法 ---
 
     /**
      * 保存角色关联分组

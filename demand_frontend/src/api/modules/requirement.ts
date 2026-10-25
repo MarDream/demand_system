@@ -104,6 +104,11 @@ export function deleteRequirement(id: number) {
   return request.delete<ApiResponse>(`/v1/requirements/${id}`) as unknown as Promise<void>
 }
 
+/** 删除需求附件（仅移除引用，权限：草稿=待办视图+本人上传；提交后=button:requirement:attachment:delete） */
+export function deleteRequirementAttachment(requirementId: number, fileId: number) {
+  return request.delete<ApiResponse>(`/v1/requirements/${requirementId}/attachments/${fileId}`) as unknown as Promise<void>
+}
+
 export function restoreRequirement(id: number) {
   return request.post<ApiResponse>(`/v1/requirements/${id}/restore`) as unknown as Promise<void>
 }

@@ -333,8 +333,7 @@ const emit = defineEmits<{
 
 const viewDialogVisible = ref(false)
 
-// ==================== 排序 / 行高弹层（钉钉工具栏风格） ====================
-
+// --- 排序 / 行高弹层（钉钉工具栏风格） ---
 /** 行高快捷档位（与 GridView 右键菜单一致） */
 const ROW_HEIGHT_PRESETS = [
   { label: '紧凑', value: 24 },

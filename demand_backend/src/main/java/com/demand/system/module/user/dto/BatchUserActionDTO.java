@@ -7,7 +7,6 @@ import java.util.List;
  */
 public class BatchUserActionDTO {
 
-    /** 目标用户ID集合 */
     private List<Long> ids;
 
     /** 目标状态，仅批量启用/停用使用：active / inactive */

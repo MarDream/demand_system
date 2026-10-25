@@ -19,8 +19,7 @@ import type {
 } from '@/types/bitable'
 import { stripRichTextHtml } from '@/utils/bitableRichText'
 
-// ==================== 常量 ====================
-
+// --- 常量 ---
 /** 系统自动填充、绝对只读的字段类型（不参与手动编辑与校验） */
 export const READONLY_FIELD_TYPES = new Set<string>([
   'auto_number',
@@ -122,8 +121,7 @@ const RATING_ICON_CHARS: Record<NonNullable<FieldConfig['ratingIcon']>, string> 
   number: '',
 }
 
-// ==================== 每类型允许的配置键 ====================
-
+// --- 每类型允许的配置键 ---
 /** 所有类型都可用的通用键 */
 const COMMON_KEYS: (keyof FieldConfig)[] = [
   'defaultValue',
@@ -193,8 +191,7 @@ export function allowedConfigKeys(fieldType: string): (keyof FieldConfig)[] {
   return [...COMMON_KEYS, ...(TYPE_KEYS[fieldType] || [])]
 }
 
-// ==================== 默认值 / 迁移 / 清洗 ====================
-
+// --- 默认值 / 迁移 / 清洗 ---
 /** 该字段类型是否有可配置属性（除通用属性外） */
 export function hasTypeSpecificAttributes(fieldType: string): boolean {
   return (TYPE_KEYS[fieldType] || []).length > 0
@@ -315,7 +312,7 @@ export function normalizeFieldConfig(fieldType: string, raw?: FieldConfig | null
   const defaults = createDefaultFieldConfig(fieldType)
   const source = (raw && typeof raw === 'object' ? { ...raw } : {}) as Record<string, unknown>
 
-  // ---- 历史键迁移 ----
+  // --- 历史键迁移 ---
   if (source.dateFormat === undefined && typeof source.format === 'string') {
     source.dateFormat = source.format
   }
@@ -350,7 +347,7 @@ export function normalizeFieldConfig(fieldType: string, raw?: FieldConfig | null
   }
   // 旧版自动编号把前缀存在 config.prefix（已是规范键），保留
 
-  // ---- 按白名单取值 + 补默认 ----
+  // --- 按白名单取值 + 补默认 ---
   const allowed = allowedConfigKeys(fieldType)
   const result: Record<string, unknown> = { ...defaults }
   for (const key of allowed) {
@@ -391,8 +388,7 @@ export function sanitizeFieldConfig(fieldType: string, config?: FieldConfig | nu
   return result as FieldConfig
 }
 
-// ==================== 展示格式化 ====================
-
+// --- 展示格式化 ---
 export function currencySymbol(code?: string): string {
   return CURRENCY_OPTIONS.find((c) => c.value === code)?.symbol ?? '¥'
 }
@@ -737,8 +733,7 @@ export function isFieldHidden(field: BitableField): boolean {
   return field.permission === 'hidden'
 }
 
-// ==================== 录入校验 ====================
-
+// --- 录入校验 ---
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const URL_RE = /^(https?:\/\/|www\.)\S+$/i
 

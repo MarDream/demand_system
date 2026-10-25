@@ -2,9 +2,6 @@ package com.demand.system.module.workflow.dto;
 
 import jakarta.validation.constraints.NotNull;
 
-/**
- * 创建迁移计划请求
- */
 public class CreateMigrationPlanRequest {
 
     @NotNull(message = "源版本ID不能为空")

@@ -78,7 +78,6 @@ public class BitableBaseRoleServiceImpl implements BitableBaseRoleService {
                     .collect(Collectors.toList());
             vo.setMembers(memberVOs);
 
-            // 读取该角色的权限配置
             List<BitableBaseRolePermission> perms = rolePermissionMapper.selectByBaseAndType(baseId, permissionType);
             List<BitableBaseRoleVO.PermissionVO> permVOs = perms.stream()
                     .filter(p -> "system".equals(p.getRoleType()) && role.getCode().equals(p.getSystemRoleCode()))
@@ -105,7 +104,6 @@ public class BitableBaseRoleServiceImpl implements BitableBaseRoleService {
             vo.setSortOrder(role.getSortOrder());
             vo.setCreatedAt(role.getCreatedAt());
 
-            // 自定义角色成员
             List<BitableBaseCustomRoleMember> members = roleMemberMapper.selectByRoleId(role.getId());
             List<BitableBaseRoleVO.MemberVO> memberVOs = members.stream()
                     .map(m -> {
@@ -251,12 +249,10 @@ public class BitableBaseRoleServiceImpl implements BitableBaseRoleService {
         // 软删除角色
         customRoleMapper.deleteById(roleId);
 
-        // 清理成员
         LambdaQueryWrapper<BitableBaseCustomRoleMember> memberWrapper = new LambdaQueryWrapper<>();
         memberWrapper.eq(BitableBaseCustomRoleMember::getRoleId, roleId);
         roleMemberMapper.delete(memberWrapper);
 
-        // 清理权限
         LambdaQueryWrapper<BitableBaseRolePermission> permWrapper = new LambdaQueryWrapper<>();
         permWrapper.eq(BitableBaseRolePermission::getCustomRoleId, roleId);
         rolePermissionMapper.delete(permWrapper);
@@ -321,7 +317,6 @@ public class BitableBaseRoleServiceImpl implements BitableBaseRoleService {
         }
         rolePermissionMapper.delete(wrapper);
 
-        // 插入新权限（如果不是 none）
         if (needsExplicitRow(dto.getPermissionType(), dto.getPermissionLevel())) {
             BitableBaseRolePermission perm = new BitableBaseRolePermission();
             perm.setBaseId(dto.getBaseId());
@@ -342,7 +337,6 @@ public class BitableBaseRoleServiceImpl implements BitableBaseRoleService {
                                          String permissionType, String permissionLevel, Long userId) {
         authorizationService.checkManagePermission(baseId, userId);
 
-        // 获取 base 下所有表
         LambdaQueryWrapper<BitableTable> tableWrapper = new LambdaQueryWrapper<>();
         tableWrapper.eq(BitableTable::getBaseId, baseId).eq(BitableTable::getDeletedAt, 0);
         List<BitableTable> tables = tableMapper.selectList(tableWrapper);
@@ -360,7 +354,7 @@ public class BitableBaseRoleServiceImpl implements BitableBaseRoleService {
         }
         rolePermissionMapper.delete(delWrapper);
 
-        // 批量插入（如果不是 none）
+        // 批量插入
         if (needsExplicitRow(permissionType, permissionLevel)) {
             for (BitableTable table : tables) {
                 BitableBaseRolePermission perm = new BitableBaseRolePermission();
@@ -398,7 +392,6 @@ public class BitableBaseRoleServiceImpl implements BitableBaseRoleService {
             }
             rolePermissionMapper.delete(wrapper);
 
-            // 插入新权限（如果不是 none）
             if (needsExplicitRow(dto.getPermissionType(), dto.getPermissionLevel())) {
                 BitableBaseRolePermission perm = new BitableBaseRolePermission();
                 perm.setBaseId(dto.getBaseId());

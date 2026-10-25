@@ -12,9 +12,9 @@ public class LlmGatewayConfig {
     private Provider embedding = new Provider();
     private Provider reranker = new Provider();
     private Provider chat = new Provider();
-    /** Provider for event/entity extraction during multi-hop expansion */
+    /** 多跳扩展时用于事件/实体抽取的 Provider。 */
     private Provider eventExtractor = new Provider();
-    /** Provider for LLM-based rerank (standard mode) */
+    /** 用于 LLM 精排（standard 模式）的 Provider。 */
     private Provider llmReranker = new Provider();
 
     public Provider getEmbedding() {

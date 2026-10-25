@@ -1,8 +1,5 @@
 package com.demand.system.module.auth.dto;
 
-/**
- * Token响应DTO
- */
 public class TokenResponse {
 
     private String accessToken;

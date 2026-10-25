@@ -45,7 +45,7 @@ public class LlmProviderServiceImpl implements LlmProviderService {
         this.llmModelResolver = llmModelResolver;
     }
 
-    // ==================== Provider ====================
+    // --- Provider ---
 
     @Override
     public List<LlmProviderVO> list() {
@@ -145,7 +145,7 @@ public class LlmProviderServiceImpl implements LlmProviderService {
         return entity.getApiKey();
     }
 
-    // ==================== Model ====================
+    // --- Model ---
 
     @Override
     @Transactional
@@ -209,7 +209,6 @@ public class LlmProviderServiceImpl implements LlmProviderService {
         if (model == null) throw new BusinessException(ErrorCode.NOT_FOUND, "模型不存在");
 
         if (Boolean.TRUE.equals(model.getIsDefault())) {
-            // 取消默认
             model.setIsDefault(false);
             modelMapper.updateById(model);
         } else {
@@ -313,7 +312,7 @@ public class LlmProviderServiceImpl implements LlmProviderService {
         return toModelVO(model);
     }
 
-    // ==================== Chat Models (for RAG) ====================
+    // --- Chat Models（RAG 用） ---
 
     @Override
     public List<Map<String, Object>> listChatModels() {
@@ -323,14 +322,12 @@ public class LlmProviderServiceImpl implements LlmProviderService {
         );
         Long applicationModelId = assistantApp == null ? null : assistantApp.getModelId();
 
-        // 查出所有已启用的 provider
         List<LlmProvider> enabledProviders = providerMapper.selectList(
                 new LambdaQueryWrapper<LlmProvider>().eq(LlmProvider::getEnabled, true)
         );
 
         List<Map<String, Object>> result = new ArrayList<>();
         for (LlmProvider provider : enabledProviders) {
-            // 查出该 provider 下已启用且非 embedding/rerank 的模型
             List<LlmModel> chatModels = modelMapper.selectList(
                     new LambdaQueryWrapper<LlmModel>()
                             .eq(LlmModel::getProviderId, provider.getId())
@@ -357,7 +354,7 @@ public class LlmProviderServiceImpl implements LlmProviderService {
         return result;
     }
 
-    // ==================== Translate ====================
+    // --- Translate ---
 
     private static final String TRANSLATE_SYSTEM_PROMPT = """
             你是一个专业的中英文翻译助手。你的任务是将中文角色名称翻译为英文编码。
@@ -403,7 +400,7 @@ public class LlmProviderServiceImpl implements LlmProviderService {
         return null;
     }
 
-    // ==================== Sniff ====================
+    // --- Sniff ---
 
     @Override
     public List<SniffedModelVO> sniffModels(Long id) {
@@ -474,7 +471,7 @@ public class LlmProviderServiceImpl implements LlmProviderService {
         }
     }
 
-    // ==================== Private ====================
+    // --- 私有方法 ---
 
     /**
      * 把「探测模型列表失败」翻译成用户能照着做的一句话。

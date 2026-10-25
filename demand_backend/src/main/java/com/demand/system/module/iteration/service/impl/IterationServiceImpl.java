@@ -177,7 +177,7 @@ public class IterationServiceImpl implements IterationService {
 
         List<Requirement> requirements = requirementMapper.selectList(wrapper);
 
-        // Group by created date for total line
+        // 按创建日期聚合，用于总需求曲线
         Map<String, Long> createdPerDay = requirements.stream()
                 .filter(r -> r.getCreatedAt() != null)
                 .collect(Collectors.groupingBy(
@@ -185,8 +185,7 @@ public class IterationServiceImpl implements IterationService {
                         Collectors.counting()
                 ));
 
-        // Group completed requirements by date (when status changed to completed)
-        // Since we only have updatedAt, approximate by using updated requirements that are in completed status
+        // 按日期聚合已完成需求。数据中仅有 updatedAt，故以已完成状态需求的更新时间近似完成时间
         Map<String, Long> completedPerDay = new LinkedHashMap<>();
         for (Requirement r : requirements) {
             if ("已上线".equals(r.getStatus()) || "已验收".equals(r.getStatus())) {
@@ -197,7 +196,7 @@ public class IterationServiceImpl implements IterationService {
             }
         }
 
-        // Build sorted date range
+        // 合并去重并排序所有日期，构建完整日期轴
         List<String> allDates = new ArrayList<>(new TreeSet<>(createdPerDay.keySet()));
         allDates.addAll(new TreeSet<>(completedPerDay.keySet()));
         allDates = new ArrayList<>(new LinkedHashSet<>(allDates));
@@ -232,7 +231,7 @@ public class IterationServiceImpl implements IterationService {
         int reqCount = iterationMapper.countRequirements(it.getId());
         vo.setRequirementCount(reqCount);
 
-        // Count completed requirements
+        // 统计已完成需求数
         LambdaQueryWrapper<Requirement> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Requirement::getIterationId, it.getId())
                 .eq(Requirement::getDeletedAt, 0)

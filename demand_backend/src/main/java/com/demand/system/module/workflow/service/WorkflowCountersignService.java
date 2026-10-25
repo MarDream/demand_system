@@ -50,9 +50,6 @@ public class WorkflowCountersignService {
         this.workflowEngineService = workflowEngineService;
     }
 
-    /**
-     * 初始化会签记录
-     */
     @Transactional
     public void initCountersignRecords(Long instanceId, String nodeId, List<Long> approverIds) {
         for (Long approverId : approverIds) {
@@ -65,9 +62,6 @@ public class WorkflowCountersignService {
         }
     }
 
-    /**
-     * 提交会签审批
-     */
     @Transactional
     public void submitCountersignApproval(CountersignSubmitDTO dto) {
         Long approverId = SecurityUtils.getCurrentUserId();
@@ -94,7 +88,6 @@ public class WorkflowCountersignService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "节点不存在");
         }
 
-        // 检查是否已审批
         WorkflowCountersignRecord existing = countersignMapper.selectOne(
             new LambdaQueryWrapper<WorkflowCountersignRecord>()
                 .eq(WorkflowCountersignRecord::getInstanceId, instance.getId())
@@ -105,12 +98,10 @@ public class WorkflowCountersignService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "您已完成审批，无需重复提交");
         }
 
-        // 验证评分
         if (dto.getRating() != null && (dto.getRating() < 1 || dto.getRating() > 5)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "评分必须在1-5之间");
         }
 
-        // 更新或创建会签记录
         if (existing != null) {
             existing.setStatus(dto.getStatus());
             existing.setRating(dto.getRating());
@@ -129,15 +120,11 @@ public class WorkflowCountersignService {
             countersignMapper.insert(record);
         }
 
-        // 检查是否满足流转条件
         if (canProceedAfterCountersign(instance.getId(), dto.getNodeId(), node)) {
             workflowEngineService.autoTransitionAfterCountersign(dto.getRequirementId(), dto.getNodeId());
         }
     }
 
-    /**
-     * 检查会签是否完成
-     */
     public boolean canProceedAfterCountersign(Long instanceId, String nodeId, WorkflowNode node) {
         Map<String, Object> properties = node.getProperties();
         if (properties == null) {
@@ -180,9 +167,6 @@ public class WorkflowCountersignService {
         }
     }
 
-    /**
-     * 获取会签记录列表
-     */
     public List<CountersignRecordVO> getCountersignRecords(Long requirementId, String nodeId) {
         WorkflowInstance instance = instanceMapper.selectOne(
             new LambdaQueryWrapper<WorkflowInstance>()
@@ -222,9 +206,6 @@ public class WorkflowCountersignService {
         }).collect(Collectors.toList());
     }
 
-    /**
-     * 检查当前用户是否可以会签
-     */
     public boolean canCurrentUserCountersign(Long requirementId, String nodeId) {
         Long userId = SecurityUtils.getCurrentUserId();
 

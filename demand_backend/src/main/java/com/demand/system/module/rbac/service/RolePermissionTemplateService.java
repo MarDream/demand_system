@@ -148,7 +148,6 @@ public class RolePermissionTemplateService {
         int addedCount = 0;
 
         for (String permissionCode : permissionCodes) {
-            // 查询权限
             SysPermission permission = permissionMapper.selectOne(
                 new LambdaQueryWrapper<SysPermission>()
                     .eq(SysPermission::getCode, permissionCode)
@@ -159,7 +158,6 @@ public class RolePermissionTemplateService {
                 continue;
             }
 
-            // 检查是否已存在
             Long count = rolePermissionMapper.selectCount(
                 new LambdaQueryWrapper<SysRolePermission>()
                     .eq(SysRolePermission::getRoleId, role.getId())
@@ -171,7 +169,6 @@ public class RolePermissionTemplateService {
                 continue;
             }
 
-            // 插入权限关联
             SysRolePermission rp = new SysRolePermission();
             rp.setRoleId(role.getId());
             rp.setPermissionId(permission.getId());
@@ -221,7 +218,6 @@ public class RolePermissionTemplateService {
             return List.of();
         }
 
-        // 查询角色已有的权限
         List<String> existingPermissionCodes = rolePermissionMapper.selectList(
             new LambdaQueryWrapper<SysRolePermission>()
                 .eq(SysRolePermission::getRoleId, role.getId())
@@ -239,16 +235,10 @@ public class RolePermissionTemplateService {
             .toList();
     }
 
-    /**
-     * 获取所有支持模板的角色代码
-     */
     public List<String> getSupportedRoleCodes() {
         return List.copyOf(ROLE_PERMISSION_TEMPLATES.keySet());
     }
 
-    /**
-     * 获取指定角色的模板权限列表
-     */
     public List<String> getTemplatePermissions(String roleCode) {
         return ROLE_PERMISSION_TEMPLATES.getOrDefault(roleCode, List.of());
     }

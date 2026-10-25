@@ -232,14 +232,12 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         }
 
         // 6) 调整 docCount / chunkCount
-        // 源：减去
         int newSourceDocCount = Math.max(0, (source.getDocCount() == null ? 0 : source.getDocCount()) - toMigrate.size());
         int newSourceChunkCount = Math.max(0, (source.getChunkCount() == null ? 0 : source.getChunkCount()) - docSumChunkCount);
         source.setDocCount(newSourceDocCount);
         source.setChunkCount(newSourceChunkCount);
         knowledgeBaseMapper.updateById(source);
 
-        // 目标：加上
         int newTargetDocCount = (target.getDocCount() == null ? 0 : target.getDocCount()) + toMigrate.size();
         int newTargetChunkCount = (target.getChunkCount() == null ? 0 : target.getChunkCount()) + docSumChunkCount;
         target.setDocCount(newTargetDocCount);
@@ -293,7 +291,6 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     public void setAsDefaultForRequirements(Long knowledgeBaseId, Long operatorId) {
         KnowledgeBase kb = findOrThrow(knowledgeBaseId);
 
-        // 检查是否已经是默认知识库
         if (Integer.valueOf(1).equals(kb.getIsDefaultForRequirements())) {
             return; // 已经是默认知识库，无需操作
         }
@@ -316,12 +313,10 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     public void unsetDefaultForRequirements(Long knowledgeBaseId, Long operatorId) {
         KnowledgeBase kb = findOrThrow(knowledgeBaseId);
 
-        // 检查是否是默认知识库
         if (!Integer.valueOf(1).equals(kb.getIsDefaultForRequirements())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "该知识库不是默认存储库");
         }
 
-        // 取消默认设置
         knowledgeBaseMapper.update(null, new LambdaUpdateWrapper<KnowledgeBase>()
                 .set(KnowledgeBase::getIsDefaultForRequirements, 0)
                 .eq(KnowledgeBase::getId, knowledgeBaseId));

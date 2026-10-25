@@ -91,9 +91,6 @@ public class WorkflowConfigController {
         return Result.success(versions);
     }
 
-    /**
-     * 查询指定版本的修改历史时间线
-     */
     @GetMapping("/workflow/versions/{versionId}/history")
     public Result<List<WorkflowHistoryVO>> getHistory(@PathVariable("versionId") Long versionId) {
         return Result.success(workflowHistoryMapper.selectHistoryByVersionId(versionId));

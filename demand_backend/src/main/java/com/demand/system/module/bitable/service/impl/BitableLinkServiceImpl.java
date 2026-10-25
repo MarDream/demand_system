@@ -67,7 +67,6 @@ public class BitableLinkServiceImpl implements BitableLinkService {
         }
         int limit = Math.min(pageSize, 200);
 
-        // 查询目标表的记录
         List<BitableRecord> records;
         if (keyword != null && !keyword.isBlank()) {
             records = searchRecordsByKeyword(targetTableId, keyword, limit);
@@ -77,7 +76,6 @@ public class BitableLinkServiceImpl implements BitableLinkService {
 
         List<BitableRecordVO> voList = converter.toRecordVOList(records);
 
-        // 批量查询 cells
         if (!records.isEmpty()) {
             List<Long> recordIds = records.stream().map(BitableRecord::getId).collect(Collectors.toList());
             List<BitableCellValue> cells = cellMapper.selectByRecordIds(recordIds);
@@ -102,7 +100,6 @@ public class BitableLinkServiceImpl implements BitableLinkService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void linkRecords(Long fieldId, Long recordId, List<Long> targetRecordIds, Long userId) {
-        // 验证字段存在且为 link 类型
         BitableField field = fieldMapper.selectById(fieldId);
         if (field == null) {
             throw new BusinessException("字段不存在");
@@ -140,7 +137,6 @@ public class BitableLinkServiceImpl implements BitableLinkService {
 
         List<Long> oldTargetRecordIds = getLinkedRecordIds(fieldId, recordId);
 
-        // 将目标记录ID列表转为 JSON 数组字符串存储到 valueJson
         String valueJson;
         try {
             valueJson = objectMapper.writeValueAsString(targetRecordIds != null ? targetRecordIds : Collections.emptyList());
@@ -148,7 +144,6 @@ public class BitableLinkServiceImpl implements BitableLinkService {
             throw new BusinessException("序列化关联记录ID失败: " + e.getMessage());
         }
 
-        // 保存或更新单元格值
         BitableCellValue cell = new BitableCellValue();
         cell.setRecordId(recordId);
         cell.setFieldId(fieldId);
@@ -280,7 +275,6 @@ public class BitableLinkServiceImpl implements BitableLinkService {
             if (page.isEmpty()) {
                 break;
             }
-            // 批量取本页 text 字段值
             List<Long> pageIds = page.stream().map(BitableRecord::getId).collect(Collectors.toList());
             Map<Long, String> textByRecord = new HashMap<>();
             if (textFieldId != null) {

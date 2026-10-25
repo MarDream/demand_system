@@ -118,7 +118,6 @@ class FlowRectModel extends RectNodeModel {
   }
 }
 
-// 注册自定义节点
 export function registerCustomNodes(lf: LogicFlow) {
   // 开始节点 - 圆形
   lf.register({
@@ -162,7 +161,6 @@ export function registerCustomNodes(lf: LogicFlow) {
     model: CircleNodeModel
   })
 
-  // 设置节点样式
   lf.setTheme({
     circle: nodeStyleConfig.start,
     rect: nodeStyleConfig.approval,

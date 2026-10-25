@@ -2,9 +2,6 @@ package com.demand.system.module.requirement.service;
 
 import com.demand.system.module.requirement.entity.RequirementApprovalEvaluation;
 
-/**
- * 评分反馈服务
- */
 public interface RatingFeedbackService {
 
     /**

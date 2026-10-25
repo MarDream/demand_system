@@ -355,10 +355,7 @@ const chartInitOptions = { renderer: 'svg' as const }
 const userStore = useUserStore()
 const pieChartRef = ref<any>(null)
 
-// ═══════════════════════════════════════════════
-// 自定义 SVG 图标（替代 Element Plus 默认图标）
-// ═══════════════════════════════════════════════
-
+// --- 自定义 SVG 图标（替代 Element Plus 默认图标） ---
 /**
  * 总需求数图标 — 分层文档 + 图表
  */
@@ -463,7 +460,6 @@ const completedRoute = computed<RouteLocationRaw>(() => {
   return { name: 'Requirements', query: { view: 'done' } }
 })
 
-// 加载结束状态码列表
 async function loadEndNodeStatuses() {
   try {
     const res = await getEndNodeStatuses()
@@ -924,16 +920,13 @@ onMounted(async () => {
 </script>
 
 <style scoped lang="scss">
-// ═══════════════════════════════════════════════
-// 科技感仪表盘样式
-// ═══════════════════════════════════════════════
-
+// --- 科技感仪表盘样式 ---
 .dashboard-container {
   padding: 20px 24px 24px;
   position: relative;
 }
 
-// ── 科技感背景 ────────────────────────────────
+// --- 科技感背景 ---
 .tech-bg {
   position: fixed;
   inset: 0;
@@ -981,7 +974,7 @@ onMounted(async () => {
   100% { transform: translate(60px, 40px) scale(1.15); }
 }
 
-// ── 欢迎区 ────────────────────────────────────
+// --- 欢迎区 ---
 .dashboard-header {
   position: relative;
   z-index: 1;
@@ -1000,7 +993,7 @@ onMounted(async () => {
   }
 }
 
-// ── 仪表盘标题 ─────────────────────────────────
+// --- 仪表盘标题 ---
 .dashboard-title {
   font-size: 26px;
   font-weight: 700;
@@ -1048,7 +1041,7 @@ onMounted(async () => {
   }
 }
 
-// ── 统计卡片行 ─────────────────────────────────
+// --- 统计卡片行 ---
 .stat-row {
   position: relative;
   z-index: 1;
@@ -1059,7 +1052,7 @@ onMounted(async () => {
   }
 }
 
-// ── 骨架屏 ────────────────────────────────────
+// --- 骨架屏 ---
 .shimmer {
   background: linear-gradient(90deg, var(--color-surface-alt) 25%, var(--color-border) 50%, var(--color-surface-alt) 75%);
   background-size: 200% 100%;
@@ -1146,7 +1139,7 @@ onMounted(async () => {
   border-radius: 6px;
 }
 
-// ── 内容区双栏 ─────────────────────────────────
+// --- 内容区双栏 ---
 .content-row {
   position: relative;
   z-index: 1;
@@ -1154,7 +1147,7 @@ onMounted(async () => {
   .el-col { margin-bottom: 0; }
 }
 
-// ── 科技感卡片 ─────────────────────────────────
+// --- 科技感卡片 ---
 .tech-card {
   border: 1px solid var(--color-border) !important;
   border-radius: 12px !important;
@@ -1198,7 +1191,7 @@ onMounted(async () => {
   }
 }
 
-// ── 区块头部 ───────────────────────────────────
+// --- 区块头部 ---
 .section-card {
   margin-bottom: 16px;
 
@@ -1267,7 +1260,7 @@ onMounted(async () => {
   padding: 0;
 }
 
-// ── 需求状态分布：精美环形图 + 图例 ───
+// --- 需求状态分布：精美环形图 + 图例 ---
 .pie-section {
   display: flex;
   align-items: center;
@@ -1404,13 +1397,13 @@ onMounted(async () => {
   transition: transform 0.2s ease;
 }
 
-// ── 柱状图 ─────────────────────────────────────
+// --- 柱状图 ---
 .type-bar-chart {
   width: 100%;
   height: 240px;
 }
 
-// ── 最近需求列表 ────────────────────────────────
+// --- 最近需求列表 ---
 .recent-list {
   max-height: 360px;
   overflow-y: auto;
@@ -1454,7 +1447,7 @@ onMounted(async () => {
   margin-left: auto;
 }
 
-// ── 流转动态 ────────────────────────────────────
+// --- 流转动态 ---
 .activity-timeline {
   max-height: 360px;
   overflow-y: auto;
@@ -1475,7 +1468,7 @@ onMounted(async () => {
   }
 }
 
-// ── 项目进度 ────────────────────────────────────
+// --- 项目进度 ---
 .project-progress {
   .progress-item {
     margin-bottom: 18px;
@@ -1510,7 +1503,7 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 
-// ── 流程处理概览 ────────────────────────────────
+// --- 流程处理概览 ---
 .workflow-overview-card {
   :deep(.el-card__body) {
     padding: 16px 20px;
@@ -1644,7 +1637,7 @@ onMounted(async () => {
   &.is-cc        { color: var(--color-accent); }
 }
 
-// ── 响应式 ────────────────────────────────────
+// --- 响应式 ---
 @media (max-width: 1024px) {
   .dashboard-header {
     flex-direction: column;

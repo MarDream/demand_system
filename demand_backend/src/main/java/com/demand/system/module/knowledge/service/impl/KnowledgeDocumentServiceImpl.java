@@ -474,12 +474,10 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
      * 确定需求文件的目标知识库（优先使用默认知识库）
      */
     private Long getTargetKnowledgeBaseForRequirements(Long projectId, Long creatorId) {
-        // 优先查找默认知识库
         Long defaultKbId = knowledgeBaseService.getDefaultKnowledgeBaseIdForRequirements();
         if (defaultKbId != null) {
             return defaultKbId;
         }
-        // 否则使用原有的项目知识库逻辑
         return ensureProjectAttachmentKnowledgeBase(projectId, creatorId);
     }
 
@@ -494,11 +492,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 .last("LIMIT 1"));
     }
 
-    /**
-     * 添加文档与需求的引用关系
-     */
     private void addRequirementReference(Long documentId, Long requirementId, String requirementCode, String requirementTitle) {
-        // 检查是否已存在引用
         Long count = refMapper.selectCount(new LambdaQueryWrapper<com.demand.system.module.knowledge.entity.KnowledgeDocumentRequirementRef>()
                 .eq(com.demand.system.module.knowledge.entity.KnowledgeDocumentRequirementRef::getDocumentId, documentId)
                 .eq(com.demand.system.module.knowledge.entity.KnowledgeDocumentRequirementRef::getRequirementId, requirementId));
@@ -1585,7 +1579,6 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         int chunkSize = config[0];
         int overlap = config[1];
 
-        // 新增：根据配置选择分块模式
         String chunkingMode = knowledgeConfig.getChunkingMode();
         if ("token".equalsIgnoreCase(chunkingMode) || "token_mode".equalsIgnoreCase(chunkingMode)) {
             int maxTokens = knowledgeConfig.getMaxTokens() > 0 ? knowledgeConfig.getMaxTokens() : chunkSize / 2;
@@ -1594,7 +1587,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 return splitContentByTokens(content, maxTokens, overlapTokens);
             } catch (Exception e) {
                 log.warn("Token 级分块失败，降级为字符级分块: {}", e.getMessage());
-                // fallback to char mode
+                // 降级到字符级分块（下方逻辑）。
             }
         }
 
@@ -1844,7 +1837,6 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         if (doc == null || !doc.getKnowledgeBaseId().equals(knowledgeBaseId)) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "文档不存在");
         }
-        // 清理已有的 chunks 和 Milvus 向量
         chunkMapper.delete(new LambdaQueryWrapper<KnowledgeChunk>()
                 .eq(KnowledgeChunk::getDocumentId, documentId));
         try {

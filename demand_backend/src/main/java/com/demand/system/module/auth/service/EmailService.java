@@ -1,8 +1,5 @@
 package com.demand.system.module.auth.service;
 
-/**
- * 邮件服务接口
- */
 public interface EmailService {
 
     /**

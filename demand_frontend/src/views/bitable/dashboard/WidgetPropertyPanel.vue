@@ -312,7 +312,7 @@
         </div>
       </el-tab-pane>
 
-      <!-- ============ 自定义配置 ============ -->
+      <!-- 自定义配置 -->
       <el-tab-pane label="自定义配置" name="custom">
         <div class="widget-panel__form">
           <!-- 单值类样式 -->
@@ -448,7 +448,7 @@ watch(() => props.widget.id, () => { activeTab.value = 'basic' })
 
 const PRESET_COLORS = ['#3b82f6', '#22d3ee', '#a78bfa', '#34d399', '#fbbf24', '#fb7185', '#f97316', '#ef4444']
 
-// ---- 数据表与字段 ----
+// --- 数据表与字段 ---
 const tableId = computed({
   get: () => props.widget.dataSourceConfig.tableId,
   set: (v) => { props.widget.dataSourceConfig.tableId = v },
@@ -478,7 +478,7 @@ function onTableChange() {
   emit('change')
 }
 
-// ==================== 多数据源模式 ====================
+// --- 多数据源模式 ---
 
 /** 与后端 MAX_SOURCES 对齐 */
 const MAX_SOURCES = 10
@@ -638,7 +638,7 @@ function isEmptyOp(op: string) {
   return op === 'is_empty' || op === 'is_not_empty'
 }
 
-// ---- 单值统计方式 ----
+// --- 单值统计方式 ---
 const primaryMetric = computed(() => {
   const ds = props.widget.dataSourceConfig
   if (!ds.metrics?.length) ds.metrics = [{ fieldId: null, aggregation: 'count' }]

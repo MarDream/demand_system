@@ -241,8 +241,7 @@ export interface LogicFlowGraphData {
   edges: LogicFlowEdgeData[]
 }
 
-// ============ ADR-002: 工作流迁移计划类型 ============
-
+// --- 工作流迁移计划类型 ---
 // 节点映射项
 export interface NodeMappingItem {
   fromNodeId: string

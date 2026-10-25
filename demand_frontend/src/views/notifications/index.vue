@@ -90,7 +90,7 @@ async function handleClick(item: any) {
       await markAsRead(item.id)
       item.isRead = 1
       void fetchUnreadCount()
-    } catch { /* ignore */ }
+    } catch { /* 标记已读失败不阻断跳转，忽略 */ }
   }
   if (item.relatedId) {
     // @提醒类通知携带评论ID：直达该工单的评论处并高亮对应评论

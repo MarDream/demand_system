@@ -28,14 +28,8 @@ public interface QuickQuestionService {
      */
     QuickQuestionVO create(QuickQuestionCreateDTO dto);
 
-    /**
-     * 更新
-     */
     QuickQuestionVO update(Long id, QuickQuestionCreateDTO dto);
 
-    /**
-     * 删除
-     */
     void delete(Long id);
 
     /**
@@ -49,8 +43,5 @@ public interface QuickQuestionService {
      */
     QuickQuestionVO adoptAiSuggestion(String questionText, String pageRoute, String questionHash);
 
-    /**
-     * 记录点击
-     */
     void recordClick(Long id);
 }

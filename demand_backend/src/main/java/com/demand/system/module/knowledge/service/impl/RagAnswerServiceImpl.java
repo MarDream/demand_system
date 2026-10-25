@@ -154,7 +154,7 @@ public class RagAnswerServiceImpl implements RagAnswerService {
         });
     }
 
-    // ==================== Chat 模型解析（默认 + 兜底列表） ====================
+    // --- Chat 模型解析（默认 + 兜底列表） ---
 
     /**
      * Chat 模型调用入口，支持默认+兜底：

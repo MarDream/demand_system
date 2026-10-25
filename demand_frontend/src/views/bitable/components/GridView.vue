@@ -238,7 +238,7 @@ const QUICK_FIELDS: { type: string; name: string; icon: string; color: string }[
   { type: 'user', name: '人员', icon: 'ri-user-3-line', color: 'var(--color-primary)' },
 ]
 
-// ==================== 人员字段可选项（系统用户列表） ====================
+// --- 人员字段可选项（系统用户列表） ---
 const userStore = useUserStore()
 
 /** 按字段属性 userScope 过滤后的可选项 */
@@ -584,7 +584,7 @@ const tableColumns = computed(() => {
               optionProps: { label: 'label', value: 'value' },
               props: { multiple: isMulti },
             }
-            // editRender: VxeSelect 下拉，修复闪退
+            // editRender: VxeSelect 下拉。
             // 关键：
             //   1) immediate: true 实时回写 model 值，避免编辑关闭时丢失选择
             //   2) popupConfig.transfer 替代已废弃的 transfer，避免 vxe-table 误判外部点击
@@ -1074,7 +1074,7 @@ function isCellEditable(field?: BitableField | null): boolean {
   return !isFieldReadonly(field) && field.permission !== 'add_only'
 }
 
-// ==================== 只读单元格轻提示（鼠标处浮层，自动消隐，不弹框） ====================
+// --- 只读单元格轻提示（鼠标处浮层，自动消隐，不弹框） ---
 
 const readonlyHint = reactive({
   visible: false,
@@ -1108,7 +1108,7 @@ function handleBeforeEdit(params: { column?: { field?: string | number }; $event
   return false
 }
 
-// ==================== 单元格内容截断浮框（悬停显示完整内容） ====================
+// --- 单元格内容截断浮框（悬停显示完整内容） ---
 
 const cellTooltip = reactive({
   visible: false,
@@ -1225,7 +1225,7 @@ function handleCellClick(params: { row: Record<string, any>; column: any; $event
   // 其他字段：值变化由 editRender 触发，edit-closed 时统一 emit
 }
 
-// ==================== 富文本单元格编辑 ====================
+// --- 富文本单元格编辑 ---
 
 const richTextEdit = reactive({
   visible: false,
@@ -1260,8 +1260,7 @@ function getFieldDescription(column: any): string {
   return String(field?.description || '').trim()
 }
 
-// ==================== 字段类型图标（钉钉 AI 多维表格风格） ====================
-
+// --- 字段类型图标（钉钉 AI 多维表格风格） ---
 /**
  * 每种字段类型一对 remixicon 图标 + 品牌色，表头一眼可辨类型。
  * 图标语义对齐钉钉多维表格：文本≈、单选◎、多选☰、日期📅、数字#、货币¥……
@@ -1317,7 +1316,7 @@ function getFieldTypeIcon(column: any): { icon: string; color: string } | null {
   return FIELD_TYPE_ICONS[field.fieldType] || { icon: 'ri-text', color: 'var(--color-primary)' }
 }
 
-// ==================== 行高（默认 32px，数据表可单独设置） ====================
+// --- 行高（默认 32px，数据表可单独设置） ---
 
 /** 默认行高：32px（wolai/飞书风格紧凑基准） */
 const DEFAULT_ROW_HEIGHT = 32
@@ -1401,7 +1400,6 @@ function handleMenuClick({ menu, row, column }: any) {
     if (fieldId !== null) emit('fillColumnColor', { fieldId, color: code.replace('fillColor_', '') })
     return
   }
-  // 设置提醒子菜单
   if (code.startsWith('remind')) {
     const fieldId = resolveFieldId()
     if (fieldId !== null) {
@@ -1702,7 +1700,7 @@ function handleColResize({ column, resizeWidth }: any) {
 </script>
 
 <style scoped lang="scss">
-// ===== 多维表格 GridView 钉钉风格精修 =====
+// --- 多维表格 GridView 钉钉风格精修 ---
 // 1. 行高默认 32px（--grid-row-height 同源 effectiveRowHeight），表头同步
 // 2. 行 hover 左缘 3px 主色条 + 极淡蓝底（方向感反馈）
 // 3. 选中行 2px 主色 outline + 渐变左缘条（编辑态突出）
@@ -1740,14 +1738,14 @@ function handleColResize({ column, resizeWidth }: any) {
     border: 0;
   }
 
-  // ===== 表头区 =====
+  // --- 表头区 ---
   :deep(.vxe-table--header-wrapper) {
     background: var(--color-background, var(--color-background));
     // 上下双线：上分割 + 下强调
     box-shadow: inset 0 -1px 0 var(--color-border, #e2e8f0), inset 0 -2px 0 rgba(37, 99, 235, 0.04);
   }
 
-  // ===== 表头字段描述角标（钉钉 AI 多维表格样式）=====
+  // --- 表头字段描述角标（钉钉 AI 多维表格样式） ---
   .bitable-th {
     display: inline-flex;
     align-items: center;
@@ -1783,7 +1781,7 @@ function handleColResize({ column, resizeWidth }: any) {
     }
   }
 
-  // ===== 表头行高：跟随 --grid-row-height（与 vxe row-config 同源，避免遮挡）=====
+  // --- 表头行高：跟随 --grid-row-height（与 vxe row-config 同源，避免遮挡） ---
   :deep(.vxe-header--row) {
     .vxe-cell {
       height: var(--grid-row-height, 32px);
@@ -1803,7 +1801,7 @@ function handleColResize({ column, resizeWidth }: any) {
     }
   }
 
-  // ===== 序号列合并复选（钉钉交互）=====
+  // --- 序号列合并复选（钉钉交互） ---
   // 表头全选框
   .seq-check-header {
     display: inline-flex;
@@ -1919,7 +1917,7 @@ function handleColResize({ column, resizeWidth }: any) {
     box-shadow: inset 0 0 0 2px var(--color-cell-active-outline, rgba(37, 99, 235, 0.35));
   }
 
-  // ===== 列分隔线（淡化）=====
+  // --- 列分隔线（淡化） ---
   :deep(.vxe-table--render-default.vxe-table--border) {
     .vxe-table--body-wrapper,
     .vxe-table--header-wrapper {
@@ -1945,7 +1943,7 @@ function handleColResize({ column, resizeWidth }: any) {
     margin: 2px;
   }
 
-  // ===== 自定义单元格渲染器（激进风格精修）=====
+  // --- 自定义单元格渲染器（激进风格精修） ---
 
   // 进度条
   :deep(.bitable-progress-cell) {
@@ -2264,19 +2262,19 @@ function handleColResize({ column, resizeWidth }: any) {
     }
   }
 
-  // ===== 钉钉布局：网格区容器 =====
+  // --- 钉钉布局：网格区容器 ---
   &__table {
     position: relative;
     flex: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
-    // 走查 P1-2：不能 overflow:hidden——vxe 的右键菜单挂载在 vxe-grid 内部，
+    // 不能 overflow:hidden——vxe 的右键菜单挂载在 vxe-grid 内部，
     // hidden 会把菜单向下超出的部分整块裁掉（表现为只剩一条白条）
     overflow: visible;
   }
 
-  // ===== 表头末尾「+ 字段」幽灵列（钉钉布局）：灰字 + 号，hover 亮起 =====
+  // --- 表头末尾「+ 字段」幽灵列（钉钉布局）：灰字 + 号，hover 亮起 ---
   :deep(.bitable-add-field) {
     display: inline-flex;
     align-items: center;
@@ -2301,7 +2299,7 @@ function handleColResize({ column, resizeWidth }: any) {
     }
   }
 
-  // ===== 空表引导（走查 P1-4）=====
+  // --- 空表引导（走查 P1-4） ---
   .grid-empty-guide {
     flex: 1;
     display: flex;
@@ -2473,7 +2471,7 @@ function handleColResize({ column, resizeWidth }: any) {
   animation: bitable-row-flash 1.5s ease-out forwards;
 }
 
-/* ===== 自定义行高弹层（teleport 到 body，需全局样式）===== */
+/* --- 自定义行高弹层（teleport 到 body，需全局样式）--- */
 .row-height-popover {
   position: fixed;
   inset: 0;
@@ -2568,7 +2566,7 @@ function handleColResize({ column, resizeWidth }: any) {
 </style>
 
 <style lang="scss">
-/* ===== 右键菜单全局样式（context-menu 挂载在 body 下，scoped 无法命中）===== */
+/* --- 右键菜单全局样式（context-menu 挂载在 body 下，scoped 无法命中）--- */
 /* 整列填色子菜单的色点（prefixIcon 位置渲染成小方块） */
 .menu-swatch {
   display: inline-block;

@@ -57,9 +57,6 @@ public final class PermissionGuard {
         }
     }
 
-    /**
-     * 校验当前用户是否已登录。
-     */
     public static Long requireCurrentUserId() {
         Long userId = SecurityUtils.getCurrentUserId();
         if (userId == null) {

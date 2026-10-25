@@ -1,8 +1,5 @@
 package com.demand.system.module.invitation.dto;
 
-/**
- * 邀请记录列表查询条件
- */
 public class InvitationQueryDTO {
 
     /** link / batch，空 = 全部 */

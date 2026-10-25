@@ -674,14 +674,12 @@ const nextNodeNames = computed(() => {
 
   if (!graphData?.edges) return []
 
-  // 找出所有从当前节点出发的边
   const outgoingEdges = (graphData.edges || []).filter(
     (edge) => edge.sourceNodeId === selectedNode.value!.id
   )
 
   if (outgoingEdges.length === 0) return []
 
-  // 构建节点ID到名称的映射
   const nodeNameMap = new Map<string, string>()
   ;(graphData.nodes || []).forEach((node) => {
     if (node.id) {
@@ -689,7 +687,6 @@ const nextNodeNames = computed(() => {
     }
   })
 
-  // 获取所有下一个节点的名称
   return outgoingEdges
     .map((edge) => nodeNameMap.get(edge.targetNodeId || ''))
     .filter((name): name is string => !!name)
@@ -798,10 +795,7 @@ const nodeForm = reactive<Partial<WorkflowNodeDTO> & {
   fieldPermissions: { visible: [], editable: [], required: [] }
 })
 
-// ------------------------------------------------------------------
-// 需求动态字段权限
-// ------------------------------------------------------------------
-
+// --- 需求动态字段权限 ---
 /** 当前流程版本所绑定需求类型下可用的动态字段 */
 const customFieldOptions = ref<CustomFieldDef[]>([])
 const customFieldsLoading = ref(false)
@@ -1728,7 +1722,6 @@ const syncSelectedNodePosition = (nodeId: string, position: LayoutPosition) => {
   nodeForm.positionY = position.y
 }
 
-// 初始化LogicFlow
 const initLogicFlow = () => {
   if (!logicFlowContainer.value) return
 
@@ -1766,17 +1759,14 @@ const initLogicFlow = () => {
   registerCustomNodes(lf)
   applyEditorEditConfig()
 
-  // 监听节点点击事件
   lf.on('node:click', ({ data }) => {
     handleNodeClick(data)
   })
 
-  // 监听边点击事件
   lf.on('edge:click', ({ data }) => {
     handleEdgeClick(data)
   })
 
-  // 监听画布点击事件（取消选中）
   lf.on('blank:click', () => {
     drawerVisible.value = false
     selectedNode.value = null
@@ -1789,14 +1779,12 @@ const initLogicFlow = () => {
   lf.on('edge:add', () => { configDirty.value = true })
   lf.on('edge:delete', () => { configDirty.value = true })
 
-  // 渲染初始数据
   lf.render({
     nodes: [],
     edges: []
   })
 }
 
-// 处理节点拖拽开始
 const handleNodeDragStart = (node: any) => {
   if (isViewMode.value) {
     ElMessage.warning('查看模式下不能编辑')
@@ -1838,7 +1826,6 @@ const removeRatingDimension = (idx: number) => {
   }
 }
 
-// 处理节点点击
 const handleNodeClick = (data: any) => {
   selectedNode.value = data
   selectedEdge.value = null
@@ -1848,7 +1835,6 @@ const handleNodeClick = (data: any) => {
   drawerVisible.value = true
   adjustDrawerSize()
 
-  // 填充表单
   Object.assign(nodeForm, {
     nodeId: data.id,
     nodeType: data.type,
@@ -1923,7 +1909,6 @@ const handleNodeClick = (data: any) => {
   normalizeCurrentNodeProjectRequired()
 }
 
-// 处理边点击
 const handleEdgeClick = (data: any) => {
   selectedEdge.value = data
   selectedNode.value = null
@@ -1931,10 +1916,9 @@ const handleEdgeClick = (data: any) => {
   drawerVisible.value = true
   adjustDrawerSize()
 
-  // 填充表单
   edgeForm.label = data.text?.value || ''
   edgeForm.conditionExpr = data.properties?.condition?.expr || ''
-  // 从边数据还原结构化条件（修复 edgeConditionModel 不持久化 bug）
+  // 从边数据还原结构化条件（edgeConditionModel 不随画布持久化，需从边回填）
   const savedCondition = data.properties?.condition
   if (savedCondition?.rules?.length) {
     edgeConditionModel.value = {
@@ -1946,8 +1930,7 @@ const handleEdgeClick = (data: any) => {
   }
 }
 
-// 保存节点配置
-// 修复 P1：客户端连通性预校验（与服务端 WorkflowConfigServiceImpl.validateConfigStructure 对齐）
+// 客户端连通性预校验（与服务端 WorkflowConfigServiceImpl.validateConfigStructure 对齐）
 // 避免无效工作流被提交，提示用户尽早修正
 const validateBeforeSave = (): { valid: boolean; error?: string } => {
   if (!lf) return { valid: false, error: '画布未初始化' }
@@ -2068,7 +2051,6 @@ const handleSaveNodeConfig = () => {
   drawerVisible.value = false
 }
 
-// 保存边配置
 const handleSaveEdgeConfig = () => {
   if (!lf || !selectedEdge.value) return
 
@@ -2091,7 +2073,6 @@ const handleSaveEdgeConfig = () => {
   drawerVisible.value = false
 }
 
-// 删除节点
 const handleDeleteNode = async () => {
   if (!lf || !selectedNode.value) return
 
@@ -2111,7 +2092,6 @@ const handleDeleteNode = async () => {
   }
 }
 
-// 删除边
 const handleDeleteEdge = async () => {
   if (!lf || !selectedEdge.value) return
 
@@ -2131,31 +2111,26 @@ const handleDeleteEdge = async () => {
   }
 }
 
-// 获取节点类型标签
 const getNodeTypeLabel = (type?: string) => {
   const node = nodeTypes.find(n => n.type === type)
   return node ? node.label : type
 }
 
-// 放大
 const handleZoomIn = () => {
   if (!lf) return
   lf.zoom(true)
 }
 
-// 缩小
 const handleZoomOut = () => {
   if (!lf) return
   lf.zoom(false)
 }
 
-// 重置缩放
 const handleResetZoom = () => {
   if (!lf) return
   lf.resetZoom()
 }
 
-// 格式化排版
 const handleFormatLayout = () => {
   if (isViewMode.value) {
     ElMessage.warning('查看模式下不能编辑')
@@ -2180,7 +2155,6 @@ const handleFormatLayout = () => {
   ElMessage.success('已完成格式化排版')
 }
 
-// 清空画布
 const handleClearCanvas = async () => {
   if (isViewMode.value) {
     ElMessage.warning('查看模式下不能编辑')
@@ -2206,7 +2180,7 @@ const handleClearCanvas = async () => {
 const handleSave = async () => {
   if (!lf) return
 
-  // 修复 P1：保存前客户端连通性校验（与服务端 validateConfigStructure 对齐）
+  // 保存前客户端连通性校验（与服务端 validateConfigStructure 对齐）
   const clientValidation = validateBeforeSave()
   if (!clientValidation.valid) {
     ElMessage.error(clientValidation.error || '工作流配置不合法')
@@ -2235,7 +2209,6 @@ const handleSave = async () => {
       return false
     }
 
-    // 转换为后端需要的格式
     const config: WorkflowConfigDTO = {
       versionId: currentVersion.value?.id,
       version: desiredVersionMeta?.version,
@@ -2402,7 +2375,6 @@ const handleSubmit = async () => {
   }
 }
 
-// 关闭抽屉
 const handleDrawerClose = () => {
   drawerVisible.value = false
   selectedNode.value = null
@@ -2422,7 +2394,7 @@ function handleRoleTreeSelectChange(val: any) {
   }
 }
 
-// ========== 抽屉拖拽调整宽度 ==========
+// --- 抽屉拖拽调整宽度 ---
 function onResizeStart(e: MouseEvent) {
   isResizing.value = true
   const startX = e.clientX
@@ -2430,7 +2402,7 @@ function onResizeStart(e: MouseEvent) {
   const maxWidth = window.innerWidth * MAX_DRAWER_WIDTH_RATIO
 
   const onMouseMove = (ev: MouseEvent) => {
-    // RTL drawer: width increases when mouse moves left
+    // 抽屉贴右侧展开：鼠标向左移动时宽度增大
     const delta = startX - ev.clientX
     const newWidth = Math.min(Math.max(startWidth + delta, MIN_DRAWER_WIDTH), maxWidth)
     drawerSize.value = `${Math.round(newWidth)}px`
@@ -2446,7 +2418,7 @@ function onResizeStart(e: MouseEvent) {
   document.addEventListener('mouseup', onMouseUp)
 }
 
-// ========== 根据节点/边类型自适应宽度 ==========
+// --- 根据节点/边类型自适应宽度 ---
 function adjustDrawerSize() {
   if (selectedNode.value) {
     const type = selectedNode.value.properties?.nodeType
@@ -2532,7 +2504,6 @@ const loadVersionHistory = async () => {
   }
 }
 
-// 加载工作流配置
 const loadWorkflowConfig = async () => {
   const versionId = route.query.versionId
   const mode = route.query.mode
@@ -3143,7 +3114,7 @@ onBeforeUnmount(() => {
   }
 }
 
-/* ===== 查看模式禁用控件：不置灰（保持正常观感），鼠标箭头显示「禁止」光标 ===== */
+/* --- 查看模式禁用控件：不置灰（保持正常观感），鼠标箭头显示「禁止」光标 --- */
 :deep(.config-drawer .el-form) {
   .el-select__wrapper.is-disabled {
     background-color: var(--el-fill-color-blank);

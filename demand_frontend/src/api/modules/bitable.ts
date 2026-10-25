@@ -104,7 +104,7 @@ export function removeBaseMember(baseId: number, userId: number) {
   return request.delete<ApiResponse<void>>(`/v1/bitable/bases/${baseId}/members/${userId}`) as unknown as Promise<void>
 }
 
-// Table
+// 数据表
 export function listTables(baseId: number) {
   return request.get<ApiResponse<BitableTable[]>>(`/v1/bitable/bases/${baseId}/tables`) as unknown as Promise<BitableTable[]>
 }
@@ -192,7 +192,7 @@ export function moveTableToGroup(tableId: number, groupId: number | null) {
   return request.put<ApiResponse<void>>(`/v1/bitable/tables/${tableId}/group`, { groupId }) as unknown as Promise<void>
 }
 
-// Field
+// 字段
 export function listFields(tableId: number) {
   return request.get<ApiResponse<BitableField[]>>(`/v1/bitable/tables/${tableId}/fields`) as unknown as Promise<BitableField[]>
 }
@@ -213,7 +213,7 @@ export function sortFields(tableId: number, fieldIds: number[]) {
   return request.put<ApiResponse<void>>(`/v1/bitable/tables/${tableId}/fields/sort`, fieldIds) as unknown as Promise<void>
 }
 
-// Record
+// 记录
 export function listRecords(
   tableId: number,
   params: { pageNum?: number; pageSize?: number; filterConfig?: string; sortConfig?: string }
@@ -252,7 +252,7 @@ export function batchCreateRecords(tableId: number, records: BitableRecordCreate
   return request.post<ApiResponse<BitableRecord[]>>(`/v1/bitable/tables/${tableId}/records/batch`, records) as unknown as Promise<BitableRecord[]>
 }
 
-// Link field
+// 关联字段
 export function listLinkableRecords(tableId: number, params?: { keyword?: string; pageSize?: number }) {
   return request.get<ApiResponse<BitableRecord[]>>(`/v1/bitable/tables/${tableId}/linkable-records`, { params }) as unknown as Promise<BitableRecord[]>
 }
@@ -265,7 +265,7 @@ export function getLinkedRecordIds(fieldId: number, recordId: number) {
   return request.get<ApiResponse<number[]>>(`/v1/bitable/fields/${fieldId}/records/${recordId}/linked`) as unknown as Promise<number[]>
 }
 
-// View
+// 视图
 export function listViews(tableId: number) {
   return request.get<ApiResponse<BitableView[]>>(`/v1/bitable/tables/${tableId}/views`) as unknown as Promise<BitableView[]>
 }
@@ -290,7 +290,7 @@ export function setDefaultView(tableId: number, viewId: number) {
   return request.post<ApiResponse<void>>(`/v1/bitable/tables/${tableId}/default-view/${viewId}`) as unknown as Promise<void>
 }
 
-// Comment
+// 评论
 export function listComments(recordId: number) {
   return request.get<ApiResponse<BitableComment[]>>(`/v1/bitable/records/${recordId}/comments`) as unknown as Promise<BitableComment[]>
 }
@@ -303,7 +303,7 @@ export function deleteComment(id: number) {
   return request.delete<ApiResponse<void>>(`/v1/bitable/comments/${id}`) as unknown as Promise<void>
 }
 
-// Operation history
+// 操作历史
 export function listOperations(baseId: number, params?: BitableOperationQuery) {
   return request.get<ApiResponse<PageResult<BitableOperation>>>(`/v1/bitable/bases/${baseId}/operations`, { params }) as unknown as Promise<PageResult<BitableOperation>>
 }
@@ -313,7 +313,7 @@ export function listTableOperations(tableId: number, params?: BitableOperationQu
   return request.get<ApiResponse<PageResult<BitableOperation>>>(`/v1/bitable/tables/${tableId}/operations`, { params }) as unknown as Promise<PageResult<BitableOperation>>
 }
 
-// Automation
+// 自动化
 export function listAutomations(baseId: number) {
   return request.get<ApiResponse<BitableAutomation[]>>(`/v1/bitable/bases/${baseId}/automations`) as unknown as Promise<BitableAutomation[]>
 }
@@ -338,8 +338,7 @@ export function listAutomationRuns(id: number, params?: { pageNum?: number; page
   return request.get<ApiResponse<PageResult<any>>>(`/v1/bitable/automations/${id}/runs`, { params }) as unknown as Promise<PageResult<any>>
 }
 
-// ==================== 公开表单发布 ====================
-
+// --- 公开表单发布 ---
 export interface FormPublishInfo {
   id: number
   viewId: number
@@ -366,8 +365,7 @@ export function updateFormPublishStatus(viewId: number, enabled: boolean) {
   return request.post<ApiResponse<void>>(`/v1/bitable/views/${viewId}/publish/status`, { enabled }) as unknown as Promise<void>
 }
 
-// ==================== 视图分享 ====================
-
+// --- 视图分享 ---
 export interface ViewShareInfo {
   id: number
   viewId: number
@@ -390,8 +388,7 @@ export function updateViewShareStatus(viewId: number, enabled: boolean) {
   return request.post<ApiResponse<void>>(`/v1/bitable/views/${viewId}/share/status`, { enabled }) as unknown as Promise<void>
 }
 
-// ==================== 仪表盘 ====================
-
+// --- 仪表盘 ---
 export interface BitableDashboardInfo {
   id: number
   baseId: number
@@ -501,8 +498,7 @@ export function getDashboardData(id: number) {
   return request.get<ApiResponse<any[]>>(`/v1/bitable/dashboards/${id}/data`) as unknown as Promise<any[]>
 }
 
-// ==================== 开放 API 凭证 ====================
-
+// --- 开放 API 凭证 ---
 export interface ApiKeyInfo {
   id: number
   name: string
@@ -525,8 +521,7 @@ export function revokeApiKey(id: number) {
   return request.delete<ApiResponse<void>>(`/v1/bitable/api-keys/${id}`) as unknown as Promise<void>
 }
 
-// ==================== 匿名公开访问（无需登录） ====================
-
+// --- 匿名公开访问（无需登录） ---
 export interface PublicFormSchema {
   title: string
   description: string | null
@@ -556,8 +551,7 @@ export function getPublicViewData(token: string, params?: { pageNum?: number; pa
   return request.get<ApiResponse<Record<string, unknown>>>(`/v1/public/bitable/views/${token}/data`, { params }) as unknown as Promise<Record<string, unknown>>
 }
 
-// ==================== Webhook 订阅 ====================
-
+// --- Webhook 订阅 ---
 export interface WebhookSubscriptionInfo {
   id: number
   baseId: number
@@ -586,8 +580,7 @@ export function deleteWebhook(id: number) {
   return request.delete<ApiResponse<void>>(`/v1/bitable/webhooks/${id}`) as unknown as Promise<void>
 }
 
-// ==================== 权限管理（数据表级） ====================
-
+// --- 权限管理（数据表级） ---
 import type {
   BitableBaseRoleVO,
   BitableBaseCustomRoleCreateDTO,

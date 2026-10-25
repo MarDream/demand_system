@@ -57,7 +57,7 @@ class GlobalExceptionHandlerTest {
         BusinessException exception = new BusinessException(ErrorCode.BUSINESS_ERROR, "业务错误");
         ResponseEntity<Result<Object>> response = handler.handleBusinessException(exception);
 
-        // P1 修复：HTTP 状态码应与 errorCode 对齐（BUSINESS_ERROR=500 -> 500）
+        // HTTP 状态码应与 errorCode 对齐（BUSINESS_ERROR=500 -> 500）
         assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
         Result<Object> result = response.getBody();
         assertNotNull(result);
@@ -82,7 +82,7 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void testHandleBusinessException_MapsHttpStatusByErrorCode() {
-        // P1 修复验证：业务异常应根据 errorCode 返回对应的真实 HTTP 状态码，
+        // 业务异常应根据 errorCode 返回对应的真实 HTTP 状态码，
         // 不再统一返回 200，以便网关/监控系统区分成功与失败。
         assertStatus(ErrorCode.BAD_REQUEST, HttpStatus.BAD_REQUEST);
         assertStatus(ErrorCode.UNAUTHORIZED, HttpStatus.UNAUTHORIZED);
@@ -128,10 +128,8 @@ class GlobalExceptionHandlerTest {
         FieldError fieldError2 = new FieldError("object", "field2", "错误2");
         when(bindingResult.getFieldErrors()).thenReturn(List.of(fieldError1, fieldError2));
 
-        // 使用 RuntimeException 模拟验证异常，避免 MethodParameter 的复杂性
-        // 实际测试中，我们关注的是 BindingResult 的处理逻辑
+        // 直接复现 BindingResult 的字段错误聚合逻辑，不构造 MethodArgumentNotValidException
         try {
-            // 直接测试处理逻辑，不通过异常构造
             String message = bindingResult.getFieldErrors().stream()
                     .map(FieldError::getDefaultMessage)
                     .collect(java.util.stream.Collectors.joining("; "));

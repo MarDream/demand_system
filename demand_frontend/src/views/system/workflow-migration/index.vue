@@ -14,8 +14,7 @@ import {
 } from '@/api/modules/workflow-migration'
 import { getVersionHistory } from '@/api/modules/workflow-visual'
 
-// ============ 状态 ============
-
+// --- 状态 ---
 const loading = ref(false)
 const executing = ref(false)
 const plans = ref<MigrationPlanVO[]>([])
@@ -58,8 +57,7 @@ const statusLabels: Record<string, string> = {
   failed: '失败',
 }
 
-// ============ 方法 ============
-
+// --- 方法 ---
 async function loadVersions() {
   try {
     const data = await getVersionHistory(projectId.value)
