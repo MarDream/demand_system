@@ -188,9 +188,9 @@ demand_system/
 `database/init.sql` 是**唯一入口**：在空库上执行一次即可建出全部表结构与基础数据（字典 / 权限 / 角色 / 需求类型 / 工作流模板等），无需再执行任何迁移脚本。
 
 ```bash
-docker exec -i mysql mysql -uroot -padmin123 \
+docker exec -i mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" \
   -e "CREATE DATABASE IF NOT EXISTS demand_system DEFAULT CHARSET utf8mb4 COLLATE utf8mb4_0900_ai_ci"
-docker exec -i mysql mysql -uroot -padmin123 --default-character-set=utf8mb4 \
+docker exec -i mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 \
   demand_system < database/init.sql
 ```
 
@@ -222,8 +222,8 @@ start-all.bat contract   # 导出 OpenAPI 契约到 contracts/openapi/
 | PC 前端 | http://localhost:5170 | dev server |
 | H5 前端 | http://localhost:5175 | dev server |
 | 后端 API | http://localhost:8081 | OpenAPI：`/v3/api-docs` |
-| MinIO 控制台 | http://localhost:9001 | admin / admin123456（仅本地） |
-| RabbitMQ 管理 | http://localhost:15672 | admin / admin（仅本地） |
+| MinIO 控制台 | http://localhost:9001 | 口令见本地容器配置 |
+| RabbitMQ 管理 | http://localhost:15672 | 口令见本地容器配置 |
 
 ---
 
@@ -238,7 +238,8 @@ start-all.bat contract   # 导出 OpenAPI 契约到 contracts/openapi/
 后端 **HTTP CORS**（`CorsConfig`）与 **WebSocket 握手 Origin 校验**（`BitableWebSocketConfig`）读的是**同一个属性** `cors.allowed-origins`，线上由环境变量 `CORS_ALLOWED_ORIGINS` 注入：
 
 ```yaml
-CORS_ALLOWED_ORIGINS: "http://dg.gov.demand.cn,http://19.106.101.220,https://demand.zxmeng.asia"
+# 按实际入口填写，多个用英文逗号分隔；真实值只放部署环境的 compose / 环境变量，不要写进仓库
+CORS_ALLOWED_ORIGINS: "https://<生产域名>,http://<公网IP>"
 ```
 
 - 加域名 = 两个门同时放开；漏域名 = 两个门同时拒。**改完必须 recreate 容器**。
@@ -292,7 +293,7 @@ const WS_BASE = import.meta.env.VITE_WS_URL
 // dev 走 vite 的 /ws 代理、生产走 nginx 的 location /ws/，同源两头都通
 ```
 
-- 校验已构建 / 已部署目录：`node tools/check-dist.mjs /home/www/demand/pc`
+- 校验已构建 / 已部署目录：`node tools/check-dist.mjs <已部署的前端目录>`
 - 守卫自身自测：`node tools/selftest-guard.mjs`
 - 临时放行（**仅限本地验证，勿用于部署**）：`ALLOW_DEV_ADDR=1 npm run build`
 - ⚠️ **不要全量 grep `localhost`**：第三方库自带（`vendor-*.js` 里有），守卫按「模块来源」区分业务 / 第三方，只判业务代码，避免误报。

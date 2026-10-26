@@ -25,8 +25,7 @@ import java.util.List;
  * <p>
  * 历史教训：这里原本写死
  * {@code setAllowedOrigins("http://localhost:5170", "http://127.0.0.1:5170")}，
- * 于是所有真实入口（{@code https://demand.zxmeng.asia} / {@code http://19.106.101.220} /
- * {@code http://dg.gov.demand.cn}）在握手阶段全部被
+ * 于是所有真实入口（生产域名 / 公网 IP / 内网域名等）在握手阶段全部被
  * {@code OriginHandshakeInterceptor} 判为非法 → <b>403（响应体为空）</b>，
  * 而普通 HTTP 接口因为 CORS 配的是另一份白名单，反而是好的 —— 极易误判成"WebSocket 服务端有问题"。
  * <p>

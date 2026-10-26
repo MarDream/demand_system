@@ -24,12 +24,14 @@ E:\Project\mygit\kkFileView  # kkFileView服务源代码，可直接修改适配
 
 | 组件 | 端口 | 账号 | 密码 | 说明 |
 |------|------|------|------|------|
-| MySQL | 3306 | root | admin123 | 数据库: demand_system |
+| MySQL | 3306 | root | 见本地环境 | 数据库: demand_system |
 | Redis | 6379 | - | (无密码) | DB 0 |
-| RabbitMQ | 5672/15672 | admin | admin | 管理界面: http://localhost:15672 |
-| MinIO | 9000/9001 | admin | admin123456 | 控制台: http://localhost:9001 |
+| RabbitMQ | 5672/15672 | admin | 见本地环境 | 管理界面: http://localhost:15672 |
+| MinIO | 9000/9001 | admin | 见本地环境 | 控制台: http://localhost:9001 |
 | Elasticsearch | 9200/9300 | - | - | 无认证 |
 | Milvus | 19530/9091 | - | - | 向量数据库 |
+
+> 本地容器口令属开发环境默认值，**不写入仓库**；实际值以本地 Docker 环境为准。
 
 - JWT: 256位+ secret, Access 2h, Refresh 7d
 - 配置文件: `demand_backend/src/main/resources/application-dev.yml`，启动先加载记录基础设施对应的访问账号密码信息

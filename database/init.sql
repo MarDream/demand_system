@@ -2,9 +2,9 @@
 -- 需求管理系统 - 数据库初始化脚本（唯一入口）
 -- 字符集: utf8mb4, 引擎: InnoDB, 排序规则: utf8mb4_0900_ai_ci
 -- 说明: 一次性完整建表 + 基础数据初始化；在空库上执行一次即可得到完整可运行环境
--- 用法: docker exec -i mysql mysql -uroot -padmin123 --default-character-set=utf8mb4 \
+-- 用法: docker exec -i mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 \
 --         -e "CREATE DATABASE IF NOT EXISTS demand_system DEFAULT CHARSET utf8mb4" \
---       && docker exec -i mysql mysql -uroot -padmin123 --default-character-set=utf8mb4 \
+--       && docker exec -i mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 \
 --         demand_system < database/init.sql
 --
 -- 执行顺序约定（改动本文件时请遵守）：
@@ -1650,7 +1650,7 @@ INSERT IGNORE INTO `positions` (`id`, `name`, `code`, `level`, `description`, `s
 (2, '开发工程师', 'DEV', 2, '负责功能开发和技术实现', 0),
 (3, '测试工程师', 'QA', 2, '负责功能测试和质量保证', 0);
 
--- 用户数据(密码: admin123, BCrypt加密)
+-- 用户数据（初始口令不入库；首次登录后请立即修改）
 INSERT IGNORE INTO `users` (`id`, `username`, `password`, `real_name`, `email`, `phone`, `status`, `region_id`, `org_id`, `job_number`, `created_at`, `updated_at`, `deleted_at`) VALUES
 (1, 'admin', '$2b$12$.SPoAlnnJvD.VajrVmgCdeBTWE/DQ75Ym/P9dGL.3IzT4ewED9QVG', '系统管理员', 'admin@demand.com', '13302613376', 'active', 1, 1, 'A001', NOW(), NOW(), 0);
 

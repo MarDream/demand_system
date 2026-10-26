@@ -261,7 +261,7 @@ VALUES ('assistant.nl2sql', 'AI助手-数据问答(NL2SQL)', '自然语言转只
 应用方式（项目未接入 Flyway，迁移脚本需手动执行）：
 
 ```bash
-docker exec -i mysql mysql -uroot -padmin123 --default-character-set=utf8mb4 demand_system \
+docker exec -i mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 demand_system \
   < database/migrations/V20260914_01__add_nl2sql_data_result.sql
 ```
 

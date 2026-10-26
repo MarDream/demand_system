@@ -1,7 +1,7 @@
 -- 需求附件删除权限点（2026-10-25）
 -- 规则：草稿期拥有我的待办视图权限的用户可删自己上传的附件；
 --       提交审核后需赋权 button:requirement:attachment:delete 才能删除需求附件。
--- 用法: docker exec -i mysql mysql -uroot -padmin123 --default-character-set=utf8mb4 demand_system < 本文件
+-- 用法: docker exec -i mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 demand_system < 本文件
 
 INSERT IGNORE INTO `sys_permissions` (`id`, `code`, `name`, `type`, `description`, `status`) VALUES
 (142, 'button:requirement:attachment:delete', '删除需求附件', 'BUTTON', '需求管理-删除附件(需求提交审核后需赋权才能删除)', 1);

@@ -53,7 +53,7 @@ console.log('\n[selftest-guard] 必须命中的用例');
 catchCase('ws 回环地址', "const u = 'ws://localhost:8081'");
 catchCase('http 回环地址', "const u = 'http://127.0.0.1:8080/api'");
 catchCase('裸 localhost（broad）', "const h = 'localhost'");
-catchCase('私网 192.168 段', "const u = 'http://192.168.110.20:8081/api'");
+catchCase('私网 192.168 段', "const u = 'http://192.168.1.20:8081/api'");
 catchCase('私网 10 段', "const u = 'http://10.1.2.3:9000'");
 catchCase('私网 172.16-31 段', "const u = 'http://172.20.0.5:8080'");
 catchCase('IPv6 回环', "const u = 'http://[::1]:8081'");
@@ -65,7 +65,7 @@ passCase('setHours 零值（曾误报）', 'y.setHours(0,0,0,0); O.setHours(0,0,
 passCase('纯数字串（曾误报）', 'const t = 0000000;');
 passCase('相对路径 API', "const base = '/api'");
 passCase('同源推导 WebSocket', "const ws = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}`");
-passCase('公网域名', "const u = 'https://zwfw.itgov.cc.cd/api'");
+passCase('公网域名', "const u = 'https://example.com/api'");
 passCase('strict 裸 localhost 不带端口', "const h = 'localhost'", 'strict');
 passCase('版本号样式的数字', "const v = '1.2.3.4'");
 passCase('空字符串', '');

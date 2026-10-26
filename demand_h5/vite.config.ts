@@ -65,7 +65,7 @@ function printBuildEnv() {
 
 // https://vitejs.dev/config/
 export default defineConfig(({ command }) => ({
-  // ⚠️ H5 部署在内网 nginx 的**子路径** `/h5/` 下（见 dg.gov.demand.cn.conf 的 location /h5/），
+  // ⚠️ H5 部署在 nginx 的**子路径** `/h5/` 下（见站点 nginx 配置里的 location /h5/），
   //    生产构建必须带 base，否则 index.html 会生成 `/assets/...` **绝对路径** ——
   //    浏览器会去**根路径**取资源（那里是 PC 端的 assets），拿回一段 HTML 当 JS 执行 → 整个 H5 白屏。
   //    2026-10-12 踩过：直接跑 `npm run build`（脚本里没有 --base）导致 H5 白屏，
