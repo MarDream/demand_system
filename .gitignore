@@ -85,6 +85,7 @@ start-claude.bat
 
 # 编辑器 / 本机工具配置
 .zcodeignore
+.zcode/
 
 # Local verification/import scripts & artifacts (contain env-specific creds/logic, do not ship)
 scripts/
