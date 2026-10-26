@@ -1513,6 +1513,8 @@ CREATE TABLE `assistant_messages` (
   `sources` JSON DEFAULT NULL COMMENT '建议来源列表',
   `thinking_steps` JSON DEFAULT NULL COMMENT '思维链步骤（RAG 检索过程，已废弃，迁移到 tasks）',
   `tasks` JSON DEFAULT NULL COMMENT '任务列表（检索过程）',
+  `agent_plan` JSON DEFAULT NULL COMMENT '智能体任务拆分计划（agent 链路）',
+  `agent_trace` JSON DEFAULT NULL COMMENT '智能体执行轨迹（工具调用与子Agent运行记录）',
   `process_summary` TEXT DEFAULT NULL COMMENT '检索过程摘要',
   `retrieved_count` INT DEFAULT NULL COMMENT '命中的片段数量',
   `citations` JSON DEFAULT NULL COMMENT '引用文档列表',
@@ -1535,6 +1537,10 @@ CREATE TABLE `assistant_messages` (
 
 -- 已部署环境升级（assistant_messages 缺 tasks 列会导致 findLatestMessage 抛 Unknown column 'tasks'）：
 -- ALTER TABLE assistant_messages ADD COLUMN tasks JSON DEFAULT NULL COMMENT '任务列表（检索过程）' AFTER thinking_steps;
+-- 已部署环境升级（智能体链路：任务拆分计划与执行轨迹）：
+-- ALTER TABLE assistant_messages
+--   ADD COLUMN agent_plan JSON DEFAULT NULL COMMENT '智能体任务拆分计划（agent 链路）' AFTER tasks,
+--   ADD COLUMN agent_trace JSON DEFAULT NULL COMMENT '智能体执行轨迹（工具调用与子Agent运行记录）' AFTER agent_plan;
 
 -- 49. 用户列配置表 user_column_configs
 DROP TABLE IF EXISTS `user_column_configs`;
@@ -1751,6 +1757,10 @@ INSERT IGNORE INTO `llm_applications` (`code`, `name`, `description`, `model_typ
 VALUES
   ('assistant.chat', '智能助手对话', '右下角智能助手及页面上下文问答', 'chat', NULL, 1, 10, 1),
   ('assistant.nl2sql', 'AI助手-数据问答(NL2SQL)', '自然语言转只读SQL查询业务数据并整合回答', 'chat', NULL, 1, 15, 1),
+  ('assistant.agent.planner', '智能体-任务规划', '复杂问题拆解为子任务', 'chat', NULL, 1, 16, 1),
+  ('assistant.agent.executor', '智能体-工具执行', 'function calling 工具循环主执行', 'chat', NULL, 1, 17, 1),
+  ('assistant.agent.researcher', '智能体-检索调研', '知识库/工单/联网资料检索子Agent', 'chat', NULL, 1, 18, 1),
+  ('assistant.agent.analyst', '智能体-数据分析', 'NL2SQL 数据查证子Agent', 'chat', NULL, 1, 19, 1),
   ('knowledge.intent', '知识库意图识别', '知识库搜索前的问题意图识别与检索词归一化', 'chat', NULL, 1, 20, 2),
   ('knowledge.answer', '知识库问答', '基于检索结果生成知识库回答', 'chat', NULL, 1, 30, 2),
   ('knowledge.embedding', '知识库向量化', '文档切片及查询向量生成', 'embedding', NULL, 1, 40, 2),
