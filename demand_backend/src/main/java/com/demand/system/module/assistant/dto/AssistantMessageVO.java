@@ -4,6 +4,8 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.demand.system.module.assistant.agent.dto.AgentPlan;
+import com.demand.system.module.assistant.agent.dto.AgentTrace;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse.CitationReference;
 import com.demand.system.module.knowledge.dto.KnowledgeSearchResponse.ThinkingStep;
 import com.demand.system.module.nl2sql.dto.DataQueryResult;
@@ -21,6 +23,10 @@ public class AssistantMessageVO {
     private List<AssistantSource> sources = new ArrayList<>();
     private List<ThinkingStep> thinkingSteps;
     private List<AssistantTask> tasks;
+    /** 智能体任务拆分计划（agent 链路） */
+    private AgentPlan agentPlan;
+    /** 智能体执行轨迹（工具调用与子Agent运行记录） */
+    private AgentTrace agentTrace;
     private String processSummary;
     private Integer retrievedCount;
     private List<CitationReference> citations;
@@ -128,6 +134,22 @@ public class AssistantMessageVO {
 
     public void setTasks(List<AssistantTask> tasks) {
         this.tasks = tasks;
+    }
+
+    public AgentPlan getAgentPlan() {
+        return agentPlan;
+    }
+
+    public void setAgentPlan(AgentPlan agentPlan) {
+        this.agentPlan = agentPlan;
+    }
+
+    public AgentTrace getAgentTrace() {
+        return agentTrace;
+    }
+
+    public void setAgentTrace(AgentTrace agentTrace) {
+        this.agentTrace = agentTrace;
     }
 
     public String getProcessSummary() {

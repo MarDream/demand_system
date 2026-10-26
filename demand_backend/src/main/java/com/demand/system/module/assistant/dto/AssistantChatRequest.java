@@ -76,6 +76,16 @@ public class AssistantChatRequest {
     private Boolean dataQuery;
 
     /**
+     * 智能体模式（仅通用助手分支生效）：
+     * <ul>
+     *   <li>auto（默认）：由后端按问题特征智能路由，复杂问题进入智能体编排</li>
+     *   <li>on：强制进入智能体编排（工具调用/任务拆分/子Agent 协同）</li>
+     *   <li>off：强制走原通用链路</li>
+     * </ul>
+     */
+    private String agentMode;
+
+    /**
      * 多轮对话历史（旧→新），用于查询改写（消解指代）与回答上下文；
      * 建议由前端截取最近 3~6 条，后端会再做长度限制。
      */
@@ -151,6 +161,14 @@ public class AssistantChatRequest {
 
     public void setDataQuery(Boolean dataQuery) {
         this.dataQuery = dataQuery;
+    }
+
+    public String getAgentMode() {
+        return agentMode;
+    }
+
+    public void setAgentMode(String agentMode) {
+        this.agentMode = agentMode;
     }
 
     public List<ConversationTurn> getHistory() {

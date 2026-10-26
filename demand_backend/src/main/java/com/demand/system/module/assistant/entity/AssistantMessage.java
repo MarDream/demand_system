@@ -7,6 +7,8 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
+import com.demand.system.module.assistant.agent.dto.AgentPlan;
+import com.demand.system.module.assistant.agent.dto.AgentTrace;
 import com.demand.system.module.assistant.dto.AssistantAction;
 import com.demand.system.module.assistant.dto.AssistantPageContext;
 import com.demand.system.module.assistant.dto.AssistantSource;
@@ -54,6 +56,14 @@ public class AssistantMessage {
     /** 任务列表（检索过程，对标 WorkBuddy 任务列表） */
     @TableField(typeHandler = JacksonTypeHandler.class)
     private List<AssistantTask> tasks;
+
+    /** 智能体任务拆分计划（agent 链路） */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private AgentPlan agentPlan;
+
+    /** 智能体执行轨迹（工具调用与子Agent运行记录，agent 链路） */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private AgentTrace agentTrace;
 
     /** 检索过程摘要（RAG 问答时填充） */
     private String processSummary;
@@ -192,6 +202,22 @@ public class AssistantMessage {
 
     public void setTasks(List<AssistantTask> tasks) {
         this.tasks = tasks;
+    }
+
+    public AgentPlan getAgentPlan() {
+        return agentPlan;
+    }
+
+    public void setAgentPlan(AgentPlan agentPlan) {
+        this.agentPlan = agentPlan;
+    }
+
+    public AgentTrace getAgentTrace() {
+        return agentTrace;
+    }
+
+    public void setAgentTrace(AgentTrace agentTrace) {
+        this.agentTrace = agentTrace;
     }
 
     public String getProcessSummary() {

@@ -6,6 +6,7 @@ import com.demand.system.module.assistant.dto.AssistantMessageVO;
 import com.demand.system.module.assistant.dto.AssistantRegenerateRequest;
 import com.demand.system.module.assistant.dto.AssistantSessionCreateDTO;
 import com.demand.system.module.assistant.dto.AssistantSessionVO;
+import com.demand.system.module.assistant.dto.AssistantToolConfirmDTO;
 import com.demand.system.module.assistant.dto.ExtractedQuestionVO;
 import com.demand.system.module.assistant.dto.QuickQuestionCreateDTO;
 import com.demand.system.module.assistant.dto.QuickQuestionVO;
@@ -75,6 +76,17 @@ public class AssistantController {
     @PreAuthorize("isAuthenticated()")
     public SseEmitter regenerateMessage(@PathVariable Long sessionId, @Valid @RequestBody AssistantRegenerateRequest request) {
         return assistantService.regenerateMessage(sessionId, request);
+    }
+
+    /**
+     * 智能体写操作工具确认回填：用户在聊天内的确认卡片上点击允许/拒绝。
+     *
+     * @return 是否命中有效待确认请求
+     */
+    @PostMapping("/tool-confirm")
+    @PreAuthorize("isAuthenticated()")
+    public Result<Boolean> confirmToolCall(@Valid @RequestBody AssistantToolConfirmDTO dto) {
+        return Result.success(assistantService.confirmToolCall(dto.getRequestId(), Boolean.TRUE.equals(dto.getApproved())));
     }
 
     // --- 快捷提问 API ---

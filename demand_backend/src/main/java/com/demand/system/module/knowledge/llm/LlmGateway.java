@@ -461,6 +461,270 @@ public class LlmGateway {
         }
     }
 
+    /**
+     * 带工具定义的多轮对话（智能体循环专用，非流式）。
+     * <p>消息列表支持 user / assistant（可携带 toolCalls）/ tool（工具执行结果）三类角色，
+     * 按协议分别组装为 OpenAI tool_calls 格式或 Anthropic tool_use/tool_result block 格式。
+     * 返回结果要么带 toolCalls（需执行工具后把结果追加进消息列表继续下一轮），
+     * 要么为纯文本（模型选择直接作答）。</p>
+     */
+    public ToolChatResult chatWithTools(LlmGatewayConfig.Provider provider,
+                                        String systemPrompt,
+                                        List<AgentChatMessage> messages,
+                                        List<ToolDefinition> tools,
+                                        BigDecimal temperature,
+                                        Integer maxTokens) {
+        long start = System.currentTimeMillis();
+        try {
+            Protocol protocol = config.resolveProtocol(provider);
+            Map<String, Object> body = protocol == Protocol.ANTHROPIC
+                    ? buildAnthropicToolBody(provider, systemPrompt, messages, tools, temperature, maxTokens)
+                    : buildOpenAIToolBody(provider, systemPrompt, messages, tools, temperature, maxTokens);
+            String path = protocol == Protocol.ANTHROPIC ? "/messages" : "/chat/completions";
+            JsonNode root = call(provider, path, body);
+            return parseToolChatResult(root, protocol, System.currentTimeMillis() - start);
+        } catch (Exception e) {
+            throw new RuntimeException("Chat(tools)调用失败: " + describeApiException(e), e);
+        }
+    }
+
+    Map<String, Object> buildOpenAIToolBody(LlmGatewayConfig.Provider provider,
+                                                    String systemPrompt,
+                                                    List<AgentChatMessage> messages,
+                                                    List<ToolDefinition> tools,
+                                                    BigDecimal temperature,
+                                                    Integer maxTokens) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("model", provider.getModel());
+        List<Map<String, Object>> openAiMessages = new ArrayList<>();
+        openAiMessages.add(Map.of("role", "system", "content", systemPrompt == null ? "" : systemPrompt));
+        for (AgentChatMessage message : messages) {
+            openAiMessages.add(toOpenAiMessage(message));
+        }
+        body.put("messages", openAiMessages);
+        body.put("temperature", normalizeTemperature(temperature));
+        body.put("max_tokens", normalizeMaxTokens(maxTokens));
+        if (tools != null && !tools.isEmpty()) {
+            body.put("tools", toOpenAiTools(tools));
+            body.put("tool_choice", "auto");
+        }
+        return body;
+    }
+
+    private Map<String, Object> toOpenAiMessage(AgentChatMessage message) {
+        Map<String, Object> item = new HashMap<>();
+        switch (message.getRole() == null ? "" : message.getRole()) {
+            case "assistant" -> {
+                item.put("role", "assistant");
+                item.put("content", message.getContent() == null ? "" : message.getContent());
+                if (message.getToolCalls() != null && !message.getToolCalls().isEmpty()) {
+                    List<Map<String, Object>> toolCalls = new ArrayList<>();
+                    for (ToolCallPayload call : message.getToolCalls()) {
+                        toolCalls.add(Map.of(
+                                "id", call.getId() == null ? "" : call.getId(),
+                                "type", "function",
+                                "function", Map.of(
+                                        "name", call.getName() == null ? "" : call.getName(),
+                                        "arguments", call.getArgumentsJson() == null ? "{}" : call.getArgumentsJson())
+                        ));
+                    }
+                    item.put("tool_calls", toolCalls);
+                }
+            }
+            case "tool" -> {
+                item.put("role", "tool");
+                item.put("tool_call_id", message.getToolCallId() == null ? "" : message.getToolCallId());
+                item.put("content", message.getContent() == null ? "" : message.getContent());
+            }
+            default -> {
+                item.put("role", "user");
+                item.put("content", message.getContent() == null ? "" : message.getContent());
+            }
+        }
+        return item;
+    }
+
+    private List<Map<String, Object>> toOpenAiTools(List<ToolDefinition> tools) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (ToolDefinition tool : tools) {
+            Map<String, Object> function = new HashMap<>();
+            function.put("name", tool.getName());
+            function.put("description", tool.getDescription() == null ? "" : tool.getDescription());
+            function.put("parameters",
+                    tool.getParametersSchema() == null ? Map.of("type", "object") : tool.getParametersSchema());
+            result.add(Map.of("type", "function", "function", function));
+        }
+        return result;
+    }
+
+    /**
+     * Anthropic 工具对话请求体：连续的 tool 结果合并进同一条 user 消息的 tool_result block
+     * （Anthropic 要求 assistant tool_use 后紧跟 tool_result，且同轮多个结果放同一 user 消息）。
+     */
+    Map<String, Object> buildAnthropicToolBody(LlmGatewayConfig.Provider provider,
+                                                       String systemPrompt,
+                                                       List<AgentChatMessage> messages,
+                                                       List<ToolDefinition> tools,
+                                                       BigDecimal temperature,
+                                                       Integer maxTokens) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("model", provider.getModel());
+        body.put("max_tokens", normalizeMaxTokens(maxTokens));
+        body.put("system", systemPrompt == null ? "" : systemPrompt);
+        body.put("temperature", normalizeTemperature(temperature));
+        body.put("messages", toAnthropicMessages(messages));
+        if (tools != null && !tools.isEmpty()) {
+            List<Map<String, Object>> toolDefs = new ArrayList<>();
+            for (ToolDefinition tool : tools) {
+                toolDefs.add(Map.of(
+                        "name", tool.getName(),
+                        "description", tool.getDescription() == null ? "" : tool.getDescription(),
+                        "input_schema", tool.getParametersSchema() == null
+                                ? Map.of("type", "object") : tool.getParametersSchema()
+                ));
+            }
+            body.put("tools", toolDefs);
+        }
+        return body;
+    }
+
+    private List<Map<String, Object>> toAnthropicMessages(List<AgentChatMessage> messages) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        List<Map<String, Object>> pendingToolResults = null;
+        for (AgentChatMessage message : messages) {
+            String role = message.getRole() == null ? "" : message.getRole();
+            if ("tool".equals(role)) {
+                if (pendingToolResults == null) {
+                    pendingToolResults = new ArrayList<>();
+                }
+                pendingToolResults.add(Map.of(
+                        "type", "tool_result",
+                        "tool_use_id", message.getToolCallId() == null ? "" : message.getToolCallId(),
+                        "content", message.getContent() == null ? "" : message.getContent()
+                ));
+                continue;
+            }
+            // 非工具结果消息前，把累计的 tool_result 们作为一条 user 消息落盘
+            if (pendingToolResults != null) {
+                result.add(Map.of("role", "user", "content", pendingToolResults));
+                pendingToolResults = null;
+            }
+            if ("assistant".equals(role)) {
+                List<Map<String, Object>> blocks = new ArrayList<>();
+                if (message.getContent() != null && !message.getContent().isEmpty()) {
+                    blocks.add(Map.of("type", "text", "text", message.getContent()));
+                }
+                if (message.getToolCalls() != null) {
+                    for (ToolCallPayload call : message.getToolCalls()) {
+                        blocks.add(Map.of(
+                                "type", "tool_use",
+                                "id", call.getId() == null ? "" : call.getId(),
+                                "name", call.getName() == null ? "" : call.getName(),
+                                "input", parseToolArguments(call.getArgumentsJson())
+                        ));
+                    }
+                }
+                if (blocks.isEmpty()) {
+                    blocks.add(Map.of("type", "text", "text", ""));
+                }
+                result.add(Map.of("role", "assistant", "content", blocks));
+            } else {
+                result.add(Map.of("role", "user", "content",
+                        message.getContent() == null ? "" : message.getContent()));
+            }
+        }
+        if (pendingToolResults != null) {
+            result.add(Map.of("role", "user", "content", pendingToolResults));
+        }
+        return result;
+    }
+
+    /** 工具入参 JSON 字符串解析为节点；非法 JSON 时退化为空对象，避免整轮请求失败 */
+    private JsonNode parseToolArguments(String argumentsJson) {
+        if (argumentsJson == null || argumentsJson.isBlank()) {
+            return objectMapper.createObjectNode();
+        }
+        try {
+            return objectMapper.readTree(argumentsJson);
+        } catch (Exception e) {
+            return objectMapper.createObjectNode();
+        }
+    }
+
+    ToolChatResult parseToolChatResult(JsonNode root, Protocol protocol, long durationMs) {
+        ToolChatResult result = new ToolChatResult();
+        result.setDurationMs(durationMs);
+        List<ToolCallPayload> toolCalls = new ArrayList<>();
+        if (protocol == Protocol.ANTHROPIC) {
+            StringBuilder text = new StringBuilder();
+            StringBuilder thinking = new StringBuilder();
+            JsonNode content = root.path("content");
+            if (content.isArray()) {
+                for (JsonNode block : content) {
+                    String type = block.path("type").asText("");
+                    if ("text".equals(type)) {
+                        text.append(block.path("text").asText(""));
+                    } else if ("thinking".equals(type)) {
+                        thinking.append(block.path("thinking").asText(""));
+                    } else if ("tool_use".equals(type)) {
+                        JsonNode input = block.path("input");
+                        toolCalls.add(new ToolCallPayload(
+                                block.path("id").asText(null),
+                                block.path("name").asText(null),
+                                input.isMissingNode() ? "{}" : input.toString()));
+                    }
+                }
+            }
+            result.setContent(text.toString());
+            result.setReasoningContent(thinking.length() > 0 ? thinking.toString() : null);
+            result.setFinishReason(root.path("stop_reason").asText(null));
+            JsonNode usageNode = root.path("usage");
+            if (usageNode.isObject()) {
+                LlmGateway.ChatUsage usage = new ChatUsage();
+                if (usageNode.has("input_tokens")) {
+                    usage.setPromptTokens(usageNode.get("input_tokens").asInt());
+                }
+                if (usageNode.has("output_tokens")) {
+                    usage.setCompletionTokens(usageNode.get("output_tokens").asInt());
+                }
+                result.setUsage(usage);
+            }
+        } else {
+            JsonNode message = root.path("choices").path(0).path("message");
+            result.setContent(message.path("content").asText(""));
+            JsonNode reasoning = message.path("reasoning_content");
+            if (reasoning.isTextual()) {
+                result.setReasoningContent(reasoning.asText());
+            }
+            JsonNode callsNode = message.path("tool_calls");
+            if (callsNode.isArray()) {
+                for (JsonNode call : callsNode) {
+                    toolCalls.add(new ToolCallPayload(
+                            call.path("id").asText(null),
+                            call.path("function").path("name").asText(null),
+                            call.path("function").path("arguments").asText("{}")));
+                }
+            }
+            result.setFinishReason(root.path("choices").path(0).path("finish_reason").asText(null));
+            JsonNode usageNode = root.path("usage");
+            if (usageNode.isObject()) {
+                LlmGateway.ChatUsage usage = new ChatUsage();
+                if (usageNode.has("prompt_tokens")) {
+                    usage.setPromptTokens(usageNode.get("prompt_tokens").asInt());
+                }
+                if (usageNode.has("completion_tokens")) {
+                    usage.setCompletionTokens(usageNode.get("completion_tokens").asInt());
+                }
+                if (usageNode.has("total_tokens")) {
+                    usage.setTotalTokens(usageNode.get("total_tokens").asInt());
+                }
+                result.setUsage(usage);
+            }
+        }
+        result.setToolCalls(toolCalls);
+        return result;
+    }
+
     private ChatResult parseChatResult(JsonNode root, Protocol protocol, long durationMs) {
         String content;
         String reasoning = null;

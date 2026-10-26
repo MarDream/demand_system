@@ -191,13 +191,27 @@
 
         <div class="assistant-panel" :class="{ 'assistant-panel--fullscreen': windowMode === 'maximized' }">
           <div class="assistant-panel__body">
-          <aside class="assistant-session-list" :class="{ 'is-collapsed': sessionListCollapsed }">
+          <aside
+            class="assistant-session-list"
+            :class="{ 'is-collapsed': sessionListCollapsed, 'is-list-resizing': isListResizing }"
+            :style="sessionListCollapsed ? undefined : sessionListWidthStyle"
+          >
             <template v-if="!sessionListCollapsed">
             <!-- 标题栏只保留「新会话 +」；侧栏显隐统一交给 header 左侧的折叠按钮，
                  避免出现"两处都能折叠"的双入口 -->
             <div class="assistant-session-list__header">
               <el-icon class="assistant-session-list__header-icon"><Folder /></el-icon>
               <span>会话</span>
+              <el-tooltip content="批量管理" placement="bottom">
+                <button
+                  type="button"
+                  class="assistant-session-list__new-btn"
+                  :class="{ 'is-active': sessionBatchMode }"
+                  @click="toggleSessionBatchMode"
+                >
+                  <el-icon><List /></el-icon>
+                </button>
+              </el-tooltip>
               <el-tooltip content="新会话" placement="right">
                 <button type="button" class="assistant-session-list__new-btn" @click="handleCreateSession">
                   <el-icon><Plus /></el-icon>
@@ -235,18 +249,34 @@
                   <el-icon class="assistant-session-group__chevron" :class="{ 'is-folded': isGroupFolded(group.key) }"><CaretRight /></el-icon>
                   <span>{{ group.label }}</span>
                   <span v-if="isGroupFolded(group.key)" class="assistant-session-group__count">{{ group.items.length }}</span>
+                  <el-checkbox
+                    v-if="sessionBatchMode"
+                    class="assistant-session-group__select"
+                    :model-value="isGroupAllSelected(group)"
+                    :indeterminate="!isGroupAllSelected(group) && group.items.some(s => selectedSessionIds.has(s.id))"
+                    @click.stop
+                    @change="toggleGroupSelect(group)"
+                  />
                 </button>
                 <div v-show="!isGroupFolded(group.key)" class="assistant-session-group__items">
                   <div
                     v-for="session in group.items"
                     :key="session.id"
                     class="assistant-session-item"
-                    :class="{ 'is-active': session.id === activeSessionId }"
-                    @click="handleSelectSession(session.id)"
+                    :class="{ 'is-active': !sessionBatchMode && session.id === activeSessionId }"
+                    @click="sessionBatchMode ? toggleSessionSelect(session.id) : handleSelectSession(session.id)"
                   >
+                    <el-checkbox
+                      v-if="sessionBatchMode"
+                      class="assistant-session-item__select"
+                      :model-value="isSessionSelected(session.id)"
+                      @click.stop
+                      @change="toggleSessionSelect(session.id)"
+                    />
                     <span class="assistant-session-item__title">{{ session.title || '新会话' }}</span>
                     <span class="assistant-session-item__time">{{ formatSessionTime(session.lastMessageAt || session.updatedAt) }}</span>
                     <el-icon
+                      v-if="!sessionBatchMode"
                       class="assistant-session-item__delete"
                       @click.stop="handleDeleteSession(session.id)"
                     >
@@ -257,9 +287,23 @@
               </div>
             </div>
 
-            <!-- 底部信息 -->
-            <div class="assistant-session-list__footer">
-              {{ sessions.length }} 个会话
+            <!-- 底部信息：普通态显示会话数；批量态显示已选数量与删除入口 -->
+            <div class="assistant-session-list__footer" :class="{ 'is-batch': sessionBatchMode }">
+              <template v-if="sessionBatchMode">
+                <span class="assistant-session-list__batch-hint">已选 {{ selectedSessionCount }}</span>
+                <el-button
+                  size="small"
+                  type="danger"
+                  plain
+                  :disabled="selectedSessionCount === 0"
+                  @click="handleBatchDeleteSessions"
+                >
+                  删除
+                </el-button>
+              </template>
+              <template v-else>
+                {{ sessions.length }} 个会话
+              </template>
             </div>
             </template>
 
@@ -279,6 +323,14 @@
               <el-icon class="assistant-session-list__rail-icon"><Expand /></el-icon>
               <span class="assistant-session-list__rail-text">会话</span>
             </div>
+
+            <!-- 右缘拖拽手柄：自由调整会话栏宽度（收起态隐藏） -->
+            <div
+              v-if="!sessionListCollapsed"
+              class="assistant-session-list__resizer"
+              :class="{ 'is-resizing': isListResizing }"
+              @mousedown="startSessionListResize"
+            />
           </aside>
 
           <section class="assistant-chat">
@@ -340,6 +392,14 @@
                     <span v-if="message.status === 'streaming' && message.content" class="assistant-streaming-cursor">|</span>
                   </div>
 
+                  <!-- 智能体写操作确认卡片（内联，允许/拒绝后移除） -->
+                  <AssistantToolConfirmCard
+                    v-for="entry in message.pendingPermissions || []"
+                    :key="entry.requestId"
+                    :payload="entry"
+                    @confirm="handleToolConfirm"
+                  />
+
                   <!-- 数据问答结果（NL2SQL：结果表 + 图表 + SQL） -->
                   <AssistantDataResult
                     v-if="message.role === 'assistant' && message.dataResult"
@@ -372,6 +432,16 @@
                       <div class="assistant-reasoning__content">{{ message.reasoning }}</div>
                     </div>
                   </div>
+
+                  <!-- 智能体执行过程（任务拆分 / 子Agent / 工具调用） -->
+                  <AssistantAgentPanel
+                    v-if="message.role === 'assistant'
+                      && (message.agentPlan?.subtasks?.length || message.agentTrace?.subAgents?.length || message.agentTrace?.toolCalls?.length)"
+                    :plan="message.agentPlan"
+                    :trace="message.agentTrace"
+                    :is-streaming="message.status === 'streaming'"
+                    class="assistant-message__task-panel"
+                  />
 
                   <!-- 任务列表（检索过程，对标 WorkBuddy） -->
                   <AssistantTaskPanel
@@ -820,12 +890,14 @@ import type { CSSProperties } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ChatDotRound, CopyDocument, Cpu, Delete, Document, FolderAdd, InfoFilled, MagicStick, Promotion, ArrowDown, FullScreen, RefreshRight, ScaleToOriginal, Plus, Close, VideoPause, Link, Search, Folder, CaretRight, Fold, Expand, BottomRight } from '@element-plus/icons-vue'
+import { ChatDotRound, CopyDocument, Cpu, Delete, Document, FolderAdd, InfoFilled, MagicStick, Promotion, ArrowDown, FullScreen, RefreshRight, ScaleToOriginal, Plus, Close, VideoPause, Link, Search, Folder, CaretRight, Fold, Expand, BottomRight, List } from '@element-plus/icons-vue'
 import MarkdownContent from '@/components/common/MarkdownContent.vue'
 import FollowUpChips from '@/components/assistant/FollowUpChips.vue'
 import AssistantAvatar from '@/components/assistant/avatars/AssistantAvatar.vue'
 import AssistantTaskPanel from '@/components/assistant/AssistantTaskPanel.vue'
 import AssistantDataResult from '@/components/assistant/AssistantDataResult.vue'
+import AssistantAgentPanel from '@/components/assistant/AssistantAgentPanel.vue'
+import AssistantToolConfirmCard from '@/components/assistant/AssistantToolConfirmCard.vue'
 import { getToken } from '@/utils/auth'
 import { formatFileSize } from '@/utils/format'
 import { useAssistantStore, ASSISTANT_FAB_POSITION_KEY } from '@/stores/assistant'
@@ -873,7 +945,105 @@ const quickQuestions = useQuickQuestions({
 // --- 会话搜索与分组 ---
 const sessionSearchKeyword = ref('')
 // 历史会话按时间分组，各组可独立折叠；折叠偏好持久化到 localStorage
-const { toggle: toggleGroupFold, isFolded: isGroupFolded } = useFoldState('assistant.session-groups-folded')
+const { toggle: toggleGroupFold, isFolded: isGroupFolded, hasStoredPreference: hasGroupFoldPreference } = useFoldState('assistant.session-groups-folded')
+
+// ===== 会话栏宽度拖拽 =====
+const SESSION_LIST_WIDTH_KEY = 'assistant.session-list-width'
+const SESSION_LIST_WIDTH_MIN = 160
+const SESSION_LIST_WIDTH_MAX = 400
+const sessionListWidth = ref((() => {
+  try {
+    const raw = Number(window.localStorage.getItem(SESSION_LIST_WIDTH_KEY))
+    return raw >= SESSION_LIST_WIDTH_MIN && raw <= SESSION_LIST_WIDTH_MAX ? raw : 200
+  } catch {
+    return 200
+  }
+})())
+const isListResizing = ref(false)
+
+function startSessionListResize(e: MouseEvent) {
+  e.preventDefault()
+  isListResizing.value = true
+  const startX = e.clientX
+  const startWidth = sessionListWidth.value
+
+  const onMove = (ev: MouseEvent) => {
+    sessionListWidth.value = Math.min(SESSION_LIST_WIDTH_MAX, Math.max(SESSION_LIST_WIDTH_MIN, startWidth + (ev.clientX - startX)))
+  }
+  const onUp = () => {
+    isListResizing.value = false
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    try {
+      window.localStorage.setItem(SESSION_LIST_WIDTH_KEY, String(sessionListWidth.value))
+    } catch {
+      // 存储不可用时静默降级
+    }
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+}
+
+const sessionListWidthStyle = computed(() => ({ width: `${sessionListWidth.value}px` }))
+
+// ===== 会话批量管理 =====
+const sessionBatchMode = ref(false)
+const selectedSessionIds = ref<Set<number>>(new Set())
+
+function toggleSessionBatchMode() {
+  sessionBatchMode.value = !sessionBatchMode.value
+  selectedSessionIds.value = new Set()
+}
+
+function isSessionSelected(sessionId: number) {
+  return selectedSessionIds.value.has(sessionId)
+}
+
+function toggleSessionSelect(sessionId: number) {
+  const next = new Set(selectedSessionIds.value)
+  if (next.has(sessionId)) {
+    next.delete(sessionId)
+  } else {
+    next.add(sessionId)
+  }
+  selectedSessionIds.value = next
+}
+
+function isGroupAllSelected(group: SessionGroup) {
+  return group.items.length > 0 && group.items.every(s => selectedSessionIds.value.has(s.id))
+}
+
+function toggleGroupSelect(group: SessionGroup) {
+  const next = new Set(selectedSessionIds.value)
+  const allSelected = isGroupAllSelected(group)
+  group.items.forEach(s => (allSelected ? next.delete(s.id) : next.add(s.id)))
+  selectedSessionIds.value = next
+}
+
+const selectedSessionCount = computed(() => selectedSessionIds.value.size)
+
+async function handleBatchDeleteSessions() {
+  const ids = [...selectedSessionIds.value]
+  if (ids.length === 0) {
+    ElMessage.warning('请先勾选要删除的会话')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(`将删除选中的 ${ids.length} 个会话及其问答记录，是否继续？`, '批量删除会话', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+    })
+  } catch {
+    return
+  }
+  await assistantStore.removeSessions(ids)
+  selectedSessionIds.value = new Set()
+  ElMessage.success(`已删除 ${ids.length} 个会话`)
+  if (sessions.value.length === 0) {
+    sessionBatchMode.value = false
+  }
+}
 
 // --- 会话侧栏收起/展开 ---
 // 收起后侧栏变为窄条（仅保留展开按钮），偏好持久化到 localStorage
@@ -911,36 +1081,80 @@ const filteredSessionGroups = computed<SessionGroup[]>(() => {
     )
   }
 
-  // 按日期分组：今天、昨天、本周、更早
+  // 按日期分组：今天、昨天、本周，再往前的会话按具体日期各自成组（日期倒序）
   const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const yesterday = new Date(today.getTime() - 86400000)
-  const weekAgo = new Date(today.getTime() - 7 * 86400000)
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const yesterdayStart = todayStart - 86400000
+  const weekStart = todayStart - 7 * 86400000
 
-  const groups: Record<string, SessionGroup> = {
-    today: { key: 'today', label: '今天', items: [] },
-    yesterday: { key: 'yesterday', label: '昨天', items: [] },
-    thisWeek: { key: 'thisWeek', label: '本周', items: [] },
-    earlier: { key: 'earlier', label: '更早', items: [] },
-  }
+  const groups: SessionGroup[] = [
+    { key: 'today', label: '今天', items: [] },
+    { key: 'yesterday', label: '昨天', items: [] },
+    { key: 'thisWeek', label: '本周', items: [] },
+  ]
+  const dateGroupMap = new Map<string, SessionGroup & { sortTime: number }>()
+  let unknownItems: typeof sessions.value = []
 
   for (const s of filtered) {
     const t = new Date(s.lastMessageAt || s.updatedAt || s.createdAt || '')
     if (isNaN(t.getTime())) {
-      groups.earlier.items.push(s)
-    } else if (t >= today) {
-      groups.today.items.push(s)
-    } else if (t >= yesterday) {
-      groups.yesterday.items.push(s)
-    } else if (t >= weekAgo) {
-      groups.thisWeek.items.push(s)
+      unknownItems.push(s)
+      continue
+    }
+    const time = t.getTime()
+    if (time >= todayStart) {
+      groups[0].items.push(s)
+    } else if (time >= yesterdayStart) {
+      groups[1].items.push(s)
+    } else if (time >= weekStart) {
+      groups[2].items.push(s)
     } else {
-      groups.earlier.items.push(s)
+      // 本周之前：按自然日分组，跨年日期带年份
+      const dayStart = new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime()
+      const key = `date-${dayStart}`
+      let group = dateGroupMap.get(key)
+      if (!group) {
+        const sameYear = t.getFullYear() === now.getFullYear()
+        group = {
+          key,
+          label: sameYear
+            ? `${t.getMonth() + 1}月${t.getDate()}日`
+            : `${t.getFullYear()}年${t.getMonth() + 1}月${t.getDate()}日`,
+          items: [],
+          sortTime: dayStart,
+        }
+        dateGroupMap.set(key, group)
+      }
+      group.items.push(s)
     }
   }
 
-  return Object.values(groups).filter(g => g.items.length > 0)
+  // 日期组按日期倒序（最近在前）
+  const dateGroups = [...dateGroupMap.values()].sort((a, b) => b.sortTime - a.sortTime)
+  const result = [...groups.slice(0, 3), ...dateGroups]
+  if (unknownItems.length > 0) {
+    result.push({ key: 'unknown', label: '更早', items: unknownItems })
+  }
+  return result.filter(g => g.items.length > 0)
 })
+
+/**
+ * 默认折叠策略：用户无折叠偏好时，仅展开最近日期分组（第一个非空组），其余折叠，
+ * 避免会话多时整列被「更早」淹没。用户手动折叠/展开任一组即记住偏好，之后不再套用默认。
+ */
+const groupFoldDefaultsApplied = ref(false)
+watch(filteredSessionGroups, (groups) => {
+  if (groupFoldDefaultsApplied.value || groups.length === 0) return
+  if (hasGroupFoldPreference()) {
+    groupFoldDefaultsApplied.value = true
+    return
+  }
+  const latestKey = groups[0].key
+  groups.forEach((group) => {
+    if (group.key !== latestKey && !isGroupFolded(group.key)) toggleGroupFold(group.key)
+  })
+  groupFoldDefaultsApplied.value = true
+}, { immediate: true })
 
 function formatSessionTime(value?: string | null) {
   if (!value) return ''
@@ -1005,6 +1219,11 @@ function buildAssistantSearchScopes(): AssistantSearchScope[] | undefined {
 
 // --- 联网搜索（仅通用助手模式生效） ---
 const webSearchEnabled = ref<boolean>(false)
+
+/** 智能体写操作确认卡片回填：允许/拒绝并从消息中移除卡片 */
+function handleToolConfirm(requestId: string, approved: boolean) {
+  assistantStore.confirmPermission(requestId, approved)
+}
 
 // --- 文档预览 ---
 const previewVisible = ref(false)
@@ -3097,6 +3316,30 @@ onBeforeUnmount(() => {
   background: var(--color-background);
   overflow: hidden;
   transition: width 0.2s ease;
+  position: relative;
+  flex-shrink: 0;
+
+  // 拖拽调宽中：关闭宽度过渡，避免手感发粘
+  &.is-list-resizing {
+    transition: none;
+    user-select: none;
+  }
+}
+
+.assistant-session-list__resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 7px;
+  cursor: col-resize;
+  z-index: 30;
+  transition: background-color 0.15s ease;
+
+  &:hover,
+  &.is-resizing {
+    background: var(--color-accent-overlay, rgba(64, 158, 255, 0.25));
+  }
 }
 
 .assistant-session-list__header {
@@ -3269,6 +3512,26 @@ onBeforeUnmount(() => {
   border-radius: 8px;
 }
 
+// 批量模式：组头全选框 + 会话行勾选框
+.assistant-session-group__select {
+  margin-left: auto;
+  margin-right: 2px;
+  height: auto;
+
+  :deep(.el-checkbox__label) {
+    display: none;
+  }
+}
+
+.assistant-session-item__select {
+  margin-right: 2px;
+  height: auto;
+
+  :deep(.el-checkbox__label) {
+    display: none;
+  }
+}
+
 .assistant-session-item {
   position: relative;
   display: flex;
@@ -3348,6 +3611,22 @@ onBeforeUnmount(() => {
   border-top: 1px solid var(--color-border);
   font-size: 10px;
   color: var(--color-muted-text);
+
+  // 批量态：已选数量 + 删除按钮
+  &.is-batch {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 12px;
+  }
+}
+
+.assistant-session-list__batch-hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 滚动容器 */
@@ -4411,6 +4690,20 @@ onBeforeUnmount(() => {
   line-height: 1;
   cursor: pointer;
   transition: border-color 0.2s, color 0.2s, background 0.2s;
+  /* 允许收缩并在文本处截断，避免挤占发送按钮空间造成重叠 */
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 200px;
+}
+
+.assistant-composer__model-btn > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.assistant-composer__footer > .el-button {
   flex-shrink: 0;
 }
 

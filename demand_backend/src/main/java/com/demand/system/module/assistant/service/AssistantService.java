@@ -22,4 +22,11 @@ public interface AssistantService {
     SseEmitter streamMessage(Long sessionId, AssistantChatRequest request);
 
     SseEmitter regenerateMessage(Long sessionId, AssistantRegenerateRequest request);
+
+    /**
+     * 用户对写操作工具确认卡片的回填决议。
+     *
+     * @return 是否命中有效待确认请求（超时/不存在/非本人会话均返回 false）
+     */
+    boolean confirmToolCall(String requestId, boolean approved);
 }

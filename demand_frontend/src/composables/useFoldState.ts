@@ -36,5 +36,14 @@ export function useFoldState(storageKey: string) {
     return !!folded[key]
   }
 
-  return { folded, toggle, isFolded }
+  /** 用户是否已有折叠偏好（localStorage 有记录）。无偏好时调用方可应用默认折叠策略 */
+  function hasStoredPreference() {
+    try {
+      return !!window.localStorage.getItem(storageKey)
+    } catch {
+      return false
+    }
+  }
+
+  return { folded, toggle, isFolded, hasStoredPreference }
 }

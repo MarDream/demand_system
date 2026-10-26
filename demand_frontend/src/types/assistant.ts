@@ -104,6 +104,65 @@ export interface AssistantTask {
   logs: TaskLog[]
 }
 
+// --- 智能体（Agent）链路类型 ---
+
+/** 规划器拆分出的子任务 */
+export interface AgentSubTaskInfo {
+  type: 'research' | 'data_analysis' | 'navigation' | 'general' | string
+  title: string
+  instruction: string
+}
+
+/** 智能体任务拆分计划 */
+export interface AgentPlanInfo {
+  subtasks: AgentSubTaskInfo[]
+}
+
+/** 一次工具调用记录（toolCall 事件与消息轨迹共用） */
+export interface ToolCallRecord {
+  id: string
+  agentId: string
+  toolName: string
+  title: string
+  argsPreview?: string | null
+  status: 'pending' | 'running' | 'awaiting_confirm' | 'confirmed' | 'denied' | 'completed' | 'failed'
+  resultPreview?: string | null
+  startedAt?: number | null
+  completedAt?: number | null
+}
+
+/** 子 Agent 运行状态（subagent 事件） */
+export interface SubAgentRun {
+  id: string
+  type: string
+  title: string
+  instruction?: string | null
+  modelLabel?: string | null
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  summary?: string | null
+  startedAt?: number | null
+  completedAt?: number | null
+  toolCalls: ToolCallRecord[]
+}
+
+/** 智能体执行轨迹（消息回放用） */
+export interface AgentTrace {
+  routeReason?: string | null
+  plan?: AgentPlanInfo | null
+  subAgents?: SubAgentRun[]
+  toolCalls?: ToolCallRecord[]
+  rounds?: number
+}
+
+/** 写操作待确认请求（permissionRequest 事件） */
+export interface PermissionRequestPayload {
+  requestId: string
+  toolCallId: string
+  toolName: string
+  title: string
+  argsPreview: string
+}
+
 export interface CitationSnippet {
   content?: string | null
   sectionTitle?: string | null
@@ -152,6 +211,12 @@ export interface AssistantMessage {
   thinkingSteps?: ThinkingStep[]
   /** 任务列表（检索过程） */
   tasks?: AssistantTask[]
+  /** 智能体任务拆分计划（agent 链路） */
+  agentPlan?: AgentPlanInfo | null
+  /** 智能体执行轨迹（agent 链路） */
+  agentTrace?: AgentTrace | null
+  /** 流式过程中的写操作确认请求（本地状态，不落库） */
+  pendingPermissions?: PermissionRequestPayload[]
   processSummary?: string | null
   retrievedCount?: number | null
   citations?: CitationReference[]
@@ -219,6 +284,13 @@ export interface AssistantChatRequest {
    * - false / 不传：由后端按问题特征自动路由
    */
   dataQuery?: boolean
+  /**
+   * 智能体模式（仅通用助手分支生效）：
+   * - auto（默认）：后端按问题特征智能路由，复杂问题进入智能体编排
+   * - on：强制智能体编排
+   * - off：强制原链路
+   */
+  agentMode?: 'auto' | 'on' | 'off'
   /** 上传的文件附件（文件ID + 客户端提取的文本内容） */
   files?: AssistantFileAttachment[]
   /** 多轮对话历史（旧→新），用于查询改写与回答上下文；建议传最近 3~6 条 */

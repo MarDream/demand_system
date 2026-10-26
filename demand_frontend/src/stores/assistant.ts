@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
+  confirmAssistantToolCall,
   createAssistantSession,
   deleteAssistantSession,
   getAssistantMessages,
@@ -9,7 +10,7 @@ import {
   regenerateAssistantMessage,
   streamAssistantMessage,
 } from '@/api/modules/assistant'
-import type { AssistantChatRequest, AssistantMessage, AssistantMessageId, AssistantSession, AssistantTask, ConversationTurn } from '@/types/assistant'
+import type { AssistantChatRequest, AssistantMessage, AssistantMessageId, AssistantSession, AssistantTask, ConversationTurn, SubAgentRun, ToolCallRecord } from '@/types/assistant'
 
 const DEFAULT_SESSION_TITLE = '新会话'
 
@@ -91,11 +92,67 @@ export const useAssistantStore = defineStore('assistant', () => {
   const activeSessionId = ref<number | null>(null)
   const messages = ref<AssistantMessage[]>([])
   const sending = ref(false)
+  /** 智能体模式：固定 auto——后端按问题特征智能路由，复杂问题自动进入智能体编排（前端不提供切换） */
+  const agentMode = ref<'auto' | 'on' | 'off'>('auto')
   let abortController: AbortController | null = null
 
   function stopGenerating() {
     abortController?.abort()
     abortController = null
+  }
+
+  /** 确保消息上有智能体轨迹对象（流式事件到达时惰性创建） */
+  function ensureAgentTrace(target: AssistantMessage) {
+    if (!target.agentTrace) {
+      target.agentTrace = { subAgents: [], toolCalls: [] }
+    }
+    if (!target.agentTrace.subAgents) target.agentTrace.subAgents = []
+    if (!target.agentTrace.toolCalls) target.agentTrace.toolCalls = []
+    return target.agentTrace
+  }
+
+  function upsertById<T extends { id: string }>(list: T[] | undefined, item: T): T[] {
+    const base = list ? [...list] : []
+    const idx = base.findIndex(existing => existing.id === item.id)
+    if (idx >= 0) {
+      base[idx] = item
+    } else {
+      base.push(item)
+    }
+    return base
+  }
+
+  /** 工具调用记录归属：主循环进 trace.toolCalls，子 Agent 进对应 run 的 toolCalls */
+  function applyToolCall(target: AssistantMessage, record: ToolCallRecord) {
+    const trace = ensureAgentTrace(target)
+    if (record.agentId && record.agentId !== 'main') {
+      const runs = trace.subAgents!
+      const runIdx = runs.findIndex(run => run.id === record.agentId)
+      if (runIdx >= 0) {
+        runs[runIdx] = { ...runs[runIdx], toolCalls: upsertById(runs[runIdx].toolCalls, record) }
+        trace.subAgents = [...runs]
+        return
+      }
+    }
+    trace.toolCalls = upsertById(trace.toolCalls, record)
+  }
+
+  function applySubAgent(target: AssistantMessage, run: SubAgentRun) {
+    const trace = ensureAgentTrace(target)
+    trace.subAgents = upsertById(trace.subAgents, run)
+  }
+
+  /** 用户点击确认卡片：回填决议并从待确认列表移除 */
+  async function confirmPermission(requestId: string, approved: boolean) {
+    try {
+      await confirmAssistantToolCall(requestId, approved)
+    } finally {
+      const target = [...messages.value].reverse()
+        .find(item => item.pendingPermissions?.some(entry => entry.requestId === requestId))
+      if (target && target.pendingPermissions) {
+        target.pendingPermissions = target.pendingPermissions.filter(entry => entry.requestId !== requestId)
+      }
+    }
   }
 
   function applyUsage(target: AssistantMessage, usage?: { inputTokens?: number | null, outputTokens?: number | null, totalTokens?: number | null }) {
@@ -157,6 +214,25 @@ export const useAssistantStore = defineStore('assistant', () => {
     sessions.value = sessions.value.filter(item => item.id !== sessionId)
 
     if (activeSessionId.value === sessionId) {
+      activeSessionId.value = sessions.value[0]?.id ?? null
+      if (activeSessionId.value) {
+        await loadMessages(activeSessionId.value)
+      } else {
+        messages.value = []
+      }
+    }
+  }
+
+  /** 批量删除会话：逐个调用删除接口，一次性更新会话列表与激活会话指向 */
+  async function removeSessions(sessionIds: number[]) {
+    const idSet = new Set(sessionIds)
+    if (idSet.size === 0) return
+    for (const sessionId of sessionIds) {
+      await deleteAssistantSession(sessionId)
+    }
+    sessions.value = sessions.value.filter(item => !idSet.has(item.id))
+
+    if (activeSessionId.value && idSet.has(activeSessionId.value)) {
       activeSessionId.value = sessions.value[0]?.id ?? null
       if (activeSessionId.value) {
         await loadMessages(activeSessionId.value)
@@ -292,7 +368,7 @@ export const useAssistantStore = defineStore('assistant', () => {
 
     abortController = new AbortController()
     try {
-      await streamAssistantMessage(sessionId, { ...request, history }, {
+      await streamAssistantMessage(sessionId, { ...request, agentMode: agentMode.value, history }, {
         onActions(payload) {
           const target = messages.value.find(item => String(item.id) === assistantTempId)
           if (!target) return
@@ -331,6 +407,32 @@ export const useAssistantStore = defineStore('assistant', () => {
           const target = messages.value.find(item => String(item.id) === assistantTempId)
           if (!target) return
           target.dataResult = result
+        },
+        onPlan(payload) {
+          const target = messages.value.find(item => String(item.id) === assistantTempId)
+          if (!target) return
+          target.agentPlan = payload.plan
+          const trace = ensureAgentTrace(target)
+          trace.plan = payload.plan
+          trace.routeReason = payload.routeReason || trace.routeReason
+        },
+        onToolCall(record) {
+          const target = messages.value.find(item => String(item.id) === assistantTempId)
+          if (!target) return
+          applyToolCall(target, record)
+        },
+        onSubAgent(run) {
+          const target = messages.value.find(item => String(item.id) === assistantTempId)
+          if (!target) return
+          applySubAgent(target, run)
+        },
+        onPermissionRequest(payload) {
+          const target = messages.value.find(item => String(item.id) === assistantTempId)
+          if (!target) return
+          if (!target.pendingPermissions) target.pendingPermissions = []
+          if (!target.pendingPermissions.some(entry => entry.requestId === payload.requestId)) {
+            target.pendingPermissions = [...target.pendingPermissions, payload]
+          }
         },
         onDelta(delta) {
           const target = messages.value.find(item => String(item.id) === assistantTempId)
@@ -417,6 +519,9 @@ export const useAssistantStore = defineStore('assistant', () => {
     oldMessage.sources = []
     oldMessage.warnings = []
     oldMessage.dataResult = null
+    oldMessage.agentPlan = null
+    oldMessage.agentTrace = null
+    oldMessage.pendingPermissions = []
     oldMessage.inputTokens = null
     oldMessage.outputTokens = null
     oldMessage.totalTokens = null
@@ -433,6 +538,7 @@ export const useAssistantStore = defineStore('assistant', () => {
         webSearch: request.webSearch,
         searchScopes: request.searchScopes,
         dataQuery: request.dataQuery,
+        agentMode: agentMode.value,
         files: request.files,
         history: buildHistory(messages.value, assistantMessageId),
         assistantMessageId,
@@ -465,6 +571,24 @@ export const useAssistantStore = defineStore('assistant', () => {
         },
         onDataResult(result) {
           oldMessage.dataResult = result
+        },
+        onPlan(payload) {
+          oldMessage.agentPlan = payload.plan
+          const trace = ensureAgentTrace(oldMessage)
+          trace.plan = payload.plan
+          trace.routeReason = payload.routeReason || trace.routeReason
+        },
+        onToolCall(record) {
+          applyToolCall(oldMessage, record)
+        },
+        onSubAgent(run) {
+          applySubAgent(oldMessage, run)
+        },
+        onPermissionRequest(payload) {
+          if (!oldMessage.pendingPermissions) oldMessage.pendingPermissions = []
+          if (!oldMessage.pendingPermissions.some(entry => entry.requestId === payload.requestId)) {
+            oldMessage.pendingPermissions = [...oldMessage.pendingPermissions, payload]
+          }
         },
         onDelta(delta) {
           oldMessage.content += delta
@@ -533,8 +657,11 @@ export const useAssistantStore = defineStore('assistant', () => {
     createSession,
     ensureSession,
     removeSession,
+    removeSessions,
     sendMessage,
     regenerateMessage,
     stopGenerating,
+    agentMode,
+    confirmPermission,
   }
 })

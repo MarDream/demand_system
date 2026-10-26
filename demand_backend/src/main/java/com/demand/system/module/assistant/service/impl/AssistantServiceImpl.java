@@ -4,6 +4,9 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.demand.system.common.config.SseExecutorConfig;
 import com.demand.system.common.exception.BusinessException;
 import com.demand.system.common.result.ErrorCode;
+import com.demand.system.module.assistant.agent.core.AgentConfirmationRegistry;
+import com.demand.system.module.assistant.agent.core.AgentModeRouter;
+import com.demand.system.module.assistant.agent.core.AgentOrchestrator;
 import com.demand.system.module.assistant.dto.AssistantAction;
 import com.demand.system.module.assistant.dto.AssistantSource;
 import com.demand.system.module.assistant.dto.AssistantChatRequest;
@@ -62,6 +65,8 @@ import java.util.concurrent.Executor;
 public class AssistantServiceImpl implements AssistantService {
     private static final Logger log = LoggerFactory.getLogger(AssistantServiceImpl.class);
     private static final long STREAM_TIMEOUT_MS = 120_000L;
+    /** Agent orchestration (multi-round LLM + tool execution + confirmation wait) requires a relaxed stream timeout */
+    private static final long AGENT_STREAM_TIMEOUT_MS = 300_000L;
     private static final String DEFAULT_SESSION_TITLE = "新会话";
     private static final String NO_RESULT_HINT = "未在所选知识库中找到相关内容，建议换个问法，或切换到其它知识库范围后再试。";
 
@@ -78,6 +83,9 @@ public class AssistantServiceImpl implements AssistantService {
     private final Nl2SqlService nl2SqlService;
     private final RequirementServiceImpl requirementService;
     private final Executor sseExecutor;
+    private final AgentModeRouter agentModeRouter;
+    private final AgentOrchestrator agentOrchestrator;
+    private final AgentConfirmationRegistry agentConfirmationRegistry;
 
     public AssistantServiceImpl(AssistantSessionMapper sessionMapper,
                                 AssistantMessageMapper messageMapper,
@@ -91,6 +99,9 @@ public class AssistantServiceImpl implements AssistantService {
                                 RagAnswerService ragAnswerService,
                                 Nl2SqlService nl2SqlService,
                                 RequirementServiceImpl requirementService,
+                                AgentModeRouter agentModeRouter,
+                                AgentOrchestrator agentOrchestrator,
+                                AgentConfirmationRegistry agentConfirmationRegistry,
                                 @Qualifier(SseExecutorConfig.SSE_TASK_EXECUTOR) Executor sseExecutor) {
         this.sessionMapper = sessionMapper;
         this.messageMapper = messageMapper;
@@ -104,7 +115,26 @@ public class AssistantServiceImpl implements AssistantService {
         this.ragAnswerService = ragAnswerService;
         this.nl2SqlService = nl2SqlService;
         this.requirementService = requirementService;
+        this.agentModeRouter = agentModeRouter;
+        this.agentOrchestrator = agentOrchestrator;
+        this.agentConfirmationRegistry = agentConfirmationRegistry;
         this.sseExecutor = sseExecutor;
+    }
+
+    /** 通用分支可能进入智能体编排时放宽流超时 */
+    private long resolveStreamTimeout(AssistantChatRequest request) {
+        boolean agentPossible = request.getKnowledgeBaseId() == null
+                && !Boolean.TRUE.equals(request.getWebSearch())
+                && !Boolean.TRUE.equals(request.getDataQuery())
+                && !hasExplicitSearchScope(request)
+                && !"off".equalsIgnoreCase(request.getAgentMode());
+        return agentPossible ? AGENT_STREAM_TIMEOUT_MS : STREAM_TIMEOUT_MS;
+    }
+
+    @Override
+    public boolean confirmToolCall(String requestId, boolean approved) {
+        Long userId = requireCurrentUserId();
+        return agentConfirmationRegistry.resolve(requestId, userId, approved);
     }
 
     @Override
@@ -193,7 +223,7 @@ public class AssistantServiceImpl implements AssistantService {
         assistantMessage.setPageContext(request.getPageContext());
         messageMapper.insert(assistantMessage);
 
-        SseEmitter emitter = new SseEmitter(STREAM_TIMEOUT_MS);
+        SseEmitter emitter = new SseEmitter(resolveStreamTimeout(request));
         dispatchByIntent(emitter, request, userContent, userMessage.getId(), assistantMessage, session,
                 questionLogId, superAdmin, permissions, false);
         return emitter;
@@ -239,7 +269,7 @@ public class AssistantServiceImpl implements AssistantService {
         newAssistant.setPageContext(request.getPageContext() != null ? request.getPageContext() : oldAssistant.getPageContext());
         messageMapper.insert(newAssistant);
 
-        SseEmitter emitter = new SseEmitter(STREAM_TIMEOUT_MS);
+        SseEmitter emitter = new SseEmitter(resolveStreamTimeout(request));
         AssistantChatRequest unifiedRequest = toChatRequest(request);
         dispatchByIntent(emitter, unifiedRequest, userMessage.getContent(), userMessage.getId(), newAssistant, session,
                 null, superAdmin, permissions, true);
@@ -258,7 +288,9 @@ public class AssistantServiceImpl implements AssistantService {
                                   List<String> permissions,
                                   boolean regenerate) {
         boolean explicitDataQuery = Boolean.TRUE.equals(request.getDataQuery());
-        boolean autoDataQuery = request.getDataQuery() == null
+        boolean forceAgent = "on".equalsIgnoreCase(request.getAgentMode());
+        boolean autoDataQuery = !forceAgent
+                && request.getDataQuery() == null
                 && nl2SqlService.isEnabled()
                 && request.getKnowledgeBaseId() == null
                 && !Boolean.TRUE.equals(request.getWebSearch())
@@ -296,7 +328,7 @@ public class AssistantServiceImpl implements AssistantService {
             CompletableFuture.runAsync(() -> doStreamWebSearchReply(
                     emitter, request, userContent, userMessageId, assistantMessage, questionLogId), sseExecutor);
         } else {
-            // 通用操作导航分支
+            // 通用操作导航分支：先经智能体智能路由（auto/on/off）决定走编排还是原链路
             AssistantOperationAdvice advice = catalogService.advise(userContent, request.getPageContext(), permissions, superAdmin);
             List<AssistantAction> validatedActions = actionValidator.sanitize(advice.getActions(), permissions, superAdmin);
             advice.setActions(validatedActions);
@@ -307,7 +339,7 @@ public class AssistantServiceImpl implements AssistantService {
             if (!regenerate) {
                 updateSessionAfterInteraction(session, advice.getSessionTitle());
             }
-            CompletableFuture.runAsync(() -> {
+            Runnable legacyFlow = () -> {
                 // 跨源摘要：数据问答 / 知识库检索结果并入通用回答，让通用助手对
                 // "查数 / 找资料"类问题也能给出结果而非只讲入口（失败静默降级为纯导航）
                 CrossSourceDigest digest = buildCrossSourceDigest(request, userContent, assistantMessage, superAdmin);
@@ -320,7 +352,17 @@ public class AssistantServiceImpl implements AssistantService {
                 doStreamReply(emitter, advice, userContent, request.getPageContext(), userMessageId,
                         assistantMessage, request.getLlmModelId(), request.getFiles(), questionLogId,
                         digest.promptBlock());
-            }, sseExecutor);
+            };
+            if (agentModeRouter.route(request.getAgentMode(), userContent) == AgentModeRouter.Decision.AGENT) {
+                // 智能体编排：任务拆分 → 子Agent 并行（多模型分派）→ 流式综合；失败降级 legacyFlow
+                assistantMessage.setIntent("agent");
+                messageMapper.updateById(assistantMessage);
+                CompletableFuture.runAsync(() -> agentOrchestrator.orchestrate(
+                        emitter, request, userContent, userMessageId, assistantMessage, session,
+                        questionLogId, superAdmin, permissions, advice, legacyFlow), sseExecutor);
+            } else {
+                CompletableFuture.runAsync(legacyFlow, sseExecutor);
+            }
         }
     }
 
@@ -338,6 +380,7 @@ public class AssistantServiceImpl implements AssistantService {
         chatRequest.setFiles(request.getFiles());
         chatRequest.setHistory(request.getHistory());
         chatRequest.setDataQuery(request.getDataQuery());
+        chatRequest.setAgentMode(request.getAgentMode());
         return chatRequest;
     }
 
@@ -1545,6 +1588,8 @@ public class AssistantServiceImpl implements AssistantService {
         vo.setSources(message.getSources() == null ? List.of() : message.getSources());
         vo.setThinkingSteps(message.getThinkingSteps());
         vo.setTasks(message.getTasks());
+        vo.setAgentPlan(message.getAgentPlan());
+        vo.setAgentTrace(message.getAgentTrace());
         vo.setProcessSummary(message.getProcessSummary());
         vo.setRetrievedCount(message.getRetrievedCount());
         vo.setCitations(message.getCitations());

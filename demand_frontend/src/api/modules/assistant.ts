@@ -1,6 +1,7 @@
 import request from '@/api/request'
 import { getToken } from '@/utils/auth'
 import type {
+  AgentPlanInfo,
   AssistantActionPayload,
   AssistantChatRequest,
   AssistantDataResult,
@@ -9,7 +10,10 @@ import type {
   AssistantSession,
   AssistantTask,
   AssistantUsage,
+  PermissionRequestPayload,
+  SubAgentRun,
   ThinkingStep,
+  ToolCallRecord,
 } from '@/types/assistant'
 
 export function getAssistantSessions() {
@@ -35,6 +39,14 @@ export interface AssistantStreamHandlers {
   onTaskUpdate?: (task: AssistantTask) => void
   /** 数据问答结构化结果（NL2SQL，在回答正文开始前下发） */
   onDataResult?: (result: AssistantDataResult) => void
+  /** 智能体任务拆分计划（plan 事件） */
+  onPlan?: (payload: { plan: AgentPlanInfo; routeReason?: string; plannerModel?: string }) => void
+  /** 智能体工具调用状态变更（toolCall 事件） */
+  onToolCall?: (record: ToolCallRecord) => void
+  /** 子 Agent 状态变更（subagent 事件） */
+  onSubAgent?: (run: SubAgentRun) => void
+  /** 写操作待确认（permissionRequest 事件） */
+  onPermissionRequest?: (payload: PermissionRequestPayload) => void
   onDelta?: (delta: string) => void
   /** 深度思考内容增量（reasoningDelta 事件，流式） */
   onReasoningDelta?: (delta: string) => void
@@ -43,6 +55,11 @@ export interface AssistantStreamHandlers {
   onUsage?: (usage: AssistantUsage) => void
   onDone?: (message: AssistantMessage) => void
   onError?: (message: string) => void
+}
+
+/** 用户对写操作工具确认卡片的回填（允许/拒绝） */
+export function confirmAssistantToolCall(requestId: string, approved: boolean) {
+  return request.post<boolean>('/v1/assistant/tool-confirm', { requestId, approved })
 }
 
 export async function streamAssistantMessage(
@@ -169,6 +186,14 @@ function handleStreamEvent(eventBlock: string, handlers: AssistantStreamHandlers
     handlers.onTaskUpdate?.(parsed as AssistantTask)
   } else if (eventName === 'dataResult') {
     handlers.onDataResult?.(parsed as AssistantDataResult)
+  } else if (eventName === 'plan') {
+    handlers.onPlan?.(parsed)
+  } else if (eventName === 'toolCall') {
+    handlers.onToolCall?.(parsed as ToolCallRecord)
+  } else if (eventName === 'subagent') {
+    handlers.onSubAgent?.(parsed as SubAgentRun)
+  } else if (eventName === 'permissionRequest') {
+    handlers.onPermissionRequest?.(parsed as PermissionRequestPayload)
   } else if (eventName === 'done') {
     handlers.onDone?.(parsed as AssistantMessage)
   }
