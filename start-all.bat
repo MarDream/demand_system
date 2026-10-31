@@ -81,7 +81,7 @@ echo   需求管理系统 - 全量启动
 echo ============================================
 echo.
 
-:: 1) 启动 Docker 容器（含 mysql/redis/rabbitmq/minio/milvus/kkfileview）
+:: 1) 启动 Docker 容器（mysql/redis/rabbitmq/minio/elasticsearch/etcd/milvus）
 echo [1 of 4] 检查 Docker 容器...
 call :containers_ready
 if not "%CONTAINERS_READY%"=="1" goto start_containers
@@ -99,7 +99,6 @@ if not "%CONTAINERS_READY%"=="1" goto wait_containers
 echo   已检测到依赖容器可用，跳过等待
 goto after_container_check
 :wait_containers
-call :wait_healthy kkfileview %KKFILEVIEW_PORT% "kkFileView"
 call :wait_healthy mysql 3306 "MySQL"
 call :wait_healthy redis 6379 "Redis"
 call :wait_healthy rabbitmq 5672 "RabbitMQ"
@@ -134,6 +133,15 @@ del /q "%FRONTEND_PID%" >NUL 2>&1
 powershell -NoProfile -Command "$p=Start-Process cmd -ArgumentList @('/c','chcp 65001>NUL && cd /d %ROOT_DIR%demand_frontend && npm run dev') -WindowStyle Hidden -RedirectStandardOutput '%FRONTEND_LOG%' -RedirectStandardError '%FRONTEND_ERR%' -PassThru; Set-Content -Path '%FRONTEND_PID%' -Value $p.Id -Encoding ascii"
 :after_frontend
 
+:: kkFileView 为独立子服务，不由 compose 管理，仅探测提示不阻塞启动
+call :is_port_listening %KKFILEVIEW_PORT%
+if "%PORT_LISTENING%"=="1" (
+    echo   kkFileView 已在运行
+) else (
+    echo   提示: kkFileView 未运行，文档预览将不可用
+    echo         启动后访问 http://localhost:%KKFILEVIEW_PORT%
+)
+
 echo.
 echo ============================================
 echo   启动完成！
@@ -142,7 +150,6 @@ echo.
 echo   访问地址：
 echo     - 前端:        http://127.0.0.1:%FRONTEND_PORT%
 echo     - 后端:        http://localhost:%BACKEND_PORT%
-echo     - kkFileView:  http://localhost:%KKFILEVIEW_PORT%
 echo     - MinIO 控制台: http://localhost:9001
 echo     - RabbitMQ:    http://localhost:15672
 echo.
@@ -162,7 +169,7 @@ exit /b 0
 :do_check
 echo.
 echo ============================================
-echo   基础设施 + kkFileView 健康检查
+echo   基础设施健康检查（不含 kkFileView——独立子服务）
 echo ============================================
 echo.
 set "FAILED=0"
@@ -172,10 +179,17 @@ call :check_service rabbitmq 5672
 call :check_service minio 9000
 call :check_service elasticsearch 9200
 call :check_service milvus 19530
-call :check_service kkfileview 8012
+echo.
+:: 单独提示 kkFileView 状态（不阻断）
+call :is_port_listening %KKFILEVIEW_PORT%
+if "%PORT_LISTENING%"=="1" (
+    echo   ✅ kkFileView 运行中
+) else (
+    echo   ℹ️  kkFileView 未运行（独立子服务，按需启动）
+)
 echo.
 if "%FAILED%"=="0" (
-    echo   ✅ 所有服务连接正常
+    echo   ✅ 所有核心服务连接正常
     exit /b 0
 ) else (
     echo   ❌ 有 %FAILED% 个服务连接异常
@@ -380,9 +394,9 @@ goto :eof
 
 :containers_ready
 set "CONTAINERS_READY=1"
-for %%c in (mysql redis rabbitmq minio elasticsearch milvus kkfileview) do (
+for %%c in (mysql redis rabbitmq minio elasticsearch milvus) do (
     call :is_container_ready %%c
-    if not "!CONTAINER_READY!"=="1" set "CONTAINERS_READY=0"
+    if not "!CONTAINERS_READY!"=="1" set "CONTAINERS_READY=0"
 )
 goto :eof
 
