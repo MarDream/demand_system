@@ -1205,12 +1205,12 @@ public class RequirementServiceImpl implements RequirementService {
             return new PageResult<>(Collections.emptyList(), 0L, query.getPageNum(), query.getPageSize());
         }
 
-        List<Long> directOrgIds = resolveDirectOrgIds(userId);
-        List<Long> scopedOrgIds = resolveScopedOrgIds(directOrgIds);
+        List<Long> roleIds = getCurrentUserRoleIds();
+        List<Long> orgIds = getUserOrgIds(userId);
 
         Page<Requirement> page = new Page<>(query.getPageNum(), query.getPageSize());
-        IPage<Requirement> result = requirementMapper.selectMyAll(page, userId, currentRoleCodes,
-                directOrgIds, scopedOrgIds, query.getProjectId(), query.getType(), query.getPriority(),
+        IPage<Requirement> result = requirementMapper.selectMyAllV2(page, userId, roleIds, orgIds,
+                query.getProjectId(), query.getType(), query.getPriority(),
                 query.getStatus(), query.getAssigneeId(), query.getKeyword(), query.getKeywordScope(),
                 query.getNodeStatus(), query.getIsOverdue(), isSuperAdmin, visibleOrgIds, query);
 
@@ -2678,7 +2678,7 @@ public class RequirementServiceImpl implements RequirementService {
         if (isParticipant(requirement.getId(), userId)) {
             return true;
         }
-        // 被指派为当前工作流节点处理人也可查看（与 selectMyPending 列表判定保持一致，
+        // 被指派为当前工作流节点处理人也可查看（与 selectMyPendingV2 列表判定保持一致，
         // 避免"我的待办"列表能看见但点进详情被 403）
         if (isAssignedAsCurrentNodeApprover(requirement, userId)) {
             return true;
@@ -2689,8 +2689,8 @@ public class RequirementServiceImpl implements RequirementService {
 
     /**
      * 判定用户是否被指派为当前工作流节点的处理人。
-     * 与 {@link com.demand.system.module.requirement.mapper.RequirementMapper#selectMyPending} 的
-     * 6 种 assignee_type 分支完全对齐，保证"我的待办"列表可见的每一条都至少能查看。
+     * 与 selectMyPendingV2 的待办物化表匹配口径保持一致，
+     * 保证"我的待办"列表可见的每一条都至少能查看。
      */
     private boolean isAssignedAsCurrentNodeApprover(Requirement requirement, Long userId) {
         return isAssignedAsCurrentNodeApprover(requirement, userId, null);

@@ -42,22 +42,6 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                       @Param("isOverdue") Boolean isOverdue,
                                       @Param("timeQuery") RequirementMyListQueryDTO timeQuery);
 
-    IPage<Requirement> selectMyPending(IPage<Requirement> page,
-                                       @Param("userId") Long userId,
-                                       @Param("roleCodes") List<String> roleCodes,
-                                       @Param("directOrgIds") List<Long> directOrgIds,
-                                       @Param("scopedOrgIds") List<Long> scopedOrgIds,
-                                       @Param("projectId") Long projectId,
-                                       @Param("type") String type,
-                                       @Param("priority") String priority,
-                                       @Param("status") String status,
-                                       @Param("assigneeId") Long assigneeId,
-                                       @Param("keyword") String keyword,
-                                       @Param("keywordScope") String keywordScope,
-                                       @Param("isSuperAdmin") boolean isSuperAdmin,
-                                       @Param("visibleOrgIds") List<Long> visibleOrgIds,
-                                       @Param("timeQuery") RequirementMyListQueryDTO timeQuery);
-
     IPage<Requirement> selectMyFollows(IPage<Requirement> page,
                                        @Param("userId") Long userId,
                                        @Param("projectId") Long projectId,
@@ -74,7 +58,7 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                        @Param("timeQuery") RequirementMyListQueryDTO timeQuery);
 
     /**
-     * 我的抄送：仅返回只读查阅待办，不参与审批权限判断。
+     * 我的抄送：仅返回只读查阅待办（通过 requirement_pending_tasks 的 CC_READ_ONLY 任务命中）。
      */
     IPage<Requirement> selectMyCc(IPage<Requirement> page,
                                   @Param("userId") Long userId,
@@ -92,67 +76,26 @@ public interface RequirementMapper extends BaseMapper<Requirement> {
                                   @Param("timeQuery") RequirementMyListQueryDTO timeQuery);
 
     /**
-     * 我的已办 - 查询当前用户创建的已提交需求 或 审批过的需求，排除当前待我审批的需求
-     * @param userId 当前用户ID
-     * @param roleCodes 当前用户角色编码列表
-     * @param directOrgIds 当前用户直接所属组织ID列表
-     * @param scopedOrgIds 当前用户含子级的组织ID列表
-     * @param keyword 关键词搜索（可选）
-     */
-    IPage<Requirement> selectMyDone(IPage<Requirement> page,
-                                    @Param("userId") Long userId,
-                                    @Param("roleCodes") List<String> roleCodes,
-                                    @Param("directOrgIds") List<Long> directOrgIds,
-                                    @Param("scopedOrgIds") List<Long> scopedOrgIds,
-                                    @Param("projectId") Long projectId,
-                                    @Param("type") String type,
-                                    @Param("priority") String priority,
-                                    @Param("status") String status,
-                                    @Param("assigneeId") Long assigneeId,
-                                    @Param("keyword") String keyword,
-                                    @Param("keywordScope") String keywordScope,
-                                    @Param("isSuperAdmin") boolean isSuperAdmin,
-                                    @Param("visibleOrgIds") List<Long> visibleOrgIds,
-                                    @Param("timeQuery") RequirementMyListQueryDTO timeQuery);
-
-    /**
      * 我的全部：合并草稿/待办/已办/关注/抄送，按更新时间倒序去重。
+     * 使用 V2 架构（requirement_pending_tasks / workflow_node_assignees 关联表），
+     * 避免旧版 JSON_CONTAINS 无法命中索引的问题。
      */
-    IPage<Requirement> selectMyAll(IPage<Requirement> page,
-                                    @Param("userId") Long userId,
-                                    @Param("roleCodes") List<String> roleCodes,
-                                    @Param("directOrgIds") List<Long> directOrgIds,
-                                    @Param("scopedOrgIds") List<Long> scopedOrgIds,
-                                    @Param("projectId") Long projectId,
-                                    @Param("type") String type,
-                                    @Param("priority") String priority,
-                                    @Param("status") String status,
-                                    @Param("assigneeId") Long assigneeId,
-                                    @Param("keyword") String keyword,
-                                    @Param("keywordScope") String keywordScope,
-                                    @Param("nodeStatus") String nodeStatus,
-                                    @Param("isOverdue") Boolean isOverdue,
-                                    @Param("isSuperAdmin") boolean isSuperAdmin,
-                                    @Param("visibleOrgIds") List<Long> visibleOrgIds,
-                                    @Param("timeQuery") RequirementMyListQueryDTO timeQuery);
-
-    /**
-     * 我的待办 - 使用物化表优化（新版本）
-     * @param userId 当前用户ID
-     * @param keyword 关键词搜索（可选）
-     */
-    IPage<Requirement> selectMyPendingOptimized(IPage<Requirement> page,
-                                                @Param("userId") Long userId,
-                                                @Param("projectId") Long projectId,
-                                                @Param("type") String type,
-                                                @Param("priority") String priority,
-                                                @Param("status") String status,
-                                                @Param("assigneeId") Long assigneeId,
-                                                @Param("keyword") String keyword,
-                                                @Param("keywordScope") String keywordScope,
-                                                @Param("isSuperAdmin") boolean isSuperAdmin,
-                                                @Param("visibleOrgIds") List<Long> visibleOrgIds,
-                                                @Param("timeQuery") RequirementMyListQueryDTO timeQuery);
+    IPage<Requirement> selectMyAllV2(IPage<Requirement> page,
+                                      @Param("userId") Long userId,
+                                      @Param("roleIds") List<Long> roleIds,
+                                      @Param("orgIds") List<Long> orgIds,
+                                      @Param("projectId") Long projectId,
+                                      @Param("type") String type,
+                                      @Param("priority") String priority,
+                                      @Param("status") String status,
+                                      @Param("assigneeId") Long assigneeId,
+                                      @Param("keyword") String keyword,
+                                      @Param("keywordScope") String keywordScope,
+                                      @Param("nodeStatus") String nodeStatus,
+                                      @Param("isOverdue") Boolean isOverdue,
+                                      @Param("isSuperAdmin") boolean isSuperAdmin,
+                                      @Param("visibleOrgIds") List<Long> visibleOrgIds,
+                                      @Param("timeQuery") RequirementMyListQueryDTO timeQuery);
 
     /**
      * 我的待办 - 使用运行期待办物化表判定当前处理权限。
