@@ -87,9 +87,13 @@ start-claude.bat
 .zcodeignore
 .zcode/
 
-# Local verification/import scripts & artifacts (contain env-specific creds/logic, do not ship)
-scripts/
+# Local import artifacts (env-specific creds/logic, do not ship)
 req-import/
+
+# scripts/: 通用启动基础设施入库（compose / ps1），仅排除本地 env 与临时产物
+scripts/.env
+scripts/.env.*.local
+scripts/out/
 
 # AI 智能助手（CodeBuddy Agent SDK 独立子项目，自带 .gitignore，这里再兜底一层）
 demand_assistant/node_modules/
