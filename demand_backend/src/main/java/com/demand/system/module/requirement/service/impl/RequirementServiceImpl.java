@@ -131,20 +131,6 @@ public class RequirementServiceImpl implements RequirementService {
     private static final DateTimeFormatter REQUIREMENT_NO_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMdd");
     private static final DateTimeFormatter REQUIREMENT_NO_TIMESTAMP_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
-    /**
-     * 是否启用待办任务物化表优化
-     * true: 使用 requirement_pending_tasks 表（推荐，性能提升80%+）
-     * false: 使用原始复杂查询（兼容模式）
-     */
-    private static final boolean USE_PENDING_TASK_OPTIMIZATION = false;
-
-    /**
-     * 架构重构开关：是否使用V2查询（workflow_node_assignees关联表）
-     * true: 使用V2架构（消除JSON_CONTAINS，性能提升100倍+）
-     * false: 使用旧查询（JSON_CONTAINS + 复杂子查询）
-     */
-    private static final boolean USE_V2_ARCHITECTURE = true;
-
     /** 评论@提醒的通知类型标识（前端据此决定点击后跳转到评论处） */
     private static final String NOTIFICATION_TYPE_COMMENT_MENTION = "requirement_comment_mention";
 
@@ -1085,33 +1071,15 @@ public class RequirementServiceImpl implements RequirementService {
         }
 
         Page<Requirement> page = new Page<>(query.getPageNum(), query.getPageSize());
-        IPage<Requirement> result;
 
-        if (USE_V2_ARCHITECTURE) {
-            // 使用V2架构：workflow_node_assignees关联表（推荐，性能提升100倍+）
-            // 角色匹配按「当前生效角色」收窄（角色切换后，其他角色名下的待办不再出现）
-            List<Long> roleIds = getCurrentUserRoleIds();
-            List<Long> orgIds = getUserOrgIds(userId);
+        // workflow_node_assignees 关联表查询；角色匹配按「当前生效角色」收窄（角色切换后，其他角色名下的待办不再出现）
+        List<Long> roleIds = getCurrentUserRoleIds();
+        List<Long> orgIds = getUserOrgIds(userId);
 
-            result = requirementMapper.selectMyPendingV2(page, userId, roleIds, orgIds,
-                    query.getProjectId(), query.getType(), query.getPriority(),
-                    query.getStatus(), query.getAssigneeId(), query.getKeyword(), query.getKeywordScope(),
-                    query.getNodeStatus(), query.getIsOverdue(), isSuperAdmin, visibleOrgIds, query);
-        } else if (USE_PENDING_TASK_OPTIMIZATION) {
-            // 使用物化表优化查询
-            result = requirementMapper.selectMyPendingOptimized(page, userId,
-                    query.getProjectId(), query.getType(), query.getPriority(),
-                    query.getStatus(), query.getAssigneeId(), query.getKeyword(), query.getKeywordScope(),
-                    isSuperAdmin, visibleOrgIds, query);
-        } else {
-            // 使用原始复杂查询（兼容模式）
-            List<Long> directOrgIds = resolveDirectOrgIds(userId);
-            List<Long> scopedOrgIds = resolveScopedOrgIds(directOrgIds);
-
-            result = requirementMapper.selectMyPending(page, userId, currentRoleCodes, directOrgIds, scopedOrgIds,
-                    query.getProjectId(), query.getType(), query.getPriority(), query.getStatus(), query.getAssigneeId(),
-                    query.getKeyword(), query.getKeywordScope(), isSuperAdmin, visibleOrgIds, query);
-        }
+        IPage<Requirement> result = requirementMapper.selectMyPendingV2(page, userId, roleIds, orgIds,
+                query.getProjectId(), query.getType(), query.getPriority(),
+                query.getStatus(), query.getAssigneeId(), query.getKeyword(), query.getKeywordScope(),
+                query.getNodeStatus(), query.getIsOverdue(), isSuperAdmin, visibleOrgIds, query);
 
         List<RequirementVO> list = new ArrayList<>();
         for (Requirement r : result.getRecords()) {
@@ -1202,27 +1170,15 @@ public class RequirementServiceImpl implements RequirementService {
         }
 
         Page<Requirement> page = new Page<>(query.getPageNum(), query.getPageSize());
-        IPage<Requirement> result;
 
-        if (USE_V2_ARCHITECTURE) {
-            // 使用V2架构：workflow_node_assignees关联表（推荐，性能提升100倍+）
-            // 角色匹配按「当前生效角色」收窄（与我的待办口径一致）
-            List<Long> roleIds = getCurrentUserRoleIds();
-            List<Long> orgIds = getUserOrgIds(userId);
+        // workflow_node_assignees 关联表查询；角色匹配按「当前生效角色」收窄（与我的待办口径一致）
+        List<Long> roleIds = getCurrentUserRoleIds();
+        List<Long> orgIds = getUserOrgIds(userId);
 
-            result = requirementMapper.selectMyDoneV2(page, userId, roleIds, orgIds,
-                    query.getProjectId(), query.getType(), query.getPriority(),
-                    query.getStatus(), query.getAssigneeId(), query.getKeyword(), query.getKeywordScope(),
-                    query.getNodeStatus(), query.getIsOverdue(), isSuperAdmin, visibleOrgIds, query);
-        } else {
-            // 使用旧查询（兼容模式）
-            List<Long> directOrgIds = resolveDirectOrgIds(userId);
-            List<Long> scopedOrgIds = resolveScopedOrgIds(directOrgIds);
-
-            result = requirementMapper.selectMyDone(page, userId, currentRoleCodes, directOrgIds, scopedOrgIds,
-                    query.getProjectId(), query.getType(), query.getPriority(), query.getStatus(), query.getAssigneeId(),
-                    query.getKeyword(), query.getKeywordScope(), isSuperAdmin, visibleOrgIds, query);
-        }
+        IPage<Requirement> result = requirementMapper.selectMyDoneV2(page, userId, roleIds, orgIds,
+                query.getProjectId(), query.getType(), query.getPriority(),
+                query.getStatus(), query.getAssigneeId(), query.getKeyword(), query.getKeywordScope(),
+                query.getNodeStatus(), query.getIsOverdue(), isSuperAdmin, visibleOrgIds, query);
 
         List<RequirementVO> list = new ArrayList<>();
         for (Requirement r : result.getRecords()) {
@@ -3005,43 +2961,23 @@ public class RequirementServiceImpl implements RequirementService {
             case "pending" -> {
                 RequirementMyListQueryDTO myQuery = buildMyListQuery(query);
                 Page<Requirement> page = new Page<>(1, 10000);
-                IPage<Requirement> result;
-                if (USE_V2_ARCHITECTURE) {
-                    List<Long> roleIds = getCurrentUserRoleIds();
-                    List<Long> orgIds = getUserOrgIds(currentUserId);
-                    result = requirementMapper.selectMyPendingV2(page, currentUserId, roleIds, orgIds,
-                            myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
-                            myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(), myQuery.getKeywordScope(),
-                            myQuery.getNodeStatus(), myQuery.getIsOverdue(), isSuperAdmin, visibleOrgIds, myQuery);
-                } else {
-                    List<Long> directOrgIds = resolveDirectOrgIds(currentUserId);
-                    List<Long> scopedOrgIds = resolveScopedOrgIds(directOrgIds);
-                    result = requirementMapper.selectMyPending(page, currentUserId, currentRoleCodes, directOrgIds, scopedOrgIds,
-                            myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
-                            myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(), myQuery.getKeywordScope(),
-                            isSuperAdmin, visibleOrgIds, myQuery);
-                }
+                List<Long> roleIds = getCurrentUserRoleIds();
+                List<Long> orgIds = getUserOrgIds(currentUserId);
+                IPage<Requirement> result = requirementMapper.selectMyPendingV2(page, currentUserId, roleIds, orgIds,
+                        myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
+                        myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(), myQuery.getKeywordScope(),
+                        myQuery.getNodeStatus(), myQuery.getIsOverdue(), isSuperAdmin, visibleOrgIds, myQuery);
                 records = result.getRecords();
             }
             case "done" -> {
                 RequirementMyListQueryDTO myQuery = buildMyListQuery(query);
                 Page<Requirement> page = new Page<>(1, 10000);
-                IPage<Requirement> result;
-                if (USE_V2_ARCHITECTURE) {
-                    List<Long> roleIds = getCurrentUserRoleIds();
-                    List<Long> orgIds = getUserOrgIds(currentUserId);
-                    result = requirementMapper.selectMyDoneV2(page, currentUserId, roleIds, orgIds,
-                            myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
-                            myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(), myQuery.getKeywordScope(),
-                            myQuery.getNodeStatus(), myQuery.getIsOverdue(), isSuperAdmin, visibleOrgIds, myQuery);
-                } else {
-                    List<Long> directOrgIds = resolveDirectOrgIds(currentUserId);
-                    List<Long> scopedOrgIds = resolveScopedOrgIds(directOrgIds);
-                    result = requirementMapper.selectMyDone(page, currentUserId, currentRoleCodes, directOrgIds, scopedOrgIds,
-                            myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
-                            myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(), myQuery.getKeywordScope(),
-                            isSuperAdmin, visibleOrgIds, myQuery);
-                }
+                List<Long> roleIds = getCurrentUserRoleIds();
+                List<Long> orgIds = getUserOrgIds(currentUserId);
+                IPage<Requirement> result = requirementMapper.selectMyDoneV2(page, currentUserId, roleIds, orgIds,
+                        myQuery.getProjectId(), myQuery.getType(), myQuery.getPriority(),
+                        myQuery.getStatus(), myQuery.getAssigneeId(), myQuery.getKeyword(), myQuery.getKeywordScope(),
+                        myQuery.getNodeStatus(), myQuery.getIsOverdue(), isSuperAdmin, visibleOrgIds, myQuery);
                 records = result.getRecords();
             }
             case "follows" -> {
